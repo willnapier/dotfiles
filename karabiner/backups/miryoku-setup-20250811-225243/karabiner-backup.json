@@ -1,0 +1,3307 @@
+{
+    "profiles": [
+        {
+            "complex_modifications": {
+                "parameters": {
+                    "basic.to_if_alone_timeout_milliseconds": 280,
+                    "basic.to_if_held_down_threshold_milliseconds": 150
+                },
+                "rules": [
+                    {
+                        "description": "Miryoku: Home Row Mods - Left Hand (CAGS)",
+                        "manipulators": [
+                            {
+                                "description": "A -> Ctrl/A",
+                                "from": {
+                                    "key_code": "a",
+                                    "modifiers": { "optional": ["any"] }
+                                },
+                                "to": [{ "key_code": "left_control" }],
+                                "to_if_alone": [{ "key_code": "a" }],
+                                "type": "basic"
+                            },
+                            {
+                                "description": "R -> Alt/R",
+                                "from": {
+                                    "key_code": "r",
+                                    "modifiers": { "optional": ["any"] }
+                                },
+                                "to": [{ "key_code": "left_alt" }],
+                                "to_if_alone": [{ "key_code": "r" }],
+                                "type": "basic"
+                            },
+                            {
+                                "description": "S -> Cmd/S",
+                                "from": {
+                                    "key_code": "s",
+                                    "modifiers": { "optional": ["any"] }
+                                },
+                                "to": [{ "key_code": "left_command" }],
+                                "to_if_alone": [{ "key_code": "s" }],
+                                "type": "basic"
+                            },
+                            {
+                                "description": "T -> Shift/T",
+                                "from": {
+                                    "key_code": "t",
+                                    "modifiers": { "optional": ["any"] }
+                                },
+                                "to": [{ "key_code": "left_shift" }],
+                                "to_if_alone": [{ "key_code": "t" }],
+                                "type": "basic"
+                            }
+                        ]
+                    },
+                    {
+                        "description": "Miryoku: Home Row Mods - Right Hand (CAGS reverse)",
+                        "manipulators": [
+                            {
+                                "description": "N -> Shift/N",
+                                "from": {
+                                    "key_code": "n",
+                                    "modifiers": { "optional": ["any"] }
+                                },
+                                "to": [{ "key_code": "right_shift" }],
+                                "to_if_alone": [{ "key_code": "n" }],
+                                "type": "basic"
+                            },
+                            {
+                                "description": "E -> Cmd/E",
+                                "from": {
+                                    "key_code": "e",
+                                    "modifiers": { "optional": ["any"] }
+                                },
+                                "to": [{ "key_code": "right_command" }],
+                                "to_if_alone": [{ "key_code": "e" }],
+                                "type": "basic"
+                            },
+                            {
+                                "description": "I -> Alt/I",
+                                "from": {
+                                    "key_code": "i",
+                                    "modifiers": { "optional": ["any"] }
+                                },
+                                "to": [{ "key_code": "right_alt" }],
+                                "to_if_alone": [{ "key_code": "i" }],
+                                "type": "basic"
+                            },
+                            {
+                                "description": "O -> Ctrl/O",
+                                "from": {
+                                    "key_code": "o",
+                                    "modifiers": { "optional": ["any"] }
+                                },
+                                "to": [{ "key_code": "right_control" }],
+                                "to_if_alone": [{ "key_code": "o" }],
+                                "type": "basic"
+                            }
+                        ]
+                    },
+                    {
+                        "description": "Miryoku: CAPS_WORD Implementation",
+                        "manipulators": [
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_unless",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: Enable caps word mode",
+                                "from": { "key_code": "caps_lock" },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_caps_word",
+                                            "value": 1
+                                        }
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: Disable on space",
+                                "from": { "key_code": "spacebar" },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_caps_word",
+                                            "value": 0
+                                        }
+                                    },
+                                    { "key_code": "spacebar" }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: Disable on enter",
+                                "from": { "key_code": "return_or_enter" },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_caps_word",
+                                            "value": 0
+                                        }
+                                    },
+                                    { "key_code": "return_or_enter" }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: Disable on escape",
+                                "from": { "key_code": "escape" },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_caps_word",
+                                            "value": 0
+                                        }
+                                    },
+                                    { "key_code": "escape" }
+                                ],
+                                "type": "basic"
+                            }
+                        ]
+                    },
+                    {
+                        "description": "Miryoku: CAPS_WORD Letter Mappings",
+                        "manipulators": [
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: A -> Shift+A",
+                                "from": { "key_code": "a" },
+                                "to": [
+                                    {
+                                        "key_code": "a",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: B -> Shift+B",
+                                "from": { "key_code": "b" },
+                                "to": [
+                                    {
+                                        "key_code": "b",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: C -> Shift+C",
+                                "from": { "key_code": "c" },
+                                "to": [
+                                    {
+                                        "key_code": "c",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: D -> Shift+D",
+                                "from": { "key_code": "d" },
+                                "to": [
+                                    {
+                                        "key_code": "d",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: E -> Shift+E",
+                                "from": { "key_code": "e" },
+                                "to": [
+                                    {
+                                        "key_code": "e",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: F -> Shift+F",
+                                "from": { "key_code": "f" },
+                                "to": [
+                                    {
+                                        "key_code": "f",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: G -> Shift+G",
+                                "from": { "key_code": "g" },
+                                "to": [
+                                    {
+                                        "key_code": "g",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: H -> Shift+H",
+                                "from": { "key_code": "h" },
+                                "to": [
+                                    {
+                                        "key_code": "h",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: I -> Shift+I",
+                                "from": { "key_code": "i" },
+                                "to": [
+                                    {
+                                        "key_code": "i",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: J -> Shift+J",
+                                "from": { "key_code": "j" },
+                                "to": [
+                                    {
+                                        "key_code": "j",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: K -> Shift+K",
+                                "from": { "key_code": "k" },
+                                "to": [
+                                    {
+                                        "key_code": "k",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: L -> Shift+L",
+                                "from": { "key_code": "l" },
+                                "to": [
+                                    {
+                                        "key_code": "l",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: M -> Shift+M",
+                                "from": { "key_code": "m" },
+                                "to": [
+                                    {
+                                        "key_code": "m",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: N -> Shift+N",
+                                "from": { "key_code": "n" },
+                                "to": [
+                                    {
+                                        "key_code": "n",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: O -> Shift+O",
+                                "from": { "key_code": "o" },
+                                "to": [
+                                    {
+                                        "key_code": "o",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: P -> Shift+P",
+                                "from": { "key_code": "p" },
+                                "to": [
+                                    {
+                                        "key_code": "p",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: Q -> Shift+Q",
+                                "from": { "key_code": "q" },
+                                "to": [
+                                    {
+                                        "key_code": "q",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: R -> Shift+R",
+                                "from": { "key_code": "r" },
+                                "to": [
+                                    {
+                                        "key_code": "r",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: S -> Shift+S",
+                                "from": { "key_code": "s" },
+                                "to": [
+                                    {
+                                        "key_code": "s",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: T -> Shift+T",
+                                "from": { "key_code": "t" },
+                                "to": [
+                                    {
+                                        "key_code": "t",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: U -> Shift+U",
+                                "from": { "key_code": "u" },
+                                "to": [
+                                    {
+                                        "key_code": "u",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: V -> Shift+V",
+                                "from": { "key_code": "v" },
+                                "to": [
+                                    {
+                                        "key_code": "v",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: W -> Shift+W",
+                                "from": { "key_code": "w" },
+                                "to": [
+                                    {
+                                        "key_code": "w",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: X -> Shift+X",
+                                "from": { "key_code": "x" },
+                                "to": [
+                                    {
+                                        "key_code": "x",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: Y -> Shift+Y",
+                                "from": { "key_code": "y" },
+                                "to": [
+                                    {
+                                        "key_code": "y",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_caps_word",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "CAPS_WORD: Z -> Shift+Z",
+                                "from": { "key_code": "z" },
+                                "to": [
+                                    {
+                                        "key_code": "z",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            }
+                        ]
+                    },
+                    {
+                        "description": "Miryoku: Layer Lock Management",
+                        "manipulators": [
+                            {
+                                "description": "Layer Lock: Clear all layer locks on Escape",
+                                "from": {
+                                    "key_code": "escape",
+                                    "modifiers": { "mandatory": ["command", "shift"] }
+                                },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_sym_layer_lock",
+                                            "value": 0
+                                        }
+                                    },
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_num_layer_lock",
+                                            "value": 0
+                                        }
+                                    },
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_nav_layer_lock",
+                                            "value": 0
+                                        }
+                                    },
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_mouse_layer_lock",
+                                            "value": 0
+                                        }
+                                    },
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_media_layer_lock",
+                                            "value": 0
+                                        }
+                                    },
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_fun_layer_lock",
+                                            "value": 0
+                                        }
+                                    },
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_caps_word",
+                                            "value": 0
+                                        }
+                                    }
+                                ],
+                                "type": "basic"
+                            }
+                        ]
+                    },
+                    {
+                        "description": "Miryoku: Layer-Tap Left Thumb Keys",
+                        "manipulators": [
+                            {
+                                "description": "CapsLock -> ESC/MEDIA Layer",
+                                "from": {
+                                    "key_code": "caps_lock",
+                                    "modifiers": { "optional": ["any"] }
+                                },
+                                "parameters": {
+                                    "basic.to_if_alone_timeout_milliseconds": 200,
+                                    "basic.to_if_held_down_threshold_milliseconds": 150
+                                },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_media_layer",
+                                            "value": 1
+                                        }
+                                    }
+                                ],
+                                "to_after_key_up": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_media_layer",
+                                            "value": 0
+                                        }
+                                    }
+                                ],
+                                "to_if_alone": [{ "key_code": "escape" }],
+                                "type": "basic"
+                            },
+                            {
+                                "description": "Space -> SPACE/NAV Layer",
+                                "from": {
+                                    "key_code": "spacebar",
+                                    "modifiers": { "optional": ["any"] }
+                                },
+                                "parameters": {
+                                    "basic.to_if_alone_timeout_milliseconds": 200,
+                                    "basic.to_if_held_down_threshold_milliseconds": 150
+                                },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_nav_layer",
+                                            "value": 1
+                                        }
+                                    }
+                                ],
+                                "to_after_key_up": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_nav_layer",
+                                            "value": 0
+                                        }
+                                    }
+                                ],
+                                "to_if_alone": [{ "key_code": "spacebar" }],
+                                "type": "basic"
+                            },
+                            {
+                                "description": "LeftCmd -> TAB/MOUSE Layer",
+                                "from": {
+                                    "key_code": "left_command",
+                                    "modifiers": { "optional": ["any"] }
+                                },
+                                "parameters": {
+                                    "basic.to_if_alone_timeout_milliseconds": 200,
+                                    "basic.to_if_held_down_threshold_milliseconds": 150
+                                },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_mouse_layer",
+                                            "value": 1
+                                        }
+                                    }
+                                ],
+                                "to_after_key_up": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_mouse_layer",
+                                            "value": 0
+                                        }
+                                    }
+                                ],
+                                "to_if_alone": [{ "key_code": "tab" }],
+                                "type": "basic"
+                            }
+                        ]
+                    },
+                    {
+                        "description": "Miryoku: Layer-Tap Right Thumb Keys",
+                        "manipulators": [
+                            {
+                                "description": "RightCmd -> RET/SYM Layer",
+                                "from": {
+                                    "key_code": "right_command",
+                                    "modifiers": { "optional": ["any"] }
+                                },
+                                "parameters": {
+                                    "basic.to_if_alone_timeout_milliseconds": 200,
+                                    "basic.to_if_held_down_threshold_milliseconds": 150
+                                },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_sym_layer",
+                                            "value": 1
+                                        }
+                                    }
+                                ],
+                                "to_after_key_up": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_sym_layer",
+                                            "value": 0
+                                        }
+                                    }
+                                ],
+                                "to_if_alone": [{ "key_code": "return_or_enter" }],
+                                "type": "basic"
+                            },
+                            {
+                                "description": "RightOpt -> BSPC/NUM Layer",
+                                "from": {
+                                    "key_code": "right_option",
+                                    "modifiers": { "optional": ["any"] }
+                                },
+                                "parameters": {
+                                    "basic.to_if_alone_timeout_milliseconds": 200,
+                                    "basic.to_if_held_down_threshold_milliseconds": 150
+                                },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_num_layer",
+                                            "value": 1
+                                        }
+                                    }
+                                ],
+                                "to_after_key_up": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_num_layer",
+                                            "value": 0
+                                        }
+                                    }
+                                ],
+                                "to_if_alone": [{ "key_code": "delete_or_backspace" }],
+                                "type": "basic"
+                            },
+                            {
+                                "description": "Fn -> DEL/FUN Layer",
+                                "from": {
+                                    "key_code": "fn",
+                                    "modifiers": { "optional": ["any"] }
+                                },
+                                "parameters": {
+                                    "basic.to_if_alone_timeout_milliseconds": 200,
+                                    "basic.to_if_held_down_threshold_milliseconds": 150
+                                },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_fun_layer",
+                                            "value": 1
+                                        }
+                                    }
+                                ],
+                                "to_after_key_up": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_fun_layer",
+                                            "value": 0
+                                        }
+                                    }
+                                ],
+                                "to_if_alone": [{ "key_code": "delete_forward" }],
+                                "type": "basic"
+                            }
+                        ]
+                    },
+                    {
+                        "description": "Miryoku: SYM Layer Mappings",
+                        "manipulators": [
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_sym_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "SYM Layer: Q -> [",
+                                "from": { "key_code": "q" },
+                                "to": [{ "key_code": "open_bracket" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_sym_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "SYM Layer: W -> &",
+                                "from": { "key_code": "w" },
+                                "to": [
+                                    {
+                                        "key_code": "7",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_sym_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "SYM Layer: F -> *",
+                                "from": { "key_code": "f" },
+                                "to": [
+                                    {
+                                        "key_code": "8",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_sym_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "SYM Layer: P -> (",
+                                "from": { "key_code": "p" },
+                                "to": [
+                                    {
+                                        "key_code": "9",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_sym_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "SYM Layer: B -> ]",
+                                "from": { "key_code": "b" },
+                                "to": [{ "key_code": "close_bracket" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_sym_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "SYM Layer: A -> :",
+                                "from": { "key_code": "a" },
+                                "to": [
+                                    {
+                                        "key_code": "semicolon",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_sym_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "SYM Layer: R -> $",
+                                "from": { "key_code": "r" },
+                                "to": [
+                                    {
+                                        "key_code": "4",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_sym_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "SYM Layer: S -> %",
+                                "from": { "key_code": "s" },
+                                "to": [
+                                    {
+                                        "key_code": "5",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_sym_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "SYM Layer: T -> ^",
+                                "from": { "key_code": "t" },
+                                "to": [
+                                    {
+                                        "key_code": "6",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_sym_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "SYM Layer: G -> +",
+                                "from": { "key_code": "g" },
+                                "to": [
+                                    {
+                                        "key_code": "equal_sign",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_sym_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "SYM Layer: Z -> ~",
+                                "from": { "key_code": "z" },
+                                "to": [
+                                    {
+                                        "key_code": "grave_accent_and_tilde",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_sym_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "SYM Layer: X -> !",
+                                "from": { "key_code": "x" },
+                                "to": [
+                                    {
+                                        "key_code": "1",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_sym_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "SYM Layer: C -> @",
+                                "from": { "key_code": "c" },
+                                "to": [
+                                    {
+                                        "key_code": "2",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_sym_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "SYM Layer: D -> #",
+                                "from": { "key_code": "d" },
+                                "to": [
+                                    {
+                                        "key_code": "3",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_sym_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "SYM Layer: V -> |",
+                                "from": { "key_code": "v" },
+                                "to": [
+                                    {
+                                        "key_code": "backslash",
+                                        "modifiers": ["shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_sym_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "SYM Layer: J -> BOOTLOADER (System Restart)",
+                                "from": { "key_code": "j" },
+                                "to": [{ "shell_command": "osascript -e 'tell app \"System Events\" to restart'" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_sym_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "SYM Layer: N -> Shift (right)",
+                                "from": { "key_code": "n" },
+                                "to": [{ "key_code": "right_shift" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_sym_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "SYM Layer: E -> Cmd (right)",
+                                "from": { "key_code": "e" },
+                                "to": [{ "key_code": "right_command" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_sym_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "SYM Layer: I -> Alt (right)",
+                                "from": { "key_code": "i" },
+                                "to": [{ "key_code": "right_alt" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_sym_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "SYM Layer: O -> Ctrl (right)",
+                                "from": { "key_code": "o" },
+                                "to": [{ "key_code": "right_control" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_sym_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "SYM Layer: K -> TO_SYM (layer lock)",
+                                "from": { "key_code": "k" },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_sym_layer_lock",
+                                            "value": 1
+                                        }
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_sym_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "SYM Layer: H -> TO_MOUSE (switch to mouse layer)",
+                                "from": { "key_code": "h" },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_mouse_layer",
+                                            "value": 1
+                                        }
+                                    },
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_sym_layer",
+                                            "value": 0
+                                        }
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_sym_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "SYM Layer: , -> Alt",
+                                "from": { "key_code": "comma" },
+                                "to": [{ "key_code": "left_alt" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_sym_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "SYM Layer: . -> RESET (Karabiner restart)",
+                                "from": { "key_code": "period" },
+                                "to": [{ "shell_command": "launchctl kickstart -k gui/$(id -u)/org.pqrs.karabiner.karabiner_console_user_server" }],
+                                "type": "basic"
+                            }
+                        ]
+                    },
+                    {
+                        "description": "Miryoku: NUM Layer Mappings",
+                        "manipulators": [
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: Q -> [",
+                                "from": { "key_code": "q" },
+                                "to": [{ "key_code": "open_bracket" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: W -> 7",
+                                "from": { "key_code": "w" },
+                                "to": [{ "key_code": "7" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: F -> 8",
+                                "from": { "key_code": "f" },
+                                "to": [{ "key_code": "8" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: P -> 9",
+                                "from": { "key_code": "p" },
+                                "to": [{ "key_code": "9" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: B -> ]",
+                                "from": { "key_code": "b" },
+                                "to": [{ "key_code": "close_bracket" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: A -> ; (semicolon)",
+                                "from": { "key_code": "a" },
+                                "to": [{ "key_code": "semicolon" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: R -> 4",
+                                "from": { "key_code": "r" },
+                                "to": [{ "key_code": "4" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: S -> 5",
+                                "from": { "key_code": "s" },
+                                "to": [{ "key_code": "5" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: T -> 6",
+                                "from": { "key_code": "t" },
+                                "to": [{ "key_code": "6" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: G -> =",
+                                "from": { "key_code": "g" },
+                                "to": [{ "key_code": "equal_sign" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: Z -> ` (backtick)",
+                                "from": { "key_code": "z" },
+                                "to": [{ "key_code": "grave_accent_and_tilde" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: X -> 1",
+                                "from": { "key_code": "x" },
+                                "to": [{ "key_code": "1" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: C -> 2",
+                                "from": { "key_code": "c" },
+                                "to": [{ "key_code": "2" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: D -> 3",
+                                "from": { "key_code": "d" },
+                                "to": [{ "key_code": "3" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: V -> \\ (backslash)",
+                                "from": { "key_code": "v" },
+                                "to": [{ "key_code": "backslash" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: J -> BOOTLOADER (System Restart)",
+                                "from": { "key_code": "j" },
+                                "to": [{ "shell_command": "osascript -e 'tell app \"System Events\" to restart'" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: N -> Shift (right)",
+                                "from": { "key_code": "n" },
+                                "to": [{ "key_code": "right_shift" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: E -> Cmd (right)",
+                                "from": { "key_code": "e" },
+                                "to": [{ "key_code": "right_command" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: I -> Alt (right)",
+                                "from": { "key_code": "i" },
+                                "to": [{ "key_code": "right_alt" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: O -> Ctrl (right)",
+                                "from": { "key_code": "o" },
+                                "to": [{ "key_code": "right_control" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: K -> TO_NUM (layer lock)",
+                                "from": { "key_code": "k" },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_num_layer_lock",
+                                            "value": 1
+                                        }
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: H -> TO_NAV (switch to nav layer)",
+                                "from": { "key_code": "h" },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_nav_layer",
+                                            "value": 1
+                                        }
+                                    },
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_num_layer",
+                                            "value": 0
+                                        }
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: , -> Alt",
+                                "from": { "key_code": "comma" },
+                                "to": [{ "key_code": "left_alt" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: . -> RESET (Karabiner restart)",
+                                "from": { "key_code": "period" },
+                                "to": [{ "shell_command": "launchctl kickstart -k gui/$(id -u)/org.pqrs.karabiner.karabiner_console_user_server" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: / -> 0 (thumb key)",
+                                "from": { "key_code": "slash" },
+                                "to": [{ "key_code": "0" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: l -> . (period - for decimal numbers)",
+                                "from": { "key_code": "l" },
+                                "to": [{ "key_code": "period" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_num_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NUM Layer: u -> - (minus)",
+                                "from": { "key_code": "u" },
+                                "to": [{ "key_code": "hyphen" }],
+                                "type": "basic"
+                            }
+                        ]
+                    },
+                    {
+                        "description": "Miryoku: NAV Layer Mappings",
+                        "manipulators": [
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: Q -> BOOTLOADER (System Restart)",
+                                "from": { "key_code": "q" },
+                                "to": [{ "shell_command": "osascript -e 'tell app \"System Events\" to restart'" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: W -> TO_BASE (layer off)",
+                                "from": { "key_code": "w" },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_nav_layer",
+                                            "value": 0
+                                        }
+                                    },
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_sym_layer",
+                                            "value": 0
+                                        }
+                                    },
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_num_layer",
+                                            "value": 0
+                                        }
+                                    },
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_mouse_layer",
+                                            "value": 0
+                                        }
+                                    },
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_media_layer",
+                                            "value": 0
+                                        }
+                                    },
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_fun_layer",
+                                            "value": 0
+                                        }
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: F -> TO_BASE (layer off)",
+                                "from": { "key_code": "f" },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_nav_layer",
+                                            "value": 0
+                                        }
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: P -> TO_BASE (layer off)",
+                                "from": { "key_code": "p" },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_nav_layer",
+                                            "value": 0
+                                        }
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: J -> Redo (Cmd+Y)",
+                                "from": { "key_code": "j" },
+                                "to": [
+                                    {
+                                        "key_code": "y",
+                                        "modifiers": ["command"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: L -> Paste (Cmd+V)",
+                                "from": { "key_code": "l" },
+                                "to": [
+                                    {
+                                        "key_code": "v",
+                                        "modifiers": ["command"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: U -> Copy (Cmd+C)",
+                                "from": { "key_code": "u" },
+                                "to": [
+                                    {
+                                        "key_code": "c",
+                                        "modifiers": ["command"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: Y -> Cut (Cmd+X)",
+                                "from": { "key_code": "y" },
+                                "to": [
+                                    {
+                                        "key_code": "x",
+                                        "modifiers": ["command"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: ' -> Undo (Cmd+Z)",
+                                "from": { "key_code": "quote" },
+                                "to": [
+                                    {
+                                        "key_code": "z",
+                                        "modifiers": ["command"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: A -> Ctrl",
+                                "from": { "key_code": "a" },
+                                "to": [{ "key_code": "left_control" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: R -> Alt",
+                                "from": { "key_code": "r" },
+                                "to": [{ "key_code": "left_alt" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: S -> Cmd",
+                                "from": { "key_code": "s" },
+                                "to": [{ "key_code": "left_command" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: T -> Shift",
+                                "from": { "key_code": "t" },
+                                "to": [{ "key_code": "left_shift" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: M -> CAPS_WORD (toggle caps lock)",
+                                "from": { "key_code": "m" },
+                                "to": [{ "key_code": "caps_lock" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: N -> Left Arrow",
+                                "from": { "key_code": "n" },
+                                "to": [{ "key_code": "left_arrow" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: E -> Down Arrow",
+                                "from": { "key_code": "e" },
+                                "to": [{ "key_code": "down_arrow" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: I -> Up Arrow",
+                                "from": { "key_code": "i" },
+                                "to": [{ "key_code": "up_arrow" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: O -> Right Arrow",
+                                "from": { "key_code": "o" },
+                                "to": [{ "key_code": "right_arrow" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: Z -> RESET (Karabiner restart)",
+                                "from": { "key_code": "z" },
+                                "to": [{ "shell_command": "launchctl kickstart -k gui/$(id -u)/org.pqrs.karabiner.karabiner_console_user_server" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: X -> Alt",
+                                "from": { "key_code": "x" },
+                                "to": [{ "key_code": "left_alt" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: C -> TO_NUM (switch to num layer)",
+                                "from": { "key_code": "c" },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_num_layer",
+                                            "value": 1
+                                        }
+                                    },
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_nav_layer",
+                                            "value": 0
+                                        }
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: D -> TO_NAV (layer lock)",
+                                "from": { "key_code": "d" },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_nav_layer_lock",
+                                            "value": 1
+                                        }
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: K -> Insert",
+                                "from": { "key_code": "k" },
+                                "to": [{ "key_code": "help" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: H -> Home",
+                                "from": { "key_code": "h" },
+                                "to": [{ "key_code": "home" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: , -> Page Down",
+                                "from": { "key_code": "comma" },
+                                "to": [{ "key_code": "page_down" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: . -> Page Up",
+                                "from": { "key_code": "period" },
+                                "to": [{ "key_code": "page_up" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_nav_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "NAV Layer: / -> End",
+                                "from": { "key_code": "slash" },
+                                "to": [{ "key_code": "end" }],
+                                "type": "basic"
+                            }
+                        ]
+                    },
+                    {
+                        "description": "Miryoku: MOUSE Layer Mappings",
+                        "manipulators": [
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: Q -> BOOTLOADER (System Restart)",
+                                "from": { "key_code": "q" },
+                                "to": [{ "shell_command": "osascript -e 'tell app \"System Events\" to restart'" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: W -> TO_BASE (layer off)",
+                                "from": { "key_code": "w" },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_mouse_layer",
+                                            "value": 0
+                                        }
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: J -> Redo (Cmd+Y)",
+                                "from": { "key_code": "j" },
+                                "to": [
+                                    {
+                                        "key_code": "y",
+                                        "modifiers": ["command"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: L -> Paste (Cmd+V)",
+                                "from": { "key_code": "l" },
+                                "to": [
+                                    {
+                                        "key_code": "v",
+                                        "modifiers": ["command"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: U -> Copy (Cmd+C)",
+                                "from": { "key_code": "u" },
+                                "to": [
+                                    {
+                                        "key_code": "c",
+                                        "modifiers": ["command"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: Y -> Cut (Cmd+X)",
+                                "from": { "key_code": "y" },
+                                "to": [
+                                    {
+                                        "key_code": "x",
+                                        "modifiers": ["command"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: ' -> Undo (Cmd+Z)",
+                                "from": { "key_code": "quote" },
+                                "to": [
+                                    {
+                                        "key_code": "z",
+                                        "modifiers": ["command"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: A -> Ctrl",
+                                "from": { "key_code": "a" },
+                                "to": [{ "key_code": "left_control" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: R -> Alt",
+                                "from": { "key_code": "r" },
+                                "to": [{ "key_code": "left_alt" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: S -> Cmd",
+                                "from": { "key_code": "s" },
+                                "to": [{ "key_code": "left_command" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: T -> Shift",
+                                "from": { "key_code": "t" },
+                                "to": [{ "key_code": "left_shift" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: N -> Mouse Left",
+                                "from": { "key_code": "n" },
+                                "to": [{ "mouse_key": { "x": -1536 } }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: E -> Mouse Down",
+                                "from": { "key_code": "e" },
+                                "to": [{ "mouse_key": { "y": 1536 } }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: I -> Mouse Up",
+                                "from": { "key_code": "i" },
+                                "to": [{ "mouse_key": { "y": -1536 } }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: O -> Mouse Right",
+                                "from": { "key_code": "o" },
+                                "to": [{ "mouse_key": { "x": 1536 } }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: Z -> RESET (Karabiner restart)",
+                                "from": { "key_code": "z" },
+                                "to": [{ "shell_command": "launchctl kickstart -k gui/$(id -u)/org.pqrs.karabiner.karabiner_console_user_server" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: X -> Alt",
+                                "from": { "key_code": "x" },
+                                "to": [{ "key_code": "left_alt" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: C -> TO_SYM (switch to sym layer)",
+                                "from": { "key_code": "c" },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_sym_layer",
+                                            "value": 1
+                                        }
+                                    },
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_mouse_layer",
+                                            "value": 0
+                                        }
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: D -> TO_MOUSE (layer lock)",
+                                "from": { "key_code": "d" },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_mouse_layer_lock",
+                                            "value": 1
+                                        }
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: H -> Scroll Left",
+                                "from": { "key_code": "h" },
+                                "to": [{ "mouse_key": { "horizontal_wheel": -32 } }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: , -> Scroll Down",
+                                "from": { "key_code": "comma" },
+                                "to": [{ "mouse_key": { "vertical_wheel": 32 } }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: . -> Scroll Up",
+                                "from": { "key_code": "period" },
+                                "to": [{ "mouse_key": { "vertical_wheel": -32 } }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: / -> Scroll Right",
+                                "from": { "key_code": "slash" },
+                                "to": [{ "mouse_key": { "horizontal_wheel": 32 } }],
+                                "type": "basic"
+                            }
+                        ]
+                    },
+                    {
+                        "description": "Miryoku: MOUSE Layer Thumb Clicks",
+                        "manipulators": [
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: Left Thumb -> Right Click",
+                                "from": { "key_code": "left_command" },
+                                "to": [{ "pointing_button": "button2" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: Center Thumb -> Left Click",
+                                "from": { "key_code": "spacebar" },
+                                "to": [{ "pointing_button": "button1" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_mouse_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MOUSE Layer: Right Thumb -> Middle Click",
+                                "from": { "key_code": "right_command" },
+                                "to": [{ "pointing_button": "button3" }],
+                                "type": "basic"
+                            }
+                        ]
+                    },
+                    {
+                        "description": "Miryoku: MEDIA Layer Mappings",
+                        "manipulators": [
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_media_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MEDIA Layer: Q -> BOOTLOADER (System Restart)",
+                                "from": { "key_code": "q" },
+                                "to": [{ "shell_command": "osascript -e 'tell app \"System Events\" to restart'" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_media_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MEDIA Layer: W -> TO_BASE (layer off)",
+                                "from": { "key_code": "w" },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_media_layer",
+                                            "value": 0
+                                        }
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_media_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MEDIA Layer: A -> Ctrl",
+                                "from": { "key_code": "a" },
+                                "to": [{ "key_code": "left_control" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_media_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MEDIA Layer: R -> Alt",
+                                "from": { "key_code": "r" },
+                                "to": [{ "key_code": "left_alt" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_media_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MEDIA Layer: S -> Cmd",
+                                "from": { "key_code": "s" },
+                                "to": [{ "key_code": "left_command" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_media_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MEDIA Layer: T -> Shift",
+                                "from": { "key_code": "t" },
+                                "to": [{ "key_code": "left_shift" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_media_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MEDIA Layer: M -> OUT_TOGGLE (Audio Output Switch)",
+                                "from": { "key_code": "m" },
+                                "to": [{ "shell_command": "open -b com.apple.systempreferences /System/Library/PreferencePanes/Sound.prefPane" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_media_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MEDIA Layer: N -> Previous Track",
+                                "from": { "key_code": "n" },
+                                "to": [{ "consumer_key_code": "rewind" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_media_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MEDIA Layer: E -> Volume Down",
+                                "from": { "key_code": "e" },
+                                "to": [{ "consumer_key_code": "volume_decrement" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_media_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MEDIA Layer: I -> Volume Up",
+                                "from": { "key_code": "i" },
+                                "to": [{ "consumer_key_code": "volume_increment" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_media_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MEDIA Layer: O -> Next Track",
+                                "from": { "key_code": "o" },
+                                "to": [{ "consumer_key_code": "fast_forward" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_media_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MEDIA Layer: Z -> RESET (Karabiner restart)",
+                                "from": { "key_code": "z" },
+                                "to": [{ "shell_command": "launchctl kickstart -k gui/$(id -u)/org.pqrs.karabiner.karabiner_console_user_server" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_media_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MEDIA Layer: X -> Alt",
+                                "from": { "key_code": "x" },
+                                "to": [{ "key_code": "left_alt" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_media_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MEDIA Layer: C -> TO_FUN (switch to function layer)",
+                                "from": { "key_code": "c" },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_fun_layer",
+                                            "value": 1
+                                        }
+                                    },
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_media_layer",
+                                            "value": 0
+                                        }
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_media_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MEDIA Layer: D -> TO_MEDIA (layer lock)",
+                                "from": { "key_code": "d" },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_media_layer_lock",
+                                            "value": 1
+                                        }
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_media_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MEDIA Layer: K -> BT_0 (Bluetooth Device 1)",
+                                "from": { "key_code": "k" },
+                                "to": [{ "shell_command": "open -b com.apple.BluetoothUIAgent" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_media_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MEDIA Layer: H -> BT_1 (Bluetooth Device 2)",
+                                "from": { "key_code": "h" },
+                                "to": [{ "shell_command": "open -b com.apple.BluetoothUIAgent" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_media_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MEDIA Layer: , -> BT_2 (Bluetooth Device 3)",
+                                "from": { "key_code": "comma" },
+                                "to": [{ "shell_command": "open -b com.apple.BluetoothUIAgent" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_media_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MEDIA Layer: . -> BT_3 (Bluetooth Device 4)",
+                                "from": { "key_code": "period" },
+                                "to": [{ "shell_command": "open -b com.apple.BluetoothUIAgent" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_media_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MEDIA Layer: / -> BT_CLR (Bluetooth Menu)",
+                                "from": { "key_code": "slash" },
+                                "to": [{ "shell_command": "open -b com.apple.BluetoothUIAgent" }],
+                                "type": "basic"
+                            }
+                        ]
+                    },
+                    {
+                        "description": "Miryoku: MEDIA Layer Thumb Controls",
+                        "manipulators": [
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_media_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MEDIA Layer: Left Thumb -> Stop",
+                                "from": { "key_code": "left_command" },
+                                "to": [{ "consumer_key_code": "stop" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_media_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MEDIA Layer: Center Thumb -> Play/Pause",
+                                "from": { "key_code": "spacebar" },
+                                "to": [{ "consumer_key_code": "play_or_pause" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_media_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "MEDIA Layer: Right Thumb -> Mute",
+                                "from": { "key_code": "right_command" },
+                                "to": [{ "consumer_key_code": "mute" }],
+                                "type": "basic"
+                            }
+                        ]
+                    },
+                    {
+                        "description": "Miryoku: FUN Layer Mappings",
+                        "manipulators": [
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: Q -> F12",
+                                "from": { "key_code": "q" },
+                                "to": [{ "key_code": "f12" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: W -> F7",
+                                "from": { "key_code": "w" },
+                                "to": [{ "key_code": "f7" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: F -> F8",
+                                "from": { "key_code": "f" },
+                                "to": [{ "key_code": "f8" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: P -> F9",
+                                "from": { "key_code": "p" },
+                                "to": [{ "key_code": "f9" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: B -> PSCRN (Screenshot)",
+                                "from": { "key_code": "b" },
+                                "to": [
+                                    {
+                                        "key_code": "3",
+                                        "modifiers": ["command", "shift"]
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: J -> BOOTLOADER (System Restart)",
+                                "from": { "key_code": "j" },
+                                "to": [{ "shell_command": "osascript -e 'tell app \"System Events\" to restart'" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: A -> F11",
+                                "from": { "key_code": "a" },
+                                "to": [{ "key_code": "f11" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: R -> F4",
+                                "from": { "key_code": "r" },
+                                "to": [{ "key_code": "f4" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: S -> F5",
+                                "from": { "key_code": "s" },
+                                "to": [{ "key_code": "f5" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: T -> F6",
+                                "from": { "key_code": "t" },
+                                "to": [{ "key_code": "f6" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: G -> SLCK (Scroll Lock - F14)",
+                                "from": { "key_code": "g" },
+                                "to": [{ "key_code": "f14" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: N -> Shift (right)",
+                                "from": { "key_code": "n" },
+                                "to": [{ "key_code": "right_shift" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: E -> Cmd (right)",
+                                "from": { "key_code": "e" },
+                                "to": [{ "key_code": "right_command" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: I -> Alt (right)",
+                                "from": { "key_code": "i" },
+                                "to": [{ "key_code": "right_alt" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: O -> Ctrl (right)",
+                                "from": { "key_code": "o" },
+                                "to": [{ "key_code": "right_control" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: Z -> F10",
+                                "from": { "key_code": "z" },
+                                "to": [{ "key_code": "f10" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: X -> F1",
+                                "from": { "key_code": "x" },
+                                "to": [{ "key_code": "f1" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: C -> F2",
+                                "from": { "key_code": "c" },
+                                "to": [{ "key_code": "f2" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: D -> F3",
+                                "from": { "key_code": "d" },
+                                "to": [{ "key_code": "f3" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: V -> PAUSE (F15)",
+                                "from": { "key_code": "v" },
+                                "to": [{ "key_code": "f15" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: K -> TO_FUN (layer lock)",
+                                "from": { "key_code": "k" },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_fun_layer_lock",
+                                            "value": 1
+                                        }
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: H -> TO_MEDIA (switch to media layer)",
+                                "from": { "key_code": "h" },
+                                "to": [
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_media_layer",
+                                            "value": 1
+                                        }
+                                    },
+                                    {
+                                        "set_variable": {
+                                            "name": "miryoku_fun_layer",
+                                            "value": 0
+                                        }
+                                    }
+                                ],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: , -> Alt",
+                                "from": { "key_code": "comma" },
+                                "to": [{ "key_code": "left_alt" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: . -> RESET (Karabiner restart)",
+                                "from": { "key_code": "period" },
+                                "to": [{ "shell_command": "launchctl kickstart -k gui/$(id -u)/org.pqrs.karabiner.karabiner_console_user_server" }],
+                                "type": "basic"
+                            }
+                        ]
+                    },
+                    {
+                        "description": "Miryoku: FUN Layer Thumb Keys",
+                        "manipulators": [
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: Left Thumb -> APP (Menu Key)",
+                                "from": { "key_code": "left_command" },
+                                "to": [{ "key_code": "application" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: Center Thumb -> Space",
+                                "from": { "key_code": "spacebar" },
+                                "to": [{ "key_code": "spacebar" }],
+                                "type": "basic"
+                            },
+                            {
+                                "conditions": [
+                                    {
+                                        "name": "miryoku_fun_layer",
+                                        "type": "variable_if",
+                                        "value": 1
+                                    }
+                                ],
+                                "description": "FUN Layer: Right Thumb -> Tab",
+                                "from": { "key_code": "right_command" },
+                                "to": [{ "key_code": "tab" }],
+                                "type": "basic"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "name": "Miryoku-Complete",
+            "selected": true,
+            "simple_modifications": [
+                {
+                    "from": { "key_code": "b" },
+                    "to": [{ "key_code": "b" }]
+                },
+                {
+                    "from": { "key_code": "f" },
+                    "to": [{ "key_code": "f" }]
+                },
+                {
+                    "from": { "key_code": "j" },
+                    "to": [{ "key_code": "j" }]
+                },
+                {
+                    "from": { "key_code": "l" },
+                    "to": [{ "key_code": "l" }]
+                },
+                {
+                    "from": { "key_code": "p" },
+                    "to": [{ "key_code": "p" }]
+                },
+                {
+                    "from": { "key_code": "q" },
+                    "to": [{ "key_code": "q" }]
+                },
+                {
+                    "from": { "key_code": "quote" },
+                    "to": [{ "key_code": "quote" }]
+                },
+                {
+                    "from": { "key_code": "u" },
+                    "to": [{ "key_code": "u" }]
+                },
+                {
+                    "from": { "key_code": "w" },
+                    "to": [{ "key_code": "w" }]
+                },
+                {
+                    "from": { "key_code": "y" },
+                    "to": [{ "key_code": "y" }]
+                }
+            ],
+            "virtual_hid_keyboard": {
+                "country_code": 0,
+                "indicate_sticky_modifier_keys": true,
+                "keyboard_type_v2": "iso"
+            }
+        }
+    ]
+}

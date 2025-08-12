@@ -1,0 +1,35 @@
+# Ghostty Configuration with Solarized Themes
+# Auto-switches between light/dark based on system appearance
+
+# Font Configuration
+font-family = JetBrains Mono
+font-size = 14
+
+# Window Settings
+window-padding-x = 10
+window-padding-y = 10
+window-decoration = true
+window-theme = auto
+
+# Terminal Behavior
+copy-on-select = true
+confirm-close-surface = false
+cursor-style = block
+cursor-style-blink = true
+
+# Shell Integration
+shell-integration = detect
+shell-integration-features = cursor,sudo,title
+
+# Theme Settings - Auto-switch based on system appearance
+theme = light:solarized-light,dark:solarized-dark
+
+# Performance
+gtk-single-instance = true
+
+# macOS Specific
+macos-option-as-alt = true
+macos-non-native-fullscreen = false
+
+# Quick Actions
+quick-terminal-position = bottom

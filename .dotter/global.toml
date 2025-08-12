@@ -12,6 +12,12 @@ depends = []
 "wezterm/wezterm.lua" = "~/.config/wezterm/wezterm.lua"
 "yazi/yazi.toml" = "~/.config/yazi/yazi.toml"
 "yazi/keymap.toml" = "~/.config/yazi/keymap.toml"
+"ghostty/config" = "~/Library/Application Support/com.mitchellh.ghostty/config"
+"ghostty/themes" = { target = "~/.config/ghostty/themes", type = "symbolic" }
+"karabiner" = { target = "~/.config/karabiner", type = "symbolic" }
+"aerospace" = { target = "~/.config/aerospace", type = "symbolic" }
+"sketchybar" = { target = "~/.config/sketchybar", type = "symbolic" }
+"nvim" = { target = "~/.config/nvim", type = "symbolic" }
 
 [default.variables]
 

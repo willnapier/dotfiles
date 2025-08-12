@@ -1,0 +1,153 @@
+start-at-login = true
+default-root-container-layout = 'tiles'
+default-root-container-orientation = 'auto'
+accordion-padding = 0
+enable-normalization-flatten-containers = true
+enable-normalization-opposite-orientation-for-nested-containers = true
+on-focused-monitor-changed = ['move-mouse monitor-lazy-center']
+on-focus-changed = ['move-mouse window-lazy-center']
+
+# Sketchybar integration plus monkeytype startup
+after-startup-command = [
+    'exec-and-forget sketchybar',
+    'exec-and-forget sh -c "sleep 3 && open -n -a \"Google Chrome\" --args --new-window \"https://www.monkeytype.com\""'
+]
+exec-on-workspace-change = ['/Users/williamnapier/.config/sketchybar/plugins/aerospace_workspace_tracker.sh']
+
+[gaps]
+inner.horizontal = 10
+inner.vertical = 10
+outer.left = 0
+outer.right = 0
+# Monitor-specific top gaps: laptop screen gets minimal gap, external monitor gets more
+# outer.top = [{ monitor.main = 10 }, { monitor."DELL U3224KBA" = 50 }, 15]
+# outer.top = 50  # Simple constant for all monitors
+outer.top = [{ monitor."DELL U3224KBA" = 32 }, { monitor.main = 0 }, 15]
+outer.bottom = 10
+
+[mode.main.binding]
+# Focus movement (Miryoku-style: n e i o)
+cmd-alt-shift-n = 'focus left'
+cmd-alt-shift-e = 'focus down'
+cmd-alt-shift-i = 'focus up'
+cmd-alt-shift-o = 'focus right'
+
+# Move focused window
+ctrl-cmd-alt-shift-n = 'move left'
+ctrl-cmd-alt-shift-e = 'move down'
+ctrl-cmd-alt-shift-i = 'move up'
+ctrl-cmd-alt-shift-o = 'move right'
+
+# Resize
+cmd-alt-shift-minus = 'resize smart -50'
+cmd-alt-shift-equal = 'resize smart +50'
+
+# Layout toggles
+cmd-alt-shift-slash = 'layout tiles horizontal vertical'
+cmd-alt-shift-comma = 'layout accordion horizontal vertical'
+
+# Workspace switching
+cmd-alt-shift-1 = 'workspace 1'
+cmd-alt-shift-2 = 'workspace 2'
+cmd-alt-shift-3 = 'workspace 3'
+cmd-alt-shift-4 = 'workspace 4'
+
+# Move focused window to workspace
+ctrl-cmd-alt-shift-1 = 'move-node-to-workspace 1'
+ctrl-cmd-alt-shift-2 = 'move-node-to-workspace 2'
+ctrl-cmd-alt-shift-3 = 'move-node-to-workspace 3'
+ctrl-cmd-alt-shift-4 = 'move-node-to-workspace 4'
+
+# Workspace nav
+cmd-alt-shift-tab = 'workspace-back-and-forth'
+ctrl-cmd-alt-shift-tab = 'move-workspace-to-monitor --wrap-around next'
+
+# Enter service mode
+cmd-alt-shift-semicolon = 'mode service'
+
+[mode.service.binding]
+esc = ['reload-config', 'mode main']
+r = ['flatten-workspace-tree', 'mode main']
+f = ['layout floating tiling', 'mode main']
+backspace = ['close-all-windows-but-current', 'mode main']
+cmd-alt-shift-n = ['join-with left', 'mode main']
+cmd-alt-shift-e = ['join-with down', 'mode main']
+cmd-alt-shift-i = ['join-with up', 'mode main']
+cmd-alt-shift-o = ['join-with right', 'mode main']
+
+# --- App Auto-Assignment Rules ---
+
+# WhatsApp: move to workspace 4 first
+[[on-window-detected]]
+if.app-id = 'net.whatsapp.WhatsApp'
+run = ['move-node-to-workspace 4']
+check-further-callbacks = true
+
+# WhatsApp: then make it floating
+[[on-window-detected]]
+if.app-id = 'net.whatsapp.WhatsApp'
+run = ['layout floating']
+
+# Zoom: All Zoom windows go to workspace 4 first
+[[on-window-detected]]
+if.app-id = 'us.zoom.xos'
+run = ['move-node-to-workspace 4']
+check-further-callbacks = true
+
+# Zoom: Meeting/chat windows should float
+[[on-window-detected]]
+if.app-id = 'us.zoom.xos'
+if.window-title-regex-substring = 'Zoom Meeting|Meeting|Breakout Room|Chat|Participants'
+run = ['layout floating']
+
+# Chrome: Typing practice sites go to workspace 4 (FIXED APP-ID)
+[[on-window-detected]]
+if.app-id = 'Google Chrome'
+if.window-title-regex-substring = 'Monkeytype|Keybr|keybr'
+run = ['move-node-to-workspace 4']
+
+# Chrome: All other Chrome windows go to workspace 2 (FIXED APP-ID)
+[[on-window-detected]]
+if.app-id = 'Google Chrome'
+run = ['move-node-to-workspace 2']
+
+# Workspace 1 — Focus
+[[on-window-detected]]
+if.app-id = 'com.googlecode.iterm2'
+run = ['move-node-to-workspace 1']
+
+[[on-window-detected]]
+if.app-id = 'md.obsidian'
+run = ['move-node-to-workspace 1']
+
+# Workspace 2 — Comms  
+[[on-window-detected]]
+if.app-id = 'com.apple.mail'
+run = ['move-node-to-workspace 2']
+
+[[on-window-detected]]
+if.app-id = 'com.apple.MobileSMS'
+run = ['move-node-to-workspace 2']
+
+[[on-window-detected]]
+if.app-id = 'com.apple.Notes'
+run = ['move-node-to-workspace 2']
+
+[[on-window-detected]]
+if.app-id = 'com.apple.iCal'
+run = ['move-node-to-workspace 2']
+
+# Workspace 3 — Scratch
+[[on-window-detected]]
+if.app-id = 'com.apple.finder'
+run = ['move-node-to-workspace 3']
+
+# Workspace 4 — Client
+[[on-window-detected]]
+if.app-id = 'com.apple.Safari'
+run = ['move-node-to-workspace 4']
+
+# Anki: Make floating for better card preview
+[[on-window-detected]]
+if.app-id = 'net.ankiweb.launcher'
+run = ['layout floating']
