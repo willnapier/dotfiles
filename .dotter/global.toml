@@ -1,0 +1,19 @@
+[helpers]
+
+[default]
+depends = []
+
+[default.files]
+"git/gitconfig" = "~/.gitconfig"
+"helix/config.toml" = "~/.config/helix/config.toml"
+"nushell/config.nu" = "~/.config/nushell/config.nu"
+"nushell/env.nu" = "~/.config/nushell/env.nu"
+"shell/zshrc" = "~/.zshrc"
+"wezterm/wezterm.lua" = "~/.config/wezterm/wezterm.lua"
+"yazi/yazi.toml" = "~/.config/yazi/yazi.toml"
+"yazi/keymap.toml" = "~/.config/yazi/keymap.toml"
+
+[default.variables]
+
+[settings]
+default_target_type = "automatic"

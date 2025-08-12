@@ -1,0 +1,70 @@
+# Yazi keymap configuration with Helix-style navigation (n/e/i/o)
+"$schema" = "https://yazi-rs.github.io/schemas/keymap.json"
+
+[mgr]
+prepend_keymap = [
+  # Helix-style navigation (n = left, e = down, i = up, o = right)
+  { on = "n", run = "leave", desc = "Go to parent directory" },
+  { on = "e", run = "arrow 1", desc = "Move cursor down" },
+  { on = "i", run = "arrow -1", desc = "Move cursor up" },
+  { on = "o", run = "enter", desc = "Enter directory (right arrow)" },
+  
+  # Capital versions for faster movement
+  { on = "N", run = "back", desc = "Go back in history" },
+  { on = "E", run = "arrow 5", desc = "Move cursor down 5 lines" },
+  { on = "I", run = "arrow -5", desc = "Move cursor up 5 lines" },
+  { on = "O", run = "forward", desc = "Go forward in history" },
+  
+  # Keep visual mode with Helix keys
+  { on = "v", run = "visual_mode", desc = "Enter visual mode" },
+  { on = "V", run = "visual_mode --unset", desc = "Enter visual mode (unset)" },
+  
+  # Open actions (since 'o' is now navigation)
+  { on = "h", run = "open", desc = "Open file with default handler" },
+  { on = "<Tab>", run = "open --interactive", desc = "Open with chooser" },
+  
+  # File operations (keeping defaults)
+  { on = "y", run = "yank", desc = "Yank (copy)" },
+  { on = "x", run = "yank --cut", desc = "Cut" },
+  { on = "p", run = "paste", desc = "Paste" },
+  { on = "P", run = "paste --force", desc = "Paste (overwrite)" },
+  { on = "d", run = "remove", desc = "Delete" },
+  { on = "D", run = "remove --permanently", desc = "Delete permanently" },
+  
+  # Creation
+  { on = "a", run = "create", desc = "Create file/directory" },
+  { on = "r", run = "rename", desc = "Rename" },
+  
+  # Navigation helpers (matching Helix with Colemak-DH)
+  { on = [ "g", "g" ], run = "arrow -99999999", desc = "Go to top" },
+  { on = [ "g", "e" ], run = "arrow 99999999", desc = "Go to bottom" },
+  
+  # Search navigation (matching Helix with Colemak-DH)
+  # Using 'j' for next and 'J' for previous search match
+  { on = "j", run = "find_arrow", desc = "Next search match" },
+  { on = "J", run = "find_arrow --previous", desc = "Previous search match" },
+  
+  # Keep k/l as alternatives (h is now open, j is now for search)
+  { on = "k", run = "arrow -1", desc = "Move cursor up" },
+  { on = "l", run = "enter", desc = "Enter directory or open file" },
+]
+
+[input]
+prepend_keymap = [
+  # Helix-style navigation in input mode
+  { on = "<C-n>", run = "move -1", desc = "Move cursor left" },
+  { on = "<C-e>", run = "arrow 1", desc = "Move down in completion" },
+  { on = "<C-i>", run = "arrow -1", desc = "Move up in completion" },
+  { on = "<C-o>", run = "move 1", desc = "Move cursor right" },
+]
+
+[select]
+prepend_keymap = [
+  # Helix-style navigation in select mode
+  { on = "e", run = "arrow 1", desc = "Move down" },
+  { on = "i", run = "arrow -1", desc = "Move up" },
+  
+  # Keep j/k as fallback
+  { on = "j", run = "arrow 1", desc = "Move down" },
+  { on = "k", run = "arrow -1", desc = "Move up" },
+]

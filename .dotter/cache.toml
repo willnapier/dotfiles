@@ -1,0 +1,11 @@
+[symlinks]
+"git/gitconfig" = "/Users/williamnapier/.gitconfig"
+"helix/config.toml" = "/Users/williamnapier/.config/helix/config.toml"
+"nushell/config.nu" = "/Users/williamnapier/.config/nushell/config.nu"
+"nushell/env.nu" = "/Users/williamnapier/.config/nushell/env.nu"
+"shell/zshrc" = "/Users/williamnapier/.zshrc"
+"wezterm/wezterm.lua" = "/Users/williamnapier/.config/wezterm/wezterm.lua"
+"yazi/keymap.toml" = "/Users/williamnapier/.config/yazi/keymap.toml"
+"yazi/yazi.toml" = "/Users/williamnapier/.config/yazi/yazi.toml"
+
+[templates]

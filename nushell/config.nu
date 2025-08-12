@@ -1,0 +1,593 @@
+# Nushell Config File
+# version = "0.106.1"
+
+# Load vendor autoload scripts conditionally
+# Check for and source Starship prompt if available
+if ($"($env.HOME)/.cache/nushell/starship-init.nu" | path exists) {
+    source ~/.cache/nushell/starship-init.nu
+}
+
+# Source zoxide for smart directory jumping if available
+if ($"($env.HOME)/.cache/nushell/zoxide-init.nu" | path exists) {
+    source ~/.cache/nushell/zoxide-init.nu
+}
+
+# Helix-Yazi integration now built into the y function
+
+# Solarized color schemes
+let solarized_light = {
+    separator: "#93a1a1"
+    leading_trailing_space_bg: { attr: n }
+    header: { fg: "#859900" attr: b }
+    empty: "#268bd2"
+    bool: "#2aa198"
+    int: "#657b83"
+    filesize: "#2aa198"
+    duration: "#657b83"
+    datetime: "#6c71c4"
+    range: "#657b83"
+    float: "#657b83"
+    string: "#859900"
+    nothing: "#657b83"
+    binary: "#657b83"
+    cell-path: "#657b83"
+    row_index: { fg: "#859900" attr: b }
+    record: "#657b83"
+    list: "#657b83"
+    closure: { fg: "#859900" attr: b }
+    glob: { fg: "#2aa198" attr: b }
+    block: "#657b83"
+    hints: "#93a1a1"
+    search_result: { bg: "#dc322f" fg: "#fdf6e3" }
+    shape_binary: { fg: "#6c71c4" attr: b }
+    shape_block: { fg: "#268bd2" attr: b }
+    shape_bool: "#2aa198"
+    shape_closure: { fg: "#859900" attr: b }
+    shape_custom: "#859900"
+    shape_datetime: { fg: "#2aa198" attr: b }
+    shape_directory: "#268bd2"
+    shape_external: "#268bd2"
+    shape_externalarg: { fg: "#859900" attr: b }
+    shape_external_resolved: { fg: "#b58900" attr: b }
+    shape_filepath: "#268bd2"
+    shape_flag: { fg: "#268bd2" attr: b }
+    shape_float: { fg: "#6c71c4" attr: b }
+    shape_glob_interpolation: { fg: "#2aa198" attr: b }
+    shape_globpattern: { fg: "#2aa198" attr: b }
+    shape_int: { fg: "#6c71c4" attr: b }
+    shape_internalcall: { fg: "#2aa198" attr: b }
+    shape_keyword: { fg: "#268bd2" attr: b }
+    shape_list: { fg: "#2aa198" attr: b }
+    shape_literal: "#268bd2"
+    shape_match_pattern: "#859900"
+    shape_matching_brackets: { attr: u }
+    shape_nothing: "#2aa198"
+    shape_operator: "#b58900"
+    shape_pipe: { fg: "#6c71c4" attr: b }
+    shape_range: { fg: "#b58900" attr: b }
+    shape_record: { fg: "#2aa198" attr: b }
+    shape_redirection: { fg: "#6c71c4" attr: b }
+    shape_signature: { fg: "#859900" attr: b }
+    shape_string: "#859900"
+    shape_string_interpolation: { fg: "#2aa198" attr: b }
+    shape_table: { fg: "#268bd2" attr: b }
+    shape_variable: "#6c71c4"
+    shape_vardecl: "#6c71c4"
+    shape_raw_string: { fg: "#cb4b16" }
+    shape_garbage: {
+        fg: "#fdf6e3"
+        bg: "#dc322f"
+        attr: b
+    }
+}
+
+let solarized_dark = {
+    separator: "#586e75"
+    leading_trailing_space_bg: { attr: n }
+    header: { fg: "#859900" attr: b }
+    empty: "#268bd2"
+    bool: "#2aa198"
+    int: "#839496"
+    filesize: "#2aa198"
+    duration: "#839496"
+    datetime: "#6c71c4"
+    range: "#839496"
+    float: "#839496"
+    string: "#859900"
+    nothing: "#839496"
+    binary: "#839496"
+    cell-path: "#839496"
+    row_index: { fg: "#859900" attr: b }
+    record: "#839496"
+    list: "#839496"
+    closure: { fg: "#859900" attr: b }
+    glob: { fg: "#2aa198" attr: b }
+    block: "#839496"
+    hints: "#586e75"
+    search_result: { bg: "#dc322f" fg: "#002b36" }
+    shape_binary: { fg: "#6c71c4" attr: b }
+    shape_block: { fg: "#268bd2" attr: b }
+    shape_bool: "#2aa198"
+    shape_closure: { fg: "#859900" attr: b }
+    shape_custom: "#859900"
+    shape_datetime: { fg: "#2aa198" attr: b }
+    shape_directory: "#268bd2"
+    shape_external: "#268bd2"
+    shape_externalarg: { fg: "#859900" attr: b }
+    shape_external_resolved: { fg: "#b58900" attr: b }
+    shape_filepath: "#268bd2"
+    shape_flag: { fg: "#268bd2" attr: b }
+    shape_float: { fg: "#6c71c4" attr: b }
+    shape_glob_interpolation: { fg: "#2aa198" attr: b }
+    shape_globpattern: { fg: "#2aa198" attr: b }
+    shape_int: { fg: "#6c71c4" attr: b }
+    shape_internalcall: { fg: "#2aa198" attr: b }
+    shape_keyword: { fg: "#268bd2" attr: b }
+    shape_list: { fg: "#2aa198" attr: b }
+    shape_literal: "#268bd2"
+    shape_match_pattern: "#859900"
+    shape_matching_brackets: { attr: u }
+    shape_nothing: "#2aa198"
+    shape_operator: "#b58900"
+    shape_pipe: { fg: "#6c71c4" attr: b }
+    shape_range: { fg: "#b58900" attr: b }
+    shape_record: { fg: "#2aa198" attr: b }
+    shape_redirection: { fg: "#6c71c4" attr: b }
+    shape_signature: { fg: "#859900" attr: b }
+    shape_string: "#859900"
+    shape_string_interpolation: { fg: "#2aa198" attr: b }
+    shape_table: { fg: "#268bd2" attr: b }
+    shape_variable: "#6c71c4"
+    shape_vardecl: "#6c71c4"
+    shape_raw_string: { fg: "#cb4b16" }
+    shape_garbage: {
+        fg: "#002b36"
+        bg: "#dc322f"
+        attr: b
+    }
+}
+
+# Set color config based on theme
+$env.config.color_config = if ($env.MACOS_THEME? | default "light") == "dark" { $solarized_dark } else { $solarized_light }
+
+# Basic Nushell configuration
+$env.config = {
+    show_banner: false # disable welcome banner
+    
+    ls: {
+        use_ls_colors: true
+        clickable_links: true
+    }
+    
+    rm: {
+        always_trash: false
+    }
+    
+    table: {
+        mode: rounded
+        index_mode: always
+        show_empty: true
+    }
+    
+    error_style: "fancy"
+    
+    datetime_format: {
+        normal: '%a, %d %b %Y %H:%M:%S %z'
+        table: '%Y-%m-%d %I:%M:%S%p'
+    }
+    
+    cursor_shape: {
+        vi_insert: line
+        vi_normal: block
+    }
+    
+    edit_mode: vi
+    
+    completions: {
+        case_sensitive: false
+        quick: true
+        partial: true
+        algorithm: "fuzzy"
+    }
+    
+    history: {
+        max_size: 100_000
+        sync_on_enter: true
+        file_format: "sqlite"
+    }
+}
+
+# Zettelkasten workflow commands for Obsidian Forge vault
+def notes [] {
+    cd $env.OBSIDIAN_VAULT
+}
+
+def note-search [query: string] {
+    if (which fd | is-empty) {
+        print "fd not found, install with: brew install fd"
+        return
+    }
+    
+    fd --type f --extension md . $env.OBSIDIAN_VAULT 
+    | par-each { |file| 
+        let content = (open $file | str downcase)
+        let query_lower = ($query | str downcase)
+        if ($content | str contains $query_lower) { 
+            {
+                file: $file
+                preview: (open $file | lines | first 3 | str join "\n")
+            }
+        } 
+    } 
+    | compact
+}
+
+def note-links [file: path] {
+    if not ($file | path exists) {
+        print $"File not found: ($file)"
+        return
+    }
+    
+    open $file 
+    | parse -r '\[\[([^\]]+)\]\]' 
+    | get capture0 
+    | uniq
+}
+
+def daily-note [] {
+    let today = (date now | format date "%Y-%m-%d")
+    let daily_dir = $"($env.OBSIDIAN_VAULT)/daily"
+    
+    # Create daily directory if it doesn't exist
+    if not ($daily_dir | path exists) {
+        mkdir $daily_dir
+    }
+    
+    let note_path = $"($daily_dir)/($today).md"
+    
+    # Create note with template if it doesn't exist
+    if not ($note_path | path exists) {
+        let template = $"# ($today)
+
+## Tasks
+- [ ] 
+
+## Notes
+
+## Links
+"
+        $template | save $note_path
+    }
+    
+    if (which $env.EDITOR | is-not-empty) {
+        ^$env.EDITOR $note_path
+    } else {
+        print $"Created/opened: ($note_path)"
+    }
+}
+
+# Enhanced commands using fzf
+def note-find [] {
+    if (which fzf | is-empty) or (which fd | is-empty) {
+        print "This command requires fzf and fd. Install with: brew install fzf fd"
+        return
+    }
+    
+    let preview_cmd = if (which bat | is-not-empty) { 
+        "bat --color=always --style=numbers {}" 
+    } else { 
+        "cat {}" 
+    }
+    
+    let selected = (
+        fd --type f --extension md . $env.OBSIDIAN_VAULT 
+        | fzf --preview $preview_cmd --height 60% 
+        | str trim
+    )
+    
+    if not ($selected | is-empty) {
+        ^$env.EDITOR $selected
+    }
+}
+
+def note-grep [query?: string] {
+    if (which fzf | is-empty) or (which rg | is-empty) {
+        print "This command requires fzf and ripgrep. Install with: brew install fzf ripgrep"
+        return
+    }
+    
+    let search_query = if ($query | is-empty) { "" } else { $query }
+    let preview_cmd = if (which bat | is-not-empty) { 
+        "bat --color=always --style=numbers --highlight-line {2} {1}" 
+    } else { 
+        "sed -n '{2}p' {1}" 
+    }
+    
+    let selected = (
+        rg --color=always --line-number --no-heading --smart-case $search_query $env.OBSIDIAN_VAULT 
+        | fzf --ansi --delimiter : --preview $preview_cmd --height 60% 
+        | str trim
+    )
+    
+    if not ($selected | is-empty) {
+        let parts = ($selected | split row ":")
+        if ($parts | length) >= 2 {
+            let file = ($parts | get 0)
+            let line = ($parts | get 1)
+            ^$env.EDITOR $"+($line)" $file
+        }
+    }
+}
+
+def note-recent [] {
+    if (which fzf | is-empty) or (which fd | is-empty) {
+        print "This command requires fzf and fd. Install with: brew install fzf fd"
+        return
+    }
+    
+    let preview_cmd = if (which bat | is-not-empty) { 
+        "bat --color=always --style=numbers {}" 
+    } else { 
+        "cat {}" 
+    }
+    
+    let selected = (
+        fd --type f --extension md . $env.OBSIDIAN_VAULT --max-depth 5 
+        | lines
+        | each { |f| {path: $f, mtime: (ls $f | get modified.0)} }
+        | sort-by mtime --reverse
+        | first 20
+        | get path
+        | str join "\n"
+        | fzf --preview $preview_cmd --height 60% 
+        | str trim
+    )
+    
+    if not ($selected | is-empty) {
+        ^$env.EDITOR $selected
+    }
+}
+
+def cd-notes [] {
+    if (which fzf | is-empty) or (which fd | is-empty) {
+        print "This command requires fzf and fd. Install with: brew install fzf fd"
+        return
+    }
+    
+    let preview_cmd = if (which eza | is-not-empty) { 
+        "eza --tree --color=always {} | head -20" 
+    } else { 
+        "ls -la {}" 
+    }
+    
+    let dir = (
+        fd --type d . $env.OBSIDIAN_VAULT 
+        | fzf --preview $preview_cmd --height 60% 
+        | str trim
+    )
+    
+    if not ($dir | is-empty) {
+        cd $dir
+    }
+}
+
+# Git aliases - conditional
+if (which git | is-not-empty) {
+    alias gs = git status
+    alias ga = git add
+    alias gc = git commit
+    alias gp = git push
+    alias gl = git log --oneline
+    alias gd = git diff
+    alias gco = git checkout
+    alias gb = git branch
+}
+
+# Modern CLI tool aliases - all conditional
+if (which bat | is-not-empty) {
+    alias cat = bat --theme=$env.BAT_THEME?
+}
+
+if (which eza | is-not-empty) {
+    alias ls = eza --color=auto --icons
+    alias ll = eza --color=auto --icons --long --all --git
+    alias la = eza --color=auto --icons --all
+    alias tree = eza --color=auto --icons --tree
+} else {
+    alias ll = ls -la
+    alias la = ls -a
+}
+
+if (which fd | is-not-empty) {
+    alias find = fd
+}
+
+if (which rg | is-not-empty) {
+    alias grep = rg --color=auto
+}
+
+if (which procs | is-not-empty) {
+    alias ps = procs
+}
+
+if (which btop | is-not-empty) {
+    alias top = btop
+}
+
+# Directory navigation
+alias .. = cd ..
+alias ... = cd ../..
+alias .... = cd ../../..
+
+# Zoxide shortcuts - conditional
+if (which zoxide | is-not-empty) {
+    alias j = z  # Jump to directory
+    alias ji = zi  # Interactive jump
+}
+
+# Quick config access
+alias nuconfig = ^$env.EDITOR $"($nu.default-config-dir)/config.nu"
+alias nuenv = ^$env.EDITOR $"($nu.default-config-dir)/env.nu"
+
+if ($"($env.HOME)/.config/wezterm/wezterm.lua" | path exists) {
+    alias wezconfig = ^$env.EDITOR ~/.config/wezterm/wezterm.lua
+}
+
+if ($"($env.HOME)/.config/nvim/init.lua" | path exists) {
+    alias nvimconfig = ^$env.EDITOR ~/.config/nvim/init.lua
+}
+
+if ($"($env.HOME)/.config/starship.toml" | path exists) {
+    alias starshipconfig = ^$env.EDITOR ~/.config/starship.toml
+}
+
+# Yazi with automatic directory change
+def y [...args] {
+    let cwd_tmp = (mktemp -t "yazi-cwd.XXXXXX")
+    let selected_tmp = (mktemp -t "yazi-selected.XXXXXX")
+    
+    # Run yazi with both temp files - one for directory change, one for file selection
+    if ($args | is-empty) {
+        yazi --cwd-file $cwd_tmp --chooser-file $selected_tmp
+    } else {
+        yazi ...$args --cwd-file $cwd_tmp --chooser-file $selected_tmp
+    }
+    
+    # Handle file selection first (if any)
+    if ($selected_tmp | path exists) {
+        let selected = (open $selected_tmp | str trim)
+        if ($selected | is-not-empty) {
+            print $"Opening ($selected) in Helix..."
+            hx $selected
+        }
+        rm -f $selected_tmp
+    }
+    
+    # Handle directory change (existing functionality)
+    if ($cwd_tmp | path exists) {
+        let cwd = (open $cwd_tmp | str trim)
+        if ($cwd | is-not-empty) and ($cwd != $env.PWD) {
+            cd $cwd
+        }
+        rm -f $cwd_tmp
+    }
+}
+
+# Helper function to reload config
+def reload-config [] {
+    exec nu
+}
+
+# Yazi integration - open at last Neovim location
+def yz [] {
+    let tmp = (mktemp -t "yazi-cwd.XXXXXX")
+    
+    # If we have a specific file, open yazi with it selected
+    if ('~/.nvim_last_file' | path expand | path exists) {
+        let file = open ~/.nvim_last_file | str trim
+        if ($file | path exists) {
+            # Pass the file as the entry argument - this will select it
+            yazi $file --cwd-file $tmp
+        } else {
+            # Fall back to directory if file doesn't exist
+            let dir = if ('~/.nvim_last_dir' | path expand | path exists) { 
+                open ~/.nvim_last_dir | str trim 
+            } else { 
+                $env.PWD 
+            }
+            cd $dir
+            yazi --cwd-file $tmp
+        }
+    } else {
+        # No specific file, just use directory
+        let dir = if ('~/.nvim_last_dir' | path expand | path exists) { 
+            open ~/.nvim_last_dir | str trim 
+        } else { 
+            $env.PWD 
+        }
+        cd $dir
+        yazi --cwd-file $tmp
+    }
+    
+    # Handle directory change after yazi exits
+    if ($tmp | path exists) {
+        let cwd = (open $tmp | str trim)
+        if ($cwd | is-not-empty) and ($cwd != $env.PWD) {
+            cd $cwd
+        }
+    }
+    
+    # Clean up temp file
+    rm -f $tmp
+}
+
+# File Management Power Functions
+# Quick file browser - replaces Yazi for quick looks
+def l [...args] {
+    if ($args | is-empty) {
+        ls | sort-by type name
+    } else {
+        ls ...$args | sort-by type name
+    }
+}
+
+# Find files by pattern (replaces fd/find)
+def ff [pattern: string] {
+    ls **/* | where name =~ $pattern | select name size modified
+}
+
+# Quick preview files
+def preview [file: path] {
+    let ext = ($file | path parse | get extension)
+    if $ext in [txt md yaml yml toml json nu] {
+        open $file | lines | first 20
+    } else if $ext == pdf {
+        echo "PDF file - use 'open' to view"
+    } else {
+        ls $file
+    }
+}
+
+# Bulk rename with pattern
+def bulk-rename [pattern: string, replacement: string] {
+    ls | where name =~ $pattern | each {|f| 
+        let new_name = ($f.name | str replace $pattern $replacement)
+        echo $"($f.name) -> ($new_name)"
+    }
+    print "Run with --execute to perform rename"
+}
+
+# Copy file to macOS clipboard
+def clip [file: path] {
+    if ($file | path exists) {
+        if ($file | path parse | get extension) == pdf {
+            # For PDFs, copy the file reference (for drag/drop)
+            $"file://($file | path expand)" | pbcopy
+            echo $"✓ ($file) copied to clipboard"
+        } else {
+            # For text files, copy contents
+            open $file | pbcopy
+            echo $"✓ Contents of ($file) copied to clipboard"
+        }
+    }
+}
+
+# Smart directory navigation (up)
+def up [levels: int = 1] {
+    let path = (1..$levels | each { ".." } | str join "/")
+    cd $path
+}
+
+# Recent files
+def recent [--days: int = 7] {
+    ls **/* | where modified > ((date now) - ($days * 24hr)) | sort-by modified -r
+}
+
+# Interactive file explorer (Yazi replacement!)
+def e [...path] {
+    let target = if ($path | is-empty) { "." } else { $path | str join "/" }
+    ls $target | explore
+}
+
+# Initialize zoxide
+source ~/.zoxide.nu

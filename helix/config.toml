@@ -1,0 +1,53 @@
+# Helix Configuration for Colemak-DH
+
+theme = "solarized_dark_modal"  # Enhanced mode indication (or use solarized_light_modal)
+
+[editor]
+# Enable cursor shape changing
+cursorline = true
+
+[editor.cursor-shape]
+insert = "bar"
+normal = "block"
+select = "underline"
+
+[keys.normal]
+# Navigation (neio for hjkl)
+n = "move_char_left"
+e = "move_line_down"
+i = "move_line_up"
+o = "move_char_right"
+
+# Displaced commands
+h = "open_below"           # was on 'o'
+j = "search_next"          # was on 'n'
+k = "move_next_word_end"   # was on 'e'
+l = "find_till_char"       # was on 't' (tilL)
+t = "insert_mode"          # was on 'i' (inserT)
+
+# Shifted versions for consistency
+N = "extend_char_left"     # extend version of 'n'
+E = "extend_line_down"     # extend version of 'e'
+I = "extend_line_up"       # extend version of 'i'
+O = "extend_char_right"    # extend version of 'o'
+H = "open_above"           # pair with 'h' (open_below)
+J = "search_prev"          # pair with 'j' (search_next)
+K = "extend_next_word_end" # extend version of 'k'
+L = "till_prev_char"       # pair with 'l' (till forward)
+T = "insert_at_line_start"  # was on 'I' (Insert at line start)
+
+[keys.select]
+# Same navigation in select mode
+n = "extend_char_left"
+e = "extend_line_down"
+i = "extend_line_up"
+o = "extend_char_right"
+
+# Displaced commands in select mode
+h = "open_below"
+j = "search_next"
+k = "extend_next_word_end"
+l = "find_till_char"       # was on 't' (tilL)
+L = "till_prev_char"       # was on 'T' (till backward)
+t = "insert_mode"          # was on 'i' (inserT)
+T = "insert_at_line_start"  # was on 'I' (Insert at line start)
