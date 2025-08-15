@@ -33,6 +33,13 @@ config.color_scheme = scheme_for_appearance(get_appearance())
 config.window_background_opacity = 0.98
 config.macos_window_background_blur = 20
 
+-- Custom selection colors for better readability in Solarized themes
+config.colors = {
+  selection_fg = 'none',  -- Keep original text color
+  selection_bg = 'rgba(88, 110, 117, 0.25)',  -- Darker, more subtle highlight for better contrast
+  -- Let the theme handle cursor and ANSI colors
+}
+
 -- Font configuration
 config.font = wezterm.font("JetBrainsMono Nerd Font")
 config.font_size = 14
@@ -460,14 +467,14 @@ wezterm.on('gui-startup', function()
   -- This ensures consistent sizing when switching between monitors
   window:gui_window():set_position(100, 50)
   
-  -- Create a notes workspace
-  local notes_tab, notes_pane, notes_window = mux.spawn_window {
-    workspace = 'notes',
-    cwd = wezterm.home_dir .. '/Obsidian.nosync/Forge',
-  }
+  -- Create a notes workspace (commented out to avoid second window)
+  -- local notes_tab, notes_pane, notes_window = mux.spawn_window {
+  --   workspace = 'notes',
+  --   cwd = wezterm.home_dir .. '/Obsidian.nosync/Forge',
+  -- }
   
   -- Switch back to main workspace
-  mux.set_active_workspace 'main'
+  -- mux.set_active_workspace 'main'
 end)
 
 -- Simple approach: detect appearance on each config reload

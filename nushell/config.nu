@@ -38,7 +38,7 @@ let solarized_light = {
     glob: { fg: "#2aa198" attr: b }
     block: "#657b83"
     hints: "#93a1a1"
-    search_result: { bg: "#dc322f" fg: "#fdf6e3" }
+    search_result: { bg: "#93a1a1" fg: "#fdf6e3" }
     shape_binary: { fg: "#6c71c4" attr: b }
     shape_block: { fg: "#268bd2" attr: b }
     shape_bool: "#2aa198"
@@ -104,7 +104,7 @@ let solarized_dark = {
     glob: { fg: "#2aa198" attr: b }
     block: "#839496"
     hints: "#586e75"
-    search_result: { bg: "#dc322f" fg: "#002b36" }
+    search_result: { bg: "#586e75" fg: "#002b36" }
     shape_binary: { fg: "#6c71c4" attr: b }
     shape_block: { fg: "#268bd2" attr: b }
     shape_bool: "#2aa198"
@@ -146,9 +146,6 @@ let solarized_dark = {
         attr: b
     }
 }
-
-# Set color config based on theme
-$env.config.color_config = if ($env.MACOS_THEME? | default "light") == "dark" { $solarized_dark } else { $solarized_light }
 
 # Basic Nushell configuration
 $env.config = {
@@ -195,7 +192,105 @@ $env.config = {
         sync_on_enter: true
         file_format: "sqlite"
     }
+    
+    color_config: {
+        separator: "#93a1a1"
+        leading_trailing_space_bg: { attr: n }
+        header: { fg: "#859900" attr: b }
+        empty: "#268bd2"
+        bool: "#2aa198"
+        int: "#657b83"
+        filesize: "#2aa198"
+        duration: "#657b83"
+        datetime: "#6c71c4"
+        range: "#657b83"
+        float: "#657b83"
+        string: "#859900"
+        nothing: "#657b83"
+        binary: "#657b83"
+        cell-path: "#657b83"
+        row_index: { fg: "#859900" attr: b }
+        record: "#657b83"
+        list: "#657b83"
+        closure: { fg: "#859900" attr: b }
+        glob: { fg: "#2aa198" attr: b }
+        block: "#657b83"
+        hints: "#93a1a1"
+        search_result: { bg: "#93a1a1" fg: "#fdf6e3" }
+        shape_binary: { fg: "#6c71c4" attr: b }
+        shape_block: { fg: "#268bd2" attr: b }
+        shape_bool: "#2aa198"
+        shape_closure: { fg: "#859900" attr: b }
+        shape_custom: "#859900"
+        shape_datetime: { fg: "#2aa198" attr: b }
+        shape_directory: "#268bd2"
+        shape_external: "#268bd2"
+        shape_externalarg: { fg: "#859900" attr: b }
+        shape_external_resolved: { fg: "#b58900" attr: b }
+        shape_filepath: "#268bd2"
+        shape_flag: { fg: "#268bd2" attr: b }
+        shape_float: { fg: "#6c71c4" attr: b }
+        shape_glob_interpolation: { fg: "#2aa198" attr: b }
+        shape_globpattern: { fg: "#2aa198" attr: b }
+        shape_int: { fg: "#6c71c4" attr: b }
+        shape_internalcall: { fg: "#2aa198" attr: b }
+        shape_keyword: { fg: "#268bd2" attr: b }
+        shape_list: { fg: "#2aa198" attr: b }
+        shape_literal: "#268bd2"
+        shape_match_pattern: "#859900"
+        shape_matching_brackets: { attr: u }
+        shape_nothing: "#2aa198"
+        shape_operator: "#b58900"
+        shape_pipe: { fg: "#6c71c4" attr: b }
+        shape_range: { fg: "#b58900" attr: b }
+        shape_record: { fg: "#2aa198" attr: b }
+        shape_redirection: { fg: "#6c71c4" attr: b }
+        shape_signature: { fg: "#859900" attr: b }
+        shape_string: "#859900"
+        shape_string_interpolation: { fg: "#2aa198" attr: b }
+        shape_table: { fg: "#268bd2" attr: b }
+        shape_variable: "#6c71c4"
+        shape_vardecl: "#6c71c4"
+        shape_raw_string: { fg: "#cb4b16" }
+        shape_garbage: {
+            fg: "#fdf6e3"
+            bg: "#dc322f"
+            attr: b
+        }
+    }
 }
+
+# Add explore configuration after main config - using upsert to merge properly
+# Dynamically set colors based on theme
+let explore_colors = if ($env.MACOS_THEME? | default "light") == "dark" {
+    {
+        selected_cell: { bg: "#586e75", fg: "#fdf6e3" }  # Dark theme: medium gray bg with light text
+        selected_row: { fg: "#839496" }
+        selected_column: "#268bd2"
+        highlight: { bg: "#586e75", fg: "#fdf6e3" }
+        status_bar_background: { fg: "#839496", bg: "#073642" }
+        status_bar_foreground: { fg: "#fdf6e3", bg: "#073642" }
+        command_bar: { fg: "#839496" }
+        split_line: "#586e75"
+        cursor: true
+        table_mode: "rounded"
+    }
+} else {
+    {
+        selected_cell: { bg: "#657b83", fg: "#fdf6e3" }  # Light theme: darker gray bg with light text
+        selected_row: { fg: "#657b83" }
+        selected_column: "#268bd2"
+        highlight: { bg: "#93a1a1", fg: "#002b36" }
+        status_bar_background: { fg: "#657b83", bg: "#eee8d5" }
+        status_bar_foreground: { fg: "#002b36", bg: "#eee8d5" }
+        command_bar: { fg: "#657b83" }
+        split_line: "#93a1a1"
+        cursor: true
+        table_mode: "rounded"
+    }
+}
+
+$env.config = ($env.config | upsert explore $explore_colors)
 
 # Zettelkasten workflow commands for Obsidian Forge vault
 def notes [] {
@@ -587,6 +682,23 @@ def recent [--days: int = 7] {
 def e [...path] {
     let target = if ($path | is-empty) { "." } else { $path | str join "/" }
     ls $target | explore
+}
+
+# File find and edit - open file from search results by index
+def fe [pattern: string, index: int = 0] {
+    let files = (ff $pattern | get name)
+    let count = ($files | length)
+    if $count == 0 {
+        echo $"No files found matching '($pattern)'"
+    } else if $index >= $count {
+        echo $"Index ($index) out of range. Found ($count) files."
+        echo "Available files:"
+        $files | enumerate | each {|f| echo $"  ($f.index): ($f.item)"}
+    } else {
+        let file = ($files | get $index)
+        echo $"Opening: ($file)"
+        hx $file
+    }
 }
 
 # Initialize zoxide
