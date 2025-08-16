@@ -2,13 +2,20 @@
 
 # Use standard Solarized themes - change based on system appearance
 # For dark mode: theme = "solarized_dark" 
-# For light mode: theme = "solarized_light"
+# For light mode: theme = "solarized_dark"
 # Modal versions with mode indicators: "solarized_dark_modal" or "solarized_light_modal"
-theme = "solarized_light_modal"
+theme = "solarized_dark_modal"
 
 [editor]
 # Enable cursor shape changing
 cursorline = true
+
+# Soft wrap configuration
+[editor.soft-wrap]
+enable = true
+max-wrap = 25  # increase value to reduce forced mid-word wrapping
+max-indent-retain = 0
+wrap-indicator = ""  # set to "" to hide wrap indicator
 
 [editor.cursor-shape]
 insert = "bar"

@@ -462,7 +462,37 @@ def cd-notes [] {
     )
     
     if not ($dir | is-empty) {
-        cd $dir
+        $dir  # Return the path instead of trying to cd
+    }
+}
+
+# Helix find - fuzzy find and open file in current directory
+def hf [] {
+    if (which fzf | is-empty) {
+        print "This command requires fzf. Install with: brew install fzf"
+        return
+    }
+    
+    let file = (ls | where type == "file" | get name | fzf --height 40% | str trim)
+    if not ($file | is-empty) {
+        hx $file
+    }
+}
+
+# Helix vault - fuzzy find any file in entire vault and open it
+def hv [] {
+    if (which fzf | is-empty) or (which fd | is-empty) {
+        print "This command requires fzf and fd. Install with: brew install fzf fd"
+        return
+    }
+    
+    let file = (
+        fd --type f . $env.OBSIDIAN_VAULT 
+        | fzf --preview 'head -20 {}' --height 60% 
+        | str trim
+    )
+    if not ($file | is-empty) {
+        hx $file
     }
 }
 
@@ -513,6 +543,8 @@ if (which btop | is-not-empty) {
 alias .. = cd ..
 alias ... = cd ../..
 alias .... = cd ../../..
+alias cdn = cd (cd-notes)
+alias hx = hx-auto  # Auto-detect theme based on system appearance
 
 # Zoxide shortcuts - conditional
 if (which zoxide | is-not-empty) {
