@@ -443,6 +443,362 @@ def note-recent [] {
     }
 }
 
+# ============================================
+# TELEKASTEN-INSPIRED ZETTELKASTEN FUNCTIONS
+# ============================================
+
+# Calendar view for daily notes - shows month with markers for existing notes
+def note-calendar [--month: int = 0] {
+    let vault_path = $env.OBSIDIAN_VAULT
+    let daily_dir = $"($vault_path)/NapierianLogs/DayPages"
+    
+    # Get current or specified month
+    let target_date = if $month == 0 {
+        date now
+    } else {
+        date now | date add $"($month)mon"
+    }
+    
+    let year = ($target_date | format date "%Y")
+    let month_num = ($target_date | format date "%m")
+    let month_name = ($target_date | format date "%B")
+    
+    # Get list of existing daily notes for this month
+    let existing_notes = (
+        ls $"($daily_dir)/($year)-($month_num)-*.md" 
+        | get name 
+        | path basename 
+        | str replace ".md" ""
+        | parse "{year}-{month}-{day}"
+        | get day
+        | each { |d| $d | into int }
+    ) | default []
+    
+    # Generate calendar
+    print $"($month_name) ($year)"
+    print "Su Mo Tu We Th Fr Sa"
+    
+    # Get first day of month and days in month
+    let first_day = (date now | date add $"($month - (date now | format date "%m" | into int))mon" | date add $"(1 - (date now | format date "%d" | into int))day")
+    let first_weekday = ($first_day | format date "%w" | into int)
+    let days_in_month = (cal | lines | skip 2 | str join " " | split row " " | where {|x| $x != ""} | length)
+    
+    # Print calendar with markers
+    let mut week = []
+    for _ in 0..<$first_weekday {
+        $week = ($week | append "  ")
+    }
+    
+    for day in 1..$days_in_month {
+        let day_str = if $day in $existing_notes {
+            $"(ansi green_bold)($day | into string | fill --width 2)(ansi reset)"
+        } else if $day == (date now | format date "%d" | into int) and $month == 0 {
+            $"(ansi yellow_bold)($day | into string | fill --width 2)(ansi reset)"
+        } else {
+            ($day | into string | fill --width 2)
+        }
+        
+        $week = ($week | append $day_str)
+        
+        if ($week | length) == 7 {
+            print ($week | str join " ")
+            $week = []
+        }
+    }
+    
+    if ($week | length) > 0 {
+        print ($week | str join " ")
+    }
+    
+    print ""
+    print "Legend: (ansi green_bold)●(ansi reset) has note  (ansi yellow_bold)●(ansi reset) today"
+    print "Use: note-calendar --month 1 for next month"
+}
+
+# Go to this week's note
+def note-week [] {
+    let week_num = (date now | format date "%Y-W%V")
+    let week_file = $"($env.OBSIDIAN_VAULT)/NapierianLogs/WeekPages/($week_num).md"
+    
+    if not ($week_file | path exists) {
+        # Create week note from template if it doesn't exist
+        let template = $"($env.OBSIDIAN_VAULT)/Areas/Obsidian/Templates/WeekPage.md"
+        if ($template | path exists) {
+            open $template | save $week_file
+            print $"Created week note: ($week_num)"
+        } else {
+            "# Week " + $week_num + "\n\n## Goals\n\n## Notes\n\n## Review\n" | save $week_file
+        }
+    }
+    
+    hx $week_file
+}
+
+# Find weekly notes
+def note-week-find [] {
+    let weekly_dir = $"($env.OBSIDIAN_VAULT)/NapierianLogs/WeekPages"
+    
+    if not ($weekly_dir | path exists) {
+        mkdir $weekly_dir
+    }
+    
+    let selected = (
+        ls $"($weekly_dir)/*.md"
+        | get name
+        | path basename
+        | sort --reverse
+        | str join "\n"
+        | fzf --preview $"bat --color=always ($weekly_dir)/{}" --height 60%
+        | str trim
+    )
+    
+    if not ($selected | is-empty) {
+        hx $"($weekly_dir)/($selected)"
+    }
+}
+
+# Show backlinks - all notes that link to the current file
+def note-backlinks [file?: path] {
+    let target = if ($file | is-empty) {
+        # Try to get current file from Helix (would need integration)
+        print "Please provide a file path"
+        return
+    } else {
+        $file | path basename | str replace ".md" ""
+    }
+    
+    print $"Finding backlinks to: ($target)"
+    
+    # Search for [[target]] links
+    rg $"\[\[($target)\]\]" $env.OBSIDIAN_VAULT --type md -l
+    | lines
+    | each { |f| 
+        let content = (rg $"\[\[($target)\]\]" $f -C 1 | str join "\n")
+        {file: ($f | path relative-to $env.OBSIDIAN_VAULT), context: $content}
+    }
+    | to md
+}
+
+# Yank (copy) wiki link for current note
+def note-yank [file?: path] {
+    let note_path = if ($file | is-empty) {
+        print "Please provide a file path"
+        return
+    } else {
+        $file
+    }
+    
+    let link_text = $"[[($note_path | path basename | str replace '.md' '')]]"
+    $link_text | pbcopy
+    print $"Copied: ($link_text)"
+}
+
+# Rename note and update all references
+def note-rename [old_name: string, new_name: string] {
+    let vault = $env.OBSIDIAN_VAULT
+    let old_file = $"($vault)/($old_name).md"
+    let new_file = $"($vault)/($new_name).md"
+    
+    if not ($old_file | path exists) {
+        print $"File not found: ($old_file)"
+        return
+    }
+    
+    if ($new_file | path exists) {
+        print $"File already exists: ($new_file)"
+        return
+    }
+    
+    # Find all files that reference the old note
+    let refs = (rg $"\[\[($old_name)\]\]" $vault --type md -l | lines)
+    
+    print $"Found (($refs | length)) references to update"
+    
+    # Update all references
+    for file in $refs {
+        let content = (open $file)
+        let updated = ($content | str replace --all $"[[($old_name)]]" $"[[($new_name)]]")
+        $updated | save -f $file
+        print $"Updated: ($file | path relative-to $vault)"
+    }
+    
+    # Rename the file
+    mv $old_file $new_file
+    print $"Renamed: ($old_name) -> ($new_name)"
+}
+
+# Toggle todo checkbox in current line (for Helix integration)
+def note-toggle-todo [] {
+    print "Run in Helix: :pipe-to sed 's/\\[ \\]/[x]/g; s/\\[x\\]/[ ]/g'"
+}
+
+# Show all tags in vault
+def note-tags [] {
+    print "Analyzing tags in vault..."
+    
+    let tags = (
+        rg "#[a-zA-Z][a-zA-Z0-9_-]*" $env.OBSIDIAN_VAULT --type md -o
+        | lines
+        | sort
+        | uniq -c
+        | sort -r
+        | parse "{count} {tag}"
+        | take 50
+    )
+    
+    print "Top tags:"
+    $tags | table
+    
+    # Interactive selection
+    let selected = (
+        $tags 
+        | get tag 
+        | str join "\n"
+        | fzf --prompt "Select tag to search: "
+        | str trim
+    )
+    
+    if not ($selected | is-empty) {
+        note-grep $selected
+    }
+}
+
+# Create note from template
+def note-template [template_name?: string] {
+    let template_dir = $"($env.OBSIDIAN_VAULT)/templates"
+    
+    if not ($template_dir | path exists) {
+        print "No templates directory found"
+        return
+    }
+    
+    let template = if ($template_name | is-empty) {
+        # Select template interactively
+        ls $"($template_dir)/*.md"
+        | get name
+        | path basename
+        | str join "\n"
+        | fzf --prompt "Select template: "
+        | str trim
+    } else {
+        $"($template_name).md"
+    }
+    
+    if ($template | is-empty) {
+        return
+    }
+    
+    let template_path = $"($template_dir)/($template)"
+    if not ($template_path | path exists) {
+        print $"Template not found: ($template)"
+        return
+    }
+    
+    # Get new note name
+    let note_name = (input "Enter note name: ")
+    if ($note_name | is-empty) {
+        return
+    }
+    
+    let note_path = $"($env.OBSIDIAN_VAULT)/($note_name).md"
+    
+    # Process template
+    let content = (open $template_path)
+    let processed = (
+        $content
+        | str replace --all "{{date}}" (date now | format date "%Y-%m-%d")
+        | str replace --all "{{date:YYYY-MM-DD}}" (date now | format date "%Y-%m-%d")
+        | str replace --all "{{time}}" (date now | format date "%H:%M")
+        | str replace --all "{{title}}" $note_name
+    )
+    
+    $processed | save $note_path
+    print $"Created: ($note_path)"
+    hx $note_path
+}
+
+# Navigate to previous/next daily note
+def note-day-prev [] {
+    let current = if (pwd | str ends-with "DayPages") {
+        pwd | path basename
+    } else {
+        # Get current file name - would need Helix integration
+        date now | format date "%Y-%m-%d"
+    }
+    
+    let current_date = ($current | str substring 0..10 | into datetime)
+    let prev_date = ($current_date | date add "-1day" | format date "%Y-%m-%d")
+    let prev_file = $"($env.OBSIDIAN_VAULT)/NapierianLogs/DayPages/($prev_date).md"
+    
+    if ($prev_file | path exists) {
+        hx $prev_file
+    } else {
+        print $"No note for ($prev_date)"
+    }
+}
+
+def note-day-next [] {
+    let current = if (pwd | str ends-with "DayPages") {
+        pwd | path basename
+    } else {
+        date now | format date "%Y-%m-%d"
+    }
+    
+    let current_date = ($current | str substring 0..10 | into datetime)
+    let next_date = ($current_date | date add "1day" | format date "%Y-%m-%d")
+    let next_file = $"($env.OBSIDIAN_VAULT)/NapierianLogs/DayPages/($next_date).md"
+    
+    if ($next_file | path exists) {
+        hx $next_file
+    } else {
+        print $"No note for ($next_date)"
+    }
+}
+
+# Paste image from clipboard and create link
+def note-paste-image [name?: string] {
+    let img_name = if ($name | is-empty) {
+        $"image-(date now | format date '%Y%m%d-%H%M%S').png"
+    } else {
+        $"($name).png"
+    }
+    
+    let img_dir = $"($env.OBSIDIAN_VAULT)/attachments"
+    mkdir $img_dir
+    let img_path = $"($img_dir)/($img_name)"
+    
+    # Use pngpaste on macOS
+    if (which pngpaste | is-not-empty) {
+        pngpaste $img_path
+        if ($img_path | path exists) {
+            let link = $"![[attachments/($img_name)]]"
+            $link | pbcopy
+            print $"Image saved: ($img_path)"
+            print $"Link copied: ($link)"
+        } else {
+            print "No image in clipboard"
+        }
+    } else {
+        print "pngpaste not found. Install with: brew install pngpaste"
+    }
+}
+
+# Find notes modified on same date as current
+def note-same-date [date?: string] {
+    let target_date = if ($date | is-empty) {
+        date now | format date "%Y-%m-%d"
+    } else {
+        $date
+    }
+    
+    print $"Finding notes modified on ($target_date)..."
+    
+    fd . $env.OBSIDIAN_VAULT --type f --extension md --changed-on $target_date
+    | lines
+    | each { |f| $f | path relative-to $env.OBSIDIAN_VAULT }
+    | to md
+}
+
 def cd-notes [] {
     if (which fzf | is-empty) or (which fd | is-empty) {
         print "This command requires fzf and fd. Install with: brew install fzf fd"
