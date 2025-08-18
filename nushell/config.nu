@@ -456,7 +456,7 @@ def note-calendar [--month: int = 0] {
     let target_date = if $month == 0 {
         date now
     } else {
-        date now | date add $"($month)mon"
+        date now | + ($month * 30day)
     }
     
     let year = ($target_date | format date "%Y")
@@ -479,9 +479,15 @@ def note-calendar [--month: int = 0] {
     print "Su Mo Tu We Th Fr Sa"
     
     # Get first day of month and days in month
-    let first_day = (date now | date add $"($month - (date now | format date "%m" | into int))mon" | date add $"(1 - (date now | format date "%d" | into int))day")
+    let first_day = $"($year)-($month_num)-01" | into datetime
     let first_weekday = ($first_day | format date "%w" | into int)
-    let days_in_month = (cal | lines | skip 2 | str join " " | split row " " | where {|x| $x != ""} | length)
+    # Calculate days in month
+    let next_month = if $month_num == "12" {
+        $"($year | into int | + 1)-01-01" | into datetime
+    } else {
+        $"($year)-($month_num | into int | + 1 | into string | fill --width 2 --character "0")-01" | into datetime
+    }
+    let days_in_month = (($next_month | - $first_day) / 1day | into int)
     
     # Print calendar with markers
     let mut week = []
@@ -727,7 +733,7 @@ def note-day-prev [] {
     }
     
     let current_date = ($current | str substring 0..10 | into datetime)
-    let prev_date = ($current_date | date add "-1day" | format date "%Y-%m-%d")
+    let prev_date = ($current_date | - 1day | format date "%Y-%m-%d")
     let prev_file = $"($env.OBSIDIAN_VAULT)/NapierianLogs/DayPages/($prev_date).md"
     
     if ($prev_file | path exists) {
@@ -745,7 +751,7 @@ def note-day-next [] {
     }
     
     let current_date = ($current | str substring 0..10 | into datetime)
-    let next_date = ($current_date | date add "1day" | format date "%Y-%m-%d")
+    let next_date = ($current_date | + 1day | format date "%Y-%m-%d")
     let next_file = $"($env.OBSIDIAN_VAULT)/NapierianLogs/DayPages/($next_date).md"
     
     if ($next_file | path exists) {
