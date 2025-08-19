@@ -17,8 +17,8 @@ if ($"($env.HOME)/.cache/nushell/zoxide-init.nu" | path exists) {
 # Solarized color schemes
 let solarized_light = {
     separator: "#93a1a1"
-    leading_trailing_space_bg: { attr: n }
-    header: { fg: "#859900" attr: b }
+    leading_trailing_space_bg: { attr: "n" }
+    header: { fg: "#859900" attr: "b" }
     empty: "#268bd2"
     bool: "#2aa198"
     int: "#657b83"
@@ -31,60 +31,60 @@ let solarized_light = {
     nothing: "#657b83"
     binary: "#657b83"
     cell-path: "#657b83"
-    row_index: { fg: "#859900" attr: b }
+    row_index: { fg: "#859900" attr: "b" }
     record: "#657b83"
     list: "#657b83"
-    closure: { fg: "#859900" attr: b }
-    glob: { fg: "#2aa198" attr: b }
+    closure: { fg: "#859900" attr: "b" }
+    glob: { fg: "#2aa198" attr: "b" }
     block: "#657b83"
     hints: "#93a1a1"
     search_result: { bg: "#93a1a1" fg: "#fdf6e3" }
-    shape_binary: { fg: "#6c71c4" attr: b }
-    shape_block: { fg: "#268bd2" attr: b }
+    shape_binary: { fg: "#6c71c4" attr: "b" }
+    shape_block: { fg: "#268bd2" attr: "b" }
     shape_bool: "#2aa198"
-    shape_closure: { fg: "#859900" attr: b }
+    shape_closure: { fg: "#859900" attr: "b" }
     shape_custom: "#859900"
-    shape_datetime: { fg: "#2aa198" attr: b }
+    shape_datetime: { fg: "#2aa198" attr: "b" }
     shape_directory: "#268bd2"
     shape_external: "#268bd2"
-    shape_externalarg: { fg: "#859900" attr: b }
-    shape_external_resolved: { fg: "#b58900" attr: b }
+    shape_externalarg: { fg: "#859900" attr: "b" }
+    shape_external_resolved: { fg: "#b58900" attr: "b" }
     shape_filepath: "#268bd2"
-    shape_flag: { fg: "#268bd2" attr: b }
-    shape_float: { fg: "#6c71c4" attr: b }
-    shape_glob_interpolation: { fg: "#2aa198" attr: b }
-    shape_globpattern: { fg: "#2aa198" attr: b }
-    shape_int: { fg: "#6c71c4" attr: b }
-    shape_internalcall: { fg: "#2aa198" attr: b }
-    shape_keyword: { fg: "#268bd2" attr: b }
-    shape_list: { fg: "#2aa198" attr: b }
+    shape_flag: { fg: "#268bd2" attr: "b" }
+    shape_float: { fg: "#6c71c4" attr: "b" }
+    shape_glob_interpolation: { fg: "#2aa198" attr: "b" }
+    shape_globpattern: { fg: "#2aa198" attr: "b" }
+    shape_int: { fg: "#6c71c4" attr: "b" }
+    shape_internalcall: { fg: "#2aa198" attr: "b" }
+    shape_keyword: { fg: "#268bd2" attr: "b" }
+    shape_list: { fg: "#2aa198" attr: "b" }
     shape_literal: "#268bd2"
     shape_match_pattern: "#859900"
     shape_matching_brackets: { attr: u }
     shape_nothing: "#2aa198"
     shape_operator: "#b58900"
-    shape_pipe: { fg: "#6c71c4" attr: b }
-    shape_range: { fg: "#b58900" attr: b }
-    shape_record: { fg: "#2aa198" attr: b }
-    shape_redirection: { fg: "#6c71c4" attr: b }
-    shape_signature: { fg: "#859900" attr: b }
+    shape_pipe: { fg: "#6c71c4" attr: "b" }
+    shape_range: { fg: "#b58900" attr: "b" }
+    shape_record: { fg: "#2aa198" attr: "b" }
+    shape_redirection: { fg: "#6c71c4" attr: "b" }
+    shape_signature: { fg: "#859900" attr: "b" }
     shape_string: "#859900"
-    shape_string_interpolation: { fg: "#2aa198" attr: b }
-    shape_table: { fg: "#268bd2" attr: b }
+    shape_string_interpolation: { fg: "#2aa198" attr: "b" }
+    shape_table: { fg: "#268bd2" attr: "b" }
     shape_variable: "#6c71c4"
     shape_vardecl: "#6c71c4"
     shape_raw_string: { fg: "#cb4b16" }
     shape_garbage: {
         fg: "#fdf6e3"
         bg: "#dc322f"
-        attr: b
+        attr: "b"
     }
 }
 
 let solarized_dark = {
     separator: "#586e75"
-    leading_trailing_space_bg: { attr: n }
-    header: { fg: "#859900" attr: b }
+    leading_trailing_space_bg: { attr: "n" }
+    header: { fg: "#859900" attr: "b" }
     empty: "#268bd2"
     bool: "#2aa198"
     int: "#839496"
@@ -97,53 +97,53 @@ let solarized_dark = {
     nothing: "#839496"
     binary: "#839496"
     cell-path: "#839496"
-    row_index: { fg: "#859900" attr: b }
+    row_index: { fg: "#859900" attr: "b" }
     record: "#839496"
     list: "#839496"
-    closure: { fg: "#859900" attr: b }
-    glob: { fg: "#2aa198" attr: b }
+    closure: { fg: "#859900" attr: "b" }
+    glob: { fg: "#2aa198" attr: "b" }
     block: "#839496"
     hints: "#586e75"
     search_result: { bg: "#586e75" fg: "#002b36" }
-    shape_binary: { fg: "#6c71c4" attr: b }
-    shape_block: { fg: "#268bd2" attr: b }
+    shape_binary: { fg: "#6c71c4" attr: "b" }
+    shape_block: { fg: "#268bd2" attr: "b" }
     shape_bool: "#2aa198"
-    shape_closure: { fg: "#859900" attr: b }
+    shape_closure: { fg: "#859900" attr: "b" }
     shape_custom: "#859900"
-    shape_datetime: { fg: "#2aa198" attr: b }
+    shape_datetime: { fg: "#2aa198" attr: "b" }
     shape_directory: "#268bd2"
     shape_external: "#268bd2"
-    shape_externalarg: { fg: "#859900" attr: b }
-    shape_external_resolved: { fg: "#b58900" attr: b }
+    shape_externalarg: { fg: "#859900" attr: "b" }
+    shape_external_resolved: { fg: "#b58900" attr: "b" }
     shape_filepath: "#268bd2"
-    shape_flag: { fg: "#268bd2" attr: b }
-    shape_float: { fg: "#6c71c4" attr: b }
-    shape_glob_interpolation: { fg: "#2aa198" attr: b }
-    shape_globpattern: { fg: "#2aa198" attr: b }
-    shape_int: { fg: "#6c71c4" attr: b }
-    shape_internalcall: { fg: "#2aa198" attr: b }
-    shape_keyword: { fg: "#268bd2" attr: b }
-    shape_list: { fg: "#2aa198" attr: b }
+    shape_flag: { fg: "#268bd2" attr: "b" }
+    shape_float: { fg: "#6c71c4" attr: "b" }
+    shape_glob_interpolation: { fg: "#2aa198" attr: "b" }
+    shape_globpattern: { fg: "#2aa198" attr: "b" }
+    shape_int: { fg: "#6c71c4" attr: "b" }
+    shape_internalcall: { fg: "#2aa198" attr: "b" }
+    shape_keyword: { fg: "#268bd2" attr: "b" }
+    shape_list: { fg: "#2aa198" attr: "b" }
     shape_literal: "#268bd2"
     shape_match_pattern: "#859900"
     shape_matching_brackets: { attr: u }
     shape_nothing: "#2aa198"
     shape_operator: "#b58900"
-    shape_pipe: { fg: "#6c71c4" attr: b }
-    shape_range: { fg: "#b58900" attr: b }
-    shape_record: { fg: "#2aa198" attr: b }
-    shape_redirection: { fg: "#6c71c4" attr: b }
-    shape_signature: { fg: "#859900" attr: b }
+    shape_pipe: { fg: "#6c71c4" attr: "b" }
+    shape_range: { fg: "#b58900" attr: "b" }
+    shape_record: { fg: "#2aa198" attr: "b" }
+    shape_redirection: { fg: "#6c71c4" attr: "b" }
+    shape_signature: { fg: "#859900" attr: "b" }
     shape_string: "#859900"
-    shape_string_interpolation: { fg: "#2aa198" attr: b }
-    shape_table: { fg: "#268bd2" attr: b }
+    shape_string_interpolation: { fg: "#2aa198" attr: "b" }
+    shape_table: { fg: "#268bd2" attr: "b" }
     shape_variable: "#6c71c4"
     shape_vardecl: "#6c71c4"
     shape_raw_string: { fg: "#cb4b16" }
     shape_garbage: {
         fg: "#002b36"
         bg: "#dc322f"
-        attr: b
+        attr: "b"
     }
 }
 
@@ -195,8 +195,8 @@ $env.config = {
     
     color_config: {
         separator: "#93a1a1"
-        leading_trailing_space_bg: { attr: n }
-        header: { fg: "#859900" attr: b }
+        leading_trailing_space_bg: { attr: "n" }
+        header: { fg: "#859900" attr: "b" }
         empty: "#268bd2"
         bool: "#2aa198"
         int: "#657b83"
@@ -209,53 +209,53 @@ $env.config = {
         nothing: "#657b83"
         binary: "#657b83"
         cell-path: "#657b83"
-        row_index: { fg: "#859900" attr: b }
+        row_index: { fg: "#859900" attr: "b" }
         record: "#657b83"
         list: "#657b83"
-        closure: { fg: "#859900" attr: b }
-        glob: { fg: "#2aa198" attr: b }
+        closure: { fg: "#859900" attr: "b" }
+        glob: { fg: "#2aa198" attr: "b" }
         block: "#657b83"
         hints: "#93a1a1"
         search_result: { bg: "#93a1a1" fg: "#fdf6e3" }
-        shape_binary: { fg: "#6c71c4" attr: b }
-        shape_block: { fg: "#268bd2" attr: b }
+        shape_binary: { fg: "#6c71c4" attr: "b" }
+        shape_block: { fg: "#268bd2" attr: "b" }
         shape_bool: "#2aa198"
-        shape_closure: { fg: "#859900" attr: b }
+        shape_closure: { fg: "#859900" attr: "b" }
         shape_custom: "#859900"
-        shape_datetime: { fg: "#2aa198" attr: b }
+        shape_datetime: { fg: "#2aa198" attr: "b" }
         shape_directory: "#268bd2"
         shape_external: "#268bd2"
-        shape_externalarg: { fg: "#859900" attr: b }
-        shape_external_resolved: { fg: "#b58900" attr: b }
+        shape_externalarg: { fg: "#859900" attr: "b" }
+        shape_external_resolved: { fg: "#b58900" attr: "b" }
         shape_filepath: "#268bd2"
-        shape_flag: { fg: "#268bd2" attr: b }
-        shape_float: { fg: "#6c71c4" attr: b }
-        shape_glob_interpolation: { fg: "#2aa198" attr: b }
-        shape_globpattern: { fg: "#2aa198" attr: b }
-        shape_int: { fg: "#6c71c4" attr: b }
-        shape_internalcall: { fg: "#2aa198" attr: b }
-        shape_keyword: { fg: "#268bd2" attr: b }
-        shape_list: { fg: "#2aa198" attr: b }
+        shape_flag: { fg: "#268bd2" attr: "b" }
+        shape_float: { fg: "#6c71c4" attr: "b" }
+        shape_glob_interpolation: { fg: "#2aa198" attr: "b" }
+        shape_globpattern: { fg: "#2aa198" attr: "b" }
+        shape_int: { fg: "#6c71c4" attr: "b" }
+        shape_internalcall: { fg: "#2aa198" attr: "b" }
+        shape_keyword: { fg: "#268bd2" attr: "b" }
+        shape_list: { fg: "#2aa198" attr: "b" }
         shape_literal: "#268bd2"
         shape_match_pattern: "#859900"
         shape_matching_brackets: { attr: u }
         shape_nothing: "#2aa198"
         shape_operator: "#b58900"
-        shape_pipe: { fg: "#6c71c4" attr: b }
-        shape_range: { fg: "#b58900" attr: b }
-        shape_record: { fg: "#2aa198" attr: b }
-        shape_redirection: { fg: "#6c71c4" attr: b }
-        shape_signature: { fg: "#859900" attr: b }
+        shape_pipe: { fg: "#6c71c4" attr: "b" }
+        shape_range: { fg: "#b58900" attr: "b" }
+        shape_record: { fg: "#2aa198" attr: "b" }
+        shape_redirection: { fg: "#6c71c4" attr: "b" }
+        shape_signature: { fg: "#859900" attr: "b" }
         shape_string: "#859900"
-        shape_string_interpolation: { fg: "#2aa198" attr: b }
-        shape_table: { fg: "#268bd2" attr: b }
+        shape_string_interpolation: { fg: "#2aa198" attr: "b" }
+        shape_table: { fg: "#268bd2" attr: "b" }
         shape_variable: "#6c71c4"
         shape_vardecl: "#6c71c4"
         shape_raw_string: { fg: "#cb4b16" }
         shape_garbage: {
             fg: "#fdf6e3"
             bg: "#dc322f"
-            attr: b
+            attr: "b"
         }
     }
 }
@@ -331,7 +331,7 @@ def note-links [file: path] {
 
 def daily-note [] {
     let today = (date now | format date "%Y-%m-%d")
-    let daily_dir = $"($env.OBSIDIAN_VAULT)/daily"
+    let daily_dir = $"($env.OBSIDIAN_VAULT)/NapierianLogs/DayPages"
     
     # Create daily directory if it doesn't exist
     if not ($daily_dir | path exists) {
@@ -342,14 +342,34 @@ def daily-note [] {
     
     # Create note with template if it doesn't exist
     if not ($note_path | path exists) {
-        let template = $"# ($today)
+        let current_date = (date now | format date "%Y-%m-%d")
+        let current_time = (date now | format date "%H:%M")
+        let readable_date = (date now | format date "%A, %B %d, %Y")
+        
+        let template = $"---
+tags:
+- journal
+date created: ($current_date) ($current_time)
+date modified: ($current_date) ($current_time)
 
-## Tasks
-- [ ] 
+# Daily Metrics
+sleep_hours: 
+healthy_eating: false
+exercise: false
+piano_practice: false
+meditation: false
+reading: false
+social_connection: false
 
-## Notes
+# exercise_details: \"[[Exercise Log ($current_date)]]\"
+# piano_details: \"[[Piano Practice Log ($current_date)]]\"
+# health_details: \"[[Health Metrics ($current_date)]]\"
+---
+# ($readable_date)
 
 ## Links
+- Previous: [[((date now) - 1day | format date '%Y-%m-%d')]]
+- Next: [[((date now) + 1day | format date '%Y-%m-%d')]]
 "
         $template | save $note_path
     }
@@ -361,10 +381,34 @@ def daily-note [] {
     }
 }
 
-# Enhanced commands using fzf
+# Quick daily note opener by date
+def daily-open [date?: string] {
+    let target_date = if ($date == null) {
+        (date now | format date "%Y-%m-%d")
+    } else {
+        $date
+    }
+    
+    let daily_dir = $"($env.OBSIDIAN_VAULT)/NapierianLogs/DayPages"
+    let note_path = $"($daily_dir)/($target_date).md"
+    
+    if ($note_path | path exists) {
+        if (which $env.EDITOR | is-not-empty) {
+            ^$env.EDITOR $note_path
+        } else {
+            print $"Daily note exists: ($note_path)"
+            print "Set $env.EDITOR to open automatically"
+        }
+    } else {
+        print $"Daily note doesn't exist: ($target_date)"
+        print $"Create it by clicking [[($target_date)]] in Helix or run 'daily-note' for today"
+    }
+}
+
+# Enhanced commands using skim (sk)
 def note-find [] {
-    if (which fzf | is-empty) or (which fd | is-empty) {
-        print "This command requires fzf and fd. Install with: brew install fzf fd"
+    if (which sk | is-empty) or (which fd | is-empty) {
+        print "This command requires sk and fd. Install with: brew install sk fd"
         return
     }
     
@@ -376,7 +420,7 @@ def note-find [] {
     
     let selected = (
         fd --type f --extension md . $env.OBSIDIAN_VAULT 
-        | fzf --preview $preview_cmd --height 60% 
+        | sk --preview $preview_cmd --height 60% 
         | str trim
     )
     
@@ -386,8 +430,8 @@ def note-find [] {
 }
 
 def note-grep [query?: string] {
-    if (which fzf | is-empty) or (which rg | is-empty) {
-        print "This command requires fzf and ripgrep. Install with: brew install fzf ripgrep"
+    if (which sk | is-empty) or (which rg | is-empty) {
+        print "This command requires sk and ripgrep. Install with: brew install sk ripgrep"
         return
     }
     
@@ -400,7 +444,7 @@ def note-grep [query?: string] {
     
     let selected = (
         rg --color=always --line-number --no-heading --smart-case $search_query $env.OBSIDIAN_VAULT 
-        | fzf --ansi --delimiter : --preview $preview_cmd --height 60% 
+        | sk --ansi --delimiter : --preview $preview_cmd --height 60% 
         | str trim
     )
     
@@ -415,8 +459,8 @@ def note-grep [query?: string] {
 }
 
 def note-recent [] {
-    if (which fzf | is-empty) or (which fd | is-empty) {
-        print "This command requires fzf and fd. Install with: brew install fzf fd"
+    if (which sk | is-empty) or (which fd | is-empty) {
+        print "This command requires sk and fd. Install with: brew install sk fd"
         return
     }
     
@@ -434,7 +478,7 @@ def note-recent [] {
         | first 20
         | get path
         | str join "\n"
-        | fzf --preview $preview_cmd --height 60% 
+        | sk --preview $preview_cmd --height 60% 
         | str trim
     )
     
@@ -447,77 +491,61 @@ def note-recent [] {
 # TELEKASTEN-INSPIRED ZETTELKASTEN FUNCTIONS
 # ============================================
 
-# Calendar view for daily notes - shows month with markers for existing notes
+# Simple calendar view for daily notes
 def note-calendar [--month: int = 0] {
     let vault_path = $env.OBSIDIAN_VAULT
     let daily_dir = $"($vault_path)/NapierianLogs/DayPages"
     
-    # Get current or specified month
-    let target_date = if $month == 0 {
-        date now
+    # Get target year and month
+    let today = date now
+    let target_year = ($today | format date "%Y" | into int)
+    let target_month = (($today | format date "%m" | into int) + $month)
+    
+    # Adjust year if month overflows
+    let actual_year = if $target_month > 12 {
+        $target_year + 1
+    } else if $target_month < 1 {
+        $target_year - 1
     } else {
-        date now | + ($month * 30day)
+        $target_year
     }
     
-    let year = ($target_date | format date "%Y")
-    let month_num = ($target_date | format date "%m")
-    let month_name = ($target_date | format date "%B")
+    let actual_month = if $target_month > 12 {
+        $target_month - 12
+    } else if $target_month < 1 {
+        $target_month + 12
+    } else {
+        $target_month
+    }
     
-    # Get list of existing daily notes for this month
+    let month_str = ($actual_month | into string | fill --alignment right --character '0' --width 2)
+    let year_str = ($actual_year | into string)
+    
+    # Get existing notes for this month
     let existing_notes = (
-        ls $"($daily_dir)/($year)-($month_num)-*.md" 
-        | get name 
-        | path basename 
-        | str replace ".md" ""
-        | parse "{year}-{month}-{day}"
-        | get day
-        | each { |d| $d | into int }
-    ) | default []
+        try {
+            glob $"($daily_dir)/($year_str)-($month_str)-*.md"
+            | path basename 
+            | str replace ".md" ""
+            | parse "{year}-{month}-{day}"
+            | get day
+            | each { |d| $d | into int }
+        } catch {
+            []
+        }
+    )
     
-    # Generate calendar
-    print $"($month_name) ($year)"
-    print "Su Mo Tu We Th Fr Sa"
-    
-    # Get first day of month and days in month
-    let first_day = $"($year)-($month_num)-01" | into datetime
-    let first_weekday = ($first_day | format date "%w" | into int)
-    # Calculate days in month
-    let next_month = if $month_num == "12" {
-        $"($year | into int | + 1)-01-01" | into datetime
+    # Use system cal command for simplicity
+    print $"Daily notes for ($year_str)-($month_str):"
+    print "Existing notes:"
+    if ($existing_notes | length) > 0 {
+        print ($existing_notes | sort | each { |d| $"  ($year_str)-($month_str)-($d | into string | fill --alignment right --character '0' --width 2)" } | str join "\n")
     } else {
-        $"($year)-($month_num | into int | + 1 | into string | fill --width 2 --character "0")-01" | into datetime
-    }
-    let days_in_month = (($next_month | - $first_day) / 1day | into int)
-    
-    # Print calendar with markers
-    let mut week = []
-    for _ in 0..<$first_weekday {
-        $week = ($week | append "  ")
-    }
-    
-    for day in 1..$days_in_month {
-        let day_str = if $day in $existing_notes {
-            $"(ansi green_bold)($day | into string | fill --width 2)(ansi reset)"
-        } else if $day == (date now | format date "%d" | into int) and $month == 0 {
-            $"(ansi yellow_bold)($day | into string | fill --width 2)(ansi reset)"
-        } else {
-            ($day | into string | fill --width 2)
-        }
-        
-        $week = ($week | append $day_str)
-        
-        if ($week | length) == 7 {
-            print ($week | str join " ")
-            $week = []
-        }
-    }
-    
-    if ($week | length) > 0 {
-        print ($week | str join " ")
+        print "  No daily notes found"
     }
     
     print ""
-    print "Legend: (ansi green_bold)●(ansi reset) has note  (ansi yellow_bold)●(ansi reset) today"
+    print "Use: daily-note to create today's note"
     print "Use: note-calendar --month 1 for next month"
 }
 
@@ -554,7 +582,7 @@ def note-week-find [] {
         | path basename
         | sort --reverse
         | str join "\n"
-        | fzf --preview $"bat --color=always ($weekly_dir)/{}" --height 60%
+        | sk --preview $"bat --color=always ($weekly_dir)/{}" --height 60%
         | str trim
     )
     
@@ -576,10 +604,10 @@ def note-backlinks [file?: path] {
     print $"Finding backlinks to: ($target)"
     
     # Search for [[target]] links
-    rg $"\[\[($target)\]\]" $env.OBSIDIAN_VAULT --type md -l
+    rg $"\\[\\[($target)\\]\\]" $env.OBSIDIAN_VAULT --type md -l
     | lines
     | each { |f| 
-        let content = (rg $"\[\[($target)\]\]" $f -C 1 | str join "\n")
+        let content = (rg $"\\[\\[($target)\\]\\]" $f -C 1 | str join "\n")
         {file: ($f | path relative-to $env.OBSIDIAN_VAULT), context: $content}
     }
     | to md
@@ -616,7 +644,7 @@ def note-rename [old_name: string, new_name: string] {
     }
     
     # Find all files that reference the old note
-    let refs = (rg $"\[\[($old_name)\]\]" $vault --type md -l | lines)
+    let refs = (rg $"\\[\\[($old_name)\\]\\]" $vault --type md -l | lines)
     
     print $"Found (($refs | length)) references to update"
     
@@ -660,7 +688,7 @@ def note-tags [] {
         $tags 
         | get tag 
         | str join "\n"
-        | fzf --prompt "Select tag to search: "
+        | sk --prompt "Select tag to search: "
         | str trim
     )
     
@@ -684,7 +712,7 @@ def note-template [template_name?: string] {
         | get name
         | path basename
         | str join "\n"
-        | fzf --prompt "Select template: "
+        | sk --prompt "Select template: "
         | str trim
     } else {
         $"($template_name).md"
@@ -733,7 +761,7 @@ def note-day-prev [] {
     }
     
     let current_date = ($current | str substring 0..10 | into datetime)
-    let prev_date = ($current_date | - 1day | format date "%Y-%m-%d")
+    let prev_date = (($current_date - 1day) | format date "%Y-%m-%d")
     let prev_file = $"($env.OBSIDIAN_VAULT)/NapierianLogs/DayPages/($prev_date).md"
     
     if ($prev_file | path exists) {
@@ -751,7 +779,7 @@ def note-day-next [] {
     }
     
     let current_date = ($current | str substring 0..10 | into datetime)
-    let next_date = ($current_date | + 1day | format date "%Y-%m-%d")
+    let next_date = (($current_date + 1day) | format date "%Y-%m-%d")
     let next_file = $"($env.OBSIDIAN_VAULT)/NapierianLogs/DayPages/($next_date).md"
     
     if ($next_file | path exists) {
@@ -806,8 +834,8 @@ def note-same-date [date?: string] {
 }
 
 def cd-notes [] {
-    if (which fzf | is-empty) or (which fd | is-empty) {
-        print "This command requires fzf and fd. Install with: brew install fzf fd"
+    if (which sk | is-empty) or (which fd | is-empty) {
+        print "This command requires sk and fd. Install with: brew install sk fd"
         return
     }
     
@@ -819,7 +847,7 @@ def cd-notes [] {
     
     let dir = (
         fd --type d . $env.OBSIDIAN_VAULT 
-        | fzf --preview $preview_cmd --height 60% 
+        | sk --preview $preview_cmd --height 60% 
         | str trim
     )
     
@@ -830,12 +858,12 @@ def cd-notes [] {
 
 # Helix find - fuzzy find and open file in current directory
 def hf [] {
-    if (which fzf | is-empty) {
-        print "This command requires fzf. Install with: brew install fzf"
+    if (which sk | is-empty) {
+        print "This command requires sk. Install with: brew install sk"
         return
     }
     
-    let file = (ls | where type == "file" | get name | fzf --height 40% | str trim)
+    let file = (ls | where type == "file" | get name | sk --height 40% | str trim)
     if not ($file | is-empty) {
         hx $file
     }
@@ -843,14 +871,14 @@ def hf [] {
 
 # Helix vault - fuzzy find any file in entire vault and open it
 def hv [] {
-    if (which fzf | is-empty) or (which fd | is-empty) {
-        print "This command requires fzf and fd. Install with: brew install fzf fd"
+    if (which sk | is-empty) or (which fd | is-empty) {
+        print "This command requires sk and fd. Install with: brew install sk fd"
         return
     }
     
     let file = (
         fd --type f . $env.OBSIDIAN_VAULT 
-        | fzf --preview 'head -20 {}' --height 60% 
+        | sk --preview 'head -20 {}' --height 60% 
         | str trim
     )
     if not ($file | is-empty) {
