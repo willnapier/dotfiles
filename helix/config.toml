@@ -1,10 +1,10 @@
 # Helix Configuration for Colemak-DH
 
 # Use standard Solarized themes - change based on system appearance
-# For dark mode: theme = "solarized_light" 
-# For light mode: theme = "solarized_light"
+# For dark mode: theme = "solarized_dark" 
+# For light mode: theme = "solarized_dark"
 # Modal versions with mode indicators: "solarized_dark_modal" or "solarized_light_modal"
-theme = "solarized_light_modal"
+theme = "solarized_dark_modal"
 
 [editor]
 # Enable cursor shape changing
@@ -52,6 +52,8 @@ T = "insert_at_line_start"  # was on 'I' (Insert at line start)
 w = ["extend_to_line_bounds", ":pipe-to hx-wiki", ":open /tmp/helix-current-link.md"]
 # Toggle todo checkbox - Space+t
 t = ["extend_to_line_bounds", ":pipe-to sed 's/\\[ \\]/[x]/g; s/\\[x\\]/[ ]/g'"]
+# Delete current file - Space+x (eXpunge with confirmation)
+x = [":sh hx-delete-current %{filename}", ":quit"]
 
 # Custom commands for opening URLs and wiki links
 [keys.normal.g]

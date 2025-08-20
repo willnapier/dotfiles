@@ -374,11 +374,8 @@ social_connection: false
         $template | save $note_path
     }
     
-    if (which $env.EDITOR | is-not-empty) {
-        ^$env.EDITOR $note_path
-    } else {
-        print $"Created/opened: ($note_path)"
-    }
+    # Use hx alias which auto-detects theme based on system appearance
+    hx $note_path
 }
 
 # Quick daily note opener by date
@@ -847,12 +844,12 @@ def cd-notes [] {
     
     let dir = (
         fd --type d . $env.OBSIDIAN_VAULT 
-        | sk --preview $preview_cmd --height 60% 
+        | ^env TERM=xterm-256color sk --preview $preview_cmd --height 60% 
         | str trim
     )
     
     if not ($dir | is-empty) {
-        $dir  # Return the path instead of trying to cd
+        cd $dir  # Changed: cd directly instead of returning the string
     }
 }
 
@@ -933,7 +930,7 @@ if (which btop | is-not-empty) {
 alias .. = cd ..
 alias ... = cd ../..
 alias .... = cd ../../..
-alias cdn = cd (cd-notes)
+alias cdn = cd-notes  # Direct alias to the function (not a subshell evaluation)
 alias hx = hx-auto  # Auto-detect theme based on system appearance
 
 # Zoxide shortcuts - conditional
