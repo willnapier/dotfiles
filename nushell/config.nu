@@ -297,6 +297,83 @@ def notes [] {
     cd $env.OBSIDIAN_VAULT
 }
 
+# Paste from Helix external registers
+def hx-paste [register?: string] {
+    if (which jq | is-empty) {
+        print "Installing jq..."
+        brew install jq
+    }
+    
+    let result = if ($register == null) {
+        # Interactive mode
+        ^hx-register-paste
+    } else {
+        # Direct register access
+        ^hx-register-paste $register
+    }
+    
+    print $result
+}
+
+# Show all saved Helix registers
+def hx-registers [] {
+    let registers_file = $"($env.HOME)/.cache/helix-registers.json"
+    
+    if not ($registers_file | path exists) {
+        print "No registers saved yet"
+        return
+    }
+    
+    if (which jq | is-not-empty) {
+        ^jq -r 'to_entries | .[] | "\(.key): \(.value | split("\n")[0] | if length > 50 then .[:50] + "..." else . end)"' $registers_file
+    } else {
+        print "Install jq for better output: brew install jq"
+        open $registers_file
+    }
+}
+
+# Create a new note in Forge vault
+def note-new [name?: string] {
+    let note_name = if ($name == null) {
+        print "Enter note name (without .md):"
+        (input)
+    } else {
+        $name
+    }
+    
+    # Add .md extension if not present
+    let filename = if ($note_name | str ends-with ".md") {
+        $note_name
+    } else {
+        $"($note_name).md"
+    }
+    
+    let note_path = $"($env.OBSIDIAN_VAULT)/($filename)"
+    
+    # Check if file already exists
+    if ($note_path | path exists) {
+        print $"Note already exists: ($note_path)"
+        hx $note_path
+        return
+    }
+    
+    # Create note with basic frontmatter
+    let current_date = (date now | format date "%Y-%m-%d")
+    let current_time = (date now | format date "%H:%M")
+    
+    let template = $"---
+date created: ($current_date) ($current_time)
+date modified: ($current_date) ($current_time)
+---
+# ($note_name | str replace ".md" "")
+
+"
+    
+    $template | save $note_path
+    print $"Created: ($note_path)"
+    hx $note_path
+}
+
 def note-search [query: string] {
     if (which fd | is-empty) {
         print "fd not found, install with: brew install fd"

@@ -54,14 +54,17 @@ w = ["extend_to_line_bounds", ":pipe-to hx-wiki", ":open /tmp/helix-current-link
 t = ["extend_to_line_bounds", ":pipe-to sed 's/\\[ \\]/[x]/g; s/\\[x\\]/[ ]/g'"]
 # Delete current file - Space+x (eXpunge with confirmation)
 x = [":sh hx-delete-current %{filename}", ":quit"]
+# Export selection to external register - Space+E (then type register letter)
+E = ":pipe-to hx-register-export"
+# Space+o - Smart open files (text in Helix, PDFs/images in external apps)
+o = ["extend_to_line_bounds", ":pipe-to hx-smart-gf", ":open /tmp/helix-gf-target.md"]
 
-# Custom commands for opening URLs and wiki links
+# Custom g-prefix commands
 [keys.normal.g]
-# gx - Open URLs in browser (place cursor on URL)
+f = ["extend_to_line_bounds", ":pipe-to hx-smart-gf", ":open /tmp/helix-gf-target.md"]  # Smart gf
+F = ["extend_to_line_bounds", ":pipe-to hx-smart-gf", ":open /tmp/helix-gf-target.md"]  # Also on gF
 x = ["extend_to_line_bounds", ":pipe-to bash -c 'grep -oE \"https?://[^[:space:]<>]+|www\\.[^[:space:]<>]+\" | head -1 | xargs open'"]
-# gw - Process wiki link and copy path to clipboard (then :o Cmd+V to open)
 w = ["extend_to_line_bounds", ":pipe-to hx-wiki"]
-# gW - Combined: process wiki link and open it (single command!)
 W = ["extend_to_line_bounds", ":pipe-to hx-wiki", ":open /tmp/helix-current-link.md"]
 
 [keys.select]
