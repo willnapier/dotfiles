@@ -47,25 +47,22 @@ K = "extend_next_word_end" # extend version of 'k'
 L = "till_prev_char"       # pair with 'l' (till forward)
 T = "insert_at_line_start"  # was on 'I' (Insert at line start)
 
-# Quick wiki link navigation - Space+w to follow wiki links
 [keys.normal.space]
-w = ["extend_to_line_bounds", ":pipe-to hx-wiki", ":open /tmp/helix-current-link.md"]
 # Toggle todo checkbox - Space+t
 t = ["extend_to_line_bounds", ":pipe-to sed 's/\\[ \\]/[x]/g; s/\\[x\\]/[ ]/g'"]
-# Delete current file - Space+x (eXpunge with confirmation)
-x = [":sh hx-delete-current %{filename}", ":quit"]
+# Delete current file - Space+x (eXpunge, no confirmation)
+x = [":sh trash %{buffer_name}", ":quit!"]
 # Export selection to external register - Space+E (then type register letter)
 E = ":pipe-to hx-register-export"
-# Space+o - Smart open files (text in Helix, PDFs/images in external apps)
+# Wiki link navigation - Space+w
+w = ["extend_to_line_bounds", ":pipe-to ~/.local/bin/hx-wiki", ":buffer-close /tmp/helix-current-link.md", ":open /tmp/helix-current-link.md"]
+# Smart file opener - Space+o (handles all file types and wiki links)
 o = ["extend_to_line_bounds", ":pipe-to hx-smart-gf", ":open /tmp/helix-gf-target.md"]
 
 # Custom g-prefix commands
 [keys.normal.g]
-f = ["extend_to_line_bounds", ":pipe-to hx-smart-gf", ":open /tmp/helix-gf-target.md"]  # Smart gf
-F = ["extend_to_line_bounds", ":pipe-to hx-smart-gf", ":open /tmp/helix-gf-target.md"]  # Also on gF
-x = ["extend_to_line_bounds", ":pipe-to bash -c 'grep -oE \"https?://[^[:space:]<>]+|www\\.[^[:space:]<>]+\" | head -1 | xargs open'"]
-w = ["extend_to_line_bounds", ":pipe-to hx-wiki"]
-W = ["extend_to_line_bounds", ":pipe-to hx-wiki", ":open /tmp/helix-current-link.md"]
+f = ["extend_to_line_bounds", ":pipe-to hx-smart-gf", ":open /tmp/helix-gf-target.md"]  # Smart file opener (handles all file types and wiki links)
+x = ["extend_to_line_bounds", ":pipe-to bash -c 'url=$(grep -oE \"https?://[^[:space:]<>()]+|www\\.[^[:space:]<>()]+\" | head -1); if [[ \"$url\" == www.* ]]; then url=\"https://$url\"; fi; [[ -n \"$url\" ]] && open \"$url\"'"]  # Open URLs
 
 [keys.select]
 # Same navigation in select mode

@@ -293,9 +293,8 @@ let explore_colors = if ($env.MACOS_THEME? | default "light") == "dark" {
 $env.config = ($env.config | upsert explore $explore_colors)
 
 # Zettelkasten workflow commands for Obsidian Forge vault
-def notes [] {
-    cd $env.OBSIDIAN_VAULT
-}
+# Use alias instead of function for cd commands (functions can't change parent shell directory)
+alias notes = cd $env.OBSIDIAN_VAULT
 
 # Paste from Helix external registers
 def hx-paste [register?: string] {
@@ -907,7 +906,7 @@ def note-same-date [date?: string] {
     | to md
 }
 
-def cd-notes [] {
+def --env cd-notes [] {
     if (which sk | is-empty) or (which fd | is-empty) {
         print "This command requires sk and fd. Install with: brew install sk fd"
         return
@@ -1033,7 +1032,7 @@ if ($"($env.HOME)/.config/starship.toml" | path exists) {
 }
 
 # Yazi with automatic directory change
-def y [...args] {
+def --env y [...args] {
     let cwd_tmp = (mktemp -t "yazi-cwd.XXXXXX")
     let selected_tmp = (mktemp -t "yazi-selected.XXXXXX")
     
@@ -1070,7 +1069,7 @@ def reload-config [] {
 }
 
 # Yazi integration - open at last Neovim location
-def yz [] {
+def --env yz [] {
     let tmp = (mktemp -t "yazi-cwd.XXXXXX")
     
     # If we have a specific file, open yazi with it selected
@@ -1164,7 +1163,7 @@ def clip [file: path] {
 }
 
 # Smart directory navigation (up)
-def up [levels: int = 1] {
+def --env up [levels: int = 1] {
     let path = (1..$levels | each { ".." } | str join "/")
     cd $path
 }
@@ -1199,3 +1198,4 @@ def fe [pattern: string, index: int = 0] {
 
 # Initialize zoxide
 source ~/.zoxide.nu
+source ~/.config/nushell/zotero-commands.nu
