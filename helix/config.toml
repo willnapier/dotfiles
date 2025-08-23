@@ -50,6 +50,10 @@ T = "insert_at_line_start"  # was on 'I' (Insert at line start)
 [keys.normal.space]
 # Toggle todo checkbox - Space+t
 t = ["extend_to_line_bounds", ":pipe-to sed 's/\\[ \\]/[x]/g; s/\\[x\\]/[ ]/g'"]
+
+# Manual theme refresh - Space+T (capital T)
+[keys.normal.space.T]
+T = ":config-reload"
 # Delete current file - Space+x (eXpunge, no confirmation)
 x = [":sh trash %{buffer_name}", ":quit!"]
 # Export selection to external register - Space+E (then type register letter)
@@ -58,6 +62,10 @@ E = ":pipe-to hx-register-export"
 w = ["extend_to_line_bounds", ":pipe-to ~/.local/bin/hx-wiki", ":buffer-close /tmp/helix-current-link.md", ":open /tmp/helix-current-link.md"]
 # Smart file opener - Space+o (handles all file types and wiki links)
 o = ["extend_to_line_bounds", ":pipe-to hx-smart-gf", ":open /tmp/helix-gf-target.md"]
+# Fuzzy link insertion - Space+l (Zellij floating pane)
+# Note: Use Alt+l in Zellij for floating pane link picker
+# Then paste result with standard paste command
+l = ":insert-output pbpaste"
 
 # Custom g-prefix commands
 [keys.normal.g]

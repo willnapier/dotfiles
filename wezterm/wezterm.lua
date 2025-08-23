@@ -77,8 +77,10 @@ config.enable_kitty_graphics = true
 -- Advertise Kitty Graphics Protocol support
 config.term = "wezterm"
 
--- Default shell
-config.default_prog = { '/opt/homebrew/bin/nu' }
+-- Default shell - Smart Zellij startup with session management (fixed terminal check)
+-- This ensures Zellij is available for wiki link integration when appropriate
+-- Falls back to Nushell if already inside Zellij or no proper terminal
+config.default_prog = { '/Users/williamnapier/.local/bin/smart-zellij-start.sh' }
 
 -- Multiplexing domains
 config.ssh_domains = {
@@ -181,7 +183,29 @@ config.keys = {
     action = act.RotatePanes 'Clockwise',
   },
   
-  -- Navigate panes with Cmd+Shift+Arrow (no leader needed!)
+  -- Colemak-DH pane navigation (neio for hjkl) - matching Helix/Yazi/Zellij
+  {
+    key = 'n',
+    mods = 'CMD|SHIFT', 
+    action = act.ActivatePaneDirection 'Left',
+  },
+  {
+    key = 'e',
+    mods = 'CMD|SHIFT',
+    action = act.ActivatePaneDirection 'Down', 
+  },
+  {
+    key = 'i',
+    mods = 'CMD|SHIFT',
+    action = act.ActivatePaneDirection 'Up',
+  },
+  {
+    key = 'o',
+    mods = 'CMD|SHIFT',
+    action = act.ActivatePaneDirection 'Right',
+  },
+  
+  -- Keep arrow key navigation as backup
   {
     key = 'LeftArrow',
     mods = 'CMD|SHIFT',
@@ -203,7 +227,29 @@ config.keys = {
     action = act.ActivatePaneDirection 'Down',
   },
   
-  -- Navigate panes with Leader+Arrow (backup option)
+  -- Colemak-DH pane navigation with Leader (neio for hjkl)
+  {
+    key = 'n',
+    mods = 'LEADER',
+    action = act.ActivatePaneDirection 'Left',
+  },
+  {
+    key = 'e', 
+    mods = 'LEADER',
+    action = act.ActivatePaneDirection 'Down',
+  },
+  {
+    key = 'i',
+    mods = 'LEADER',
+    action = act.ActivatePaneDirection 'Up',
+  },
+  {
+    key = 'o',
+    mods = 'LEADER',
+    action = act.ActivatePaneDirection 'Right',
+  },
+  
+  -- Keep Leader+Arrow navigation as backup
   {
     key = 'LeftArrow',
     mods = 'LEADER',

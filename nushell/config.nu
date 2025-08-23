@@ -1031,37 +1031,8 @@ if ($"($env.HOME)/.config/starship.toml" | path exists) {
     alias starshipconfig = ^$env.EDITOR ~/.config/starship.toml
 }
 
-# Yazi with automatic directory change
-def --env y [...args] {
-    let cwd_tmp = (mktemp -t "yazi-cwd.XXXXXX")
-    let selected_tmp = (mktemp -t "yazi-selected.XXXXXX")
-    
-    # Run yazi with both temp files - one for directory change, one for file selection
-    if ($args | is-empty) {
-        yazi --cwd-file $cwd_tmp --chooser-file $selected_tmp
-    } else {
-        yazi ...$args --cwd-file $cwd_tmp --chooser-file $selected_tmp
-    }
-    
-    # Handle file selection first (if any)
-    if ($selected_tmp | path exists) {
-        let selected = (open $selected_tmp | str trim)
-        if ($selected | is-not-empty) {
-            print $"Opening ($selected) in Helix..."
-            hx $selected
-        }
-        rm -f $selected_tmp
-    }
-    
-    # Handle directory change (existing functionality)
-    if ($cwd_tmp | path exists) {
-        let cwd = (open $cwd_tmp | str trim)
-        if ($cwd | is-not-empty) and ($cwd != $env.PWD) {
-            cd $cwd
-        }
-        rm -f $cwd_tmp
-    }
-}
+# Simple Yazi alias - no complex process management
+alias y = yazi
 
 # Helper function to reload config
 def reload-config [] {
@@ -1199,3 +1170,9 @@ def fe [pattern: string, index: int = 0] {
 # Initialize zoxide
 source ~/.zoxide.nu
 source ~/.config/nushell/zotero-commands.nu
+
+# Link Manager aliases
+alias links-status = link-service status
+alias links-logs = link-service logs  
+alias links-restart = link-service restart
+alias links-test = link-service test

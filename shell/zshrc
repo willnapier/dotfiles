@@ -4,6 +4,9 @@ export PATH="$HOME/.cargo/bin:$PATH"
 export EDITOR="hx"
 export VISUAL="hx"
 
+# Obsidian vault path for Zellij link picker
+export OBSIDIAN_VAULT="/Users/williamnapier/Obsidian.nosync/Forge"
+
 # Switch to Nushell for interactive use
 if [[ $- == *i* ]] && command -v nu &> /dev/null; then
     exec nu

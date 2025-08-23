@@ -1,88 +1,23 @@
-# Yazi keymap configuration with Helix-style navigation (n/e/i/o)
+# Minimal Yazi keymap - Colemak-DH navigation + Helix opening
 "$schema" = "https://yazi-rs.github.io/schemas/keymap.json"
 
 [mgr]
 prepend_keymap = [
-  # Helix-style navigation (n = left, e = down, i = up, o = right)
+  # Colemak-DH navigation (neio)
   { on = "n", run = "leave", desc = "Go to parent directory" },
   { on = "e", run = "arrow 1", desc = "Move cursor down" },
   { on = "i", run = "arrow -1", desc = "Move cursor up" },
-  { on = "o", run = "enter", desc = "Enter directory (right arrow)" },
+  { on = "o", run = "enter", desc = "Enter directory" },
   
-  # Capital versions for faster movement
-  { on = "N", run = "back", desc = "Go back in history" },
-  { on = "E", run = "arrow 5", desc = "Move cursor down 5 lines" },
-  { on = "I", run = "arrow -5", desc = "Move cursor up 5 lines" },
-  { on = "O", run = "forward", desc = "Go forward in history" },
+  # File opening - l for "launch" in Helix (maintains terminal context)
+  { on = "<Enter>", run = "open", desc = "Open file (system default)" },
+  { on = "l", run = """shell 'hx "$@"' --block --confirm""", desc = "Open in Helix (edit mode)" },
+  { on = "h", run = "open --interactive", desc = "Choose how to open (picker)" },
   
-  # Tab management
-  { on = "Q", run = "close", desc = "Close current tab" },
-  
-  # Keep visual mode with Helix keys
-  { on = "v", run = "visual_mode", desc = "Enter visual mode" },
-  { on = "V", run = "visual_mode --unset", desc = "Enter visual mode (unset)" },
-  
-  # Open actions (since 'o' is now navigation)
-  { on = "h", run = "open --with=helix", desc = "Open file with Helix (blocking)" },
-  { on = "<Tab>", run = "open --interactive", desc = "Open with chooser" },
-  
-  # File operations (keeping defaults)
-  { on = "y", run = "yank", desc = "Yank (copy)" },
-  { on = "x", run = "yank --cut", desc = "Cut" },
+  # Basic file operations
+  { on = "y", run = "yank", desc = "Copy" },
   { on = "p", run = "paste", desc = "Paste" },
-  { on = "P", run = "paste --force", desc = "Paste (overwrite)" },
-  { on = "<Esc>", run = "unyank", desc = "Clear yank selection" },
-  
-  # System clipboard operations (\ = copy leader)
-  { on = [ "\\", "y" ], run = "copy", desc = "Copy file/content to system clipboard" },
-  { on = [ "\\", "Y" ], run = "copy path", desc = "Copy file path to system clipboard" },
   { on = "d", run = "remove", desc = "Delete" },
-  { on = "D", run = "remove --permanently", desc = "Delete permanently" },
-  
-  # Creation
-  { on = "a", run = "create", desc = "Create file/directory" },
+  { on = "a", run = "create", desc = "Create" },
   { on = "r", run = "rename", desc = "Rename" },
-  
-  # Navigation helpers (matching Helix with Colemak-DH)
-  { on = [ "g", "g" ], run = "arrow -99999999", desc = "Go to top" },
-  { on = [ "g", "e" ], run = "arrow 99999999", desc = "Go to bottom" },
-  { on = [ "g", "h" ], run = "cd ~", desc = "Go to home directory" },
-  { on = [ "g", "d" ], run = "cd ~/Downloads", desc = "Go to Downloads" },
-  { on = [ "g", "c" ], run = "cd ~/.config", desc = "Go to config directory" },
-  { on = [ "g", "n" ], run = "cd $OBSIDIAN_VAULT", desc = "Go to notes (Obsidian vault)" },
-  
-  # Smart jumping and fuzzy finding
-  { on = "z", run = "plugin zoxide", desc = "Jump with zoxide (frecency-based)" },
-  { on = "Z", run = "plugin skim", desc = "Jump with skim/fzf (fuzzy find)" },
-  
-  # Zotero integration - using 'S' (capital S) as leader to avoid conflict with search
-  { on = [ "S", "i" ], run = "plugin zotero --args=import", desc = "Import to Zotero (copy)" },
-  { on = [ "S", "m" ], run = "plugin zotero --args=move", desc = "Move to Zotero" },
-  { on = [ "S", "o" ], run = "plugin zotero --args=open", desc = "Open Zotero Import folder" },
-  
-  # Search navigation (matching Helix with Colemak-DH)
-  # Using 'j' for next and 'J' for previous search match
-  { on = "j", run = "find_arrow", desc = "Next search match" },
-  { on = "J", run = "find_arrow --previous", desc = "Previous search match" },
-  
-]
-
-[input]
-prepend_keymap = [
-  # Helix-style navigation in input mode
-  { on = "<C-n>", run = "move -1", desc = "Move cursor left" },
-  { on = "<C-e>", run = "arrow 1", desc = "Move down in completion" },
-  { on = "<C-i>", run = "arrow -1", desc = "Move up in completion" },
-  { on = "<C-o>", run = "move 1", desc = "Move cursor right" },
-  
-  # Line navigation
-  { on = "<C-a>", run = "move -999", desc = "Move to beginning of line" },
-  { on = "<C-l>", run = "move 999", desc = "Move to end of line" },
-]
-
-[select]
-prepend_keymap = [
-  # Helix-style navigation in select mode
-  { on = "e", run = "arrow 1", desc = "Move down" },
-  { on = "i", run = "arrow -1", desc = "Move up" },
 ]
