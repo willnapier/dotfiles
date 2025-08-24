@@ -11,14 +11,14 @@ prepend_keymap = [
   
   # File opening - l for "launch" in Helix (maintains terminal context)
   { on = "<Enter>", run = "open", desc = "Open file (system default)" },
-  { on = "l", run = """shell 'hx "$@"' --block --confirm""", desc = "Open in Helix (edit mode)" },
+  { on = "l", run = """shell --block --confirm 'hx "$@"'""", desc = "Open in Helix (edit mode)" },
   { on = "h", run = "open --interactive", desc = "Choose how to open (picker)" },
   
-  # Superior Rust-powered search replacing Yazi's built-ins  
-  { on = "s", run = """shell 'cd "$0" && fd -t f | sk --preview "echo \"📄 File Info:\"; nu -c \"ls {} | table\"; echo; echo \"📖 Content Preview:\"; bat --color=always --line-range=:20 {}" | xargs -r hx' --block""", desc = "Smart file search (fd + skim + nushell + bat)" },
-  { on = "S", run = """shell 'cd "$0" && rg -l . | sk --preview "rg --color=always --context=3 \\".*\\" {}" | xargs -r hx' --block""", desc = "Content search (ripgrep + skim)" },
+  # File search with multi-select and better defaults
+  { on = "s", run = """shell 'unset TERMINFO && unset TERMINFO_DIRS && export TERM=xterm && /opt/homebrew/bin/fd -t f | /opt/homebrew/bin/sk --multi --bind="tab:toggle+down,ctrl-a:select-all" --preview "FILE_PATH={} /Users/williamnapier/.config/yazi/scripts/file-preview.nu" | xargs hx' --block""", desc = "Smart file search (Nushell tables)" },
+  { on = "S", run = """shell 'cd "$0" && rg -l . | sk --preview "FILE_PATH={} /Users/williamnapier/.config/yazi/scripts/search-preview.nu" | xargs -r hx' --block""", desc = "Content search (Nushell tables)" },
   { on = "z", run = "plugin zoxide", desc = "Jump to directory (zoxide frecency)" },
-  { on = "Z", run = """shell 'fd -t d | sk --preview "nu -c \"ls {} | table\"" | xargs -r cd' --block""", desc = "Directory picker (fd + skim + nushell)" },
+  { on = "Z", run = """shell 'fd -t d | sk --preview "FILE_PATH={} /Users/williamnapier/.config/yazi/scripts/dir-preview.nu" | xargs -r hx' --block""", desc = "Directory picker (Nushell tables)" },
   
   # Basic file operations
   { on = "y", run = "yank", desc = "Copy" },

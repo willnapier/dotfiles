@@ -1031,8 +1031,26 @@ if ($"($env.HOME)/.config/starship.toml" | path exists) {
     alias starshipconfig = ^$env.EDITOR ~/.config/starship.toml
 }
 
-# Simple Yazi alias - no complex process management
-alias y = yazi
+# Yazi function with directory change support
+def --env y [...args] {
+    let tmp = (mktemp -t "yazi-cwd.XXXXXX")
+    
+    # Run yazi with any provided arguments
+    if ($args | length) > 0 {
+        yazi ...$args --cwd-file $tmp
+    } else {
+        yazi --cwd-file $tmp
+    }
+    
+    # Change to the directory yazi was in when it exited
+    let cwd = (open $tmp | str trim)
+    if $cwd != "" and $cwd != $env.PWD {
+        cd $cwd
+    }
+    
+    # Clean up temp file
+    rm -f $tmp
+}
 
 # Helper function to reload config
 def reload-config [] {

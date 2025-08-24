@@ -60,16 +60,18 @@ E = ":pipe-to hx-register-export"
 # Wiki link navigation - Space+w
 w = ["extend_to_line_bounds", ":pipe-to ~/.local/bin/hx-wiki", ":buffer-close /tmp/helix-current-link.md", ":open /tmp/helix-current-link.md"]
 # Smart file opener - Space+o (handles all file types and wiki links)
-o = ["extend_to_line_bounds", ":pipe-to hx-smart-gf", ":open /tmp/helix-gf-target.md"]
+o = ["extend_to_line_bounds", ":pipe-to hx-open-system-rust"]  # Open in system app (Preview, Excel, etc.)
 # Fuzzy link insertion - Space+l (Zellij floating pane)
 # Note: Use Alt+l in Zellij for floating pane link picker
 # Then paste result with standard paste command
-l = ":insert-output bash /Users/williamnapier/.config/helix/obsidian-linker.sh"
+l = ":insert-output pbpaste"
+# Show real file name - Space+i (Info about current file)
+i = ":sh hx-show-real-file %{buffer_name}"
 
 # Custom g-prefix commands
 [keys.normal.g]
-f = ["extend_to_line_bounds", ":pipe-to hx-smart-gf", ":open /tmp/helix-gf-target.md"]  # Smart file opener (handles all file types and wiki links)
-x = ["extend_to_line_bounds", ":pipe-to bash -c 'url=$(grep -oE \"https?://[^[:space:]<>()]+|www\\.[^[:space:]<>()]+\" | head -1); if [[ \"$url\" == www.* ]]; then url=\"https://$url\"; fi; [[ -n \"$url\" ]] && open \"$url\"'"]  # Open URLs
+f = ["extend_to_line_bounds", ":pipe-to hx-smart-gf-rust", ":open /tmp/helix-gf-target.md"]  # Smart file opener (Rust/Nushell version with fd, rg)
+x = ["extend_to_line_bounds", ":pipe-to hx-open-url-rust"]  # Open URLs (Rust/Nushell version with rg)
 
 [keys.select]
 # Same navigation in select mode
