@@ -1,0 +1,151 @@
+# Cross-platform bashrc for Linux systems
+# Mirrors zshrc functionality with bash-specific adaptations
+
+# Environment variables
+export EDITOR='hx'
+export VISUAL='hx'
+export BROWSER='firefox'
+export TERMINAL='foot'
+
+# XDG Base Directory specification  
+export XDG_CONFIG_HOME="$HOME/.config"
+export XDG_DATA_HOME="$HOME/.local/share"
+export XDG_CACHE_HOME="$HOME/.cache"
+export XDG_STATE_HOME="$HOME/.local/state"
+
+# Rust/Cargo
+export CARGO_HOME="$HOME/.cargo"
+export PATH="$CARGO_HOME/bin:$PATH"
+
+# Local binaries
+export PATH="$HOME/.local/bin:$PATH"
+
+# Obsidian vault path (Linux)
+export OBSIDIAN_VAULT="$HOME/Obsidian/Forge"
+
+# History configuration
+export HISTSIZE=10000
+export HISTFILESIZE=20000
+export HISTCONTROL=ignoredups:erasedups
+shopt -s histappend
+
+# Enable bash completion
+if [ -f /etc/bash_completion ]; then
+    source /etc/bash_completion
+fi
+
+# Enable programmable completion features
+if [ -f /usr/share/bash-completion/bash_completion ]; then
+    source /usr/share/bash-completion/bash_completion
+elif [ -f /etc/bash_completion ]; then
+    source /etc/bash_completion
+fi
+
+# Aliases - cross-platform versions
+alias ls='ls --color=auto'
+alias ll='ls -alF'
+alias la='ls -A'
+alias l='ls -CF'
+alias grep='grep --color=auto'
+alias fgrep='fgrep --color=auto'
+alias egrep='egrep --color=auto'
+
+# Modern CLI tools (Rust-based)
+if command -v exa &> /dev/null; then
+    alias ls='exa'
+    alias ll='exa -la'
+    alias la='exa -a'
+    alias tree='exa --tree'
+fi
+
+if command -v bat &> /dev/null; then
+    alias cat='bat --paging=never'
+    alias batcat='bat'
+fi
+
+if command -v rg &> /dev/null; then
+    alias grep='rg'
+fi
+
+if command -v fd &> /dev/null; then
+    alias find='fd'
+fi
+
+# Git aliases
+alias gs='git status'
+alias ga='git add'
+alias gc='git commit'
+alias gp='git push'
+alias gl='git log --oneline'
+alias gd='git diff'
+
+# Helix editor
+alias hx='helix'
+alias e='$EDITOR'
+
+# Directory navigation
+alias ..='cd ..'
+alias ...='cd ../..'
+alias ....='cd ../../..'
+
+# Yazi function with directory change support (bash version)
+y() {
+    local tmp=$(mktemp -t "yazi-cwd.XXXXXX")
+    if [ $# -gt 0 ]; then
+        yazi "$@" --cwd-file="$tmp"
+    else
+        yazi --cwd-file="$tmp"
+    fi
+    
+    if [ -f "$tmp" ]; then
+        local cwd=$(cat "$tmp")
+        if [ -n "$cwd" ] && [ "$cwd" != "$PWD" ]; then
+            cd "$cwd"
+        fi
+        rm -f "$tmp"
+    fi
+}
+
+# Zoxide integration (if available)
+if command -v zoxide &> /dev/null; then
+    eval "$(zoxide init bash)"
+    alias cd='z'
+fi
+
+# Starship prompt (if available)
+if command -v starship &> /dev/null; then
+    eval "$(starship init bash)"
+fi
+
+# Nushell integration - launch nushell if available and desired
+# Uncomment to auto-launch nushell on terminal start
+# if command -v nu &> /dev/null && [ -z "$NU_LAUNCHED" ]; then
+#     export NU_LAUNCHED=1
+#     exec nu
+# fi
+
+# Platform-specific configurations
+case "$(uname -s)" in
+    Linux*)
+        # Linux-specific settings
+        export BROWSER='firefox'
+        export TERMINAL='foot'
+        ;;
+    Darwin*)
+        # macOS-specific settings (shouldn't be used with this file)
+        export BROWSER='open'
+        export TERMINAL='wezterm'
+        ;;
+esac
+
+# Load additional configuration files if they exist
+[ -f "$HOME/.bashrc.local" ] && source "$HOME/.bashrc.local"
+[ -f "$XDG_CONFIG_HOME/bash/bashrc" ] && source "$XDG_CONFIG_HOME/bash/bashrc"
+
+# Welcome message for new installs
+if [ ! -f "$HOME/.config/.welcome_shown" ]; then
+    echo "🦀 Cross-platform Rust development environment loaded!"
+    echo "Key tools: helix (hx), yazi (y), nushell (nu), zellij"
+    echo "Run 'nu' to switch to Nushell interactive shell"
+    touch "$HOME/.config/.welcome_shown"
+fi

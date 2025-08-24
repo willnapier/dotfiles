@@ -1,23 +1,62 @@
 [helpers]
 
-[default]
+# Cross-platform shared configuration
+[shared]
 depends = []
 
-[default.files]
+[shared.files]
 "git/gitconfig" = "~/.gitconfig"
 "helix/config.toml" = "~/.config/helix/config.toml"
 "nushell/config.nu" = "~/.config/nushell/config.nu"
 "nushell/env.nu" = "~/.config/nushell/env.nu"
-"shell/zshrc" = "~/.zshrc"
-"wezterm/wezterm.lua" = "~/.config/wezterm/wezterm.lua"
 "yazi/yazi.toml" = "~/.config/yazi/yazi.toml"
 "yazi/keymap.toml" = "~/.config/yazi/keymap.toml"
+"nvim" = { target = "~/.config/nvim", type = "symbolic" }
+
+[shared.variables]
+
+# macOS-specific configuration
+[macos]
+depends = ["shared"]
+
+[macos.files]
+"shell/zshrc" = "~/.zshrc"
+"wezterm/wezterm.lua" = "~/.config/wezterm/wezterm.lua"
 "ghostty/config" = "~/Library/Application Support/com.mitchellh.ghostty/config"
 "ghostty/themes" = { target = "~/.config/ghostty/themes", type = "symbolic" }
 "karabiner" = { target = "~/.config/karabiner", type = "symbolic" }
 "aerospace" = { target = "~/.config/aerospace", type = "symbolic" }
 "sketchybar" = { target = "~/.config/sketchybar", type = "symbolic" }
-"nvim" = { target = "~/.config/nvim", type = "symbolic" }
+
+[macos.variables]
+opener_cmd = "open"
+clipboard_copy = "pbcopy"
+clipboard_paste = "pbpaste"
+terminal_emulator = "wezterm"
+platform = "macos"
+
+# Linux-specific configuration  
+[linux]
+depends = ["shared"]
+
+[linux.files]
+"shell/bashrc" = "~/.bashrc"
+"wayland/river" = { target = "~/.config/river", type = "symbolic" }
+"wayland/waybar" = { target = "~/.config/waybar", type = "symbolic" }
+"wayland/foot" = { target = "~/.config/foot", type = "symbolic" }
+
+[linux.variables]
+opener_cmd = "xdg-open"
+clipboard_copy = "wl-copy"
+clipboard_paste = "wl-paste" 
+terminal_emulator = "foot"
+platform = "linux"
+
+# Legacy default package for compatibility
+[default]
+depends = ["macos"]
+
+[default.files]
 
 [default.variables]
 
