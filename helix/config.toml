@@ -4,7 +4,7 @@
 # For dark mode: theme = "solarized_dark" 
 # For light mode: theme = "solarized_dark"
 # Modal versions with mode indicators: "solarized_dark_modal" or "solarized_light_modal"
-theme = "solarized_dark_modal"
+theme = "solarized_light_modal"
 
 [editor]
 # Enable cursor shape changing
@@ -52,7 +52,6 @@ T = "insert_at_line_start"  # was on 'I' (Insert at line start)
 t = ["extend_to_line_bounds", ":pipe-to sed 's/\\[ \\]/[x]/g; s/\\[x\\]/[ ]/g'"]
 
 # Manual theme refresh - Space+T (capital T)
-[keys.normal.space.T]
 T = ":config-reload"
 # Delete current file - Space+x (eXpunge, no confirmation)
 x = [":sh trash %{buffer_name}", ":quit!"]
@@ -65,7 +64,7 @@ o = ["extend_to_line_bounds", ":pipe-to hx-smart-gf", ":open /tmp/helix-gf-targe
 # Fuzzy link insertion - Space+l (Zellij floating pane)
 # Note: Use Alt+l in Zellij for floating pane link picker
 # Then paste result with standard paste command
-l = ":insert-output pbpaste"
+l = ":insert-output bash /Users/williamnapier/.config/helix/obsidian-linker.sh"
 
 # Custom g-prefix commands
 [keys.normal.g]

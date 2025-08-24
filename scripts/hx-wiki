@@ -1,0 +1,179 @@
+#!/bin/bash
+
+# Smart wiki link handler for Helix
+# Creates a command that can be executed in Helix
+
+line=$(cat)
+
+# Clear any old temp file first
+rm -f /tmp/helix-current-link.md
+target_file="/tmp/helix-current-link.md"
+
+
+# Extract wiki link (handles both [[link]] and ![[link]] formats)
+link=$(echo "$line" | grep -oE '!?\[\[[^]]+\]\]' | head -1 | sed 's/!*\[\[\(.*\)\]\]/\1/')
+
+if [ -z "$link" ]; then
+    echo "# No wiki link found on this line" > "$target_file"
+    exit 0
+fi
+
+# Clean the link
+clean_link=$(echo "$link" | sed 's/[#|].*//')
+
+vault="$HOME/Obsidian.nosync/Forge"
+daily_dir="$vault/NapierianLogs/DayPages"
+
+# First, search for existing file anywhere in the vault - exact match
+existing_file=$(fd -t f "^$clean_link\.md$" "$vault" 2>/dev/null | head -1)
+if [ -n "$existing_file" ]; then
+    # Found exact match - use it
+    cp "$existing_file" "$target_file" 2>/dev/null
+    exit 0
+fi
+
+# If no exact match, search for files containing the link text (for partial matches like dates)
+if [[ "$clean_link" =~ Journal.*[0-9]{4}-[0-9]{2}-[0-9]{2} ]]; then
+    # Extract date from journal links
+    date_part=$(echo "$clean_link" | grep -o '[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}')
+    if [ -n "$date_part" ]; then
+        existing_file=$(fd -t f "$date_part.*\.md$" "$vault" 2>/dev/null | head -1)
+        if [ -n "$existing_file" ]; then
+            # Found existing journal entry with matching date
+            cp "$existing_file" "$target_file" 2>/dev/null
+            exit 0
+        fi
+    fi
+fi
+
+# Check current file context - if we have a symlink, resolve it
+current_file=""
+if [ -L "/tmp/helix-current-link.md" ]; then
+    current_file=$(readlink "/tmp/helix-current-link.md")
+fi
+
+# Determine where to create the new file
+if [[ "$current_file" == *"/DayPages/"* ]]; then
+    # We're in a DayPages file - create new files in the same directory
+    if [[ "$clean_link" != *.md ]]; then
+        file="$daily_dir/$clean_link.md"
+    else
+        file="$daily_dir/$clean_link"
+    fi
+elif [[ "$clean_link" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    # Daily note format (YYYY-MM-DD) - use DayPages path
+    file="$daily_dir/$clean_link.md"
+else
+    # Regular note - build normal path
+    # Check if file already has an extension
+    if [[ "$clean_link" == *.* ]]; then
+        # Has extension - use as-is
+        file="$vault/$clean_link"
+    elif [[ "$clean_link" != *.md ]]; then
+        # No extension - assume markdown
+        file="$vault/$clean_link.md"
+    else
+        file="$vault/$clean_link"
+    fi
+fi
+
+if [ -f "$file" ]; then
+    # File exists - check type and handle accordingly
+    extension="${file##*.}"
+    case "$extension" in
+        md|txt|text)
+            # Text files - copy for Helix (instead of symlink)
+            cp "$file" /tmp/helix-current-link.md 2>/dev/null
+            ;;
+        pdf|PDF)
+            # PDFs - open in Preview, no temp file needed
+            open "$file"
+            exit 0
+            ;;
+        png|jpg|jpeg|gif|PNG|JPG|JPEG|GIF)
+            # Images - open in Preview, no temp file needed
+            open "$file"
+            exit 0
+            ;;
+        *)
+            # Other files - try to open with system default, no temp file needed
+            open "$file"
+            exit 0
+            ;;
+    esac
+elif [[ "$clean_link" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    # Daily note format (YYYY-MM-DD) - create it
+    daily_dir="$vault/NapierianLogs/DayPages"
+    mkdir -p "$daily_dir"
+    
+    # Create the daily note using the template
+    current_date="$clean_link"
+    current_time=$(date "+%H:%M")
+    readable_date=$(date -j -f "%Y-%m-%d" "$clean_link" "+%A, %B %d, %Y" 2>/dev/null || echo "$clean_link")
+    
+    # Calculate previous and next dates using Python
+    prev_date=$(python3 -c "from datetime import datetime, timedelta; d=datetime.strptime('$clean_link', '%Y-%m-%d') - timedelta(days=1); print(d.strftime('%Y-%m-%d'))" 2>/dev/null || echo "")
+    next_date=$(python3 -c "from datetime import datetime, timedelta; d=datetime.strptime('$clean_link', '%Y-%m-%d') + timedelta(days=1); print(d.strftime('%Y-%m-%d'))" 2>/dev/null || echo "")
+    
+    cat > "$file" << EOF
+---
+tags:
+- journal
+date created: $current_date $current_time
+date modified: $current_date $current_time
+
+# Daily Metrics
+sleep_hours: 
+healthy_eating: false
+exercise: false
+piano_practice: false
+meditation: false
+reading: false
+social_connection: false
+
+# exercise_details: "[[Exercise Log $current_date]]"
+# piano_details: "[[Piano Practice Log $current_date]]"
+# health_details: "[[Health Metrics $current_date]]"
+---
+# $readable_date
+
+## Tasks
+- [ ] 
+
+## Notes
+
+## Journal
+
+## Links
+- Previous: [[$prev_date]]
+- Next: [[$next_date]]
+EOF
+
+    # Copy new file for Helix
+    cp "$file" /tmp/helix-current-link.md 2>/dev/null
+    echo "✓ Created daily note: $clean_link"
+    echo "  → Or :open /tmp/helix-current-link.md"
+else
+    # Regular note that doesn't exist - create it like Obsidian does
+    current_date=$(date "+%Y-%m-%d")
+    current_time=$(date "+%H:%M")
+    
+    # Ensure directory exists
+    note_dir=$(dirname "$file")
+    mkdir -p "$note_dir"
+    
+    # Create the note with basic frontmatter
+    cat > "$file" << EOF
+---
+tags:
+- 
+date created: $current_date $current_time
+date modified: $current_date $current_time
+---
+# $clean_link
+
+EOF
+    
+    # Copy new file for Helix
+    cp "$file" /tmp/helix-current-link.md 2>/dev/null
+fi
