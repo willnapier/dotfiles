@@ -12,6 +12,7 @@ depends = []
 "yazi/yazi.toml" = "~/.config/yazi/yazi.toml"
 "yazi/keymap.toml" = "~/.config/yazi/keymap.toml"
 "nvim" = { target = "~/.config/nvim", type = "symbolic" }
+"scripts" = { target = "~/.local/bin", type = "symbolic" }
 
 [shared.variables]
 

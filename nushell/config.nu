@@ -1031,6 +1031,17 @@ if ($"($env.HOME)/.config/starship.toml" | path exists) {
     alias starshipconfig = ^$env.EDITOR ~/.config/starship.toml
 }
 
+# Zellij session management aliases
+alias zj-save = ~/.dotfiles/scripts/zellij-sync.nu save
+alias zj-restore = ~/.dotfiles/scripts/zellij-sync.nu restore  
+alias zj-remote = ~/.dotfiles/scripts/zellij-sync.nu remote
+
+# Quick aliases for common Zellij operations
+alias zj = zellij
+alias zj-ls = zellij list-sessions
+alias zj-kill = zellij kill-session
+alias zj-work = zellij --session work
+
 # Yazi function with directory change support
 def --env y [...args] {
     let tmp = (mktemp -t "yazi-cwd.XXXXXX")
