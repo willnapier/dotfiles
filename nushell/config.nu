@@ -433,6 +433,7 @@ def daily-note [] {
                 | str replace --all "\{\{date\}\}" $current_date
                 | str replace --all "\{\{time24\}\}" $current_time
                 | str replace --all "\{\{hdate\}\}" $readable_date
+                | str replace --all "<cursor>" ""
             )
             
             $processed | save $note_path

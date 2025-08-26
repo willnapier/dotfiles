@@ -115,43 +115,11 @@ suppress_preload = false
 [plugin]
 previewers = [
   { name = "*/", run = "folder", sync = true },
-  
-  # Text files - use Nushell tabulated preview
-  { mime = "text/*", run = "nushell-preview" },
-  { mime = "*/xml", run = "nushell-preview" },
-  { mime = "*/javascript", run = "nushell-preview" },
-  { mime = "*/x-wine-extension-ini", run = "nushell-preview" },
-  { mime = "application/json", run = "nushell-preview" },
-  
-  # Specific file extensions - use Nushell preview
-  { name = "*.md", run = "nushell-preview" },
-  { name = "*.txt", run = "nushell-preview" },
-  { name = "*.lua", run = "nushell-preview" },
-  { name = "*.toml", run = "nushell-preview" },
-  { name = "*.yaml", run = "nushell-preview" },
-  { name = "*.yml", run = "nushell-preview" },
-  { name = "*.nu", run = "nushell-preview" },
-  { name = "*.sh", run = "nushell-preview" },
-  { name = "*.py", run = "nushell-preview" },
-  { name = "*.js", run = "nushell-preview" },
-  { name = "*.ts", run = "nushell-preview" },
-  { name = "*.rs", run = "nushell-preview" },
-  
-  # Media files - keep native visual previews
+  { mime = "text/*", run = "code" },
   { mime = "image/*", run = "image" },
   { mime = "video/*", run = "video" },
   { mime = "application/pdf", run = "pdf" },
-  
-  # Archives - keep native content listing
   { mime = "application/zip", run = "archive" },
-  { mime = "application/gzip", run = "archive" },
-  { mime = "application/x-tar", run = "archive" },
-  { mime = "application/x-bzip", run = "archive" },
-  { mime = "application/x-bzip2", run = "archive" },
-  { mime = "application/x-7z-compressed", run = "archive" },
-  { mime = "application/x-rar", run = "archive" },
-  { mime = "application/x-xz", run = "archive" },
-  
   { name = "*", run = "file" },
 ]
 

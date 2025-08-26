@@ -74,6 +74,8 @@
 "nvim/spell/en.utf-8.add" = "/Users/williamnapier/.config/nvim/spell/en.utf-8.add"
 "nvim/spell/en.utf-8.add.spl" = "/Users/williamnapier/.config/nvim/spell/en.utf-8.add.spl"
 "nvim/telescope_debug.lua" = "/Users/williamnapier/.config/nvim/telescope_debug.lua"
+"scripts/daily-note" = "/Users/williamnapier/.local/bin/daily-note"
+"scripts/daypage-template" = "/Users/williamnapier/.local/bin/daypage-template"
 "scripts/hx-open-system-cross" = "/Users/williamnapier/.local/bin/hx-open-system-cross"
 "scripts/hx-smart-gf-cross" = "/Users/williamnapier/.local/bin/hx-smart-gf-cross"
 "scripts/hx-wiki" = "/Users/williamnapier/.local/bin/hx-wiki"
@@ -103,6 +105,6 @@
 "wezterm/wezterm.lua" = "/Users/williamnapier/.config/wezterm/wezterm.lua"
 "yazi/keymap.toml" = "/Users/williamnapier/.config/yazi/keymap.toml"
 "yazi/yazi.toml" = "/Users/williamnapier/.config/yazi/yazi.toml"
+"zellij/config.kdl" = "/Users/williamnapier/.config/zellij/config.kdl"
 
 [templates]
-"zellij/config.kdl" = "/Users/williamnapier/.config/zellij/config.kdl"

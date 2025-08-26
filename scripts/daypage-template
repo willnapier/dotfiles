@@ -18,10 +18,11 @@ TEMPLATE_FILE="$VAULT_DIR/Areas/Obsidian/Templates/DayPage.md"
 
 # Check if template file exists
 if [ -f "$TEMPLATE_FILE" ]; then
-    # Read template and process variables
+    # Read template, process variables, and remove cursor marker
     sed -e "s/{{date}}/$date_param/g" \
         -e "s/{{time24}}/$current_time/g" \
         -e "s/{{hdate}}/$readable_date/g" \
+        -e "s/<cursor>//g" \
         "$TEMPLATE_FILE"
 else
     # Fallback to hardcoded template if file doesn't exist

@@ -122,7 +122,7 @@ keybinds {
 }
 
 // Theme configuration to match system (auto-switched)
-theme "solarized-light"
+theme "solarized-dark"
 
 // Define Solarized themes for consistent theming
 themes {
@@ -162,11 +162,11 @@ themes {
 }
 
 // General settings - Use Nushell as default shell (platform-specific path)
-default_shell "{{nushell_path}}"
+default_shell "/opt/homebrew/bin/nu"
 
 // Copy/paste configuration - cross-platform
 // Use platform-specific clipboard command (WezTerm doesn't fully support OSC 52)
-copy_command "{{clipboard_copy}}"
+copy_command "pbcopy"
 copy_clipboard "primary"
 copy_on_select true
 
@@ -176,7 +176,7 @@ scroll_buffer_size 10000
 
 // Pane settings
 pane_frames true
-simplified_ui true
+simplified_ui false
 
 // Plugin settings
 plugins {
