@@ -124,10 +124,9 @@ config.enable_kitty_graphics = true
 -- Advertise Kitty Graphics Protocol support
 config.term = "wezterm"
 
--- Default shell - Smart Zellij startup with session management (fixed terminal check)
--- This ensures Zellij is available for wiki link integration when appropriate
--- Falls back to Nushell if already inside Zellij or no proper terminal
-config.default_prog = { '/Users/williamnapier/.local/bin/smart-zellij-start.sh' }
+-- Default shell - Nushell directly (Zellij auto-start disabled for debugging)
+-- Use manual `zellij` command when you want multiplexing
+config.default_prog = { '/opt/homebrew/bin/nu' }
 
 -- Multiplexing domains
 config.ssh_domains = {

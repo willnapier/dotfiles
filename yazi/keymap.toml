@@ -11,18 +11,31 @@ prepend_keymap = [
   
   # File opening - l for "launch" in Helix (maintains terminal context)
   { on = "<Enter>", run = "open", desc = "Open file (system default)" },
-  { on = "l", run = """shell --block --confirm 'hx "$@"'""", desc = "Open in Helix (edit mode)" },
+  { on = "l", run = "shell 'hx \"$@\"' --block --confirm", desc = "Open in Helix (edit mode)" },
   { on = "L", run = """shell 'zellij action new-pane -- hx "$@"' --block""", desc = "Open in Helix (new pane)" },
   { on = "h", run = "open --interactive", desc = "Choose how to open (picker)" },
   
   # File search with beautiful fd+skim - open in new Zellij pane (same session)
   { on = "s", run = """shell 'selected=$(unset TERMINFO && unset TERMINFO_DIRS && export TERM=xterm && /opt/homebrew/bin/fd -t f | /opt/homebrew/bin/sk --bind="tab:down" --preview "FILE_PATH={} /Users/williamnapier/.config/yazi/scripts/file-preview.nu"); if [ -n "$selected" ]; then zellij action new-pane -- hx "$selected"; fi' --block""", desc = "Smart file search - open in new pane" },
   { on = "S", run = """shell 'cd "$0" && rg -l . | sk --preview "FILE_PATH={} /Users/williamnapier/.config/yazi/scripts/search-preview.nu" | xargs -r hx' --block""", desc = "Content search (Nushell tables)" },
-  # Directory picker (use Alt+z in Zellij for zoxide navigation)
+  # Quick navigation shortcuts (g prefix)
+  { on = [ "g", "g" ], run = "arrow -999999999", desc = "Go to top" },
+  { on = [ "g", "e" ], run = "arrow 999999999", desc = "Go to bottom" },
+  { on = [ "g", "h" ], run = "cd ~", desc = "Go to home directory" },
+  { on = [ "g", "d" ], run = "cd ~/Downloads", desc = "Go to Downloads" },
+  { on = [ "g", "c" ], run = "cd ~/.config", desc = "Go to config directory" },
+  { on = [ "g", "n" ], run = "cd '/Users/williamnapier/Obsidian.nosync/Forge'", desc = "Go to Obsidian vault" },
+  
+  # Zoxide frecency-based directory jumping
+  { on = "z", run = "plugin zoxide-simple", desc = "Zoxide directory jump (skim)" },
+  # Directory picker (general search)
   { on = "Z", run = """shell 'fd -t d | sk --preview "FILE_PATH={} /Users/williamnapier/.config/yazi/scripts/dir-preview.nu" | xargs -r hx' --block""", desc = "Directory picker (Nushell tables)" },
   
   # Basic file operations
   { on = "y", run = "yank", desc = "Copy" },
+  
+  # Zotero import - select PDFs and press I (Import) to add to Zotero
+  { on = "I", run = """shell 'for file in "$@"; do /Users/williamnapier/.local/bin/zotero-cli-import "$file" --move; done' --block --confirm""", desc = "Import PDFs to Zotero" },
   
   # Quick daily note access  
   { on = "D", run = """shell '/Users/williamnapier/.local/bin/daily-note' --block""", desc = "Open today's daily note" },

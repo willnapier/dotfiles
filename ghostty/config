@@ -17,9 +17,9 @@ confirm-close-surface = false
 cursor-style = block
 cursor-style-blink = true
 
-# Shell Integration
+# Shell Integration - Reduced features to fix scrollback issues
 shell-integration = detect
-shell-integration-features = cursor,sudo,title
+shell-integration-features = cursor,title
 
 # Theme Settings - Auto-switch based on system appearance
 theme = light:solarized-light,dark:solarized-dark
@@ -33,3 +33,9 @@ macos-non-native-fullscreen = false
 
 # Quick Actions
 quick-terminal-position = bottom
+
+# Scrollback Configuration
+scrollback-limit = 10000
+mouse-scroll-multiplier = 3
+
+# Note: alternate-screen-scroll option not available in Ghostty 1.1.3

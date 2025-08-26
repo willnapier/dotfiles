@@ -4,7 +4,7 @@
 # For dark mode: theme = "solarized_dark" 
 # For light mode: theme = "solarized_dark"
 # Modal versions with mode indicators: "solarized_dark_modal" or "solarized_light_modal"
-theme = "solarized_light_modal"
+theme = "solarized_dark_modal"
 
 [editor]
 # Enable cursor shape changing
