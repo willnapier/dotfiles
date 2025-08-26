@@ -72,6 +72,7 @@ i = ":sh hx-show-real-file %{buffer_name}"
 [keys.normal.g]
 f = ["extend_to_line_bounds", ":pipe-to hx-smart-gf-rust", ":open /tmp/helix-gf-target.md"]  # Smart file opener (Rust/Nushell version with fd, rg)
 x = ["extend_to_line_bounds", ":pipe-to hx-open-url-rust"]  # Open URLs (Rust/Nushell version with rg)
+w = ["extend_to_line_bounds", ":pipe-to hx-wiki-tiling"]  # Wiki link tiling navigation (opens in new pane)
 
 [keys.select]
 # Same navigation in select mode

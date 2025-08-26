@@ -12,16 +12,20 @@ prepend_keymap = [
   # File opening - l for "launch" in Helix (maintains terminal context)
   { on = "<Enter>", run = "open", desc = "Open file (system default)" },
   { on = "l", run = """shell --block --confirm 'hx "$@"'""", desc = "Open in Helix (edit mode)" },
+  { on = "L", run = """shell 'zellij action new-pane -- hx "$@"' --block""", desc = "Open in Helix (new pane)" },
   { on = "h", run = "open --interactive", desc = "Choose how to open (picker)" },
   
-  # File search with multi-select and better defaults
-  { on = "s", run = """shell 'unset TERMINFO && unset TERMINFO_DIRS && export TERM=xterm && /opt/homebrew/bin/fd -t f | /opt/homebrew/bin/sk --multi --bind="tab:toggle+down,ctrl-a:select-all" --preview "FILE_PATH={} /Users/williamnapier/.config/yazi/scripts/file-preview.nu" | xargs hx' --block""", desc = "Smart file search (Nushell tables)" },
+  # File search with beautiful fd+skim - open in new Zellij pane (same session)
+  { on = "s", run = """shell 'selected=$(unset TERMINFO && unset TERMINFO_DIRS && export TERM=xterm && /opt/homebrew/bin/fd -t f | /opt/homebrew/bin/sk --bind="tab:down" --preview "FILE_PATH={} /Users/williamnapier/.config/yazi/scripts/file-preview.nu"); if [ -n "$selected" ]; then zellij action new-pane -- hx "$selected"; fi' --block""", desc = "Smart file search - open in new pane" },
   { on = "S", run = """shell 'cd "$0" && rg -l . | sk --preview "FILE_PATH={} /Users/williamnapier/.config/yazi/scripts/search-preview.nu" | xargs -r hx' --block""", desc = "Content search (Nushell tables)" },
-  { on = "z", run = "plugin zoxide", desc = "Jump to directory (zoxide frecency)" },
+  # Directory picker (use Alt+z in Zellij for zoxide navigation)
   { on = "Z", run = """shell 'fd -t d | sk --preview "FILE_PATH={} /Users/williamnapier/.config/yazi/scripts/dir-preview.nu" | xargs -r hx' --block""", desc = "Directory picker (Nushell tables)" },
   
   # Basic file operations
   { on = "y", run = "yank", desc = "Copy" },
+  
+  # Quick daily note access  
+  { on = "D", run = """shell '/Users/williamnapier/.local/bin/daily-note' --block""", desc = "Open today's daily note" },
   { on = "p", run = "paste", desc = "Paste" },
   { on = "d", run = "remove", desc = "Delete" },
   { on = "a", run = "create", desc = "Create" },

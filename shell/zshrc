@@ -11,3 +11,4 @@ export OBSIDIAN_VAULT="/Users/williamnapier/Obsidian.nosync/Forge"
 if [[ $- == *i* ]] && command -v nu &> /dev/null; then
     exec nu
 fi
+export PATH="$HOME/.local/bin:$PATH"

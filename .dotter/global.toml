@@ -11,6 +11,7 @@ depends = []
 "nushell/env.nu" = "~/.config/nushell/env.nu"
 "yazi/yazi.toml" = "~/.config/yazi/yazi.toml"
 "yazi/keymap.toml" = "~/.config/yazi/keymap.toml"
+"zellij/config.kdl" = "~/.config/zellij/config.kdl"
 "nvim" = { target = "~/.config/nvim", type = "symbolic" }
 "scripts" = { target = "~/.local/bin", type = "symbolic" }
 
@@ -35,6 +36,7 @@ clipboard_copy = "pbcopy"
 clipboard_paste = "pbpaste"
 terminal_emulator = "wezterm"
 platform = "macos"
+nushell_path = "/opt/homebrew/bin/nu"
 
 # Linux-specific configuration  
 [linux]
@@ -52,6 +54,7 @@ clipboard_copy = "wl-copy"
 clipboard_paste = "wl-paste" 
 terminal_emulator = "foot"
 platform = "linux"
+nushell_path = "/usr/bin/nu"
 
 # Legacy default package for compatibility
 [default]

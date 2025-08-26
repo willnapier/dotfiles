@@ -1,3 +1,15 @@
+# Aerospace Configuration - Screen-Aware Window Management
+# 
+# This config is part of a three-mode adaptive system:
+#   - laptop.toml: MacBook Air 15" (conservative tiling)
+#   - desktop-27.toml: 27" Mac Thunderbolt (moderate tiling)  
+#   - desktop.toml: 32" Dell 6K (aggressive tiling)
+#
+# Auto-switch with: aerospace-screen-setup
+# Full documentation: ~/.config/aerospace/README.md
+#
+# Current active configuration will be copied here by the setup script
+
 start-at-login = true
 default-root-container-layout = 'tiles'
 default-root-container-orientation = 'auto'

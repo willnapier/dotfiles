@@ -20,6 +20,49 @@ local function scheme_for_appearance(appearance)
   end
 end
 
+-- Helper function to detect screen size and return appropriate config
+local function get_screen_config()
+  -- Get display dimensions
+  for _, screen in ipairs(wezterm.gui and wezterm.gui.screens() or {}) do
+    local width = screen.width
+    local height = screen.height
+    
+    -- Large screen (32" 6K Dell or similar)
+    if width >= 5120 then  -- 6K width
+      return {
+        default_layout = "four_pane",
+        pane_strategy = "aggressive",
+        initial_cols = 200,
+        initial_rows = 60
+      }
+    -- Medium/Large screen  
+    elseif width >= 2560 then  -- 4K or large
+      return {
+        default_layout = "dual_pane", 
+        pane_strategy = "moderate",
+        initial_cols = 140,
+        initial_rows = 40
+      }
+    -- Laptop screen (15" MacBook Air)
+    else
+      return {
+        default_layout = "single_pane",
+        pane_strategy = "minimal", 
+        initial_cols = 100,
+        initial_rows = 30
+      }
+    end
+  end
+  
+  -- Fallback for laptop
+  return {
+    default_layout = "single_pane",
+    pane_strategy = "minimal",
+    initial_cols = 100, 
+    initial_rows = 30
+  }
+end
+
 -- Configuration
 local config = {}
 
@@ -70,6 +113,10 @@ config.cursor_blink_ease_out = 'Constant'
 
 -- Scrollback
 config.scrollback_lines = 10000
+
+-- Clipboard integration - basic settings
+config.enable_csi_u_key_encoding = true
+config.use_ime = true
 
 -- Image protocol support for tools like Yazi
 config.enable_kitty_graphics = true
@@ -419,12 +466,33 @@ config.keys = {
   },
 }
 
--- Mouse bindings
+-- Mouse bindings - explicit clipboard handling
 config.mouse_bindings = {
-  -- Right click pastes
+  -- Mouse selection automatically copies on release
+  {
+    event = { Up = { streak = 1, button = 'Left' } },
+    mods = 'NONE',
+    action = act.CompleteSelection 'ClipboardAndPrimarySelection',
+  },
+  
+  -- Double-click selects word and copies
+  {
+    event = { Up = { streak = 2, button = 'Left' } },
+    mods = 'NONE',
+    action = act.CompleteSelection 'ClipboardAndPrimarySelection',
+  },
+  
+  -- Triple-click selects line and copies
+  {
+    event = { Up = { streak = 3, button = 'Left' } },
+    mods = 'NONE',
+    action = act.CompleteSelection 'ClipboardAndPrimarySelection',
+  },
+  
+  -- Right click pastes from clipboard
   {
     event = { Down = { streak = 1, button = 'Right' } },
-    mods = 'NONE',
+    mods = 'NONE', 
     action = act.PasteFrom 'Clipboard',
   },
   
