@@ -27,9 +27,9 @@ prepend_keymap = [
   { on = [ "g", "n" ], run = "cd '/Users/williamnapier/Obsidian.nosync/Forge'", desc = "Go to Obsidian vault" },
   
   # Zoxide frecency-based directory jumping
-  { on = "z", run = "plugin zoxide-simple", desc = "Zoxide directory jump (skim)" },
-  # Directory picker (general search)
-  { on = "Z", run = """shell 'fd -t d | sk --preview "FILE_PATH={} /Users/williamnapier/.config/yazi/scripts/dir-preview.nu" | xargs -r hx' --block""", desc = "Directory picker (Nushell tables)" },
+  { on = "z", run = "plugin zoxide-simple", desc = "Zoxide directory jump" },
+  # Directory picker (general search) 
+  { on = "Z", run = "plugin --sync smart-cd", desc = "Directory picker with fuzzy finder" },
   
   # Basic file operations
   { on = "y", run = "yank", desc = "Copy" },

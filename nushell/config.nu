@@ -418,11 +418,31 @@ def daily-note [] {
     
     # Create note with template if it doesn't exist
     if not ($note_path | path exists) {
-        let current_date = (date now | format date "%Y-%m-%d")
-        let current_time = (date now | format date "%H:%M")
-        let readable_date = (date now | format date "%A, %B %d, %Y")
+        let template_path = $"($env.OBSIDIAN_VAULT)/Areas/Obsidian/Templates/DayPage.md"
         
-        let template = $"---
+        if ($template_path | path exists) {
+            # Read template from file and process variables
+            let current_date = (date now | format date "%Y-%m-%d")
+            let current_time = (date now | format date "%H:%M")
+            let readable_date = (date now | format date "%A, %B %d, %Y")
+            
+            # Read and process the template
+            let template_content = (open $template_path)
+            let processed = (
+                $template_content
+                | str replace --all "\{\{date\}\}" $current_date
+                | str replace --all "\{\{time24\}\}" $current_time
+                | str replace --all "\{\{hdate\}\}" $readable_date
+            )
+            
+            $processed | save $note_path
+        } else {
+            # Fallback to hardcoded template if file doesn't exist
+            let current_date = (date now | format date "%Y-%m-%d")
+            let current_time = (date now | format date "%H:%M")
+            let readable_date = (date now | format date "%A, %B %d, %Y")
+            
+            let template = $"---
 tags:
 - journal
 date created: ($current_date) ($current_time)
@@ -447,7 +467,8 @@ social_connection: false
 - Previous: [[((date now) - 1day | format date '%Y-%m-%d')]]
 - Next: [[((date now) + 1day | format date '%Y-%m-%d')]]
 "
-        $template | save $note_path
+            $template | save $note_path
+        }
     }
     
     # Use hx alias which auto-detects theme based on system appearance
