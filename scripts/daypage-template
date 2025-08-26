@@ -1,0 +1,67 @@
+#!/bin/bash
+
+# DayPage Template Generator - Reads from actual template file
+# Usage: daypage-template "2024-01-15" > file.md
+
+if [ -z "$1" ]; then
+    echo "Usage: daypage-template YYYY-MM-DD" >&2
+    exit 1
+fi
+
+date_param="$1"
+current_time=$(date "+%H:%M")
+readable_date=$(date -j -f "%Y-%m-%d" "$date_param" "+%A, %B %d, %Y" 2>/dev/null || echo "$date_param")
+
+# Path to the actual template file
+VAULT_DIR="/Users/williamnapier/Obsidian.nosync/Forge"
+TEMPLATE_FILE="$VAULT_DIR/Areas/Obsidian/Templates/DayPage.md"
+
+# Check if template file exists
+if [ -f "$TEMPLATE_FILE" ]; then
+    # Read template and process variables
+    sed -e "s/{{date}}/$date_param/g" \
+        -e "s/{{time24}}/$current_time/g" \
+        -e "s/{{hdate}}/$readable_date/g" \
+        "$TEMPLATE_FILE"
+else
+    # Fallback to hardcoded template if file doesn't exist
+    echo "Warning: Template file not found at $TEMPLATE_FILE, using fallback" >&2
+    
+    # Calculate previous and next dates using Python
+    prev_date=$(python3 -c "from datetime import datetime, timedelta; d=datetime.strptime('$date_param', '%Y-%m-%d') - timedelta(days=1); print(d.strftime('%Y-%m-%d'))" 2>/dev/null || echo "")
+    next_date=$(python3 -c "from datetime import datetime, timedelta; d=datetime.strptime('$date_param', '%Y-%m-%d') + timedelta(days=1); print(d.strftime('%Y-%m-%d'))" 2>/dev/null || echo "")
+
+    cat << EOF
+---
+tags:
+- journal
+date created: $date_param $current_time
+date modified: $date_param $current_time
+
+# Daily Metrics
+sleep_hours: 
+healthy_eating: false
+exercise: false
+piano_practice: false
+meditation: false
+reading: false
+social_connection: false
+
+# exercise_details: "[[Exercise Log $date_param]]"
+# piano_details: "[[Piano Practice Log $date_param]]"
+# health_details: "[[Health Metrics $date_param]]"
+---
+# $readable_date
+
+## Tasks
+- [ ] 
+
+## Notes
+
+## Journal
+
+## Links
+- Previous: [[$prev_date]]
+- Next: [[$next_date]]
+EOF
+fi

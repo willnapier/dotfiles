@@ -1,0 +1,22 @@
+#!/bin/bash
+# Open today's daily note directly in Helix
+
+VAULT_DIR="/Users/williamnapier/Obsidian.nosync/Forge"
+DAILY_DIR="$VAULT_DIR/NapierianLogs/DayPages"  # Adjust path as needed
+
+# Generate today's filename (adjust format as needed)
+TODAY=$(date '+%Y-%m-%d')
+DAILY_FILE="$DAILY_DIR/$TODAY.md"
+
+# Create the file if it doesn't exist
+if [[ ! -f "$DAILY_FILE" ]]; then
+    # Create directory if needed
+    mkdir -p "$DAILY_DIR"
+    
+    # Create file using shared template
+    daypage-template "$TODAY" > "$DAILY_FILE"
+    echo "📝 Created new daily note: $TODAY.md"
+fi
+
+# Open in Helix (will use current Zellij session)
+exec hx "$DAILY_FILE"
