@@ -813,10 +813,10 @@ def note-template [template_name?: string] {
     let content = (open $template_path)
     let processed = (
         $content
-        | str replace --all "{{date}}" (date now | format date "%Y-%m-%d")
-        | str replace --all "{{date:YYYY-MM-DD}}" (date now | format date "%Y-%m-%d")
-        | str replace --all "{{time}}" (date now | format date "%H:%M")
-        | str replace --all "{{title}}" $note_name
+        | str replace --all "{{{{date}}}}" (date now | format date "%Y-%m-%d")
+        | str replace --all "{{{{date:YYYY-MM-DD}}}}" (date now | format date "%Y-%m-%d")
+        | str replace --all "{{{{time}}}}" (date now | format date "%H:%M")
+        | str replace --all "{{{{title}}}}" $note_name
     )
     
     $processed | save $note_path
