@@ -99,14 +99,48 @@ fi
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
+# Check for specific Zellij UI-breaking settings
+echo ""
+echo "Checking Zellij UI configuration:"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Check simplified_ui setting
+simplified_ui=$(grep "simplified_ui" /Users/williamnapier/.config/zellij/config.kdl | awk '{print $2}')
+if [[ "$simplified_ui" == "false" ]]; then
+    echo -e "${GREEN}✅ OK: simplified_ui false${NC}"
+else
+    echo -e "${RED}❌ WRONG: simplified_ui is '$simplified_ui' (should be 'false')${NC}"
+    ((failed++))
+fi
+
+# Check default_layout setting
+default_layout=$(grep "default_layout" /Users/williamnapier/.config/zellij/config.kdl | awk '{print $2}' | tr -d '"')
+if [[ "$default_layout" == "default" ]]; then
+    echo -e "${GREEN}✅ OK: default_layout \"default\"${NC}"
+elif [[ "$default_layout" == "compact" ]]; then
+    echo -e "${RED}❌ UI KILLER: default_layout \"compact\" FORCES SIMPLIFIED UI!${NC}"
+    echo -e "${RED}   This overrides simplified_ui false setting!${NC}"
+    ((failed++))
+else
+    echo -e "${YELLOW}⚠️  WARNING: default_layout \"$default_layout\" (unknown effect)${NC}"
+fi
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
 # Summary
 if [[ $failed -eq 0 ]]; then
     echo -e "${GREEN}🎉 ALL CHECKS PASSED: Dotfiles integrity verified!${NC}"
     exit 0
 else
-    echo -e "${RED}⚠️  DRIFT DETECTED: $failed configuration(s) not properly linked${NC}"
+    echo -e "${RED}⚠️  PROBLEMS DETECTED: $failed issue(s) found${NC}"
     echo ""
     echo "To fix drift issues, run:"
     echo "  dotter deploy --force"
+    echo ""
+    echo "To fix Zellij UI issues:"
+    echo "  1. Set simplified_ui false"
+    echo "  2. Set default_layout \"default\" (NOT \"compact\")"
+    echo "  3. Kill all Zellij sessions: pkill -f zellij"
     exit 1
 fi

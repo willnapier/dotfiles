@@ -44,6 +44,42 @@ This command MUST show all green checkmarks before proceeding with any config mo
 ✅ OK: Scripts directory (FIXED)
 ```
 
+### ZELLIJ UI GOTCHA - THE SILENT KILLER
+
+**CRITICAL**: The `default_layout "compact"` setting **SILENTLY OVERRIDES** `simplified_ui false`
+
+#### The Deadly Combination:
+```kdl
+simplified_ui false        // ✅ Correctly set
+default_layout "compact"   // ❌ KILLS THE UI - overrides above setting!
+```
+
+#### Symptoms:
+- Config shows `simplified_ui false` ✅
+- Zellij still shows minimal UI ❌
+- No error messages or warnings
+- Works intermittently or stops working randomly
+
+#### Root Cause:
+- The "compact" layout **forces simplified UI mode**
+- This override happens at layout level, ignoring config setting
+- Session serialization can persist this broken state
+- No documentation warns about this interaction
+
+#### Solution:
+```kdl
+simplified_ui false         // ✅ Set this
+default_layout "default"    // ✅ NOT "compact"!
+```
+
+#### Recovery:
+1. Fix both settings in config
+2. Kill ALL Zellij sessions: `pkill -f zellij`
+3. Start fresh session
+4. Verify with: `verify-dotfiles-integrity`
+
+**This exact issue caused 4+ rounds of "fixing" the same problem!**
+
 ### MANDATORY WORKFLOW FOR ALL CONFIG CHANGES
 
 #### Before Making Changes:

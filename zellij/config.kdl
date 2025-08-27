@@ -185,7 +185,7 @@ plugins {
 }
 
 // Layout settings
-default_layout "compact"
+default_layout "default"
 
 // Session settings - Enable persistence for better startup experience
 session_serialization true
