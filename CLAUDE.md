@@ -199,7 +199,84 @@ sed -i 's/old_text/new_text/g' /path/to/file     # Linux
 
 ---
 
-## Latest Session: Complete Template Cursor Positioning + Drift Prevention (2025-08-27)
+## Latest Session: Final Zellij UI Fix + Sisyphean Stone Prevention (2025-08-27)
+
+### The Sisyphean Stone Problem - FINALLY SOLVED
+**Status**: ✅ Root cause identified and permanently prevented
+
+**The Maddening Pattern**: 
+- Fix Zellij simplified UI → Works temporarily → Breaks again → Fix again → Repeat 4+ times
+- Each time appeared to be "config drift" or "session serialization" 
+- Each fix seemed correct but stone kept rolling back down the hill
+
+**The REAL Root Cause - Silent Override**:
+```kdl
+simplified_ui false        // ✅ This looked correct
+default_layout "compact"   // ❌ THIS was silently killing the UI!
+```
+
+**Why This Was So Insidious**:
+1. **No error messages** - Zellij gives no warning about the override
+2. **Looked correct** - `simplified_ui false` was properly set
+3. **Session serialization red herring** - Made us think it was persistence issue
+4. **Layout-level override** - `compact` layout forces simplified UI regardless of config
+5. **Undocumented behavior** - Zellij docs don't warn about this interaction
+
+**The Breakthrough Moment**:
+User: "previously you found that it was to do with a 'compact' option"
+- This triggered the memory of the layout override behavior
+- Confirmed `default_layout "compact"` was the real culprit
+- Fixed by changing to `default_layout "default"`
+
+**Permanent Prevention Measures Applied**:
+
+#### 1. Enhanced Verification Script
+`verify-dotfiles-integrity` now specifically detects this gotcha:
+```bash
+❌ UI KILLER: default_layout "compact" FORCES SIMPLIFIED UI!
+   This overrides simplified_ui false setting!
+```
+
+#### 2. Comprehensive Documentation
+Added "ZELLIJ UI GOTCHA - THE SILENT KILLER" section explaining:
+- The deadly combination of settings
+- Symptoms and root cause
+- Recovery procedures
+- Why this caused 4+ rounds of "fixing"
+
+#### 3. Future-Proofing
+- All config changes must run `verify-dotfiles-integrity` first
+- Script catches BOTH `simplified_ui` AND `default_layout` settings
+- Documentation preserved in dotfiles repo for all future sessions
+- Clear recovery procedures for when problems arise
+
+**This was a perfect example of troubleshooting symptom vs. root cause - we kept fixing the symptom (`simplified_ui`) while the real problem (`compact` layout) remained hidden.**
+
+### Template Cursor Positioning System
+**Status**: ✅ Complete cursor marker system implemented
+
+**Problem Solved**: Templates had no way to specify cursor position when creating files from templates, requiring manual navigation to writing position.
+
+**Solution Applied**: Simple `<cursor>` marker system:
+
+#### Implementation:
+1. **Template marker**: Added `<cursor>` to `/Users/williamnapier/Obsidian.nosync/Forge/Areas/Obsidian/Templates/DayPage.md`
+2. **Processing scripts**: Both `daypage-template` and `daily-note` function remove the marker during processing
+3. **Cursor positioning**: File opens with cursor positioned where `<cursor>` was removed
+
+#### Files Updated:
+- **Template**: `/Users/williamnapier/Obsidian.nosync/Forge/Areas/Obsidian/Templates/DayPage.md` - Added `<cursor>` marker
+- **Shell script**: `/Users/williamnapier/.local/bin/daypage-template` - Added `sed -e "s/<cursor>//g"` 
+- **Nushell function**: `/Users/williamnapier/.config/nushell/config.nu` - Added `| str replace --all "<cursor>" ""`
+
+#### Usage:
+- Daily note creation now positions cursor ready for immediate writing
+- Works with both Yazi `D` key and direct `daily-note` command
+- Extensible pattern for other templates
+
+---
+
+## Previous Session: Complete Template Cursor Positioning + Drift Prevention (2025-08-27)
 
 ### Template Cursor Positioning System
 **Status**: ✅ Complete cursor marker system implemented
