@@ -44,6 +44,8 @@ depends = []
 "scripts/dotter-add" = "~/.local/bin/dotter-add"
 "scripts/dotter-protect-all" = "~/.local/bin/dotter-protect-all"
 "scripts/dotter-verify-protection" = "~/.local/bin/dotter-verify-protection"
+"scripts/dotter-protect-all-cross-platform" = "~/.local/bin/dotter-protect-all-cross-platform"
+"scripts/dotter-verify-protection-cross-platform" = "~/.local/bin/dotter-verify-protection-cross-platform"
 # Semantic search system - managed separately (has virtual environment)
 
 [shared.variables]

@@ -1,0 +1,113 @@
+#!/usr/bin/env nu
+
+# Cross-Platform Comprehensive Dotter Drift Protection System
+# Works on both macOS and Arch Linux
+
+def main [] {
+    print "🚨 Cross-Platform Dotter Protection System"
+    print "===========================================" 
+    
+    let os = (sys host | get name)
+    let dotfiles_root = detect_dotfiles_root
+    
+    print $"🖥️  Platform: ($os)"
+    print $"📁 Dotfiles: ($dotfiles_root)"
+    
+    # Get platform-appropriate managed files
+    let managed_files = get_managed_files_for_platform
+    
+    print $"📋 Processing (($managed_files | length)) platform-specific files"
+    
+    # Add warnings to all managed files
+    for file in $managed_files {
+        add_warning_to_file $file $dotfiles_root
+    }
+    
+    print ""
+    print "✅ Cross-platform Dotter protection applied successfully!"
+    print "Run 'dotter-verify-protection-cross-platform' to check status"
+}
+
+def detect_dotfiles_root [] {
+    # Try to detect dotfiles root - works on both platforms
+    if ($env.PWD | str ends-with "dotfiles") {
+        $env.PWD
+    } else if (($env.HOME + "/dotfiles") | path exists) {
+        $env.HOME + "/dotfiles"
+    } else if (($env.HOME + "/.dotfiles") | path exists) {
+        $env.HOME + "/.dotfiles"
+    } else {
+        print "❌ Could not locate dotfiles directory"
+        exit 1
+    }
+}
+
+def get_managed_files_for_platform [] {
+    let os = (sys host | get name)
+    
+    # Shared files (work on all platforms)
+    mut files = [
+        {path: "helix/config.toml", comment: "#"},
+        {path: "nushell/config.nu", comment: "#"},
+        {path: "nushell/env.nu", comment: "#"},
+        {path: "yazi/yazi.toml", comment: "#"},
+        {path: "yazi/keymap.toml", comment: "#"},
+        {path: "yazi/theme.toml", comment: "#"},
+        {path: "zellij/config.kdl", comment: "//"},
+        {path: "starship.toml", comment: "#"},
+        {path: "git/gitconfig", comment: "#"},
+        {path: "nvim/init.lua", comment: "--"}
+    ]
+    
+    # Platform-specific files
+    if ($os | str contains "Darwin") {
+        # macOS specific
+        $files = ($files | append [
+            {path: "shell/zshrc", comment: "#"},
+            {path: "wezterm/wezterm.lua", comment: "--"},
+            {path: "ghostty/config", comment: "#"}
+        ])
+    } else {
+        # Linux specific  
+        $files = ($files | append [
+            {path: "shell/bashrc", comment: "#"}
+        ])
+    }
+    
+    $files
+}
+
+def add_warning_to_file [file_info: record, dotfiles_root: string] {
+    let source_path = $"($dotfiles_root)/($file_info.path)"
+    let comment = $file_info.comment
+    
+    if not ($source_path | path exists) {
+        print $"⚠️  Source file not found: ($file_info.path)"
+        return
+    }
+    
+    # Check if warning already exists
+    let content = (open $source_path --raw | decode utf-8)
+    if ($content | str contains "CLAUDE CODE: THIS FILE IS DOTTER-MANAGED") {
+        print $"✅ Warning already present: ($file_info.path)"
+        return
+    }
+    
+    # Create platform-appropriate warning
+    let target_hint = if ($file_info.path | str starts-with "shell/") {
+        if ($file_info.path | str contains "zshrc") { "~/" } else { "~/" }
+    } else {
+        "~/.config/"
+    }
+    
+    let warning1 = $"($comment) ⚠️  CLAUDE CODE: THIS FILE IS DOTTER-MANAGED - EDIT HERE IN DOTFILES, NOT ($target_hint)"
+    let warning2 = $"($comment) ⚠️  NEVER EDIT TARGET FILE - IT'S A SYMLINK TO THIS FILE"
+    
+    # Prepend warning to file
+    let new_content = $"($warning1)\n($warning2)\n($content)"
+    $new_content | save --force $source_path
+    
+    print $"🚨 Added warning to: ($file_info.path)"
+}
+
+main
