@@ -1,3 +1,5 @@
+# ⚠️  CLAUDE CODE: THIS FILE IS DOTTER-MANAGED - EDIT HERE IN DOTFILES, NOT ~/.config/yazi/
+# ⚠️  NEVER EDIT ~/.config/yazi/theme.toml - IT'S A SYMLINK TO THIS FILE
 [flavor]
 dark = "solarized-dark"
 light = "solarized-light"
