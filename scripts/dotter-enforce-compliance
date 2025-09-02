@@ -1,0 +1,160 @@
+#!/opt/homebrew/bin/nu
+
+# dotter-enforce-compliance - Automatically bring unmanaged files under Dotter control
+# This script helps migrate files to Dotter management with minimal manual work
+
+def main [
+    --dry-run (-d): bool = false  # Show what would be done without actually doing it
+] {
+    print "🔧 DOTTER COMPLIANCE ENFORCEMENT"
+    print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    
+    if $dry_run {
+        print "🔍 DRY RUN MODE - No changes will be made"
+    }
+    print ""
+
+    let dotfiles_dir = "/Users/williamnapier/dotfiles"
+    let dotter_config = $"($dotfiles_dir)/.dotter/global.toml"
+
+    # Define files that should definitely be under Dotter management
+    let critical_files = [
+        {
+            source: "~/.config/helix/languages.toml",
+            target_dir: "helix",
+            target_file: "languages.toml",
+            reason: "Helix language configuration"
+        },
+        {
+            source: "~/.config/yazi/package.toml", 
+            target_dir: "yazi",
+            target_file: "package.toml",
+            reason: "Yazi package configuration"
+        },
+        {
+            source: "~/.local/bin/daypage-template.nu",
+            target_dir: "scripts",
+            target_file: "daypage-template.nu", 
+            reason: "Critical daily note script in Nushell"
+        },
+        {
+            source: "~/.local/bin/fix-zotero-import.sh",
+            target_dir: "scripts", 
+            target_file: "fix-zotero-import.sh",
+            reason: "Zotero import fix script"
+        }
+    ]
+
+    # Special handling for theme-related scripts
+    let theme_scripts = [
+        {
+            source: "~/.config/ghostty-auto-theme.sh",
+            target_dir: "scripts",
+            target_file: "ghostty-auto-theme.sh",
+            reason: "Automated theme switching for Ghostty"
+        },
+        {
+            source: "~/.config/ghostty-theme-switcher.sh", 
+            target_dir: "scripts",
+            target_file: "ghostty-theme-switcher.sh",
+            reason: "Manual theme switching for Ghostty"
+        },
+        {
+            source: "~/.config/helix/scripts/get-system-theme.sh",
+            target_dir: "helix/scripts",
+            target_file: "get-system-theme.sh", 
+            reason: "System theme detection for Helix"
+        }
+    ]
+
+    # Process critical files
+    print "🔥 CRITICAL FILES ENFORCEMENT"
+    print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    
+    for file in $critical_files {
+        let source_path = ($file.source | str replace '~' $env.HOME)
+        
+        if ($source_path | path exists) {
+            let target_dir_path = $"($dotfiles_dir)/($file.target_dir)"
+            let target_file_path = $"($target_dir_path)/($file.target_file)"
+            
+            print $"📋 Processing: ($file.target_file)"
+            print $"   Reason: ($file.reason)"
+            
+            if not ($dry_run) {
+                # Create target directory if it doesn't exist
+                if not ($target_dir_path | path exists) {
+                    mkdir $target_dir_path
+                    print $"   ✅ Created directory: ($file.target_dir)"
+                }
+                
+                # Copy file to dotfiles
+                cp $source_path $target_file_path
+                print $"   ✅ Copied to dotfiles: ($target_file_path)"
+                
+                # Add to Dotter config (this would need manual intervention for now)
+                print $"   ⚠️  MANUAL STEP: Add to .dotter/global.toml:"
+                print $"      \"($file.target_dir)/($file.target_file)\" = \"($file.source)\""
+            } else {
+                print $"   🔍 Would copy: ($source_path) → ($target_file_path)"
+                print $"   🔍 Would add to Dotter config"
+            }
+            print ""
+        } else {
+            print $"   ❌ File not found: ($source_path)"
+            print ""
+        }
+    }
+
+    # Process theme scripts
+    print "🎨 THEME MANAGEMENT SCRIPTS"
+    print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    
+    for script in $theme_scripts {
+        let source_path = ($script.source | str replace '~' $env.HOME)
+        
+        if ($source_path | path exists) {
+            let target_dir_path = $"($dotfiles_dir)/($script.target_dir)"
+            let target_file_path = $"($target_dir_path)/($script.target_file)"
+            
+            print $"🎨 Processing: ($script.target_file)"
+            print $"   Reason: ($script.reason)"
+            
+            if not ($dry_run) {
+                # Create target directory if it doesn't exist 
+                if not ($target_dir_path | path exists) {
+                    mkdir -p $target_dir_path
+                    print $"   ✅ Created directory: ($script.target_dir)"
+                }
+                
+                # Copy file to dotfiles
+                cp $source_path $target_file_path
+                print $"   ✅ Copied to dotfiles: ($target_file_path)"
+                
+                print $"   ⚠️  MANUAL STEP: Add to .dotter/global.toml:"
+                print $"      \"($script.target_dir)/($script.target_file)\" = \"($script.source)\""
+            } else {
+                print $"   🔍 Would copy: ($source_path) → ($target_file_path)"
+                print $"   🔍 Would add to Dotter config"
+            }
+            print ""
+        } else {
+            print $"   ❌ File not found: ($source_path)"
+            print ""
+        }
+    }
+
+    # Summary and next steps
+    print "📋 NEXT STEPS FOR COMPLETE COMPLIANCE"
+    print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    print "1. Run 'dotter-complete-audit' to see remaining unmanaged files"
+    print "2. Manually add the suggested lines to .dotter/global.toml"
+    print "3. Run 'cd ~/dotfiles && dotter deploy' to create symlinks"
+    print "4. Run 'dotter-complete-audit' again to verify compliance"
+    print "5. Commit changes: 'cd ~/dotfiles && git add . && git commit -m \"Add comprehensive Dotter management\"'"
+    
+    if $dry_run {
+        print ""
+        print "🔄 Run without --dry-run to actually make changes"
+    }
+}

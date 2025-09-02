@@ -46,8 +46,10 @@ depends = []
 "scripts/dotter-verify-protection" = "~/.local/bin/dotter-verify-protection"
 "scripts/dotter-protect-all-cross-platform" = "~/.local/bin/dotter-protect-all-cross-platform"
 "scripts/dotter-verify-protection-cross-platform" = "~/.local/bin/dotter-verify-protection-cross-platform"
-"scripts/obsidian-linker.sh" = "~/.local/bin/obsidian-linker.sh"
 "scripts/citation-picker.sh" = "~/.local/bin/citation-picker.sh"
+"scripts/dotter-complete-audit" = "~/.local/bin/dotter-complete-audit"
+"scripts/dotter-enforce-compliance" = "~/.local/bin/dotter-enforce-compliance"
+"scripts/dotter-drift-monitor" = "~/.local/bin/dotter-drift-monitor"
 # Semantic search system - managed separately (has virtual environment)
 
 [shared.variables]

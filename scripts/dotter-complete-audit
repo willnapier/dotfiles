@@ -1,0 +1,178 @@
+#!/opt/homebrew/bin/nu
+
+# dotter-complete-audit - Comprehensive audit to find ALL files that should be Dotter-managed
+# This script identifies configuration files, scripts, and other important files not under Dotter management
+
+def main [] {
+    print "🔍 COMPREHENSIVE DOTTER AUDIT - Finding ALL unmanaged files"
+    print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    print ""
+
+    # Read current Dotter configuration to get managed files
+    let dotter_config_path = "/Users/williamnapier/dotfiles/.dotter/global.toml"
+    
+    if not ($dotter_config_path | path exists) {
+        print "❌ Dotter configuration not found!"
+        return
+    }
+
+    # Get list of currently managed files from Dotter config
+    let dotter_config = (open $dotter_config_path)
+    
+    let managed_files = (
+        $dotter_config.shared.files
+        | transpose key value
+        | where ($it.value | describe) == "string"  # Only simple string targets, not complex records
+        | get value
+        | where $it =~ "^~/"
+        | str replace '~' $env.HOME
+    )
+
+    print $"📋 Currently Dotter-managed files: ($managed_files | length)"
+    print ""
+
+    # Define critical directories and file patterns to audit
+    let audit_locations = [
+        {
+            path: "~/.config",
+            patterns: ["*.toml", "*.kdl", "*.nu", "*.lua", "*.yml", "*.yaml", "*.json", "config"],
+            description: "Configuration files"
+        },
+        {
+            path: "~/.local/bin",
+            patterns: ["*"],
+            description: "User scripts and binaries"
+        },
+        {
+            path: "~/Library/Application Support/com.mitchellh.ghostty",
+            patterns: ["*"],
+            description: "Ghostty configuration"
+        }
+    ]
+
+    mut total_unmanaged = 0
+
+    for location in $audit_locations {
+        let expanded_path = ($location.path | str replace '~' $env.HOME)
+        
+        if not ($expanded_path | path exists) {
+            continue
+        }
+
+        print $"📂 Auditing: ($location.description) in ($location.path)"
+        
+        # Find all matching files
+        let found_files = (
+            $location.patterns
+            | each { |pattern|
+                try {
+                    glob $"($expanded_path)/**/*($pattern)" 
+                } catch { 
+                    []
+                }
+            }
+            | flatten
+            | where ($it | path type) == "file"
+            | where not ($it | str contains ".git")
+            | where not ($it | str contains "node_modules")
+            | where not ($it | str contains ".DS_Store")
+        )
+
+        # Check which files are NOT managed by Dotter
+        let unmanaged_files = (
+            $found_files
+            | where $it not-in $managed_files
+            | where not ($it | str ends-with ".lock")
+            | where not ($it | str ends-with ".log")
+            | where not ($it | str ends-with ".tmp")
+        )
+
+        if ($unmanaged_files | length) > 0 {
+            print $"  ⚠️  Found ($unmanaged_files | length) unmanaged files:"
+            
+            $unmanaged_files 
+            | each { |file| 
+                let relative_path = ($file | str replace $env.HOME "~")
+                let file_type = (
+                    if ($file | str ends-with ".toml") { "TOML Config" }
+                    else if ($file | str ends-with ".kdl") { "KDL Config" } 
+                    else if ($file | str ends-with ".nu") { "Nushell Script" }
+                    else if ($file | str ends-with ".lua") { "Lua Config" }
+                    else if ($file | str ends-with ".sh") { "Shell Script" }
+                    else if ($file | str ends-with ".py") { "Python Script" }
+                    else if ($file | str ends-with ".json") { "JSON Config" }
+                    else if ($file | str contains "bin/") { "Executable" }
+                    else { "Unknown" }
+                )
+                print $"    • ($relative_path) [($file_type)]"
+            }
+            
+            $total_unmanaged = $total_unmanaged + ($unmanaged_files | length)
+            print ""
+        } else {
+            print "  ✅ All files in this location are managed"
+            print ""
+        }
+    }
+
+    # Special checks for commonly missed items
+    print "🔍 SPECIAL CHECKS FOR COMMONLY MISSED FILES"
+    print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    # Check for non-symlink scripts in ~/.local/bin
+    let non_symlink_scripts = (
+        ls ~/.local/bin
+        | where type != "symlink"
+        | where name =~ '\.(sh|nu|py|rb|pl)$'
+        | get name
+    )
+
+    if ($non_symlink_scripts | length) > 0 {
+        print "⚠️  NON-SYMLINK SCRIPTS in ~/.local/bin (should be Dotter-managed):"
+        $non_symlink_scripts | each { |script| print $"    • ($script)" }
+        $total_unmanaged = $total_unmanaged + ($non_symlink_scripts | length)
+        print ""
+    }
+
+    # Check for config files with recent modifications (might be active development)
+    print "📅 RECENTLY MODIFIED CONFIG FILES (last 7 days):"
+    let recent_configs = (
+        try {
+            fd -e toml -e kdl -e nu -e lua -e json . ~/.config --changed-within 7days
+            | lines
+            | where $it != ""
+        } catch {
+            []
+        }
+    )
+
+    if ($recent_configs | length) > 0 {
+        $recent_configs 
+        | each { |file| 
+            let managed_status = if $file in $managed_files { "✅ MANAGED" } else { "⚠️  UNMANAGED" }
+            print $"    • ($file | str replace $env.HOME "~") - ($managed_status)"
+        }
+        print ""
+    }
+
+    # Summary
+    print "📊 AUDIT SUMMARY"
+    print "━━━━━━━━━━━━━━━━━━━━"
+    print $"Total managed files: ($managed_files | length)"
+    print $"Total unmanaged files found: ($total_unmanaged)"
+    
+    if $total_unmanaged > 0 {
+        print ""
+        print "⚠️  RECOMMENDATIONS:"
+        print "1. Review each unmanaged file to determine if it should be Dotter-managed"
+        print "2. For files you want to manage, use: dotter-add <file-path>"  
+        print "3. For scripts, move to ~/dotfiles/scripts/ and add to Dotter config"
+        print "4. For configs, copy to ~/dotfiles/ and add to Dotter config"
+        print "5. Re-run this audit after making changes"
+        print ""
+        print "🚨 FILES NOT UNDER DOTTER MANAGEMENT ARE AT RISK OF DRIFT!"
+    } else {
+        print ""
+        print "✅ EXCELLENT! All critical files appear to be under Dotter management."
+    }
+}

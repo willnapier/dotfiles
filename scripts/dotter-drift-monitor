@@ -1,0 +1,207 @@
+#!/opt/homebrew/bin/nu
+
+# dotter-drift-monitor - Continuous monitoring system to prevent Dotter Drift
+# This creates a daemon-like monitoring system to catch drift as it happens
+
+def main [
+    --setup (-s)    # Set up monitoring for the first time
+    --check (-c)    # Run a single check
+    --daemon (-d)   # Run as daemon (continuous monitoring)
+] {
+    
+    if $setup {
+        setup_monitoring
+        return
+    }
+    
+    if $check {
+        run_drift_check
+        return
+    }
+    
+    if $daemon {
+        run_daemon_monitoring
+        return
+    }
+    
+    # Default: show usage
+    show_usage
+}
+
+def setup_monitoring [] {
+    print "🔧 SETTING UP DOTTER DRIFT MONITORING"
+    print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    print ""
+    
+    let monitor_dir = $"($env.HOME)/.config/dotter-monitor"
+    let baseline_file = $"($monitor_dir)/baseline.json"
+    
+    # Create monitoring directory
+    if not ($monitor_dir | path exists) {
+        mkdir $monitor_dir
+        print $"✅ Created monitoring directory: ($monitor_dir)"
+    }
+    
+    # Create baseline of all Dotter-managed files
+    print "📊 Creating baseline of Dotter-managed files..."
+    let managed_files = get_dotter_managed_files
+    
+    $managed_files | to json | save $baseline_file
+    print $"✅ Baseline saved: ($baseline_file)"
+    print $"📊 Monitoring ($managed_files | length) Dotter-managed files"
+    
+    # Create launchd plist for macOS daemon
+    let plist_content = create_launchd_plist
+    let plist_path = $"($env.HOME)/Library/LaunchAgents/com.user.dotter-drift-monitor.plist"
+    
+    $plist_content | save $plist_path
+    print $"✅ Created launchd plist: ($plist_path)"
+    
+    print ""
+    print "🚀 SETUP COMPLETE! To start monitoring:"
+    print $"   launchctl load ($plist_path)"
+    print "   launchctl start com.user.dotter-drift-monitor"
+    print ""
+    print "To stop monitoring:"
+    print "   launchctl stop com.user.dotter-drift-monitor"
+    print $"   launchctl unload ($plist_path)"
+}
+
+def run_drift_check [] {
+    print "🔍 CHECKING FOR DOTTER DRIFT..."
+    
+    let monitor_dir = $"($env.HOME)/.config/dotter-monitor"
+    let baseline_file = $"($monitor_dir)/baseline.json"
+    let drift_log = $"($monitor_dir)/drift.log"
+    
+    if not ($baseline_file | path exists) {
+        print "❌ No baseline found. Run with --setup first."
+        return
+    }
+    
+    let baseline = (open $baseline_file | from json)
+    let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
+    mut drift_detected = false
+    
+    for file_info in $baseline {
+        let file_path = ($file_info.path | str replace '~' $env.HOME)
+        
+        if ($file_path | path exists) {
+            let current_stat = (stat $file_path)
+            let current_mtime = $current_stat.modified
+            
+            if $current_mtime != $file_info.mtime {
+                let drift_message = $"🚨 DRIFT DETECTED: ($file_info.path) modified at ($current_mtime)"
+                print $drift_message
+                
+                # Log the drift
+                $"($timestamp): ($drift_message)" | save --append $drift_log
+                
+                # Check if it's still a symlink
+                if ($current_stat.type != "symlink") {
+                    let critical_message = $"💀 CRITICAL: ($file_info.path) is no longer a symlink!"
+                    print $critical_message
+                    $"($timestamp): ($critical_message)" | save --append $drift_log
+                }
+                
+                $drift_detected = true
+            }
+        } else {
+            let missing_message = $"⚠️  MISSING: ($file_info.path) no longer exists"
+            print $missing_message
+            $"($timestamp): ($missing_message)" | save --append $drift_log
+            $drift_detected = true
+        }
+    }
+    
+    if not $drift_detected {
+        print "✅ No drift detected - all Dotter-managed files are intact"
+    }
+}
+
+def run_daemon_monitoring [] {
+    print "🔄 STARTING DOTTER DRIFT DAEMON..."
+    print "   Checking every 60 seconds for drift..."
+    print "   Press Ctrl+C to stop"
+    print ""
+    
+    loop {
+        run_drift_check
+        sleep 60sec
+    }
+}
+
+def get_dotter_managed_files [] {
+    let dotter_config_path = "/Users/williamnapier/dotfiles/.dotter/global.toml"
+    
+    if not ($dotter_config_path | path exists) {
+        return []
+    }
+    
+    # Parse Dotter config to get managed files
+    let dotter_config = (open $dotter_config_path)
+    
+    let managed_files = (
+        $dotter_config.shared.files
+        | transpose key value
+        | where ($it.value | describe) == "string"  # Only simple string targets
+        | each { |entry|
+            let expanded_path = ($entry.value | str replace '~' $env.HOME)
+            if ($expanded_path | path exists) {
+                let file_stat = (stat $expanded_path)
+                {
+                    path: $entry.value,
+                    source: $entry.key,
+                    mtime: $file_stat.modified,
+                    type: $file_stat.type
+                }
+            }
+        }
+        | compact
+    )
+    
+    return $managed_files
+}
+
+def create_launchd_plist [] {
+    let plist_xml = $'<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.dotter-drift-monitor</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/williamnapier/.local/bin/dotter-drift-monitor</string>
+        <string>--daemon</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/williamnapier/.config/dotter-monitor/daemon.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/williamnapier/.config/dotter-monitor/daemon.error.log</string>
+</dict>
+</plist>'
+    
+    return $plist_xml
+}
+
+def show_usage [] {
+    print "DOTTER DRIFT MONITOR - Prevent configuration drift"
+    print ""
+    print "USAGE:"
+    print "  dotter-drift-monitor --setup     # Initial setup and baseline creation"
+    print "  dotter-drift-monitor --check     # Run a single drift check"
+    print "  dotter-drift-monitor --daemon    # Run continuous monitoring"
+    print ""
+    print "WORKFLOW:"
+    print "1. Run --setup to create baseline of all Dotter-managed files"
+    print "2. Use --check for manual verification"
+    print "3. Use --daemon for continuous monitoring (runs as background service)"
+    print ""
+    print "The monitor tracks modification times of all Dotter-managed files and"
+    print "alerts when they change, helping catch drift immediately."
+}
