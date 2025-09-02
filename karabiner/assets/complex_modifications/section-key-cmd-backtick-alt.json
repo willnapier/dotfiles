@@ -1,0 +1,22 @@
+{
+  "title": "Section Key Cmd+Backtick Alternative",
+  "rules": [
+    {
+      "description": "Section key sends Cmd+backtick for window cycling",
+      "manipulators": [
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "non_us_backslash"
+          },
+          "to": [
+            {
+              "key_code": "grave_accent_and_tilde",
+              "modifiers": ["left_command"]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

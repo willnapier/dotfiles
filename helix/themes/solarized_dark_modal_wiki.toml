@@ -1,0 +1,127 @@
+# Solarized Dark Modal theme with Wiki Link support
+# Based on the built-in solarized_dark_modal theme
+# Adds highlighting for existing vs missing wiki links
+
+# Import base solarized dark colors
+"attribute" = "blue"
+"keyword" = "green" 
+"keyword.directive" = "yellow"
+"namespace" = "violet"
+"punctuation" = "orange"
+"punctuation.delimiter" = "orange"
+"operator" = "green"
+"special" = "orange"
+"variable.other.member" = "cyan"
+"variable" = "base0"
+"variable.builtin" = "cyan"
+"variable.parameter" = "base0"
+"type" = "yellow"
+"type.builtin" = "yellow"
+"constructor" = "blue"
+"function" = "blue"
+"function.macro" = "magenta"
+"function.builtin" = "blue"
+"tag" = "magenta"
+"comment" = "base01"
+"constant" = "cyan"
+"constant.builtin" = "cyan"
+"string" = "cyan"
+"constant.numeric" = "cyan"
+"constant.character.escape" = "orange"
+"label" = "magenta"
+"module" = "base0"
+
+# Markup
+"markup.heading" = "blue"
+"markup.heading.marker" = "orange"
+"markup.list" = "orange"
+"markup.bold" = { fg = "base1", modifiers = ["bold"] }
+"markup.italic" = { fg = "base1", modifiers = ["italic"] }
+"markup.strikethrough" = { modifiers = ["crossed_out"] }
+"markup.link.url" = { fg = "cyan", modifiers = ["underlined"] }
+"markup.link.text" = "magenta"
+"markup.quote" = "green"
+"markup.raw" = "green"
+
+# Diff
+"diff.plus" = "green"
+"diff.delta" = "orange"
+"diff.minus" = "red"
+
+# UI
+"ui.background" = { bg = "base03" }
+"ui.background.separator" = "base02"
+"ui.linenr" = "base01"
+"ui.linenr.selected" = "base0"
+"ui.statusline" = { fg = "base1", bg = "base02" }
+"ui.statusline.inactive" = { fg = "base01", bg = "base02" }
+"ui.statusline.normal" = { fg = "base02", bg = "blue", modifiers = ["bold"] }
+"ui.statusline.insert" = { fg = "base02", bg = "green", modifiers = ["bold"] }
+"ui.statusline.select" = { fg = "base02", bg = "magenta", modifiers = ["bold"] }
+"ui.bufferline" = { fg = "base01", bg = "base02" }
+"ui.bufferline.inactive" = { fg = "base01", bg = "base02" }
+"ui.bufferline.active" = { fg = "base1", bg = "base03", underline = { color = "blue", style = "line" } }
+"ui.popup" = { bg = "base02" }
+"ui.window" = { bg = "base02" }
+"ui.help" = { bg = "base02", fg = "base1" }
+"ui.text" = "base1"
+"ui.text.focus" = "base1"
+"ui.text.inactive" = "base01"
+"ui.virtual.ruler" = { bg = "base02" }
+"ui.virtual.whitespace" = { fg = "base01" }
+"ui.virtual.indent-guide" = { fg = "base02" }
+"ui.virtual.inlay-hint" = { fg = "base01", bg = "base02" }
+
+"ui.selection" = { bg = "base02" }
+"ui.selection.primary" = { bg = "base02" }
+"ui.cursorline.primary" = { bg = "base02" }
+"ui.cursorline.secondary" = { bg = "base02" }
+"ui.cursorcolumn.primary" = { bg = "base02" }
+"ui.cursorcolumn.secondary" = { bg = "base02" }
+"ui.cursor" = { fg = "base03", bg = "base1" }
+"ui.cursor.normal" = { fg = "base03", bg = "base1" }
+"ui.cursor.insert" = { fg = "base03", bg = "base1" }
+"ui.cursor.select" = { fg = "base03", bg = "base1" }
+"ui.cursor.match" = { fg = "base0", bg = "base02", modifiers = ["underlined"] }
+"ui.cursor.primary" = { fg = "base03", bg = "base1" }
+"ui.cursor.primary.normal" = { fg = "base03", bg = "base1" }
+"ui.cursor.primary.insert" = { fg = "base03", bg = "base1" }
+"ui.cursor.primary.select" = { fg = "base03", bg = "base1" }
+
+"ui.menu" = { fg = "base1", bg = "base02" }
+"ui.menu.selected" = { fg = "base02", bg = "base0" }
+"ui.menu.scroll" = { fg = "base1", bg = "base02" }
+
+# Wiki Link Highlighting - THIS IS THE KEY ADDITION
+# These correspond to the LSP highlight kinds we're using
+"ui.highlight.text" = { bg = "green", fg = "base03" }      # Existing wiki links (kind 1)
+"ui.highlight.read" = { bg = "red", fg = "base1" }         # Missing wiki links (kind 2)
+
+# Diagnostics
+"warning" = "yellow"
+"error" = "red"
+"info" = "blue"
+"hint" = "base01"
+"diagnostic.hint" = { underline = { color = "base01", style = "dotted" } }
+"diagnostic.info" = { underline = { color = "blue", style = "dotted" } }
+"diagnostic.warning" = { underline = { color = "yellow", style = "dotted" } }
+"diagnostic.error" = { underline = { color = "red", style = "dotted" } }
+
+[palette]
+# Solarized colors
+base03 = "#002b36"
+base02 = "#073642"
+base01 = "#586e75"
+base00 = "#657b83"
+base0 = "#839496"
+base1 = "#93a1a1"
+base2 = "#eee8d5"
+base3 = "#fdf6e3"
+yellow = "#b58900"
+orange = "#cb4b16"
+red = "#dc322f"
+magenta = "#d33682"
+violet = "#6c71c4"
+blue = "#268bd2"
+cyan = "#2aa198"
+green = "#859900"

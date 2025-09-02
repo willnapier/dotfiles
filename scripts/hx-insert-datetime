@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Insert current date and time (YYYY-MM-DD HH:MM)
+
+date +"%Y-%m-%d %H:%M"

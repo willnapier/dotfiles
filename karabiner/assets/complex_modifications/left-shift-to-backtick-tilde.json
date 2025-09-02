@@ -1,0 +1,79 @@
+{
+  "title": "Left Shift to Backtick/Tilde (Physical Left Shift Key)",
+  "rules": [
+    {
+      "description": "Remap physical left shift to backtick/tilde (single tap = `, double tap = ~)",
+      "manipulators": [
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "left_shift"
+          },
+          "conditions": [
+            {
+              "type": "variable_unless",
+              "name": "left_shift_pressed",
+              "value": 1
+            }
+          ],
+          "to": [
+            {
+              "set_variable": {
+                "name": "left_shift_pressed",
+                "value": 1
+              }
+            }
+          ],
+          "to_delayed_action": {
+            "to_if_invoked": [
+              {
+                "shell_command": "osascript -e 'tell application \"System Events\" to keystroke \"`\"'"
+              },
+              {
+                "set_variable": {
+                  "name": "left_shift_pressed",
+                  "value": 0
+                }
+              }
+            ],
+            "to_if_canceled": [
+              {
+                "set_variable": {
+                  "name": "left_shift_pressed",
+                  "value": 0
+                }
+              }
+            ]
+          },
+          "parameters": {
+            "basic.to_delayed_action_delay_milliseconds": 200
+          }
+        },
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "left_shift"
+          },
+          "conditions": [
+            {
+              "type": "variable_if",
+              "name": "left_shift_pressed",
+              "value": 1
+            }
+          ],
+          "to": [
+            {
+              "shell_command": "osascript -e 'tell application \"System Events\" to keystroke \"~\"'"
+            },
+            {
+              "set_variable": {
+                "name": "left_shift_pressed",
+                "value": 0
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

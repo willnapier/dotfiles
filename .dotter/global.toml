@@ -11,9 +11,38 @@ depends = []
 "nushell/env.nu" = "~/.config/nushell/env.nu"
 "yazi/yazi.toml" = "~/.config/yazi/yazi.toml"
 "yazi/keymap.toml" = "~/.config/yazi/keymap.toml"
+"yazi/theme.toml" = "~/.config/yazi/theme.toml"
 "zellij/config.kdl" = "~/.config/zellij/config.kdl"
-"nvim" = { target = "~/.config/nvim", type = "symbolic" }
-"scripts" = { target = "~/.local/bin", type = "symbolic" }
+"starship.toml" = "~/.config/starship.toml"
+# Directory-level management for collections
+"yazi/plugins" = { target = "~/.config/yazi/plugins", type = "symbolic" }
+"yazi/scripts" = { target = "~/.config/yazi/scripts", type = "symbolic" }
+"yazi/flavors" = { target = "~/.config/yazi/flavors", type = "symbolic" }
+"zellij/layouts" = { target = "~/.config/zellij/layouts", type = "symbolic" }
+"helix/themes" = { target = "~/.config/helix/themes", type = "symbolic" }
+# Neovim configuration files
+"nvim/init.lua" = "~/.config/nvim/init.lua"
+"nvim/lazy-lock.json" = "~/.config/nvim/lazy-lock.json"
+"nvim/lua" = { target = "~/.config/nvim/lua", type = "symbolic" }
+"nvim/doc" = { target = "~/.config/nvim/doc", type = "symbolic" }
+"nvim/spell" = { target = "~/.config/nvim/spell", type = "symbolic" }
+# Essential scripts (most commonly used)
+"scripts/claude" = "~/.local/bin/claude"
+"scripts/daily-note" = { target = "~/.local/bin/daily-note", type = "symbolic" }
+"scripts/daypage-template" = "~/.local/bin/daypage-template"
+"scripts/hx-insert-date" = "~/.local/bin/hx-insert-date"
+"scripts/hx-insert-datetime" = "~/.local/bin/hx-insert-datetime"
+"scripts/search-comparison-test" = "~/.local/bin/search-comparison-test"
+"scripts/hx-insert-time" = "~/.local/bin/hx-insert-time"
+"scripts/hx-auto" = "~/.local/bin/hx-auto"
+"scripts/hx-wiki" = "~/.local/bin/hx-wiki"
+"scripts/obsidian-linker.sh" = "~/.local/bin/obsidian-linker.sh"
+"scripts/semantic-indexer" = "~/.local/bin/semantic-indexer"
+"scripts/semantic-query" = "~/.local/bin/semantic-query"
+"scripts/zj" = "~/.local/bin/zj"
+"scripts/dotter-audit" = "~/.local/bin/dotter-audit"
+"scripts/dotter-add" = "~/.local/bin/dotter-add"
+# Semantic search system - managed separately (has virtual environment)
 
 [shared.variables]
 

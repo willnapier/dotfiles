@@ -1,0 +1,5 @@
+# Test theme to diagnose color issue
+inherits = "solarized_dark"
+
+# Explicitly set background to terminal default (no background)
+"ui.background" = {}

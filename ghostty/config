@@ -1,4 +1,4 @@
- # Ghostty Configuration with Solarized Themes
+ ew  # Ghostty Configuration with Solarized Themes
 # Auto-switches between light/dark based on system appearance
 
 # Font Configuration
@@ -17,9 +17,8 @@ confirm-close-surface = false
 cursor-style = block
 cursor-style-blink = true
 
-# Shell Integration - Reduced features to fix scrollback issues
-shell-integration = detect
-shell-integration-features = cursor,title
+# Shell Integration - Further reduced to fix Claude Code scrollback 
+shell-integration = none
 
 # Theme Settings - Auto-switch based on system appearance
 theme = light:solarized-light,dark:solarized-dark
@@ -28,14 +27,16 @@ theme = light:solarized-light,dark:solarized-dark
 gtk-single-instance = true
 
 # macOS Specific
-macos-option-as-alt = true
+# macos-option-as-alt = true  # Removed - interferes with UK keyboard layout
 macos-non-native-fullscreen = false
 
 # Quick Actions
 quick-terminal-position = bottom
 
-# Scrollback Configuration
+# Scrollback Configuration  
 scrollback-limit = 10000
 mouse-scroll-multiplier = 3
 
-# Note: alternate-screen-scroll option not available in Ghostty 1.1.3
+# Force scrollback behavior for alternate screen applications
+# Try different approaches for Claude Code compatibility
+mouse-hide-while-typing = false

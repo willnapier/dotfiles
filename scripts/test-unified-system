@@ -1,0 +1,67 @@
+#!/bin/bash
+# test-unified-system - Quick verification that unified root detection system is working
+
+echo "🧪 Testing Unified Project Root Detection System..."
+echo ""
+
+# Test if Nushell can load the modules
+echo "📦 Testing module loading..."
+if nu -c "source ~/.config/nushell/scripts/project-root-detection.nu; print 'Root detection module loaded successfully'" 2>/dev/null; then
+    echo "✅ Root detection module loads correctly"
+else
+    echo "❌ Root detection module failed to load"
+    exit 1
+fi
+
+if nu -c "source ~/.config/nushell/scripts/serpl.nu; print 'Serpl integration module loaded successfully'" 2>/dev/null; then
+    echo "✅ Serpl integration module loads correctly"  
+else
+    echo "❌ Serpl integration module failed to load"
+    exit 1
+fi
+
+# Test project detection functions
+echo ""
+echo "🔍 Testing project detection..."
+CURRENT_PROJECT=$(nu -c "source ~/.config/nushell/config.nu; show-project-info | get project_type" 2>/dev/null)
+echo "Current project type: $CURRENT_PROJECT"
+
+PROJECT_ROOT=$(nu -c "source ~/.config/nushell/config.nu; find-project-root" 2>/dev/null)
+echo "Current project root: $PROJECT_ROOT"
+
+# Test marker listing
+echo ""
+echo "🏷️  Available project markers:"
+nu -c "source ~/.config/nushell/config.nu; list-project-markers | first 5 | select marker description" 2>/dev/null || echo "Could not load markers"
+
+# Test serpl functions
+echo ""
+echo "🔧 Testing serpl commands availability..."
+if nu -c "source ~/.config/nushell/config.nu; help commands | where name =~ serpl | length" 2>/dev/null | grep -q "[1-9]"; then
+    echo "✅ Serpl commands available in Nushell"
+else
+    echo "❌ Serpl commands not found in Nushell"
+fi
+
+# Test file opener
+echo ""
+echo "📁 Testing file opener..."
+if [[ -x ~/.local/bin/hx-smart-gf-rust ]]; then
+    echo "✅ Smart file opener (hx-smart-gf-rust) is executable"
+else
+    echo "❌ Smart file opener not found or not executable"
+fi
+
+# Test URL opener  
+if [[ -x ~/.local/bin/hx-open-url-rust ]]; then
+    echo "✅ URL opener (hx-open-url-rust) is executable"
+else
+    echo "❌ URL opener not found or not executable"
+fi
+
+echo ""
+echo "🎉 Unified system test complete!"
+echo ""
+echo "💡 To test in your current shell:"
+echo "   nu -c 'source ~/.config/nushell/config.nu; show-project-info'"
+echo "   nu -c 'source ~/.config/nushell/config.nu; serpl-anywhere --help'"

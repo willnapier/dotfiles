@@ -1,0 +1,79 @@
+#!/usr/bin/env nu
+# dotter-add - Automatically add a config file to Dotter management
+# Usage: dotter-add ~/.config/newapp/config.toml
+
+def main [config_path: string] {
+    let full_path = ($config_path | path expand)
+    
+    if not ($full_path | path exists) {
+        print $"❌ Error: File ($full_path) does not exist"
+        exit 1
+    }
+    
+    if not ($full_path | str starts-with $"($env.HOME)/.config/") and not ($full_path | str starts-with $"($env.HOME)/.local/bin/") {
+        print $"❌ Error: Only ~/.config/ and ~/.local/bin/ files are supported"
+        exit 1
+    }
+    
+    # Determine the relative path and dotfiles location
+    let relative_path = if ($full_path | str starts-with $"($env.HOME)/.config/") {
+        $full_path | str replace $"($env.HOME)/.config/" ""
+    } else {
+        $full_path | str replace $"($env.HOME)/.local/bin/" "scripts/"
+    }
+    
+    let dotfiles_path = $"($env.HOME)/dotfiles/($relative_path)"
+    let dotfiles_dir = ($dotfiles_path | path dirname)
+    
+    print $"🔄 Adding ($full_path) to Dotter management..."
+    print $"   Source: ($full_path)"
+    print $"   Target: ($dotfiles_path)"
+    
+    # Create dotfiles directory if needed
+    if not ($dotfiles_dir | path exists) {
+        mkdir $dotfiles_dir
+        print $"📁 Created directory: ($dotfiles_dir)"
+    }
+    
+    # Move file to dotfiles
+    mv $full_path $dotfiles_path
+    print $"📦 Moved file to dotfiles location"
+    
+    # Add to Dotter configuration
+    let config_file = $"($env.HOME)/dotfiles/.dotter/global.toml"
+    let current_config = (open $config_file)
+    
+    # Determine the correct target path
+    let target_path = if ($full_path | str starts-with $"($env.HOME)/.config/") {
+        $"~/.config/($relative_path)"
+    } else {
+        $"~/.local/bin/($relative_path | str replace "scripts/" "")"
+    }
+    
+    print $"⚙️ Adding to Dotter configuration..."
+    print $"   Entry: \"($relative_path)\" = \"($target_path)\""
+    
+    # Note: This requires manual addition to .dotter/global.toml for now
+    # Auto-editing TOML files is complex and error-prone
+    print ""
+    print $"📝 MANUAL STEP REQUIRED:"
+    print $"   Add this line to ($config_file) under [shared.files]:"
+    print $"   \"($relative_path)\" = \"($target_path)\""
+    print ""
+    print $"🚀 Then run: cd ~/dotfiles && dotter deploy"
+    print $"🧪 Test with: ls -la ($target_path)"
+}
+
+# Show help if no arguments
+if ($args | length) == 0 {
+    print "Usage: dotter-add <config-file-path>"
+    print ""
+    print "Examples:"
+    print "  dotter-add ~/.config/starship.toml"
+    print "  dotter-add ~/.local/bin/my-script"
+    print ""
+    print "This script will:"
+    print "  1. Move the file to ~/dotfiles/"
+    print "  2. Show you what to add to .dotter/global.toml"
+    print "  3. You manually add the entry and run 'dotter deploy'"
+}

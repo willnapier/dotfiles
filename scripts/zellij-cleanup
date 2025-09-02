@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Clean up zombie Zellij sessions
+
+echo "🧹 Zellij Session Cleanup"
+echo "─────────────────────────"
+
+# Show current sessions
+echo "📊 Current sessions:"
+zellij list-sessions --no-formatting 2>/dev/null || echo "No sessions found"
+echo ""
+
+# Count running Zellij processes
+PROCESS_COUNT=$(ps aux | grep -i zellij | grep -v grep | wc -l | tr -d ' ')
+echo "🔍 Running Zellij processes: $PROCESS_COUNT"
+
+if [[ "$PROCESS_COUNT" -gt 3 ]]; then
+    echo "⚠️  Too many Zellij processes detected!"
+    echo ""
+    
+    # Show old/exited sessions
+    echo "📋 Sessions to clean up:"
+    zellij list-sessions --no-formatting 2>/dev/null | grep "EXITED"
+    echo ""
+    
+    echo "🗑️  Cleaning up exited sessions..."
+    # Delete all exited sessions
+    for session in $(zellij list-sessions --no-formatting 2>/dev/null | grep "EXITED" | awk '{print $1}'); do
+        echo "   Deleting: $session"
+        zellij delete-session "$session" 2>/dev/null || true
+    done
+    
+    echo ""
+    echo "🔄 Sessions after cleanup:"
+    zellij list-sessions --no-formatting 2>/dev/null || echo "No sessions found"
+    
+    # Check process count again
+    NEW_PROCESS_COUNT=$(ps aux | grep -i zellij | grep -v grep | wc -l | tr -d ' ')
+    echo "✅ Zellij processes now: $NEW_PROCESS_COUNT"
+else
+    echo "✅ Zellij process count looks healthy"
+fi

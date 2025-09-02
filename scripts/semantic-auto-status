@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Check semantic search automation status
+
+LOGFILE="$HOME/.local/share/semantic-search/logs/auto-update.log"
+
+echo "🤖 Semantic Search Automation Status"
+echo "─────────────────────────────────────"
+
+# Check cron job
+echo "📅 Cron Schedule:"
+crontab -l | grep semantic-cron-wrapper | sed 's/^/  /'
+
+echo ""
+
+# Check recent updates
+echo "📊 Recent Updates:"
+if [[ -f "$LOGFILE" ]]; then
+    tail -10 "$LOGFILE" | grep -E "(Starting|completed|finished)" | tail -5 | sed 's/^/  /'
+else
+    echo "  No log file found"
+fi
+
+echo ""
+
+# Check if API key is set
+if [[ -n "$OPENAI_API_KEY" ]]; then
+    echo "✅ OpenAI API key is configured"
+else
+    echo "❌ OpenAI API key not found"
+fi
+
+echo ""
+
+# Show next scheduled run
+echo "⏰ Next scheduled runs:"
+echo "  Morning: 8:00 AM daily"
+echo "  Evening: 8:00 PM daily"

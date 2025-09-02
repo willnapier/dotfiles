@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Insert current date in ISO format (YYYY-MM-DD)
+
+date +"%Y-%m-%d"

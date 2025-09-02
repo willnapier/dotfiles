@@ -1,3 +1,5 @@
+# ⚠️  CLAUDE CODE: THIS FILE IS DOTTER-MANAGED - EDIT HERE IN DOTFILES, NOT ~/.config/nushell/
+# ⚠️  NEVER EDIT ~/.config/nushell/config.nu - IT'S A SYMLINK TO THIS FILE
 # Nushell Config File
 # version = "0.106.1"
 
@@ -11,6 +13,14 @@ if ($"($env.HOME)/.cache/nushell/starship-init.nu" | path exists) {
 if ($"($env.HOME)/.cache/nushell/zoxide-init.nu" | path exists) {
     source ~/.cache/nushell/zoxide-init.nu
 }
+
+# ---- Unified Project Root Detection & Tools ----
+use ~/.config/nushell/scripts/project-root-detection.nu *
+use ~/.config/nushell/scripts/serpl.nu *
+use ~/.config/nushell/completions/serpl-completions.nu *
+alias serpl-any = serpl-anywhere
+# Example to customize project markers globally:
+# $env.PROJECT_ROOT_MARKERS = [".git" ".vault-root" ".obsidian" "Cargo.toml" ".my-custom-marker"]
 
 # Helix-Yazi integration now built into the y function
 
@@ -170,7 +180,7 @@ $env.config = {
     
     datetime_format: {
         normal: '%a, %d %b %Y %H:%M:%S %z'
-        table: '%Y-%m-%d %I:%M:%S%p'
+        table: '%Y-%m-%d %H:%M:%S'
     }
     
     cursor_shape: {
@@ -407,7 +417,7 @@ def note-links [file: path] {
 
 def daily-note [] {
     let today = (date now | format date "%Y-%m-%d")
-    let daily_dir = $"($env.OBSIDIAN_VAULT)/NapierianLogs/DayPages"
+    let daily_dir = "/Users/williamnapier/Obsidian.nosync/Forge/NapierianLogs/DayPages"
     
     # Create daily directory if it doesn't exist
     if not ($daily_dir | path exists) {
@@ -418,7 +428,7 @@ def daily-note [] {
     
     # Create note with template if it doesn't exist
     if not ($note_path | path exists) {
-        let template_path = $"($env.OBSIDIAN_VAULT)/Areas/Obsidian/Templates/DayPage.md"
+        let template_path = "/Users/williamnapier/Obsidian.nosync/Forge/Areas/Obsidian/Templates/DayPage.md"
         
         if ($template_path | path exists) {
             # Read template from file and process variables
@@ -473,8 +483,9 @@ social_connection: false
     }
     
     # Use hx alias which auto-detects theme based on system appearance
-    hx $note_path
+    hx $"($note_path):3"
 }
+
 
 # Quick daily note opener by date
 def daily-open [date?: string] {
@@ -500,87 +511,11 @@ def daily-open [date?: string] {
     }
 }
 
-# Enhanced commands using skim (sk)
-def note-find [] {
-    if (which sk | is-empty) or (which fd | is-empty) {
-        print "This command requires sk and fd. Install with: brew install sk fd"
-        return
-    }
-    
-    let preview_cmd = if (which bat | is-not-empty) { 
-        "bat --color=always --style=numbers {}" 
-    } else { 
-        "cat {}" 
-    }
-    
-    let selected = (
-        fd --type f --extension md . $env.OBSIDIAN_VAULT 
-        | sk --preview $preview_cmd --height 60% 
-        | str trim
-    )
-    
-    if not ($selected | is-empty) {
-        ^$env.EDITOR $selected
-    }
-}
-
-def note-grep [query?: string] {
-    if (which sk | is-empty) or (which rg | is-empty) {
-        print "This command requires sk and ripgrep. Install with: brew install sk ripgrep"
-        return
-    }
-    
-    let search_query = if ($query | is-empty) { "" } else { $query }
-    let preview_cmd = if (which bat | is-not-empty) { 
-        "bat --color=always --style=numbers --highlight-line {2} {1}" 
-    } else { 
-        "sed -n '{2}p' {1}" 
-    }
-    
-    let selected = (
-        rg --color=always --line-number --no-heading --smart-case $search_query $env.OBSIDIAN_VAULT 
-        | sk --ansi --delimiter : --preview $preview_cmd --height 60% 
-        | str trim
-    )
-    
-    if not ($selected | is-empty) {
-        let parts = ($selected | split row ":")
-        if ($parts | length) >= 2 {
-            let file = ($parts | get 0)
-            let line = ($parts | get 1)
-            ^$env.EDITOR $"+($line)" $file
-        }
-    }
-}
-
-def note-recent [] {
-    if (which sk | is-empty) or (which fd | is-empty) {
-        print "This command requires sk and fd. Install with: brew install sk fd"
-        return
-    }
-    
-    let preview_cmd = if (which bat | is-not-empty) { 
-        "bat --color=always --style=numbers {}" 
-    } else { 
-        "cat {}" 
-    }
-    
-    let selected = (
-        fd --type f --extension md . $env.OBSIDIAN_VAULT --max-depth 5 
-        | lines
-        | each { |f| {path: $f, mtime: (ls $f | get modified.0)} }
-        | sort-by mtime --reverse
-        | first 20
-        | get path
-        | str join "\n"
-        | sk --preview $preview_cmd --height 60% 
-        | str trim
-    )
-    
-    if not ($selected | is-empty) {
-        ^$env.EDITOR $selected
-    }
-}
+# Redundant note search functions removed - use Yazi equivalents instead:
+# - note-find → 's' key in Yazi (project-aware file search)
+# - note-grep → 'S' key in Yazi (project-aware content search) 
+# - note-recent → 'R' key in Yazi (recent files, 7 days)
+# Keeping only Helix-initiated functions (hf, hv) which serve distinct workflow
 
 # ============================================
 # TELEKASTEN-INSPIRED ZETTELKASTEN FUNCTIONS
@@ -677,7 +612,7 @@ def note-week-find [] {
         | path basename
         | sort --reverse
         | str join "\n"
-        | sk --preview $"bat --color=always ($weekly_dir)/{}" --height 60%
+        | ^env TERM=xterm TERMINFO="" TERMINFO_DIRS="" sk --preview $"bat --color=always ($weekly_dir)/{}" --height 60%
         | str trim
     )
     
@@ -958,7 +893,7 @@ def hf [] {
         return
     }
     
-    let file = (ls | where type == "file" | get name | sk --height 40% | str trim)
+    let file = (ls | where type == "file" | get name | ^env TERM=xterm TERMINFO="" TERMINFO_DIRS="" sk --height 40% | str trim)
     if not ($file | is-empty) {
         hx $file
     }
@@ -973,7 +908,7 @@ def hv [] {
     
     let file = (
         fd --type f . $env.OBSIDIAN_VAULT 
-        | sk --preview 'head -20 {}' --height 60% 
+        | ^env TERM=xterm TERMINFO="" TERMINFO_DIRS="" sk --preview 'head -20 {}' --height 60%
         | str trim
     )
     if not ($file | is-empty) {
@@ -1064,14 +999,190 @@ alias zj-ls = zellij list-sessions
 alias zj-kill = zellij kill-session
 alias zj-work = zellij --session work
 
-# Yazi function with directory change support
+# Smart Zellij launcher (screen-aware layouts)
+alias zj = ^zj
+
+# Find project root with intelligent priority-based detection
+# Detects: Obsidian vaults, Git repos, Dotter configs, Node.js/Python/Rust projects
+# Returns: Record with path, type, priority, and marker information
+def find-project-root-enhanced [start_path?: path] {
+    let current_dir = if ($start_path == null) { (pwd) } else { $start_path | path expand }
+    # Build list of directories to check (current + parents)
+    mut dirs_to_check = [$current_dir]
+    mut check_dir = $current_dir
+    for $i in 1..10 {
+        let parent = ($check_dir | path dirname)
+        if $parent == $check_dir {
+            break
+        }
+        $dirs_to_check = ($dirs_to_check | append $parent)
+        $check_dir = $parent
+    }
+    
+    # Project type detection (ordered by priority)
+    let project_types = [
+        {
+            name: "Obsidian Vault",
+            marker: ".obsidian",
+            priority: 1
+        },
+        {
+            name: "Git Repository",
+            marker: ".git",
+            priority: 2
+        },
+        {
+            name: "Dotter Config",
+            marker: ".dotter",
+            priority: 3
+        },
+        {
+            name: "Node.js Project",
+            marker: "package.json",
+            priority: 4
+        },
+        {
+            name: "Python Project",
+            marker: "pyproject.toml",
+            priority: 5
+        },
+        {
+            name: "Rust Project",
+            marker: "Cargo.toml",
+            priority: 6
+        }
+    ]
+    
+    # Find all possible project roots
+    let found_projects = ($dirs_to_check | each { |dir|
+        let project_info = ($project_types | each { |proj|
+            let marker_path = ($dir | path join $proj.marker)
+            if ($marker_path | path exists) {
+                {
+                    path: $dir,
+                    type: $proj.name,
+                    priority: $proj.priority,
+                    marker: $proj.marker
+                }
+            } else {
+                null
+            }
+        } | where $it != null)
+        
+        if ($project_info | length) > 0 {
+            $project_info.0  # Return first (highest priority) match
+        } else {
+            null
+        }
+    } | where $it != null)
+    
+    # Return the highest priority project root found
+    if ($found_projects | length) > 0 {
+        $found_projects | sort-by priority | first
+    } else {
+        {
+            path: $current_dir,
+            type: "Current Directory",
+            priority: 99,
+            marker: null
+        }
+    }
+}
+
+# Display rich contextual information about the detected project
+# Shows: project type, root path, file counts, git status, package info
+def show-project-info [] {
+    let project = (find-project-root-enhanced)
+    
+    print $"📁 Project: ($project.type)"
+    print $"📍 Root: ($project.path)"
+    
+    # Show additional info based on project type
+    match $project.type {
+        "Obsidian Vault" => {
+            let md_count = (do -i { 
+                cd $project.path; 
+                glob **/*.md | length 
+            } | default 0)
+            print $"📝 Notes: ($md_count) markdown files"
+        },
+        "Git Repository" => {
+            let branch = (do -i { git -C $project.path branch --show-current } | complete)
+            if $branch.exit_code == 0 {
+                print $"🔀 Branch: ($branch.stdout | str trim)"
+            }
+            
+            let status = (do -i { git -C $project.path status --porcelain } | complete)
+            if $status.exit_code == 0 {
+                let changes = ($status.stdout | str trim | lines | length)
+                if $changes > 0 {
+                    print $"📝 Changes: ($changes) modified files"
+                } else {
+                    print $"✅ Status: Clean working tree"
+                }
+            }
+        },
+        "Node.js Project" => {
+            let package_json = ($project.path | path join "package.json")
+            if ($package_json | path exists) {
+                let pkg_info = (open $package_json | from json)
+                if "name" in $pkg_info {
+                    print $"📦 Package: ($pkg_info.name)"
+                }
+                if "version" in $pkg_info {
+                    print $"🏷️  Version: ($pkg_info.version)"
+                }
+            }
+        },
+        "Python Project" => {
+            let pyproject = ($project.path | path join "pyproject.toml")
+            if ($pyproject | path exists) {
+                print $"🐍 Python project with pyproject.toml"
+            }
+        },
+        "Rust Project" => {
+            let cargo = ($project.path | path join "Cargo.toml")
+            if ($cargo | path exists) {
+                print $"🦀 Rust project with Cargo.toml"
+            }
+        },
+        _ => {
+            let files = (ls $project.path | length)
+            print $"📂 Files: ($files) items"
+        }
+    }
+    
+    print ""  # Empty line for readability
+}
+
+# Intelligent Yazi launcher with project-aware navigation
+# No args: Opens at detected project root with context info  
+# With args: Preserves explicit user intent (e.g., y ~/Downloads)
+# Integrates with Alt+l wiki links and floating pane workflow
 def --env y [...args] {
     let tmp = (mktemp -t "yazi-cwd.XXXXXX")
     
-    # Run yazi with any provided arguments
-    if ($args | length) > 0 {
+    # Determine the starting directory
+    let start_dir = if ($args | length) > 0 {
+        # If arguments provided, use them as-is (preserve explicit user intent)
+        null  # Will use args directly
+    } else {
+        # No args - use intelligent project root detection
+        let project = (find-project-root-enhanced)
+        
+        # Show project context info
+        show-project-info
+        
+        $project.path
+    }
+    
+    # Run yazi with appropriate starting directory
+    if $start_dir != null {
+        yazi $start_dir --cwd-file $tmp
+    } else if ($args | length) > 0 {
         yazi ...$args --cwd-file $tmp
     } else {
+        # Fallback (shouldn't happen with our logic above)
         yazi --cwd-file $tmp
     }
     
@@ -1227,3 +1338,187 @@ alias links-status = link-service status
 alias links-logs = link-service logs  
 alias links-restart = link-service restart
 alias links-test = link-service test
+
+# Semantic Search System - AI-powered note discovery
+# Find notes semantically related to current context
+
+def related [...args] {
+    # Find notes semantically similar to current file or specified file
+    if ($args | is-empty) {
+        # Try to find current file context - for now, use current directory
+        let current_dir = (pwd)
+        let md_files = (ls *.md | get name)
+        
+        if ($md_files | length) > 0 {
+            let first_file = ($md_files | first)
+            print $"Finding notes related to: ($first_file | path basename)"
+            ^semantic-query --file $first_file
+        } else {
+            print "No markdown files in current directory. Use: related /path/to/file.md"
+        }
+    } else {
+        let file_path = ($args | first)
+        if ($file_path | path exists) {
+            print $"Finding notes related to: ($file_path | path basename)"
+            ^semantic-query --file $file_path
+        } else {
+            print $"File not found: ($file_path)"
+        }
+    }
+}
+
+def semantic [query: string, --limit: int = 10] {
+    # Find notes by concept description using AI semantic search
+    print $"Searching for concept: \"($query)\""
+    if $limit != 10 {
+        ^semantic-query --text $query --limit $limit
+    } else {
+        ^semantic-query --text $query
+    }
+}
+
+def semantic-rebuild [] {
+    # Rebuild the entire semantic search index (run after major vault changes)
+    print "🔄 Rebuilding semantic search index..."
+    print "⚠️  This will process all 6,000+ files and may cost ~$8-15 in OpenAI API usage"
+    print "Continue? (y/N)"
+    
+    let response = (input)
+    if ($response | str downcase) == "y" {
+        print "🚀 Starting full rebuild. This may take 15-30 minutes..."
+        ^semantic-indexer --rebuild
+    } else {
+        print "❌ Rebuild cancelled"
+    }
+}
+
+def semantic-update [] {
+    # Update semantic search index with only changed files (daily maintenance)
+    print "🔄 Updating semantic search index with changed files..."
+    ^semantic-indexer --update
+}
+
+def semantic-watch [] {
+    # Start file watcher for automatic incremental updates
+    print "👁️  Starting semantic search file watcher..."
+    print "This will monitor your vault and update the index automatically."
+    print "Press Ctrl+C to stop."
+    ^semantic-indexer --watch
+}
+
+def semantic-status [] {
+    # Show semantic search system status
+    let index_path = $"($env.HOME)/.local/share/semantic-search/db/faiss_index.bin"
+    let metadata_path = $"($env.HOME)/.local/share/semantic-search/db/file_metadata.json"
+    let config_path = $"($env.HOME)/.local/share/semantic-search/config.yaml"
+    
+    print "📊 Semantic Search System Status"
+    print "─" * 50
+    
+    if ($index_path | path exists) {
+        let index_size = (ls $index_path | get size | first)
+        print $"✅ Index exists: ($index_size | into string)"
+    } else {
+        print "❌ Index not found - run semantic-rebuild first"
+    }
+    
+    if ($metadata_path | path exists) {
+        let metadata = (open $metadata_path)
+        let file_count = ($metadata.files | length)
+        let last_updated = $metadata.last_updated
+        print $"📁 Files indexed: ($file_count)"
+        print $"🕐 Last updated: ($last_updated)"
+    } else {
+        print "❌ Metadata not found"
+    }
+    
+    if ($config_path | path exists) {
+        print "✅ Configuration found"
+    } else {
+        print "❌ Configuration missing"
+    }
+    
+    # Check if OpenAI API key is set
+    if ($env.OPENAI_API_KEY? | is-empty) {
+        print "❌ OPENAI_API_KEY not set"
+        print "   Set with: $env.OPENAI_API_KEY = 'your-key-here'"
+    } else {
+        print "✅ OpenAI API key configured"
+    }
+}
+
+# Clipboard aliases - force external command execution to prevent Nushell interception
+alias pbcopy = ^pbcopy
+alias pbpaste = ^pbpaste
+
+
+# Helix integration functions (project-aware file opening)
+def hx-smart-gf [] {
+    let input_text = ($in | str trim)
+    
+    if ($input_text | is-empty) {
+        print "No text provided"
+        return
+    }
+    
+    # Get project context
+    let project_info = (show-project-info)
+    let project_root = $project_info.project_root
+    let project_type = $project_info.project_type
+    
+    # Clean input
+    let clean_text = ($input_text | str replace --all '"' "" | str replace --all "'" "" | str trim)
+    
+    let target_file = if ($clean_text | str starts-with "http") {
+        $clean_text
+    } else if ($clean_text | str contains "[[") and ($clean_text | str contains "]]") {
+        # Handle wiki links
+        let wiki_content = ($clean_text | str replace "[[" "" | str replace "]]" "")
+        
+        if $project_type == "obsidian-vault" {
+            let note_path = ($project_root | path join $"($wiki_content).md")
+            if ($note_path | path exists) {
+                $note_path
+            } else {
+                let search_results = (try {
+                    ^fd -e md -g $"*($wiki_content)*" $project_root | lines | take 1
+                } catch { [] })
+                
+                if ($search_results | length) > 0 {
+                    $search_results | first
+                } else {
+                    $wiki_content
+                }
+            }
+        } else {
+            $wiki_content
+        }
+    } else {
+        # Handle file paths
+        let potential_paths = [
+            ($project_root | path join $clean_text)
+            ($env.PWD | path join $clean_text) 
+            $clean_text
+        ]
+        
+        let existing_path = ($potential_paths | where {|path| $path | path exists} | first)
+        
+        if ($existing_path | is-empty) {
+            let search_results = (try {
+                ^fd -t f -g $"*($clean_text)*" $project_root | lines | take 1
+            } catch { [] })
+            
+            if ($search_results | length) > 0 {
+                $search_results | first
+            } else {
+                $clean_text
+            }
+        } else {
+            $existing_path
+        }
+    }
+    
+    # Write result
+    $target_file | save -f /tmp/helix-gf-target.md
+    print $"Resolved: ($input_text) -> ($target_file)"
+}

@@ -1,0 +1,2 @@
+#!/bin/bash
+security find-generic-password -s "openai-api-key" -a "semantic-search" -w 2>/dev/null

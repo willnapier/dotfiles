@@ -1,3 +1,5 @@
+# ⚠️  CLAUDE CODE: THIS FILE IS DOTTER-MANAGED - EDIT HERE IN DOTFILES, NOT ~/.config/helix/
+# ⚠️  NEVER EDIT ~/.config/helix/config.toml - IT'S A SYMLINK TO THIS FILE
 # Helix Configuration for Colemak-DH
 
 # Use standard Solarized themes - change based on system appearance
@@ -67,12 +69,27 @@ o = ["extend_to_line_bounds", ":pipe-to hx-open-system-rust"]  # Open in system 
 l = ":insert-output pbpaste"
 # Show real file name - Space+i (Info about current file)
 i = ":sh hx-show-real-file %{buffer_name}"
+# Date and time insertion commands
+d = ":insert-output hx-insert-date"        # Insert current date (YYYY-MM-DD)
+# Time insertion moved to avoid conflicts with Space+t (todo toggle) and Space+T (config reload)
+";" = ":insert-output hx-insert-time"      # Insert current time (HH:MM) 
+":" = ":insert-output hx-insert-datetime"  # Insert date and time (YYYY-MM-DD HH:MM)
 
 # Custom g-prefix commands
 [keys.normal.g]
 f = ["extend_to_line_bounds", ":pipe-to hx-smart-gf-rust", ":open /tmp/helix-gf-target.md"]  # Smart file opener (Rust/Nushell version with fd, rg)
 x = ["extend_to_line_bounds", ":pipe-to hx-open-url-rust"]  # Open URLs (Rust/Nushell version with rg)
 w = ["extend_to_line_bounds", ":pipe-to hx-wiki-tiling"]  # Wiki link tiling navigation (opens in new pane)
+
+# Serpl search and replace integration - Space+r,r
+[keys.normal.space.r]
+r = [
+  ":write-all",
+  ":sh git add -A && git commit -m 'pre-serpl snapshot' || true",
+  ":insert-output nu -c 'serpl-anywhere >/dev/tty'",
+  ":redraw",
+  ":reload-all"
+]
 
 [keys.select]
 # Same navigation in select mode

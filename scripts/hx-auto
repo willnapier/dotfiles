@@ -1,0 +1,30 @@
+#!/bin/bash
+# Auto-detect system appearance and set Helix theme accordingly
+
+# Resolve symlink to get actual file location
+CONFIG_FILE="$(readlink -f "$HOME/.config/helix/config.toml" 2>/dev/null || realpath "$HOME/.config/helix/config.toml" 2>/dev/null || echo "$HOME/.config/helix/config.toml")"
+
+# If still a symlink or doesn't exist, use the dotfiles location directly
+if [ ! -f "$CONFIG_FILE" ] || [ -L "$CONFIG_FILE" ]; then
+    CONFIG_FILE="$HOME/dotfiles/helix/config.toml"
+fi
+
+# Check macOS appearance
+# Note: AppleInterfaceStyle only exists when in Dark mode
+# When in Light mode, the key doesn't exist at all
+if defaults read -g AppleInterfaceStyle 2>/dev/null | grep -q "Dark"; then
+    # Dark mode detected
+    sed -i '' 's/theme = "solarized_light_modal"/theme = "solarized_dark_modal"/g' "$CONFIG_FILE"
+    sed -i '' 's/theme = "solarized_light"/theme = "solarized_dark"/g' "$CONFIG_FILE"
+    # Debug output
+    >&2 echo "hx-auto: Set dark theme"
+else
+    # Light mode (key doesn't exist)
+    sed -i '' 's/theme = "solarized_dark_modal"/theme = "solarized_light_modal"/g' "$CONFIG_FILE"
+    sed -i '' 's/theme = "solarized_dark"/theme = "solarized_light"/g' "$CONFIG_FILE"
+    # Debug output
+    >&2 echo "hx-auto: Set light theme"
+fi
+
+# Launch Helix with all arguments
+exec /opt/homebrew/bin/hx "$@"

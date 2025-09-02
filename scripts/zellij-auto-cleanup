@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Automated Zellij zombie session cleanup
+# Runs silently in background, logs activity
+
+LOGFILE="$HOME/.local/share/zellij-cleanup.log"
+
+# Ensure log directory exists
+mkdir -p "$(dirname "$LOGFILE")"
+
+# Log with timestamp
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOGFILE"
+}
+
+# Count running Zellij processes before cleanup
+PROCESS_COUNT_BEFORE=$(ps aux | grep -i zellij | grep -v grep | wc -l | tr -d ' ')
+
+# Get zombie sessions
+ZOMBIE_SESSIONS=$(zellij list-sessions --no-formatting 2>/dev/null | grep "EXITED" | awk '{print $1}')
+ZOMBIE_COUNT=$(echo "$ZOMBIE_SESSIONS" | wc -l | tr -d ' ')
+
+# Only log if there's activity
+if [[ -n "$ZOMBIE_SESSIONS" && "$ZOMBIE_SESSIONS" != "" ]]; then
+    log "Found $ZOMBIE_COUNT zombie sessions (Zellij processes: $PROCESS_COUNT_BEFORE)"
+    
+    # Clean up zombie sessions
+    for session in $ZOMBIE_SESSIONS; do
+        if zellij delete-session "$session" 2>/dev/null; then
+            log "  Cleaned: $session"
+        else
+            log "  Failed to clean: $session"
+        fi
+    done
+    
+    # Count processes after cleanup
+    PROCESS_COUNT_AFTER=$(ps aux | grep -i zellij | grep -v grep | wc -l | tr -d ' ')
+    log "Cleanup complete (Zellij processes: $PROCESS_COUNT_BEFORE → $PROCESS_COUNT_AFTER)"
+else
+    # Silent run - no zombies found
+    # Only log occasionally to confirm the system is running
+    HOUR=$(date '+%H')
+    if [[ "$HOUR" == "08" ]]; then  # Log once daily at 8 AM
+        log "System healthy - no zombie sessions found ($PROCESS_COUNT_BEFORE Zellij processes)"
+    fi
+fi

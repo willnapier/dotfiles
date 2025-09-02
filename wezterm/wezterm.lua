@@ -118,6 +118,10 @@ config.scrollback_lines = 10000
 config.enable_csi_u_key_encoding = true
 config.use_ime = true
 
+-- Alt key handling - Left Alt for commands, Right Alt for characters
+config.send_composed_key_when_left_alt_is_pressed = false
+config.send_composed_key_when_right_alt_is_pressed = true
+
 -- Image protocol support for tools like Yazi
 config.enable_kitty_graphics = true
 
@@ -361,6 +365,18 @@ config.keys = {
     action = act.PasteFrom 'Clipboard',
   },
   
+  -- Standard macOS clipboard shortcuts
+  {
+    key = 'c',
+    mods = 'CMD',
+    action = act.CopyTo 'Clipboard',
+  },
+  {
+    key = 'v',
+    mods = 'CMD',
+    action = act.PasteFrom 'Clipboard',
+  },
+  
   -- Command palette
   {
     key = 'P',
@@ -467,7 +483,7 @@ config.keys = {
 
 -- Mouse bindings - explicit clipboard handling
 config.mouse_bindings = {
-  -- Mouse selection automatically copies on release
+  -- Mouse selection automatically copies
   {
     event = { Up = { streak = 1, button = 'Left' } },
     mods = 'NONE',

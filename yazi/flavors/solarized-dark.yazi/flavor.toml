@@ -1,0 +1,44 @@
+[manager]
+cwd         = { fg = "#268bd2", bold = true }
+hovered     = { fg = "#839496", bg = "#073642" }
+previewed   = { fg = "#2aa198" }
+synced      = { fg = "#6c71c4" }
+marked      = { fg = "#cb4b16" }
+flagged     = { fg = "#dc322f" }
+
+[status]
+separator   = { fg = "#586e75" }
+mode_normal = { fg = "#93a1a1", bg = "#073642", bold = true }
+mode_select = { fg = "#073642", bg = "#b58900", bold = true }
+mode_visual = { fg = "#073642", bg = "#2aa198", bold = true }
+
+[progress]
+label       = { fg = "#586e75" }
+gauge       = { fg = "#859900" }
+
+[selection]
+matched     = { fg = "#b58900", bold = true }
+
+[input]
+title       = { fg = "#268bd2", bold = true }
+value       = { fg = "#93a1a1" }
+
+[completion]
+active      = { fg = "#2aa198", bg = "#002b36", bold = true }
+
+[help]
+on          = { fg = "#859900" }
+off         = { fg = "#586e75" }
+desc        = { fg = "#657b83" }
+
+[tasks]
+running     = { fg = "#b58900" }
+done        = { fg = "#859900" }
+failed      = { fg = "#dc322f" }
+
+[preview]
+syntect_theme = "Solarized (dark)"
+
+[border]
+active      = { fg = "#268bd2" }
+inactive    = { fg = "#586e75" }

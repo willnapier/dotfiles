@@ -1,0 +1,16 @@
+# Solarized Dark with enhanced mode indication
+# Based on the default solarized_dark theme with modal visual cues
+
+inherits = "solarized_dark"
+
+# Enhanced cursor colors for different modes
+"ui.cursor" = { fg = "base03", bg = "blue" }           # Normal mode - blue block cursor
+"ui.cursor.insert" = { fg = "base03", bg = "green" }   # Insert mode - green cursor
+"ui.cursor.select" = { fg = "base03", bg = "orange" }  # Select mode - orange cursor
+
+# Status line mode indicators
+"ui.statusline.normal" = { fg = "base03", bg = "blue", modifiers = ["bold"] }
+"ui.statusline.insert" = { fg = "base03", bg = "green", modifiers = ["bold"] } 
+"ui.statusline.select" = { fg = "base03", bg = "orange", modifiers = ["bold"] }
+
+# Don't redefine the palette - inherit it from solarized_dark

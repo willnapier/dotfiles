@@ -1,0 +1,49 @@
+# Starship configuration optimized for Solarized themes
+format = "$username$hostname$directory$line_break$character"
+
+# Disable the continuation prompt that adds the colon
+continuation_prompt = ""
+
+[fill]
+symbol = " "
+
+[directory]
+style = "bold cyan"
+read_only = " 🔒"
+truncation_length = 4
+truncate_to_repo = true
+format = "[$path]($style)"
+
+[character]
+success_symbol = "[> ](bold green)"
+error_symbol = "[> ](bold red)"
+
+[git_branch]
+symbol = "🌱 "
+style = "bold yellow"
+
+[git_status]
+style = "bold red"
+
+[cmd_duration]
+min_time = 500
+format = "[$duration](bold yellow)"
+
+[time]
+disabled = false
+format = '🕙[$time]($style) '
+time_format = "%T"
+style = "bold blue"
+
+[username]
+style_user = "bold dimmed blue"
+show_always = true
+format = "[wn]($style)@"
+
+[hostname]
+ssh_only = true
+style = "bold dimmed green"
+
+[jobs]
+symbol = "+ "
+style = "bold blue"

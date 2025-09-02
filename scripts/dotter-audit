@@ -1,0 +1,72 @@
+#!/usr/bin/env nu
+# dotter-audit - Find config files not managed by Dotter and propose fixes
+
+# Colors for output
+let RED = "\e[31m"
+let GREEN = "\e[32m"  
+let YELLOW = "\e[33m"
+let BLUE = "\e[34m"
+let RESET = "\e[0m"
+
+print $"($BLUE)🔍 Auditing Dotter Configuration Management($RESET)"
+print ""
+
+# Get currently managed files from Dotter config
+let dotter_config = (open ~/dotfiles/.dotter/global.toml)
+let managed_targets = ($dotter_config | get shared.files | columns)
+
+print $"($GREEN)✅ Currently managed by Dotter:($RESET)"
+$managed_targets | each { |target| print $"   • ($target)" }
+print ""
+
+# Find config files in ~/.config using fd
+let config_files = (
+    ^fd -t f '\.(toml|nu|kdl|lua|json|yaml|yml)$|^config$' ~/.config
+    | lines
+    | where $it !~ "cache|lock|log|tmp"  # Skip cache/temp files
+    | sort
+)
+
+print $"($BLUE)📁 Found config files:($RESET)"
+
+mut unmanaged_files = []
+
+for $file in $config_files {
+    let relative_path = ($file | str replace $env.HOME "~")
+    let is_symlink = (ls -la $file | get 0.type) == "symlink"
+    
+    if $is_symlink {
+        let target = (ls -la $file | get 0.target)
+        if ($target | str contains "dotfiles") {
+            print $"   ($GREEN)✅ ($relative_path) → ($target)($RESET)"
+        } else {
+            print $"   ($YELLOW)⚠️  ($relative_path) → ($target) (symlinked but not to dotfiles)($RESET)"
+        }
+    } else {
+        print $"   ($RED)❌ ($relative_path) - unmanaged real file($RESET)"
+        $unmanaged_files = ($unmanaged_files | append $file)
+    }
+}
+
+print ""
+
+if ($unmanaged_files | length) > 0 {
+    print $"($RED)🚨 Found ($unmanaged_files | length) unmanaged config files!($RESET)"
+    print ""
+    print $"($YELLOW)📋 To add these to Dotter management:($RESET)"
+    
+    for $file in $unmanaged_files {
+        let relative_from_home = ($file | str replace $env.HOME "")
+        let relative_from_config = ($file | str replace ~/.config/ "")
+        let dotfile_path = $"dotfiles/($relative_from_config)"
+        
+        print $"1. mv ($file) ~/($dotfile_path)"
+        print $"2. Add to .dotter/global.toml: \"($relative_from_config)\" = \"($relative_from_home)\""
+        print $"3. dotter deploy"
+        print ""
+    }
+} else {
+    print $"($GREEN)🎉 All found config files are properly managed by Dotter!($RESET)"
+}
+
+print $"($BLUE)💡 Run this script after installing new applications to catch unmanaged configs.($RESET)"

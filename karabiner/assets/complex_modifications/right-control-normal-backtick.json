@@ -1,0 +1,35 @@
+{
+  "title": "Right Control as Normal Backtick Key",
+  "rules": [
+    {
+      "description": "Right Control = backtick, Shift + Right Control = tilde",
+      "manipulators": [
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "right_control",
+            "modifiers": {
+              "mandatory": ["shift"]
+            }
+          },
+          "to": [
+            {
+              "shell_command": "osascript -e 'tell application \"System Events\" to keystroke \"~\"'"
+            }
+          ]
+        },
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "right_control"
+          },
+          "to": [
+            {
+              "shell_command": "osascript -e 'tell application \"System Events\" to keystroke \"`\"'"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

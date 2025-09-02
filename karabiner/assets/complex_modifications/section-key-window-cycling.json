@@ -1,0 +1,22 @@
+{
+  "title": "Section Key for Window Cycling",
+  "rules": [
+    {
+      "description": "Section key (§) = Cmd+` for window cycling",
+      "manipulators": [
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "grave_accent_and_tilde"
+          },
+          "to": [
+            {
+              "key_code": "grave_accent_and_tilde",
+              "modifiers": ["left_command"]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

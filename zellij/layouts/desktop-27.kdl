@@ -1,0 +1,31 @@
+// Desktop layout - optimized for 27" Mac Thunderbolt (1710×1107px)
+// Strategy: Dedicated daily note pane + balanced workspace
+layout {
+    default_tab_template {
+        // Removed tab-bar plugin to eliminate duplicate mode indicators
+        // Mode information is still available in the comprehensive status-bar below
+        children
+        pane size=2 borderless=true {
+            plugin location="zellij:status-bar"
+        }
+    }
+    
+    tab name="workspace" focus=true {
+        pane split_direction="vertical" {
+            pane name="daily-note" {
+                size "35%"
+                command "bash"
+                args "-c" "echo 'Daily Note Pane - Persistent across days\nRun: y → D for todays note'; exec /opt/homebrew/bin/nu"
+            }
+            pane split_direction="horizontal" {
+                pane name="main-work" {
+                    focus true
+                    size "60%"
+                }
+                pane name="auxiliary" {
+                    size "40%"
+                }
+            }
+        }
+    }
+}

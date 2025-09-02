@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Automatic Semantic Search Update
+# Runs invisibly in background, only processes changed files
+
+set -e
+
+LOGFILE="$HOME/.local/share/semantic-search/logs/auto-update.log"
+INDEXER="$HOME/.local/share/semantic-search/venv/bin/python3"
+SCRIPT="$HOME/.local/share/semantic-search/semantic_indexer.py"
+
+# Ensure log directory exists
+mkdir -p "$(dirname "$LOGFILE")"
+
+# Log with timestamp
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOGFILE"
+}
+
+# Check if OpenAI API key is available
+if [[ -z "$OPENAI_API_KEY" ]]; then
+    log "ERROR: OPENAI_API_KEY not set, skipping update"
+    exit 1
+fi
+
+# Check if another update is running
+PIDFILE="$HOME/.local/share/semantic-search/.update_running"
+if [[ -f "$PIDFILE" ]]; then
+    log "Update already running (PID: $(cat "$PIDFILE")), skipping"
+    exit 0
+fi
+
+# Create PID file
+echo $$ > "$PIDFILE"
+
+# Cleanup function
+cleanup() {
+    rm -f "$PIDFILE"
+}
+trap cleanup EXIT
+
+log "Starting automatic semantic search update"
+
+# Run incremental update
+cd "$HOME/.local/share/semantic-search"
+if "$INDEXER" "$SCRIPT" --update >> "$LOGFILE" 2>&1; then
+    log "Update completed successfully"
+else
+    log "Update failed with exit code $?"
+fi
+
+log "Automatic update finished"

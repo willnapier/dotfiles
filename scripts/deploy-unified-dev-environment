@@ -1,0 +1,649 @@
+#!/bin/bash
+# deploy-unified-dev-environment - Cross-platform deployment of complete dev environment
+# Includes: Unified root detection, serpl integration, dynamic vault detection, and all tools
+
+set -e
+
+echo "🚀 Deploying Unified Development Environment..."
+echo "   - Cross-platform compatible (macOS/Arch Linux)"
+echo "   - Unified project root detection system"
+echo "   - Serpl search/replace integration" 
+echo "   - Dynamic Obsidian vault detection"
+echo "   - Project-aware file opening (gf/gx)"
+echo ""
+
+# Detect platform
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    PLATFORM="macos"
+    PACKAGE_MANAGER="brew"
+elif [[ -f /etc/arch-release ]]; then
+    PLATFORM="arch"
+    PACKAGE_MANAGER="pacman"
+elif [[ -f /etc/debian_version ]]; then
+    PLATFORM="debian"
+    PACKAGE_MANAGER="apt"
+else
+    echo "⚠️  Unknown platform - proceeding with generic Linux assumptions"
+    PLATFORM="linux"
+    PACKAGE_MANAGER="unknown"
+fi
+
+echo "📋 Platform detected: $PLATFORM"
+
+# Create necessary directories
+echo "📁 Creating directory structure..."
+mkdir -p ~/.config/nushell/scripts
+mkdir -p ~/.config/nushell/completions  
+mkdir -p ~/.config/helix
+mkdir -p ~/.config/zellij
+mkdir -p ~/.config/wezterm
+mkdir -p ~/.config/yazi
+mkdir -p ~/.local/bin
+mkdir -p ~/.local/share
+
+# Install dependencies based on platform
+echo "📦 Installing dependencies..."
+case $PLATFORM in
+    "macos")
+        echo "   Installing macOS dependencies via Homebrew..."
+        if ! command -v brew &> /dev/null; then
+            echo "❌ Homebrew not found! Install from https://brew.sh"
+            exit 1
+        fi
+        
+        # Core Rust development stack
+        brew install nushell helix yazi zellij wezterm starship
+        
+        # Essential search/file tools  
+        brew install serpl ripgrep fd skim bat eza zoxide
+        
+        # Optional productivity tools
+        brew install git-delta tealdeer tokei || echo "⚠️  Some optional tools failed to install"
+        ;;
+    "arch")
+        echo "   Installing Arch Linux dependencies..."
+        # Core Rust development stack
+        sudo pacman -S --needed nushell helix yazi zellij starship
+        
+        # Essential search/file tools
+        sudo pacman -S --needed serpl ripgrep fd skim bat eza zoxide
+        
+        # WezTerm (may need AUR)
+        yay -S --needed wezterm || echo "⚠️  WezTerm requires AUR helper (yay/paru)"
+        
+        # Optional productivity tools
+        sudo pacman -S --needed git-delta tealdeer tokei || echo "⚠️  Some optional tools not available"
+        ;;
+    *)
+        echo "⚠️  Please install dependencies manually:"
+        echo ""
+        echo "   🦀 Core Rust Development Stack:"
+        echo "   - nushell (shell)"
+        echo "   - helix (editor)"
+        echo "   - yazi (file manager)"
+        echo "   - zellij (terminal multiplexer)"
+        echo "   - wezterm (terminal)"
+        echo "   - starship (prompt)"
+        echo ""
+        echo "   🔍 Essential Tools:"
+        echo "   - serpl (search/replace)"
+        echo "   - ripgrep (rg - search)"
+        echo "   - fd (file finder)"
+        echo "   - skim (fuzzy finder)"
+        echo "   - bat (syntax highlighter)"
+        echo "   - eza (ls replacement)"
+        echo "   - zoxide (cd replacement)"
+        ;;
+esac
+
+# Deploy unified root detection system
+echo "🧠 Deploying unified project root detection system..."
+
+# 1. Main root detection module
+cat > ~/.config/nushell/scripts/project-root-detection.nu << 'EOF'
+# ---- project-root-detection.nu (Unified Intelligent Root Detection) ----
+#
+# Shared root detection system for all development tools
+# 
+# This module provides intelligent project boundary detection that works
+# across the entire filesystem, enabling tools to automatically understand
+# project scope regardless of where files are located.
+
+# Default project markers - can be customized per user
+export-env {
+  if "PROJECT_ROOT_MARKERS" not-in $env {
+    $env.PROJECT_ROOT_MARKERS = [
+      # Version control systems
+      ".git" ".hg" ".svn"
+      
+      # Knowledge management systems  
+      ".obsidian" ".vault-root"
+      
+      # Programming language project roots
+      "Cargo.toml"      # Rust
+      "package.json"    # Node.js/JavaScript
+      "pyproject.toml"  # Python
+      "go.mod"          # Go
+      "pom.xml"         # Java Maven
+      "build.gradle"    # Java Gradle
+      "composer.json"   # PHP
+      "Gemfile"         # Ruby
+      
+      # Custom markers
+      ".project-root"
+      ".workspace-root"
+    ]
+  }
+}
+
+# Core root detection function - walks up directory tree
+def find-project-root [start_path?: path]: nothing -> string {
+  let start = ($start_path | default $env.PWD | path expand)
+  
+  mut current_dir = $start
+  mut found = false
+  
+  while not $found {
+    for marker in $env.PROJECT_ROOT_MARKERS {
+      let marker_path = ($current_dir | path join $marker)
+      if ($marker_path | path exists) {
+        $found = true
+        break
+      }
+    }
+    
+    if not $found {
+      let parent = ($current_dir | path dirname)
+      if $parent == $current_dir {
+        # Hit filesystem root, return original path
+        return $start
+      }
+      $current_dir = $parent
+    }
+  }
+  
+  $current_dir
+}
+
+# Find specifically an Obsidian vault root
+export def find-obsidian-vault [start_path?: path]: nothing -> string {
+  let start = ($start_path | default $env.PWD | path expand)
+  
+  mut current_dir = $start
+  mut found = false
+  
+  while not $found {
+    let obsidian_path = ($current_dir | path join ".obsidian")
+    if ($obsidian_path | path exists) and ($obsidian_path | path type) == "dir" {
+      return $current_dir
+    }
+    
+    let parent = ($current_dir | path dirname)
+    if $parent == $current_dir {
+      # Hit filesystem root, return empty to indicate no vault found
+      return ""
+    }
+    $current_dir = $parent
+  }
+  
+  "" # fallback
+}
+
+# Find specifically a git repository root
+export def find-git-root [start_path?: path]: nothing -> string {
+  let start = ($start_path | default $env.PWD | path expand)
+  
+  mut current_dir = $start
+  mut found = false
+  
+  while not $found {
+    let git_path = ($current_dir | path join ".git")
+    if ($git_path | path exists) {
+      return $current_dir
+    }
+    
+    let parent = ($current_dir | path dirname)
+    if $parent == $current_dir {
+      # Hit filesystem root, return empty to indicate no git repo found
+      return ""
+    }
+    $current_dir = $parent
+  }
+  
+  "" # fallback
+}
+
+# Determine the project type based on markers found
+export def get-project-type [start_path?: path]: nothing -> string {
+  let root = (find-project-root $start_path)
+  
+  # Check for specific markers in priority order
+  let markers_with_types = [
+    [".obsidian", "obsidian-vault"]
+    [".git", "git-repository"] 
+    ["Cargo.toml", "rust-project"]
+    ["package.json", "nodejs-project"]
+    ["pyproject.toml", "python-project"]
+    ["go.mod", "go-project"]
+    ["pom.xml", "java-maven-project"]
+    ["build.gradle", "java-gradle-project"]
+    ["composer.json", "php-project"]
+    ["Gemfile", "ruby-project"]
+    [".vault-root", "custom-vault"]
+    [".project-root", "custom-project"]
+    [".workspace-root", "custom-workspace"]
+  ]
+  
+  for marker_info in $markers_with_types {
+    let marker = ($marker_info | get 0)
+    let type = ($marker_info | get 1)
+    let marker_path = ($root | path join $marker)
+    
+    if ($marker_path | path exists) {
+      return $type
+    }
+  }
+  
+  "unknown-project"
+}
+
+# List all configured project markers
+export def list-project-markers []: nothing -> table {
+  $env.PROJECT_ROOT_MARKERS 
+  | enumerate 
+  | each {|item| {
+      index: $item.index
+      marker: $item.item
+      description: (match $item.item {
+        ".git" => "Git repository"
+        ".hg" => "Mercurial repository" 
+        ".svn" => "Subversion repository"
+        ".obsidian" => "Obsidian vault"
+        ".vault-root" => "Custom vault marker"
+        "Cargo.toml" => "Rust project"
+        "package.json" => "Node.js project"
+        "pyproject.toml" => "Python project"
+        "go.mod" => "Go project"
+        "pom.xml" => "Java Maven project"
+        "build.gradle" => "Java Gradle project"
+        "composer.json" => "PHP project"
+        "Gemfile" => "Ruby project"
+        ".project-root" => "Custom project marker"
+        ".workspace-root" => "Custom workspace marker"
+        _ => "Custom marker"
+      })
+    }}
+}
+
+# Test function to show project detection for current location
+export def show-project-info [path?: path]: nothing -> record {
+  let target_path = ($path | default $env.PWD | path expand)
+  let root = (find-project-root $target_path)
+  let project_type = (get-project-type $target_path)
+  let obsidian_vault = (find-obsidian-vault $target_path)
+  let git_root = (find-git-root $target_path)
+  
+  {
+    current_path: $target_path
+    project_root: $root
+    project_type: $project_type
+    obsidian_vault: (if $obsidian_vault == "" { null } else { $obsidian_vault })
+    git_root: (if $git_root == "" { null } else { $git_root })
+    is_obsidian_vault: ($obsidian_vault != "")
+    is_git_repository: ($git_root != "")
+  }
+}
+
+# Export main function for backward compatibility and convenience
+export def find-root [path?: path]: nothing -> string {
+  find-project-root $path
+}
+EOF
+
+# 2. Serpl integration module
+cat > ~/.config/nushell/scripts/serpl.nu << 'EOF'
+# ---- serpl.nu (Nushell-native with unified root detection) ----
+#
+# Serpl integration for Helix-Zellij development environment
+# Uses the unified project root detection system
+
+# Import unified root detection system
+use project-root-detection.nu *
+
+# Launch serpl with auto-detected root (or explicit --root)
+# 
+# Automatically detects the project root by walking up directories looking for
+# common project markers (.git, .obsidian, Cargo.toml, package.json, etc.)
+# and launches serpl from that root directory for project-wide search/replace.
+#
+# Examples:
+#   serpl-anywhere                    # Auto-detect from current directory
+#   serpl-anywhere --from ~/projects  # Auto-detect starting from ~/projects  
+#   serpl-anywhere --root ~/myproject # Use specific root directory
+export def serpl-anywhere [
+  --from: path     # start directory for detection (defaults to $PWD)
+  --root: path     # explicit root; bypass detection
+]: nothing -> nothing {
+  let start_dir = (if $from != null { $from | path expand } else { $env.PWD })
+  let root_dir  = (if $root != null { $root | path expand } else { find-project-root $start_dir })
+  cd $root_dir
+  ^serpl
+}
+
+# Convenience: point at a path and detect root above it
+#
+# Useful when you want to run serpl on a specific file or directory
+# but have it operate from the project root containing that path.
+#
+# Example:
+#   serpl-at ~/myproject/src/main.rs  # Finds root above main.rs and runs serpl there
+export def serpl-at [path: path]: nothing -> nothing {
+  serpl-anywhere --from ($path | path expand)
+}
+
+# Enhanced: work with current directory (useful for Yazi integration)  
+#
+# Equivalent to serpl-anywhere but more explicit about using current directory.
+# Particularly useful when called from file managers like Yazi.
+#
+# Example:
+#   serpl-here  # Auto-detect project root from current directory
+export def serpl-here []: nothing -> nothing {
+  let current = $env.PWD
+  serpl-anywhere --from $current
+}
+EOF
+
+# 3. Serpl completions
+cat > ~/.config/nushell/completions/serpl-completions.nu << 'EOF'
+# ---- serpl-completions.nu ----
+# Directory-only completion helper
+def "nu-complete serpl dirs" [] {
+  ls -a | where type == "dir" | get name
+}
+
+# Extern signatures with completions
+export extern "serpl-anywhere" [
+  --from: path@"nu-complete serpl dirs"   # start dir for root detection
+  --root: path@"nu-complete serpl dirs"   # explicit root dir
+]
+
+export extern "serpl-at" [
+  path: path@"nu-complete serpl dirs"
+]
+
+export extern "serpl-here" []
+EOF
+
+# 4. Create project-aware file opener
+cat > ~/.local/bin/hx-smart-gf-rust << 'EOF'
+#!/bin/bash
+# hx-smart-gf-rust - Nushell-powered project-aware file opener
+
+# Read input
+input_text=$(cat)
+
+# Use Nushell for the core logic - call individual functions rather than a script
+project_root=$(echo "$input_text" | nu -c "source ~/.config/nushell/scripts/project-root-detection.nu; find-project-root" 2>/dev/null || echo "$PWD")
+project_type=$(echo "$input_text" | nu -c "source ~/.config/nushell/scripts/project-root-detection.nu; get-project-type" 2>/dev/null || echo "unknown")
+
+# Clean the input text
+clean_text=$(echo "$input_text" | tr -d '"' | tr -d "'" | xargs)
+
+target_file="$clean_text"
+
+# Handle URLs (keep as-is)
+if [[ "$clean_text" =~ ^https?:// ]]; then
+    target_file="$clean_text"
+elif [[ "$clean_text" =~ \[\[.*\]\] ]]; then
+    # Handle wiki links - use Nushell for parsing
+    wiki_content=$(echo "$clean_text" | nu -c 'let input = ($in | str trim); $input | str replace "[[" "" | str replace "]]" ""' 2>/dev/null)
+    
+    if [[ "$project_type" == "obsidian-vault" ]]; then
+        # Look for exact match first
+        note_path="$project_root/${wiki_content}.md"
+        if [[ -f "$note_path" ]]; then
+            target_file="$note_path"
+        else
+            # Search for similar notes using fd
+            found_note=$(fd -e md -g "*${wiki_content}*" "$project_root" 2>/dev/null | head -1)
+            if [[ -n "$found_note" ]]; then
+                target_file="$found_note"
+            else
+                target_file="$wiki_content"
+            fi
+        fi
+    else
+        target_file="$wiki_content"
+    fi
+else
+    # Handle file paths
+    potential_paths=(
+        "$project_root/$clean_text"
+        "$PWD/$clean_text"
+        "$clean_text"
+    )
+    
+    found=false
+    for path in "${potential_paths[@]}"; do
+        if [[ -e "$path" ]]; then
+            target_file="$path"
+            found=true
+            break
+        fi
+    done
+    
+    # Search for similar files if not found
+    if [[ "$found" == false ]]; then
+        search_result=$(fd -t f -g "*${clean_text}*" "$project_root" 2>/dev/null | head -1)
+        if [[ -n "$search_result" ]]; then
+            target_file="$search_result"
+        fi
+    fi
+fi
+
+# Write result for Helix
+echo "$target_file" > /tmp/helix-gf-target.md
+
+echo "Resolved: $input_text -> $target_file"
+EOF
+
+# 5. Create URL opener
+cat > ~/.local/bin/hx-open-url-rust << 'EOF'
+#!/usr/bin/env nu
+# hx-open-url-rust - Project-aware URL opener for Helix
+
+use ~/.config/nushell/scripts/project-root-detection.nu *
+
+# Get the text from stdin (from Helix pipe-to command)
+let input_text = ($in | str trim)
+
+if ($input_text | is-empty) {
+    print "No text provided"
+    exit 1
+}
+
+# Clean up the URL text
+let clean_url = ($input_text | str replace --all '"' "" | str replace --all "'" "" | str trim)
+
+# Check if it's a valid URL pattern
+if ($clean_url | str starts-with "http") or ($clean_url | str starts-with "www.") {
+    let final_url = if ($clean_url | str starts-with "www.") {
+        $"https://($clean_url)"
+    } else {
+        $clean_url
+    }
+    
+    print $"Opening URL: ($final_url)"
+    
+    # Open URL based on platform
+    try {
+        if $nu.os-info.name == "macos" {
+            ^open $final_url
+        } else if $nu.os-info.name == "linux" {
+            ^xdg-open $final_url
+        } else {
+            print "Unsupported platform for URL opening"
+            exit 1
+        }
+    } catch {
+        print $"Failed to open URL: ($final_url)"
+        exit 1
+    }
+} else {
+    print $"Not a valid URL: ($clean_url)"
+    exit 1
+}
+EOF
+
+# Make scripts executable
+chmod +x ~/.local/bin/hx-smart-gf-rust
+chmod +x ~/.local/bin/hx-open-url-rust
+
+# 6. Create standalone serpl script
+mkdir -p ~/bin
+cat > ~/bin/serpl-anywhere.nu << 'EOF'
+#!/usr/bin/env nu
+use ~/.config/nushell/scripts/serpl.nu *
+# Pass-through: accepts optional arg (start dir)
+let start = (if ($env | has "nu.cli_args") and ($nu.cli_args | length) > 0 { $nu.cli_args.0 } else { $env.PWD })
+serpl-anywhere --from $start
+EOF
+chmod +x ~/bin/serpl-anywhere.nu
+
+echo "✅ Unified root detection system deployed!"
+
+# 7. Update Nushell config to include the unified system
+echo "⚙️  Integrating with Nushell configuration..."
+
+NUSHELL_CONFIG="$HOME/.config/nushell/config.nu"
+INTEGRATION_BLOCK="# ---- Unified Project Root Detection & Tools ----
+use ~/.config/nushell/scripts/project-root-detection.nu *
+use ~/.config/nushell/scripts/serpl.nu *
+use ~/.config/nushell/completions/serpl-completions.nu *
+alias serpl-any = serpl-anywhere
+# Example to customize project markers globally:
+# \$env.PROJECT_ROOT_MARKERS = [\".git\" \".vault-root\" \".obsidian\" \"Cargo.toml\" \".my-custom-marker\"]"
+
+# Check if integration is already present
+if ! grep -q "Unified Project Root Detection" "$NUSHELL_CONFIG" 2>/dev/null; then
+    echo "$INTEGRATION_BLOCK" >> "$NUSHELL_CONFIG"
+    echo "✅ Added unified system integration to Nushell config"
+else
+    echo "✅ Unified system integration already present in Nushell config"
+fi
+
+# 8. Update Helix config for serpl integration (if config exists)
+HELIX_CONFIG="$HOME/.config/helix/config.toml"
+if [[ -f "$HELIX_CONFIG" ]]; then
+    echo "⌨️  Updating Helix configuration for serpl integration..."
+    
+    # Check if serpl keybinding already exists
+    if ! grep -q "Space+r,r" "$HELIX_CONFIG" 2>/dev/null; then
+        cat >> "$HELIX_CONFIG" << 'HELIX_SERPL'
+
+# Serpl search and replace integration - Space+r,r
+[keys.normal.space.r]
+r = [
+  ":write-all",
+  ":sh git add -A && git commit -m 'pre-serpl snapshot' || true",
+  ":insert-output nu -c 'serpl-anywhere >/dev/tty'",
+  ":redraw",
+  ":reload-all"
+]
+HELIX_SERPL
+        echo "✅ Added serpl keybinding (Space+r,r) to Helix config"
+    else
+        echo "✅ Serpl keybinding already present in Helix config"
+    fi
+fi
+
+# 9. Update Zellij config for serpl integration (if config exists)
+ZELLIJ_CONFIG="$HOME/.config/zellij/config.kdl"
+if [[ -f "$ZELLIJ_CONFIG" ]]; then
+    echo "🔲 Updating Zellij configuration for serpl integration..."
+    
+    # Check if serpl keybinding already exists
+    if ! grep -q "Alt r" "$ZELLIJ_CONFIG" 2>/dev/null; then
+        # Find the normal keybinds section and add the serpl binding
+        sed -i.bak '/bind "Alt Shift t" {/a\
+        \
+        // Serpl search and replace - Alt+r\
+        bind "Alt r" {\
+            ToggleFloatingPanes;\
+            Run "nu" "-c" "serpl-anywhere";\
+            ToggleFloatingPanes;\
+        }
+' "$ZELLIJ_CONFIG"
+        echo "✅ Added serpl keybinding (Alt+r) to Zellij config"
+    else
+        echo "✅ Serpl keybinding already present in Zellij config"
+    fi
+fi
+
+echo ""
+
+# Update dynamic wiki link picker if it exists
+if [[ -f ~/.config/helix/obsidian-linker.sh ]]; then
+    echo "🔗 Updating wiki link picker for dynamic vault detection..."
+    
+    # Update to use intelligent vault detection
+    sed -i.bak 's|VAULT_PATH="/Users/williamnapier/Obsidian.nosync/Forge"|VAULT_PATH=$(nu -c "source ~/.config/nushell/scripts/project-root-detection.nu; find-obsidian-vault" 2>/dev/null)|' ~/.config/helix/obsidian-linker.sh
+    
+    # Add error handling
+    cat >> ~/.config/helix/obsidian-linker.sh << 'WIKI_UPDATE'
+
+# Add vault detection with error handling
+if [[ -z "$VAULT_PATH" ]]; then
+    echo "❌ No Obsidian vault found from current location"
+    echo "📝 Make sure you're working within an Obsidian vault directory"
+    echo "💡 Or create a .obsidian folder to mark a custom vault root"
+    exit 1
+fi
+
+echo "✅ Found Obsidian vault: $VAULT_PATH"
+WIKI_UPDATE
+
+    echo "✅ Wiki link picker updated for dynamic vault detection"
+fi
+
+# Update citation picker if it exists  
+if [[ -f ~/.config/helix/citation-picker.sh ]]; then
+    echo "📚 Updating citation picker for dynamic vault detection..."
+    
+    # Similar update for citations
+    sed -i.bak 's|CITATIONS_FILE="/Users/williamnapier/Obsidian.nosync/Forge/ZET/citations.md"|VAULT_PATH=$(nu -c "source ~/.config/nushell/scripts/project-root-detection.nu; find-obsidian-vault" 2>/dev/null)|' ~/.config/helix/citation-picker.sh
+    
+    echo "✅ Citation picker updated for dynamic vault detection"
+fi
+
+echo ""
+echo "🎉 Unified Development Environment Deployment Complete!"
+echo ""
+echo "🧠 Intelligent Root Detection Features:"
+echo "   - Auto-detects project boundaries (.git, .obsidian, Cargo.toml, etc.)"
+echo "   - Works from anywhere in your filesystem"
+echo "   - Configurable markers via \$env.PROJECT_ROOT_MARKERS"
+echo ""
+echo "🔧 Available Tools:"
+echo "   - serpl-anywhere, serpl-at, serpl-here (project-scoped search/replace)"  
+echo "   - show-project-info (debug project detection)"
+echo "   - list-project-markers (show configured markers)"
+echo "   - find-project-root, find-obsidian-vault, find-git-root"
+echo ""
+echo "⌨️  Integration Commands:"
+echo "   - Zellij: Alt+r → serpl in floating pane"
+echo "   - Helix: Space+r,r → serpl with auto-reload"
+echo "   - Helix: gf → project-aware file opening"
+echo "   - Helix: gx → cross-platform URL opening"
+echo "   - Helix: Alt+l → dynamic wiki link picker"
+echo ""
+echo "🎛️  Customization:"
+echo "   Add to ~/.config/nushell/config.nu:"
+echo '   $env.PROJECT_ROOT_MARKERS = [".git" ".obsidian" ".my-custom-marker"]'
+echo ""
+echo "🧪 Test Your Setup:"
+echo "   nu -c 'source ~/.config/nushell/config.nu; show-project-info'"
+echo ""
+echo "✨ Your development environment now has complete filesystem freedom!"
+echo "   All tools automatically adapt to YOUR project structure! ✨"

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Insert current time in 24-hour format (HH:MM)
+
+date +"%H:%M"

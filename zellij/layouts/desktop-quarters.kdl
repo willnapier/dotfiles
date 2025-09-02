@@ -1,0 +1,40 @@
+// Desktop 4-Quarters layout - optimized for 32" Dell 6K (6016×3384px)
+// Strategy: Four equal quarters with daily note in top-left
+layout {
+    default_tab_template {
+        // Removed tab-bar plugin to eliminate duplicate mode indicators
+        // Mode information is still available in the comprehensive status-bar below
+        children
+        pane size=2 borderless=true {
+            plugin location="zellij:status-bar"
+        }
+    }
+    
+    tab name="workspace" focus=true {
+        pane split_direction="vertical" {
+            pane split_direction="horizontal" {
+                pane name="daily-note" {
+                    size "50%"
+                    focus true
+                    command "/opt/homebrew/bin/nu"
+                    args "-c" "source ~/.config/nushell/config.nu; /Users/williamnapier/.local/bin/daily-note"
+                }
+                pane name="main-editor" {
+                    size "50%"
+                    command "/opt/homebrew/bin/nu"
+                }
+            }
+            pane split_direction="horizontal" {
+                pane name="files-browser" {
+                    size "50%"
+                    cwd "/Users/williamnapier/Obsidian.nosync/Forge"
+                    command "y-wrapper"
+                }
+                pane name="auxiliary" {
+                    size "50%"
+                    command "/opt/homebrew/bin/nu"
+                }
+            }
+        }
+    }
+}

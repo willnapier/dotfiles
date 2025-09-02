@@ -1,0 +1,31 @@
+// Laptop layout - optimized for 15" MacBook Air
+// Strategy: Two-pane approach for daily note + work separation
+layout {
+    default_tab_template {
+        // Removed tab-bar plugin to eliminate duplicate mode indicators
+        // Mode information is still available in the comprehensive status-bar below
+        children
+        pane size=2 borderless=true {
+            plugin location="zellij:status-bar"
+        }
+    }
+    
+    tab name="workspace" focus=true {
+        pane split_direction="vertical" {
+            // Left pane: Daily note in Helix
+            pane name="daily-note" {
+                size "50%"
+                focus true
+                command "/opt/homebrew/bin/nu"
+                args "-c" "source ~/.config/nushell/config.nu; /Users/williamnapier/.local/bin/daily-note"
+            }
+            // Right pane: Yazi file manager in Forge vault with intelligent project detection
+            pane name="yazi" {
+                size "50%"
+                cwd "/Users/williamnapier/Obsidian.nosync/Forge"
+                command "/opt/homebrew/bin/nu"
+                args "-c" "source ~/.config/nushell/config.nu; y"
+            }
+        }
+    }
+}

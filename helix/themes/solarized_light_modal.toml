@@ -1,0 +1,16 @@
+# Solarized Light with enhanced mode indication
+# Based on the default solarized_light theme with modal visual cues
+
+inherits = "solarized_light"
+
+# Enhanced cursor colors for different modes
+"ui.cursor" = { fg = "base3", bg = "blue" }           # Normal mode - blue block cursor
+"ui.cursor.insert" = { fg = "base3", bg = "green" }   # Insert mode - green cursor
+"ui.cursor.select" = { fg = "base3", bg = "orange" }  # Select mode - orange cursor
+
+# Status line mode indicators
+"ui.statusline.normal" = { fg = "base3", bg = "blue", modifiers = ["bold"] }
+"ui.statusline.insert" = { fg = "base3", bg = "green", modifiers = ["bold"] } 
+"ui.statusline.select" = { fg = "base3", bg = "orange", modifiers = ["bold"] }
+
+# Don't redefine the palette - inherit it from solarized_light

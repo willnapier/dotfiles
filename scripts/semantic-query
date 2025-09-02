@@ -1,0 +1,25 @@
+#!/bin/bash
+# Semantic Query - Fast semantic search interface
+
+SCRIPT_DIR="$HOME/.local/share/semantic-search"
+PYTHON_BIN="$SCRIPT_DIR/venv/bin/python3"
+
+cd "$SCRIPT_DIR" || exit 1
+
+# Check if virtual environment exists
+if [[ ! -f "$PYTHON_BIN" ]]; then
+    echo "Error: Virtual environment not found at $SCRIPT_DIR/venv"
+    echo "Please run the semantic-indexer --rebuild first"
+    exit 1
+fi
+
+# Check for OpenAI API key
+if [[ -z "$OPENAI_API_KEY" ]]; then
+    echo "Error: OPENAI_API_KEY environment variable is required"
+    echo "Please set your OpenAI API key:"
+    echo "export OPENAI_API_KEY='your-api-key-here'"
+    exit 1
+fi
+
+# Execute the query with all arguments
+exec "$PYTHON_BIN" semantic_query.py "$@"

@@ -1,0 +1,79 @@
+{
+  "title": "Right Control to Backtick/Tilde (Remapped Left Shift)",
+  "rules": [
+    {
+      "description": "Right Control: single tap = backtick, double tap = tilde",
+      "manipulators": [
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "right_control"
+          },
+          "conditions": [
+            {
+              "type": "variable_unless",
+              "name": "right_control_pressed",
+              "value": 1
+            }
+          ],
+          "to": [
+            {
+              "set_variable": {
+                "name": "right_control_pressed",
+                "value": 1
+              }
+            }
+          ],
+          "to_delayed_action": {
+            "to_if_invoked": [
+              {
+                "shell_command": "osascript -e 'tell application \"System Events\" to keystroke \"`\"'"
+              },
+              {
+                "set_variable": {
+                  "name": "right_control_pressed",
+                  "value": 0
+                }
+              }
+            ],
+            "to_if_canceled": [
+              {
+                "set_variable": {
+                  "name": "right_control_pressed",
+                  "value": 0
+                }
+              }
+            ]
+          },
+          "parameters": {
+            "basic.to_delayed_action_delay_milliseconds": 200
+          }
+        },
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "right_control"
+          },
+          "conditions": [
+            {
+              "type": "variable_if",
+              "name": "right_control_pressed",
+              "value": 1
+            }
+          ],
+          "to": [
+            {
+              "shell_command": "osascript -e 'tell application \"System Events\" to keystroke \"~\"'"
+            },
+            {
+              "set_variable": {
+                "name": "right_control_pressed",
+                "value": 0
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
