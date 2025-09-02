@@ -80,6 +80,7 @@
 "nvim/lua/telescope_filter_debug.lua" = "/Users/williamnapier/.config/nvim/lua/telescope_filter_debug.lua"
 "nvim/spell/en.utf-8.add" = "/Users/williamnapier/.config/nvim/spell/en.utf-8.add"
 "nvim/spell/en.utf-8.add.spl" = "/Users/williamnapier/.config/nvim/spell/en.utf-8.add.spl"
+"scripts/citation-picker.sh" = "/Users/williamnapier/.local/bin/citation-picker.sh"
 "scripts/claude" = "/Users/williamnapier/.local/bin/claude"
 "scripts/daily-note" = "/Users/williamnapier/.local/bin/daily-note"
 "scripts/daypage-template" = "/Users/williamnapier/.local/bin/daypage-template"

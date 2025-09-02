@@ -37,7 +37,7 @@ keybinds {
         
         // Obsidian link picker - Alt+l (large floating window for better visibility)
         bind "Alt l" {
-            Run "bash" "/Users/williamnapier/.config/helix/obsidian-linker.sh" {
+            Run "bash" "/Users/williamnapier/.local/bin/obsidian-linker.sh" {
                 floating true
                 close_on_exit true
                 width "90%"
@@ -49,7 +49,7 @@ keybinds {
         
         // Citation picker - Alt+c (large floating window for citation lookup)
         bind "Alt c" {
-            Run "bash" "/Users/williamnapier/.config/helix/citation-picker.sh" {
+            Run "bash" "/Users/williamnapier/.local/bin/citation-picker.sh" {
                 floating true
                 close_on_exit true
                 width "90%"
