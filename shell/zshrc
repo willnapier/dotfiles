@@ -1,3 +1,5 @@
+# ⚠️  CLAUDE CODE: THIS FILE IS DOTTER-MANAGED - EDIT HERE IN DOTFILES, NOT ~/.config/shell/
+# ⚠️  NEVER EDIT ~/.config/shell/zshrc - IT'S A SYMLINK TO THIS FILE
 # Clean minimal zsh config - NO RECURSION
 export PATH="$HOME/.local/bin:$PATH"
 export PATH="$HOME/.cargo/bin:$PATH"

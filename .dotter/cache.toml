@@ -85,6 +85,8 @@
 "scripts/daypage-template" = "/Users/williamnapier/.local/bin/daypage-template"
 "scripts/dotter-add" = "/Users/williamnapier/.local/bin/dotter-add"
 "scripts/dotter-audit" = "/Users/williamnapier/.local/bin/dotter-audit"
+"scripts/dotter-protect-all" = "/Users/williamnapier/.local/bin/dotter-protect-all"
+"scripts/dotter-verify-protection" = "/Users/williamnapier/.local/bin/dotter-verify-protection"
 "scripts/hx-auto" = "/Users/williamnapier/.local/bin/hx-auto"
 "scripts/hx-insert-date" = "/Users/williamnapier/.local/bin/hx-insert-date"
 "scripts/hx-insert-datetime" = "/Users/williamnapier/.local/bin/hx-insert-datetime"

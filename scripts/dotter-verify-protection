@@ -1,0 +1,67 @@
+#!/usr/bin/env nu
+
+# Simplified Dotter Protection Verification System
+
+def main [] {
+    print "🔍 Dotter Protection Verification"
+    print "================================="
+    
+    # Define managed files with their expected targets
+    let managed_files = [
+        "helix/config.toml",
+        "nushell/config.nu",
+        "nushell/env.nu", 
+        "yazi/yazi.toml",
+        "yazi/keymap.toml",
+        "yazi/theme.toml",
+        "zellij/config.kdl",
+        "starship.toml",
+        "git/gitconfig",
+        "nvim/init.lua",
+        "shell/zshrc",
+        "wezterm/wezterm.lua",
+        "ghostty/config"
+    ]
+    
+    print "\n📊 PROTECTION STATUS BY FILE"
+    print "============================="
+    
+    mut protected_count = 0
+    mut total_count = 0
+    
+    for file in $managed_files {
+        let source_path = $"/Users/williamnapier/dotfiles/($file)"
+        
+        if ($source_path | path exists) {
+            $total_count = $total_count + 1
+            
+            # Check if file has warning comment
+            let content = (open $source_path --raw | decode utf-8)
+            let has_warning = ($content | str contains "CLAUDE CODE: THIS FILE IS DOTTER-MANAGED")
+            
+            if $has_warning {
+                print $"✅ ($file) - Protected"
+                $protected_count = $protected_count + 1
+            } else {
+                print $"❌ ($file) - NOT PROTECTED"
+            }
+        } else {
+            print $"❓ ($file) - Source file not found"
+        }
+    }
+    
+    print "\n📈 SUMMARY"
+    print $"Protected files: ($protected_count)/($total_count)"
+    
+    if $protected_count < $total_count {
+        let unprotected = $total_count - $protected_count
+        print $"❌ ($unprotected) files still need protection!"
+        print "\nRun: dotter-protect-all"
+        exit 1
+    } else {
+        print "✅ ALL DOTTER-MANAGED FILES ARE PROTECTED!"
+        exit 0
+    }
+}
+
+main

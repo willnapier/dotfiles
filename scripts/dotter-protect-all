@@ -1,0 +1,73 @@
+#!/bin/bash
+
+# Comprehensive Dotter Drift Protection System
+# Automatically adds warnings to ALL Dotter-managed files
+
+echo "🚨 Comprehensive Dotter Protection System"
+echo "========================================="
+
+DOTFILES_ROOT="/Users/williamnapier/dotfiles"
+
+# List of all Dotter-managed config files
+declare -a MANAGED_FILES=(
+    "helix/config.toml:#"
+    "nushell/config.nu:#"
+    "nushell/env.nu:#"
+    "yazi/yazi.toml:#"
+    "yazi/keymap.toml:#"
+    "yazi/theme.toml:#"
+    "zellij/config.kdl://"
+    "starship.toml:#"
+    "git/gitconfig:#"
+    "nvim/init.lua:--"
+    "shell/zshrc:#"
+    "wezterm/wezterm.lua:--"
+    "ghostty/config:#"
+)
+
+add_warning_to_file() {
+    local file_info="$1"
+    local file_path="${file_info%:*}"
+    local comment_style="${file_info#*:}"
+    
+    local source_path="$DOTFILES_ROOT/$file_path"
+    local target_dir=$(dirname "$file_path")
+    
+    if [[ ! -f "$source_path" ]]; then
+        echo "⚠️  Source file not found: $file_path"
+        return
+    fi
+    
+    # Check if warning already exists
+    if grep -q "CLAUDE CODE: THIS FILE IS DOTTER-MANAGED" "$source_path"; then
+        echo "✅ Warning already present: $file_path"
+        return
+    fi
+    
+    # Create warning lines
+    local warning1="$comment_style ⚠️  CLAUDE CODE: THIS FILE IS DOTTER-MANAGED - EDIT HERE IN DOTFILES, NOT ~/.config/$target_dir/"
+    local warning2="$comment_style ⚠️  NEVER EDIT ~/.config/$file_path - IT'S A SYMLINK TO THIS FILE"
+    
+    # Create temporary file with warning prepended
+    {
+        echo "$warning1"
+        echo "$warning2"
+        cat "$source_path"
+    } > "${source_path}.tmp"
+    
+    # Replace original file
+    mv "${source_path}.tmp" "$source_path"
+    
+    echo "🚨 Added warning to: $file_path"
+}
+
+echo "📋 Processing $(echo ${#MANAGED_FILES[@]}) Dotter-managed files"
+
+# Process each managed file
+for file_info in "${MANAGED_FILES[@]}"; do
+    add_warning_to_file "$file_info"
+done
+
+echo ""
+echo "✅ Comprehensive Dotter protection applied successfully!"
+echo "Run 'dotter-verify-protection' to check status"

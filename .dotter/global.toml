@@ -42,6 +42,8 @@ depends = []
 "scripts/zj" = "~/.local/bin/zj"
 "scripts/dotter-audit" = "~/.local/bin/dotter-audit"
 "scripts/dotter-add" = "~/.local/bin/dotter-add"
+"scripts/dotter-protect-all" = "~/.local/bin/dotter-protect-all"
+"scripts/dotter-verify-protection" = "~/.local/bin/dotter-verify-protection"
 # Semantic search system - managed separately (has virtual environment)
 
 [shared.variables]

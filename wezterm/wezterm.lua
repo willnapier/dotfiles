@@ -1,3 +1,5 @@
+-- ⚠️  CLAUDE CODE: THIS FILE IS DOTTER-MANAGED - EDIT HERE IN DOTFILES, NOT ~/.config/wezterm/
+-- ⚠️  NEVER EDIT ~/.config/wezterm/wezterm.lua - IT'S A SYMLINK TO THIS FILE
 -- WezTerm configuration with advanced multiplexing and Solarized themes
 local wezterm = require 'wezterm'
 local act = wezterm.action
