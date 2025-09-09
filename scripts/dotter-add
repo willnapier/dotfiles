@@ -39,14 +39,14 @@ def main [file_path: string] {
     print "⚙️ Adding to Dotter configuration..."
     let config_entry = $'"($source_path)" = "($relative_path)"'
     
-    # Read current config
-    let current_config = (open $dotter_config)
+    # Read current config as raw text
+    let current_config = (open --raw $dotter_config)
     
     # Find the [shared.files] section and add the new entry
     let lines = ($current_config | lines)
-    let mut new_lines = []
-    let mut in_shared_files = false
-    let mut added = false
+    mut new_lines = []
+    mut in_shared_files = false
+    mut added = false
     
     for line in $lines {
         if ($line | str trim) == "[shared.files]" {
@@ -96,24 +96,24 @@ def main [file_path: string] {
 # Determine appropriate source path within dotfiles based on target location
 def determine_source_path [target_path: string, dotfiles_root: string] {
     if ($target_path | str contains ".config/helix") {
-        return "helix/" + ($target_path | path basename)
+        "helix/" + ($target_path | path basename)
     } else if ($target_path | str contains ".config/nushell") {
-        return "nushell/" + ($target_path | path basename)
+        "nushell/" + ($target_path | path basename)
     } else if ($target_path | str contains ".config/zellij") {
-        return "zellij/" + ($target_path | path basename)
+        "zellij/" + ($target_path | path basename)
     } else if ($target_path | str contains ".config/yazi") {
-        return "yazi/" + ($target_path | path basename)
+        "yazi/" + ($target_path | path basename)
     } else if ($target_path | str contains ".config/nvim") {
         let relative = ($target_path | str replace ($target_path | str replace "/nvim/.*" "/nvim") "")
-        return "nvim" + $relative
+        "nvim" + $relative
     } else if ($target_path | str contains ".local/bin") {
-        return "scripts/" + ($target_path | path basename)
+        "scripts/" + ($target_path | path basename)
     } else if ($target_path | str contains ".config") {
-        let app_name = ($target_path | str replace $env.HOME + "/.config/" "" | split row "/" | get 0)
+        let app_name = ($target_path | str replace ($env.HOME + "/.config/") "" | split row "/" | get 0)
         let file_name = ($target_path | path basename)
-        return $app_name + "/" + $file_name
+        $app_name + "/" + $file_name
     } else {
         # Default: preserve structure relative to home
-        return ($target_path | str replace $env.HOME + "/" "")
+        ($target_path | str replace ($env.HOME + "/") "")
     }
 }
