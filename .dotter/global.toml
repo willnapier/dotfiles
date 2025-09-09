@@ -78,6 +78,7 @@ depends = []
 "scripts/dotter-verify-protection-cross-platform" = "~/.local/bin/dotter-verify-protection-cross-platform"
 "scripts/citation-picker.sh" = "~/.local/bin/citation-picker.sh"
 "scripts/dotter-complete-audit" = "~/.local/bin/dotter-complete-audit"
+"scripts/dotter-orphan-detector-v2" = "~/.local/bin/dotter-orphan-detector-v2"
 "scripts/dotter-enforce-compliance" = "~/.local/bin/dotter-enforce-compliance"
 "scripts/dotter-drift-monitor" = "~/.local/bin/dotter-drift-monitor"
 "scripts/claude-docs-backup" = "~/.local/bin/claude-docs-backup"

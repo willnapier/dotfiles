@@ -98,6 +98,7 @@
 "scripts/dotter-drift-watcher" = "/Users/williamnapier/.local/bin/dotter-drift-watcher"
 "scripts/dotter-enforce-compliance" = "/Users/williamnapier/.local/bin/dotter-enforce-compliance"
 "scripts/dotter-orphan-detector" = "/Users/williamnapier/.local/bin/dotter-orphan-detector"
+"scripts/dotter-orphan-detector-v2" = "/Users/williamnapier/.local/bin/dotter-orphan-detector-v2"
 "scripts/dotter-protect-all" = "/Users/williamnapier/.local/bin/dotter-protect-all"
 "scripts/dotter-protect-all-cross-platform" = "/Users/williamnapier/.local/bin/dotter-protect-all-cross-platform"
 "scripts/dotter-verify-protection" = "/Users/williamnapier/.local/bin/dotter-verify-protection"
