@@ -1,0 +1,128 @@
+#!/bin/bash
+# Cross-Platform Zellij Zombie Watcher
+# Works on macOS, Linux, and other Unix systems
+
+MAX_PROCESSES=8
+CLEANUP_SCRIPT_DIR="$(dirname "$0")"
+CLEANUP_SCRIPT="$CLEANUP_SCRIPT_DIR/zellij-zombie-killer"
+
+# Platform detection
+detect_platform() {
+    case "$(uname -s)" in
+        Darwin*) echo "macos" ;;
+        Linux*)  echo "linux" ;;
+        CYGWIN*|MINGW*|MSYS*) echo "windows" ;;
+        *) echo "unix" ;;
+    esac
+}
+
+PLATFORM=$(detect_platform)
+
+echo "🔍 Zellij Zombie Watcher started ($PLATFORM)"
+echo "Max allowed processes: $MAX_PROCESSES"
+
+# Platform-specific temp directory patterns
+get_temp_dirs() {
+    case "$PLATFORM" in
+        macos)
+            echo "/var/folders/*/*/*/*"
+            ;;
+        linux)
+            echo "/tmp /run/user/*/zellij*"
+            ;;
+        *)
+            echo "/tmp"
+            ;;
+    esac
+}
+
+# Function to check and cleanup if needed
+check_and_cleanup() {
+    local zombie_count
+    
+    # Cross-platform process counting
+    if command -v pgrep >/dev/null 2>&1; then
+        zombie_count=$(pgrep -f zellij | wc -l)
+    else
+        zombie_count=$(ps aux | grep '[z]ellij' | wc -l)
+    fi
+    
+    zombie_count=$(echo "$zombie_count" | tr -d ' ')
+    
+    if [ "$zombie_count" -gt "$MAX_PROCESSES" ]; then
+        echo "⚠️  $(date): $zombie_count Zellij processes detected (max: $MAX_PROCESSES)"
+        echo "🧟 Running zombie cleanup..."
+        
+        # Try to run the killer script
+        if [ -x "$CLEANUP_SCRIPT" ]; then
+            if command -v nu >/dev/null 2>&1; then
+                nu "$CLEANUP_SCRIPT" --auto
+            else
+                echo "⚠️  Nushell not available, using basic cleanup"
+                pkill -9 zellij 2>/dev/null || killall -9 zellij 2>/dev/null
+                sleep 2
+                # Clean temp directories
+                for temp_pattern in $(get_temp_dirs); do
+                    rm -rf $temp_pattern/zellij-* 2>/dev/null || true
+                done
+            fi
+        else
+            echo "⚠️  Cleanup script not found, using basic cleanup"
+            pkill -9 zellij 2>/dev/null || killall -9 zellij 2>/dev/null
+        fi
+        
+        # Log the cleanup
+        local log_dir="${HOME}/.local/share"
+        mkdir -p "$log_dir" 2>/dev/null || log_dir="/tmp"
+        echo "$(date): Auto-cleanup performed - $zombie_count processes" >> "$log_dir/zellij-zombie-cleanup.log"
+    fi
+}
+
+# Platform-specific monitoring
+case "$PLATFORM" in
+    macos)
+        # Use fswatch if available, otherwise fall back to periodic
+        if command -v fswatch >/dev/null 2>&1; then
+            echo "Using fswatch for real-time monitoring"
+            fswatch -0 --recursive --include=".*zellij.*" $(get_temp_dirs) 2>/dev/null | while read -d "" event; do
+                if [[ "$event" == *"zellij"* ]]; then
+                    echo "📁 Zellij activity detected: $(basename "$event")"
+                    sleep 2
+                    check_and_cleanup
+                fi
+            done
+        else
+            echo "fswatch not found, using periodic checking"
+            while true; do
+                check_and_cleanup
+                sleep 30
+            done
+        fi
+        ;;
+    linux)
+        # Use inotify if available
+        if command -v inotifywait >/dev/null 2>&1; then
+            echo "Using inotifywait for real-time monitoring"
+            inotifywait -m -r --include=".*zellij.*" $(get_temp_dirs) -e create,delete,modify 2>/dev/null | while read path action file; do
+                if [[ "$file" == *"zellij"* ]]; then
+                    echo "📁 Zellij activity detected: $file"
+                    sleep 2
+                    check_and_cleanup
+                fi
+            done
+        else
+            echo "inotifywait not found, using periodic checking"
+            while true; do
+                check_and_cleanup
+                sleep 30
+            done
+        fi
+        ;;
+    *)
+        echo "Using periodic checking (generic Unix)"
+        while true; do
+            check_and_cleanup
+            sleep 30
+        done
+        ;;
+esac

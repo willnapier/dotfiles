@@ -102,8 +102,8 @@ rules = [
   # PDF
   { mime = "application/pdf", use = [ "open", "reveal" ] },
   
-  # Fallback
-  { name = "*", use = [ "open", "reveal" ] },
+  # Files without extension (like "Anki Nushell") - use Helix first
+  { name = "*", use = [ "helix", "edit", "open", "reveal" ] },
 ]
 
 [tasks]

@@ -1,0 +1,43 @@
+#!/bin/bash
+# Zellij Zombie Watcher - Event-based zombie prevention
+# Monitors Zellij temp directories and process count
+
+WATCH_DIR="/var/folders/*/*/*/*"
+MAX_PROCESSES=8
+CLEANUP_SCRIPT="/Users/williamnapier/dotfiles/scripts/zellij-zombie-killer"
+
+echo "🔍 Zellij Zombie Watcher started"
+echo "Monitoring: Zellij temp directories and process count"
+echo "Max allowed processes: $MAX_PROCESSES"
+
+# Function to check and cleanup if needed
+check_and_cleanup() {
+    local zombie_count=$(ps aux | grep '[z]ellij' | wc -l | tr -d ' ')
+    
+    if [ "$zombie_count" -gt "$MAX_PROCESSES" ]; then
+        echo "⚠️  $(date): $zombie_count Zellij processes detected (max: $MAX_PROCESSES)"
+        echo "🧟 Running zombie cleanup..."
+        nu "$CLEANUP_SCRIPT" --auto
+        
+        # Log the cleanup
+        echo "$(date): Auto-cleanup performed - $zombie_count processes" >> ~/.local/share/zellij-zombie-cleanup.log
+    fi
+}
+
+# Monitor temp directories for Zellij session creation/deletion
+if command -v fswatch >/dev/null 2>&1; then
+    fswatch -0 --recursive --include=".*zellij.*" "$WATCH_DIR" | while read -d "" event; do
+        if [[ "$event" == *"zellij"* ]]; then
+            echo "📁 Zellij activity detected: $(basename "$event")"
+            sleep 2  # Brief delay to let processes settle
+            check_and_cleanup
+        fi
+    done
+else
+    # Fallback: periodic checking if fswatch not available
+    echo "fswatch not found, falling back to periodic checking..."
+    while true; do
+        check_and_cleanup
+        sleep 30  # Check every 30 seconds
+    done
+fi

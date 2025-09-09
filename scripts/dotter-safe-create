@@ -1,0 +1,171 @@
+#!/opt/homebrew/bin/nu
+
+# DOTTER SAFE CREATE - Prevents orphaned config files
+# Ensures every new config/script is immediately managed by Dotter
+
+def main [
+    path: string,           # Path relative to dotfiles (e.g., "helix/languages.toml")
+    --target?: string,      # Target symlink path (auto-detected if not provided)
+    --platform?: string,    # Platform: shared, macos, linux (auto-detected)
+    --force,                # Skip safety checks and create anyway
+] {
+    let dotfiles_root = $"($env.HOME)/dotfiles"
+    let full_path = $"($dotfiles_root)/($path)"
+    let parent_dir = ($full_path | path dirname)
+    
+    print $"🔧 Dotter Safe Create: ($path)"
+    print $"📁 Full path: ($full_path)"
+    
+    # 1. PRE-FLIGHT CHECKS
+    if not $force {
+        print "\n📋 Running pre-flight checks..."
+        
+        # Check if file already exists
+        if ($full_path | path exists) {
+            print $"❌ File already exists: ($full_path)"
+            print "💡 Use --force to override or edit existing file directly"
+            exit 1
+        }
+        
+        # Show current orphan count for baseline
+        print "📊 Current orphan status:"
+        let result = do { ^dotter-orphan-detector-v2 } | complete
+        if $result.exit_code == 0 {
+            print ($result.stdout | lines | first 3 | str join "\n")
+        }
+    }
+    
+    # 2. AUTO-DETECT PLATFORM AND TARGET
+    let platform = if ($platform | is-empty) {
+        # Auto-detect based on file path and system
+        if ($path | str contains "karabiner") or ($path | str contains "aerospace") or ($path | str contains "sketchybar") {
+            "macos"
+        } else if ($path | str contains "wayland") or ($path | str contains "hyprland") {
+            "linux" 
+        } else {
+            "shared"
+        }
+    } else {
+        $platform
+    }
+    
+    let target = if ($target | is-empty) {
+        # Auto-detect target based on common patterns
+        if ($path | str starts-with "helix/") {
+            let suffix = ($path | str replace "helix/" "")
+            $"~/.config/helix/($suffix)"
+        } else if ($path | str starts-with "nushell/") {
+            let suffix = ($path | str replace "nushell/" "")
+            $"~/.config/nushell/($suffix)"
+        } else if ($path | str starts-with "yazi/") {
+            let suffix = ($path | str replace "yazi/" "")
+            $"~/.config/yazi/($suffix)"
+        } else if ($path | str starts-with "zellij/") {
+            let suffix = ($path | str replace "zellij/" "")
+            $"~/.config/zellij/($suffix)"
+        } else if ($path | str starts-with "scripts/") {
+            let filename = ($path | path basename)
+            $"~/.local/bin/($filename)"
+        } else {
+            # Fallback: assume ~/.config structure
+            $"~/.config/($path)"
+        }
+    } else {
+        $target
+    }
+    
+    print $"\n🎯 Detected configuration:"
+    print $"   Platform: ($platform)"
+    print $"   Target: ($target)"
+    
+    # 3. CREATE DIRECTORY IF NEEDED
+    if not ($parent_dir | path exists) {
+        print $"\n📁 Creating directory: ($parent_dir)"
+        mkdir ($parent_dir)
+    }
+    
+    # 4. CREATE THE FILE
+    print $"\n✏️  Creating file: ($full_path)"
+    
+    # Create with basic content based on file type
+    let initial_content = if ($path | str ends-with ".toml") {
+        "# Configuration file created with dotter-safe-create\n# Remember to customize this file for your needs\n"
+    } else if ($path | str ends-with ".nu") {
+        "#!/opt/homebrew/bin/nu\n# Nushell script created with dotter-safe-create\n"
+    } else if ($path | str ends-with ".sh") {
+        "#!/bin/bash\n# Script created with dotter-safe-create\nset -euo pipefail\n"
+    } else if ($path | str ends-with ".kdl") {
+        "// Layout file created with dotter-safe-create\n"
+    } else {
+        "// File created with dotter-safe-create\n"
+    }
+    
+    $initial_content | save -f $full_path
+    
+    # 5. ADD TO DOTTER CONFIG IMMEDIATELY
+    print $"\n🔗 Adding to Dotter configuration..."
+    
+    let dotter_config = $"($dotfiles_root)/.dotter/global.toml"
+    let section_key = $"($platform).files"
+    
+    # Read current config
+    let current_config = (open $dotter_config)
+    
+    # Add the new entry
+    let dotter_entry = {
+        ($path): ($target)
+    }
+    
+    # This is complex TOML manipulation, so we'll use a simpler append approach
+    let entry_line = $'"($path)" = "($target)"'
+    
+    print $"   Adding: ($entry_line)"
+    print $"   To section: [($section_key)]"
+    
+    # Append to the appropriate section (this is a simplified approach)
+    # In a real implementation, you'd want proper TOML editing
+    $"\n# Added by dotter-safe-create on (date now | format date '%Y-%m-%d %H:%M:%S')\n($entry_line)" | save -a $dotter_config
+    
+    # 6. DEPLOY IMMEDIATELY
+    print $"\n🚀 Deploying with Dotter..."
+    cd $dotfiles_root
+    let deploy_result = do { dotter deploy } | complete
+    
+    if $deploy_result.exit_code == 0 {
+        print "✅ Deployment successful!"
+    } else {
+        print "❌ Deployment failed:"
+        print $deploy_result.stderr
+        print "\n🔧 Manual fix required - check Dotter configuration"
+        exit 1
+    }
+    
+    # 7. VERIFY SUCCESS
+    print $"\n🔍 Verifying deployment..."
+    if ($target | str replace "~" $env.HOME | path exists) {
+        print $"✅ Target file exists: ($target)"
+    } else {
+        print $"❌ Target file missing: ($target)"
+        exit 1
+    }
+    
+    # 8. FINAL ORPHAN CHECK
+    print $"\n📊 Final orphan check:"
+    let final_result = do { ^dotter-orphan-detector-v2 } | complete
+    if $final_result.exit_code == 0 {
+        print ($final_result.stdout | lines | first 3 | str join "\n")
+    }
+    
+    # 9. SUCCESS SUMMARY
+    print $"\n🎉 SUCCESS! File created and managed:"
+    print $"   Created: ($full_path)"
+    print $"   Target: ($target)"
+    print $"   Platform: ($platform)"
+    print $"   Status: ✅ Managed by Dotter"
+    
+    # 10. NEXT STEPS
+    print $"\n📝 Next steps:"
+    print $"   1. Edit the file: hx ($full_path)"
+    print $"   2. Changes will sync automatically via symlink"
+    print $"   3. Commit when ready: git add . && git commit -m 'Add ($path)'"
+}

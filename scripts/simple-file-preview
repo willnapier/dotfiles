@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# Simple file preview for floating pane skim
+# Provides character-wrapped preview with fallback (use word-wrap-preview.nu for word-level wrapping)
+
+file="$1"
+
+if [[ ! -f "$file" ]]; then
+    echo "File not found: $file"
+    exit 1
+fi
+
+# Try bat with wrapping first, fallback to head
+if command -v bat >/dev/null 2>&1; then
+    bat --style=plain --color=always --line-range=:20 --wrap=character --terminal-width=80 "$file" 2>/dev/null
+else
+    head -20 "$file"
+fi

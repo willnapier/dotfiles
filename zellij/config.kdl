@@ -73,6 +73,56 @@ keybinds {
             ToggleFloatingPanes;
         }
         
+        // Content search with wikilink output - Alt+s (case insensitive)
+        bind "Alt s" {
+            Run "bash" "-c" "SEARCH_CASE_INSENSITIVE=1 /Users/williamnapier/.local/bin/obsidian-content-search-interactive.sh" {
+                floating true
+                close_on_exit true
+                width "90%"
+                height "85%"
+                x "5%"
+                y "7.5%"
+            }
+        }
+        
+        // Content search with wikilink output - Alt+S (case sensitive)
+        bind "Alt S" {
+            Run "bash" "/Users/williamnapier/.local/bin/obsidian-content-search-interactive.sh" {
+                floating true
+                close_on_exit true
+                width "90%"
+                height "85%"
+                x "5%"
+                y "7.5%"
+            }
+        }
+        
+        // Semantic search with wikilink output - Alt+e
+        bind "Alt e" {
+            Run "bash" "/Users/williamnapier/.local/bin/obsidian-semantic-search.sh" {
+                floating true
+                close_on_exit true
+                width "90%"
+                height "85%"
+                x "5%"
+                y "7.5%"
+            }
+        }
+        
+        // Mode switches - Zellij defaults (preserved)
+        bind "Ctrl t" { SwitchToMode "Tab"; }
+        bind "Ctrl p" { SwitchToMode "Pane"; }
+        bind "Ctrl r" { SwitchToMode "Resize"; }
+        bind "Ctrl s" { SwitchToMode "Scroll"; }
+        bind "Ctrl o" { SwitchToMode "Session"; }
+        bind "Ctrl h" { SwitchToMode "Move"; }
+        bind "Ctrl g" { SwitchToMode "Locked"; }
+        
+        // Quick actions - Zellij defaults (added)
+        bind "Ctrl n" { NewPane; }
+        bind "Ctrl q" { Quit; }
+        bind "Ctrl d" { Detach; }
+        
         // Unbind system theme switcher to let macOS handle it
         unbind "Ctrl Alt Shift d"
     }
@@ -80,18 +130,36 @@ keybinds {
     // Tab mode with neio navigation (and arrow key fallback)
     tab {
         // neio navigation
-        bind "n" { GoToPreviousTab; SwitchToMode "Normal"; }
-        bind "o" { GoToNextTab; SwitchToMode "Normal"; }
-        bind "e" { GoToTab 1; SwitchToMode "Normal"; }  // first tab
-        bind "i" { GoToTab -1; SwitchToMode "Normal"; } // last tab
+        bind "n" { GoToPreviousTab; FocusNextPane; SwitchToMode "Normal"; }
+        bind "o" { GoToNextTab; FocusNextPane; SwitchToMode "Normal"; }
+        bind "e" { GoToTab 1; FocusNextPane; SwitchToMode "Normal"; }  // first tab + focus
+        bind "i" { GoToTab -1; FocusNextPane; SwitchToMode "Normal"; } // last tab + focus
         bind "t" { NewTab; SwitchToMode "Normal"; }
         bind "x" { CloseTab; SwitchToMode "Normal"; }
         
         // Arrow key fallback
-        bind "Left" { GoToPreviousTab; SwitchToMode "Normal"; }
-        bind "Right" { GoToNextTab; SwitchToMode "Normal"; }
-        bind "Down" { GoToTab 1; SwitchToMode "Normal"; }
-        bind "Up" { GoToTab -1; SwitchToMode "Normal"; }
+        bind "Left" { GoToPreviousTab; FocusNextPane; SwitchToMode "Normal"; }
+        bind "Right" { GoToNextTab; FocusNextPane; SwitchToMode "Normal"; }
+        bind "Down" { GoToTab 1; FocusNextPane; SwitchToMode "Normal"; }
+        bind "Up" { GoToTab -1; FocusNextPane; SwitchToMode "Normal"; }
+        
+        // Zellij defaults - added
+        bind "r" { SwitchToMode "RenameTab"; TabNameInput 0; }
+        bind "s" { ToggleActiveSyncTab; SwitchToMode "Normal"; }
+        bind "1" { GoToTab 1; SwitchToMode "Normal"; }
+        bind "2" { GoToTab 2; SwitchToMode "Normal"; }
+        bind "3" { GoToTab 3; SwitchToMode "Normal"; }
+        bind "4" { GoToTab 4; SwitchToMode "Normal"; }
+        bind "5" { GoToTab 5; SwitchToMode "Normal"; }
+        bind "6" { GoToTab 6; SwitchToMode "Normal"; }
+        bind "7" { GoToTab 7; SwitchToMode "Normal"; }
+        bind "8" { GoToTab 8; SwitchToMode "Normal"; }
+        bind "9" { GoToTab 9; SwitchToMode "Normal"; }
+        bind "Tab" { ToggleTab; }
+        
+        // Exit bindings
+        bind "Ctrl c" { SwitchToMode "Normal"; }
+        bind "Esc" { SwitchToMode "Normal"; }
     }
     
     // Pane mode with neio navigation (and arrow key fallback)
@@ -112,14 +180,24 @@ keybinds {
         bind "x" { CloseFocus; SwitchToMode "Normal"; }
         bind "f" { ToggleFocusFullscreen; SwitchToMode "Normal"; }
         bind "z" { TogglePaneFrames; SwitchToMode "Normal"; }
-        bind "p" { TogglePanePinned; SwitchToMode "Normal"; }  // Pin/unpin floating pane (stays visible across tabs)
-        bind "w" { TogglePaneEmbedOrFloating; SwitchToMode "Normal"; }  // Convert pane between floating/embedded
+        bind "w" { TogglePaneEmbedOrFloating; SwitchToMode "Normal"; }
         
         // Arrow key fallback for focus
         bind "Left" { MoveFocus "Left"; }
         bind "Down" { MoveFocus "Down"; }
         bind "Up" { MoveFocus "Up"; }
         bind "Right" { MoveFocus "Right"; }
+        
+        // Zellij defaults - added
+        bind "r" { SwitchToMode "RenamePane"; PaneNameInput 0; }
+        bind "c" { SwitchToMode "Normal"; NewPane; }
+        bind "b" { BreakPane; SwitchToMode "Normal"; }  // THE KEY ADDITION - break pane to new tab
+        bind "." { NextSwapLayout; }
+        bind "," { PreviousSwapLayout; }
+        
+        // Exit bindings
+        bind "Ctrl c" { SwitchToMode "Normal"; }
+        bind "Esc" { SwitchToMode "Normal"; }
     }
     
     // Resize mode with neio navigation (and arrow key fallback)
@@ -141,6 +219,103 @@ keybinds {
         bind "Down" { Resize "Increase Down"; }
         bind "Up" { Resize "Decrease Down"; }
         bind "Right" { Resize "Increase Right"; }
+        
+        // Zellij defaults - added
+        bind "=" { Resize "Increase"; }
+        bind "+" { Resize "Increase"; }
+        bind "-" { Resize "Decrease"; }
+        
+        // Exit bindings
+        bind "Ctrl c" { SwitchToMode "Normal"; }
+        bind "Esc" { SwitchToMode "Normal"; }
+    }
+    
+    // NEW MODES - Scroll mode for buffer navigation and search
+    scroll {
+        // neio navigation
+        bind "e" { ScrollDown; }
+        bind "i" { ScrollUp; }
+        bind "n" { PageScrollUp; }
+        bind "o" { PageScrollDown; }
+        
+        // Arrow fallback
+        bind "Down" { ScrollDown; }
+        bind "Up" { ScrollUp; }
+        bind "PageDown" { PageScrollDown; }
+        bind "PageUp" { PageScrollUp; }
+        
+        // Zellij defaults - vim-style
+        bind "j" { ScrollDown; }
+        bind "k" { ScrollUp; }
+        bind "g" { ScrollToTop; }
+        bind "G" { ScrollToBottom; }
+        bind "d" { HalfPageScrollDown; }
+        bind "u" { HalfPageScrollUp; }
+        bind "Ctrl d" { HalfPageScrollDown; }
+        bind "Ctrl u" { HalfPageScrollUp; }
+        
+        // Search
+        bind "s" { SwitchToMode "EnterSearch"; SearchInput 0; }
+        bind "Ctrl f" { SwitchToMode "EnterSearch"; SearchInput 0; }
+        
+        // Exit bindings
+        bind "Ctrl c" { SwitchToMode "Normal"; }
+        bind "Esc" { SwitchToMode "Normal"; }
+        bind "Enter" { SwitchToMode "Normal"; }
+        bind "Space" { SwitchToMode "Normal"; }
+    }
+    
+    // NEW MODES - Search mode
+    search {
+        bind "n" { Search "down"; }
+        bind "p" { Search "up"; }
+        bind "N" { Search "up"; }
+        bind "P" { Search "down"; }
+        bind "c" { SearchToggleOption "CaseSensitivity"; }
+        bind "w" { SearchToggleOption "Wrap"; }
+        bind "o" { SearchToggleOption "WholeWord"; }
+        
+        bind "Ctrl c" { SwitchToMode "Scroll"; }
+        bind "Esc" { SwitchToMode "Scroll"; }
+        bind "Enter" { SwitchToMode "Normal"; }
+    }
+    
+    // NEW MODES - Move mode for moving panes between tabs  
+    move {
+        bind "n" { MovePane; }
+        bind "p" { MovePaneBackwards; }
+        bind "h" { MovePane "Left"; }
+        bind "j" { MovePane "Down"; }
+        bind "k" { MovePane "Up"; }
+        bind "l" { MovePane "Right"; }
+        bind "t" { BreakPane; SwitchToMode "Normal"; }  // Move to new tab
+        
+        bind "Ctrl c" { SwitchToMode "Normal"; }
+        bind "Esc" { SwitchToMode "Normal"; }
+    }
+    
+    // NEW MODES - Session mode
+    session {
+        bind "d" { Detach; }
+        bind "w" { 
+            LaunchOrFocusPlugin "session-manager" {
+                floating true
+            }
+        }
+        bind "c" {
+            LaunchOrFocusPlugin "session-manager" {
+                floating true
+                move_to_focused_tab true
+            }
+        }
+        
+        bind "Ctrl c" { SwitchToMode "Normal"; }
+        bind "Esc" { SwitchToMode "Normal"; }
+    }
+    
+    // NEW MODES - Locked mode (help)
+    locked {
+        bind "Ctrl g" { SwitchToMode "Normal"; }
     }
 }
 
@@ -188,9 +363,11 @@ themes {
 default_shell "/opt/homebrew/bin/nu"
 
 // Environment variables for proper terminal detection
-env {
-    TERM "xterm-256color"
-}
+// Commented out to let WezTerm's native TERM pass through to Nushell
+// This fixes cursor position report issues (^[[34;33R) in table output
+// env {
+//     TERM "xterm-256color"
+// }
 
 // Copy/paste configuration - disabled to prevent conflict with WezTerm clipboard handling
 // copy_command "pbcopy"
@@ -203,7 +380,7 @@ scroll_buffer_size 10000
 
 // Pane settings
 pane_frames true
-simplified_ui false
+simplified_ui true
 
 // Plugin settings - tab-bar removed to prevent duplicate mode indicators
 plugins {

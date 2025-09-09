@@ -25,17 +25,24 @@ The fundamental issue was mixing two incompatible approaches in Dotter:
 # ... etc for all essential files
 ```
 
-#### 2. Eliminated All Verification Requirements
-- **Removed**: `verify-dotfiles-integrity` script (no longer needed)
-- **Removed**: All mandatory verification steps
-- **Removed**: Anxiety about configuration drift
+#### 2. Added Orphan Prevention System (2025-09-05)
+**CRITICAL DISCOVERY**: We solved drift detection but missed orphan prevention!
+- **Added**: `dotter-orphan-detector-v2` - Finds unmanaged files in dotfiles
+- **Found**: 124 orphaned files (61% of configs not protected!)
+- **Process**: Mandatory orphan check before/after adding any config files
 
-#### 3. Achieved True "Set and Forget" Operation
-**How it works now**:
-1. Edit any file in `/Users/williamnapier/dotfiles/`
+#### 3. Two-Layer Protection System
+**Layer 1 - Drift Protection** (for managed files):
+1. Edit any managed file in `/Users/williamnapier/dotfiles/`
 2. Change appears **instantly** in `~/.config/` or `~/.local/bin/`
-3. **No verification needed** - it just works automatically
-4. **No manual checks** - no thinking about symlinks required
+3. **No verification needed** - symlinks work automatically
+
+**Layer 2 - Orphan Prevention** (for new/unmanaged files):
+1. **BEFORE** adding any config file: `dotter-orphan-detector-v2`
+2. Create your config file in dotfiles
+3. **IMMEDIATELY** add to `.dotter/global.toml`
+4. Run `dotter deploy` and verify deployment
+5. **AFTER** adding: `dotter-orphan-detector-v2` (should show one less orphan)
 
 ### Current Working Status (All Tested ✅)
 
@@ -95,13 +102,18 @@ The system has been completely migrated from the problematic mixed approach to t
 
 ### ⚠️ MANDATORY CONFIGURATION CHANGE PROCEDURE ⚠️
 
-**CRITICAL**: The "set and forget it" approach was WRONG. Every config change requires this exact procedure:
+**UPDATED PROCEDURE** (2025-09-05): Two-layer protection system
 
-#### BEFORE Making ANY Configuration Change:
-1. **STOP** - Do not make changes directly to config files
-2. **Run verification**: `cd ~/dotfiles && verify-dotfiles-integrity` (if script exists)
-3. **Check symlink status**: Verify the file you're about to change is properly symlinked to dotfiles
-4. **If NOT symlinked**: Add to Dotter configuration FIRST, then deploy
+#### FOR EXISTING MANAGED FILES (Layer 1 - Drift Protection):
+1. **Edit directly** in `/Users/williamnapier/dotfiles/[app]/[file]`
+2. **Changes work instantly** via symlinks - no additional steps needed
+
+#### FOR NEW/UNMANAGED FILES (Layer 2 - Orphan Prevention):
+1. **BEFORE creating**: Run `dotter-orphan-detector-v2` to see current orphans
+2. **Create file** in `/Users/williamnapier/dotfiles/[app]/[file]`
+3. **IMMEDIATELY add** to `.dotter/global.toml` in appropriate section
+4. **Deploy**: `cd ~/dotfiles && dotter deploy`
+5. **VERIFY**: Run `dotter-orphan-detector-v2` again (should be one less orphan)
 
 #### The CORRECT Change Process:
 1. **Edit files in `/Users/williamnapier/dotfiles/`** - NEVER edit files in ~/.config/ or ~/.local/bin/

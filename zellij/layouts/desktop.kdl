@@ -2,8 +2,6 @@
 // Strategy: Dedicated daily note quadrant + full 4-pane workspace
 layout {
     default_tab_template {
-        // Removed tab-bar plugin to eliminate duplicate mode indicators
-        // Mode information is still available in the comprehensive status-bar below
         children
         pane size=2 borderless=true {
             plugin location="zellij:status-bar"
@@ -14,12 +12,12 @@ layout {
         pane split_direction="vertical" {
             pane split_direction="horizontal" {
                 pane name="daily-note" {
+                    focus true
                     size "40%"
                     command "bash"
-                    args "-c" "echo 'Daily Note Quadrant - Always visible\nPersistent across days\nRun: y → D for today'\''s note'; exec $SHELL"
+                    args "-c" "/Users/williamnapier/.local/bin/daily-note && exec hx \"$(daily-note --print-path)\" || exec /opt/homebrew/bin/nu"
                 }
                 pane name="main-editor" {
-                    focus true
                     size "60%"
                 }
             }

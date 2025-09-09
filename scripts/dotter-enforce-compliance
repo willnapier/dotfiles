@@ -4,7 +4,7 @@
 # This script helps migrate files to Dotter management with minimal manual work
 
 def main [
-    --dry-run (-d): bool = false  # Show what would be done without actually doing it
+    --dry-run (-d)  # Show what would be done without actually doing it
 ] {
     print "🔧 DOTTER COMPLIANCE ENFORCEMENT"
     print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -123,7 +123,7 @@ def main [
             if not ($dry_run) {
                 # Create target directory if it doesn't exist 
                 if not ($target_dir_path | path exists) {
-                    mkdir -p $target_dir_path
+                    mkdir $target_dir_path
                     print $"   ✅ Created directory: ($script.target_dir)"
                 }
                 

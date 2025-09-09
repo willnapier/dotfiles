@@ -14,12 +14,27 @@ depends = []
 "yazi/theme.toml" = "~/.config/yazi/theme.toml"
 "zellij/config.kdl" = "~/.config/zellij/config.kdl"
 "starship.toml" = "~/.config/starship.toml"
-# Directory-level management for collections
+# FIXED: Directory-level symlinks converted to individual files for reliability
+# Yazi flavors - individual directory symlinks (flavors are complex nested structures)
+"yazi/flavors/solarized-dark.yazi" = { target = "~/.config/yazi/flavors/solarized-dark.yazi", type = "symbolic" }
+"yazi/flavors/solarized-light.yazi" = { target = "~/.config/yazi/flavors/solarized-light.yazi", type = "symbolic" }
+"yazi/flavors/dracula.yazi" = { target = "~/.config/yazi/flavors/dracula.yazi", type = "symbolic" }
+# Yazi plugins and scripts - individual directory symlinks
 "yazi/plugins" = { target = "~/.config/yazi/plugins", type = "symbolic" }
 "yazi/scripts" = { target = "~/.config/yazi/scripts", type = "symbolic" }
-"yazi/flavors" = { target = "~/.config/yazi/flavors", type = "symbolic" }
-"zellij/layouts" = { target = "~/.config/zellij/layouts", type = "symbolic" }
-"helix/themes" = { target = "~/.config/helix/themes", type = "symbolic" }
+# Zellij layouts - individual files for reliability  
+"zellij/layouts/laptop.kdl" = "~/.config/zellij/layouts/laptop.kdl"
+"zellij/layouts/desktop.kdl" = "~/.config/zellij/layouts/desktop.kdl"
+"zellij/layouts/desktop-27.kdl" = "~/.config/zellij/layouts/desktop-27.kdl"
+"zellij/layouts/desktop-27-simple.kdl" = "~/.config/zellij/layouts/desktop-27-simple.kdl"
+"zellij/layouts/desktop-quarters.kdl" = "~/.config/zellij/layouts/desktop-quarters.kdl"
+"zellij/layouts/minimal-test.kdl" = "~/.config/zellij/layouts/minimal-test.kdl"
+"zellij/layouts/test-basic.kdl" = "~/.config/zellij/layouts/test-basic.kdl"
+# Helix themes - individual files for reliability (no more drift!)
+"helix/themes/solarized_dark_modal.toml" = "~/.config/helix/themes/solarized_dark_modal.toml"
+"helix/themes/solarized_light_modal.toml" = "~/.config/helix/themes/solarized_light_modal.toml" 
+"helix/themes/solarized_dark_modal_wiki.toml" = "~/.config/helix/themes/solarized_dark_modal_wiki.toml"
+"helix/themes/test_theme.toml" = "~/.config/helix/themes/test_theme.toml"
 # Neovim configuration files
 "nvim/init.lua" = "~/.config/nvim/init.lua"
 "nvim/lazy-lock.json" = "~/.config/nvim/lazy-lock.json"
@@ -27,13 +42,28 @@ depends = []
 "nvim/doc" = { target = "~/.config/nvim/doc", type = "symbolic" }
 "nvim/spell" = { target = "~/.config/nvim/spell", type = "symbolic" }
 # Essential scripts (most commonly used)
-"scripts/claude" = "~/.local/bin/claude"
 "scripts/daily-note" = { target = "~/.local/bin/daily-note", type = "symbolic" }
 "scripts/daypage-template" = "~/.local/bin/daypage-template"
 "scripts/hx-insert-date" = "~/.local/bin/hx-insert-date"
 "scripts/hx-insert-datetime" = "~/.local/bin/hx-insert-datetime"
 "scripts/search-comparison-test" = "~/.local/bin/search-comparison-test"
 "scripts/hx-insert-time" = "~/.local/bin/hx-insert-time"
+"scripts/hx-mark-revisit" = "~/.local/bin/hx-mark-revisit"
+"scripts/new-script" = "~/.local/bin/new-script"
+"scripts/obsidian-content-search-interactive.sh" = "~/.local/bin/obsidian-content-search-interactive.sh"
+"scripts/obsidian-semantic-search.sh" = "~/.local/bin/obsidian-semantic-search.sh"
+"nushell/scripts/quantified-tracking.nu" = "~/.config/nushell/scripts/quantified-tracking.nu"
+"nushell/scripts/quantified-tracking-v2.nu" = "~/.config/nushell/scripts/quantified-tracking-v2.nu"
+
+# Cross-platform utilities
+"scripts/detect-platform" = "~/.local/bin/detect-platform"
+"scripts/cross-platform-paths" = "~/.local/bin/cross-platform-paths"
+"scripts/obsidian-linker-cross-platform.sh" = "~/.local/bin/obsidian-linker-cross-platform.sh"
+"scripts/citation-picker-cross-platform.sh" = "~/.local/bin/citation-picker-cross-platform.sh"
+# Zellij zombie prevention system (cross-platform)
+"scripts/zellij-zombie-killer" = "~/.local/bin/zellij-zombie-killer" 
+"scripts/zellij-zombie-watcher-cross-platform" = "~/.local/bin/zellij-zombie-watcher-cross-platform"
+"scripts/setup-zellij-zombie-prevention-cross-platform" = "~/.local/bin/setup-zellij-zombie-prevention-cross-platform"
 "scripts/hx-auto" = "~/.local/bin/hx-auto"
 "scripts/hx-wiki" = "~/.local/bin/hx-wiki"
 "scripts/obsidian-linker.sh" = "~/.local/bin/obsidian-linker.sh"
@@ -50,6 +80,21 @@ depends = []
 "scripts/dotter-complete-audit" = "~/.local/bin/dotter-complete-audit"
 "scripts/dotter-enforce-compliance" = "~/.local/bin/dotter-enforce-compliance"
 "scripts/dotter-drift-monitor" = "~/.local/bin/dotter-drift-monitor"
+"scripts/claude-docs-backup" = "~/.local/bin/claude-docs-backup"
+"scripts/claude-docs-watcher" = "~/.local/bin/claude-docs-watcher"
+"scripts/rotate-linkmanager-logs" = "~/.local/bin/rotate-linkmanager-logs"
+"scripts/dotter-drift-watcher" = "~/.local/bin/dotter-drift-watcher"
+"scripts/dotter-drift-cron" = "~/.local/bin/dotter-drift-cron"
+"scripts/setup-drift-monitoring" = "~/.local/bin/setup-drift-monitoring"
+"scripts/drift-status" = "~/.local/bin/drift-status"
+"scripts/dotter-orphan-detector" = "~/.local/bin/dotter-orphan-detector"
+"scripts/script-ready-deploy" = "~/.local/bin/script-ready-deploy"
+"scripts/yazi-project-file-search-floating" = "~/.local/bin/yazi-project-file-search-floating"
+"scripts/simple-file-preview" = "~/.local/bin/simple-file-preview"
+"scripts/test-skim-floating" = "~/.local/bin/test-skim-floating"
+"scripts/word-wrap-preview.nu" = "~/.local/bin/word-wrap-preview.nu"
+"scripts/sleep-duration-processor" = "~/.local/bin/sleep-duration-processor"
+"scripts/helix-sleep-watcher" = "~/.local/bin/helix-sleep-watcher"
 # Semantic search system - managed separately (has virtual environment)
 
 [shared.variables]

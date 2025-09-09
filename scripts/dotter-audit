@@ -1,72 +1,232 @@
 #!/usr/bin/env nu
-# dotter-audit - Find config files not managed by Dotter and propose fixes
+# dotter-audit - Comprehensive system to ensure ALL relevant files are Dotter-managed
+# Prevents Dotter Drift by identifying unmanaged files that should be in dotfiles
 
-# Colors for output
-let RED = "\e[31m"
-let GREEN = "\e[32m"  
-let YELLOW = "\e[33m"
-let BLUE = "\e[34m"
-let RESET = "\e[0m"
-
-print $"($BLUE)🔍 Auditing Dotter Configuration Management($RESET)"
-print ""
-
-# Get currently managed files from Dotter config
-let dotter_config = (open ~/dotfiles/.dotter/global.toml)
-let managed_targets = ($dotter_config | get shared.files | columns)
-
-print $"($GREEN)✅ Currently managed by Dotter:($RESET)"
-$managed_targets | each { |target| print $"   • ($target)" }
-print ""
-
-# Find config files in ~/.config using fd
-let config_files = (
-    ^fd -t f '\.(toml|nu|kdl|lua|json|yaml|yml)$|^config$' ~/.config
-    | lines
-    | where $it !~ "cache|lock|log|tmp"  # Skip cache/temp files
-    | sort
-)
-
-print $"($BLUE)📁 Found config files:($RESET)"
-
-mut unmanaged_files = []
-
-for $file in $config_files {
-    let relative_path = ($file | str replace $env.HOME "~")
-    let is_symlink = (ls -la $file | get 0.type) == "symlink"
+def main [] {
+    print "🔍 COMPREHENSIVE DOTTER AUDIT SYSTEM"
+    print "=====================================\n"
     
-    if $is_symlink {
-        let target = (ls -la $file | get 0.target)
-        if ($target | str contains "dotfiles") {
-            print $"   ($GREEN)✅ ($relative_path) → ($target)($RESET)"
-        } else {
-            print $"   ($YELLOW)⚠️  ($relative_path) → ($target) (symlinked but not to dotfiles)($RESET)"
+    let dotfiles_root = "/Users/williamnapier/dotfiles"
+    let dotter_config = $dotfiles_root + "/.dotter/global.toml"
+    
+    # Parse current Dotter config to get managed files
+    let managed_files = parse_dotter_config $dotter_config
+    
+    # Define critical directories to audit
+    let critical_dirs = [
+        "~/.config",
+        "~/.local/bin", 
+        "~/.local/share",
+        "~/bin"
+    ]
+    
+    let mut unmanaged_files = []
+    let mut total_files_found = 0
+    
+    for dir in $critical_dirs {
+        let expanded_dir = ($dir | str replace "~" $env.HOME)
+        if ($expanded_dir | path exists) {
+            print $"🔍 Scanning ($dir)..."
+            let files = find_relevant_files $expanded_dir
+            $total_files_found += ($files | length)
+            
+            for file in $files {
+                let relative_path = get_relative_path $file
+                if not ($relative_path in $managed_files) {
+                    $unmanaged_files = ($unmanaged_files | append {
+                        file: $file,
+                        relative: $relative_path,
+                        category: (categorize_file $file)
+                    })
+                }
+            }
         }
-    } else {
-        print $"   ($RED)❌ ($relative_path) - unmanaged real file($RESET)"
-        $unmanaged_files = ($unmanaged_files | append $file)
     }
-}
-
-print ""
-
-if ($unmanaged_files | length) > 0 {
-    print $"($RED)🚨 Found ($unmanaged_files | length) unmanaged config files!($RESET)"
-    print ""
-    print $"($YELLOW)📋 To add these to Dotter management:($RESET)"
     
-    for $file in $unmanaged_files {
-        let relative_from_home = ($file | str replace $env.HOME "")
-        let relative_from_config = ($file | str replace ~/.config/ "")
-        let dotfile_path = $"dotfiles/($relative_from_config)"
+    # Report results
+    print $"\n📊 AUDIT RESULTS"
+    print $"================"
+    print $"Total files scanned: ($total_files_found)"
+    print $"Currently managed: ($managed_files | length)"
+    print $"Unmanaged files found: ($unmanaged_files | length)\n"
+    
+    if ($unmanaged_files | length) > 0 {
+        print "⚠️  UNMANAGED FILES REQUIRING ATTENTION:"
+        print "========================================\n"
         
-        print $"1. mv ($file) ~/($dotfile_path)"
-        print $"2. Add to .dotter/global.toml: \"($relative_from_config)\" = \"($relative_from_home)\""
-        print $"3. dotter deploy"
+        # Group by category
+        let grouped = ($unmanaged_files | group-by category)
+        
+        for category in ($grouped | columns) {
+            let files = ($grouped | get $category)
+            print $"🏷️  ($category) (($files | length) files):"
+            for file_info in $files {
+                let importance = get_importance_level $file_info.file
+                print $"   ($importance) ($file_info.relative)"
+            }
+            print ""
+        }
+        
+        print "🎯 RECOMMENDED ACTIONS:"
+        print "======================"
+        print "1. High priority files (🔴): Add to Dotter immediately"
+        print "2. Medium priority files (🟡): Review and add if actively used"
+        print "3. Low priority files (🟢): Consider for cleanup or archiving"
         print ""
+        print "📝 To add a file to Dotter management:"
+        print $"   dotter-add <file-path>"
+        print ""
+        print "⚙️  To add multiple files:"
+        print $"   dotter-bulk-add <category>"
+    } else {
+        print "✅ SUCCESS: All relevant files are properly Dotter-managed!"
     }
-} else {
-    print $"($GREEN)🎉 All found config files are properly managed by Dotter!($RESET)"
 }
 
-print $"($BLUE)💡 Run this script after installing new applications to catch unmanaged configs.($RESET)"
+# Parse Dotter configuration to extract managed files
+def parse_dotter_config [config_file: string] {
+    if not ($config_file | path exists) {
+        print $"❌ Dotter config not found: ($config_file)"
+        return []
+    }
+    
+    # Extract file mappings from TOML (simplified parsing)
+    let content = (open $config_file)
+    let lines = ($content | lines)
+    
+    let mut managed = []
+    for line in $lines {
+        # Match patterns like: "path/file" = "target/path"
+        if ($line | str contains " = ") and ($line | str contains "~/.") {
+            let parts = ($line | str trim | split column " = ")
+            if ($parts | length) >= 2 {
+                let target = ($parts | get 1 | str trim --char '"')
+                let relative = ($target | str replace $env.HOME "~")
+                $managed = ($managed | append $relative)
+            }
+        }
+    }
+    
+    return $managed
+}
+
+# Find all relevant configuration and script files
+def find_relevant_files [dir: string] {
+    let mut files = []
+    
+    # Configuration files
+    let config_extensions = ["toml", "yaml", "yml", "json", "kdl", "lua", "nu", "sh", "conf", "cfg", "ini"]
+    
+    for ext in $config_extensions {
+        try {
+            let found = (ls -a $"($dir)/**/*.($ext)" | get name | where { |x| not (is_excluded $x) })
+            $files = ($files | append $found)
+        } catch {
+            # Directory might not exist or no files found
+        }
+    }
+    
+    # Executable scripts
+    try {
+        let scripts = (ls -a $"($dir)/*" | where type == file | get name | where { |x| is_executable $x and not (is_excluded $x) })
+        $files = ($files | append $scripts)
+    } catch {
+        # Directory might not exist
+    }
+    
+    return ($files | uniq)
+}
+
+# Check if file should be excluded from audit
+def is_excluded [file: string] {
+    let excludes = [
+        ".DS_Store",
+        ".git",
+        "node_modules",
+        ".cache",
+        ".npm",
+        ".local/share/nvim",  # Neovim plugins
+        ".local/share/applications",  # Desktop files
+        "Trash",
+        "Cache",
+        "cache",
+        ".obsidian",
+        "linked_media"
+    ]
+    
+    for exclude in $excludes {
+        if ($file | str contains $exclude) {
+            return true
+        }
+    }
+    
+    return false
+}
+
+# Check if file is executable
+def is_executable [file: string] {
+    try {
+        let perms = (ls -la $file | get permissions.0)
+        return ($perms | str contains "x")
+    } catch {
+        return false
+    }
+}
+
+# Convert absolute path to relative for comparison
+def get_relative_path [file: string] {
+    return ($file | str replace $env.HOME "~")
+}
+
+# Categorize files by type/purpose
+def categorize_file [file: string] {
+    if ($file | str contains ".config/helix") { return "Editor-Helix" }
+    if ($file | str contains ".config/nvim") { return "Editor-Neovim" }
+    if ($file | str contains ".config/yazi") { return "File-Manager" }
+    if ($file | str contains ".config/zellij") { return "Terminal-Multiplexer" }
+    if ($file | str contains ".config/nushell") { return "Shell-Nushell" }
+    if ($file | str contains ".local/bin") { return "Scripts-Executable" }
+    if ($file | str contains ".config/ghostty") { return "Terminal-Emulator" }
+    if ($file | str contains ".config/aerospace") { return "Window-Manager" }
+    if ($file | str contains ".config/karabiner") { return "Keyboard-Customization" }
+    if ($file | str contains ".config/starship") { return "Shell-Prompt" }
+    if ($file | str contains ".config") { return "Configuration-Other" }
+    if ($file | str contains ".local") { return "Local-Data" }
+    return "Other"
+}
+
+# Determine importance level for prioritization
+def get_importance_level [file: string] {
+    # Critical files (must be managed)
+    let critical_patterns = [
+        "helix/config.toml",
+        "nushell/config.nu",
+        "zellij/config.kdl",
+        "yazi/yazi.toml",
+        "yazi/keymap.toml",
+        "/bin/"  # Any executable script
+    ]
+    
+    for pattern in $critical_patterns {
+        if ($file | str contains $pattern) {
+            return "🔴 HIGH"
+        }
+    }
+    
+    # Important files (should be managed)
+    let important_patterns = [
+        "nvim/",
+        "ghostty/",
+        "aerospace/",
+        "starship",
+        ".config/"
+    ]
+    
+    for pattern in $important_patterns {
+        if ($file | str contains $pattern) {
+            return "🟡 MEDIUM"
+        }
+    }
+    
+    return "🟢 LOW"
+}

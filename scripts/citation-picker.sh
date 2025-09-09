@@ -16,9 +16,21 @@ export COLUMNS=$(tput cols 2>/dev/null || echo 80)
 echo "🔍 Detecting Obsidian vault for citations..."
 VAULT_PATH=$(nu -c "source ~/.config/nushell/scripts/project-root-detection.nu; find-obsidian-vault" 2>/dev/null)
 
+# If not found from current location, check known vault locations
 if [[ -z "$VAULT_PATH" ]]; then
-    echo "❌ No Obsidian vault found from current location"
-    echo "📝 Make sure you're working within an Obsidian vault directory"
+    # Check common vault locations
+    for possible_vault in "/Users/williamnapier/Obsidian.nosync/Forge" "/Users/williamnapier/Obsidian/Forge" "$HOME/Documents/Obsidian/Forge"; do
+        if [[ -d "$possible_vault/.obsidian" ]]; then
+            VAULT_PATH="$possible_vault"
+            echo "📍 Using default vault location"
+            break
+        fi
+    done
+fi
+
+if [[ -z "$VAULT_PATH" ]]; then
+    echo "❌ No Obsidian vault found"
+    echo "📝 Searched from current location and checked default vaults"
     exit 1
 fi
 

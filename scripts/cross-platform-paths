@@ -1,0 +1,45 @@
+#!/bin/bash
+# cross-platform-paths - Environment-specific path detection
+# Usage: source this script to get platform-specific paths
+
+PLATFORM=$($(dirname "${BASH_SOURCE[0]}")/detect-platform 2>/dev/null || detect-platform 2>/dev/null || echo "unknown")
+
+case "$PLATFORM" in
+    macos)
+        # macOS paths
+        export HOMEBREW_PREFIX="/opt/homebrew"
+        export USER_HOME="/Users/$(whoami)"
+        export CLIPBOARD_COPY="pbcopy"
+        export CLIPBOARD_PASTE="pbpaste"
+        export OPEN_CMD="open"
+        export NU_PATH="/opt/homebrew/bin/nu"
+        ;;
+    linux)
+        # Linux paths
+        export HOMEBREW_PREFIX=""  # No homebrew on Linux typically
+        export USER_HOME="/home/$(whoami)"
+        export CLIPBOARD_COPY="xclip -selection clipboard"
+        export CLIPBOARD_PASTE="xclip -o -selection clipboard"
+        export OPEN_CMD="xdg-open"
+        export NU_PATH=$(command -v nu || echo "/usr/bin/nu")
+        ;;
+    *)
+        # Fallback/unknown
+        export USER_HOME="$HOME"
+        export CLIPBOARD_COPY="cat"  # Fallback to stdout
+        export CLIPBOARD_PASTE="echo"
+        export OPEN_CMD="echo"
+        export NU_PATH="nu"
+        ;;
+esac
+
+# Common derived paths
+export OBSIDIAN_VAULT_PATHS=(
+    "$USER_HOME/Obsidian.nosync/Forge"
+    "$USER_HOME/Obsidian/Forge" 
+    "$USER_HOME/Documents/Obsidian/Forge"
+)
+
+export DOTFILES_PATH="$USER_HOME/dotfiles"
+export CONFIG_PATH="$USER_HOME/.config"
+export BIN_PATH="$USER_HOME/.local/bin"

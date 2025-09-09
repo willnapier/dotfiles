@@ -1,0 +1,35 @@
+#!/opt/homebrew/bin/nu
+
+# DOTTER PRE-COMMIT HOOK
+# Prevents committing when config files are orphaned (not managed by Dotter)
+
+def main [] {
+    print "🔍 Dotter Pre-Commit Check: Scanning for orphaned files..."
+    
+    let dotfiles_root = $"($env.HOME)/dotfiles"
+    cd $dotfiles_root
+    
+    # Run orphan detector
+    let result = do { ^dotter-orphan-detector-v2 --quiet } | complete
+    
+    if $result.exit_code != 0 {
+        print "❌ COMMIT BLOCKED: Orphaned configuration files detected!"
+        print ""
+        print "The following files are in your dotfiles but NOT managed by Dotter:"
+        print ($result.stdout)
+        print ""
+        print "🔧 To fix this issue:"
+        print "   1. Run: dotter-orphan-detector-v2"
+        print "   2. Follow the suggested fixes to add files to .dotter/global.toml"
+        print "   3. Deploy: dotter deploy"
+        print "   4. Verify: dotter-orphan-detector-v2"
+        print "   5. Try your commit again"
+        print ""
+        print "Or use: dotter-safe-create [file-path] for future config files"
+        
+        exit 1
+    }
+    
+    print "✅ All configuration files are properly managed by Dotter"
+    exit 0
+}

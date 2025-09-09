@@ -1,0 +1,38 @@
+#!/opt/homebrew/bin/nu
+
+# Check specifically for desktop-quarters issue
+
+def main [] {
+    print "🔍 Checking desktop-quarters specifically..."
+    
+    let dotter_config = (open ~/dotfiles/.dotter/global.toml)
+    let all_managed_files = (
+        [
+            ($dotter_config.shared?.files? | default {} | columns),
+            ($dotter_config.macos?.files? | default {} | columns), 
+            ($dotter_config.linux?.files? | default {} | columns)
+        ]
+        | flatten 
+        | uniq
+    )
+    
+    print $"🔗 Total managed files: ($all_managed_files | length)"
+    
+    # Check for desktop-quarters specifically
+    let quarters_found = ($all_managed_files | where $it == "zellij/layouts/desktop-quarters.kdl")
+    
+    if ($quarters_found | is-empty) {
+        print "❌ desktop-quarters.kdl NOT found in managed files"
+        print "🔍 Looking for similar files:"
+        $all_managed_files | where { $it | str contains "zellij" } | each { print $"  ($it)" }
+    } else {
+        print "✅ desktop-quarters.kdl IS in managed files"
+    }
+    
+    # Check if file exists
+    if ("zellij/layouts/desktop-quarters.kdl" | path exists) {
+        print "✅ File exists in dotfiles"
+    } else {
+        print "❌ File missing in dotfiles"
+    }
+}

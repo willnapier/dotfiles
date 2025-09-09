@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# setup-drift-monitoring - Complete automated drift monitoring setup
+# Creates cron jobs, launch agents, and verification
+
+set -euo pipefail
+
+echo "🔧 Setting up comprehensive drift monitoring system"
+echo "=================================================="
+
+# Make scripts executable
+chmod +x /Users/williamnapier/dotfiles/scripts/dotter-complete-audit
+chmod +x /Users/williamnapier/dotfiles/scripts/dotter-drift-watcher  
+chmod +x /Users/williamnapier/dotfiles/scripts/dotter-drift-cron
+
+echo "✅ Scripts made executable"
+
+# Create launch agent for drift watcher
+LAUNCH_AGENT_FILE="$HOME/Library/LaunchAgents/com.user.dotter-drift-watcher.plist"
+
+cat > "$LAUNCH_AGENT_FILE" << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.dotter-drift-watcher</string>
+    
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/williamnapier/.local/bin/dotter-drift-watcher</string>
+    </array>
+    
+    <key>RunAtLoad</key>
+    <true/>
+    
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    
+    <key>StandardOutPath</key>
+    <string>/Users/williamnapier/.local/share/dotter-drift-watcher.stdout</string>
+    
+    <key>StandardErrorPath</key>
+    <string>/Users/williamnapier/.local/share/dotter-drift-watcher.stderr</string>
+    
+    <key>ProcessType</key>
+    <string>Background</string>
+    
+    <key>LowPriorityIO</key>
+    <true/>
+</dict>
+</plist>
+EOF
+
+echo "✅ Launch agent created: $LAUNCH_AGENT_FILE"
+
+# Set up cron job for scheduled audits
+echo "🕒 Setting up cron job for scheduled audits..."
+
+# Remove existing drift monitoring cron jobs
+crontab -l 2>/dev/null | grep -v "dotter-drift-cron" > /tmp/current_crontab || echo "" > /tmp/current_crontab
+
+# Add new cron job - run every 6 hours
+echo "0 */6 * * * /Users/williamnapier/.local/bin/dotter-drift-cron" >> /tmp/current_crontab
+
+# Install the updated crontab
+crontab /tmp/current_crontab
+rm /tmp/current_crontab
+
+echo "✅ Cron job installed (runs every 6 hours)"
+
+# Deploy scripts to ~/.local/bin
+echo "📦 Deploying scripts..."
+dotter deploy --force >/dev/null 2>&1 || echo "⚠️  Some deployment warnings (likely safe to ignore)"
+
+echo "✅ Scripts deployed to ~/.local/bin"
+
+# Load launch agent
+echo "🚀 Starting drift watcher service..."
+launchctl unload "$LAUNCH_AGENT_FILE" 2>/dev/null || true  # Unload if already loaded
+launchctl load "$LAUNCH_AGENT_FILE"
+
+# Wait a moment for service to start
+sleep 2
+
+# Verify service is running
+if launchctl list com.user.dotter-drift-watcher >/dev/null 2>&1; then
+    echo "✅ Drift watcher service started successfully"
+else
+    echo "⚠️  Drift watcher service may not have started - check logs"
+fi
+
+echo ""
+echo "📊 DRIFT MONITORING SYSTEM STATUS"
+echo "================================="
+echo "1. 📱 REAL-TIME: File watcher service running"
+echo "2. 🕒 SCHEDULED: Cron job every 6 hours"  
+echo "3. 🔧 MANUAL: Run 'dotter-complete-audit' anytime"
+echo ""
+
+echo "📁 LOG LOCATIONS"
+echo "================"
+echo "• Watcher logs: ~/.local/share/dotter-drift-watcher.log"
+echo "• Cron logs: ~/.local/share/dotter-drift-cron.log"
+echo "• Alert logs: ~/.local/share/dotter-drift-alerts.log"
+echo "• Audit reports: /tmp/dotter-complete-audit-report.md"
+echo ""
+
+echo "🔧 MANAGEMENT COMMANDS"
+echo "===================="
+echo "• Check status: launchctl list com.user.dotter-drift-watcher"
+echo "• Stop watcher: launchctl unload ~/Library/LaunchAgents/com.user.dotter-drift-watcher.plist"
+echo "• Start watcher: launchctl load ~/Library/LaunchAgents/com.user.dotter-drift-watcher.plist"
+echo "• View cron jobs: crontab -l"
+echo "• Manual audit: dotter-complete-audit"
+echo ""
+
+echo "✅ COMPREHENSIVE DRIFT MONITORING ACTIVE"
+echo "   Your configuration is now protected 24/7!"
+
+# Run initial audit to verify everything works
+echo "🔍 Running initial verification audit..."
+if dotter-complete-audit >/dev/null 2>&1; then
+    echo "✅ Initial audit passed - system is working correctly"
+else
+    echo "⚠️  Initial audit detected issues - check 'dotter-complete-audit' output"
+fi

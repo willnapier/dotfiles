@@ -1,0 +1,34 @@
+#!/opt/homebrew/bin/nu
+
+# Simple debug version to see what's happening
+
+def main [] {
+    print "🔍 Debug: Checking Dotter vs actual files..."
+    
+    # Get first 5 files from dotfiles
+    cd ~/dotfiles
+    let sample_files = (
+        fd --type f --exclude ".git" --exclude ".DS_Store" .
+        | lines
+        | first 5
+    )
+    
+    print "📋 Sample files in dotfiles:"
+    $sample_files | each { |f| print $"  ($f)" }
+    
+    # Get managed files from Dotter
+    let dotter_config = (open ~/dotfiles/.dotter/global.toml)
+    let managed_files = (
+        $dotter_config.shared.files | columns | first 5
+    )
+    
+    print "🔗 Sample managed files from Dotter:"
+    $managed_files | each { |f| print $"  ($f)" }
+    
+    print "🔍 Checking if 'zellij/layouts/desktop-quarters.kdl' is managed..."
+    if ("zellij/layouts/desktop-quarters.kdl" in $managed_files) {
+        print "✅ desktop-quarters IS in managed files"
+    } else {
+        print "❌ desktop-quarters is NOT in managed files"
+    }
+}

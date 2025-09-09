@@ -14,6 +14,24 @@ if ($"($env.HOME)/.cache/nushell/zoxide-init.nu" | path exists) {
     source ~/.cache/nushell/zoxide-init.nu
 }
 
+# ---- Dotfiles Sync Functions ----
+# Manual sync functions for cross-platform dotfiles management
+def sync-push [] { 
+    cd ~/dotfiles
+    git add .
+    let timestamp = (date now | format date '%H:%M')
+    git commit -m $"Manual sync ($timestamp)"
+    git push
+    print "✅ Dotfiles pushed to GitHub"
+}
+
+def sync-pull [] { 
+    cd ~/dotfiles
+    git pull
+    dotter deploy
+    print "✅ Dotfiles pulled and deployed"
+}
+
 # ---- Unified Project Root Detection & Tools ----
 use ~/.config/nushell/scripts/project-root-detection.nu *
 use ~/.config/nushell/scripts/serpl.nu *

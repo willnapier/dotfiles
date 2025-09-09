@@ -1,0 +1,60 @@
+#!/bin/bash
+
+# Claude Documentation Auto-Backup Script
+# Automatically commits and pushes Claude documentation to GitHub
+
+set -euo pipefail
+
+CLAUDE_DIR="/Users/williamnapier/Claude"
+LOG_FILE="/tmp/claude-docs-backup.log"
+
+# Function to log with timestamp
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
+}
+
+# Check if Claude directory exists and is a git repo
+if [[ ! -d "$CLAUDE_DIR" ]]; then
+    log "ERROR: Claude directory not found at $CLAUDE_DIR"
+    exit 1
+fi
+
+if [[ ! -d "$CLAUDE_DIR/.git" ]]; then
+    log "ERROR: $CLAUDE_DIR is not a git repository"
+    exit 1
+fi
+
+cd "$CLAUDE_DIR"
+
+# Check if there are any changes
+if git diff --quiet && git diff --cached --quiet; then
+    log "No changes in Claude documentation - skipping backup"
+    exit 0
+fi
+
+# Add all changes
+git add .
+
+# Create commit with timestamp
+COMMIT_MSG="Auto-backup: Claude documentation updates $(date '+%Y-%m-%d %H:%M:%S')
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>"
+
+if git commit -m "$COMMIT_MSG"; then
+    log "Successfully committed changes to Claude documentation"
+    
+    # Push to remote (will fail gracefully if remote not set up yet)
+    if git push origin main 2>/dev/null; then
+        log "Successfully pushed Claude documentation to GitHub"
+    else
+        log "WARNING: Failed to push to GitHub - remote may not be configured"
+        log "Manual setup required: create GitHub repo 'claude-docs' and configure remote"
+    fi
+else
+    log "ERROR: Failed to commit changes"
+    exit 1
+fi
+
+log "Claude documentation backup completed"

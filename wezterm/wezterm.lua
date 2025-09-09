@@ -117,12 +117,12 @@ config.cursor_blink_ease_out = 'Constant'
 config.scrollback_lines = 10000
 
 -- Clipboard integration - basic settings
-config.enable_csi_u_key_encoding = true
+config.enable_csi_u_key_encoding = true   -- Re-enabled for testing
 config.use_ime = true
 
--- Alt key handling - Left Alt for commands, Right Alt for characters
+-- Alt key handling - Both Alt keys work as regular Alt for commands
 config.send_composed_key_when_left_alt_is_pressed = false
-config.send_composed_key_when_right_alt_is_pressed = true
+config.send_composed_key_when_right_alt_is_pressed = false
 
 -- Image protocol support for tools like Yazi
 config.enable_kitty_graphics = true

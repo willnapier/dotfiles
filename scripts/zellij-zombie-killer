@@ -1,0 +1,46 @@
+#!/opt/homebrew/bin/nu
+
+# zellij-zombie-killer - Prevent and clean up zombie Zellij sessions
+# This addresses the known Zellij bugs causing memory leaks and zombie processes
+
+def main [
+    --auto    # Run automatic cleanup
+] {
+    print "🧟 Zellij Zombie Killer"
+    print "━━━━━━━━━━━━━━━━━━━━━━━"
+    
+    # Count current Zellij processes
+    let zombie_count = (ps | where name =~ "zellij" | length)
+    
+    if $zombie_count > 5 {
+        print $"⚠️  Found ($zombie_count) Zellij processes - likely zombies!"
+        
+        if $auto {
+            print "🔫 Auto-killing all Zellij processes..."
+            pkill -9 zellij
+            sleep 1sec
+            
+            # Clean up session files
+            print "🧹 Cleaning up session files..."
+            bash -c "rm -rf /var/folders/*/*/*/*/zellij-* 2>/dev/null"
+            
+            print "✅ Zombie cleanup complete!"
+        } else {
+            print "Run with --auto to clean them up"
+        }
+    } else if $zombie_count > 0 {
+        print $"ℹ️  ($zombie_count) Zellij processes running (probably normal)"
+    } else {
+        print "✅ No Zellij processes running"
+    }
+    
+    # Show memory usage if processes exist
+    if $zombie_count > 0 {
+        print ""
+        print "Memory usage by Zellij:"
+        ps | where name =~ "zellij" | select pid mem | sort-by mem --reverse | first 5
+    }
+}
+
+# Add this to your shell startup or cron to run periodically
+# zellij-zombie-killer --auto

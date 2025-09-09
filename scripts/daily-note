@@ -31,12 +31,11 @@ if [[ ! -f "$DAILY_FILE" ]]; then
     fi
     
     # Process the template
-    sed \
-        -e "s/{{date}}/$CURRENT_DATE/g" \
-        -e "s/{{time24}}/$CURRENT_TIME/g" \
-        -e "s/{{hdate}}/$HUMAN_DATE/g" \
-        -e "s/<cursor>//g" \
-        "$TEMPLATE_FILE" > "$DAILY_FILE"
+    cat "$TEMPLATE_FILE" | \
+        sd --string-mode '{{date}}' "$CURRENT_DATE" | \
+        sd --string-mode '{{time24}}' "$CURRENT_TIME" | \
+        sd --string-mode '{{hdate}}' "$HUMAN_DATE" | \
+        sd --string-mode '<cursor>' '' > "$DAILY_FILE"
     
     echo "📝 Created new daily note: $TODAY.md" >&2
 fi

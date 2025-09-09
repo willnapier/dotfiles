@@ -1,79 +1,119 @@
 #!/usr/bin/env nu
-# dotter-add - Automatically add a config file to Dotter management
-# Usage: dotter-add ~/.config/newapp/config.toml
+# dotter-add - Semi-automatically add a file to Dotter management
+# Usage: dotter-add <file-path>
 
-def main [config_path: string] {
-    let full_path = ($config_path | path expand)
+def main [file_path: string] {
+    let dotfiles_root = "/Users/williamnapier/dotfiles"
+    let dotter_config = $dotfiles_root + "/.dotter/global.toml"
     
-    if not ($full_path | path exists) {
-        print $"❌ Error: File ($full_path) does not exist"
+    # Validate input file
+    let expanded_path = ($file_path | str replace "~" $env.HOME)
+    if not ($expanded_path | path exists) {
+        print $"❌ File not found: ($expanded_path)"
         exit 1
     }
     
-    if not ($full_path | str starts-with $"($env.HOME)/.config/") and not ($full_path | str starts-with $"($env.HOME)/.local/bin/") {
-        print $"❌ Error: Only ~/.config/ and ~/.local/bin/ files are supported"
+    # Convert to relative path for cleaner config
+    let relative_path = ($expanded_path | str replace $env.HOME "~")
+    
+    # Determine source path in dotfiles
+    let source_path = determine_source_path $expanded_path $dotfiles_root
+    let source_full_path = $dotfiles_root + "/" + $source_path
+    
+    print $"📁 Adding to Dotter management:"
+    print $"   Source: ($source_full_path)"
+    print $"   Target: ($relative_path)"
+    
+    # Create source directory if needed
+    let source_dir = ($source_full_path | path dirname)
+    if not ($source_dir | path exists) {
+        print $"📁 Creating directory: ($source_dir)"
+        mkdir $source_dir
+    }
+    
+    # Copy file to dotfiles (preserving permissions)
+    print "📄 Copying file to dotfiles..."
+    cp -p $expanded_path $source_full_path
+    
+    # Add to Dotter config
+    print "⚙️ Adding to Dotter configuration..."
+    let config_entry = $'"($source_path)" = "($relative_path)"'
+    
+    # Read current config
+    let current_config = (open $dotter_config)
+    
+    # Find the [shared.files] section and add the new entry
+    let lines = ($current_config | lines)
+    let mut new_lines = []
+    let mut in_shared_files = false
+    let mut added = false
+    
+    for line in $lines {
+        if ($line | str trim) == "[shared.files]" {
+            $in_shared_files = true
+            $new_lines = ($new_lines | append $line)
+        } else if ($line | str starts-with "[") and $in_shared_files {
+            # End of shared.files section, add our entry before next section
+            if not $added {
+                $new_lines = ($new_lines | append $config_entry)
+                $added = true
+            }
+            $in_shared_files = false
+            $new_lines = ($new_lines | append $line)
+        } else {
+            $new_lines = ($new_lines | append $line)
+        }
+    }
+    
+    # If we're still in shared.files section at end of file, add it now
+    if $in_shared_files and not $added {
+        $new_lines = ($new_lines | append $config_entry)
+    }
+    
+    # Write updated config
+    $new_lines | str join "\n" | save -f $dotter_config
+    
+    # Deploy the changes
+    print "🚀 Deploying with Dotter..."
+    cd $dotfiles_root
+    dotter deploy
+    
+    # Verify the symlink was created
+    if ($expanded_path | path type) == "symlink" {
+        let link_target = (ls -la $expanded_path | get target.0)
+        if $link_target == $source_full_path {
+            print "✅ SUCCESS: File is now Dotter-managed!"
+            print $"   Symlink: ($relative_path) -> ($source_full_path)"
+        } else {
+            print $"⚠️ WARNING: Symlink points to unexpected target: ($link_target)"
+        }
+    } else {
+        print "❌ ERROR: Symlink was not created properly"
         exit 1
     }
-    
-    # Determine the relative path and dotfiles location
-    let relative_path = if ($full_path | str starts-with $"($env.HOME)/.config/") {
-        $full_path | str replace $"($env.HOME)/.config/" ""
-    } else {
-        $full_path | str replace $"($env.HOME)/.local/bin/" "scripts/"
-    }
-    
-    let dotfiles_path = $"($env.HOME)/dotfiles/($relative_path)"
-    let dotfiles_dir = ($dotfiles_path | path dirname)
-    
-    print $"🔄 Adding ($full_path) to Dotter management..."
-    print $"   Source: ($full_path)"
-    print $"   Target: ($dotfiles_path)"
-    
-    # Create dotfiles directory if needed
-    if not ($dotfiles_dir | path exists) {
-        mkdir $dotfiles_dir
-        print $"📁 Created directory: ($dotfiles_dir)"
-    }
-    
-    # Move file to dotfiles
-    mv $full_path $dotfiles_path
-    print $"📦 Moved file to dotfiles location"
-    
-    # Add to Dotter configuration
-    let config_file = $"($env.HOME)/dotfiles/.dotter/global.toml"
-    let current_config = (open $config_file)
-    
-    # Determine the correct target path
-    let target_path = if ($full_path | str starts-with $"($env.HOME)/.config/") {
-        $"~/.config/($relative_path)"
-    } else {
-        $"~/.local/bin/($relative_path | str replace "scripts/" "")"
-    }
-    
-    print $"⚙️ Adding to Dotter configuration..."
-    print $"   Entry: \"($relative_path)\" = \"($target_path)\""
-    
-    # Note: This requires manual addition to .dotter/global.toml for now
-    # Auto-editing TOML files is complex and error-prone
-    print ""
-    print $"📝 MANUAL STEP REQUIRED:"
-    print $"   Add this line to ($config_file) under [shared.files]:"
-    print $"   \"($relative_path)\" = \"($target_path)\""
-    print ""
-    print $"🚀 Then run: cd ~/dotfiles && dotter deploy"
-    print $"🧪 Test with: ls -la ($target_path)"
 }
 
-# Show help if no arguments
-if ($args | length) == 0 {
-    print "Usage: dotter-add <config-file-path>"
-    print ""
-    print "Examples:"
-    print "  dotter-add ~/.config/starship.toml"
-    print "  dotter-add ~/.local/bin/my-script"
-    print ""
-    print "This script will:"
-    print "  1. Move the file to ~/dotfiles/"
-    print "  2. Show you what to add to .dotter/global.toml"
-    print "  3. You manually add the entry and run 'dotter deploy'"
+# Determine appropriate source path within dotfiles based on target location
+def determine_source_path [target_path: string, dotfiles_root: string] {
+    if ($target_path | str contains ".config/helix") {
+        return "helix/" + ($target_path | path basename)
+    } else if ($target_path | str contains ".config/nushell") {
+        return "nushell/" + ($target_path | path basename)
+    } else if ($target_path | str contains ".config/zellij") {
+        return "zellij/" + ($target_path | path basename)
+    } else if ($target_path | str contains ".config/yazi") {
+        return "yazi/" + ($target_path | path basename)
+    } else if ($target_path | str contains ".config/nvim") {
+        let relative = ($target_path | str replace ($target_path | str replace "/nvim/.*" "/nvim") "")
+        return "nvim" + $relative
+    } else if ($target_path | str contains ".local/bin") {
+        return "scripts/" + ($target_path | path basename)
+    } else if ($target_path | str contains ".config") {
+        let app_name = ($target_path | str replace $env.HOME + "/.config/" "" | split row "/" | get 0)
+        let file_name = ($target_path | path basename)
+        return $app_name + "/" + $file_name
+    } else {
+        # Default: preserve structure relative to home
+        return ($target_path | str replace $env.HOME + "/" "")
+    }
 }

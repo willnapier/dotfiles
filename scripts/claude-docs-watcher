@@ -1,0 +1,117 @@
+#!/bin/bash
+
+# Claude Documentation Real-Time Sync
+# Watches ~/Claude directory and auto-commits + pushes on file changes
+
+set -euo pipefail
+
+CLAUDE_DIR="/Users/williamnapier/Claude"
+LOG_FILE="/tmp/claude-docs-watcher.log"
+LOCKFILE="/tmp/claude-docs-watcher.lock"
+
+# Function to log with timestamp
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
+}
+
+# Function to cleanup on exit
+cleanup() {
+    rm -f "$LOCKFILE"
+    log "Claude docs watcher stopped"
+}
+trap cleanup EXIT
+
+# Improved lockfile creation with retry mechanism
+for i in {1..3}; do
+    if (set -C; echo $$ > "$LOCKFILE") 2>/dev/null; then
+        # Successfully created lockfile
+        break
+    else
+        if [[ -f "$LOCKFILE" ]]; then
+            existing_pid=$(cat "$LOCKFILE" 2>/dev/null || echo "unknown")
+            if [[ -n "$existing_pid" ]] && kill -0 "$existing_pid" 2>/dev/null; then
+                log "Claude docs watcher already running (PID: $existing_pid)"
+                exit 0  # Exit gracefully, not an error
+            else
+                log "Removing stale lock file (attempt $i)"
+                rm -f "$LOCKFILE"
+                sleep 0.1
+            fi
+        else
+            log "Could not create lock file (attempt $i)"
+            sleep 0.1
+        fi
+    fi
+done
+
+if [[ ! -f "$LOCKFILE" ]] || [[ "$(cat "$LOCKFILE" 2>/dev/null)" != "$$" ]]; then
+    log "ERROR: Could not acquire lock after 3 attempts"
+    exit 1
+fi
+
+# Check if Claude directory exists and is a git repo
+if [[ ! -d "$CLAUDE_DIR" ]]; then
+    log "ERROR: Claude directory not found at $CLAUDE_DIR"
+    exit 1
+fi
+
+if [[ ! -d "$CLAUDE_DIR/.git" ]]; then
+    log "ERROR: $CLAUDE_DIR is not a git repository"
+    exit 1
+fi
+
+log "Starting Claude docs watcher for $CLAUDE_DIR"
+
+# Function to handle file changes
+handle_change() {
+    local file="$1"
+    log "Detected change in: $file"
+    
+    # Small delay to ensure file write is complete
+    sleep 0.5
+    
+    cd "$CLAUDE_DIR"
+    
+    # Check if there are actually any changes
+    if git diff --quiet && git diff --cached --quiet; then
+        log "No actual changes detected after checking - skipping"
+        return
+    fi
+    
+    # Add all changes
+    git add .
+    
+    # Create commit with file-specific message
+    local filename=$(basename "$file")
+    local commit_msg="Auto-sync: Updated $filename
+
+$(date '+%Y-%m-%d %H:%M:%S')
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>"
+    
+    if git commit -m "$commit_msg"; then
+        log "Committed changes for $filename"
+        
+        # Push to remote
+        if git push origin main 2>/dev/null; then
+            log "Successfully pushed $filename to GitHub"
+        else
+            log "WARNING: Failed to push to GitHub - will retry later"
+        fi
+    else
+        log "No changes to commit for $filename"
+    fi
+}
+
+# Use fswatch to monitor file changes
+log "Monitoring $CLAUDE_DIR for file changes..."
+
+# Monitor for file modifications, excluding hidden files and directories
+/opt/homebrew/bin/fswatch -0 --recursive --exclude='\\.git/' --exclude='\\._' "$CLAUDE_DIR" | while IFS= read -r -d '' file; do
+    # Only handle .md files to avoid noise
+    if [[ "$file" == *.md ]]; then
+        handle_change "$file"
+    fi
+done

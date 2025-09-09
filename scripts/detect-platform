@@ -1,0 +1,15 @@
+#!/bin/bash
+# detect-platform - Cross-platform environment detection
+# Returns: macos, linux, or unknown
+
+case "$(uname -s)" in
+    Darwin)
+        echo "macos"
+        ;;
+    Linux)
+        echo "linux"
+        ;;
+    *)
+        echo "unknown"
+        ;;
+esac

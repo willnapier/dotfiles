@@ -1,0 +1,120 @@
+#!/bin/bash
+
+# Floating pane version of project file search for Yazi
+# Opens skim picker in a floating pane, then opens selected file in Helix
+
+set -euo pipefail
+
+# Get project root using the enhanced Nushell function (cross-platform)
+PROJECT_ROOT=$(nu -c "source ~/.config/nushell/config.nu; find-project-root" 2>/dev/null || echo "$HOME")
+
+if [[ -z "$PROJECT_ROOT" ]]; then
+    echo "Error: Could not detect project root" >&2
+    exit 1
+fi
+
+# Safety check: Never search above home directory unless in a specific project
+if [[ "$PROJECT_ROOT" == "/Users" ]] || [[ "$PROJECT_ROOT" == "/home" ]] || [[ "$PROJECT_ROOT" == "/" ]]; then
+    echo "⚠️  Search scope too broad. Limiting to home directory" >&2
+    PROJECT_ROOT="$HOME"
+fi
+
+# Additional safety: If we're at home directory, limit to common document folders
+if [[ "$PROJECT_ROOT" == "$HOME" ]]; then
+    echo "🏠 At home directory - checking for Obsidian vault..." >&2
+    # Try to find Obsidian vault first
+    if [[ -d "$HOME/Obsidian.nosync/Forge" ]]; then
+        PROJECT_ROOT="$HOME/Obsidian.nosync/Forge"
+        echo "📝 Found Obsidian vault, using: $PROJECT_ROOT" >&2
+    elif [[ -d "$HOME/Documents" ]]; then
+        PROJECT_ROOT="$HOME/Documents"
+        echo "📁 Using Documents folder: $PROJECT_ROOT" >&2
+    else
+        echo "⚠️  Will search entire home directory - this may be slow!" >&2
+    fi
+fi
+
+echo "🔍 Searching in: $PROJECT_ROOT" >&2
+
+# Terminal compatibility fixes for skim - following obsidian-linker pattern
+export TERM="xterm"           # Use most basic, widely supported terminal type
+unset TERMINFO                # Clear any conflicting terminfo
+export COLORTERM=""           # Clear color term to avoid conflicts
+export RUST_BACKTRACE=0       # Suppress Rust panic backtraces for cleaner output
+
+# Ensure we have a proper terminal size
+export LINES=$(tput lines 2>/dev/null || echo 24)
+export COLUMNS=$(tput cols 2>/dev/null || echo 80)
+
+# Use fd | sk pipeline and capture selection properly
+cd "$PROJECT_ROOT"
+
+# Run skim in floating pane
+
+# Debug: Test if fd finds files
+echo "🔍 Testing fd command..." >&2
+echo "📁 Current directory: $(pwd)" >&2
+echo "🔧 Testing fd with timeout..." >&2
+
+# Use timeout to prevent fd from hanging
+if timeout 5s fd -t f -e md 2>/dev/null > /tmp/fd_output; then
+    file_count=$(wc -l < /tmp/fd_output)
+    echo "📊 Found $file_count markdown files" >&2
+else
+    echo "❌ fd command timed out or failed, trying find instead..." >&2
+    # Fallback to find command with timeout and debugging
+    echo "🔧 Running find command..." >&2
+    if timeout 10s find . -name "*.md" -type f 2>/dev/null > /tmp/fd_output; then
+        file_count=$(wc -l < /tmp/fd_output)
+        echo "📊 Found $file_count markdown files with find" >&2
+    else
+        echo "❌ find also timed out! Using manual ls approach..." >&2
+        # Last resort: just look for .md files with ls
+        ls *.md 2>/dev/null > /tmp/fd_output || echo "No .md files in current directory" > /tmp/fd_output
+        file_count=$(wc -l < /tmp/fd_output)
+        echo "📊 Found $file_count files with ls" >&2
+    fi
+fi
+
+echo "🔍 Contents of file list:" >&2
+head -3 /tmp/fd_output >&2
+echo "⏸️  Pausing to show file detection results..." >&2
+sleep 3
+
+if [[ $file_count -eq 0 ]]; then
+    echo "❌ No markdown files found in: $PROJECT_ROOT" >&2
+    echo "🔍 Listing directory contents:" >&2
+    ls -la "$PROJECT_ROOT" | head -5 >&2
+    exit 1
+fi
+
+# Run skim with preview and capture its exit status (cross-platform)
+# This runs in a proper floating pane with TTY
+echo "🚀 Starting skim with file list..." >&2
+if selected=$(cat /tmp/fd_output | \
+    sk \
+        --bind="tab:down" \
+        --header="Project: $(basename "$PROJECT_ROOT") - Select file to open in Helix ($file_count files)" \
+        --preview="$HOME/.local/bin/simple-file-preview {}" \
+        --preview-window="right:60%"); then
+    
+    # Something was selected
+    absolute_path="$PROJECT_ROOT/$selected"
+    echo "📝 Selected: $selected" >&2
+    echo "🚀 Opening file in Helix..." >&2
+    
+    # Open in new Helix pane in main Zellij session
+    zellij action new-pane -- hx "$absolute_path"
+    
+    echo "✅ File opened in new pane!" >&2
+else
+    # User cancelled or nothing selected
+    echo "📝 Search cancelled" >&2
+    echo "⏸️  Pausing to show output..." >&2
+    sleep 5
+    exit 0
+fi
+
+# Always pause at the end to see what happened
+echo "⏸️  Script completed - pausing to show output..." >&2
+sleep 5

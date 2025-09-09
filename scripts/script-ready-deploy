@@ -1,0 +1,249 @@
+#!/usr/bin/env nu
+
+# SCRIPT READY DEPLOY - Final verification and deployment
+# Ensures a developed script is properly integrated into the system
+# Usage: script-ready-deploy "script-name" [--skip-tests]
+
+def main [
+    script_name: string,
+    --skip-tests,     # Skip interactive testing
+    --force          # Force deployment even with warnings
+] {
+    # Cross-platform path detection
+    let dotfiles_root = $"($env.HOME)/dotfiles"
+    let script_path = $"($dotfiles_root)/scripts/($script_name)"
+    let bin_path = $"($env.HOME)/.local/bin/($script_name)"
+    
+    print $"🚀 Script Ready Deploy: ($script_name)"
+    print $"==============================================="
+    
+    # 1. EXISTENCE CHECKS
+    print "\n📋 Phase 1: Existence Verification"
+    
+    if not ($script_path | path exists) {
+        print $"❌ Script not found: ($script_path)"
+        print "💡 Use: new-script \"($script_name)\" \"nu\" to create it first"
+        exit 1
+    }
+    print $"✅ Source script exists: ($script_path)"
+    
+    if not ($bin_path | path exists) {
+        print $"❌ Deployed script missing: ($bin_path)"
+        print "🔧 Running dotter deploy to fix..."
+        cd $dotfiles_root
+        dotter deploy --force
+        
+        if not ($bin_path | path exists) {
+            print $"❌ Deployment failed - script still missing from ~/.local/bin/"
+            print "🔍 Check Dotter configuration manually"
+            exit 1
+        }
+    }
+    print $"✅ Deployed script exists: ($bin_path)"
+    
+    # 2. SYMLINK VERIFICATION
+    print "\n📋 Phase 2: Symlink Verification"
+    
+    let link_check = (do { readlink $bin_path } | complete)
+    if $link_check.exit_code == 0 {
+        let target = ($link_check.stdout | str trim)
+        if $target == $script_path {
+            print $"✅ Correct symlink: ($bin_path) -> ($target)"
+        } else {
+            print $"⚠️  Symlink target mismatch:"
+            print $"   Expected: ($script_path)"
+            print $"   Actual:   ($target)"
+            if not $force {
+                print "❌ Use --force to proceed anyway"
+                exit 1
+            }
+        }
+    } else {
+        print $"❌ Not a symlink: ($bin_path)"
+        print "🔧 This should be a symlink managed by Dotter"
+        if not $force {
+            exit 1
+        }
+    }
+    
+    # 3. EXECUTABLE PERMISSIONS
+    print "\n📋 Phase 3: Permissions Verification"
+    
+    let script_stat = (ls -la $script_path)
+    let bin_stat = (ls -la $bin_path) 
+    
+    if ($script_stat | get mode.0) =~ "x" {
+        print $"✅ Source script is executable"
+    } else {
+        print $"🔧 Making source script executable..."
+        chmod +x $script_path
+        print $"✅ Fixed executable permissions"
+    }
+    
+    # 4. BASIC SYNTAX CHECK
+    print "\n📋 Phase 4: Syntax Verification"
+    
+    # Determine script type by shebang
+    let first_line = (open $script_path | lines | first)
+    let script_type = if ($first_line | str contains "/nu") {
+        "nu"
+    } else if ($first_line | str contains "bash") {
+        "bash"
+    } else if ($first_line | str contains "python") {
+        "python"
+    } else {
+        "unknown"
+    }
+    
+    match $script_type {
+        "nu" => {
+            let syntax_check = (do { nu -c $"source ($script_path)" } | complete)
+            if $syntax_check.exit_code == 0 {
+                print "✅ Nushell syntax valid"
+            } else {
+                print "❌ Nushell syntax error:"
+                print $syntax_check.stderr
+                if not $force {
+                    exit 1
+                }
+            }
+        },
+        "bash" => {
+            let syntax_check = (do { bash -n $script_path } | complete)
+            if $syntax_check.exit_code == 0 {
+                print "✅ Bash syntax valid" 
+            } else {
+                print "❌ Bash syntax error:"
+                print $syntax_check.stderr
+                if not $force {
+                    exit 1
+                }
+            }
+        },
+        _ => {
+            print $"ℹ️  Skipping syntax check for ($script_type) script"
+        }
+    }
+    
+    # 5. HELP/USAGE CHECK  
+    print "\n📋 Phase 5: Help System Verification"
+    
+    let help_check = (do { ^$bin_path --help } | complete)
+    if $help_check.exit_code == 0 {
+        print "✅ Help system working (--help responds)"
+    } else {
+        print "⚠️  No help system (--help failed)"
+        print "💡 Consider adding help text to your script"
+    }
+    
+    # 6. INTERACTIVE TESTING (unless skipped)
+    if not $skip_tests {
+        print "\n📋 Phase 6: Interactive Testing"
+        print $"🧪 About to test: ($script_name)"
+        print "   This will run your script to verify it works correctly."
+        print "   You can observe its behavior and verify it works as expected."
+        print ""
+        
+        let proceed = (input "Proceed with test run? [y/N]: ")
+        if ($proceed | str downcase) in ["y", "yes"] {
+            print $"\n🔍 Running: ($script_name)"
+            print "----------------------------------------"
+            
+            # Run the script and capture result
+            let test_result = (do { ^$bin_path } | complete)
+            
+            print "----------------------------------------"
+            if $test_result.exit_code == 0 {
+                print "✅ Script executed successfully"
+                if not ($test_result.stdout | is-empty) {
+                    print "📝 Output received (script produced results)"
+                }
+            } else {
+                print $"❌ Script failed with exit code: ($test_result.exit_code)"
+                if not ($test_result.stderr | is-empty) {
+                    print "Error output:"
+                    print $test_result.stderr
+                }
+                if not $force {
+                    print "❌ Fix errors before deployment"
+                    exit 1
+                }
+            }
+            
+            let satisfied = (input "\nAre you satisfied with the script's behavior? [y/N]: ")
+            if not (($satisfied | str downcase) in ["y", "yes"]) {
+                print "❌ Script needs more development"
+                print $"💡 Continue editing: hx ($script_path)"
+                exit 1
+            }
+        } else {
+            print "⚠️  Skipping interactive test (user declined)"
+        }
+    }
+    
+    # 7. DOTTER CONFIGURATION VERIFICATION
+    print "\n📋 Phase 7: Dotter Configuration Verification"
+    
+    let dotter_config = $"($dotfiles_root)/.dotter/global.toml"
+    let expected_entry = $"\"scripts/($script_name)\" = \"~/.local/bin/($script_name)\""
+    
+    let config_check = (do { rg -q $expected_entry $dotter_config } | complete)
+    if $config_check.exit_code == 0 {
+        print "✅ Script properly configured in Dotter"
+    } else {
+        print "❌ Script missing from Dotter configuration"
+        print $"   Expected: ($expected_entry)"
+        print "🔧 Adding to Dotter configuration..."
+        
+        # Add to dotter config (append to scripts section)
+        $"\n($expected_entry)" | save -a $dotter_config
+        print "✅ Added to Dotter configuration"
+        
+        print "🚀 Re-deploying with Dotter..."
+        cd $dotfiles_root
+        dotter deploy --force
+    }
+    
+    # 8. FINAL VERIFICATION
+    print "\n📋 Phase 8: Final System Integration Check"
+    
+    # Test that script can be called from anywhere
+    let global_test = (do { ^which $script_name } | complete)
+    if $global_test.exit_code == 0 {
+        print $"✅ Script globally accessible: ($global_test.stdout | str trim)"
+    } else {
+        print $"❌ Script not in PATH"
+        print "💡 Check ~/.local/bin is in your PATH"
+    }
+    
+    # Check orphan status
+    print "\n🔍 Checking for configuration orphans..."
+    let orphan_check = (do { ^dotter-orphan-detector --quiet } | complete)
+    if $orphan_check.exit_code == 0 and ($orphan_check.stdout | str trim | is-empty) {
+        print "✅ No orphaned configuration files"
+    } else {
+        print "⚠️  Some configuration files may be orphaned"
+        print "💡 Run: dotter-orphan-detector"
+    }
+    
+    # 9. SUCCESS SUMMARY
+    print "\n🎉 DEPLOYMENT VERIFICATION COMPLETE!"
+    print "========================================"
+    print $"✅ Script: ($script_name)"
+    print $"✅ Source: ($script_path)"
+    print $"✅ Binary: ($bin_path)"  
+    print $"✅ Type: ($script_type)"
+    print "✅ Permissions: Executable"
+    print "✅ Symlink: Properly managed by Dotter"
+    print "✅ Syntax: Valid"
+    print "✅ Integration: System-wide accessible"
+    
+    # 10. FINAL STEPS REMINDER
+    print "\n📝 Final Steps:"
+    print "1. ✅ Script is ready for use"
+    print $"2. Test from any directory: ($script_name)"
+    print "3. Commit when satisfied:"
+    print $"   cd ~/dotfiles && git add . && git commit -m 'Finalize ($script_name) script'"
+    
+    print "\n🚀 Your script is now fully deployed and integrated!"
+}

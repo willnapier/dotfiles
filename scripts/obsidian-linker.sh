@@ -13,13 +13,25 @@ export LINES=$(tput lines 2>/dev/null || echo 24)
 export COLUMNS=$(tput cols 2>/dev/null || echo 80)
 
 # Use intelligent vault detection - find .obsidian folder from current location
-echo "🔍 Detecting Obsidian vault from current location..."
+echo "🔍 Detecting Obsidian vault..."
 VAULT_PATH=$(nu -c "source ~/.config/nushell/scripts/project-root-detection.nu; find-obsidian-vault" 2>/dev/null)
 
+# If not found from current location, check known vault locations
 if [[ -z "$VAULT_PATH" ]]; then
-    echo "❌ No Obsidian vault found from current location"
-    echo "📝 Make sure you're working within an Obsidian vault directory"
-    echo "💡 Or create a .obsidian folder to mark a custom vault root"
+    # Check common vault locations
+    for possible_vault in "/Users/williamnapier/Obsidian.nosync/Forge" "/Users/williamnapier/Obsidian/Forge" "$HOME/Documents/Obsidian/Forge"; do
+        if [[ -d "$possible_vault/.obsidian" ]]; then
+            VAULT_PATH="$possible_vault"
+            echo "📍 Using default vault location"
+            break
+        fi
+    done
+fi
+
+if [[ -z "$VAULT_PATH" ]]; then
+    echo "❌ No Obsidian vault found"
+    echo "📝 Searched from current location and checked default vaults"
+    echo "💡 Create a .obsidian folder to mark a vault root"
     exit 1
 fi
 
@@ -47,7 +59,7 @@ export SHELL="/bin/bash"  # Ensure bash is used for preview commands
 
 # Build list of markdown files - exclude common directories that slow things down
 echo "🔍 Scanning vault for markdown files..."
-notes=$(fd -e md . "$VAULT_PATH" \
+notes=$(fd -L -e md . "$VAULT_PATH" \
     --exclude ".obsidian" \
     --exclude "linked_media" \
     --exclude "Trash" \
@@ -69,20 +81,21 @@ if [ -t 0 ] && [ -t 1 ] && [ -t 2 ]; then
     # Interactive mode - run skim with full interface
     cd "$VAULT_PATH"
     # Generate relative paths from current directory for cleaner display
-    notes_relative=$(fd -e md . \
+    notes_relative=$(fd -L -e md . \
         --exclude ".obsidian" \
         --exclude "linked_media" \
         --exclude ".trash" \
         --exclude "Templates" \
         2>/dev/null | sort)
     selected=$(printf '%s\n' "$notes_relative" | sk \
-        --prompt="📝 Select note(s) [Tab=toggle, Ctrl+A=all]: " \
+        --prompt="📝 Select note(s) [Tab=toggle, Ctrl+A=all, Ctrl+N=new]: " \
         --multi \
         --reverse \
         --bind="tab:toggle+down" \
-        --preview="FILE_PATH={} /Users/williamnapier/.config/yazi/scripts/obsidian-preview.nu" \
+        --bind="ctrl-n:print-query+accept" \
+        --preview="nu $HOME/.local/bin/word-wrap-preview.nu {} 80 2>/dev/null || $HOME/.local/bin/simple-file-preview {}" \
         --preview-window="right:60%" \
-        --header="Tab=toggle selection, arrows=navigate, Enter=confirm")
+        --header="Tab=toggle selection, Ctrl+N=create new note, arrows=navigate, Enter=confirm")
 else
     # Non-interactive mode - return most recent note as fallback
     # This handles the case when run from Helix :insert-output
@@ -95,15 +108,24 @@ if [[ -n "$selected" ]]; then
     wiki_links=""
     while IFS= read -r file; do
         if [[ -n "$file" ]]; then
-            # Extract just the filename without path or extension
-            filename=$(basename "$file")
-            filename="${filename%.md}"
+            # Check if this is an existing file or a new note name
+            if [[ -f "$VAULT_PATH/$file" ]]; then
+                # Existing file - extract just the filename without path or extension
+                filename=$(basename "$file")
+                filename="${filename%.md}"
+                link_prefix=""
+            else
+                # New note (from Ctrl+N) - use as-is, add ? prefix for unresolved link
+                filename="$file"
+                filename="${filename%.md}"  # Remove .md if present
+                link_prefix="?"
+            fi
             
             # Add to wiki links collection
             if [[ -z "$wiki_links" ]]; then
-                wiki_links="[[$filename]]"
+                wiki_links="${link_prefix}[[$filename]]"
             else
-                wiki_links="$wiki_links [[$filename]]"
+                wiki_links="$wiki_links ${link_prefix}[[$filename]]"
             fi
         fi
     done <<< "$selected"

@@ -1,0 +1,50 @@
+#!/bin/bash
+# Setup complete Zellij zombie prevention system
+
+echo "🛠️  Setting up Zellij Zombie Prevention System"
+echo "=============================================="
+
+# 1. Create log directory
+mkdir -p ~/.local/share
+
+# 2. Load the Launch Agent
+echo "📱 Installing Launch Agent..."
+launchctl unload ~/Library/LaunchAgents/com.williamnapier.zellij-zombie-watcher.plist 2>/dev/null || true
+launchctl load ~/Library/LaunchAgents/com.williamnapier.zellij-zombie-watcher.plist
+
+# 3. Add cron job for backup cleanup
+echo "⏰ Setting up cron job..."
+CRON_JOB="*/15 * * * * /opt/homebrew/bin/nu /Users/williamnapier/dotfiles/scripts/zellij-zombie-killer --auto >/dev/null 2>&1"
+
+# Check if cron job already exists
+if ! crontab -l 2>/dev/null | grep -q "zellij-zombie-killer"; then
+    # Add to existing crontab
+    (crontab -l 2>/dev/null; echo "$CRON_JOB") | crontab -
+    echo "✅ Cron job added: cleanup every 15 minutes"
+else
+    echo "ℹ️  Cron job already exists"
+fi
+
+# 4. Test the system
+echo ""
+echo "🧪 Testing the system..."
+ps aux | grep '[z]ellij' | wc -l | xargs echo "Current Zellij processes:"
+
+# 5. Status check
+echo ""
+echo "📊 System Status:"
+echo "- Launch Agent: $(launchctl list | grep zellij-zombie-watcher >/dev/null && echo "✅ Running" || echo "❌ Not running")"
+echo "- Cron Job: $(crontab -l 2>/dev/null | grep -q zellij-zombie-killer && echo "✅ Installed" || echo "❌ Not installed")"
+echo "- Watcher Script: $([ -x /Users/williamnapier/dotfiles/scripts/zellij-zombie-watcher ] && echo "✅ Executable" || echo "❌ Not executable")"
+echo "- Killer Script: $([ -f /Users/williamnapier/dotfiles/scripts/zellij-zombie-killer ] && echo "✅ Present" || echo "❌ Missing")"
+
+echo ""
+echo "🎯 Prevention System Active!"
+echo "- Event-based monitoring via Launch Agent"
+echo "- Periodic cleanup every 15 minutes via cron"
+echo "- Logs: ~/.local/share/zellij-zombie-*.log"
+echo ""
+echo "Manual commands:"
+echo "- Check status: launchctl list | grep zellij"
+echo "- View logs: tail -f ~/.local/share/zellij-zombie-watcher.log"
+echo "- Manual cleanup: nu /Users/williamnapier/dotfiles/scripts/zellij-zombie-killer --auto"

@@ -148,7 +148,7 @@ def get_dotter_managed_files [] {
         | each { |entry|
             let expanded_path = ($entry.value | str replace '~' $env.HOME)
             if ($expanded_path | path exists) {
-                let file_stat = (stat $expanded_path)
+                let file_stat = (ls -l $expanded_path | get 0)
                 {
                     path: $entry.value,
                     source: $entry.key,

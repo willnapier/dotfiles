@@ -4,13 +4,21 @@
 
 # Use standard Solarized themes - change based on system appearance
 # For dark mode: theme = "solarized_dark" 
-# For light mode: theme = "solarized_dark"
+# For light mode: theme = "solarized_light"
 # Modal versions with mode indicators: "solarized_dark_modal" or "solarized_light_modal"
 theme = "solarized_dark_modal"
 
 [editor]
 # Enable cursor shape changing
 cursorline = true
+# Auto-save files when switching buffers or after inactivity
+auto-save = true
+
+# Status line configuration
+[editor.statusline]
+left = ["mode", "spinner", "file-name", "file-modification-indicator"]
+center = []
+right = ["diagnostics", "selections", "position", "position-percentage", "file-encoding", "file-type"]
 
 # Soft wrap configuration
 [editor.soft-wrap]
@@ -30,6 +38,20 @@ n = "move_char_left"
 e = "move_line_down"
 i = "move_line_up"
 o = "move_char_right"
+
+# Fix for ZMK keyboard key interpretation in WezTerm
+# These explicit bindings ensure correct behavior regardless of terminal interpretation
+# ZMK sends US layout keycodes, macOS expects British layout, causing symbol misinterpretation
+# This is a stable solution - no need to modify ZMK firmware (2025-09-09)
+"$" = "goto_line_end"              # End of line
+"0" = "goto_line_start"            # Beginning of line  
+"^" = "goto_first_nonwhitespace"   # First non-whitespace
+"%" = "match_brackets"              # Match bracket
+"_" = "goto_first_nonwhitespace"   # Also first non-whitespace (alternate)
+"|" = "goto_column"                 # Go to column
+"*" = "search_selection"            # Search for selection
+"#" = "search_prev"                 # Search backwards
+"&" = "shell_keep_pipe"             # Ensure & works correctly for its intended purpose
 
 # Displaced commands
 h = "open_below"           # was on 'o'
@@ -51,7 +73,7 @@ T = "insert_at_line_start"  # was on 'I' (Insert at line start)
 
 [keys.normal.space]
 # Toggle todo checkbox - Space+t
-t = ["extend_to_line_bounds", ":pipe-to sed 's/\\[ \\]/[x]/g; s/\\[x\\]/[ ]/g'"]
+t = ["extend_to_line_bounds", ":pipe-to sd '\\[ \\]' '[TEMP]' | sd '\\[x\\]' '[ ]' | sd '\\[TEMP\\]' '[x]'"]
 
 # Manual theme refresh - Space+T (capital T)
 T = ":config-reload"
@@ -74,12 +96,18 @@ d = ":insert-output hx-insert-date"        # Insert current date (YYYY-MM-DD)
 # Time insertion moved to avoid conflicts with Space+t (todo toggle) and Space+T (config reload)
 ";" = ":insert-output hx-insert-time"      # Insert current time (HH:MM) 
 ":" = ":insert-output hx-insert-datetime"  # Insert date and time (YYYY-MM-DD HH:MM)
+# Mark file as revisited - using 'v' for 'visited'
+v = ":sh hx-mark-revisit %{buffer_name}"   # Add today to revisited dates
+
+
+# Save and return to previous buffer - Space+q (Quit current, return to previous)  
+q = [":write", ":buffer-previous"]  # Write then go back to previous buffer
 
 # Custom g-prefix commands
 [keys.normal.g]
 f = ["extend_to_line_bounds", ":pipe-to hx-smart-gf-rust", ":open /tmp/helix-gf-target.md"]  # Smart file opener (Rust/Nushell version with fd, rg)
-x = ["extend_to_line_bounds", ":pipe-to hx-open-url-rust"]  # Open URLs (Rust/Nushell version with rg)
-w = ["extend_to_line_bounds", ":pipe-to hx-wiki-tiling"]  # Wiki link tiling navigation (opens in new pane)
+x = ["extend_to_line_bounds", ":pipe-to hx-open-url"]  # Open URLs
+w = ["extend_to_line_bounds", ":pipe-to hx-wiki", ":open /tmp/helix-current-link.md"]  # Wiki link navigation (opens via temp symlink)
 
 # Serpl search and replace integration - Space+r,r
 [keys.normal.space.r]

@@ -1,0 +1,83 @@
+#!/bin/bash
+# Syncthing-safe Claude Documentation Auto-Backup Script
+
+set -euo pipefail
+
+CLAUDE_DIR="/Users/williamnapier/Claude"
+LOG_FILE="/tmp/claude-docs-backup.log"
+
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
+}
+
+# Check if directory exists and is a git repo
+if [[ ! -d "$CLAUDE_DIR" ]] || [[ ! -d "$CLAUDE_DIR/.git" ]]; then
+    log "ERROR: Claude directory not found or not a git repository"
+    exit 1
+fi
+
+cd "$CLAUDE_DIR"
+
+# Handle Syncthing conflicts first
+if find . -name "*.sync-conflict-*" | grep -q .; then
+    log "WARNING: Syncthing conflicts detected - resolving automatically"
+    
+    # Simple resolution: keep the newer file, remove conflicts
+    find . -name "*.sync-conflict-*" | while read conflict_file; do
+        original_file=$(echo "$conflict_file" | sed 's/\.sync-conflict-[^.]*\././')
+        
+        if [[ -f "$original_file" ]]; then
+            # Compare timestamps, keep newer
+            if [[ "$conflict_file" -nt "$original_file" ]]; then
+                log "Keeping conflict version: $conflict_file -> $original_file"
+                mv "$conflict_file" "$original_file"
+            else
+                log "Keeping original, removing conflict: $conflict_file"
+                rm "$conflict_file"
+            fi
+        else
+            # No original, rename conflict to original
+            mv "$conflict_file" "$original_file"
+            log "No original found, using conflict: $conflict_file -> $original_file"
+        fi
+    done
+fi
+
+# Check if there are any changes after conflict resolution
+if git diff --quiet && git diff --cached --quiet; then
+    log "No changes after conflict resolution - skipping backup"
+    exit 0
+fi
+
+# Add all changes
+git add .
+
+# Create commit with timestamp
+COMMIT_MSG="Auto-backup: Claude documentation updates $(date '+%Y-%m-%d %H:%M:%S')
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+Co-Authored-By: Claude <noreply@anthropic.com>"
+
+if git commit -m "$COMMIT_MSG"; then
+    log "Successfully committed changes to Claude documentation"
+    
+    # Push to remote with retry logic
+    for i in {1..3}; do
+        if git push origin main 2>/dev/null; then
+            log "Successfully pushed Claude documentation to GitHub"
+            break
+        else
+            if [[ $i -eq 3 ]]; then
+                log "ERROR: Failed to push after 3 attempts"
+                exit 1
+            fi
+            log "Push attempt $i failed, retrying in 5 seconds..."
+            sleep 5
+        fi
+    done
+else
+    log "ERROR: Failed to commit changes"
+    exit 1
+fi
+
+log "Claude documentation backup completed successfully"

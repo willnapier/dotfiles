@@ -1,0 +1,74 @@
+#!/opt/homebrew/bin/nu
+
+# Dotter Orphan Detector v2 - Simple and Working
+# Finds config files in dotfiles repo that aren't managed by Dotter
+
+def main [] {
+    print "🔍 Scanning for unmanaged config files in dotfiles..."
+    
+    cd ~/dotfiles
+    
+    # Get important config files (not docs/build files)
+    let config_files = (
+        fd --type f 
+           --exclude ".git" --exclude ".DS_Store" --exclude "*.md" 
+           --exclude "CLAUDE.md" --exclude ".dotter" --exclude "docs"
+           . helix nushell yazi zellij scripts nvim wezterm ghostty karabiner aerospace sketchybar wayland 2>/dev/null
+        | lines
+        | where { |f| not ($f | str ends-with "~") }  # Exclude backup files
+        | sort
+    )
+    
+    # Get managed files from Dotter config
+    let dotter_config = (open .dotter/global.toml)
+    let managed_files = (
+        [
+            ($dotter_config.shared?.files? | default {} | columns),
+            ($dotter_config.macos?.files? | default {} | columns),
+            ($dotter_config.linux?.files? | default {} | columns)
+        ]
+        | flatten
+        | uniq
+        | sort
+    )
+    
+    print $"📋 Found ($config_files | length) config files in dotfiles"
+    print $"🔗 Found ($managed_files | length) files managed by Dotter"
+    
+    # Find orphans
+    let orphans = ($config_files | where { |file| $file not-in $managed_files })
+    
+    if ($orphans | is-empty) {
+        print "✅ All config files are managed by Dotter! No orphans found."
+        return
+    }
+    
+    print $"⚠️  Found ($orphans | length) unmanaged config files:"
+    print ""
+    
+    for $file in $orphans {
+        let section = if ($file | str starts-with "scripts/") { 
+            "shared.files" 
+        } else if ($file | str starts-with "wezterm/") or ($file | str starts-with "ghostty/") { 
+            "macos.files" 
+        } else if ($file | str starts-with "wayland/") { 
+            "linux.files" 
+        } else { 
+            "shared.files" 
+        }
+        
+        let target = if ($file | str starts-with "scripts/") {
+            $"~/.local/bin/($file | str replace 'scripts/' '')"
+        } else {
+            $"~/.config/($file)"
+        }
+        
+        print $"❌ ($file)"
+        print $"   Add to .dotter/global.toml \\[($section)]:"
+        print $"   \"($file)\" = \"($target)\""
+        print ""
+    }
+    
+    print "🚨 These files could disappear like desktop-quarters did!"
+    print "🔧 Fix: Add them to .dotter/global.toml, then run 'dotter deploy'"
+}

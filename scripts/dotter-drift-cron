@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# dotter-drift-cron - Scheduled drift detection for cron
+# Runs comprehensive audit and alerts on issues
+
+set -euo pipefail
+
+LOG_FILE="$HOME/.local/share/dotter-drift-cron.log"
+ALERT_FILE="$HOME/.local/share/dotter-drift-alerts.log"
+
+# Ensure log directory exists  
+mkdir -p "$(dirname "$LOG_FILE")"
+mkdir -p "$(dirname "$ALERT_FILE")"
+
+# Logging function
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
+}
+
+# Alert function
+alert() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - ALERT: $1" | tee -a "$ALERT_FILE" -a "$LOG_FILE"
+}
+
+log "🔍 Starting scheduled drift audit"
+
+# Set up proper environment for cron
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+export HOME="/Users/williamnapier"
+
+# Change to dotfiles directory
+cd "$HOME/dotfiles" || {
+    alert "❌ Cannot access dotfiles directory"
+    exit 1
+}
+
+# Run comprehensive audit
+AUDIT_OUTPUT=$(mktemp)
+if dotter-complete-audit > "$AUDIT_OUTPUT" 2>&1; then
+    # Audit passed
+    log "✅ Scheduled audit passed - configuration protected"
+    
+    # Log summary stats
+    PROTECTED=$(grep "Protected entries:" "$AUDIT_OUTPUT" | grep -o '[0-9]*' | head -1 || echo "0")
+    TOTAL=$(grep "Total entries analyzed:" "$AUDIT_OUTPUT" | grep -o '[0-9]*' | head -1 || echo "0")
+    log "📊 Status: $PROTECTED/$TOTAL entries protected"
+    
+else
+    # Audit failed - drift detected
+    alert "🚨 DRIFT DETECTED in scheduled audit"
+    
+    # Extract key metrics
+    VULNERABLE=$(grep "Vulnerable entries:" "$AUDIT_OUTPUT" | grep -o '[0-9]*' | head -1 || echo "0")
+    MISSING=$(grep "Missing source files:" "$AUDIT_OUTPUT" | grep -o '[0-9]*' | head -1 || echo "0") 
+    BROKEN=$(grep "Broken symlinks:" "$AUDIT_OUTPUT" | grep -o '[0-9]*' | head -1 || echo "0")
+    DIRECTORY=$(grep "Directory symlinks" "$AUDIT_OUTPUT" | grep -o '[0-9]*' | head -1 || echo "0")
+    
+    alert "📊 Issues found: $VULNERABLE vulnerable, $MISSING missing, $BROKEN broken, $DIRECTORY directory symlinks"
+    
+    # Log specific issues
+    alert "🔍 Critical issues:"
+    grep -E "(VULNERABLE|CRITICAL)" "$AUDIT_OUTPUT" | head -5 >> "$ALERT_FILE" || true
+    
+    # macOS notification
+    if command -v osascript >/dev/null 2>&1; then
+        osascript -e "display notification \"$VULNERABLE vulnerable configs found in scheduled audit\" with title \"Dotter Drift Alert\" sound name \"Glass\"" 2>/dev/null || true
+    fi
+    
+    alert "🔧 Fix by running: dotter-complete-audit && dotter deploy --force"
+fi
+
+# Cleanup temp file
+rm -f "$AUDIT_OUTPUT"
+
+# Rotate logs if they get too large (keep last 1000 lines)
+if [[ -f "$LOG_FILE" && $(wc -l < "$LOG_FILE") -gt 1000 ]]; then
+    tail -500 "$LOG_FILE" > "${LOG_FILE}.tmp" && mv "${LOG_FILE}.tmp" "$LOG_FILE"
+    log "🔄 Log rotated (kept last 500 entries)"
+fi
+
+log "✅ Scheduled drift audit completed"

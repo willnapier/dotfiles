@@ -1,0 +1,72 @@
+#!/bin/bash
+
+# Link Manager Log Rotation Script
+# Rotates link manager logs to prevent unlimited growth
+
+set -euo pipefail
+
+LOG_DIR="/Users/williamnapier/scripts/obsidian-link-manager/logs"
+OUT_LOG="$LOG_DIR/linkmanager.out.log"
+ERR_LOG="$LOG_DIR/linkmanager.err.log"
+MAX_SIZE_MB=50
+KEEP_ROTATED=5
+
+# Function to rotate a log file if it's too large
+rotate_log_if_needed() {
+    local logfile="$1"
+    
+    if [[ ! -f "$logfile" ]]; then
+        echo "Log file $logfile doesn't exist, skipping"
+        return
+    fi
+    
+    # Get file size in MB
+    local size_mb=$(du -m "$logfile" | cut -f1)
+    
+    if [[ $size_mb -gt $MAX_SIZE_MB ]]; then
+        echo "Rotating $logfile (${size_mb}MB > ${MAX_SIZE_MB}MB)"
+        
+        # Rotate existing numbered logs
+        for i in $(seq $((KEEP_ROTATED-1)) -1 1); do
+            if [[ -f "${logfile}.$i" ]]; then
+                mv "${logfile}.$i" "${logfile}.$((i+1))"
+            fi
+        done
+        
+        # Move current log to .1
+        mv "$logfile" "${logfile}.1"
+        
+        # Remove old logs beyond retention limit
+        if [[ -f "${logfile}.$((KEEP_ROTATED+1))" ]]; then
+            rm -f "${logfile}.$((KEEP_ROTATED+1))"
+        fi
+        
+        # Create new empty log file
+        touch "$logfile"
+        
+        # Send HUP signal to link manager to reopen log files (if process supports it)
+        # Note: This may not be needed if the service writes to the file handle
+        
+        echo "Log rotation completed for $logfile"
+    else
+        echo "Log file $logfile size (${size_mb}MB) is under limit (${MAX_SIZE_MB}MB)"
+    fi
+}
+
+echo "Starting link manager log rotation check..."
+echo "Log directory: $LOG_DIR"
+
+# Rotate both log files
+rotate_log_if_needed "$OUT_LOG"
+rotate_log_if_needed "$ERR_LOG"
+
+# Show current log sizes after rotation
+if [[ -f "$OUT_LOG" ]]; then
+    echo "Current out log size: $(du -h "$OUT_LOG" | cut -f1)"
+fi
+
+if [[ -f "$ERR_LOG" ]]; then
+    echo "Current err log size: $(du -h "$ERR_LOG" | cut -f1)"
+fi
+
+echo "Log rotation check completed"

@@ -1,0 +1,98 @@
+#!/usr/bin/env nu
+
+# Sleep Duration Processor
+# Automatically calculates and inserts sleep durations for time range entries
+# Processes entries like "s:: 0025-0755" -> "s:: 7hr 30min 0025-0755"
+# Created: 2025-09-07
+
+def main [file_path?: string] {
+    let target_file = if ($file_path | is-empty) {
+        # If no file specified, find recently modified .md files
+        let recent_files = (glob $"($env.HOME)/Obsidian.nosync/Forge/**/*.md" 
+            | where ($it | stat | get modified) > ((date now) - 5min))
+        
+        if ($recent_files | length) == 0 {
+            print "No recently modified markdown files found"
+            return
+        }
+        $recent_files | first
+    } else {
+        $file_path
+    }
+    
+    if not ($target_file | path exists) {
+        print $"File not found: ($target_file)"
+        return
+    }
+    
+    print $"Processing sleep entries in: ($target_file)"
+    
+    # Read file content and process line by line
+    let content = (open $target_file)
+    let lines = ($content | lines)
+    
+    let processed_lines = ($lines | each { |line|
+        # Check if line matches pattern "s:: XXXX-YYYY" (no existing duration)
+        if ($line | str trim | parse "s:: {times}" | length) > 0 {
+            let time_part = ($line | str trim | parse "s:: {times}" | first | get times)
+            
+            let has_dash = ($time_part | str contains "-")
+            let has_hr = ($time_part | str contains "hr")  
+            let has_min = ($time_part | str contains "min")
+            
+            if $has_dash and (not $has_hr) and (not $has_min) {
+                let time_split = ($time_part | split row "-")
+                
+                if ($time_split | length) == 2 {
+                    let start_time = ($time_split | first | str trim)
+                    let end_time = ($time_split | last | str trim)
+                    
+                    # Validate 4-digit times
+                    if ($start_time | str length) == 4 and ($end_time | str length) == 4 {
+                        # Convert HHMM to HH:MM format
+                        let start_formatted = ($start_time | str substring 0..<2) + ":" + ($start_time | str substring 2..<4)
+                        let end_formatted = ($end_time | str substring 0..<2) + ":" + ($end_time | str substring 2..<4)
+                        
+                        try {
+                            # Use Nushell's native datetime parsing and calculation
+                            let start_dt = ($start_formatted | into datetime)
+                            let end_dt = ($end_formatted | into datetime)
+                            
+                            # Calculate duration (handle overnight sleep)
+                            let duration = if $end_dt < $start_dt {
+                                ($end_dt + 1day) - $start_dt
+                            } else {
+                                $end_dt - $start_dt
+                            }
+                            
+                            # Format as Nushell duration string (already perfect format!)
+                            let duration_str = ($duration | to text)
+                            
+                            $"s:: ($duration_str) ($start_time)-($end_time)"
+                        } catch {
+                            $line  # Return original line if parsing fails
+                        }
+                    } else {
+                        $line
+                    }
+                } else {
+                    $line
+                }
+            } else {
+                $line
+            }
+        } else {
+            $line
+        }
+    })
+    
+    let processed_content = ($processed_lines | str join "\n")
+    
+    # Only write if content changed
+    if $processed_content != $content {
+        $processed_content | save --force $target_file
+        print $"✅ Updated sleep duration entries in ($target_file)"
+    } else {
+        print "No unprocessed sleep entries found"
+    }
+}

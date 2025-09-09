@@ -1,0 +1,62 @@
+#!/opt/homebrew/bin/nu
+
+# Mark a file as revisited by adding today's date
+# Called from Helix with Space+r
+
+def main [file_path: string] {
+    if not ($file_path | path exists) {
+        print "Error: File does not exist"
+        return
+    }
+    
+    let today = (date now | format date "%Y-%m-%d")
+    let content = (open $file_path)
+    
+    # Look for existing Revisited line
+    let lines = ($content | lines)
+    let revisited_line_idx = ($lines | enumerate | where {|it| $it.item | str starts-with "Revisited:"} | get index.0?)
+    
+    if $revisited_line_idx != null {
+        # Update existing revisited line
+        let current_line = ($lines | get $revisited_line_idx)
+        let dates_part = ($current_line | str replace "Revisited: " "")
+        
+        # Check if today is already there
+        if ($dates_part | str contains $today) {
+            print $"Already marked as revisited today: ($today)"
+            return
+        }
+        
+        # Add today's date
+        let new_line = $"Revisited: ($dates_part), ($today)"
+        let updated_lines = ($lines | enumerate | each {|it|
+            if $it.index == $revisited_line_idx {
+                $new_line
+            } else {
+                $it.item
+            }
+        })
+        
+        $updated_lines | str join "\n" | save -f $file_path
+        print $"Added revisit date: ($today)"
+        
+    } else {
+        # Add new revisited line after H1 title
+        let h1_idx = ($lines | enumerate | where {|it| $it.item | str starts-with "# "} | get index.0?)
+        
+        let insertion_point = if $h1_idx != null {
+            $h1_idx + 1
+        } else {
+            0
+        }
+        
+        let new_line = $"Revisited: ($today)"
+        let before = ($lines | take $insertion_point)
+        let after = ($lines | skip $insertion_point)
+        
+        let updated_lines = ([$before [""] [$new_line] [""] $after] | flatten)
+        
+        $updated_lines | str join "\n" | save -f $file_path
+        print $"Created new revisit tracking: ($today)"
+    }
+}

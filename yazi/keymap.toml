@@ -18,30 +18,30 @@ prepend_keymap = [
   { on = "h", run = "open --interactive", desc = "How to open? (interactive picker)" },
   
   # Project-aware search functions (requires Full Disk Access + Developer Tools for WezTerm)
-  { on = "s", run = """shell 'selected=$(/Users/williamnapier/.local/bin/yazi-project-file-search); [ -n "$selected" ] && hx "$selected"' --block""", desc = "Project-aware file search" },
-  { on = "S", run = """shell 'echo -n "Search (use AND/OR for multiple terms): "; read term; selected=$(/Users/williamnapier/.local/bin/yazi-project-content-search-nu "$term"); [ -n "$selected" ] && hx "$selected"' --block""", desc = "Project-aware content search with AND/OR support" },
-  { on = "R", run = """shell 'selected=$(/Users/williamnapier/.local/bin/yazi-recent-files); [ -n "$selected" ] && hx "$selected"' --block""", desc = "Recent files (last 7 days)" },
+  { on = "s", run = """shell 'zellij action new-pane --close-on-exit --floating --width 90% --height 85% -- bash $HOME/.local/bin/yazi-project-file-search-floating' --block""", desc = "Project-aware file search with preview (floating pane)" },
+  { on = "S", run = """shell 'echo -n "Search (use AND/OR for multiple terms): "; read term; selected=$($HOME/.local/bin/yazi-project-content-search-nu "$term"); [ -n "$selected" ] && hx "$selected"' --block""", desc = "Project-aware content search with AND/OR support" },
+  { on = "R", run = """shell 'selected=$($HOME/.local/bin/yazi-recent-files); [ -n "$selected" ] && hx "$selected"' --block""", desc = "Recent files (last 7 days)" },
   # Quick navigation shortcuts (g prefix)
   { on = [ "g", "g" ], run = "arrow -999999999", desc = "Go to top" },
   { on = [ "g", "e" ], run = "arrow 999999999", desc = "Go to bottom" },
   { on = [ "g", "h" ], run = "cd ~", desc = "Go to home directory" },
   { on = [ "g", "d" ], run = "cd ~/Downloads", desc = "Go to Downloads" },
   { on = [ "g", "c" ], run = "cd ~/.config", desc = "Go to config directory" },
-  { on = [ "g", "n" ], run = "cd '/Users/williamnapier/Obsidian.nosync/Forge'", desc = "Go to Obsidian vault" },
+  { on = [ "g", "n" ], run = "shell 'nu -c \"source ~/.config/nushell/config.nu; cd (detect-obsidian-vault)\"' --block", desc = "Go to Obsidian vault (cross-platform)" },
   
   # Zoxide frecency-based directory jumping (lowercase z)
-  { on = "z", run = "shell '/Users/williamnapier/.local/bin/yazi-zoxide-jump' --block --confirm", desc = "Zoxide frecency jump with skim" },
+  { on = "z", run = "shell '$HOME/.local/bin/yazi-zoxide-jump' --block --confirm", desc = "Zoxide frecency jump with skim" },
   # General directory search (uppercase Z)  
-  { on = "Z", run = "shell '/Users/williamnapier/.local/bin/yazi-directory-jump' --block --confirm", desc = "General directory picker with Nushell preview" },
+  { on = "Z", run = "shell '$HOME/.local/bin/yazi-directory-jump' --block --confirm", desc = "General directory picker with Nushell preview" },
   
   # Basic file operations
   { on = "y", run = "yank", desc = "Copy" },
   
   # Zotero import - select PDFs and press I (Import) to add to Zotero
-  { on = "I", run = """shell 'for file in "$@"; do /Users/williamnapier/.local/bin/zotero-cli-import "$file" --move; done' --block --confirm""", desc = "Import PDFs to Zotero" },
+  { on = "I", run = """shell 'for file in "$@"; do $HOME/.local/bin/zotero-cli-import "$file" --move; done' --block --confirm""", desc = "Import PDFs to Zotero" },
   
   # Quick daily note access  
-  { on = "D", run = """shell '/Users/williamnapier/.local/bin/daily-note' --block""", desc = "Open today's daily note" },
+  { on = "D", run = """shell '$HOME/.local/bin/daily-note' --block""", desc = "Open today's daily note" },
   
   # Obsidian link navigation
   { on = "b", run = """shell 'nu ~/.config/yazi/scripts/show-backlinks.nu' --block --confirm""", desc = "Show backlinks to current note" },

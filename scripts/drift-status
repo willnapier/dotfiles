@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+# drift-status - Status and control interface for drift monitoring system
+
+set -euo pipefail
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+case "${1:-status}" in
+    "status"|"")
+        echo -e "${BLUE}📊 DRIFT MONITORING SYSTEM STATUS${NC}"
+        echo "======================================"
+        
+        # Check file watcher service
+        if launchctl list com.user.dotter-drift-watcher >/dev/null 2>&1; then
+            WATCHER_PID=$(launchctl list com.user.dotter-drift-watcher | grep -o '"PID" = [0-9]*' | grep -o '[0-9]*' || echo "unknown")
+            echo -e "📱 Real-time watcher: ${GREEN}RUNNING${NC} (PID: $WATCHER_PID)"
+        else
+            echo -e "📱 Real-time watcher: ${RED}STOPPED${NC}"
+        fi
+        
+        # Check cron job
+        if crontab -l 2>/dev/null | grep -q "dotter-drift-cron"; then
+            NEXT_CRON=$(crontab -l 2>/dev/null | grep "dotter-drift-cron" | head -1 | awk '{print $1, $2, $3, $4, $5}')
+            echo -e "🕒 Scheduled audits: ${GREEN}ACTIVE${NC} ($NEXT_CRON)"
+        else
+            echo -e "🕒 Scheduled audits: ${RED}NOT CONFIGURED${NC}"
+        fi
+        
+        # Check recent activity
+        WATCHER_LOG="$HOME/.local/share/dotter-drift-watcher.log"
+        CRON_LOG="$HOME/.local/share/dotter-drift-cron.log"
+        ALERT_LOG="$HOME/.local/share/dotter-drift-alerts.log"
+        
+        if [[ -f "$WATCHER_LOG" ]]; then
+            LAST_WATCHER=$(tail -1 "$WATCHER_LOG" | grep -o '^[0-9-]* [0-9:]*' || echo "Never")
+            echo -e "🔍 Last watcher activity: ${BLUE}$LAST_WATCHER${NC}"
+        fi
+        
+        if [[ -f "$CRON_LOG" ]]; then
+            LAST_CRON=$(tail -1 "$CRON_LOG" | grep -o '^[0-9-]* [0-9:]*' || echo "Never")
+            echo -e "⏰ Last scheduled audit: ${BLUE}$LAST_CRON${NC}"
+        fi
+        
+        if [[ -f "$ALERT_LOG" ]]; then
+            ALERT_COUNT=$(wc -l < "$ALERT_LOG" 2>/dev/null || echo "0")
+            if [[ "$ALERT_COUNT" -gt 0 ]]; then
+                LAST_ALERT=$(tail -1 "$ALERT_LOG" | grep -o '^[0-9-]* [0-9:]*' || echo "Unknown")
+                echo -e "🚨 Alerts: ${RED}$ALERT_COUNT total${NC} (last: $LAST_ALERT)"
+            else
+                echo -e "🚨 Alerts: ${GREEN}None${NC}"
+            fi
+        fi
+        ;;
+        
+    "start")
+        echo "🚀 Starting drift monitoring services..."
+        launchctl load ~/Library/LaunchAgents/com.user.dotter-drift-watcher.plist
+        sleep 2
+        if launchctl list com.user.dotter-drift-watcher >/dev/null 2>&1; then
+            echo -e "${GREEN}✅ Drift watcher started${NC}"
+        else
+            echo -e "${RED}❌ Failed to start drift watcher${NC}"
+        fi
+        ;;
+        
+    "stop")
+        echo "🛑 Stopping drift monitoring services..."
+        launchctl unload ~/Library/LaunchAgents/com.user.dotter-drift-watcher.plist 2>/dev/null || true
+        echo -e "${YELLOW}⏹️  Drift watcher stopped${NC}"
+        ;;
+        
+    "restart")
+        echo "🔄 Restarting drift monitoring services..."
+        launchctl unload ~/Library/LaunchAgents/com.user.dotter-drift-watcher.plist 2>/dev/null || true
+        sleep 1
+        launchctl load ~/Library/LaunchAgents/com.user.dotter-drift-watcher.plist
+        sleep 2
+        if launchctl list com.user.dotter-drift-watcher >/dev/null 2>&1; then
+            echo -e "${GREEN}✅ Drift watcher restarted${NC}"
+        else
+            echo -e "${RED}❌ Failed to restart drift watcher${NC}"
+        fi
+        ;;
+        
+    "logs")
+        echo -e "${BLUE}📄 Recent drift monitoring logs:${NC}"
+        echo "==============================="
+        
+        if [[ -f "$HOME/.local/share/dotter-drift-watcher.log" ]]; then
+            echo -e "${YELLOW}[File Watcher Log]${NC}"
+            tail -10 "$HOME/.local/share/dotter-drift-watcher.log"
+            echo ""
+        fi
+        
+        if [[ -f "$HOME/.local/share/dotter-drift-cron.log" ]]; then
+            echo -e "${YELLOW}[Scheduled Audit Log]${NC}"
+            tail -10 "$HOME/.local/share/dotter-drift-cron.log"
+            echo ""
+        fi
+        
+        if [[ -f "$HOME/.local/share/dotter-drift-alerts.log" ]]; then
+            echo -e "${RED}[Alert Log]${NC}"
+            tail -10 "$HOME/.local/share/dotter-drift-alerts.log"
+            echo ""
+        fi
+        ;;
+        
+    "audit")
+        echo "🔍 Running manual drift audit..."
+        dotter-complete-audit
+        ;;
+        
+    "alerts")
+        ALERT_LOG="$HOME/.local/share/dotter-drift-alerts.log"
+        if [[ -f "$ALERT_LOG" && -s "$ALERT_LOG" ]]; then
+            echo -e "${RED}🚨 Drift monitoring alerts:${NC}"
+            echo "============================="
+            cat "$ALERT_LOG"
+        else
+            echo -e "${GREEN}✅ No alerts found${NC}"
+        fi
+        ;;
+        
+    "clear-alerts")
+        ALERT_LOG="$HOME/.local/share/dotter-drift-alerts.log"
+        if [[ -f "$ALERT_LOG" ]]; then
+            > "$ALERT_LOG"  # Clear file
+            echo -e "${GREEN}✅ Alert log cleared${NC}"
+        else
+            echo "No alert log to clear"
+        fi
+        ;;
+        
+    "help")
+        echo -e "${BLUE}Drift Monitoring System Commands:${NC}"
+        echo "================================="
+        echo "drift-status [command]"
+        echo ""
+        echo "Commands:"
+        echo "  status     Show system status (default)"
+        echo "  start      Start drift monitoring services"
+        echo "  stop       Stop drift monitoring services"
+        echo "  restart    Restart drift monitoring services"
+        echo "  logs       Show recent monitoring logs"
+        echo "  audit      Run manual drift audit"
+        echo "  alerts     Show drift alerts"
+        echo "  clear-alerts Clear alert log"
+        echo "  help       Show this help"
+        ;;
+        
+    *)
+        echo -e "${RED}❌ Unknown command: $1${NC}"
+        echo "Use 'drift-status help' for available commands"
+        exit 1
+        ;;
+esac

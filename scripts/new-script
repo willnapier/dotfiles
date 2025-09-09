@@ -1,0 +1,102 @@
+#!/usr/bin/env nu
+
+# Create a new script with automatic Dotter registration and deployment
+# Usage: new-script "script-name" "extension"
+# Example: new-script "hx-mark-revisit" "nu"
+#          new-script "backup-vault" "sh"
+
+def main [script_name: string, extension: string = "nu"] {
+    let dotfiles_root = $"($env.HOME)/dotfiles"
+    let scripts_dir = $"($dotfiles_root)/scripts"
+    let script_path = $"($scripts_dir)/($script_name)"
+    let dotter_config = $"($dotfiles_root)/.dotter/global.toml"
+    
+    # Check if script already exists
+    if ($script_path | path exists) {
+        print $"❌ Script already exists: ($script_path)"
+        return
+    }
+    
+    # Create script with appropriate cross-platform shebang
+    let shebang = match $extension {
+        "nu" => "#!/usr/bin/env nu",
+        "sh" => "#!/bin/bash", 
+        "bash" => "#!/bin/bash",
+        "py" => "#!/usr/bin/env python3",
+        _ => $"#!/usr/bin/env ($extension)"
+    }
+    
+    let template = $"($shebang)
+
+# ($script_name) - TODO: Add description
+# Created: (date now | format date '%Y-%m-%d')
+
+def main [] {
+    print \"TODO: Implement ($script_name)\"
+}
+"
+    
+    # Create the script file
+    $template | save $script_path
+    
+    # Make executable
+    chmod +x $script_path
+    
+    print $"✅ Created script: ($script_path)"
+    
+    # Read current dotter config as raw text
+    let dotter_content = (open --raw $dotter_config)
+    
+    # Find the insertion point (after existing scripts)
+    let lines = ($dotter_content | lines)
+    let script_lines = ($lines | enumerate | where {|it| $it.item | str contains "scripts/"})
+    
+    if ($script_lines | is-empty) {
+        print "❌ Could not find scripts section in dotter config"
+        return
+    }
+    
+    let last_script_idx = ($script_lines | last | get index)
+    let new_entry = $"\"scripts/($script_name)\" = \"~/.local/bin/($script_name)\""
+    
+    # Insert the new entry
+    let before = ($lines | take ($last_script_idx + 1))
+    let after = ($lines | skip ($last_script_idx + 1))
+    
+    let updated_lines = ([$before [$new_entry] $after] | flatten)
+    $updated_lines | str join "\n" | save -f $dotter_config
+    
+    print $"✅ Added to Dotter config: ($new_entry)"
+    
+    # Deploy with dotter
+    cd $dotfiles_root
+    let deploy_result = (dotter deploy --force | complete)
+    
+    if $deploy_result.exit_code == 0 {
+        print $"✅ Deployed script to ~/.local/bin/($script_name)"
+        print $"🎯 Script ready to use!"
+        
+        # Show final status
+        let bin_path = ($"~/.local/bin/($script_name)" | path expand)
+        if ($bin_path | path exists) {
+            # Check if it's a symlink using readlink
+            let link_check = (do { readlink $bin_path } | complete)
+            if $link_check.exit_code == 0 {
+                print $"📍 Symlink: ~/.local/bin/($script_name) -> ($link_check.stdout | str trim)"
+            } else {
+                print $"📍 File: ~/.local/bin/($script_name) - not a symlink"
+            }
+        }
+        
+    } else {
+        print $"❌ Dotter deployment failed:"
+        print $deploy_result.stderr
+        print "Manual deployment needed: cd ~/dotfiles && dotter deploy --force"
+    }
+    
+    print $"\n🚀 Next steps:"
+    print $"   1. Edit script: hx ($script_path)"
+    print $"   2. Develop and test your script functionality"
+    print $"   3. When ready to deploy: script-ready-deploy ($script_name)"
+    print $"   4. Commit: cd ~/dotfiles && git add . && git commit -m 'Add ($script_name) script'"
+}
