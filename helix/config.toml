@@ -79,9 +79,8 @@ t = ["extend_to_line_bounds", ":pipe-to sd '\\[ \\]' '[TEMP]' | sd '\\[x\\]' '[ 
 
 # Manual theme refresh - Space+T (capital T)  
 T = ":config-reload"
-# Process activity durations - Two step process to avoid timing issues
-# Step 1: Save file manually with :w first  
-# Step 2: Process with Space+p
+# Process activity durations - Manual save required first
+# 1. Save with :w first, 2. Then Space+p to process
 p = [":sh hx-process-durations %{buffer_name}", ":reload"]
 # Delete current file - Space+x (eXpunge, no confirmation)
 x = [":sh trash %{buffer_name}", ":quit!"]
