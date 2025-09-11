@@ -1,0 +1,93 @@
+#!/usr/bin/env nu
+
+# Activity Duration Processor - Buffer Version
+# Works directly with Helix buffer content via stdin/stdout
+# Processes time ranges like "t:: 0930-45" -> "t:: 15min 0930-0945"
+
+def main [] {
+    # Read all content from stdin
+    let content = (open /dev/stdin --raw | decode utf-8)
+    let lines = ($content | lines)
+    
+    let processed_lines = ($lines | each { |line|
+        # Check if line matches pattern "[letters]:: ..." and extract time ranges
+        let trimmed_line = ($line | str trim)
+        let activity_pattern = ($trimmed_line | parse --regex '^([a-zA-Z]+):: (.+)$')
+        
+        if ($activity_pattern | length) > 0 {
+            let activity_code = ($activity_pattern | first | get capture0)
+            let content_raw = ($activity_pattern | first | get capture1)
+            
+            # Look for time range pattern HHMM-HHMM or HHMM-HH or HHMM-MM anywhere in the content
+            let time_range_matches = ($content_raw | parse --regex '(\d{4})-(\d{2,4})')
+            
+            if ($time_range_matches | length) > 0 and (not ($content_raw | str contains "hr")) and (not ($content_raw | str contains "min")) {
+                let match = ($time_range_matches | first)
+                let start_time = ($match | get capture0)
+                let end_time_raw = ($match | get capture1)
+                let time_range_text = $"($start_time)-($end_time_raw)"
+                
+                # Handle both full HHMM and shorthand MM formats for end time
+                let end_time = if ($end_time_raw | str length) == 2 {
+                    # Shorthand: expand 2-digit end time to HHMM
+                    let start_hour = ($start_time | str substring 0..<2 | into int)
+                    let start_min = ($start_time | str substring 2..<4 | into int)
+                    let end_min = ($end_time_raw | into int)
+                    
+                    if $end_min <= $start_min {
+                        # Next hour
+                        let end_hour_raw = $start_hour + 1
+                        let end_hour = if $end_hour_raw >= 24 { $end_hour_raw - 24 } else { $end_hour_raw }
+                        $"(if $end_hour < 10 { $"0($end_hour)" } else { $end_hour })(if $end_min < 10 { $"0($end_min)" } else { $end_min })"
+                    } else {
+                        # Same hour
+                        $"(if $start_hour < 10 { $"0($start_hour)" } else { $start_hour })(if $end_min < 10 { $"0($end_min)" } else { $end_min })"
+                    }
+                } else if ($end_time_raw | str length) == 4 {
+                    # Full format
+                    $end_time_raw
+                } else {
+                    "" # Invalid
+                }
+                
+                if ($end_time | str length) == 4 {
+                    # Convert HHMM to HH:MM format for datetime parsing
+                    let start_formatted = ($start_time | str substring 0..<2) + ":" + ($start_time | str substring 2..<4)
+                    let end_formatted = ($end_time | str substring 0..<2) + ":" + ($end_time | str substring 2..<4)
+                    
+                    try {
+                        # Use Nushell's native datetime parsing and calculation
+                        let start_dt = ($start_formatted | into datetime)
+                        let end_dt = ($end_formatted | into datetime)
+                        
+                        # Calculate duration (handle overnight)
+                        let duration = if $end_dt < $start_dt {
+                            ($end_dt + 1day) - $start_dt
+                        } else {
+                            $end_dt - $start_dt
+                        }
+                        
+                        # Format as Nushell duration string
+                        let duration_str = ($duration | to text)
+                        
+                        # Insert duration into the content, replacing the time range
+                        let updated_content = ($content_raw | str replace $time_range_text $"($duration_str) ($start_time)-($end_time)")
+                        
+                        $"($activity_code):: ($updated_content)"
+                    } catch {
+                        $line  # Return original line if parsing fails
+                    }
+                } else {
+                    $line  # Invalid end time format
+                }
+            } else {
+                $line  # Already processed or not a time range
+            }
+        } else {
+            $line  # Not an activity pattern
+        }
+    })
+    
+    # Output processed content
+    $processed_lines | str join "\n"
+}

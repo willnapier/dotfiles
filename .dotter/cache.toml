@@ -83,6 +83,7 @@
 "nvim/spell/en.utf-8.add" = "/Users/williamnapier/.config/nvim/spell/en.utf-8.add"
 "nvim/spell/en.utf-8.add.spl" = "/Users/williamnapier/.config/nvim/spell/en.utf-8.add.spl"
 "scripts/activity-duration-processor" = "/Users/williamnapier/.local/bin/activity-duration-processor"
+"scripts/activity-duration-processor-buffer" = "/Users/williamnapier/.local/bin/activity-duration-processor-buffer"
 "scripts/activity-watcher-renu" = "/Users/williamnapier/.local/bin/activity-watcher-renu"
 "scripts/citation-picker-cross-platform.sh" = "/Users/williamnapier/.local/bin/citation-picker-cross-platform.sh"
 "scripts/citation-picker.sh" = "/Users/williamnapier/.local/bin/citation-picker.sh"

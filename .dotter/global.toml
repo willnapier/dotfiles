@@ -98,6 +98,7 @@ depends = []
 "scripts/test-skim-floating" = "~/.local/bin/test-skim-floating"
 "scripts/word-wrap-preview.nu" = "~/.local/bin/word-wrap-preview.nu"
 "scripts/activity-duration-processor" = "~/.local/bin/activity-duration-processor"
+"scripts/activity-duration-processor-buffer" = "~/.local/bin/activity-duration-processor-buffer"
 "scripts/hx-process-durations" = "~/.local/bin/hx-process-durations"
 # Re-nu conversion scripts - Native Nushell watchers with no external dependencies
 "scripts/claude-docs-watcher-renu" = "~/.local/bin/claude-docs-watcher-renu"
