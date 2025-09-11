@@ -79,8 +79,8 @@ t = ["extend_to_line_bounds", ":pipe-to sd '\\[ \\]' '[TEMP]' | sd '\\[x\\]' '[ 
 
 # Manual theme refresh - Space+T (capital T)  
 T = ":config-reload"
-# Process activity durations - Force save, process, then force buffer refresh
-p = [":write!", ":sh sleep 1 && sync", ":sh hx-process-durations %{buffer_name}", ":sh sleep 0.5", ":buffer-close", ":open %{buffer_name}"]
+# Process activity durations - Complete workflow with reload refresh  
+p = [":write!", ":sh sleep 1 && sync", ":sh hx-process-durations %{buffer_name}", ":reload"]
 # Delete current file - Space+x (eXpunge, no confirmation)
 x = [":sh trash %{buffer_name}", ":quit!"]
 # Export selection to external register - Space+E (then type register letter)
