@@ -22,47 +22,40 @@ local function scheme_for_appearance(appearance)
   end
 end
 
--- Helper function to detect screen size and return appropriate config
-local function get_screen_config()
-  -- Get display dimensions
-  for _, screen in ipairs(wezterm.gui and wezterm.gui.screens() or {}) do
-    local width = screen.width
-    local height = screen.height
-    
-    -- Large screen (32" 6K Dell or similar)
-    if width >= 5120 then  -- 6K width
-      return {
-        default_layout = "four_pane",
-        pane_strategy = "aggressive",
-        initial_cols = 200,
-        initial_rows = 60
-      }
-    -- Medium/Large screen  
-    elseif width >= 2560 then  -- 4K or large
-      return {
-        default_layout = "dual_pane", 
-        pane_strategy = "moderate",
-        initial_cols = 140,
-        initial_rows = 40
-      }
-    -- Laptop screen (15" MacBook Air)
-    else
-      return {
-        default_layout = "single_pane",
-        pane_strategy = "minimal", 
-        initial_cols = 100,
-        initial_rows = 30
-      }
-    end
-  end
+-- Helper function to get appropriate window size based on screen resolution
+local function get_window_size()
+  -- Use system_profiler to safely detect screen size
+  -- This avoids GUI issues during WezTerm startup
+  local handle = io.popen("system_profiler SPDisplaysDataType | grep 'Resolution:' | head -1")
+  local res_line = handle:read("*a")
+  handle:close()
   
-  -- Fallback for laptop
-  return {
-    default_layout = "single_pane",
-    pane_strategy = "minimal",
-    initial_cols = 100, 
-    initial_rows = 30
-  }
+  -- Extract width and height from "Resolution: 1920 x 1242"
+  local width, height = res_line:match("Resolution: (%d+) x (%d+)")
+  width = tonumber(width) or 1920
+  height = tonumber(height) or 1200
+  
+  -- Calculate maximum columns and rows based on font metrics
+  -- JetBrainsMono 14pt: ~8px wide × 17px tall (with line_height 1.2)
+  local char_width = 6.5
+  local char_height = 16
+  local padding_x = -120  -- Minimal window padding left + right
+  local padding_y = -40  -- Just menu bar space (reduce from 80)
+  
+  local max_cols = math.floor((width - padding_x) / char_width)
+  local max_rows = math.floor((height - padding_y) / char_height)
+  
+  -- Return appropriate window size based on screen width
+  if width >= 6000 then
+    -- 32" Dell 6K - use calculated maximum
+    return { initial_cols = math.min(max_cols, 700), initial_rows = math.min(max_rows, 180) }
+  elseif width >= 2560 then
+    -- 27" Display - use calculated maximum
+    return { initial_cols = math.min(max_cols, 300), initial_rows = math.min(max_rows, 75) }
+  else
+    -- Laptop - use calculated maximum for full screen usage
+    return { initial_cols = max_cols, initial_rows = max_rows }
+  end
 end
 
 -- Configuration
@@ -96,16 +89,14 @@ config.enable_tab_bar = false
 -- Window configuration
 config.window_decorations = "RESIZE"
 config.window_padding = {
-  left = 10,
-  right = 10,
-  top = 10,
-  bottom = 5,
+  left = 0,
+  right = 0,
+  top = 0,
+  bottom = 0,
 }
 
--- Initial window size (in character cells)
--- This sets a reasonable default that works on both large and small screens
-config.initial_cols = 120  -- Width in columns
-config.initial_rows = 35   -- Height in rows
+-- Let WezTerm handle sizing with maximize() instead of manual calculations
+-- config.initial_cols and config.initial_rows removed to let maximize() work
 
 -- Cursor
 config.default_cursor_style = 'BlinkingBar'
@@ -594,9 +585,40 @@ wezterm.on('gui-startup', function()
     cwd = wezterm.home_dir,
   }
   
-  -- Set window to a reasonable size and center it
-  -- This ensures consistent sizing when switching between monitors
-  window:gui_window():set_position(100, 50)
+  -- Get the GUI window
+  local gui_window = window:gui_window()
+  
+  -- Maximize the window to fill the screen (not fullscreen mode)
+  -- Small delay to ensure window is fully created
+  wezterm.time.call_after(0.1, function()
+    if gui_window then
+      -- Set position closer to top-left edge
+      gui_window:set_position(0, 0)
+      -- Try to maximize the window to use all available space
+      gui_window:maximize()
+      
+      -- Window sizing is already handled by initial_cols and initial_rows
+      -- which are set from get_window_size() during startup
+      -- This just ensures consistent positioning
+    end
+  end)
+  
+  -- Auto-split for laptop layout (two panes side by side)
+  wezterm.time.call_after(0.5, function()
+    -- Get screen width to determine if this is laptop layout
+    local handle = io.popen("system_profiler SPDisplaysDataType | grep 'Resolution:' | head -1")
+    local res_line = handle:read("*a")
+    handle:close()
+    
+    local width = res_line:match("Resolution: (%d+) x")
+    width = tonumber(width) or 1920
+    
+    -- Only auto-split for laptop screens (< 2560px width)
+    if width < 2560 then
+      -- Create vertical split (two panes side by side)
+      window:perform_action(wezterm.action.SplitHorizontal { domain = 'CurrentPaneDomain' }, pane)
+    end
+  end)
   
   -- Create a notes workspace (commented out to avoid second window)
   -- local notes_tab, notes_pane, notes_window = mux.spawn_window {

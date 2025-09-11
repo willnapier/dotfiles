@@ -1,0 +1,477 @@
+#!/usr/bin/env nu
+
+# Activity Watcher - Unified Re-nu Revolutionary Version
+# Consolidates the best features from multiple activity watchers into one optimal solution
+# Re-nu revolution: Native Nushell watch + Smart content analysis + Conditional monitoring
+# Eliminates: watchexec, fswatch, polling loops, fragmented functionality, resource duplication
+# Unifies: activity-watcher-native, activity-watcher-smart, helix-activity-watcher-renu
+
+def main [
+    --mode: string = "smart"         # Monitoring mode: "smart", "always", "helix-only"
+    --debounce-ms: int = 2000        # Milliseconds to wait before processing changes
+    --vault-path: string = ""        # Custom vault path (auto-detected if empty)
+    --enable-analytics               # Enable detailed productivity analytics and tracking
+    --check-interval: int = 30       # Seconds between state checks (helix mode)
+    --dry-run                        # Show what would be processed without actually processing
+] {
+    # Cross-platform vault detection
+    let vault_path = if ($vault_path | is-empty) {
+        detect_vault_path
+    } else {
+        $vault_path
+    }
+    
+    # Cross-platform log directory
+    let log_dir = if (sys host | get name) == "Darwin" {
+        $"($env.HOME)/Library/Logs"
+    } else {
+        $"($env.HOME)/.local/share"
+    }
+    
+    let log_file = $"($log_dir)/activity-watcher-unified.log"
+    let lock_file = "/tmp/activity-watcher-unified.lock"
+    let analytics_file = $"($log_dir)/activity-analytics-unified.json"
+    
+    # Ensure log directory exists
+    mkdir $log_dir
+    
+    # Check for existing instance
+    if ($lock_file | path exists) {
+        let existing_content = (try { open $lock_file | str trim } catch { "" })
+        if $existing_content != "" {
+            log_message $log_file $"🔒 Unified activity watcher already running: ($existing_content)"
+            return
+        }
+        log_message $log_file "⚠️  Removing stale lock file"
+        rm $lock_file
+    }
+    
+    # Create lock file with timestamp
+    (date now | format date "%s") | save $lock_file
+    
+    # Validate environment
+    if not ($vault_path | path exists) {
+        log_message $log_file $"❌ Vault path not found: ($vault_path)"
+        cleanup $lock_file $log_file
+        return
+    }
+    
+    if (which activity-duration-processor | is-empty) {
+        log_message $log_file "❌ activity-duration-processor not found - check deployment"
+        cleanup $lock_file $log_file
+        return
+    }
+    
+    # Validate mode parameter
+    if not ($mode in ["smart", "always", "helix-only"]) {
+        log_message $log_file $"❌ Invalid mode: ($mode). Valid modes: smart, always, helix-only"
+        cleanup $lock_file $log_file
+        return
+    }
+    
+    log_message $log_file "🚀 Starting Unified Activity Watcher (Re-nu revolutionary version)"
+    log_message $log_file $"📁 Vault: ($vault_path)"
+    log_message $log_file $"🎯 Mode: ($mode)"
+    log_message $log_file $"⚡ Debounce: ($debounce_ms)ms"
+    log_message $log_file "🌍 Cross-platform native monitoring - zero external dependencies!"
+    
+    if $enable_analytics {
+        log_message $log_file $"📊 Analytics enabled: ($analytics_file)"
+    }
+    
+    if $dry_run {
+        log_message $log_file "🧪 DRY RUN MODE - No files will be processed"
+    }
+    
+    # Start monitoring based on selected mode
+    try {
+        match $mode {
+            "always" => {
+                log_message $log_file "🔄 Always mode: Continuous monitoring with smart processing"
+                always_monitoring $vault_path $log_file $debounce_ms $enable_analytics $analytics_file $dry_run
+            },
+            "helix-only" => {
+                log_message $log_file "✏️  Helix-only mode: Conditional monitoring when editor is active"
+                helix_conditional_monitoring $vault_path $log_file $debounce_ms $check_interval $enable_analytics $analytics_file $dry_run
+            },
+            "smart" => {
+                log_message $log_file "🧠 Smart mode: Intelligent content analysis with optimal processing"
+                smart_monitoring $vault_path $log_file $debounce_ms $enable_analytics $analytics_file $dry_run
+            }
+        }
+    } catch {|error|
+        log_message $log_file $"❌ Monitoring failed: ($error.msg)"
+        cleanup $lock_file $log_file
+    }
+}
+
+# Cross-platform vault path detection with comprehensive search
+def detect_vault_path [] {
+    let candidates = [
+        $"($env.HOME)/Obsidian.nosync/Forge",           # Current setup
+        $"($env.HOME)/Documents/Obsidian",              # Common location  
+        $"($env.HOME)/Notes",                           # Simple notes folder
+        $"($env.HOME)/Vault",                           # Generic vault
+        $"($env.HOME)/Obsidian",                        # Standard Obsidian
+        $"($env.HOME)/ObsidianVault",                   # Alternative naming
+        "./vault",                                      # Current directory
+        "./notes"                                       # Alternative current
+    ]
+    
+    for candidate in $candidates {
+        if ($candidate | path exists) {
+            return $candidate
+        }
+    }
+    
+    # Fallback to the configured path
+    $"($env.HOME)/Obsidian.nosync/Forge"
+}
+
+# Enhanced logging with unified context
+def log_message [log_file: string, message: string] {
+    let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
+    let log_entry = $"($timestamp) - ($message)"
+    print $log_entry
+    $log_entry | save --append $log_file
+}
+
+# Cleanup function
+def cleanup [lock_file: string, log_file: string] {
+    if ($lock_file | path exists) {
+        rm $lock_file
+    }
+    log_message $log_file "🛑 Unified activity watcher stopped"
+}
+
+# Always monitoring mode - continuous with smart processing
+def always_monitoring [vault_path: string, log_file: string, debounce_ms: int, enable_analytics: bool, analytics_file: string, dry_run: bool] {
+    log_message $log_file "👁️  Starting always-on smart monitoring..."
+    
+    # Native Nushell file monitoring with intelligent processing
+    watch $vault_path --glob "**/*.md" --debounce-ms $debounce_ms {|operation, path, new_path|
+        handle_file_change_smart $operation $path $new_path $log_file $enable_analytics $analytics_file $dry_run
+    }
+}
+
+# Helix conditional monitoring mode - only active when editor is running
+def helix_conditional_monitoring [vault_path: string, log_file: string, debounce_ms: int, check_interval: int, enable_analytics: bool, analytics_file: string, dry_run: bool] {
+    log_message $log_file "🧠 Starting Helix-aware conditional monitoring..."
+    
+    mut monitoring_active = false
+    mut session_start: datetime = (date now)
+    
+    loop {
+        let current_time = (date now)
+        let helix_running = is_helix_active
+        
+        # State transition logic
+        if $helix_running and not $monitoring_active {
+            log_message $log_file $"✅ Helix detected - starting smart monitoring at (date now | format date '%H:%M:%S')"
+            $monitoring_active = true
+            $session_start = $current_time
+            
+            if $enable_analytics {
+                record_session_event "session_start" {timestamp: $current_time} $analytics_file
+            }
+            
+            # Start native file monitoring
+            start_smart_file_monitoring $vault_path $log_file $debounce_ms $enable_analytics $analytics_file $dry_run
+            
+        } else if not $helix_running and $monitoring_active {
+            log_message $log_file $"⏸️  Helix stopped - pausing monitoring at (date now | format date '%H:%M:%S')"
+            $monitoring_active = false
+            
+            if $enable_analytics {
+                let session_duration = (($current_time - $session_start) / 1sec)
+                record_session_event "session_end" {
+                    timestamp: $current_time,
+                    duration_seconds: $session_duration
+                } $analytics_file
+                log_message $log_file $"📊 Session duration: ($session_duration | math round)s"
+            }
+            
+            $session_start = $current_time
+        }
+        
+        # Efficient state checking
+        if $monitoring_active {
+            sleep ($check_interval | into duration --unit sec)
+        } else {
+            sleep 10sec
+        }
+    }
+}
+
+# Smart monitoring mode - intelligent content analysis for optimal processing
+def smart_monitoring [vault_path: string, log_file: string, debounce_ms: int, enable_analytics: bool, analytics_file: string, dry_run: bool] {
+    log_message $log_file "🔍 Starting smart content-aware monitoring..."
+    
+    # Native Nushell file monitoring with smart processing
+    watch $vault_path --glob "**/*.md" --debounce-ms $debounce_ms {|operation, path, new_path|
+        handle_file_change_smart $operation $path $new_path $log_file $enable_analytics $analytics_file $dry_run
+    }
+}
+
+# Native Nushell process detection
+def is_helix_active [] {
+    let helix_processes = (ps | where name =~ "hx|helix" | length)
+    $helix_processes > 0
+}
+
+# Start smart file monitoring
+def start_smart_file_monitoring [vault_path: string, log_file: string, debounce_ms: int, enable_analytics: bool, analytics_file: string, dry_run: bool] {
+    log_message $log_file "👁️  Starting smart file monitoring..."
+    
+    try {
+        watch $vault_path --glob "**/*.md" --debounce-ms $debounce_ms {|operation, path, new_path|
+            handle_file_change_smart $operation $path $new_path $log_file $enable_analytics $analytics_file $dry_run
+        }
+    } catch {|error|
+        log_message $log_file $"❌ Smart file monitoring error: ($error.msg)"
+    }
+}
+
+# Handle file changes with intelligent processing (unified smart logic)
+def handle_file_change_smart [operation: string, path: string, new_path: string, log_file: string, enable_analytics: bool, analytics_file: string, dry_run: bool] {
+    let timestamp = (date now | format date "%H:%M:%S")
+    let filename = ($path | path basename)
+    
+    # DEBUG: Log all file events
+    log_message $log_file $"[($timestamp)] 🔍 DEBUG: Operation: ($operation), File: ($filename)"
+    
+    # Process modifications, writes, and creations of markdown files
+    if ($operation in ["Modify", "Write", "Create"]) and (($path | path parse).extension == "md") {
+        log_message $log_file $"[($timestamp)] 📝 File change detected: ($filename)"
+        
+        # Smart content analysis - only process files that need updates
+        let needs_processing = check_needs_processing $path $log_file
+        
+        if $needs_processing.required {
+            log_message $log_file $"🧠 Smart analysis: File needs processing - ($needs_processing.reason)"
+            
+            if $dry_run {
+                log_message $log_file $"🧪 DRY RUN: Would process ($filename)"
+                return
+            }
+            
+            # Enhanced file analysis for activity tracking
+            let activity_analysis = analyze_activity_content $path $log_file
+            log_message $log_file $"📊 Activity analysis: ($activity_analysis.summary)"
+            
+            # Brief delay to ensure file operations are complete
+            sleep 2sec
+            
+            log_message $log_file "🔄 Processing activity duration entries..."
+            
+            # Process with enhanced error handling
+            let process_result = process_activity_durations $path $log_file
+            
+            if $process_result.success {
+                log_message $log_file "✅ Smart processing completed successfully"
+                
+                if $enable_analytics {
+                    record_activity_event "smart_processed" $activity_analysis $analytics_file
+                    track_activity_productivity $activity_analysis $analytics_file $log_file
+                }
+            } else {
+                log_message $log_file "❌ Error in smart processing"
+                log_message $log_file $"🔧 Error details: ($process_result.error_summary)"
+                
+                if $enable_analytics {
+                    record_activity_event "processing_error" {
+                        error: $process_result.error_summary,
+                        timestamp: (date now)
+                    } $analytics_file
+                }
+            }
+        } else {
+            log_message $log_file $"🎯 Smart analysis: File doesn't need processing - ($needs_processing.reason)"
+        }
+        
+    } else {
+        # Log other events for debugging but don't process them
+        log_message $log_file $"[($timestamp)] 👁️  Detected ($operation) on ($filename) - ignored"
+    }
+}
+
+# Smart content analysis - checks if file needs processing (from activity-watcher-smart)
+def check_needs_processing [file_path: string, log_file: string] {
+    let content = try {
+        if ($file_path | path exists) {
+            open $file_path | str downcase
+        } else {
+            ""
+        }
+    } catch {
+        log_message $log_file "⚠️  Could not read file for smart analysis"
+        return {required: false, reason: "File not readable"}
+    }
+    
+    if ($content | str trim | is-empty) {
+        return {required: false, reason: "Empty file"}
+    }
+    
+    # Enhanced smart detection - look for activity patterns without duration
+    # Pattern: letter(s):: followed by time range, but NOT already processed with "hr" or "min"
+    let has_unprocessed = ($content =~ '[a-z]+::\s*\d{4}-\d{2}(?!.*(?:hr|min))')
+    
+    if $has_unprocessed {
+        {required: true, reason: "Found unprocessed activity entries"}
+    } else {
+        {required: false, reason: "All activity entries already processed"}
+    }
+}
+
+# Analyze activity content with comprehensive metrics
+def analyze_activity_content [file_path: string, log_file: string] {
+    let file_content = try {
+        if ($file_path | path exists) {
+            open $file_path
+        } else {
+            ""
+        }
+    } catch {
+        log_message $log_file "⚠️  Could not read file for analysis"
+        ""
+    }
+    
+    if ($file_content | str trim | is-empty) {
+        return {
+            entry_count: 0,
+            activity_types: [],
+            file_size: 0,
+            summary: "Empty or inaccessible file"
+        }
+    }
+    
+    # Count activity entries (any pattern with :: separator)
+    let activity_lines = ($file_content | lines | where ($it | str contains "::") | where ($it =~ '^\s*\w+::\s'))
+    let entry_count = ($activity_lines | length)
+    
+    # Analyze activity types
+    let activity_types = ($activity_lines | each { |line|
+        ($line | str replace --regex '^\s*(\w+)::.*' '$1')
+    } | uniq)
+    
+    # File size analysis
+    let file_size = try { (stat $file_path).size } catch { 0 }
+    
+    {
+        entry_count: $entry_count,
+        activity_types: $activity_types,
+        file_size: $file_size,
+        summary: $"($entry_count) activity entries, types: ($activity_types | str join ', ')"
+    }
+}
+
+# Process activity durations with structured error handling
+def process_activity_durations [file_path: string, log_file: string] {
+    log_message $log_file $"🐚 Executing unified activity processor: ($file_path)"
+    
+    let process_result = (activity-duration-processor $file_path | complete)
+    
+    if $process_result.exit_code == 0 {
+        # Success - analyze output for insights
+        let output_lines = ($process_result.stdout | lines)
+        let processed_entries = ($output_lines | where ($it | str contains "processed") | length)
+        
+        {
+            success: true,
+            exit_code: $process_result.exit_code,
+            processed_entries: $processed_entries,
+            output_lines: ($output_lines | length),
+            error_summary: ""
+        }
+    } else {
+        # Processing error - provide structured error analysis
+        let error_lines = ($process_result.stderr | lines)
+        let error_summary = if ($error_lines | length) > 0 {
+            ($error_lines | first 3 | str join "; ")
+        } else {
+            "Unknown processing error"
+        }
+        
+        {
+            success: false,
+            exit_code: $process_result.exit_code,
+            processed_entries: 0,
+            output_lines: 0,
+            error_summary: $error_summary
+        }
+    }
+}
+
+# Record session analytics events
+def record_session_event [event_type: string, stats: record, analytics_file: string] {
+    let event_record = {
+        timestamp: (date now | format date "%Y-%m-%d %H:%M:%S"),
+        event_type: $event_type,
+        stats: $stats,
+        watcher_mode: "unified"
+    }
+    
+    try {
+        $event_record | to json | save --append $analytics_file
+    } catch {
+        # Analytics are optional - don't fail if we can't write
+    }
+}
+
+# Record activity analytics events
+def record_activity_event [event_type: string, stats: record, analytics_file: string] {
+    let event_record = {
+        timestamp: (date now | format date "%Y-%m-%d %H:%M:%S"),
+        event_type: $event_type,
+        stats: $stats,
+        watcher_mode: "unified"
+    }
+    
+    try {
+        $event_record | to json | save --append $analytics_file
+    } catch {
+        # Analytics are optional - don't fail if we can't write
+    }
+}
+
+# Track activity productivity with unified insights
+def track_activity_productivity [current_stats: record, analytics_file: string, log_file: string] {
+    try {
+        # Read recent analytics for productivity patterns
+        let recent_events = if ($analytics_file | path exists) {
+            open $analytics_file
+            | lines
+            | each { |line| try { $line | from json } catch { null } }
+            | where $it != null
+            | last 50  # Analyze recent activity
+        } else {
+            []
+        }
+        
+        if ($recent_events | length) > 1 {
+            let recent_activities = ($recent_events | where event_type == "smart_processed")
+            
+            if ($recent_activities | length) > 1 {
+                let latest = ($recent_activities | last)
+                let previous = ($recent_activities | drop | last)
+                
+                if ($latest.stats.entry_count != null) and ($previous.stats.entry_count != null) {
+                    let activity_growth = ($latest.stats.entry_count - $previous.stats.entry_count)
+                    
+                    if $activity_growth > 0 {
+                        log_message $log_file $"📈 Productivity insight: +($activity_growth) new activity entries since last session"
+                    }
+                    
+                    # Daily productivity analysis
+                    let today_activities = ($recent_events | where event_type == "smart_processed" | where ($it.timestamp | str contains (date now | format date "%Y-%m-%d")) | length)
+                    
+                    if $today_activities > 3 {
+                        log_message $log_file $"🔥 High productivity day: ($today_activities) activity processing sessions today"
+                    }
+                }
+            }
+        }
+    } catch {
+        log_message $log_file "ℹ️  Could not calculate unified productivity metrics"
+    }
+}

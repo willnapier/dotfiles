@@ -1,0 +1,104 @@
+#!/usr/bin/env nu
+
+# dotter-auto-onboard-simple - Simplified proactive config onboarding
+# Scans for orphaned configs and automatically onboards them
+
+def main [--dry-run] {
+    print "🤖 Dotter Auto-Onboard - The Proactive Onboarding Guy"
+    print "=================================================="
+    
+    let common_config_paths = [
+        "~/.config/*/config.toml"
+        "~/.config/*/config.yml" 
+        "~/.config/*/config.yaml"
+        "~/.config/*/settings.json"
+        "~/.local/bin/*"
+    ]
+    
+    mut candidates = []
+    
+    print "🔍 Scanning common config locations..."
+    
+    for pattern in $common_config_paths {
+        let expanded = ($pattern | str replace "~" $env.HOME)
+        try {
+            let files = (glob $expanded)
+            for file in $files {
+                if ($file | path type) == "file" {
+                    if not (is_managed $file) {
+                        if (should_onboard $file) {
+                            $candidates = ($candidates | append $file)
+                        }
+                    }
+                }
+            }
+        } catch { |e|
+            # Ignore glob errors
+        }
+    }
+    
+    if ($candidates | length) == 0 {
+        print "✅ No orphaned configs found - all clean!"
+        return
+    }
+    
+    print $"📋 Found ($candidates | length) candidates for auto-onboarding:"
+    
+    for candidate in $candidates {
+        let relative = ($candidate | str replace $env.HOME "~")
+        if $dry_run {
+            print $"  🔍 WOULD ONBOARD: ($relative)"
+        } else {
+            print $"  🤖 Onboarding: ($relative)"
+            try {
+                do { dotter-add $candidate } | complete
+                print $"     ✅ Success"
+            } catch { |e|
+                print $"     ❌ Failed: ($e)"
+            }
+        }
+    }
+    
+    if not $dry_run {
+        print ""
+        print "🎉 Auto-onboarding complete!"
+        print "💡 Run with --dry-run to preview without changes"
+    }
+}
+
+def is_managed [file_path: string] {
+    let dotter_config = ($env.HOME + "/dotfiles/.dotter/global.toml")
+    if not ($dotter_config | path exists) {
+        false
+    } else {
+        let content = (open --raw $dotter_config)
+        let relative = ($file_path | str replace $env.HOME "~")
+        ($content | str contains $relative)
+    }
+}
+
+def should_onboard [file_path: string] {
+    let filename = ($file_path | path basename)
+    let extension = try { ($file_path | path parse | get extension) } catch { "" }
+    
+    # Skip temporary files
+    if ($filename | str contains "tmp") or ($filename | str contains "lock") {
+        false
+    } else if ($filename | str contains "cache") or ($filename == ".DS_Store") {
+        false
+    } else if $extension in ["toml", "yml", "yaml", "json", "nu", "sh", "py"] {
+        true
+    } else if $filename in ["config", "settings", "preferences"] {
+        true
+    } else if ($file_path | str contains ".local/bin") {
+        # Check if executable
+        try {
+            let permissions = (ls -la $file_path | get mode.0)
+            ($permissions | str contains "x")
+        } catch {
+            false
+        }
+    } else {
+        false
+    }
+}

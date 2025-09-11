@@ -977,6 +977,337 @@ if (which btop | is-not-empty) {
     alias top = btop
 }
 
+# 🔥 UNIVERSAL COMMAND-LINE SEARCH SUITE 🔥
+# Replacements for Alt commands with universal clipboard support
+
+# File search + open in Helix
+def fsh [] {
+    if (which fd | is-empty) or (which sk | is-empty) {
+        print "fd and sk are required. Install with: brew install fd sk"
+        return
+    }
+    let file = (fd . --type f --hidden --exclude .git | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'bat --color=always {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📁 File Search: " | str trim)
+    if not ($file | is-empty) {
+        print $"🚀 Opening ($file) in Helix..."
+        hx $file
+    }
+}
+
+# File wiki link + copy to clipboard (universal)
+def fwl [] {
+    if not ($env.OBSIDIAN_VAULT? | is-empty) and ($env.OBSIDIAN_VAULT | path exists) {
+        let file = (fd . $env.OBSIDIAN_VAULT --type f --extension md | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'bat --color=always {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📝 Wiki Link: " | str trim)
+        if not ($file | is-empty) {
+            let filename = ($file | path basename | str replace ".md" "")
+            let wikilink = $"[[($filename)]]"
+            $wikilink | pbcopy
+            print $"📋 Copied to clipboard: ($wikilink)"
+            print "💡 Paste anywhere with Cmd+V"
+        }
+    } else {
+        print "❌ OBSIDIAN_VAULT not set or doesn't exist"
+    }
+}
+
+# File citation + copy to clipboard (universal)
+def fcit [] {
+    print "🔍 Loading citations..."
+    let citations_file = $"($env.OBSIDIAN_VAULT?)/ZET/citations.md"
+    if not ($citations_file | path exists) {
+        print $"❌ Citations file not found: ($citations_file)"
+        return
+    }
+    
+    let citations = (open $citations_file | lines | where $it != "" | where ($it | str starts-with "#") == false | where ($it | str trim) != "")
+    if ($citations | is-empty) {
+        print "❌ No citations found"
+        return
+    }
+    
+    let selected = ($citations | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'echo {}' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📚 Citation: " | str trim)
+    if not ($selected | is-empty) {
+        $selected | pbcopy
+        print $"📋 Copied to clipboard: ($selected)"
+        print "💡 Paste anywhere with Cmd+V"
+    }
+}
+
+# File citation + open PDF in Zotero (searches library.bib)
+def fcitz [] {
+    print "🔍 Loading Zotero library..."
+    let library_file = $"($env.OBSIDIAN_VAULT?)/ZET/library.bib"
+    if not ($library_file | path exists) {
+        print $"❌ Library file not found: ($library_file)"
+        return
+    }
+    
+    print "📚 Extracting citations from BibTeX library..."
+    # Simple approach: extract keys, then get metadata for each
+    let entries = (
+        rg '@\w+\{([^,]+),' $library_file -o --replace '$1' --no-line-number
+        | lines
+        | uniq
+        | each { |key|
+            # Get the full entry for this key
+            let entry_text = (rg -A 20 $"@\\w+\\{($key)," $library_file | str join ' ')
+            
+            # Extract title
+            let title = (
+                $entry_text 
+                | parse --regex 'title\s*=\s*\{([^}]+(?:\{\{[^}]+\}\}[^}]+)*)\}' 
+                | get -o 0.capture0? 
+                | default ""
+                | str replace --all '\{\{' '' 
+                | str replace --all '\}\}' ''
+            )
+            
+            # Extract file path
+            let file_path = (
+                $entry_text 
+                | parse --regex 'file\s*=\s*\{([^}]+)\}' 
+                | get -o 0.capture0? 
+                | default ""
+            )
+            
+            # Extract author
+            let author = (
+                $entry_text 
+                | parse --regex 'author\s*=\s*\{([^}]+)\}' 
+                | get -o 0.capture0? 
+                | default ""
+                | split row ' and ' 
+                | get -o 0? 
+                | default ""
+                | split row ',' 
+                | get -o 0? 
+                | default ""
+            )
+            
+            # Extract year  
+            let year = (
+                $entry_text 
+                | parse --regex 'year\s*=\s*\{(\d+)\}' 
+                | get -o 0.capture0? 
+                | default ""
+            )
+            
+            # Create display string
+            let display = if ($title | is-empty) {
+                $key
+            } else if (not ($author | is-empty)) and (not ($year | is-empty)) {
+                $"($key) | ($author) (($year)) - ($title)"
+            } else if not ($year | is-empty) {
+                $"($key) | (($year)) - ($title)"
+            } else {
+                $"($key) | ($title)"
+            }
+            
+            {key: $key, title: $title, file: $file_path, display: $display}
+        }
+    )
+    
+    if ($entries | is-empty) {
+        print "❌ No citations found in library.bib"
+        return
+    }
+    
+    print $"📖 Found (($entries | length)) entries"
+    
+    # Create selection list
+    let selected = (
+        $entries 
+        | get display 
+        | str join "\n" 
+        | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk 
+            --preview 'echo {}' 
+            --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' 
+            --prompt "📚 Citation → PDF: " 
+        | str trim
+    )
+    
+    if not ($selected | is-empty) {
+        # Find the matching entry
+        let entry = ($entries | where { |it| $it.display == $selected } | get -o 0?)
+        
+        if ($entry | is-empty) {
+            print "❌ Could not find entry data"
+            return
+        }
+        
+        print $"📄 Opening: ($entry.key)"
+        
+        # Try to open the PDF file directly if available
+        if (not ($entry.file | is-empty)) and ($entry.file | path exists) {
+            print $"📂 Opening PDF: ($entry.file | path basename)"
+            
+            # Cross-platform file opening
+            let open_cmd = if $nu.os-info.name == "macos" {
+                "open"
+            } else if $nu.os-info.name == "linux" {
+                "xdg-open"
+            } else {
+                "start"  # Windows
+            }
+            ^$open_cmd $entry.file
+            print "✅ PDF opened directly"
+        } else {
+            # Fallback to Zotero select URL to highlight the item
+            print "🔍 Opening in Zotero library (PDF not found locally)..."
+            
+            # Use the select URL scheme which works better than search
+            # This will select the item in Zotero, then user can double-click to open PDF
+            let zotero_url = $"zotero://select/items/@($entry.key)"
+            
+            # Cross-platform URL opening
+            let open_cmd = if $nu.os-info.name == "macos" {
+                "open"
+            } else if $nu.os-info.name == "linux" {
+                "xdg-open"
+            } else {
+                "start"  # Windows
+            }
+            ^$open_cmd $zotero_url
+            
+            print "💡 Item selected in Zotero - double-click to open its PDF"
+            print $"💡 If not found, try searching for: ($entry.title)"
+        }
+    }
+}
+
+# File semantic search + copy link to clipboard (universal)
+def fsem [] {
+    if ($env.OPENAI_API_KEY? | is-empty) {
+        print "❌ OPENAI_API_KEY not set for semantic search"
+        return
+    }
+    
+    print "🧠 Semantic search in your vault..."
+    let query = (input "🔍 Search concept: ")
+    if ($query | is-empty) {
+        return
+    }
+    
+    print $"🔍 Finding notes related to: ($query)"
+    let results = try {
+        ^semantic-query --text $query --limit 20 2>/dev/null | lines | where $it != ""
+    } catch {
+        print "❌ Semantic search failed. Check if semantic-indexer is set up."
+        return
+    }
+    
+    if ($results | is-empty) {
+        print "❌ No semantic matches found"
+        return
+    }
+    
+    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'bat --color=always {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "🧠 Semantic: " | str trim)
+    if not ($selected | is-empty) {
+        let filename = ($selected | path basename | str replace ".md" "")
+        let wikilink = $"[[($filename)]]"
+        $wikilink | pbcopy
+        print $"📋 Copied to clipboard: ($wikilink)"
+        print "💡 Paste anywhere with Cmd+V"
+    }
+}
+
+# File semantic search + open in Helix
+def fsemh [] {
+    if ($env.OPENAI_API_KEY? | is-empty) {
+        print "❌ OPENAI_API_KEY not set for semantic search"
+        return
+    }
+    
+    print "🧠 Semantic search in your vault..."
+    let query = (input "🔍 Search concept: ")
+    if ($query | is-empty) {
+        return
+    }
+    
+    print $"🔍 Finding notes related to: ($query)"
+    let results = try {
+        ^semantic-query --text $query --limit 20 2>/dev/null | lines | where $it != ""
+    } catch {
+        print "❌ Semantic search failed. Check if semantic-indexer is set up."
+        return
+    }
+    
+    if ($results | is-empty) {
+        print "❌ No semantic matches found"
+        return
+    }
+    
+    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'bat --color=always {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "🧠 Semantic: " | str trim)
+    if not ($selected | is-empty) {
+        print $"🚀 Opening ($selected) in Helix..."
+        hx $selected
+    }
+}
+
+# File content search + copy link to clipboard (universal)
+def fsearch [] {
+    if not ($env.OBSIDIAN_VAULT? | is-empty) and ($env.OBSIDIAN_VAULT | path exists) {
+        let query = (input "🔍 Search content: ")
+        if ($query | is-empty) {
+            return
+        }
+        
+        print $"🔍 Searching for: ($query)"
+        let results = try {
+            ^rg -i --type md -l $query $env.OBSIDIAN_VAULT | lines | where $it != ""
+        } catch {
+            print "❌ Content search failed"
+            return
+        }
+        
+        if ($results | is-empty) {
+            print "❌ No matches found"
+            return
+        }
+        
+        let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview $"rg --color=always -i -C 3 '($query)' {}" --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📄 Content: " | str trim)
+        if not ($selected | is-empty) {
+            let filename = ($selected | path basename | str replace ".md" "")
+            let wikilink = $"[[($filename)]]"
+            $wikilink | pbcopy
+            print $"📋 Copied to clipboard: ($wikilink)"
+            print "💡 Paste anywhere with Cmd+V"
+        }
+    } else {
+        print "❌ OBSIDIAN_VAULT not set or doesn't exist"
+    }
+}
+
+# File content search + open in Helix
+def fcsh [] {
+    if not ($env.OBSIDIAN_VAULT? | is-empty) and ($env.OBSIDIAN_VAULT | path exists) {
+        let query = (input "🔍 Search content: ")
+        if ($query | is-empty) {
+            return
+        }
+        
+        print $"🔍 Searching for: ($query)"
+        let results = try {
+            ^rg -i --type md -l $query $env.OBSIDIAN_VAULT | lines | where $it != ""
+        } catch {
+            print "❌ Content search failed"
+            return
+        }
+        
+        if ($results | is-empty) {
+            print "❌ No matches found"
+            return
+        }
+        
+        let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview $"rg --color=always -i -C 3 '($query)' {}" --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📄 Content: " | str trim)
+        if not ($selected | is-empty) {
+            print $"🚀 Opening ($selected) in Helix..."
+            hx $selected
+        }
+    } else {
+        print "❌ OBSIDIAN_VAULT not set or doesn't exist"
+    }
+}
+
 # Directory navigation
 alias .. = cd ..
 alias ... = cd ../..

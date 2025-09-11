@@ -1,0 +1,80 @@
+#!/usr/bin/env nu
+
+# Helix-Aware Activity Duration Watcher - Re-nu Native Version
+# Only runs activity duration processing while Helix is active
+# Uses native Nushell watch with structured data - no external dependencies!
+# Re-nu conversion: 2025-09-09
+
+def is-helix-active [] {
+    # Check if Helix (hx) process is running
+    let helix_processes = (ps | where name =~ "hx|helix" | length)
+    $helix_processes > 0
+}
+
+def main [] {
+    print "🚀 Starting Helix-aware activity duration watcher (Re-nu native)"
+    print "📝 Will process activity time entries while Helix is running"
+    print "⚡ Using native Nushell watch - no external dependencies!"
+    print "🛑 Press Ctrl+C to stop\n"
+    
+    let vault_path = $"($env.HOME)/Obsidian.nosync/Forge"
+    
+    # Check if activity processor is available
+    if (which activity-duration-processor | is-empty) {
+        print "❌ Error: activity-duration-processor is not available"
+        print "Make sure the activity processor is in your PATH"
+        return
+    }
+    
+    print $"📁 Monitoring: ($vault_path)"
+    print "🎯 Watching: **/*.md files"
+    print "⚡ Native structured data processing"
+    print ""
+    
+    # Main monitoring loop - only watch when Helix is active
+    loop {
+        if (is-helix-active) {
+            print $"✅ Helix is running - starting native watch at (date now | format date '%H:%M:%S')"
+            
+            # The Re-nu breakthrough: Native Nushell watch with structured data!
+            try {
+                watch $vault_path --glob "**/*.md" --debounce-ms 2000 --recursive true {|operation, path, new_path|
+                    process_activity_event $operation $path $new_path
+                }
+            } catch {|error|
+                print $"⚠️  Watch stopped: ($error.msg)"
+            }
+            
+            print $"⏸️  Native watch stopped at (date now | format date '%H:%M:%S')"
+        } else {
+            print $"⏳ Helix not running, waiting... (checked at (date now | format date '%H:%M:%S'))"
+            sleep 10sec
+        }
+        
+        # Short pause before checking Helix status again
+        sleep 5sec
+    }
+}
+
+# Process file events with native Nushell structured data
+def process_activity_event [operation: string, path: string, new_path: string] {
+    let timestamp = (date now | format date "%H:%M:%S")
+    let filename = ($path | path basename)
+    
+    # Only process actual file modifications to markdown files (Write or Modify events)
+    if ($operation in ["Write", "Modify"]) and (($path | path parse).extension == "md") {
+        print $"[($timestamp)] 📄 Activity file modified: ($filename)"
+        
+        # Call our activity processor with the exact file path  
+        let result = (do { ^activity-duration-processor $path } | complete)
+        
+        if $result.exit_code == 0 {
+            print $"[($timestamp)] ✅ Processed activity durations in ($filename)"
+        } else {
+            print $"[($timestamp)] ❌ Error processing ($filename): ($result.stderr)"
+        }
+    } else {
+        # Just show that we detected the event but aren't processing it
+        print $"[($timestamp)] 👁️  Detected ($operation) on ($filename) - skipped"
+    }
+}

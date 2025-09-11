@@ -1,0 +1,337 @@
+#!/usr/bin/env nu
+
+# Dotter Drift Watcher - Re-nu Native Version  
+# Revolutionary configuration integrity monitoring using native Nushell structured data
+# Re-nu conversion: No external dependencies - pure Nushell file monitoring and audit processing
+# Eliminates: fswatch, grep parsing, hardcoded paths, platform-specific dependencies
+
+def main [
+    --debounce-ms: int = 2000    # Milliseconds to wait before processing changes
+    --audit-timeout: int = 30    # Seconds to wait for audit completion
+    --enable-notifications       # Enable system notifications for drift alerts
+] {
+    let dotfiles_dir = $"($env.HOME)/dotfiles"
+    let dotter_config = $"($dotfiles_dir)/.dotter/global.toml"
+    let log_file = $"($env.HOME)/.local/share/dotter-drift-watcher.log" 
+    let lock_file = "/tmp/dotter-drift-watcher.lock"
+    
+    # Ensure log directory exists
+    mkdir ($log_file | path dirname)
+    
+    # Check for existing instance
+    if ($lock_file | path exists) {
+        let existing_content = (try { open $lock_file | str trim } catch { "" })
+        if $existing_content != "" {
+            log_message $log_file $"🔒 Drift watcher already running: ($existing_content)"
+            return
+        }
+        log_message $log_file "⚠️  Removing stale lock file"
+        rm $lock_file
+    }
+    
+    # Create lock file with timestamp
+    (date now | format date "%s") | save $lock_file
+    
+    # Validate environment
+    if not ($dotfiles_dir | path exists) {
+        log_message $log_file $"❌ Dotfiles directory not found: ($dotfiles_dir)"
+        cleanup $lock_file $log_file
+        return
+    }
+    
+    if not ($dotter_config | path exists) {
+        log_message $log_file $"❌ Dotter config not found: ($dotter_config)"
+        cleanup $lock_file $log_file
+        return
+    }
+    
+    # Check if audit tool is available
+    if (which dotter-complete-audit | is-empty) {
+        log_message $log_file "❌ dotter-complete-audit not found - check deployment"
+        cleanup $lock_file $log_file
+        return
+    }
+    
+    log_message $log_file "🚀 Starting Dotter Drift Watcher (Re-nu native version)"
+    log_message $log_file $"📁 Monitoring: ($dotfiles_dir)"
+    log_message $log_file $"⚙️  Config: ($dotter_config)"
+    log_message $log_file $"⚡ Debounce: ($debounce_ms)ms, Audit timeout: ($audit_timeout)s"
+    log_message $log_file "🌍 Cross-platform native file monitoring - no fswatch dependency!"
+    
+    # Register cleanup handler (best effort)
+    try {
+        # Start native Nushell file monitoring with sophisticated filtering
+        watch $dotfiles_dir --recursive true --debounce-ms $debounce_ms {|operation, path, new_path|
+            handle_config_change $operation $path $new_path $log_file $audit_timeout $enable_notifications
+        }
+    } catch {|error|
+        log_message $log_file $"❌ File monitoring failed: ($error.msg)"
+        cleanup $lock_file $log_file
+    }
+}
+
+# Logging function with structured data
+def log_message [log_file: string, message: string] {
+    let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
+    let log_entry = $"($timestamp) - ($message)"
+    print $log_entry
+    $log_entry | save --append $log_file
+}
+
+# Cleanup function
+def cleanup [lock_file: string, log_file: string] {
+    if ($lock_file | path exists) {
+        rm $lock_file
+    }
+    log_message $log_file "🛑 Drift watcher stopped"
+}
+
+# Handle configuration file changes with native structured data
+def handle_config_change [operation: string, path: string, new_path: string, log_file: string, audit_timeout: int, enable_notifications: bool] {
+    let filename = ($path | path basename)
+    let timestamp = (date now | format date "%H:%M:%S")
+    
+    # Smart file filtering using native path operations
+    if (should_monitor_config_file $path) {
+        log_message $log_file $"[($timestamp)] 📝 Config change detected: ($operation) on ($filename)"
+        
+        # Enhanced file analysis using native Nushell
+        let file_info = analyze_file_change $path $operation $log_file
+        log_message $log_file $"📊 File analysis: ($file_info.summary)"
+        
+        # Brief delay to ensure file operations are complete
+        sleep 2sec
+        
+        log_message $log_file "🔍 Running comprehensive drift audit..."
+        
+        # Run audit with structured data processing
+        let audit_result = run_structured_audit $audit_timeout $log_file
+        
+        if $audit_result.success {
+            log_message $log_file "✅ Drift audit passed - configuration protected"
+            log_message $log_file $"📊 Protected files: ($audit_result.protected_count)"
+        } else {
+            log_message $log_file "🚨 DRIFT DETECTED - Configuration vulnerabilities found!"
+            handle_drift_alert $audit_result $log_file $enable_notifications
+        }
+        
+        log_message $log_file "⏱️  Continuing to monitor..."
+    } else {
+        # Log ignored files for debugging but don't process
+        let file_type = ($path | path parse).extension
+        log_message $log_file $"[($timestamp)] 👁️  Ignoring ($operation) on .($file_type) file: ($filename)"
+    }
+}
+
+# Smart file filtering using native Nushell path operations
+def should_monitor_config_file [file_path: string] {
+    let parsed_path = ($file_path | path parse)
+    let filename = $parsed_path.stem
+    let extension = $parsed_path.extension
+    
+    # Skip hidden/temp files using native string operations
+    if ($filename | str starts-with ".") and ($filename != ".dotter") { 
+        return false 
+    }
+    
+    if ($filename | str contains "tmp") or ($filename | str contains "temp") { 
+        return false 
+    }
+    
+    # Skip system files
+    if $filename in [".DS_Store", ".gitignore"] { 
+        return false 
+    }
+    
+    # Monitor configuration file types
+    if $extension in ["toml", "kdl", "nu", "lua", "js", "ts", "json", "yml", "yaml"] {
+        return true
+    }
+    
+    # Monitor scripts directory files (regardless of extension)
+    if ($file_path | str contains "/scripts/") {
+        return true
+    }
+    
+    # Monitor files without extensions in certain directories
+    if ($extension == "") and (($file_path | str contains "/scripts/") or ($file_path | str contains "/.local/bin/")) {
+        return true
+    }
+    
+    return false
+}
+
+# Analyze file changes with rich structured data
+def analyze_file_change [file_path: string, operation: string, log_file: string] {
+    let file_info = try {
+        if ($file_path | path exists) {
+            let stats = (stat $file_path)
+            {
+                size: $stats.size,
+                modified: $stats.modified,
+                type: ($file_path | path parse).extension,
+                accessible: true
+            }
+        } else {
+            {
+                size: 0,
+                modified: null,
+                type: "deleted",
+                accessible: false
+            }
+        }
+    } catch {
+        {
+            size: 0,
+            modified: null,
+            type: "error",
+            accessible: false
+        }
+    }
+    
+    let summary = match $operation {
+        "Create" => $"New ($file_info.type) file \(($file_info.size) bytes\)",
+        "Modify" => $"Modified ($file_info.type) file \(($file_info.size) bytes\)",
+        "Delete" => $"Deleted ($file_info.type) file",
+        _ => $"($operation) on ($file_info.type) file"
+    }
+    
+    {
+        operation: $operation,
+        file_info: $file_info,
+        summary: $summary
+    }
+}
+
+# Run audit with structured data processing and timeout handling
+def run_structured_audit [timeout_seconds: int, log_file: string] {
+    log_message $log_file $"⏰ Running audit with ($timeout_seconds)s timeout..."
+    
+    # Run audit with timeout and capture structured output
+    let audit_command = $"timeout ($timeout_seconds)s dotter-complete-audit"
+    let audit_result = (do { bash -c $audit_command } | complete)
+    
+    if $audit_result.exit_code == 124 {
+        # Timeout occurred
+        log_message $log_file "⏰ Audit timed out - configuration may be complex"
+        return {
+            success: false,
+            timeout: true,
+            protected_count: 0,
+            vulnerable_count: 0,
+            vulnerabilities: [],
+            summary: "Audit timed out"
+        }
+    }
+    
+    if $audit_result.exit_code != 0 {
+        # Audit found issues - parse the structured output
+        let output_lines = ($audit_result.stdout | lines)
+        let vulnerable_lines = ($output_lines | where ($it | str contains "VULNERABLE"))
+        let protected_lines = ($output_lines | where ($it | str contains "✅ PROTECTED"))
+        
+        {
+            success: false,
+            timeout: false,
+            protected_count: ($protected_lines | length),
+            vulnerable_count: ($vulnerable_lines | length),
+            vulnerabilities: $vulnerable_lines,
+            summary: $"($vulnerable_lines | length) vulnerabilities detected"
+        }
+    } else {
+        # Audit passed - extract summary info
+        let output_lines = ($audit_result.stdout | lines)
+        let protected_lines = ($output_lines | where ($it | str contains "✅ PROTECTED"))
+        
+        {
+            success: true,
+            timeout: false,
+            protected_count: ($protected_lines | length),
+            vulnerable_count: 0,
+            vulnerabilities: [],
+            summary: "All configurations protected"
+        }
+    }
+}
+
+# Handle drift alert with rich structured data and notifications
+def handle_drift_alert [audit_result: record, log_file: string, enable_notifications: bool] {
+    log_message $log_file $"📊 Drift Analysis Results:"
+    log_message $log_file $"   • Protected files: ($audit_result.protected_count)"
+    log_message $log_file $"   • Vulnerable files: ($audit_result.vulnerable_count)"
+    
+    # Log top vulnerabilities with structured data
+    if ($audit_result.vulnerabilities | length) > 0 {
+        log_message $log_file "🚨 CRITICAL VULNERABILITIES:"
+        
+        let top_vulnerabilities = ($audit_result.vulnerabilities | first 5)
+        for vuln in $top_vulnerabilities {
+            log_message $log_file $"   ⚠️  ($vuln)"
+        }
+        
+        if ($audit_result.vulnerabilities | length) > 5 {
+            let remaining = (($audit_result.vulnerabilities | length) - 5)
+            log_message $log_file $"   ... and ($remaining) more vulnerabilities"
+        }
+    }
+    
+    # Provide structured remediation guidance
+    log_message $log_file "🔧 REMEDIATION STEPS:"
+    log_message $log_file "   1. Run 'dotter-complete-audit' to see full details"
+    log_message $log_file "   2. Fix symlink issues in problematic files"
+    log_message $log_file "   3. Redeploy with 'dotter deploy --force'"
+    log_message $log_file "   4. Verify fixes with another audit run"
+    
+    # System notification with rich context
+    if $enable_notifications {
+        send_drift_notification $audit_result $log_file
+    }
+    
+    # Create structured drift report for analysis
+    create_drift_report $audit_result $log_file
+}
+
+# Send system notification using cross-platform approach
+def send_drift_notification [audit_result: record, log_file: string] {
+    let notification_title = "Dotter Drift Alert"
+    let notification_message = $"($audit_result.vulnerable_count) config vulnerabilities detected! Check drift logs."
+    
+    # Try to send notification using available tools
+    try {
+        if (which osascript | length) > 0 {
+            # macOS notification
+            ^osascript -e $"display notification \"($notification_message)\" with title \"($notification_title)\" sound name \"Glass\""
+            log_message $log_file "📱 Sent macOS notification"
+        } else if (which notify-send | length) > 0 {
+            # Linux notification
+            ^notify-send $notification_title $notification_message
+            log_message $log_file "📱 Sent Linux notification"
+        } else {
+            log_message $log_file "📱 No notification system available"
+        }
+    } catch {
+        log_message $log_file "⚠️  Failed to send system notification"
+    }
+}
+
+# Create structured drift report for analysis and tracking
+def create_drift_report [audit_result: record, log_file: string] {
+    let report_file = $"($env.HOME)/.local/share/dotter-drift-reports.json"
+    
+    let drift_report = {
+        timestamp: (date now | format date "%Y-%m-%d %H:%M:%S"),
+        protected_count: $audit_result.protected_count,
+        vulnerable_count: $audit_result.vulnerable_count,
+        vulnerabilities: $audit_result.vulnerabilities,
+        summary: $audit_result.summary,
+        remediation_suggested: true
+    }
+    
+    try {
+        # Append to drift reports log for trending analysis
+        $drift_report | to json | save --append $report_file
+        log_message $log_file $"📊 Drift report saved to ($report_file)"
+    } catch {
+        log_message $log_file "⚠️  Could not save drift report"
+    }
+}

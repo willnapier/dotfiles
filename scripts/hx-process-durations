@@ -1,0 +1,16 @@
+#!/usr/bin/env nu
+
+# Helix Activity Duration Processor
+# Ensures proper file sync before processing
+# Usage: hx-process-durations <file_path>
+
+def main [file_path: string] {
+    # Wait longer to ensure file is fully written by Helix
+    sleep 2sec
+    
+    # Process the file
+    activity-duration-processor $file_path
+    
+    # Touch file to ensure modification timestamp updates
+    touch $file_path
+}

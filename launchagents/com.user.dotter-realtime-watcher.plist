@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.dotter-realtime-watcher</string>
+    
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/williamnapier/.local/bin/dotter-realtime-watcher</string>
+    </array>
+    
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/williamnapier/.local/bin:/Users/williamnapier/.cargo/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+    
+    <key>RunAtLoad</key>
+    <true/>
+    
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    
+    <key>StandardOutPath</key>
+    <string>/Users/williamnapier/.local/share/dotter-realtime-watcher.stdout</string>
+    
+    <key>StandardErrorPath</key>
+    <string>/Users/williamnapier/.local/share/dotter-realtime-watcher.stderr</string>
+    
+    <key>ProcessType</key>
+    <string>Background</string>
+    
+    <key>LowPriorityIO</key>
+    <true/>
+    
+    <key>Nice</key>
+    <integer>15</integer>
+    
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+</dict>
+</plist>

@@ -1,0 +1,329 @@
+#!/usr/bin/env nu
+
+# Yazi Search with Preview - Pure Nushell Interactive Search
+# No external dependencies, full preview support during selection
+# Created: 2025-09-10
+
+# Enhanced project root detection (reuse from your existing script)
+export def find-project-root-enhanced [] {
+    let project_indicators = [
+        ".git",
+        ".obsidian", 
+        "package.json",
+        "Cargo.toml",
+        "pyproject.toml",
+        "go.mod",
+        "NapierianLogs",
+        "Areas",
+        "ZET"
+    ]
+    
+    let current_dir = (pwd)
+    mut check_dir = $current_dir
+    
+    print -e "🔍 Detecting project root from current location..."
+    
+    # Walk up directory tree looking for project indicators
+    loop {
+        for indicator in $project_indicators {
+            let indicator_path = ($check_dir | path join $indicator)
+            if ($indicator_path | path exists) {
+                return {
+                    path: $check_dir,
+                    type: "found",
+                    method: "indicator_search",
+                    indicator: $indicator,
+                    safety_level: "safe"
+                }
+            }
+        }
+        
+        let parent = ($check_dir | path dirname)
+        if $parent == $check_dir {
+            break
+        }
+        $check_dir = $parent
+    }
+    
+    # Enhanced safety checks with structured decision making
+    let home_dir = $env.HOME
+    let dangerous_roots = ["/Users", "/home", "/"]
+    
+    # If we're at a dangerous root, implement intelligent fallback
+    if $current_dir in $dangerous_roots {
+        print -e "⚠️  Search scope too broad. Implementing intelligent fallback..."
+        return (find-safe-search-scope $home_dir)
+    }
+    
+    # If we're in home directory, try to find a sensible scope
+    if ($current_dir | str starts-with $home_dir) {
+        print -e "🏠 At home directory - finding appropriate search scope..."
+        return (find-safe-search-scope $home_dir)
+    }
+    
+    # Default to current directory if it seems reasonable
+    return {
+        path: $current_dir,
+        type: "found",
+        method: "current_dir_fallback",
+        safety_level: "safe"
+    }
+}
+
+def find-safe-search-scope [home_dir: string] {
+    # Priority order for search scope selection
+    let scope_candidates = [
+        {
+            path: ($home_dir | path join "Obsidian.nosync" "Forge"),
+            name: "Obsidian Vault",
+            reason: "Primary knowledge base"
+        },
+        {
+            path: ($home_dir | path join "Documents"),
+            name: "Documents",
+            reason: "Common document location"
+        },
+        {
+            path: ($home_dir | path join "Projects"),
+            name: "Projects",
+            reason: "Development workspace"
+        },
+        {
+            path: ($home_dir | path join "Desktop"),
+            name: "Desktop", 
+            reason: "Active workspace"
+        }
+    ]
+    
+    for candidate in $scope_candidates {
+        if ($candidate.path | path exists) {
+            print -e $"📝 Found ($candidate.name), using: ($candidate.path)"
+            print -e $"💡 Reason: ($candidate.reason)"
+            return {
+                path: $candidate.path,
+                type: "found",
+                method: "safe_scope_fallback",
+                scope_type: $candidate.name,
+                safety_level: "safe"
+            }
+        }
+    }
+    
+    # Last resort: home directory with warning
+    print -e "⚠️  Will search entire home directory - this may be slow!"
+    return {
+        path: $home_dir,
+        type: "found", 
+        method: "home_fallback",
+        safety_level: "broad_but_safe"
+    }
+}
+
+# Scan files with multiple patterns
+export def scan-project-files [project_root: string, --file-patterns: list<string> = ["*.md", "*.txt", "*.org", "*.rs", "*.py", "*.js", "*.ts", "*.toml", "*.json", "*.yaml", "*.nu"]] {
+    print -e $"🔍 Scanning files in: (($project_root | path basename))"
+    
+    let exclusions = [
+        ".git", ".obsidian", "node_modules", "target", "dist", "build",
+        ".DS_Store", "linked_media", ".trash", "Templates", ".vscode",
+        "__pycache__", ".pytest_cache", "venv", ".env"
+    ]
+    
+    mut all_files = []
+    
+    for pattern in $file_patterns {
+        let pattern_files = try {
+            glob ($project_root | path join "**" $pattern)
+            | where {|file|
+                let relative = ($file | str replace $project_root "")
+                not ($exclusions | any {|exc| $relative | str contains $exc})
+            }
+            | sort
+        } catch { [] }
+        
+        $all_files = ($all_files | append $pattern_files)
+    }
+    
+    let files_with_metadata = (
+        $all_files 
+        | uniq
+        | each {|file|
+            let relative_path = ($file | str replace $project_root "" | str trim --left --char "/")
+            {
+                absolute_path: $file,
+                relative_path: $relative_path,
+                filename: ($file | path basename),
+                display_name: $relative_path
+            }
+        }
+    )
+    
+    print -e $"📝 Found ($files_with_metadata | length) total files"
+    return $files_with_metadata
+}
+
+# Generate preview content for a file
+def generate-preview [file_path: string, --lines: int = 15] {
+    try {
+        let extension = ($file_path | path parse | get extension)
+        let content = match $extension {
+            "md" | "txt" | "org" => (open $file_path | lines | first $lines | str join "\n"),
+            "json" | "toml" | "yaml" | "nu" | "rs" | "py" | "js" | "ts" => (open $file_path | lines | first $lines | str join "\n"),
+            _ => (open $file_path | lines | first $lines | str join "\n")
+        }
+        
+        if ($content | str trim | is-empty) {
+            return "📄 Empty file"
+        }
+        
+        return $content
+    } catch {
+        return "❌ Could not read file"
+    }
+}
+
+# Simple alternative: numbered selection with preview
+def numbered-selection-with-preview [files: table] {
+    if ($files | is-empty) {
+        print -e "❌ No files found"
+        sleep 3sec
+        return null
+    }
+    
+    # Show limited files to avoid overwhelming display
+    let display_count = if ($files | length) > 20 { 20 } else { ($files | length) }
+    let display_files = ($files | first $display_count)
+    
+    loop {
+        clear
+        print "🔍 Yazi File Search with Preview"
+        print "═" * 50
+        print $"📁 Showing ($display_count) of ($files | length) files:"
+        print ""
+        
+        for i in 0..(($display_files | length) - 1) {
+            let file = ($display_files | get $i)
+            print $"($i + 1). ($file.display_name)"
+        }
+        
+        print ""
+        print "─" * 50
+        print "Commands:"
+        print "• Type number (1-($display_count)) to preview and select"
+        print "• Type 'q' or 'quit' to exit"
+        if ($files | length) > 20 {
+            print "• Type 'more' to see more files"
+        }
+        print "─" * 50
+        
+        # Force terminal to stay open for input
+        print -n "Selection: "
+        
+        let selection = try {
+            # Use a more robust input method
+            bash -c "read -p '' response; echo $response"
+        } catch {
+            print -e "❌ Input failed - terminal may not be interactive"
+            sleep 2sec
+            return null
+        }
+        
+        let selection = ($selection | str trim)
+        
+        if $selection == "q" or $selection == "quit" or $selection == "" {
+            return null
+        }
+        
+        if $selection == "more" and ($files | length) > 20 {
+            # Show more files (simple pagination)
+            let display_files = ($files | first 40)
+            continue
+        }
+        
+        let index = try {
+            ($selection | into int) - 1
+        } catch {
+            print -e "❌ Invalid selection. Press Enter to continue..."
+            bash -c "read"
+            continue
+        }
+        
+        if $index < 0 or $index >= ($display_files | length) {
+            print -e "❌ Selection out of range. Press Enter to continue..."
+            bash -c "read"
+            continue
+        }
+        
+        let selected_file = ($display_files | get $index)
+        
+        # Show preview
+        clear
+        print "🔍 File Preview"
+        print "═" * 60
+        print $"📖 File: ($selected_file.filename)"
+        print $"📁 Path: ($selected_file.relative_path)"
+        print "─" * 60
+        let preview = (generate-preview $selected_file.absolute_path)
+        print $preview
+        print "─" * 60
+        print ""
+        print "Actions:"
+        print "• Press 'o' or Enter to OPEN in Helix"
+        print "• Press 'b' to go BACK to file list"
+        print "• Press 'q' to QUIT"
+        print -n "Action: "
+        
+        let action = try {
+            bash -c "read -p '' response; echo $response"
+        } catch {
+            return null
+        }
+        
+        let action = ($action | str trim | str downcase)
+        
+        match $action {
+            "" | "o" | "open" => {
+                return $selected_file
+            },
+            "b" | "back" => {
+                continue
+            },
+            "q" | "quit" => {
+                return null
+            },
+            _ => {
+                print -e "❌ Invalid action. Press Enter to continue..."
+                bash -c "read"
+                continue
+            }
+        }
+    }
+}
+
+# Main function
+def main [] {
+    print -e "🚀 Yazi Search with Preview (Pure Nushell)"
+    print -e ""
+    
+    let project_info = (find-project-root-enhanced)
+    print -e $"✅ Project root: (($project_info.path | path basename))"
+    print -e $"🔍 Detection method: ($project_info.method)"
+    print -e ""
+    
+    let files_data = (scan-project-files $project_info.path)
+    
+    if ($files_data | is-empty) {
+        print -e "❌ No files found in project"
+        exit 1
+    }
+    
+    # Use numbered selection with preview (more reliable than interactive search)
+    let selected_file = (numbered-selection-with-preview $files_data)
+    
+    if $selected_file != null {
+        print -e $"✅ Opening: ($selected_file.filename)"
+        ^zellij action new-pane -- hx $selected_file.absolute_path
+    } else {
+        print -e "❌ No file selected"
+    }
+}

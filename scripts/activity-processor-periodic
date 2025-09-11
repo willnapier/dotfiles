@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+# Periodic Activity Duration Processor
+# Runs the processor every 30 seconds on recently modified files
+
+INTERVAL="${1:-30}"  # Default 30 seconds
+
+echo "🚀 Starting Periodic Activity Processor"
+echo "⏱️ Running every ${INTERVAL} seconds"
+echo "📁 Processing recently modified files in vault"
+echo ""
+echo "Press Ctrl+C to stop"
+echo ""
+
+while true; do
+    echo "[$(date +"%H:%M:%S")] Running activity-duration-processor..."
+    
+    # Run the processor without arguments - it will find recent files
+    activity-duration-processor
+    
+    sleep "$INTERVAL"
+done

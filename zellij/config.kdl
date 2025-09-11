@@ -35,79 +35,18 @@ keybinds {
         // REMOVED uppercase letter bindings - they steal keystrokes from Helix!
         // Use Ctrl+t for tab mode, Ctrl+p for pane mode instead
         
-        // Obsidian link picker - Alt+l (large floating window for better visibility)
-        bind "Alt l" {
-            Run "bash" "/Users/williamnapier/.local/bin/obsidian-linker.sh" {
-                floating true
-                close_on_exit true
-                width "90%"
-                height "85%"
-                x "5%"
-                y "7.5%"
-            }
-        }
+        // Simple tab switching with Alt+n/o (ColemakDH left/right)
+        bind "Alt n" { GoToPreviousTab; }
+        bind "Alt o" { GoToNextTab; }
         
-        // Citation picker - Alt+c (large floating window for citation lookup)
-        bind "Alt c" {
-            Run "bash" "/Users/williamnapier/.local/bin/citation-picker.sh" {
-                floating true
-                close_on_exit true
-                width "90%"
-                height "85%"
-                x "5%"
-                y "7.5%"
-            }
-        }
-        
-        // Manual theme sync - Alt+Shift+t
-        bind "Alt Shift t" {
-            Run "bash" "-c" "/Users/williamnapier/.local/bin/sync-themes-once.sh" {
-                close_on_exit true
-            }
-        }
-        
-        // Serpl search and replace - Alt+r
-        bind "Alt r" {
-            ToggleFloatingPanes;
-            Run "nu" "-c" "serpl-anywhere";
-            ToggleFloatingPanes;
-        }
-        
-        // Content search with wikilink output - Alt+s (case insensitive)
-        bind "Alt s" {
-            Run "bash" "-c" "SEARCH_CASE_INSENSITIVE=1 /Users/williamnapier/.local/bin/obsidian-content-search-interactive.sh" {
-                floating true
-                close_on_exit true
-                width "90%"
-                height "85%"
-                x "5%"
-                y "7.5%"
-            }
-        }
-        
-        // Content search with wikilink output - Alt+S (case sensitive)
-        bind "Alt S" {
-            Run "bash" "/Users/williamnapier/.local/bin/obsidian-content-search-interactive.sh" {
-                floating true
-                close_on_exit true
-                width "90%"
-                height "85%"
-                x "5%"
-                y "7.5%"
-            }
-        }
-        
-        // Semantic search with wikilink output - Alt+e
-        bind "Alt e" {
-            Run "bash" "/Users/williamnapier/.local/bin/obsidian-semantic-search.sh" {
-                floating true
-                close_on_exit true
-                width "90%"
-                height "85%"
-                x "5%"
-                y "7.5%"
-            }
-        }
+        // 🔥 ALT COMMANDS NUKED 🔥
+        // Replaced with universal command-line versions:
+        // fsh    - file search + open in Helix
+        // fwl    - file wiki link + copy to clipboard  
+        // fcit   - file citation + copy to clipboard
+        // fsem   - file semantic search + copy/open options
+        // fsearch- file content search + copy/open options  
+        // freplace - find and replace anywhere
         
         // Mode switches - Zellij defaults (preserved)
         bind "Ctrl t" { SwitchToMode "Tab"; }

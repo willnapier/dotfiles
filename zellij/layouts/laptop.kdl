@@ -9,17 +9,11 @@ layout {
     }
     
     tab name="daily" focus=true {
-        // Split pane layout: daily note (left) + Yazi (right)
-        pane split_direction="vertical" {
-            pane name="daily-note" size="35%" {
-                focus true
-                command "bash"
-                args "-c" "/Users/williamnapier/.local/bin/daily-note && exec hx \"$(daily-note --print-path)\" || exec /opt/homebrew/bin/nu"
-            }
-            pane name="file-browser" size="65%" {
-                command "/opt/homebrew/bin/nu"
-                args "-c" "source ~/.config/nushell/config.nu; y"
-            }
+        // Single pane layout: daily note only
+        pane name="daily-note" {
+            focus true
+            command "bash"
+            args "-c" "/Users/williamnapier/.local/bin/daily-note && exec hx \"$(daily-note --print-path)\" || exec /opt/homebrew/bin/nu"
         }
     }
     

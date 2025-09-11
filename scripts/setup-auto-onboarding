@@ -1,0 +1,189 @@
+#!/usr/bin/env nu
+
+# setup-auto-onboarding - Deploy the proactive config onboarding system
+# Sets up the "smart onboarding guy" to automatically manage new configs
+
+def main [
+    --enable        # Enable the auto-onboarding service
+    --disable       # Disable the auto-onboarding service  
+    --status        # Check service status
+    --test          # Run a test scan
+] {
+    let script_name = "dotter-auto-onboard"
+    let plist_name = "com.user.dotter-auto-onboard.plist"
+    let dotfiles_root = ($env.HOME + "/dotfiles")
+    
+    print "🤖 Dotter Auto-Onboarding Setup"
+    print "==============================="
+    
+    if $test {
+        print "\n🧪 Running test scan..."
+        do { dotter-auto-onboard --scan-once --dry-run }
+        return
+    }
+    
+    if $status {
+        check_service_status $plist_name
+        return
+    }
+    
+    if $enable {
+        print "\n📦 Setting up auto-onboarding system..."
+        setup_auto_onboarding $script_name $plist_name $dotfiles_root
+    } else if $disable {
+        print "\n⏹️  Disabling auto-onboarding system..."
+        disable_auto_onboarding $plist_name
+    } else {
+        print "\nUsage:"
+        print "  --enable    Set up and start auto-onboarding"
+        print "  --disable   Stop and remove auto-onboarding"
+        print "  --status    Check if service is running"
+        print "  --test      Run a test scan (dry-run)"
+        print "\n💡 The auto-onboarding system will:"
+        print "   • Scan for orphaned configs every 5 minutes"
+        print "   • Automatically onboard legitimate config files"
+        print "   • Send notifications when files are onboarded"
+        print "   • Skip temporary/cache files"
+    }
+}
+
+def setup_auto_onboarding [script_name: string, plist_name: string, dotfiles_root: string] {
+    # 1. Add script to Dotter if not already managed
+    print "📝 Ensuring script is in Dotter management..."
+    let script_path = ($dotfiles_root + "/scripts/" + $script_name)
+    if not (is_script_managed $script_name) {
+        print $"   Adding ($script_name) to Dotter config..."
+        # The script should already be in dotfiles/scripts/, just need to add to config
+        add_to_dotter_config $script_name
+    } else {
+        print "   ✅ Script already managed by Dotter"
+    }
+    
+    # 2. Deploy with Dotter to create symlink
+    print "🔄 Deploying with Dotter..."
+    cd $dotfiles_root
+    do { dotter deploy }
+    
+    # 3. Set up LaunchAgent
+    print "🚀 Setting up LaunchAgent..."
+    let plist_source = ($dotfiles_root + "/launchagents/" + $plist_name)
+    let plist_target = ($env.HOME + "/Library/LaunchAgents/" + $plist_name)
+    
+    if ($plist_source | path exists) {
+        cp $plist_source $plist_target
+        print $"   ✅ Copied LaunchAgent: ($plist_target)"
+    } else {
+        print $"   ❌ LaunchAgent source not found: ($plist_source)"
+        return
+    }
+    
+    # 4. Load the LaunchAgent
+    print "▶️  Loading LaunchAgent..."
+    try {
+        launchctl load $plist_target
+        print "   ✅ LaunchAgent loaded and will start automatically"
+    } catch { |e|
+        print $"   ⚠️  LaunchAgent load warning: ($e)"
+        print "   💡 This is normal if it was already loaded"
+    }
+    
+    # 5. Run initial scan
+    print "🔍 Running initial orphan scan..."
+    do { dotter-auto-onboard --scan-once }
+    
+    print "\n🎉 Auto-onboarding system is now active!"
+    print "   • Scans every 5 minutes for new configs"
+    print "   • Logs: ~/.local/share/dotter-auto-onboard.stdout"
+    print "   • Check status: setup-auto-onboarding --status"
+}
+
+def disable_auto_onboarding [plist_name: string] {
+    let plist_target = ($env.HOME + "/Library/LaunchAgents/" + $plist_name)
+    
+    if ($plist_target | path exists) {
+        print "⏹️  Unloading LaunchAgent..."
+        try {
+            launchctl unload $plist_target
+            print "   ✅ LaunchAgent unloaded"
+        } catch { |e|
+            print $"   ⚠️  Unload warning: ($e)"
+        }
+        
+        print "🗑️  Removing LaunchAgent file..."
+        rm $plist_target
+        print "   ✅ LaunchAgent removed"
+        
+        print "\n✅ Auto-onboarding system disabled"
+    } else {
+        print "❌ LaunchAgent not found - system not active"
+    }
+}
+
+def check_service_status [plist_name: string] {
+    let plist_target = ($env.HOME + "/Library/LaunchAgents/" + $plist_name)
+    let label = "com.user.dotter-auto-onboard"
+    
+    print "\n📊 Auto-Onboarding Status:"
+    print "=========================="
+    
+    if ($plist_target | path exists) {
+        print "✅ LaunchAgent file exists"
+        
+        # Check if loaded
+        let loaded = (launchctl list | grep $label | length) > 0
+        if $loaded {
+            print "✅ Service is loaded and active"
+            
+            # Show recent activity
+            let log_file = ($env.HOME + "/.local/share/dotter-auto-onboard.stdout")
+            if ($log_file | path exists) {
+                print "\n📋 Recent activity (last 10 lines):"
+                tail -10 $log_file
+            }
+        } else {
+            print "❌ Service is not loaded"
+            print "💡 Run: setup-auto-onboarding --enable"
+        }
+    } else {
+        print "❌ LaunchAgent not installed"
+        print "💡 Run: setup-auto-onboarding --enable"
+    }
+}
+
+def is_script_managed [script_name: string] -> bool {
+    let dotter_config = ($env.HOME + "/dotfiles/.dotter/global.toml")
+    let config_content = (open --raw $dotter_config)
+    let script_entry = $"scripts/($script_name)"
+    
+    ($config_content | str contains $script_entry)
+}
+
+def add_to_dotter_config [script_name: string] {
+    let dotter_config = ($env.HOME + "/dotfiles/.dotter/global.toml")
+    let config_content = (open --raw $dotter_config)
+    let new_entry = $'"scripts/($script_name)" = "~/.local/bin/($script_name)"'
+    
+    # Find the scripts section and add the entry
+    let lines = ($config_content | lines)
+    mut new_lines = []
+    
+    for line in $lines {
+        $new_lines = ($new_lines | append $line)
+        
+        # Add our entry after other script entries
+        if ($line | str contains "scripts/") and not ($line | str starts-with "#") {
+            # Check if this is the last script entry
+            let next_line_idx = ($lines | enumerate | where { |item| $item.item == $line } | get index.0) + 1
+            if $next_line_idx < ($lines | length) {
+                let next_line = ($lines | get $next_line_idx)
+                if not ($next_line | str contains "scripts/") {
+                    $new_lines = ($new_lines | append $new_entry)
+                }
+            } else {
+                $new_lines = ($new_lines | append $new_entry)
+            }
+        }
+    }
+    
+    $new_lines | str join "\n" | save -f $dotter_config
+}

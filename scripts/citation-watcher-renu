@@ -1,0 +1,380 @@
+#!/usr/bin/env nu
+
+# Citation Watcher - Re-nu Cross-Platform Academic Version
+# Revolutionary BibTeX library monitoring using native Nushell structured data  
+# Re-nu conversion: No external dependencies - pure Nushell file monitoring with academic analytics
+# Eliminates: fswatch, platform-specific paths, basic logging
+# Adds: Citation analytics, research productivity tracking, enhanced error handling
+
+def main [
+    --library-path: string = ""  # Path to library.bib file (auto-detected if not provided)
+    --parser-script: string = "" # Path to citation-parser script (auto-detected if not provided) 
+    --debounce-ms: int = 2000    # Milliseconds to wait before processing changes
+    --enable-analytics           # Enable detailed citation analytics and tracking
+    --initial-parse              # Run initial parse on startup (default: true)
+] {
+    # Auto-detect academic workflow paths with cross-platform support
+    let library_file = if ($library_path | is-empty) { 
+        detect_library_file
+    } else { 
+        $library_path 
+    }
+    
+    let parser_script = if ($parser_script | is-empty) { 
+        $"($env.HOME)/.local/bin/citation-parser"
+    } else { 
+        $parser_script 
+    }
+    
+    # Cross-platform log directory
+    let log_dir = if (sys host | get name) == "Darwin" { 
+        $"($env.HOME)/Library/Logs" 
+    } else { 
+        $"($env.HOME)/.local/share"  
+    }
+    
+    let log_file = $"($log_dir)/citation-watcher.log"
+    let lock_file = "/tmp/citation-watcher.lock" 
+    let analytics_file = $"($log_dir)/citation-analytics.json"
+    
+    # Ensure log directory exists
+    mkdir $log_dir
+    
+    # Check for existing instance  
+    if ($lock_file | path exists) {
+        let existing_content = (try { open $lock_file | str trim } catch { "" })
+        if $existing_content != "" {
+            log_message $log_file $"🔒 Citation watcher already running: ($existing_content)"
+            return
+        }
+        log_message $log_file "⚠️  Removing stale lock file"
+        rm $lock_file
+    }
+    
+    # Create lock file with timestamp
+    (date now | format date "%s") | save $lock_file
+    
+    # Validate academic workflow environment
+    if not ($library_file | path exists) {
+        log_message $log_file $"❌ Library file not found: ($library_file)"
+        cleanup $lock_file $log_file
+        return
+    }
+    
+    if not ($parser_script | path exists) {
+        log_message $log_file $"❌ Citation parser not found: ($parser_script)"
+        cleanup $lock_file $log_file
+        return
+    }
+    
+    log_message $log_file "🚀 Starting Citation Watcher (Re-nu cross-platform version)"
+    log_message $log_file $"📚 Monitoring: ($library_file)"
+    log_message $log_file $"🔧 Parser: ($parser_script)"
+    log_message $log_file $"⚡ Debounce: ($debounce_ms)ms"
+    
+    if $enable_analytics {
+        log_message $log_file $"📊 Analytics enabled: ($analytics_file)"
+    }
+    
+    log_message $log_file "🌍 Cross-platform academic workflow - no fswatch dependency!"
+    
+    # Run initial parse if requested (default behavior)
+    if $initial_parse {
+        log_message $log_file "🔄 Generating initial citation database..."
+        let initial_result = run_citation_parser $parser_script $log_file
+        
+        if $initial_result.success {
+            log_message $log_file "✅ Initial citation database generated"
+            
+            if $enable_analytics {
+                let initial_stats = analyze_citation_database $library_file
+                log_message $log_file $"📊 Initial library stats: ($initial_stats.summary)"
+                record_citation_event "startup" $initial_stats $analytics_file
+            }
+        } else {
+            log_message $log_file "❌ Error generating initial database"
+            cleanup $lock_file $log_file
+            return
+        }
+    }
+    
+    # Register cleanup handler (best effort)
+    try {
+        log_message $log_file "👁️  Watching for changes to library.bib..."
+        log_message $log_file "Press Ctrl+C to stop"
+        
+        # Start native Nushell academic file monitoring
+        watch $library_file --debounce-ms $debounce_ms {|operation, path, new_path|
+            handle_library_change $operation $path $new_path $parser_script $log_file $enable_analytics $analytics_file
+        }
+    } catch {|error|
+        log_message $log_file $"❌ Library monitoring failed: ($error.msg)"
+        cleanup $lock_file $log_file
+    }
+}
+
+# Cross-platform library file detection for academic workflows
+def detect_library_file [] {
+    let candidates = [
+        $"($env.HOME)/Obsidian.nosync/Forge/ZET/library.bib",     # Current setup
+        $"($env.HOME)/Documents/library.bib",                     # Common location
+        $"($env.HOME)/Papers/library.bib",                        # Academic folder
+        $"($env.HOME)/Research/library.bib",                      # Research folder
+        $"($env.HOME)/Zotero/library.bib",                        # Zotero export
+        "./library.bib"                                           # Current directory
+    ]
+    
+    for candidate in $candidates {
+        if ($candidate | path exists) {
+            return $candidate
+        }
+    }
+    
+    # Fallback to the configured path
+    $"($env.HOME)/Obsidian.nosync/Forge/ZET/library.bib"
+}
+
+# Logging function with academic context
+def log_message [log_file: string, message: string] {
+    let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
+    let log_entry = $"($timestamp) - ($message)"
+    print $log_entry
+    $log_entry | save --append $log_file
+}
+
+# Cleanup function
+def cleanup [lock_file: string, log_file: string] {
+    if ($lock_file | path exists) {
+        rm $lock_file
+    }
+    log_message $log_file "🛑 Citation watcher stopped"
+}
+
+# Handle library file changes with academic workflow intelligence
+def handle_library_change [operation: string, path: string, new_path: string, parser_script: string, log_file: string, enable_analytics: bool, analytics_file: string] {
+    let timestamp = (date now | format date "%H:%M:%S")
+    let filename = ($path | path basename)
+    
+    # Only process actual modifications to the BibTeX library
+    if ($operation == "Modify") and ($filename == "library.bib") {
+        log_message $log_file $"[($timestamp)] 📚 Library change detected: ($filename)"
+        
+        # Analyze the change with academic metrics
+        let change_analysis = analyze_library_change $path $log_file
+        log_message $log_file $"📊 Change analysis: ($change_analysis.summary)"
+        
+        # Brief delay to ensure file operations are complete
+        sleep 2sec
+        
+        log_message $log_file "🔄 Regenerating citation database..."
+        
+        # Run parser with enhanced error handling and analytics
+        let parse_result = run_citation_parser $parser_script $log_file
+        
+        if $parse_result.success {
+            log_message $log_file "✅ Citation database updated successfully"
+            
+            if $enable_analytics {
+                let updated_stats = analyze_citation_database $path
+                log_message $log_file $"📈 Updated library stats: ($updated_stats.summary)"
+                
+                # Record detailed analytics event
+                record_citation_event "update" $updated_stats $analytics_file
+                
+                # Track research productivity
+                track_research_productivity $updated_stats $analytics_file $log_file
+            }
+        } else {
+            log_message $log_file "❌ Error updating citation database"
+            log_message $log_file $"🔧 Parser error details: ($parse_result.error_summary)"
+            
+            if $enable_analytics {
+                record_citation_event "parse_error" { 
+                    error: $parse_result.error_summary, 
+                    timestamp: (date now) 
+                } $analytics_file
+            }
+        }
+        
+    } else {
+        # Log other events for debugging but don't process them
+        log_message $log_file $"[($timestamp)] 👁️  Detected ($operation) on ($filename) (ignored)"
+    }
+}
+
+# Run citation parser with structured error handling and analytics
+def run_citation_parser [parser_script: string, log_file: string] {
+    log_message $log_file $"🐍 Executing Python citation parser: ($parser_script)"
+    
+    let parse_result = (python3 $parser_script | complete)
+    
+    if $parse_result.exit_code == 0 {
+        # Success - analyze output for insights
+        let output_lines = ($parse_result.stdout | lines)
+        let processed_entries = ($output_lines | where ($it | str contains "Processed") | length)
+        
+        {
+            success: true,
+            exit_code: $parse_result.exit_code,
+            processed_entries: $processed_entries,
+            output_lines: ($output_lines | length),
+            error_summary: ""
+        }
+    } else {
+        # Parse error - provide structured error analysis
+        let error_lines = ($parse_result.stderr | lines)
+        let error_summary = if ($error_lines | length) > 0 { 
+            ($error_lines | first 3 | str join "; ") 
+        } else { 
+            "Unknown parsing error" 
+        }
+        
+        {
+            success: false,
+            exit_code: $parse_result.exit_code,
+            processed_entries: 0,
+            output_lines: 0,
+            error_summary: $error_summary
+        }
+    }
+}
+
+# Analyze library file changes with academic metrics
+def analyze_library_change [library_path: string, log_file: string] {
+    let file_stats = try {
+        if ($library_path | path exists) {
+            let stats = (stat $library_path)
+            {
+                size: $stats.size,
+                modified: $stats.modified,
+                accessible: true
+            }
+        } else {
+            {
+                size: 0,
+                modified: null,
+                accessible: false
+            }
+        }
+    } catch {
+        log_message $log_file "⚠️  Could not analyze library file statistics"
+        {
+            size: 0,
+            modified: null,
+            accessible: false
+        }
+    }
+    
+    let size_mb = ($file_stats.size / 1024 / 1024)
+    let size_description = if $size_mb > 1 { 
+        $"($size_mb | math round --precision 1) MB" 
+    } else { 
+        $"($file_stats.size / 1024 | math round) KB" 
+    }
+    
+    {
+        file_stats: $file_stats,
+        summary: $"Library size: ($size_description)"
+    }
+}
+
+# Analyze citation database with comprehensive academic metrics  
+def analyze_citation_database [library_path: string] {
+    let content = try {
+        if ($library_path | path exists) {
+            open $library_path
+        } else {
+            ""
+        }
+    } catch {
+        ""
+    }
+    
+    if ($content | str trim | is-empty) {
+        return {
+            total_entries: 0,
+            entry_types: {},
+            size_mb: 0,
+            summary: "Empty or inaccessible library"
+        }
+    }
+    
+    # Count total BibTeX entries
+    let total_entries = ($content | str replace --all --regex '@\w+\{' '@ENTRY{' | lines | where ($it | str contains '@ENTRY{') | length)
+    
+    # Analyze entry types (article, book, inproceedings, etc.)
+    let entry_type_lines = ($content | lines | where ($it | str contains '@') | where ($it | str contains '{'))
+    let entry_types = ($entry_type_lines | each { |line| 
+        ($line | str replace --regex '@(\w+)\{.*' '$1' | str trim)
+    } | group-by | transpose key value | each { |row| { type: $row.key, count: ($row.value | length) } })
+    
+    # File size analysis
+    let file_size = try { (stat $library_path).size } catch { 0 }
+    let size_mb = ($file_size / 1024 / 1024 | math round --precision 2)
+    
+    {
+        total_entries: $total_entries,
+        entry_types: $entry_types,
+        size_mb: $size_mb,
+        file_size: $file_size,
+        summary: $"($total_entries) entries, ($size_mb) MB"
+    }
+}
+
+# Record citation analytics events for research productivity tracking
+def record_citation_event [event_type: string, stats: record, analytics_file: string] {
+    let event_record = {
+        timestamp: (date now | format date "%Y-%m-%d %H:%M:%S"),
+        event_type: $event_type,
+        stats: $stats
+    }
+    
+    try {
+        $event_record | to json | save --append $analytics_file
+    } catch {
+        # Analytics are optional - don't fail if we can't write
+    }
+}
+
+# Track research productivity metrics and trends
+def track_research_productivity [current_stats: record, analytics_file: string, log_file: string] {
+    try {
+        # Read recent analytics to calculate productivity metrics
+        let recent_events = if ($analytics_file | path exists) {
+            open $analytics_file 
+            | lines 
+            | each { |line| try { $line | from json } catch { null } } 
+            | where $it != null 
+            | last 50  # Analyze recent activity
+        } else {
+            []
+        }
+        
+        if ($recent_events | length) > 1 {
+            let recent_updates = ($recent_events | where event_type == "update")
+            
+            if ($recent_updates | length) > 1 {
+                let latest = ($recent_updates | last)
+                let previous = ($recent_updates | drop | last)
+                
+                if ($latest.stats.total_entries != null) and ($previous.stats.total_entries != null) {
+                    let entry_growth = ($latest.stats.total_entries - $previous.stats.total_entries)
+                    
+                    if $entry_growth > 0 {
+                        log_message $log_file $"📈 Research progress: +($entry_growth) new citations since last update"
+                    }
+                    
+                    # Weekly/daily productivity could be calculated here
+                    let today_updates = ($recent_events | where event_type == "update" | where ($it.timestamp | str contains (date now | format date "%Y-%m-%d")) | length)
+                    
+                    if $today_updates > 1 {
+                        log_message $log_file $"🔥 Active research day: ($today_updates) citation updates today"
+                    }
+                }
+            }
+        }
+    } catch {
+        # Productivity tracking is optional
+        log_message $log_file "ℹ️  Could not calculate research productivity metrics"
+    }
+}

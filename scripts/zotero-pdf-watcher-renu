@@ -1,0 +1,101 @@
+#!/usr/bin/env nu
+
+# Zotero PDF Watcher - Native Nushell Re-nu Version
+# Watches directories for new PDFs and automatically processes them for Zotero import
+# Re-nu Phase 2: Replace fswatch with native Nushell watch command
+# Created: 2025-09-11
+
+export def main [
+    --watch-dir: string = "~/Documents/ZoteroImport"  # Directory to watch for PDFs
+    --output-dir: string = "~/Documents/ProcessedPDFs"  # Where to move processed PDFs
+    --debounce: int = 2000  # Debounce delay in milliseconds
+] {
+    let watch_path = ($watch_dir | path expand)
+    let output_path = ($output_dir | path expand)
+    
+    print "🔍 Zotero PDF Watcher (Native Nushell Re-nu Version)"
+    print $"📁 Watching: ($watch_path)"
+    print $"📤 Output: ($output_path)"
+    print $"⏱️  Debounce: ($debounce)ms"
+    print ""
+    
+    # Ensure directories exist
+    if not ($watch_path | path exists) {
+        print $"❌ Watch directory does not exist: ($watch_path)"
+        mkdir $watch_path
+        print $"✅ Created watch directory: ($watch_path)"
+    }
+    
+    if not ($output_path | path exists) {
+        mkdir $output_path
+        print $"✅ Created output directory: ($output_path)"
+    }
+    
+    print "👀 Watching for PDF files... (Press Ctrl+C to stop)"
+    print ""
+    
+    # Native Nushell watch command - no external dependencies
+    watch $watch_path --glob "*.pdf" --recursive false {|op, path, new_path|
+        if $op == "Write" or $op == "Create" {
+            print $"📄 New PDF detected: ($path | path basename)"
+            
+            # Debounce - wait for file to be fully written
+            sleep ($debounce | into string | $in + "ms")
+            
+            # Process the PDF
+            process_zotero_pdf $path $output_path
+        }
+    }
+}
+
+def process_zotero_pdf [file_path: string, output_dir: string] {
+    let filename = ($file_path | path basename)
+    let output_path = ($output_dir | path join $filename)
+    
+    print $"🔄 Processing: ($filename)"
+    
+    try {
+        # Move file to processed directory
+        mv $file_path $output_path
+        print $"✅ Moved to processed: ($filename)"
+        
+        # Optional: Extract metadata or trigger Zotero import
+        # This could call your existing zotero-import-now or similar tool
+        print $"📚 Ready for Zotero import: ($output_path)"
+        
+        # Send notification (cross-platform)
+        let notification_result = try {
+            if (which terminal-notifier | is-not-empty) {
+                ^terminal-notifier -title "Zotero PDF Watcher" -message $"New PDF ready: ($filename)"
+                { success: true, method: "terminal-notifier" }
+            } else if (which notify-send | is-not-empty) {
+                ^notify-send "Zotero PDF Watcher" $"New PDF ready: ($filename)"
+                { success: true, method: "notify-send" }
+            } else {
+                { success: false, method: "none" }
+            }
+        } catch {
+            { success: false, method: "error" }
+        }
+        
+        if $notification_result.success {
+            print $"🔔 Notification sent via ($notification_result.method)"
+        }
+        
+    } catch {|err|
+        print $"❌ Error processing ($filename): ($err.msg)"
+    }
+}
+
+# Analytics and usage tracking
+def log_processing_event [filename: string, status: string] {
+    let log_entry = {
+        timestamp: (date now),
+        filename: $filename,
+        status: $status,
+        tool: "zotero-pdf-watcher-renu"
+    }
+    
+    # Optional: Save to structured log for analytics
+    # $log_entry | to json | save --append ~/.local/share/zotero-analytics.json
+}

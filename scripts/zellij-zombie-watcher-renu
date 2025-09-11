@@ -1,0 +1,266 @@
+#!/usr/bin/env nu
+
+# Zellij Zombie Watcher - Re-nu Native Version
+# Revolutionary cross-platform session management using native Nushell structured data
+# Re-nu conversion: No external dependencies - pure Nushell process and file monitoring
+# Eliminates: fswatch, inotifywait, platform detection, shell process parsing
+
+def main [
+    --max-processes: int = 8    # Maximum allowed Zellij processes before cleanup
+    --check-interval: int = 30  # Seconds between process checks (fallback mode)
+    --monitor-temps             # Enable temp directory monitoring (experimental)
+] {
+    let log_file = $"($env.HOME)/.local/share/zellij-zombie-watcher.log"
+    let lock_file = "/tmp/zellij-zombie-watcher.lock"
+    
+    # Ensure log directory exists
+    mkdir ($log_file | path dirname)
+    
+    # Check for existing instance
+    if ($lock_file | path exists) {
+        let existing_content = (try { open $lock_file | str trim } catch { "" })
+        if $existing_content != "" {
+            log_message $log_file $"🔒 Zellij zombie watcher already running: ($existing_content)"
+            return
+        }
+        log_message $log_file "⚠️  Removing stale lock file"
+        rm $lock_file
+    }
+    
+    # Create lock file with timestamp
+    (date now | format date "%s") | save $lock_file
+    
+    log_message $log_file "🚀 Starting Zellij Zombie Watcher (Re-nu native version)"
+    log_message $log_file $"⚙️  Max processes: ($max_processes), Check interval: ($check_interval)s"
+    log_message $log_file "⚡ Using native Nushell structured process monitoring"
+    log_message $log_file "🌍 Cross-platform by design - no platform detection needed!"
+    
+    # Register cleanup handler (best effort)
+    try {
+        # Main monitoring approach: Dual mode operation
+        if $monitor_temps {
+            log_message $log_file "🔍 Starting advanced monitoring (processes + temp files)"
+            monitor_with_temp_watching $max_processes $log_file $lock_file
+        } else {
+            log_message $log_file "🔍 Starting process-focused monitoring (recommended)"
+            monitor_processes_only $max_processes $check_interval $log_file $lock_file
+        }
+    } catch {|error|
+        log_message $log_file $"❌ Monitoring failed: ($error.msg)"
+        cleanup $lock_file $log_file
+    }
+}
+
+# Logging function
+def log_message [log_file: string, message: string] {
+    let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
+    let log_entry = $"($timestamp) - ($message)"
+    print $log_entry
+    $log_entry | save --append $log_file
+}
+
+# Cleanup function
+def cleanup [lock_file: string, log_file: string] {
+    if ($lock_file | path exists) {
+        rm $lock_file
+    }
+    log_message $log_file "🛑 Zellij zombie watcher stopped"
+}
+
+# Main monitoring mode: Process-focused (recommended)
+def monitor_processes_only [max_processes: int, check_interval: int, log_file: string, lock_file: string] {
+    log_message $log_file "📊 Process-only monitoring active"
+    
+    # Periodic process checking with structured data analysis
+    loop {
+        check_and_cleanup_processes $max_processes $log_file
+        sleep ($check_interval * 1sec)
+        
+        # Check if we should still be running
+        if not ($lock_file | path exists) {
+            log_message $log_file "🔒 Lock file removed, stopping monitoring"
+            break
+        }
+    }
+}
+
+# Advanced monitoring mode: Processes + temp file watching
+def monitor_with_temp_watching [max_processes: int, log_file: string, lock_file: string] {
+    log_message $log_file "📂 Advanced monitoring: processes + temp files"
+    
+    # Discover temp directories with native Nushell (cross-platform)
+    let temp_dirs = discover_temp_directories $log_file
+    
+    if ($temp_dirs | length) == 0 {
+        log_message $log_file "⚠️  No temp directories found, falling back to process-only mode"
+        monitor_processes_only $max_processes 30 $log_file $lock_file
+        return
+    }
+    
+    log_message $log_file $"📁 Monitoring temp directories: ($temp_dirs | str join ', ')"
+    
+    # Watch the first accessible temp directory for Zellij activity
+    let primary_temp = ($temp_dirs | first)
+    
+    try {
+        watch $primary_temp --glob "**/zellij*" --debounce-ms 2000 --recursive true {|operation, path, new_path|
+            handle_temp_activity $operation $path $new_path $max_processes $log_file
+        }
+    } catch {|error|
+        log_message $log_file $"❌ Temp directory watching failed: ($error.msg)"
+        log_message $log_file "🔄 Falling back to process-only monitoring"
+        monitor_processes_only $max_processes 30 $log_file $lock_file
+    }
+}
+
+# Handle temp directory Zellij activity with native structured data
+def handle_temp_activity [operation: string, path: string, new_path: string, max_processes: int, log_file: string] {
+    let filename = ($path | path basename)
+    let timestamp = (date now | format date "%H:%M:%S")
+    
+    # Only process events related to Zellij temp files
+    if ($filename | str contains "zellij") {
+        log_message $log_file $"[($timestamp)] 📁 Zellij temp activity: ($operation) on ($filename)"
+        
+        # Small delay to let activity settle
+        sleep 2sec
+        
+        # Check processes after temp file activity
+        check_and_cleanup_processes $max_processes $log_file
+    }
+}
+
+# Cross-platform temp directory discovery using native Nushell
+def discover_temp_directories [log_file: string] {
+    let potential_dirs = [
+        "/tmp"
+        "/var/folders"  # macOS
+        "/run/user"     # Linux
+        $"($env.HOME)/.cache" # User cache
+    ]
+    
+    let accessible_dirs = (
+        $potential_dirs 
+        | each {|dir| 
+            try { 
+                ls $dir | where type == "dir" | get name | first 
+            } catch { 
+                null 
+            }
+        } 
+        | where $it != null
+    )
+    
+    log_message $log_file $"🔍 Found ($accessible_dirs | length) accessible temp directories"
+    $accessible_dirs
+}
+
+# Core function: Check and cleanup processes using native structured data
+def check_and_cleanup_processes [max_processes: int, log_file: string] {
+    # Native Nushell structured process monitoring - no grep needed!
+    let zellij_processes = (ps | where name =~ "zellij")
+    let process_count = ($zellij_processes | length)
+    
+    if $process_count > $max_processes {
+        log_message $log_file $"⚠️  Found ($process_count) Zellij processes (max: ($max_processes))"
+        log_message $log_file "🧟 Zombie cleanup required!"
+        
+        # Show process details with structured data (much richer than original!)
+        let high_memory_procs = ($zellij_processes | sort-by mem --reverse | first 3)
+        log_message $log_file $"💾 Top memory users: ($high_memory_procs | select pid mem | to json -r)"
+        
+        # Perform cleanup using zellij-zombie-killer
+        let killer_script = $"($env.HOME)/.local/bin/zellij-zombie-killer"
+        
+        if ($killer_script | path exists) {
+            log_message $log_file "🔫 Running structured zombie killer..."
+            
+            let cleanup_result = (do { ^nu $killer_script --auto } | complete)
+            if $cleanup_result.exit_code == 0 {
+                log_message $log_file "✅ Zombie cleanup completed successfully"
+                
+                # Verify cleanup worked
+                let remaining_count = (ps | where name =~ "zellij" | length)
+                log_message $log_file $"📊 Processes after cleanup: ($remaining_count)"
+            } else {
+                log_message $log_file $"❌ Cleanup failed: ($cleanup_result.stderr)"
+                
+                # Fallback: Basic cleanup with process analysis
+                log_message $log_file "🔄 Attempting basic cleanup with process analysis"
+                perform_basic_cleanup $zellij_processes $log_file
+            }
+        } else {
+            log_message $log_file "⚠️  Zombie killer script not found, using basic cleanup"
+            perform_basic_cleanup $zellij_processes $log_file
+        }
+        
+        # Log the cleanup event with rich data
+        let cleanup_timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
+        let cleanup_record = {
+            timestamp: $cleanup_timestamp,
+            processes_before: $process_count,
+            processes_after: (ps | where name =~ "zellij" | length),
+            action: "auto-cleanup"
+        }
+        $cleanup_record | to json | save --append $"($env.HOME)/.local/share/zellij-zombie-cleanup-history.json"
+        
+    } else if $process_count > 0 {
+        # Normal process count - just log status with rich data
+        let total_memory = ($zellij_processes | get mem | math sum)
+        log_message $log_file $"ℹ️  ($process_count) Zellij processes running \(($total_memory) MB total memory\)"
+    }
+}
+
+# Fallback cleanup using native structured process analysis
+def perform_basic_cleanup [zellij_processes: table, log_file: string] {
+    log_message $log_file "🔍 Analyzing processes for safe cleanup..."
+    
+    # Get processes sorted by CPU usage (kill high CPU ones first)
+    let high_cpu_procs = ($zellij_processes | sort-by cpu --reverse)
+    
+    for proc in $high_cpu_procs {
+        log_message $log_file $"🎯 Terminating process PID ($proc.pid) (CPU: ($proc.cpu)%, MEM: ($proc.mem)MB)"
+        try {
+            ^kill -TERM $proc.pid
+        } catch {
+            log_message $log_file $"⚠️  Could not terminate PID ($proc.pid), trying KILL"
+            try {
+                ^kill -KILL $proc.pid
+            } catch {
+                log_message $log_file $"❌ Failed to kill PID ($proc.pid)"
+            }
+        }
+    }
+    
+    # Brief pause for graceful termination
+    sleep 2sec
+    
+    # Clean up temp directories using native path operations
+    cleanup_temp_directories $log_file
+}
+
+# Cross-platform temp directory cleanup using native Nushell
+def cleanup_temp_directories [log_file: string] {
+    log_message $log_file "🧹 Cleaning Zellij temp directories..."
+    
+    let temp_patterns = [
+        "/tmp/zellij*",
+        "/var/folders/*/*/*/*/zellij*",
+        "/run/user/*/zellij*",
+        $"($env.HOME)/.cache/zellij*"
+    ]
+    
+    for pattern in $temp_patterns {
+        try {
+            let matches = (glob $pattern)
+            if ($matches | length) > 0 {
+                log_message $log_file $"🗑️  Removing ($matches | length) temp files/dirs for pattern: ($pattern)"
+                $matches | each {|item| rm -rf $item}
+            }
+        } catch {
+            # Silently continue - some patterns may not match on all platforms
+        }
+    }
+    
+    log_message $log_file "✅ Temp directory cleanup completed"
+}

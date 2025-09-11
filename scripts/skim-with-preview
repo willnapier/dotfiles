@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# Skim wrapper that works in Zellij floating panes
+# Uses script command to create a proper pseudo-TTY
+
+input="$1"
+project_path="$2"
+
+# Create a temporary file for input
+tmpfile=$(mktemp)
+echo "$input" > "$tmpfile"
+
+# Use script to create a pseudo-TTY and run skim
+result=$(script -q /dev/null bash -c "cat '$tmpfile' | TERM=xterm-256color sk --ansi --reverse --interactive --prompt='📁 File Search: ' --preview='bat --style=numbers --color=always --line-range=:50 \"$project_path\"/{} 2>/dev/null || head -n 20 \"$project_path\"/{} 2>/dev/null || echo \"No preview available\"' --preview-window='right:60%:wrap' --bind='ctrl-/:toggle-preview' --header='Type to search, Ctrl+/ toggles preview, Enter selects' --height=90%" 2>/dev/null)
+
+# Clean up
+rm -f "$tmpfile"
+
+# Output the result
+echo "$result"

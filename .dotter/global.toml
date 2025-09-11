@@ -62,16 +62,19 @@ depends = []
 "scripts/citation-picker-cross-platform.sh" = "~/.local/bin/citation-picker-cross-platform.sh"
 # Zellij zombie prevention system (cross-platform)
 "scripts/zellij-zombie-killer" = "~/.local/bin/zellij-zombie-killer" 
-"scripts/zellij-zombie-watcher-cross-platform" = "~/.local/bin/zellij-zombie-watcher-cross-platform"
 "scripts/setup-zellij-zombie-prevention-cross-platform" = "~/.local/bin/setup-zellij-zombie-prevention-cross-platform"
 "scripts/hx-auto" = "~/.local/bin/hx-auto"
 "scripts/hx-wiki" = "~/.local/bin/hx-wiki"
 "scripts/obsidian-linker.sh" = "~/.local/bin/obsidian-linker.sh"
+"scripts/forge-linker.nu" = "~/.local/bin/forge-linker.nu"
 "scripts/semantic-indexer" = "~/.local/bin/semantic-indexer"
 "scripts/semantic-query" = "~/.local/bin/semantic-query"
 "scripts/zj" = "~/.local/bin/zj"
 "scripts/dotter-audit" = "~/.local/bin/dotter-audit"
 "scripts/dotter-add" = "~/.local/bin/dotter-add"
+"scripts/dotter-auto-onboard" = "~/.local/bin/dotter-auto-onboard"
+"scripts/dotter-auto-onboard-simple" = "~/.local/bin/dotter-auto-onboard-simple"
+"scripts/setup-realtime-onboarding" = "~/.local/bin/setup-realtime-onboarding"
 "scripts/dotter-protect-all" = "~/.local/bin/dotter-protect-all"
 "scripts/dotter-verify-protection" = "~/.local/bin/dotter-verify-protection"
 "scripts/dotter-protect-all-cross-platform" = "~/.local/bin/dotter-protect-all-cross-platform"
@@ -82,20 +85,32 @@ depends = []
 "scripts/dotter-enforce-compliance" = "~/.local/bin/dotter-enforce-compliance"
 "scripts/dotter-drift-monitor" = "~/.local/bin/dotter-drift-monitor"
 "scripts/claude-docs-backup" = "~/.local/bin/claude-docs-backup"
-"scripts/claude-docs-watcher" = "~/.local/bin/claude-docs-watcher"
 "scripts/rotate-linkmanager-logs" = "~/.local/bin/rotate-linkmanager-logs"
-"scripts/dotter-drift-watcher" = "~/.local/bin/dotter-drift-watcher"
 "scripts/dotter-drift-cron" = "~/.local/bin/dotter-drift-cron"
 "scripts/setup-drift-monitoring" = "~/.local/bin/setup-drift-monitoring"
 "scripts/drift-status" = "~/.local/bin/drift-status"
 "scripts/dotter-orphan-detector" = "~/.local/bin/dotter-orphan-detector"
 "scripts/script-ready-deploy" = "~/.local/bin/script-ready-deploy"
 "scripts/yazi-project-file-search-floating" = "~/.local/bin/yazi-project-file-search-floating"
+"scripts/yazi-project-file-search-floating.nu" = "~/.local/bin/yazi-project-file-search-floating.nu"
+"scripts/yazi-recent-files.nu" = "~/.local/bin/yazi-recent-files.nu"
 "scripts/simple-file-preview" = "~/.local/bin/simple-file-preview"
 "scripts/test-skim-floating" = "~/.local/bin/test-skim-floating"
 "scripts/word-wrap-preview.nu" = "~/.local/bin/word-wrap-preview.nu"
-"scripts/sleep-duration-processor" = "~/.local/bin/sleep-duration-processor"
-"scripts/helix-sleep-watcher" = "~/.local/bin/helix-sleep-watcher"
+"scripts/activity-duration-processor" = "~/.local/bin/activity-duration-processor"
+"scripts/hx-process-durations" = "~/.local/bin/hx-process-durations"
+# Re-nu conversion scripts - Native Nushell watchers with no external dependencies
+"scripts/claude-docs-watcher-renu" = "~/.local/bin/claude-docs-watcher-renu"
+"scripts/dotter-realtime-watcher-renu" = "~/.local/bin/dotter-realtime-watcher-renu"
+"scripts/helix-activity-watcher-renu" = "~/.local/bin/helix-activity-watcher-renu"
+"scripts/zellij-zombie-watcher-renu" = "~/.local/bin/zellij-zombie-watcher-renu"
+"scripts/dotter-drift-watcher-renu" = "~/.local/bin/dotter-drift-watcher-renu"
+"scripts/citation-watcher-renu" = "~/.local/bin/citation-watcher-renu"
+"scripts/activity-watcher-renu" = "~/.local/bin/activity-watcher-renu"
+"scripts/yazi-search-with-preview" = "~/.local/bin/yazi-search-with-preview"
+# Zotero automation - Native Nushell versions (no fswatch dependency)
+"scripts/zotero-pdf-watcher-renu" = "~/.local/bin/zotero-pdf-watcher-renu"
+"scripts/zotero-bridge-renu" = "~/.local/bin/zotero-bridge-renu"
 # Semantic search system - managed separately (has virtual environment)
 
 [shared.variables]
@@ -127,6 +142,11 @@ depends = ["shared"]
 
 [linux.files]
 "shell/bashrc" = "~/.bashrc"
+# Systemd user services - Re-nu Nushell-based watchers
+"systemd/dotter-realtime-watcher.service" = "~/.config/systemd/user/dotter-realtime-watcher.service"
+"systemd/zotero-pdf-watcher.service" = "~/.config/systemd/user/zotero-pdf-watcher.service"
+"systemd/zotero-bridge.service" = "~/.config/systemd/user/zotero-bridge.service"
+# Wayland compositor configuration
 "wayland/river" = { target = "~/.config/river", type = "symbolic" }
 "wayland/waybar" = { target = "~/.config/waybar", type = "symbolic" }
 "wayland/foot" = { target = "~/.config/foot", type = "symbolic" }
@@ -146,6 +166,10 @@ depends = ["macos"]
 [default.files]
 
 [default.variables]
+
+"scripts/skim-with-preview" = "~/.local/bin/skim-with-preview"
+"scripts/activity-watcher-simple" = "~/.local/bin/activity-watcher-simple"
+"scripts/activity-watcher-fixed" = "~/.local/bin/activity-watcher-fixed"
 
 [settings]
 default_target_type = "automatic"

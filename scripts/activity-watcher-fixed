@@ -1,0 +1,73 @@
+#!/usr/bin/env nu
+
+# Fixed Activity Duration Watcher
+# Uses Nu's watch command to monitor markdown files and process activity durations
+# Fixed version that properly detects and processes unprocessed entries
+
+def main [
+    --vault-path: string = ""  # Vault path (auto-detected if empty)
+    --debounce: int = 2000     # Debounce in milliseconds
+] {
+    # Auto-detect vault path if not provided
+    let vault = if ($vault_path | is-empty) {
+        $"($env.HOME)/Obsidian.nosync/Forge"
+    } else {
+        $vault_path
+    }
+    
+    print $"🚀 Starting Fixed Activity Watcher"
+    print $"📁 Vault: ($vault)"
+    print $"⏱️ Debounce: ($debounce)ms"
+    print ""
+    print "Monitoring for changes to markdown files..."
+    print "Press Ctrl+C to stop"
+    print ""
+    
+    # Watch for file changes
+    watch $vault --glob "**/*.md" --debounce-ms $debounce {|operation, path, new_path|
+        let timestamp = (date now | format date "%H:%M:%S")
+        let filename = ($path | path basename)
+        
+        # Process Write and Modify operations
+        if $operation in ["Write", "Modify"] {
+            print $"[($timestamp)] 📝 ($operation): ($filename)"
+            
+            # Read file content
+            let content = (open $path)
+            
+            # Check for unprocessed activity entries
+            # Look for patterns like "s:: 0800-0900" without "hr" or "min"
+            let lines = ($content | lines)
+            let needs_processing = false
+            
+            for line in $lines {
+                # Check if line has activity pattern (letter(s):: followed by time range)
+                if ($line =~ '^[a-zA-Z]+::\s+\d{4}-\d{2,4}') {
+                    # Check if it doesn't have duration yet
+                    if not ($line =~ '\d+hr|\d+min') {
+                        print $"  ⚡ Found unprocessed entry: ($line | str substring 0..30)..."
+                        
+                        # Process the file
+                        print "  🔄 Processing activity durations..."
+                        activity-duration-processor $path
+                        print "  ✅ Processing complete!"
+                        
+                        # Only process once per file change
+                        break
+                    }
+                }
+            }
+            
+            if not $needs_processing {
+                # Check if there are ANY activity entries at all
+                if ($content =~ '[a-zA-Z]+::\s+\d{4}-\d{2,4}') {
+                    print "  ✓ All activity entries already have durations"
+                } else {
+                    print "  ○ No activity entries in file"
+                }
+            }
+        } else {
+            print $"[($timestamp)] 👁️ ($operation): ($filename) - ignored"
+        }
+    }
+}

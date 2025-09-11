@@ -1,0 +1,34 @@
+[Unit]
+Description=Dotter Real-time Configuration Watcher
+Documentation=file:///home/%i/Claude/REAL-TIME-CONFIG-ONBOARDING-SYSTEM.md
+After=graphical-session.target
+Wants=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/dotter-realtime-watcher
+Restart=always
+RestartSec=5
+Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/sbin
+Environment=HOME=%h
+
+# Logging
+StandardOutput=append:%h/.local/share/dotter-realtime-watcher.stdout
+StandardError=append:%h/.local/share/dotter-realtime-watcher.stderr
+
+# Performance optimizations
+Nice=15
+IOSchedulingClass=3
+IOSchedulingPriority=7
+
+# Security
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/share %h/dotfiles /tmp
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,192 @@
+#!/usr/bin/env nu
+
+# Zotero Import Bridge - Native Nushell Re-nu Version  
+# Handles automated transfer of PDFs between different import directories
+# Re-nu Phase 2: Cross-platform structured data processing
+# Created: 2025-09-11
+
+export def main [
+    --source: string = "~/Library/CloudStorage/Dropbox/ZoteroImport"  # Source directory
+    --destination: string = "~/Documents/ZoteroImport"  # Destination directory  
+    --interval: int = 30  # Check interval in seconds
+    --batch-size: int = 5  # Maximum files to process per batch
+] {
+    let src_path = ($source | path expand)
+    let dest_path = ($destination | path expand) 
+    
+    print $"🌉 Zotero Import Bridge (Native Nushell Re-nu Version)"
+    print $"📂 Source: ($src_path)"
+    print $"📁 Destination: ($dest_path)"
+    print $"⏱️  Check interval: ($interval)s"
+    print $"📦 Batch size: ($batch_size) files"
+    print ""
+    
+    # Ensure directories exist
+    ensure_directory_exists $src_path "source"
+    ensure_directory_exists $dest_path "destination"
+    
+    print $"🔄 Starting import bridge... (Press Ctrl+C to stop)"
+    print ""
+    
+    # Main processing loop
+    loop {
+        let pdf_files = (
+            glob ($src_path | path join "*.pdf")
+            | where ($it | path exists)
+            | sort-by modified
+            | first $batch_size
+        )
+        
+        if ($pdf_files | length) > 0 {
+            print $"📄 Found ($pdf_files | length) PDF(s) to process"
+            
+            for file in $pdf_files {
+                process_pdf_transfer $file $dest_path
+            }
+            
+            print ""
+        }
+        
+        sleep ($interval | into string | $in + "sec")
+    }
+}
+
+def ensure_directory_exists [dir_path: string, dir_type: string] {
+    if not ($dir_path | path exists) {
+        try {
+            mkdir $dir_path
+            print $"✅ Created ($dir_type) directory: ($dir_path)"
+        } catch {|err|
+            print $"❌ Cannot create ($dir_type) directory: ($err.msg)"
+            exit 1
+        }
+    }
+}
+
+def process_pdf_transfer [source_file: string, dest_dir: string] {
+    let filename = ($source_file | path basename)
+    let dest_file = ($dest_dir | path join $filename)
+    
+    print $"🔄 Processing: ($filename)"
+    
+    # Check if destination file already exists
+    if ($dest_file | path exists) {
+        print $"⚠️  File already exists in destination: ($filename)"
+        
+        # Compare file sizes to decide action
+        let src_size = (stat $source_file).st_size
+        let dest_size = (stat $dest_file).st_size
+        
+        if $src_size == $dest_size {
+            print $"🗑️  Removing duplicate from source: ($filename)"
+            rm $source_file
+            return
+        } else {
+            # Rename with timestamp to avoid conflict
+            let timestamp = (date now | format date "%Y%m%d_%H%M%S")
+            let new_name = ($filename | str replace '.pdf' $'_($timestamp).pdf')
+            let new_dest = ($dest_dir | path join $new_name)
+            
+            try {
+                mv $source_file $new_dest
+                print $"✅ Transferred with new name: ($new_name)"
+                log_transfer_event $filename "renamed_transfer" $new_name
+            } catch {|err|
+                print $"❌ Failed to transfer ($filename): ($err.msg)"
+                log_transfer_event $filename "error" $err.msg
+            }
+        }
+    } else {
+        # Standard transfer
+        try {
+            mv $source_file $dest_file
+            print $"✅ Transferred: ($filename)"
+            log_transfer_event $filename "success" null
+            
+            # Optional: Trigger notification
+            send_transfer_notification $filename
+            
+        } catch {|err|
+            print $"❌ Failed to transfer ($filename): ($err.msg)"
+            
+            # Try copy instead of move if permissions issue
+            if ($err.msg | str contains "Operation not permitted") {
+                try {
+                    cp $source_file $dest_file
+                    print $"✅ Copied instead (permissions issue): ($filename)"
+                    
+                    # Verify copy succeeded before removing source
+                    let src_size = (stat $source_file).st_size
+                    let dest_size = (stat $dest_file).st_size
+                    
+                    if $src_size == $dest_size {
+                        rm $source_file
+                        print $"🗑️  Removed source after successful copy"
+                        log_transfer_event $filename "copy_success" null
+                    } else {
+                        print $"⚠️  Copy verification failed - keeping both files"
+                        log_transfer_event $filename "copy_verify_failed" null
+                    }
+                } catch {|copy_err|
+                    print $"❌ Copy also failed: ($copy_err.msg)"
+                    log_transfer_event $filename "copy_error" $copy_err.msg
+                }
+            } else {
+                log_transfer_event $filename "move_error" $err.msg
+            }
+        }
+    }
+}
+
+def send_transfer_notification [filename: string] {
+    try {
+        if (which terminal-notifier | is-not-empty) {
+            ^terminal-notifier -title "Zotero Bridge" -message $"PDF ready for import: ($filename)"
+        } else if (which notify-send | is-not-empty) {
+            ^notify-send "Zotero Bridge" $"PDF ready for import: ($filename)"
+        }
+    } catch {
+        # Notifications are optional - don't fail on notification errors
+    }
+}
+
+def log_transfer_event [filename: string, status: string, details: any] {
+    let log_entry = {
+        timestamp: (date now),
+        filename: $filename,
+        status: $status,
+        details: $details,
+        tool: "zotero-bridge-renu"
+    }
+    
+    # Optional: Save to structured log for analytics
+    # $log_entry | to json | save --append ~/.local/share/zotero-analytics.json
+}
+
+# Manual trigger mode for one-time sync
+export def "main sync-now" [] {
+    print "🔄 Running one-time sync..."
+    
+    let src_path = ("~/Library/CloudStorage/Dropbox/ZoteroImport" | path expand)
+    let dest_path = ("~/Documents/ZoteroImport" | path expand)
+    
+    ensure_directory_exists $src_path "source"
+    ensure_directory_exists $dest_path "destination"
+    
+    let pdf_files = (
+        glob ($src_path | path join "*.pdf")
+        | where ($it | path exists)
+    )
+    
+    if ($pdf_files | length) > 0 {
+        print $"📄 Found ($pdf_files | length) PDF(s) to transfer"
+        
+        for file in $pdf_files {
+            process_pdf_transfer $file $dest_path
+        }
+        
+        print "✅ Sync complete!"
+    } else {
+        print "📂 No PDFs found to transfer"
+    }
+}

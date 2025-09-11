@@ -1,0 +1,179 @@
+#!/usr/bin/env nu
+
+# dotter-auto-onboard - Proactive config onboarding automation
+# Watches for new config files and automatically adds them to Dotter management
+# The "smart onboarding guy" that doesn't wait for explicit instructions
+
+def main [
+    --dry-run          # Show what would be onboarded without doing it
+    --watch            # Run in continuous monitoring mode
+    --scan-once        # Scan once for existing orphans and onboard them
+] {
+    let dotfiles_root = ($env.HOME + "/dotfiles")
+    
+    if $watch {
+        run_continuous_watcher
+    } else if $scan_once {
+        scan_and_onboard_existing $dry_run
+    } else {
+        print "🤖 Dotter Auto-Onboard - The Proactive Onboarding Guy"
+        print "=================================================="
+        print ""
+        print "Usage:"
+        print "  --watch       Run continuous monitoring (recommended)"
+        print "  --scan-once   Scan for existing orphans and onboard them"
+        print "  --dry-run     Show what would be done without doing it"
+        print ""
+        print "💡 Tip: Run with --scan-once first to catch existing orphans"
+    }
+}
+
+# Scan for existing orphaned configs and onboard them
+def scan_and_onboard_existing [dry_run: bool = false] {
+    print "🔍 Scanning for existing orphaned configs..."
+    
+    let orphans = detect_orphaned_configs
+    
+    if ($orphans | length) == 0 {
+        print "✅ No orphaned configs found - all clean!"
+        return
+    }
+    
+    print $"📋 Found ($orphans | length) orphaned configs:"
+    
+    for orphan in $orphans {
+        print $"  📄 ($orphan)"
+        
+        if not $dry_run {
+            if (should_auto_onboard $orphan) {
+                print $"  🤖 Auto-onboarding: ($orphan)"
+                onboard_file $orphan
+            } else {
+                print $"  ⏭️  Skipping: ($orphan) (filtered out)"
+            }
+        } else {
+            let action = if (should_auto_onboard $orphan) { "WOULD ONBOARD" } else { "WOULD SKIP" }
+            print $"  🔍 DRY-RUN: ($action)"
+        }
+    }
+}
+
+# Run continuous file system watcher
+def run_continuous_watcher [] {
+    print "👀 Starting continuous config monitoring..."
+    print "🎯 Watching: ~/.config/, ~/.local/bin/, and other common locations"
+    print "⏹️  Press Ctrl+C to stop"
+    
+    # Check if fswatch is available
+    if not (which fswatch | length > 0) {
+        print "❌ fswatch not found - please install with: brew install fswatch"
+        exit 1
+    }
+    
+    let watch_paths = [
+        ($env.HOME + "/.config")
+        ($env.HOME + "/.local/bin") 
+        ($env.HOME + "/.zshrc")
+        ($env.HOME + "/.bashrc")
+    ]
+    
+    # Start fswatch and process events
+    print $"🔄 Monitoring paths: ($watch_paths | str join ', ')"
+    
+    # This would use fswatch in a real implementation
+    print "⚠️  TODO: Implement fswatch integration"
+    print "💡 For now, run periodically with --scan-once"
+}
+
+# Detect orphaned config files that aren't managed by Dotter
+def detect_orphaned_configs [] {
+    # Common config file locations
+    let config_patterns = [
+        "~/.config/*/*.toml"
+        "~/.config/*/*.yml" 
+        "~/.config/*/*.yaml"
+        "~/.config/*/*.json"
+        "~/.config/*/config"
+        "~/.local/bin/*"
+        "~/.zshrc"
+        "~/.bashrc"
+    ]
+    
+    mut orphans = []
+    
+    for pattern in $config_patterns {
+        let expanded_pattern = ($pattern | str replace "~" $env.HOME)
+        let files = (glob $expanded_pattern | where ($it | path type) == "file")
+        
+        for file in $files {
+            if not (is_managed_by_dotter $file) {
+                $orphans = ($orphans | append $file)
+            }
+        }
+    }
+    
+    $orphans
+}
+
+# Check if a file is already managed by Dotter
+def is_managed_by_dotter [file_path: string] -> bool {
+    let dotter_config = ($env.HOME + "/dotfiles/.dotter/global.toml")
+    
+    if not ($dotter_config | path exists) {
+        false
+    } else {
+        let config_content = (open --raw $dotter_config)
+        let relative_path = ($file_path | str replace $env.HOME "~")
+        
+        # Check if the file path appears in Dotter config
+        ($config_content | str contains $relative_path)
+    }
+}
+
+# Determine if a file should be automatically onboarded
+def should_auto_onboard [file_path: string] -> bool {
+    let filename = ($file_path | path basename)
+    let dirname = ($file_path | path dirname | path basename)
+    let extension = ($file_path | path parse | get extension)
+    
+    # Skip temporary and cache files
+    if ($filename | str contains "tmp") or ($filename | str contains "temp") or ($filename | str contains "lock") {
+        false
+    } else if ($filename | str contains "log") or ($filename | str contains "cache") or ($filename == ".DS_Store") {
+        false  
+    } else if ($dirname == "cache") or ($dirname == "logs") or ($dirname == "tmp") or ($dirname == ".git") {
+        false
+    } else if $extension in ["toml", "yml", "yaml", "json", "nu", "sh", "py"] {
+        true
+    } else if $filename in ["config", "settings", "preferences"] {
+        true
+    } else if ($file_path | str contains ".local/bin") {
+        true
+    } else {
+        false
+    }
+}
+
+# Onboard a single file using dotter-add
+def onboard_file [file_path: string] {
+    print $"🤖 Onboarding: ($file_path)"
+    
+    try {
+        # Use the fixed dotter-add script
+        let result = (do { dotter-add $file_path } | complete)
+        
+        if $result.exit_code == 0 {
+            print $"✅ Successfully onboarded: ($file_path)"
+            
+            # Send notification
+            if (which osascript | length > 0) {
+                osascript -e $"display notification \"Auto-onboarded: ($file_path | path basename)\" with title \"Dotter Auto-Onboard\" sound name \"Glass\""
+            }
+        } else {
+            print $"❌ Failed to onboard: ($file_path)"
+            print $"   Error: ($result.stderr)"
+        }
+    } catch { |e|
+        print $"❌ Exception onboarding ($file_path): ($e)"
+    }
+}

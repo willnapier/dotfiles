@@ -1,0 +1,18 @@
+[Unit]
+Description=Zotero Import Bridge - Native Nushell Re-nu Version
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/nu /home/%u/.local/bin/zotero-bridge-renu
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+# Environment for Nushell
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+Environment="HOME=/home/%u"
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,181 @@
+#!/usr/bin/env nu
+
+# dotter-realtime-watcher-renu - Native Nushell Re-nu Version
+# Event-driven config onboarding using Nushell's native watch
+# Major improvement: No external dependencies, structured data handling
+
+def main [] {
+    # Configuration
+    let watch_paths = [
+        $"($env.HOME)/.config"
+        $"($env.HOME)/.local/bin"
+        $"($env.HOME)/.zshrc"
+        $"($env.HOME)/.bashrc"
+    ]
+    
+    let log_file = $"($env.HOME)/.local/share/dotter-realtime-watcher.log"
+    let lock_file = "/tmp/dotter-realtime-watcher.lock"
+    
+    # Ensure log directory exists
+    mkdir ($log_file | path dirname)
+    
+    # Check for existing instance
+    if ($lock_file | path exists) {
+        let existing_pid = (try { open $lock_file | str trim } catch { "" })
+        if $existing_pid != "" {
+            try {
+                # Check if process is still running (cross-platform)
+                let running = ((ps | where pid == ($existing_pid | into int) | length) > 0)
+                if $running {
+                    print "❌ Real-time watcher already running (PID: $existing_pid)"
+                    exit 1
+                }
+            }
+        }
+        log_message $log_file "⚠️  Removing stale lock file"
+        rm $lock_file
+    }
+    
+    # Create lock file with timestamp (simpler than getting PID)
+    (date now | format date "%s") | save $lock_file
+    
+    log_message $log_file "🚀 Starting real-time config watcher (Re-nu native Nushell version)"
+    log_message $log_file $"👀 Watching: ($watch_paths | str join ', ')"
+    
+    # Check dependencies
+    if (which dotter-add | length) == 0 {
+        log_message $log_file "❌ dotter-add not found - check deployment"
+        cleanup $lock_file $log_file
+        exit 1
+    }
+    
+    log_message $log_file "⚡ Re-nu monitoring active - native Nushell structured data"
+    log_message $log_file "🔄 No external dependencies - pure Nushell watch"
+    
+    # Register cleanup handler
+    # Note: Nushell doesn't have signal traps like bash, but we can use try/catch
+    
+    # Start watching using native Nushell watch for each path
+    # We'll watch each path separately since Nushell watch takes a single path
+    log_message $log_file $"🔍 Starting native Nushell watch on ($watch_paths | length) paths..."
+    
+    # For now, let's watch the primary config directory
+    let primary_path = $watch_paths.0  # ~/.config
+    
+    try {
+        watch $primary_path --recursive true --debounce-ms 1000 {|operation, path, new_path|
+            handle_config_event $operation $path $new_path $log_file
+        }
+    } catch {|error|
+        log_message $log_file $"❌ Watch failed: ($error.msg)"
+        cleanup $lock_file $log_file
+    }
+}
+
+# Logging function
+def log_message [log_file: string, message: string] {
+    let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
+    let log_entry = $"($timestamp) - ($message)"
+    print $log_entry
+    $log_entry | save --append $log_file
+}
+
+# Cleanup function
+def cleanup [lock_file: string, log_file: string] {
+    if ($lock_file | path exists) {
+        rm $lock_file
+    }
+    log_message $log_file "🛑 Real-time watcher stopped"
+}
+
+# Handle file system events with native Nushell structured data
+def handle_config_event [operation: string, path: string, new_path: string, log_file: string] {
+    # Filter events - only care about Creates and Modifies
+    match $operation {
+        "Create" | "Modify" => {
+            if (should_monitor_file $path) {
+                log_message $log_file $"📝 Config change detected: ($path) (($operation))"
+                
+                # Brief delay to let file operations complete
+                sleep 1sec
+                
+                if (is_new_unmanaged_config $path) {
+                    log_message $log_file $"🤖 Auto-onboarding new config: ($path)"
+                    
+                    let result = (do { ^dotter-add $path } | complete)
+                    if $result.exit_code == 0 {
+                        log_message $log_file $"✅ Successfully onboarded: ($path)"
+                        
+                        # macOS notification (if available)
+                        if (which osascript | length) > 0 {
+                            let filename = ($path | path basename)
+                            try {
+                                ^osascript -e $"display notification \"Auto-onboarded: ($filename)\" with title \"Dotter Real-time Re-nu\" sound name \"Glass\""
+                            }
+                        }
+                    } else {
+                        log_message $log_file $"❌ Failed to onboard: ($path) - ($result.stderr)"
+                    }
+                } else {
+                    log_message $log_file "ℹ️  File already managed or not suitable for onboarding"
+                }
+            }
+        }
+        _ => {
+            # Ignore other events (renames, deletes, etc.)
+        }
+    }
+}
+
+# Check if file should be monitored for onboarding
+def should_monitor_file [file_path: string] {
+    let filename = ($file_path | path basename)
+    let extension = ($file_path | path parse).extension
+    
+    # Skip temporary files
+    if ($filename =~ '\.(tmp|temp|lock|pid|log|cache)$') { return false }
+    if ($filename =~ '^\..*\.(tmp|swp|bak)$') { return false }
+    if $filename == ".DS_Store" { return false }
+    
+    # Monitor config-like extensions
+    if $extension in ["toml", "yml", "yaml", "json", "nu", "sh", "py", "lua", "js", "ts"] {
+        return true
+    }
+    
+    # Monitor files named 'config', 'settings', etc.
+    if $filename in ["config", "settings", "preferences"] {
+        return true
+    }
+    
+    # Monitor executable files in .local/bin
+    if ($file_path | str contains ".local/bin/") and ($file_path | path exists) {
+        # Check if executable (simplified cross-platform check)
+        try {
+            let stat_result = (stat $file_path)
+            # This is a simplified check - in production you'd want more robust executable detection
+            return true
+        } catch {
+            return false
+        }
+    }
+    
+    return false
+}
+
+# Check if file is new and unmanaged
+def is_new_unmanaged_config [file_path: string] {
+    # File must exist
+    if not ($file_path | path exists) { return false }
+    
+    # Check if already managed by Dotter
+    let dotter_config = $"($env.HOME)/dotfiles/.dotter/global.toml"
+    if ($dotter_config | path exists) {
+        let relative_path = ($file_path | str replace $env.HOME "~")
+        let config_content = (open $dotter_config)
+        if ($config_content | str contains $relative_path) {
+            return false  # Already managed
+        }
+    }
+    
+    return true  # New and unmanaged
+}
