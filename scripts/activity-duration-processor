@@ -47,27 +47,38 @@ def main [file_path?: string] {
         return
     }
     
-    # Read file content and process line by line
-    let content = (open $target_file)
+    # Read file content with retry logic for file system reliability
+    let content = (try {
+        open $target_file
+    } catch { |err|
+        # Retry once after brief delay if file read fails
+        sleep 50ms
+        open $target_file
+    })
     let lines = ($content | lines)
     
     let processed_lines = ($lines | each { |line|
-        # Check if line matches pattern "[letters]:: ..." and extract time ranges
-        let trimmed_line = ($line | str trim)
-        let activity_pattern = ($trimmed_line | parse --regex '^([a-zA-Z]+):: (.+)$')
+        # Look for ALL time range patterns in the line (handles nested entries)
+        # Match time patterns (HHMM) but NOT dates (YYYY-MM-DD)
+        # Only match 4-digit patterns where first 2 digits are 00-23 (hours)
+        let time_range_matches = ($line | parse --regex '([0-2]\d[0-5]\d)-(\d{2,4})')
         
-        if ($activity_pattern | length) > 0 {
-            let activity_code = ($activity_pattern | first | get capture0)
-            let content_raw = ($activity_pattern | first | get capture1)
+        if ($time_range_matches | length) > 0 {
+            mut current_line = $line
             
-            # Look for time range pattern HHMM-HHMM or HHMM-HH or HHMM-MM anywhere in the content
-            let time_range_matches = ($content_raw | parse --regex '(\d{4})-(\d{2,4})')
-            
-            if ($time_range_matches | length) > 0 and (not ($content_raw | str contains "hr")) and (not ($content_raw | str contains "min")) {
-                let match = ($time_range_matches | first)
+            # Process each time pattern found in the line
+            for match in $time_range_matches {
                 let start_time = ($match | get capture0)
                 let end_time_raw = ($match | get capture1)
                 let time_range_text = $"($start_time)-($end_time_raw)"
+                
+                # Skip this pattern if it's already processed (has duration before it)
+                # Look for pattern like "15min 1430-45" or "2hr 30min 0900-30"
+                # Only match actual duration units: min, hr, sec, hour, minute, second
+                let has_duration = (($current_line | str contains $"min ($start_time)-($end_time_raw)") or ($current_line | str contains $"hr ($start_time)-($end_time_raw)") or ($current_line | str contains $"sec ($start_time)-($end_time_raw)"))
+                if $has_duration {
+                    continue  # This specific pattern already has duration, skip it
+                }
                 
                 # Handle both full HHMM and shorthand MM formats for end time
                 let end_time = if ($end_time_raw | str length) == 2 {
@@ -112,21 +123,17 @@ def main [file_path?: string] {
                         # Format as Nushell duration string
                         let duration_str = ($duration | to text)
                         
-                        # Insert duration into the content, replacing the time range
-                        let updated_content = ($content_raw | str replace $time_range_text $"($duration_str) ($start_time)-($end_time)")
-                        
-                        $"($activity_code):: ($updated_content)"
+                        # Replace the time pattern with duration + expanded time in current line
+                        $current_line = ($current_line | str replace $time_range_text $"($duration_str) ($start_time)-($end_time)")
                     } catch {
-                        $line  # Return original line if parsing fails
+                        # Continue with next match if this one fails
                     }
-                } else {
-                    $line  # Invalid end time format
                 }
-            } else {
-                $line  # Already processed or not a time range
             }
+            
+            $current_line
         } else {
-            $line  # Not an activity pattern
+            $line  # No time patterns found
         }
     })
     
