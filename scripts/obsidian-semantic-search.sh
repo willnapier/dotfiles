@@ -87,8 +87,8 @@ fi
 echo "✅ Search successful, processing results..."
 
 # Parse results for skim selection
-# Extract lines that start with score like: "0.52  Filename"
-results=$(grep -E "^[0-9]\.[0-9][0-9].*\.md|^[0-9]\.[0-9][0-9]  " "$TEMP_FILE" | head -10)
+# Extract lines that start with score like: "0.52  Filename" - using modern tools
+results=$(rg -E "^[0-9]\.[0-9][0-9].*\.md|^[0-9]\.[0-9][0-9]  " "$TEMP_FILE" | head -10)
 
 if [[ -z "$results" ]]; then
     echo "❌ No semantic matches found for '$query'"
@@ -168,8 +168,8 @@ wikilink="[[$filename]]"
 echo ""
 echo "$wikilink"
 
-# Extract similarity for display (format: "0.52  Filename")
-similarity=$(echo "$selected" | sed -E 's/^([0-9]\.[0-9][0-9]).*/\1/')
+# Extract similarity for display (format: "0.52  Filename") - using modern tools
+similarity=$(echo "$selected" | sd -E '^([0-9]\.[0-9][0-9]).*' '$1')
 similarity_pct=$(echo "scale=0; $similarity * 100" | bc)
 
 # Copy to clipboard

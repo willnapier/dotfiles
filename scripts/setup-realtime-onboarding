@@ -89,7 +89,7 @@ setup_macos_service() {
     
     # Verify it's running
     sleep 2
-    if launchctl list | grep -q "dotter-realtime-watcher"; then
+    if launchctl list | rg -q "dotter-realtime-watcher"; then
         echo "🎉 Real-time onboarding is now ACTIVE!"
         show_success_message
     else
@@ -154,7 +154,7 @@ disable_realtime() {
 }
 
 disable_macos_service() {
-    if launchctl list | grep -q "dotter-realtime-watcher"; then
+    if launchctl list | rg -q "dotter-realtime-watcher"; then
         launchctl unload "$SERVICE_TARGET" 2>/dev/null || true
         echo "✅ LaunchAgent service stopped"
     fi
@@ -210,7 +210,7 @@ check_status() {
 }
 
 check_macos_status() {
-    if launchctl list | grep -q "dotter-realtime-watcher"; then
+    if launchctl list | rg -q "dotter-realtime-watcher"; then
         echo "✅ LaunchAgent service is running"
     else
         echo "❌ LaunchAgent service is not running"

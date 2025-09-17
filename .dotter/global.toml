@@ -48,7 +48,7 @@ depends = []
 "karabiner/karabiner.json" = "~/.config/karabiner/karabiner.json"
 
 # Essential scripts (most commonly used)
-"scripts/daily-note" = { target = "~/.local/bin/daily-note", type = "symbolic" }
+"scripts/daily-note.nu" = "~/.local/bin/daily-note"
 "scripts/daypage-template" = "~/.local/bin/daypage-template"
 "scripts/hx-insert-date" = "~/.local/bin/hx-insert-date"
 "scripts/hx-insert-datetime" = "~/.local/bin/hx-insert-datetime"

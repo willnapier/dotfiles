@@ -28,14 +28,14 @@ fi
 
 echo "📚 Picking citation from: $CITATIONS_FILE"
 
-# Extract citation keys and let user pick
-citation_key=$(grep -o '@[a-zA-Z0-9_-]*' "$CITATIONS_FILE" | \
+# Extract citation keys and let user pick - using modern tools
+citation_key=$(rg -o '@[a-zA-Z0-9_-]*' "$CITATIONS_FILE" | \
     sort -u | \
     sk --ansi \
         --border \
         --height=60% \
         --header="📖 Pick citation key (Enter=select, Esc=cancel)" \
-        --preview="grep -A 5 -B 1 '{}' '$CITATIONS_FILE'" \
+        --preview="rg -A 5 -B 1 '{}' '$CITATIONS_FILE'" \
         --preview-window=right:60%:wrap)
 
 if [[ -n "$citation_key" ]]; then

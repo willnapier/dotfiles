@@ -12,11 +12,11 @@ log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOGFILE"
 }
 
-# Count running Zellij processes before cleanup
-PROCESS_COUNT_BEFORE=$(ps aux | grep -i zellij | grep -v grep | wc -l | tr -d ' ')
+# Count running Zellij processes before cleanup - using modern tools
+PROCESS_COUNT_BEFORE=$(ps aux | rg -i zellij | rg -v rg | wc -l | tr -d ' ')
 
-# Get zombie sessions
-ZOMBIE_SESSIONS=$(zellij list-sessions --no-formatting 2>/dev/null | grep "EXITED" | awk '{print $1}')
+# Get zombie sessions - using modern tools
+ZOMBIE_SESSIONS=$(zellij list-sessions --no-formatting 2>/dev/null | rg "EXITED" | cut -d' ' -f1)
 ZOMBIE_COUNT=$(echo "$ZOMBIE_SESSIONS" | wc -l | tr -d ' ')
 
 # Only log if there's activity
@@ -33,7 +33,7 @@ if [[ -n "$ZOMBIE_SESSIONS" && "$ZOMBIE_SESSIONS" != "" ]]; then
     done
     
     # Count processes after cleanup
-    PROCESS_COUNT_AFTER=$(ps aux | grep -i zellij | grep -v grep | wc -l | tr -d ' ')
+    PROCESS_COUNT_AFTER=$(ps aux | rg -i zellij | rg -v rg | wc -l | tr -d ' ')
     log "Cleanup complete (Zellij processes: $PROCESS_COUNT_BEFORE → $PROCESS_COUNT_AFTER)"
 else
     # Silent run - no zombies found

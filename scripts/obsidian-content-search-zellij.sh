@@ -20,9 +20,9 @@ echo "Searching for: $query"
 # Function to preview file content with search context
 preview_cmd="rg --type md --color=always --context 3 '$query' '$VAULT/{}' 2>/dev/null | head -30 || bat --style=plain --color=always '$VAULT/{}' 2>/dev/null || head -30 '$VAULT/{}'"
 
-# Search with ripgrep and let user select with preview
+# Search with ripgrep and let user select with preview - using modern tools
 selected=$(rg --type md --files-with-matches --follow "$query" "$VAULT" \
-    | sed "s|$VAULT/||" \
+    | sd "$VAULT/" "" \
     | sk --prompt="📝 Select file: " \
          --preview="$preview_cmd" \
          --preview-window="right:60%" \

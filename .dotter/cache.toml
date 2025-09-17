@@ -48,7 +48,6 @@
 "scripts/claude-docs-backup" = "/Users/williamnapier/.local/bin/claude-docs-backup"
 "scripts/claude-docs-watcher-renu" = "/Users/williamnapier/.local/bin/claude-docs-watcher-renu"
 "scripts/cross-platform-paths" = "/Users/williamnapier/.local/bin/cross-platform-paths"
-"scripts/daily-note" = "/Users/williamnapier/.local/bin/daily-note"
 "scripts/daily-note.nu" = "/Users/williamnapier/.local/bin/daily-note.nu"
 "scripts/daypage-template" = "/Users/williamnapier/.local/bin/daypage-template"
 "scripts/deploy-semantic-search" = "/Users/williamnapier/.local/bin/deploy-semantic-search"

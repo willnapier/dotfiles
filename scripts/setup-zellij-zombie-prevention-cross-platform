@@ -77,9 +77,9 @@ case "$PLATFORM" in
 </plist>
 EOF
         
-        # Replace placeholders
-        sed -i '' "s|SCRIPT_DIR_PLACEHOLDER|$SCRIPT_DIR|g" ~/Library/LaunchAgents/com.williamnapier.zellij-zombie-watcher.plist
-        sed -i '' "s|HOME_PLACEHOLDER|$HOME|g" ~/Library/LaunchAgents/com.williamnapier.zellij-zombie-watcher.plist
+        # Replace placeholders - using modern tools
+        sd "SCRIPT_DIR_PLACEHOLDER" "$SCRIPT_DIR" ~/Library/LaunchAgents/com.williamnapier.zellij-zombie-watcher.plist
+        sd "HOME_PLACEHOLDER" "$HOME" ~/Library/LaunchAgents/com.williamnapier.zellij-zombie-watcher.plist
         
         # Load the agent
         launchctl unload ~/Library/LaunchAgents/com.williamnapier.zellij-zombie-watcher.plist 2>/dev/null || true
@@ -146,7 +146,7 @@ setup_cron_job() {
     CRON_JOB="*/15 * * * * $NU_PATH $SCRIPT_DIR/zellij-zombie-killer --auto >/dev/null 2>&1"
     
     # Check if cron job already exists
-    if ! crontab -l 2>/dev/null | grep -q "zellij-zombie-killer"; then
+    if ! crontab -l 2>/dev/null | rg -q "zellij-zombie-killer"; then
         # Add to existing crontab
         (crontab -l 2>/dev/null; echo "$CRON_JOB") | crontab -
         echo "✅ Cron job added: cleanup every 15 minutes"
@@ -163,7 +163,7 @@ echo "🧪 Testing the system..."
 if command -v pgrep >/dev/null 2>&1; then
     pgrep -f zellij | wc -l | xargs echo "Current Zellij processes:"
 else
-    ps aux | grep '[z]ellij' | wc -l | xargs echo "Current Zellij processes:"
+    ps aux | rg '\bzellij\b' | wc -l | xargs echo "Current Zellij processes:"
 fi
 
 echo ""
@@ -171,7 +171,7 @@ echo "📊 System Status:"
 
 case "$PLATFORM" in
     macos)
-        echo "- Launch Agent: $(launchctl list | grep zellij-zombie-watcher >/dev/null && echo "✅ Running" || echo "❌ Not running")"
+        echo "- Launch Agent: $(launchctl list | rg zellij-zombie-watcher >/dev/null && echo "✅ Running" || echo "❌ Not running")"
         ;;
     linux)
         if [ "$INIT_SYSTEM" = "systemd" ]; then
@@ -180,7 +180,7 @@ case "$PLATFORM" in
         ;;
 esac
 
-echo "- Cron Job: $(crontab -l 2>/dev/null | grep -q zellij-zombie-killer && echo "✅ Installed" || echo "❌ Not installed")"
+echo "- Cron Job: $(crontab -l 2>/dev/null | rg -q zellij-zombie-killer && echo "✅ Installed" || echo "❌ Not installed")"
 echo "- Watcher Script: $([ -x "$SCRIPT_DIR/zellij-zombie-watcher-cross-platform" ] && echo "✅ Executable" || echo "❌ Not executable")"
 echo "- Killer Script: $([ -f "$SCRIPT_DIR/zellij-zombie-killer" ] && echo "✅ Present" || echo "❌ Missing")"
 
@@ -193,7 +193,7 @@ echo ""
 case "$PLATFORM" in
     macos)
         echo "macOS commands:"
-        echo "- Check status: launchctl list | grep zellij"
+        echo "- Check status: launchctl list | rg zellij"
         echo "- Stop: launchctl unload ~/Library/LaunchAgents/com.williamnapier.zellij-zombie-watcher.plist"
         echo "- Start: launchctl load ~/Library/LaunchAgents/com.williamnapier.zellij-zombie-watcher.plist"
         ;;
