@@ -55,8 +55,8 @@ echo "✅ Found citations file: $CITATIONS_FILE"
 preview_citation() {
     local line="$1"
     if [[ -n "$line" ]]; then
-        # Extract citation key (first word)
-        citation_key=$(echo "$line" | awk '{print $1}')
+        # Extract citation key (first word) - using modern tools
+        citation_key=$(echo "$line" | cut -d' ' -f1)
         echo "📖 Citation Key: $citation_key"
         echo ""
         echo "📝 Full Entry:"
@@ -72,9 +72,9 @@ preview_citation() {
 export -f preview_citation
 export SHELL="/bin/bash"  # Ensure bash is used for preview commands
 
-# Read citations file and filter out header/empty lines
+# Read citations file and filter out header/empty lines - using ripgrep for better performance
 echo "🔍 Loading citations database..."
-citations=$(grep -v '^#' "$CITATIONS_FILE" | grep -v '^$' | grep -v '^Total entries:')
+citations=$(rg -v '^#' "$CITATIONS_FILE" | rg -v '^$' | rg -v '^Total entries:')
 
 if [[ -z "$citations" ]]; then
     echo "❌ No citations found in database"
@@ -102,8 +102,8 @@ fi
 
 # Process selection
 if [[ -n "$selected" ]]; then
-    # Extract citation key (first word of the line)
-    citation_key=$(echo "$selected" | awk '{print $1}')
+    # Extract citation key (first word of the line) - using modern tools
+    citation_key=$(echo "$selected" | cut -d' ' -f1)
     
     if [[ -n "$citation_key" ]]; then
         # Output the citation key as wikilink for Helix insertion

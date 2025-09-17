@@ -129,8 +129,8 @@ def check_service_status [plist_name: string] {
     if ($plist_target | path exists) {
         print "✅ LaunchAgent file exists"
         
-        # Check if loaded
-        let loaded = (launchctl list | grep $label | length) > 0
+        # Check if loaded - using modern tools
+        let loaded = (launchctl list | rg $label | length) > 0
         if $loaded {
             print "✅ Service is loaded and active"
             

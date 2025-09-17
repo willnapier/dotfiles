@@ -21,16 +21,16 @@ find_helix_pane() {
         return 0
     fi
     
-    # Method 2: Look for 'hx' or 'helix' in process or title
-    local pane_id=$(wezterm cli list | rg -E 'hx|helix|daily-note' | awk '{print $3}' | head -n1)
+    # Method 2: Look for 'hx' or 'helix' in process or title - using modern tools
+    local pane_id=$(wezterm cli list | rg -E 'hx|helix|daily-note' | cut -d' ' -f3 | head -n1)
     
     if [ -n "$pane_id" ]; then
         echo "$pane_id"
         return 0
     fi
     
-    # Method 3: Get the first pane (assuming it's where we're working)
-    local first_pane=$(wezterm cli list | rg -v PANEID | awk '{print $3}' | head -n1)
+    # Method 3: Get the first pane (assuming it's where we're working) - using modern tools
+    local first_pane=$(wezterm cli list | rg -v PANEID | cut -d' ' -f3 | head -n1)
     if [ -n "$first_pane" ]; then
         log "Using first pane as fallback: $first_pane"
         echo "$first_pane"
