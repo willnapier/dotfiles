@@ -22,6 +22,28 @@ local function scheme_for_appearance(appearance)
   end
 end
 
+-- Cross-platform key modifier mapping
+local function get_platform_modifiers()
+  local is_macos = wezterm.target_triple:find("apple") ~= nil
+  local is_linux = wezterm.target_triple:find("linux") ~= nil
+
+  if is_macos then
+    return {
+      word_mod = 'OPT',      -- Option/Alt on macOS
+      line_mod = 'CMD',      -- Command on macOS
+      primary_mod = 'CMD',   -- Primary modifier (Cmd on macOS)
+    }
+  else -- Linux and other platforms
+    return {
+      word_mod = 'ALT',      -- Alt on Linux
+      line_mod = 'CTRL',     -- Ctrl on Linux
+      primary_mod = 'CTRL',  -- Primary modifier (Ctrl on Linux)
+    }
+  end
+end
+
+local mods = get_platform_modifiers()
+
 -- Helper function to get appropriate window size based on screen resolution
 local function get_window_size()
   -- Use system_profiler to safely detect screen size
@@ -111,9 +133,9 @@ config.scrollback_lines = 10000
 config.enable_csi_u_key_encoding = true   -- Re-enabled for testing
 config.use_ime = true
 
--- Alt key handling - Both Alt keys work as regular Alt for commands
+-- Alt key handling - Enable right alt for composed characters like # symbol
 config.send_composed_key_when_left_alt_is_pressed = false
-config.send_composed_key_when_right_alt_is_pressed = false
+config.send_composed_key_when_right_alt_is_pressed = true
 
 -- Image protocol support for tools like Yazi
 config.enable_kitty_graphics = true
@@ -138,57 +160,92 @@ config.ssh_domains = {
 -- Leader key for multiplexing (similar to tmux)
 config.leader = { key = 'b', mods = 'CTRL', timeout_milliseconds = 1000 }
 
--- Key bindings
+-- Cross-platform key bindings
 config.keys = {
-  -- macOS word navigation
+  -- Cross-platform word navigation (Alt on all platforms, Option on macOS)
   {
     key = 'LeftArrow',
-    mods = 'OPT',
+    mods = mods.word_mod,
     action = act.SendKey { key = 'b', mods = 'ALT' },
   },
   {
     key = 'RightArrow',
-    mods = 'OPT',
+    mods = mods.word_mod,
     action = act.SendKey { key = 'f', mods = 'ALT' },
   },
-  -- Delete word backward
-  {
-    key = 'Backspace',
-    mods = 'OPT',
-    action = act.SendKey { key = 'w', mods = 'CTRL' },
-  },
-  -- Delete to line start (standard macOS behavior)
-  {
-    key = 'Backspace',
-    mods = 'CMD',
-    action = act.SendString '\x15',  -- Ctrl+U (kill line backward)
-  },
-  -- Jump to line start/end with Cmd+Arrow
+
+  -- Cross-platform line start/end navigation (Cmd on macOS, Ctrl on Linux)
   {
     key = 'LeftArrow',
-    mods = 'CMD',
+    mods = mods.line_mod,
     action = act.SendKey { key = 'a', mods = 'CTRL' },
   },
   {
     key = 'RightArrow',
-    mods = 'CMD',
+    mods = mods.line_mod,
     action = act.SendKey { key = 'e', mods = 'CTRL' },
   },
+
+  -- Cross-platform deletion shortcuts
+  {
+    key = 'Backspace',
+    mods = mods.word_mod,
+    action = act.SendKey { key = 'w', mods = 'CTRL' },  -- Delete word backward
+  },
+  {
+    key = 'Backspace',
+    mods = mods.line_mod,
+    action = act.SendString '\x15',  -- Delete to line start (Ctrl+U)
+  },
+  {
+    key = 'Delete',
+    mods = mods.word_mod,
+    action = act.SendKey { key = 'd', mods = 'ALT' },  -- Delete word forward
+  },
+  {
+    key = 'Delete',
+    mods = mods.line_mod,
+    action = act.SendString '\x0b',  -- Delete to line end (Ctrl+K)
+  },
+
+  -- Cross-platform selection with Shift+arrows (word selection)
+  {
+    key = 'LeftArrow',
+    mods = 'SHIFT|' .. mods.word_mod,
+    action = act.SendString '\x1b[1;6D',  -- Shift+Alt+Left
+  },
+  {
+    key = 'RightArrow',
+    mods = 'SHIFT|' .. mods.word_mod,
+    action = act.SendString '\x1b[1;6C',  -- Shift+Alt+Right
+  },
+
+  -- Cross-platform selection with Shift+arrows (line selection)
+  {
+    key = 'LeftArrow',
+    mods = 'SHIFT|' .. mods.line_mod,
+    action = act.SendString '\x1b[1;2H',  -- Shift+Home
+  },
+  {
+    key = 'RightArrow',
+    mods = 'SHIFT|' .. mods.line_mod,
+    action = act.SendString '\x1b[1;2F',  -- Shift+End
+  },
   
-  -- Direct pane commands (no leader needed!)
+  -- Direct pane commands (no leader needed!) - Cross-platform
   {
     key = 'h',
-    mods = 'CMD|SHIFT',
+    mods = mods.primary_mod .. '|SHIFT',
     action = act.SplitVertical { domain = 'CurrentPaneDomain' },
   },
   {
     key = 'v',
-    mods = 'CMD|SHIFT',
+    mods = mods.primary_mod .. '|SHIFT',
     action = act.SplitHorizontal { domain = 'CurrentPaneDomain' },
   },
   {
     key = 'z',
-    mods = 'CMD|SHIFT',
+    mods = mods.primary_mod .. '|SHIFT',
     action = act.TogglePaneZoomState,
   },
   
@@ -210,7 +267,7 @@ config.keys = {
   },
   {
     key = 'x',
-    mods = 'CMD|SHIFT',
+    mods = mods.primary_mod .. '|SHIFT',
     action = act.CloseCurrentPane { confirm = true },
   },
   {
@@ -222,51 +279,51 @@ config.keys = {
   -- Rotate panes (swap positions) - no leader needed!
   {
     key = 'r',
-    mods = 'CMD|SHIFT',
+    mods = mods.primary_mod .. '|SHIFT',
     action = act.RotatePanes 'Clockwise',
   },
   
   -- Colemak-DH pane navigation (neio for hjkl) - matching Helix/Yazi/Zellij
   {
     key = 'n',
-    mods = 'CMD|SHIFT', 
+    mods = mods.primary_mod .. '|SHIFT', 
     action = act.ActivatePaneDirection 'Left',
   },
   {
     key = 'e',
-    mods = 'CMD|SHIFT',
+    mods = mods.primary_mod .. '|SHIFT',
     action = act.ActivatePaneDirection 'Down', 
   },
   {
     key = 'i',
-    mods = 'CMD|SHIFT',
+    mods = mods.primary_mod .. '|SHIFT',
     action = act.ActivatePaneDirection 'Up',
   },
   {
     key = 'o',
-    mods = 'CMD|SHIFT',
+    mods = mods.primary_mod .. '|SHIFT',
     action = act.ActivatePaneDirection 'Right',
   },
   
   -- Keep arrow key navigation as backup
   {
     key = 'LeftArrow',
-    mods = 'CMD|SHIFT',
+    mods = mods.primary_mod .. '|SHIFT',
     action = act.ActivatePaneDirection 'Left',
   },
   {
     key = 'RightArrow',
-    mods = 'CMD|SHIFT',
+    mods = mods.primary_mod .. '|SHIFT',
     action = act.ActivatePaneDirection 'Right',
   },
   {
     key = 'UpArrow',
-    mods = 'CMD|SHIFT',
+    mods = mods.primary_mod .. '|SHIFT',
     action = act.ActivatePaneDirection 'Up',
   },
   {
     key = 'DownArrow',
-    mods = 'CMD|SHIFT',
+    mods = mods.primary_mod .. '|SHIFT',
     action = act.ActivatePaneDirection 'Down',
   },
   
@@ -361,12 +418,12 @@ config.keys = {
   -- Standard macOS clipboard shortcuts
   {
     key = 'c',
-    mods = 'CMD',
+    mods = mods.primary_mod,
     action = act.CopyTo 'Clipboard',
   },
   {
     key = 'v',
-    mods = 'CMD',
+    mods = mods.primary_mod,
     action = act.PasteFrom 'Clipboard',
   },
   

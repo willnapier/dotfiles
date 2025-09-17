@@ -1,0 +1,143 @@
+#!/usr/bin/env nu
+
+# Emergency Date Corruption Fix Script
+# Repairs dates that were corrupted from YYYY-MM-DD to YYYY-TTTT-DD format
+# Created: 2025-09-12 (emergency fix)
+
+def main [--dry-run] {
+    let vault_path = $"($env.HOME)/Obsidian.nosync/Forge"
+    
+    print "🚨 Emergency Date Corruption Repair Tool"
+    print "======================================="
+    print $"Scanning vault: ($vault_path)"
+    
+    # Find all markdown files
+    let files = (glob $"($vault_path)/**/*.md")
+    print $"Found ($files | length) markdown files to check"
+    
+    mut total_corrupted_files = 0
+    mut total_fixes = 0
+    
+    for file in $files {
+        let content = (open $file --raw)
+        
+        # Look for corrupted date patterns
+        # Pattern: YYYY-TTTT-DD where TTTT represents corrupted month values
+        # Common corruptions:
+        # 01 -> 1min -> 1min
+        # 02 -> 2min -> 2min
+        # 03 -> 3min -> 3min
+        # ...
+        # 09 -> 9min -> 9min
+        # 10 -> 10min -> 10min
+        # 11 -> 11min -> 11min
+        # 12 -> 12min -> 12min
+        
+        # Find all corrupted patterns
+        let corrupted_patterns = [
+            # Handle numeric+min patterns (1min through 59min)
+            { pattern: '(20\d{2})-(\d{1,2}min)-(\d{2})', replacement: '$1-XX-$3' }
+            # Handle hour+min patterns (1hr, 2hr, etc)
+            { pattern: '(20\d{2})-(\d{1,2}hr(?:\s+\d{1,2}min)?)-(\d{2})', replacement: '$1-XX-$3' }
+            # Handle just hour patterns
+            { pattern: '(20\d{2})-(\d{1,2}hr)-(\d{2})', replacement: '$1-XX-$3' }
+        ]
+        
+        mut fixed_content = $content
+        mut file_had_corruption = false
+        
+        # First pass: identify what months were likely corrupted
+        # We'll need to infer the correct month from context
+        
+        # Look for specific corrupted patterns and fix them
+        # Common month-to-duration corruptions:
+        if ($content | str contains "-1min-") {
+            $fixed_content = ($fixed_content | str replace --all "-1min-" "-01-")
+            $file_had_corruption = true
+        }
+        if ($content | str contains "-2min-") {
+            $fixed_content = ($fixed_content | str replace --all "-2min-" "-02-")
+            $file_had_corruption = true
+        }
+        if ($content | str contains "-3min-") {
+            $fixed_content = ($fixed_content | str replace --all "-3min-" "-03-")
+            $file_had_corruption = true
+        }
+        if ($content | str contains "-4min-") {
+            $fixed_content = ($fixed_content | str replace --all "-4min-" "-04-")
+            $file_had_corruption = true
+        }
+        if ($content | str contains "-5min-") {
+            $fixed_content = ($fixed_content | str replace --all "-5min-" "-05-")
+            $file_had_corruption = true
+        }
+        if ($content | str contains "-6min-") {
+            $fixed_content = ($fixed_content | str replace --all "-6min-" "-06-")
+            $file_had_corruption = true
+        }
+        if ($content | str contains "-7min-") {
+            $fixed_content = ($fixed_content | str replace --all "-7min-" "-07-")
+            $file_had_corruption = true
+        }
+        if ($content | str contains "-8min-") {
+            $fixed_content = ($fixed_content | str replace --all "-8min-" "-08-")
+            $file_had_corruption = true
+        }
+        if ($content | str contains "-9min-") {
+            $fixed_content = ($fixed_content | str replace --all "-9min-" "-09-")
+            $file_had_corruption = true
+        }
+        if ($content | str contains "-10min-") {
+            $fixed_content = ($fixed_content | str replace --all "-10min-" "-10-")
+            $file_had_corruption = true
+        }
+        if ($content | str contains "-11min-") {
+            $fixed_content = ($fixed_content | str replace --all "-11min-" "-11-")
+            $file_had_corruption = true
+        }
+        if ($content | str contains "-12min-") {
+            $fixed_content = ($fixed_content | str replace --all "-12min-" "-12-")
+            $file_had_corruption = true
+        }
+        
+        # Also check for hour-based corruptions (less likely but possible)
+        if ($content | str contains "-1hr-") {
+            $fixed_content = ($fixed_content | str replace --all "-1hr-" "-01-")
+            $file_had_corruption = true
+        }
+        
+        # Count the number of fixes in this file
+        if $file_had_corruption {
+            $total_corrupted_files = $total_corrupted_files + 1
+            
+            # Count how many dates were fixed
+            let original_dates = ($content | parse --regex '(20\d{2})-(\d{1,2}(?:min|hr).*?)-(\d{2})' | length)
+            $total_fixes = $total_fixes + $original_dates
+            
+            let relative_path = ($file | str replace $vault_path "")
+            print $"  📝 Found corrupted dates in: ($relative_path)"
+            
+            if not $dry_run {
+                # Write the fixed content back
+                $fixed_content | save --force $file
+                print $"     ✅ Fixed ($original_dates) date(s)"
+            } else {
+                print $"     🔍 Would fix ($original_dates) date(s) (dry-run mode)"
+            }
+        }
+    }
+    
+    print ""
+    print "======================================="
+    if $dry_run {
+        print $"🔍 DRY RUN RESULTS:"
+        print $"   Would fix ($total_fixes) corrupted dates"
+        print $"   Across ($total_corrupted_files) files"
+        print ""
+        print "Run without --dry-run to apply fixes"
+    } else {
+        print $"✅ REPAIR COMPLETE:"
+        print $"   Fixed ($total_fixes) corrupted dates"
+        print $"   Across ($total_corrupted_files) files"
+    }
+}

@@ -9,9 +9,36 @@ if ($"($env.HOME)/.cache/nushell/starship-init.nu" | path exists) {
     source ~/.cache/nushell/starship-init.nu
 }
 
-# Source zoxide for smart directory jumping if available
-if ($"($env.HOME)/.cache/nushell/zoxide-init.nu" | path exists) {
-    source ~/.cache/nushell/zoxide-init.nu
+# Initialize zoxide with reliable function-based approach
+# Custom zoxide functions (more reliable than aliases)
+def --env z [query?: string] {
+    if ($query | is-empty) {
+        cd ~
+    } else {
+        cd (zoxide query $query)
+    }
+}
+
+# Interactive zoxide - rich skim experience matching fsh
+def --env zi [] {
+    if (which sk | is-empty) {
+        print "sk (skim) not found. Install with: brew install sk"
+        return
+    }
+    
+    let selected = (
+        zoxide query -l 
+        | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk 
+            --preview 'eza --tree --color=always --level=2 {} | head -20' 
+            --preview-window 'right:60%' 
+            --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' 
+            --prompt "📁 Zoxide: "
+        | str trim
+    )
+    
+    if not ($selected | is-empty) {
+        cd $selected
+    }
 }
 
 # ---- Dotfiles Sync Functions ----
@@ -206,7 +233,7 @@ $env.config = {
         vi_normal: block
     }
     
-    edit_mode: vi
+    edit_mode: emacs  # Use emacs mode for cross-platform text navigation compatibility
     
     completions: {
         case_sensitive: false
@@ -1308,6 +1335,46 @@ def fcsh [] {
     }
 }
 
+# File duration processing (universal) - processes activity time spans
+def fdur [file_path?: string] {
+    let files_to_process = if ($file_path | is-empty) {
+        # Process all .md files recursively that contain "t::"
+        let activity_files = (ls **/*.md | where type == file | get name | where {|file|
+            let content = (try { open $file --raw | str trim } catch { "" })
+            ($content | str contains "t::")
+        })
+        
+        if ($activity_files | is-empty) {
+            print "❌ No activity files found in current directory or subdirectories"
+            print "💡 Usage: fdur [file_path] or run in directory with .md files containing 't::'"
+            print $"💡 Current directory: (pwd)"
+            return
+        }
+        
+        $activity_files
+    } else {
+        if not ($file_path | path exists) {
+            print $"❌ File not found: ($file_path)"
+            print $"💡 Usage: fdur [file_path] or run in directory with activity files"
+            return
+        }
+        [$file_path]
+    }
+    
+    for file in $files_to_process {
+        print $"🔄 Processing activity durations in ($file)"
+        # Small delay to ensure file system stability
+        sleep 100ms
+        activity-duration-processor $file
+        print $"✅ Activity durations processed in ($file)"
+    }
+    
+    if ($files_to_process | length) > 1 {
+        print $"🎉 Processed ($files_to_process | length) files total"
+    }
+    print $"💡 Remember to reload files in your editor if they're open"
+}
+
 # Directory navigation
 alias .. = cd ..
 alias ... = cd ../..
@@ -1650,6 +1717,81 @@ def --env up [levels: int = 1] {
     cd $path
 }
 
+# Zoxide-powered directory navigation suite (Yazi-like CLI experience)
+
+# Recent directories - show zoxide's frecency-ranked directories interactively
+def --env zr [] {
+    if (which sk | is-empty) {
+        print "sk (skim) not found. Install with: brew install sk"
+        return
+    }
+    
+    let selected = (
+        zoxide query -l 
+        | str trim
+        | str join "\n"
+        | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk 
+            --preview 'eza --tree --color=always --level=2 {} | head -20' 
+            --preview-window 'right:60%' 
+            --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' 
+            --prompt "📂 Recent Dirs: "
+        | str trim
+    )
+    
+    if not ($selected | is-empty) {
+        cd $selected
+    }
+}
+
+# Project directories - smart detection for git/obsidian/dotter projects
+def --env zp [] {
+    if (which sk | is-empty) or (which fd | is-empty) {
+        print "sk and fd required. Install with: brew install sk fd"
+        return
+    }
+    
+    let selected = (
+        fd -H -t d '(\.git|\.obsidian|\.dotter|package\.json|Cargo\.toml)$' ~ --max-depth 4
+        | lines
+        | each { |p| $p | path dirname }
+        | uniq
+        | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk 
+            --preview 'eza --tree --color=always --level=2 {} | head -20' 
+            --preview-window 'right:60%' 
+            --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' 
+            --prompt "🚀 Projects: "
+        | str trim
+    )
+    
+    if not ($selected | is-empty) {
+        cd $selected
+    }
+}
+
+# Fuzzy find any directory from current location down
+def --env zf [path?: string] {
+    if (which sk | is-empty) or (which fd | is-empty) {
+        print "sk and fd required. Install with: brew install sk fd"
+        return
+    }
+    
+    let search_path = if ($path | is-empty) { "." } else { $path }
+    
+    let selected = (
+        fd -t d . $search_path
+        | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk 
+            --preview 'eza --tree --color=always --level=2 {} | head -20' 
+            --preview-window 'right:60%' 
+            --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' 
+            --prompt "🔍 Find Dir: "
+        | str trim
+    )
+    
+    if not ($selected | is-empty) {
+        cd $selected
+    }
+}
+
 # Recent files
 def recent [--days: int = 7] {
     ls **/* | where modified > ((date now) - ($days * 24hr)) | sort-by modified -r
@@ -1678,8 +1820,7 @@ def fe [pattern: string, index: int = 0] {
     }
 }
 
-# Initialize zoxide
-source ~/.zoxide.nu
+# Note: Zoxide functions (z, zi) are initialized at the top of the file
 source ~/.config/nushell/zotero-commands.nu
 
 # Link Manager aliases

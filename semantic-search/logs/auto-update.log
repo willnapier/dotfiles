@@ -105,3 +105,4 @@ Incremental update completed
 2025-08-27 08:29:50,629 - SemanticIndexer - INFO - Total cost: $0.0000
 2025-08-27 08:29:50 - Update completed successfully
 2025-08-27 08:29:50 - Automatic update finished
+2025-09-17 08:00:00 - ERROR: OPENAI_API_KEY not set, skipping update

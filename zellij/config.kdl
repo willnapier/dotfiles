@@ -60,7 +60,8 @@ keybinds {
         // Quick actions - Zellij defaults (added)
         bind "Ctrl n" { NewPane; }
         bind "Ctrl q" { Quit; }
-        bind "Ctrl d" { Detach; }
+        // Moved detach to Ctrl+Alt+d to avoid conflict with Helix half-page scroll
+        bind "Ctrl Alt d" { Detach; }
         
         // Unbind system theme switcher to let macOS handle it
         unbind "Ctrl Alt Shift d"

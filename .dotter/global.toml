@@ -41,6 +41,12 @@ depends = []
 "nvim/lua" = { target = "~/.config/nvim/lua", type = "symbolic" }
 "nvim/doc" = { target = "~/.config/nvim/doc", type = "symbolic" }
 "nvim/spell" = { target = "~/.config/nvim/spell", type = "symbolic" }
+# HIGH PRIORITY: Essential configurations (added 2025-09-16)
+"aerospace/aerospace.toml" = "~/.config/aerospace/aerospace.toml"
+"ghostty/themes/solarized-dark" = "~/.config/ghostty/themes/solarized-dark"
+"ghostty/themes/solarized-light" = "~/.config/ghostty/themes/solarized-light"
+"karabiner/karabiner.json" = "~/.config/karabiner/karabiner.json"
+
 # Essential scripts (most commonly used)
 "scripts/daily-note" = { target = "~/.local/bin/daily-note", type = "symbolic" }
 "scripts/daypage-template" = "~/.local/bin/daypage-template"
@@ -91,6 +97,10 @@ depends = []
 "scripts/drift-status" = "~/.local/bin/drift-status"
 "scripts/dotter-orphan-detector" = "~/.local/bin/dotter-orphan-detector"
 "scripts/script-ready-deploy" = "~/.local/bin/script-ready-deploy"
+"scripts/zellij-cleanup.nu" = "~/.local/bin/zellij-cleanup.nu"
+"scripts/process-count.nu" = "~/.local/bin/process-count.nu"
+"scripts/daily-note.nu" = "~/.local/bin/daily-note.nu"
+"scripts/zj.nu" = "~/.local/bin/zj.nu"
 "scripts/yazi-project-file-search-floating" = "~/.local/bin/yazi-project-file-search-floating"
 "scripts/yazi-project-file-search-floating.nu" = "~/.local/bin/yazi-project-file-search-floating.nu"
 "scripts/yazi-recent-files.nu" = "~/.local/bin/yazi-recent-files.nu"
@@ -99,7 +109,7 @@ depends = []
 "scripts/word-wrap-preview.nu" = "~/.local/bin/word-wrap-preview.nu"
 "scripts/activity-duration-processor" = "~/.local/bin/activity-duration-processor"
 "scripts/activity-duration-processor-buffer" = "~/.local/bin/activity-duration-processor-buffer"
-"scripts/hx-process-durations" = "~/.local/bin/hx-process-durations"
+"scripts/hx-process-durations-wezterm" = "~/.local/bin/hx-process-durations-wezterm"
 # Re-nu conversion scripts - Native Nushell watchers with no external dependencies
 "scripts/claude-docs-watcher-renu" = "~/.local/bin/claude-docs-watcher-renu"
 "scripts/dotter-realtime-watcher-renu" = "~/.local/bin/dotter-realtime-watcher-renu"
@@ -112,6 +122,26 @@ depends = []
 # Zotero automation - Native Nushell versions (no fswatch dependency)
 "scripts/zotero-pdf-watcher-renu" = "~/.local/bin/zotero-pdf-watcher-renu"
 "scripts/zotero-bridge-renu" = "~/.local/bin/zotero-bridge-renu"
+
+# MEDIUM PRIORITY: Additional essential scripts (added 2025-09-16)
+"scripts/get-openai-key" = "~/.local/bin/get-openai-key"
+"scripts/semantic-auto-update" = "~/.local/bin/semantic-auto-update"
+"scripts/deploy-semantic-search" = "~/.local/bin/deploy-semantic-search"
+"scripts/fix-corrupted-dates" = "~/.local/bin/fix-corrupted-dates"
+"scripts/fix-date-corruption-emergency" = "~/.local/bin/fix-date-corruption-emergency"
+
+# ESSENTIAL SKETCHYBAR CONFIGURATION (added 2025-09-16)
+"sketchybar/sketchybarrc" = "~/.config/sketchybar/sketchybarrc"
+"sketchybar/colors.sh" = "~/.config/sketchybar/colors.sh"
+"sketchybar/items/aerospace.sh" = "~/.config/sketchybar/items/aerospace.sh"
+"sketchybar/items/battery.sh" = "~/.config/sketchybar/items/battery.sh"
+"sketchybar/items/calendar.sh" = "~/.config/sketchybar/items/calendar.sh"
+"sketchybar/items/clock.sh" = "~/.config/sketchybar/items/clock.sh"
+"sketchybar/plugins/aerospace.sh" = "~/.config/sketchybar/plugins/aerospace.sh"
+"sketchybar/plugins/battery.sh" = "~/.config/sketchybar/plugins/battery.sh"
+"sketchybar/plugins/calendar.sh" = "~/.config/sketchybar/plugins/calendar.sh"
+"sketchybar/plugins/clock.sh" = "~/.config/sketchybar/plugins/clock.sh"
+
 # Semantic search system - managed separately (has virtual environment)
 
 [shared.variables]
@@ -124,10 +154,8 @@ depends = ["shared"]
 "shell/zshrc" = "~/.zshrc"
 "wezterm/wezterm.lua" = "~/.config/wezterm/wezterm.lua"
 "ghostty/config" = "~/Library/Application Support/com.mitchellh.ghostty/config"
-"ghostty/themes" = { target = "~/.config/ghostty/themes", type = "symbolic" }
-"karabiner" = { target = "~/.config/karabiner", type = "symbolic" }
-"aerospace" = { target = "~/.config/aerospace", type = "symbolic" }
-"sketchybar" = { target = "~/.config/sketchybar", type = "symbolic" }
+# NOTE: Individual files managed in [shared.files] for better reliability
+# Removed directory symlinks that were causing orphan detection issues
 
 [macos.variables]
 opener_cmd = "open"

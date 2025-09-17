@@ -12,16 +12,16 @@ fi
 # Check macOS appearance
 # Note: AppleInterfaceStyle only exists when in Dark mode
 # When in Light mode, the key doesn't exist at all
-if defaults read -g AppleInterfaceStyle 2>/dev/null | grep -q "Dark"; then
+if defaults read -g AppleInterfaceStyle 2>/dev/null | rg -q "Dark"; then
     # Dark mode detected
-    sed -i '' 's/theme = "solarized_light_modal"/theme = "solarized_dark_modal"/g' "$CONFIG_FILE"
-    sed -i '' 's/theme = "solarized_light"/theme = "solarized_dark"/g' "$CONFIG_FILE"
+    sd 'theme = "solarized_light_modal"' 'theme = "solarized_dark_modal"' "$CONFIG_FILE"
+    sd 'theme = "solarized_light"' 'theme = "solarized_dark"' "$CONFIG_FILE"
     # Debug output
     >&2 echo "hx-auto: Set dark theme"
 else
     # Light mode (key doesn't exist)
-    sed -i '' 's/theme = "solarized_dark_modal"/theme = "solarized_light_modal"/g' "$CONFIG_FILE"
-    sed -i '' 's/theme = "solarized_dark"/theme = "solarized_light"/g' "$CONFIG_FILE"
+    sd 'theme = "solarized_dark_modal"' 'theme = "solarized_light_modal"' "$CONFIG_FILE"
+    sd 'theme = "solarized_dark"' 'theme = "solarized_light"' "$CONFIG_FILE"
     # Debug output
     >&2 echo "hx-auto: Set light theme"
 fi
