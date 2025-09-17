@@ -1,0 +1,143 @@
+#!/usr/bin/env nu
+# Cross-platform Obsidian Link Management Service
+# Manages startup, status, and control of the link management service
+
+def main [action?: string = "status"] {
+    let link_manager_dir = $"($env.HOME)/scripts/obsidian-link-manager"
+    let vault_path = $"($env.HOME)/Obsidian.nosync/Forge"
+    let log_dir = $"($link_manager_dir)/logs"
+
+    # Ensure log directory exists
+    mkdir $log_dir
+
+    let pid_file = $"($log_dir)/linkmanager.pid"
+    let log_file = $"($log_dir)/linkmanager.out.log"
+    let err_file = $"($log_dir)/linkmanager.err.log"
+
+    match $action {
+        "start" => {
+            if (link_service_running $pid_file) {
+                print "✅ Link management service already running"
+                return
+            }
+
+            print "🚀 Starting link management service..."
+
+            # Change to link manager directory and start service
+            cd $link_manager_dir
+
+            let start_command = if ($nu.os-info.name == "macos") {
+                $"source venv/bin/activate && python3 comprehensive_link_manager_enhanced.py '($vault_path)' --watch-enhanced --verbose"
+            } else {
+                $"source venv/bin/activate && python3 comprehensive_link_manager_enhanced.py '($vault_path)' --watch-enhanced --verbose"
+            }
+
+            # Start in background and capture PID
+            let process = (bash -c $"($start_command) > '($log_file)' 2> '($err_file)' & echo $!")
+            let pid = ($process | str trim)
+
+            # Save PID to file
+            $pid | save --force $pid_file
+
+            print $"✅ Link management service started (PID: ($pid))"
+            print $"📝 Logs: ($log_file)"
+            print $"❌ Errors: ($err_file)"
+        }
+
+        "stop" => {
+            if not (link_service_running $pid_file) {
+                print "⚠️  Link management service not running"
+                return
+            }
+
+            let pid = (open $pid_file | str trim)
+            print $"🛑 Stopping link management service (PID: ($pid))..."
+
+            try {
+                kill $pid
+                rm -f $pid_file
+                print "✅ Link management service stopped"
+            } catch {
+                print "❌ Failed to stop service - may already be dead"
+                rm -f $pid_file
+            }
+        }
+
+        "restart" => {
+            link_service stop
+            sleep 2sec
+            link_service start
+        }
+
+        "status" => {
+            if (link_service_running $pid_file) {
+                let pid = (open $pid_file | str trim)
+                print $"✅ Link management service running (PID: ($pid))"
+
+                # Show recent log activity
+                if ($log_file | path exists) {
+                    print "\n📝 Recent activity:"
+                    try {
+                        open $log_file | lines | last 5 | each { |line| print $"   ($line)" }
+                    } catch {
+                        print "   (No recent activity)"
+                    }
+                }
+            } else {
+                print "❌ Link management service not running"
+                print "💡 Run: link-service start"
+            }
+        }
+
+        "logs" => {
+            if ($log_file | path exists) {
+                print "📝 Link management logs:"
+                open $log_file | lines | last 20
+            } else {
+                print "❌ No log file found"
+            }
+        }
+
+        "errors" => {
+            if ($err_file | path exists) {
+                print "❌ Link management errors:"
+                open $err_file | lines | last 20
+            } else {
+                print "✅ No error file found"
+            }
+        }
+
+        _ => {
+            print "Usage: link-service [start|stop|restart|status|logs|errors]"
+            print ""
+            print "Commands:"
+            print "  start   - Start the link management service"
+            print "  stop    - Stop the link management service"
+            print "  restart - Restart the service"
+            print "  status  - Show service status (default)"
+            print "  logs    - Show recent service logs"
+            print "  errors  - Show recent error logs"
+        }
+    }
+}
+
+def link_service_running [pid_file: path] {
+    if not ($pid_file | path exists) {
+        return false
+    }
+
+    let pid = (open $pid_file | str trim)
+
+    # Check if process is actually running
+    try {
+        if ($nu.os-info.name == "macos") {
+            let result = (^ps -p $pid | lines | length)
+            $result > 1  # Header + process line
+        } else {
+            let result = (^ps -p $pid --no-headers | lines | length)
+            $result > 0
+        }
+    } catch {
+        false
+    }
+}

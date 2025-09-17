@@ -35,10 +35,15 @@ macos-non-native-fullscreen = false
 # Quick Actions
 quick-terminal-position = bottom
 
-# Scrollback Configuration  
+# Scrollback Configuration
 scrollback-limit = 10000
 mouse-scroll-multiplier = 3
 
-# Force scrollback behavior for alternate screen applications
-# Try different approaches for Claude Code compatibility
+# CRITICAL FIX FOR CLAUDE CODE SCROLLING
+# Default is "keystroke,no-output" which breaks Claude Code scrolling
+# Setting to empty disables auto-scroll completely
+scroll-to-bottom =
+
+# Mouse behavior for better Claude Code compatibility
 mouse-hide-while-typing = false
+mouse-shift-capture = false

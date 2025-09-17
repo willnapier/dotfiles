@@ -58,6 +58,8 @@ depends = []
 "scripts/new-script" = "~/.local/bin/new-script"
 "scripts/obsidian-content-search-interactive.sh" = "~/.local/bin/obsidian-content-search-interactive.sh"
 "scripts/obsidian-semantic-search.sh" = "~/.local/bin/obsidian-semantic-search.sh"
+"scripts/link-service" = "~/.local/bin/link-service"
+"scripts/setup-link-service" = "~/.local/bin/setup-link-service"
 "nushell/scripts/quantified-tracking.nu" = "~/.config/nushell/scripts/quantified-tracking.nu"
 "nushell/scripts/quantified-tracking-v2.nu" = "~/.config/nushell/scripts/quantified-tracking-v2.nu"
 
@@ -153,6 +155,7 @@ depends = ["shared"]
 "shell/zshrc" = "~/.zshrc"
 "wezterm/wezterm.lua" = "~/.config/wezterm/wezterm.lua"
 "ghostty/config" = "~/Library/Application Support/com.mitchellh.ghostty/config"
+"macos/launchd/com.williamnapier.obsidian-link-manager.plist" = "~/Library/LaunchAgents/com.williamnapier.obsidian-link-manager.plist"
 # NOTE: Individual files managed in [shared.files] for better reliability
 # Removed directory symlinks that were causing orphan detection issues
 
@@ -174,6 +177,7 @@ depends = ["shared"]
 "systemd/dotter-realtime-watcher.service" = "~/.config/systemd/user/dotter-realtime-watcher.service"
 "systemd/zotero-pdf-watcher.service" = "~/.config/systemd/user/zotero-pdf-watcher.service"
 "systemd/zotero-bridge.service" = "~/.config/systemd/user/zotero-bridge.service"
+"linux/systemd/obsidian-link-manager.service" = "~/.config/systemd/user/obsidian-link-manager.service"
 # Wayland compositor configuration
 "wayland/river" = { target = "~/.config/river", type = "symbolic" }
 "wayland/waybar" = { target = "~/.config/waybar", type = "symbolic" }
@@ -194,10 +198,6 @@ depends = ["macos"]
 [default.files]
 
 [default.variables]
-
-"scripts/skim-with-preview" = "~/.local/bin/skim-with-preview"
-"scripts/activity-watcher-simple" = "~/.local/bin/activity-watcher-simple"
-"scripts/activity-watcher-fixed" = "~/.local/bin/activity-watcher-fixed"
 
 [settings]
 default_target_type = "automatic"

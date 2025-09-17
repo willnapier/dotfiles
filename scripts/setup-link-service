@@ -1,0 +1,169 @@
+#!/usr/bin/env nu
+# Cross-platform setup script for Obsidian Link Management Service
+
+def main [action?: string = "install"] {
+    let platform = $nu.os-info.name
+
+    match $action {
+        "install" => {
+            print "🔧 Setting up link management service..."
+
+            # Deploy configuration files
+            print "📝 Deploying configuration files..."
+            cd ~/dotfiles
+            dotter deploy
+
+            # Platform-specific setup
+            if ($platform == "macos") {
+                setup_macos
+            } else if ($platform == "linux") {
+                setup_linux
+            } else {
+                print $"❌ Unsupported platform: ($platform)"
+                return
+            }
+
+            # Test the service
+            print "\n🧪 Testing service..."
+            link-service status
+
+            print "\n✅ Link management service setup complete!"
+            print "💡 Use 'link-service start' to begin monitoring"
+        }
+
+        "enable" => {
+            if ($platform == "macos") {
+                enable_macos
+            } else if ($platform == "linux") {
+                enable_linux
+            }
+        }
+
+        "disable" => {
+            if ($platform == "macos") {
+                disable_macos
+            } else if ($platform == "linux") {
+                disable_linux
+            }
+        }
+
+        "status" => {
+            print $"Platform: ($platform)"
+            link-service status
+
+            if ($platform == "macos") {
+                print "\n🍎 macOS LaunchAgent status:"
+                try {
+                    launchctl list | rg "obsidian-link-manager"
+                } catch {
+                    print "   Not loaded"
+                }
+            } else if ($platform == "linux") {
+                print "\n🐧 Linux systemd status:"
+                try {
+                    systemctl --user status obsidian-link-manager.service --no-pager
+                } catch {
+                    print "   Not available or not running"
+                }
+            }
+        }
+
+        _ => {
+            print "Usage: setup-link-service [install|enable|disable|status]"
+            print ""
+            print "Commands:"
+            print "  install  - Set up link service on current platform (default)"
+            print "  enable   - Enable automatic startup"
+            print "  disable  - Disable automatic startup"
+            print "  status   - Show service and startup status"
+        }
+    }
+}
+
+def setup_macos [] {
+    print "🍎 Setting up macOS LaunchAgent..."
+
+    let plist_path = "~/Library/LaunchAgents/com.williamnapier.obsidian-link-manager.plist"
+
+    if ($plist_path | path expand | path exists) {
+        print "✅ LaunchAgent plist deployed"
+
+        # Load the agent
+        try {
+            launchctl load $plist_path
+            print "✅ LaunchAgent loaded"
+        } catch {
+            print "⚠️  Failed to load LaunchAgent - will start manually"
+        }
+    } else {
+        print "❌ LaunchAgent plist not found - check Dotter deployment"
+    }
+}
+
+def setup_linux [] {
+    print "🐧 Setting up Linux systemd service..."
+
+    let service_path = "~/.config/systemd/user/obsidian-link-manager.service"
+
+    if ($service_path | path expand | path exists) {
+        print "✅ Systemd service deployed"
+
+        # Reload systemd and enable service
+        try {
+            systemctl --user daemon-reload
+            print "✅ Systemd daemon reloaded"
+        } catch {
+            print "⚠️  Failed to reload systemd daemon"
+        }
+    } else {
+        print "❌ Systemd service not found - check Dotter deployment"
+    }
+}
+
+def enable_macos [] {
+    print "🍎 Enabling macOS LaunchAgent..."
+    let plist_path = "~/Library/LaunchAgents/com.williamnapier.obsidian-link-manager.plist"
+
+    try {
+        launchctl load $plist_path
+        print "✅ LaunchAgent enabled and loaded"
+    } catch {
+        print "❌ Failed to enable LaunchAgent"
+    }
+}
+
+def enable_linux [] {
+    print "🐧 Enabling Linux systemd service..."
+
+    try {
+        systemctl --user enable obsidian-link-manager.service
+        systemctl --user start obsidian-link-manager.service
+        print "✅ Systemd service enabled and started"
+    } catch {
+        print "❌ Failed to enable systemd service"
+    }
+}
+
+def disable_macos [] {
+    print "🍎 Disabling macOS LaunchAgent..."
+    let plist_path = "~/Library/LaunchAgents/com.williamnapier.obsidian-link-manager.plist"
+
+    try {
+        launchctl unload $plist_path
+        print "✅ LaunchAgent disabled and unloaded"
+    } catch {
+        print "❌ Failed to disable LaunchAgent"
+    }
+}
+
+def disable_linux [] {
+    print "🐧 Disabling Linux systemd service..."
+
+    try {
+        systemctl --user stop obsidian-link-manager.service
+        systemctl --user disable obsidian-link-manager.service
+        print "✅ Systemd service stopped and disabled"
+    } catch {
+        print "❌ Failed to disable systemd service"
+    }
+}
