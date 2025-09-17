@@ -60,8 +60,33 @@ def main [file_path?: string] {
     let processed_lines = ($lines | each { |line|
         # Look for ALL time range patterns in the line (handles nested entries)
         # Match time patterns (HHMM) but NOT dates (YYYY-MM-DD)
-        # Only match 4-digit patterns where first 2 digits are 00-23 (hours)
-        let time_range_matches = ($line | parse --regex '([0-2]\d[0-5]\d)-(\d{2,4})')
+        # CRITICAL: Only match 4-digit patterns where first 2 digits are 00-23 (hours)
+        # AVOID DATE CORRUPTION: Skip lines that start with # (headers) or contain YYYY-MM-DD dates
+        # CRITICAL: The dreaded 2025-09-17 → 2025-2109-17 corruption prevention
+        let contains_iso_date = ($line =~ '\d{4}-\d{2}-\d{2}')
+        let time_range_matches = if ($line | str starts-with "#") or $contains_iso_date {
+            []  # Skip headers and lines with ISO dates entirely - SAFEST APPROACH
+        } else {
+            # Additional safety: Only match actual time patterns (00:00-23:59 range)
+            # Reject anything that could possibly be a year (20XX, 21XX, 22XX, 23XX)
+            let potential_matches = ($line | parse --regex '([0-2]\d[0-5]\d)-(\d{2,4})')
+            ($potential_matches | where {|match|
+                let start = ($match | get capture0)
+                let end = ($match | get capture1)
+                # STRICT FILTER: Only allow valid time ranges (00:00-23:59)
+                let start_hour = ($start | str substring 0..<2 | into int)
+                let start_min = ($start | str substring 2..<4 | into int)
+
+                # Reject if looks like a year or invalid time
+                if $start_hour > 23 or $start_min > 59 {
+                    false
+                } else {
+                    # Final safety check: reject if it's in context of a date
+                    # Look for YYYY- pattern before our match
+                    not ($line =~ $'\\d{4}-\\d{2}-($start)')
+                }
+            })
+        }
         
         if ($time_range_matches | length) > 0 {
             mut current_line = $line

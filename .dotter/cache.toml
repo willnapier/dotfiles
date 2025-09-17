@@ -100,6 +100,7 @@
 "scripts/setup-realtime-onboarding" = "/Users/williamnapier/.local/bin/setup-realtime-onboarding"
 "scripts/setup-zellij-zombie-prevention-cross-platform" = "/Users/williamnapier/.local/bin/setup-zellij-zombie-prevention-cross-platform"
 "scripts/simple-file-preview" = "/Users/williamnapier/.local/bin/simple-file-preview"
+"scripts/test-date-corruption-prevention" = "/Users/williamnapier/.local/bin/test-date-corruption-prevention"
 "scripts/test-skim-floating" = "/Users/williamnapier/.local/bin/test-skim-floating"
 "scripts/word-wrap-preview.nu" = "/Users/williamnapier/.local/bin/word-wrap-preview.nu"
 "scripts/yazi-project-file-search-floating" = "/Users/williamnapier/.local/bin/yazi-project-file-search-floating"

@@ -107,6 +107,7 @@ depends = []
 "scripts/yazi-recent-files.nu" = "~/.local/bin/yazi-recent-files.nu"
 "scripts/simple-file-preview" = "~/.local/bin/simple-file-preview"
 "scripts/test-skim-floating" = "~/.local/bin/test-skim-floating"
+"scripts/test-date-corruption-prevention" = "~/.local/bin/test-date-corruption-prevention"
 "scripts/word-wrap-preview.nu" = "~/.local/bin/word-wrap-preview.nu"
 "scripts/activity-duration-processor" = "~/.local/bin/activity-duration-processor"
 "scripts/activity-duration-processor-buffer" = "~/.local/bin/activity-duration-processor-buffer"
