@@ -4,7 +4,7 @@
 line=$(cat)
 
 # Extract wiki link
-link=$(echo "$line" | grep -oE '\[\[[^]]+\]\]' | head -1 | sed 's/\[\[\(.*\)\]\]/\1/')
+link=$(echo "$line" | rg -o '\[\[[^]]+\]\]' | head -1 | sd '\[\[(.*)\]\]' '$1')
 
 if [ -z "$link" ]; then
     echo "No wiki link found on this line"
@@ -12,7 +12,7 @@ if [ -z "$link" ]; then
 fi
 
 # Clean the link
-clean_link=$(echo "$link" | sed 's/[#|].*//')
+clean_link=$(echo "$link" | sd '[#|].*' '')
 
 vault="$HOME/Obsidian.nosync/Forge"
 file="$vault/$clean_link.md"

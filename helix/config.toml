@@ -13,8 +13,8 @@ theme = "solarized_dark_modal"
 cursorline = true
 # Auto-save files when switching buffers or after inactivity
 auto-save = true
-# Auto-save every 1000ms for activity duration processing (prevents race conditions)
-idle-timeout = 1000
+# Auto-save every 500ms for activity duration processing (prevents race conditions)
+idle-timeout = 500
 
 # Status line configuration
 [editor.statusline]
@@ -79,14 +79,14 @@ t = ["extend_to_line_bounds", ":pipe-to sd '\\[ \\]' '[TEMP]' | sd '\\[x\\]' '[ 
 
 # Manual theme refresh - Space+T (capital T)  
 T = ":config-reload"
-# Process activity durations - Complete workflow with reload refresh  
-p = [":write!", ":sh sleep 1 && sync", ":sh hx-process-durations %{buffer_name}", ":reload"]
+# Process activity durations - WezTerm auto-refresh (fully automated)
+p = [":write!", ":sh sleep 1 && sync", ":sh hx-process-durations-wezterm %{buffer_name}"]
 # Delete current file - Space+x (eXpunge, no confirmation)
 x = [":sh trash %{buffer_name}", ":quit!"]
 # Export selection to external register - Space+E (then type register letter)
 E = ":pipe-to hx-register-export"
 # Wiki link navigation - Space+w
-w = ["extend_to_line_bounds", ":pipe-to ~/.local/bin/hx-wiki", ":buffer-close /tmp/helix-current-link.md", ":open /tmp/helix-current-link.md"]
+w = ["extend_to_line_bounds", ":sh echo %{selection.column.0} > /tmp/helix-cursor-col.txt", ":pipe-to ~/.local/bin/hx-wiki", ":buffer-close /tmp/helix-current-link.md", ":open /tmp/helix-current-link.md"]
 # Smart file opener - Space+o (handles all file types and wiki links)
 o = ["extend_to_line_bounds", ":pipe-to hx-open-system-rust"]  # Open in system app (Preview, Excel, etc.)
 # Fuzzy link insertion - Space+l (Zellij floating pane)
@@ -95,8 +95,13 @@ o = ["extend_to_line_bounds", ":pipe-to hx-open-system-rust"]  # Open in system 
 l = ":insert-output pbpaste"
 # Show real file name - Space+i (Info about current file)
 i = ":sh hx-show-real-file %{buffer_name}"
-# Date and time insertion commands
-d = ":insert-output hx-insert-date"        # Insert current date (YYYY-MM-DD)
+# Quick save commands - Space+m ("memorize" or "save to memory")
+m = ":write"                                # Quick save current file
+M = ":write-all"                            # Save all modified files
+
+# Date and time insertion - Space+c ("calendar" or "chronos")
+# Moved from Space+d to avoid conflict with diagnostic picker (important for Rust LSP)
+c = ":insert-output hx-insert-date"        # Insert current date (YYYY-MM-DD)
 # Time insertion moved to avoid conflicts with Space+t (todo toggle) and Space+T (config reload)
 ";" = ":insert-output hx-insert-time"      # Insert current time (HH:MM) 
 ":" = ":insert-output hx-insert-datetime"  # Insert date and time (YYYY-MM-DD HH:MM)
@@ -104,8 +109,9 @@ d = ":insert-output hx-insert-date"        # Insert current date (YYYY-MM-DD)
 v = ":sh hx-mark-revisit %{buffer_name}"   # Add today to revisited dates
 
 
-# Save and return to previous buffer - Space+q (Quit current, return to previous)  
-q = [":write", ":buffer-previous"]  # Write then go back to previous buffer
+# Save and return to previous buffer - Space+q
+q = [":write", ":buffer-previous"]         # Save then go to previous buffer
+Q = ":quit!"                                # Force quit without saving
 
 # Custom g-prefix commands
 [keys.normal.g]

@@ -1,0 +1,128 @@
+#!/bin/bash
+# hx-process-durations-wezterm
+# Processes Helix activity durations and refreshes display via WezTerm automation
+
+set -euo pipefail  # Strict error handling
+
+FILENAME="$1"
+SCRIPT_DIR="$(dirname "$0")"
+LOG_FILE="/tmp/helix-duration-processing.log"
+
+# Function to log with timestamp
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG_FILE"
+}
+
+# Function to find Helix pane in WezTerm
+find_helix_pane() {
+    # Method 1: Look for current pane if we're in Helix context (most reliable)
+    if [ -n "${WEZTERM_PANE:-}" ]; then
+        echo "$WEZTERM_PANE"
+        return 0
+    fi
+    
+    # Method 2: Look for 'hx' or 'helix' in process or title
+    local pane_id=$(wezterm cli list | rg -E 'hx|helix|daily-note' | awk '{print $3}' | head -n1)
+    
+    if [ -n "$pane_id" ]; then
+        echo "$pane_id"
+        return 0
+    fi
+    
+    # Method 3: Get the first pane (assuming it's where we're working)
+    local first_pane=$(wezterm cli list | rg -v PANEID | awk '{print $3}' | head -n1)
+    if [ -n "$first_pane" ]; then
+        log "Using first pane as fallback: $first_pane"
+        echo "$first_pane"
+        return 0
+    fi
+    
+    return 1
+}
+
+# Function to send reload command to Helix
+send_reload_command() {
+    local pane_id="$1"
+    local method="$2"
+    
+    case "$method" in
+        "direct")
+            # Send :reload command directly
+            echo ":reload" | wezterm cli send-text --pane-id "$pane_id" --no-paste
+            sleep 0.1
+            printf "\r" | wezterm cli send-text --pane-id "$pane_id" --no-paste
+            ;;
+        "combined")
+            # Send command with carriage return in one go
+            printf ":reload\r" | wezterm cli send-text --pane-id "$pane_id" --no-paste
+            ;;
+        "with_newline")
+            # Try with explicit newline
+            printf ":reload\n" | wezterm cli send-text --pane-id "$pane_id" --no-paste
+            ;;
+        "escape_sequence")
+            # Send with proper escape sequence
+            echo -e ":reload\r" | wezterm cli send-text --pane-id "$pane_id" --no-paste
+            ;;
+    esac
+}
+
+main() {
+    log "=== Processing durations for: $FILENAME ==="
+    
+    # Validate input file
+    if [ ! -f "$FILENAME" ]; then
+        log "ERROR: File not found: $FILENAME"
+        echo "❌ File not found: $FILENAME"
+        exit 1
+    fi
+    
+    # Check if we're running in WezTerm
+    if ! command -v wezterm >/dev/null 2>&1; then
+        log "ERROR: WezTerm CLI not available"
+        echo "❌ WezTerm CLI not available"
+        
+        # Fall back to Nushell processor without WezTerm refresh
+        log "Falling back to standard processor"
+        echo "⚠️  Falling back to standard processor (manual :rl needed)"
+        activity-duration-processor "$FILENAME"
+        touch "$FILENAME"
+        exit 0
+    fi
+    
+    # Process the file using the Nushell activity processor
+    log "Processing durations with activity-duration-processor"
+    if activity-duration-processor "$FILENAME"; then
+        log "✅ Duration processing completed successfully"
+        
+        # Touch file to ensure modification timestamp updates
+        touch "$FILENAME"
+    else
+        log "ERROR: Duration processing failed"
+        exit 1
+    fi
+    
+    # Brief pause for file system consistency
+    sleep 0.5
+    
+    # Find Helix pane
+    log "Searching for Helix pane..."
+    if PANE_ID=$(find_helix_pane); then
+        log "Found Helix pane: $PANE_ID"
+        
+        # Send reload command using the combined method
+        log "Attempting reload with combined method"
+        send_reload_command "$PANE_ID" "combined"
+        sleep 0.5  # Give Helix time to process
+        
+        log "✅ Reload command sent successfully"
+        
+    else
+        log "WARNING: Could not find Helix pane"
+    fi
+    
+    log "=== Processing complete ==="
+}
+
+# Execute main function
+main "$@"
