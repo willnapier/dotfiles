@@ -131,5 +131,6 @@ def main [...args] {
     }
 
     print $"Executing: zellij (($zellij_args | str join ' '))"
-    ^zellij ...$zellij_args
+    let cmd = (["zellij"] | append $zellij_args)
+    exec ...$cmd
 }

@@ -106,7 +106,7 @@
 "scripts/zellij-cleanup.nu" = "/Users/williamnapier/.local/bin/zellij-cleanup.nu"
 "scripts/zellij-zombie-killer" = "/Users/williamnapier/.local/bin/zellij-zombie-killer"
 "scripts/zellij-zombie-watcher-renu" = "/Users/williamnapier/.local/bin/zellij-zombie-watcher-renu"
-"scripts/zj.nu" = "/Users/williamnapier/.local/bin/zj"
+"scripts/zj" = "/Users/williamnapier/.local/bin/zj"
 "scripts/zotero-bridge-renu" = "/Users/williamnapier/.local/bin/zotero-bridge-renu"
 "scripts/zotero-pdf-watcher-renu" = "/Users/williamnapier/.local/bin/zotero-pdf-watcher-renu"
 "shell/zshrc" = "/Users/williamnapier/.zshrc"
