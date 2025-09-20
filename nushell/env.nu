@@ -18,8 +18,8 @@ $env.EDITOR = "hx"
 $env.VISUAL = "hx"
 $env.BROWSER = "open"
 
-# Obsidian vault path for notes command
-$env.OBSIDIAN_VAULT = "/Users/williamnapier/Obsidian.nosync/Forge"
+# Forge knowledge base path (cross-platform)
+$env.OBSIDIAN_VAULT = $"($env.HOME)/Forge"
 
 # OpenAI API key for semantic search system (retrieved from keychain)
 $env.OPENAI_API_KEY = (try {
