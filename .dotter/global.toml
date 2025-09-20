@@ -65,6 +65,7 @@ depends = []
 "nushell/scripts/project-root-detection.nu" = "~/.config/nushell/scripts/project-root-detection.nu"
 "nushell/scripts/serpl.nu" = "~/.config/nushell/scripts/serpl.nu"
 "nushell/scripts/hx-smart-gf.nu" = "~/.config/nushell/scripts/hx-smart-gf.nu"
+"nushell/completions/serpl-completions.nu" = "~/.config/nushell/completions/serpl-completions.nu"
 
 # Cross-platform utilities
 "scripts/detect-platform" = "~/.local/bin/detect-platform"
