@@ -1,0 +1,148 @@
+#!/usr/bin/env nu
+# Fix Linux Nushell deployment issues - comprehensive solution
+# This script addresses the systematic deployment problems discovered during migration
+# Usage: fix-linux-nushell-deployment
+
+print "🔧 Linux Nushell Deployment Fix"
+print "=============================="
+print ""
+
+# Detect platform
+let platform = (uname | str downcase)
+if $platform != "linux" {
+    print "❌ This script is designed for Linux systems only."
+    print $"   Current platform: ($platform)"
+    exit 1
+}
+
+print "📋 Step 1: Testing current function availability..."
+print ""
+
+# Run the completeness test
+let test_result = (try {
+    nu ~/.local/bin/test-nushell-function-completeness
+} catch { |e|
+    print $"❌ Failed to run test: ($e.msg)"
+    print "   Installing test script first..."
+    exit 1
+})
+
+print ""
+print "🔧 Step 2: Diagnosing configuration issues..."
+
+# Check Nushell config file
+let config_path = ($env.HOME | path join ".config" "nushell" "config.nu")
+let dotfiles_path = ($env.HOME | path join "dotfiles" "nushell" "config.nu")
+
+print $"Config path: ($config_path)"
+print $"Dotfiles path: ($dotfiles_path)"
+
+# Check if config exists and is properly symlinked
+if not ($config_path | path exists) {
+    print "❌ Config file doesn't exist - redeploying..."
+    cd ($env.HOME | path join "dotfiles")
+    dotter deploy -l linux
+} else {
+    let symlink_target = (try { readlink $config_path } catch { "not a symlink" })
+    if ($symlink_target | str contains "dotfiles") {
+        print $"✅ Config properly symlinked to: ($symlink_target)"
+    } else {
+        print $"❌ Config not symlinked: ($symlink_target)"
+        print "   Fixing symlink..."
+        rm -f $config_path
+        ln -sf $dotfiles_path $config_path
+    }
+}
+
+print ""
+print "🔧 Step 3: Checking Nushell syntax..."
+
+# Check for syntax errors
+let syntax_check = (try {
+    nu --check $config_path | complete
+} catch { |e|
+    print $"❌ Syntax check failed: ($e.msg)"
+    {exit_code: 1, stderr: $e.msg, stdout: ""}
+})
+
+if $syntax_check.exit_code == 0 {
+    print "✅ Nushell config syntax is valid"
+} else {
+    print "❌ Nushell config has syntax errors:"
+    print $syntax_check.stderr
+    print ""
+    print "🔧 Attempting to fix by re-deploying from dotfiles..."
+    cd ($env.HOME | path join "dotfiles")
+    dotter deploy -l linux --force
+}
+
+print ""
+print "🔧 Step 4: Testing file size and content..."
+
+let config_size = (ls $config_path | get size.0)
+let dotfiles_size = (ls $dotfiles_path | get size.0)
+
+print $"Config file size: ($config_size) bytes"
+print $"Dotfiles size: ($dotfiles_size) bytes"
+
+if $config_size != $dotfiles_size {
+    print "❌ File sizes don't match - incomplete deployment detected!"
+    print "   Re-deploying with force..."
+    cd ($env.HOME | path join "dotfiles")
+    dotter deploy -l linux --force
+} else {
+    print "✅ File sizes match"
+}
+
+print ""
+print "🔧 Step 5: Force reload Nushell configuration..."
+
+# Source the config to force reload
+try {
+    source $config_path
+    print "✅ Successfully sourced configuration"
+} catch { |e|
+    print $"❌ Failed to source config: ($e.msg)"
+    print "   This indicates a syntax or dependency error"
+}
+
+print ""
+print "🔧 Step 6: Testing critical function availability..."
+
+# Test the y function specifically
+let y_test = (try {
+    nu -c "help y" | complete
+} catch { |e|
+    {exit_code: 1, stderr: $e.msg}
+})
+
+if $y_test.exit_code == 0 {
+    print "✅ y function is now available!"
+} else {
+    print "❌ y function still missing"
+    print "   This may require a fresh Nushell session"
+}
+
+print ""
+print "🎯 Step 7: Final verification..."
+
+# Run the test again
+try {
+    nu ~/.local/bin/test-nushell-function-completeness
+} catch { |e|
+    print $"❌ Final test failed: ($e.msg)"
+}
+
+print ""
+print "✅ Fix script completed!"
+print ""
+print "🔄 Next steps:"
+print "1. Exit and restart your terminal/shell"
+print "2. Run: test-nushell-function-completeness"
+print "3. Test: y (should open Yazi with project detection)"
+print "4. If still failing, check Nushell version compatibility"
+print ""
+print "💡 If problems persist:"
+print "   - Check Nushell version: nu --version"
+print "   - Compare with macOS version"
+print "   - Check for missing external dependencies (fd, rg, sk, etc.)"

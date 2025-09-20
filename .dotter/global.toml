@@ -68,6 +68,8 @@ depends = []
 "scripts/cross-platform-paths" = "~/.local/bin/cross-platform-paths"
 "scripts/cross-platform-clipboard" = "~/.local/bin/cross-platform-clipboard"
 "scripts/cross-platform-open" = "~/.local/bin/cross-platform-open"
+"scripts/test-nushell-function-completeness" = "~/.local/bin/test-nushell-function-completeness"
+"scripts/fix-linux-nushell-deployment" = "~/.local/bin/fix-linux-nushell-deployment"
 "scripts/obsidian-linker-cross-platform.sh" = "~/.local/bin/obsidian-linker-cross-platform.sh"
 "scripts/citation-picker-cross-platform.sh" = "~/.local/bin/citation-picker-cross-platform.sh"
 # Zellij zombie prevention system (cross-platform)

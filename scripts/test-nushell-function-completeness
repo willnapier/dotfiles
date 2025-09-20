@@ -1,0 +1,120 @@
+#!/usr/bin/env nu
+# Test script to verify all critical Nushell functions are available
+# Usage: test-nushell-function-completeness
+
+print "🔍 Testing Nushell Function Completeness..."
+print ""
+
+# Critical universal tools that must be available
+let universal_tools = [
+    "fcit"    # Citation picker
+    "fcitz"   # Zotero PDF finder
+    "fwl"     # Wiki link picker
+    "fsem"    # Semantic search
+    "fsh"     # File search and open
+    "fsearch" # Content search
+]
+
+# Environment navigation functions
+let nav_functions = [
+    "y"       # Smart Yazi launcher (THE MISSING ONE!)
+    "yz"      # Yazi at last nvim location
+    "z"       # Zoxide navigation
+    "zi"      # Interactive zoxide
+]
+
+# Critical note/obsidian functions
+let note_functions = [
+    "daily-note"           # Daily note creation
+    "note-search"          # Note search
+    "note-backlinks"       # Backlink analysis
+    "note-calendar"        # Calendar view
+]
+
+# Project detection functions
+let project_functions = [
+    "find-project-root-enhanced"  # Project root detection
+    "show-project-info"          # Project context display
+]
+
+print "📋 Testing Universal Academic Tools:"
+for tool in $universal_tools {
+    let result = (try { (nu -c $"help ($tool)" | complete | get exit_code) } catch { 1 })
+    if $result == 0 {
+        print $"  ✅ ($tool) - Available"
+    } else {
+        print $"  ❌ ($tool) - MISSING!"
+    }
+}
+
+print ""
+print "🧭 Testing Navigation Functions:"
+for func in $nav_functions {
+    let result = (try { (nu -c $"help ($func)" | complete | get exit_code) } catch { 1 })
+    if $result == 0 {
+        print $"  ✅ ($func) - Available"
+    } else {
+        print $"  ❌ ($func) - MISSING!"
+    }
+}
+
+print ""
+print "📝 Testing Note Functions:"
+for func in $note_functions {
+    let result = (try { (nu -c $"help ($func)" | complete | get exit_code) } catch { 1 })
+    if $result == 0 {
+        print $"  ✅ ($func) - Available"
+    } else {
+        print $"  ❌ ($func) - MISSING!"
+    }
+}
+
+print ""
+print "🔍 Testing Project Detection Functions:"
+for func in $project_functions {
+    let result = (try { (nu -c $"help ($func)" | complete | get exit_code) } catch { 1 })
+    if $result == 0 {
+        print $"  ✅ ($func) - Available"
+    } else {
+        print $"  ❌ ($func) - MISSING!"
+    }
+}
+
+print ""
+print "📊 Testing Configuration File Loading:"
+
+# Check if config file is actually loaded
+let config_path = ($env.HOME | path join ".config" "nushell" "config.nu")
+if ($config_path | path exists) {
+    print $"  ✅ Config file exists: ($config_path)"
+
+    # Check if it's a symlink
+    let symlink_target = (ls -l $config_path | get target.0? | default "not a symlink")
+    if ($symlink_target | str contains "dotfiles") {
+        print $"  ✅ Properly symlinked to: ($symlink_target)"
+    } else {
+        print $"  ❌ NOT symlinked to dotfiles: ($symlink_target)"
+    }
+
+    # Check file size
+    let file_size = (ls $config_path | get size.0)
+    if $file_size > 50000 {  # Config should be substantial
+        print $"  ✅ Config file size looks good: ($file_size) bytes"
+    } else {
+        print $"  ❌ Config file suspiciously small: ($file_size) bytes"
+    }
+} else {
+    print $"  ❌ Config file missing: ($config_path)"
+}
+
+print ""
+print "🎯 Summary:"
+print "If any functions show as MISSING, the Nushell configuration didn't load properly."
+print "This indicates a systematic deployment issue, not missing files."
+print ""
+print "🔧 Troubleshooting steps if functions are missing:"
+print "1. Check config file permissions and symlink"
+print "2. Try: source ~/.config/nushell/config.nu"
+print "3. Check for Nushell syntax errors: nu --check ~/.config/nushell/config.nu"
+print "4. Compare file sizes between systems"
+print "5. Re-run: dotter deploy --force"
