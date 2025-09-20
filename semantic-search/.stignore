@@ -1,0 +1,26 @@
+# Syncthing ignore file for semantic-search folder
+# Sync expensive embeddings but not machine-specific paths
+
+# Don't sync path-specific database
+**/files.db
+**/files.db-*
+
+# Don't sync logs (machine-specific)
+logs/
+*.log
+
+# Don't sync Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Don't sync temporary files
+*.tmp
+*.swp
+.DS_Store
+
+# Keep syncing these valuable items:
+# - cache/ folder (contains expensive OpenAI embeddings)
+# - db/embeddings.db (the actual embedding database)
+# - config.yaml (configuration)
+# - *.py scripts (already in git but won't hurt)
