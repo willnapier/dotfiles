@@ -35,12 +35,12 @@ depends = []
 "helix/themes/solarized_light_modal.toml" = "~/.config/helix/themes/solarized_light_modal.toml" 
 "helix/themes/solarized_dark_modal_wiki.toml" = "~/.config/helix/themes/solarized_dark_modal_wiki.toml"
 "helix/themes/test_theme.toml" = "~/.config/helix/themes/test_theme.toml"
-# Neovim configuration files
-"nvim/init.lua" = "~/.config/nvim/init.lua"
-"nvim/lazy-lock.json" = "~/.config/nvim/lazy-lock.json"
-"nvim/lua" = { target = "~/.config/nvim/lua", type = "symbolic" }
-"nvim/doc" = { target = "~/.config/nvim/doc", type = "symbolic" }
-"nvim/spell" = { target = "~/.config/nvim/spell", type = "symbolic" }
+# Neovim configuration files - DISABLED (user doesn't use nvim)
+# "nvim/init.lua" = "~/.config/nvim/init.lua"
+# "nvim/lazy-lock.json" = "~/.config/nvim/lazy-lock.json"
+# "nvim/lua" = { target = "~/.config/nvim/lua", type = "symbolic" }
+# "nvim/doc" = { target = "~/.config/nvim/doc", type = "symbolic" }
+# "nvim/spell" = { target = "~/.config/nvim/spell", type = "symbolic" }
 # HIGH PRIORITY: Essential configurations (added 2025-09-16)
 "aerospace/aerospace.toml" = "~/.config/aerospace/aerospace.toml"
 "ghostty/themes/solarized-dark" = "~/.config/ghostty/themes/solarized-dark"
@@ -66,6 +66,8 @@ depends = []
 # Cross-platform utilities
 "scripts/detect-platform" = "~/.local/bin/detect-platform"
 "scripts/cross-platform-paths" = "~/.local/bin/cross-platform-paths"
+"scripts/cross-platform-clipboard" = "~/.local/bin/cross-platform-clipboard"
+"scripts/cross-platform-open" = "~/.local/bin/cross-platform-open"
 "scripts/obsidian-linker-cross-platform.sh" = "~/.local/bin/obsidian-linker-cross-platform.sh"
 "scripts/citation-picker-cross-platform.sh" = "~/.local/bin/citation-picker-cross-platform.sh"
 # Zellij zombie prevention system (cross-platform)
@@ -101,7 +103,6 @@ depends = []
 "scripts/script-ready-deploy" = "~/.local/bin/script-ready-deploy"
 "scripts/zellij-cleanup.nu" = "~/.local/bin/zellij-cleanup.nu"
 "scripts/process-count.nu" = "~/.local/bin/process-count.nu"
-"scripts/daily-note.nu" = "~/.local/bin/daily-note.nu"
 "scripts/yazi-project-file-search-floating" = "~/.local/bin/yazi-project-file-search-floating"
 "scripts/yazi-project-file-search-floating.nu" = "~/.local/bin/yazi-project-file-search-floating.nu"
 "scripts/yazi-recent-files.nu" = "~/.local/bin/yazi-recent-files.nu"
