@@ -62,6 +62,9 @@ depends = []
 "scripts/setup-link-service" = "~/.local/bin/setup-link-service"
 "nushell/scripts/quantified-tracking.nu" = "~/.config/nushell/scripts/quantified-tracking.nu"
 "nushell/scripts/quantified-tracking-v2.nu" = "~/.config/nushell/scripts/quantified-tracking-v2.nu"
+"nushell/scripts/project-root-detection.nu" = "~/.config/nushell/scripts/project-root-detection.nu"
+"nushell/scripts/serpl.nu" = "~/.config/nushell/scripts/serpl.nu"
+"nushell/scripts/hx-smart-gf.nu" = "~/.config/nushell/scripts/hx-smart-gf.nu"
 
 # Cross-platform utilities
 "scripts/detect-platform" = "~/.local/bin/detect-platform"
