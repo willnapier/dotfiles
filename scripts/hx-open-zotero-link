@@ -1,0 +1,41 @@
+#!/usr/bin/env nu
+
+# Extract and open Zotero links from Helix selection
+# Usage: Called from Helix via Space+z keybinding
+
+def main [] {
+    # Read the selection from stdin (from Helix pipe)
+    let content = $in
+
+    # Look for zotero:// URLs in the content
+    let zotero_links = (
+        $content
+        | str find-replace --all --regex '\[([^\]]+)\]\((zotero://[^)]+)\)' '${2}'
+        | lines
+        | where ($it | str starts-with "zotero://")
+    )
+
+    if ($zotero_links | is-empty) {
+        # Also try to find bare zotero:// URLs
+        let bare_links = (
+            $content
+            | str find-replace --all --regex '(zotero://[^\s\)]+)' '${1}'
+            | lines
+            | where ($it | str starts-with "zotero://")
+        )
+
+        if ($bare_links | is-empty) {
+            print "❌ No Zotero links found in selection"
+            print "💡 Make sure cursor is on a line with: [Title](zotero://select/items/@KEY)"
+            return
+        } else {
+            let link = $bare_links.0
+            print $"🔗 Opening Zotero link: ($link)"
+            ^open $link
+        }
+    } else {
+        let link = $zotero_links.0
+        print $"🔗 Opening Zotero link: ($link)"
+        ^open $link
+    }
+}
