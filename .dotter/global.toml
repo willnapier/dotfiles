@@ -66,6 +66,7 @@ depends = []
 "nushell/scripts/serpl.nu" = "~/.config/nushell/scripts/serpl.nu"
 "nushell/scripts/hx-smart-gf.nu" = "~/.config/nushell/scripts/hx-smart-gf.nu"
 "nushell/completions/serpl-completions.nu" = "~/.config/nushell/completions/serpl-completions.nu"
+"nushell/zotero-commands.nu" = "~/.config/nushell/zotero-commands.nu"
 
 # Cross-platform utilities
 "scripts/detect-platform" = "~/.local/bin/detect-platform"
