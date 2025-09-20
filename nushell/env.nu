@@ -44,13 +44,20 @@ let paths_to_add = [
 let existing_path = ($env.PATH | split row (char esep))
 $env.PATH = ($paths_to_add | append $existing_path | uniq | str join (char esep))
 
-# Theme detection
-let theme_result = (^defaults read -g AppleInterfaceStyle | complete)
-$env.MACOS_THEME = if $theme_result.exit_code == 0 {
-    let theme_value = ($theme_result.stdout | str trim)
-    if ($theme_value | str contains "Dark") { "dark" } else { "light" }
+# Cross-platform theme detection
+let platform = (uname | str downcase)
+$env.SYSTEM_THEME = if $platform == "darwin" {
+    # macOS theme detection
+    let theme_result = (^defaults read -g AppleInterfaceStyle | complete)
+    if $theme_result.exit_code == 0 {
+        let theme_value = ($theme_result.stdout | str trim)
+        if ($theme_value | str contains "Dark") { "dark" } else { "light" }
+    } else {
+        "light"  # Default to light if command fails
+    }
 } else {
-    "light"  # Default to light if command fails
+    # Linux/other platforms - default to dark (can be enhanced later)
+    "dark"
 }
 
 # Zoxide initialization
@@ -59,22 +66,21 @@ if (which zoxide | is-not-empty) {
     source ~/.zoxide.nu
 }
 
-# FZF configuration
-if (which fzf | is-not-empty) {
-    let fzf_base_command = "fd --type f --strip-cwd-prefix --hidden --follow --exclude .git"
-    
-    if $env.MACOS_THEME == "dark" {
-        $env.FZF_DEFAULT_OPTS = "--color=dark"
+# Skim (sk) configuration - preferred fuzzy finder
+if (which sk | is-not-empty) {
+    let sk_base_command = "fd --type f --strip-cwd-prefix --hidden --follow --exclude .git"
+
+    if $env.SYSTEM_THEME == "dark" {
+        $env.SKIM_DEFAULT_OPTIONS = "--color=dark"
     } else {
-        $env.FZF_DEFAULT_OPTS = "--color=light"
+        $env.SKIM_DEFAULT_OPTIONS = "--color=light"
     }
-    
-    $env.FZF_DEFAULT_COMMAND = $fzf_base_command
-    $env.FZF_CTRL_T_COMMAND = $env.FZF_DEFAULT_COMMAND
+
+    $env.SKIM_DEFAULT_COMMAND = $sk_base_command
 }
 
 # Vivid for better LS_COLORS
 if (which vivid | is-not-empty) {
-    let theme = if $env.MACOS_THEME == "dark" { "solarized-dark" } else { "solarized-light" }
+    let theme = if $env.SYSTEM_THEME == "dark" { "solarized-dark" } else { "solarized-light" }
     $env.LS_COLORS = (^vivid generate $theme)
 }

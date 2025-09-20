@@ -317,7 +317,7 @@ $env.config = {
 
 # Add explore configuration after main config - using upsert to merge properly
 # Dynamically set colors based on theme
-let explore_colors = if ($env.MACOS_THEME? | default "light") == "dark" {
+let explore_colors = if ($env.SYSTEM_THEME? | default "light") == "dark" {
     {
         selected_cell: { bg: "#586e75", fg: "#fdf6e3" }  # Dark theme: medium gray bg with light text
         selected_row: { fg: "#839496" }

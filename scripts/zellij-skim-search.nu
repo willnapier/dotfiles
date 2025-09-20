@@ -130,27 +130,18 @@ def main [] {
         $result
     } catch {|err|
         print $"❌ Skim still failed: ($err.msg)"
-        print "DEBUG: Falling back to simple fzf or native selection..."
-        
-        # Try fzf as fallback since it's more robust in terminal environments
-        let fzf_result = try {
-            $skim_input | fzf --preview=$"bat --style=numbers --color=always --line-range=:50 \"($project_root)/{{}}\" 2>/dev/null || head -n 20 \"($project_root)/{{}}\" 2>/dev/null" --preview-window="right:60%"
-        } catch {
-            print "FZF also failed, using simple selection..."
-            
-            # Show first 20 files for quick selection
-            let display_files = ($files | first 20)
-            print "Available files (first 20):"
-            for i in 0..(($display_files | length) - 1) {
-                print $"($i + 1). ($display_files | get $i)"
-            }
-            
-            print "Enter file number:"
-            let choice = (input --numchar 2 | str trim | into int)
-            $display_files | get ($choice - 1)
+        print "DEBUG: Falling back to native selection..."
+
+        # Show first 20 files for quick selection
+        let display_files = ($file_list | first 20)
+        print "Available files (first 20):"
+        for i in 0..(($display_files | length) - 1) {
+            print $"($i + 1). ($display_files | get $i)"
         }
-        
-        $fzf_result
+
+        print "Enter file number (1-20):"
+        let choice = (input --numchar 2 | str trim | into int)
+        $display_files | get ($choice - 1)
     }
     
     let selection = ($selection | str trim)
