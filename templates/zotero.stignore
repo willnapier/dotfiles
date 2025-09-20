@@ -1,0 +1,22 @@
+# Zotero Syncthing ignore patterns
+# Sync everything except temporary files
+
+# Temporary/lock files
+*.tmp
+*.lock
+zotero.sqlite-journal
+
+# Log files
+*.log
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Keep these important files synced:
+# - zotero.sqlite (main database)
+# - storage/ (PDFs and attachments)
+# - styles/ (citation styles)
+# - better-bibtex.sqlite (if using Better BibTeX)
+# - translators/ (import/export)
+# - locate/ (file locations)
