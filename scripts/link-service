@@ -64,9 +64,9 @@ def main [action?: string = "status"] {
         }
 
         "restart" => {
-            link_service stop
+            main "stop"
             sleep 2sec
-            link_service start
+            main "start"
         }
 
         "status" => {

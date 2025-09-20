@@ -21,8 +21,17 @@ $env.BROWSER = "open"
 # Obsidian vault path for notes command
 $env.OBSIDIAN_VAULT = "/Users/williamnapier/Obsidian.nosync/Forge"
 
-# OpenAI API key for semantic search system
-$env.OPENAI_API_KEY = "REPLACE_THIS_WITH_YOUR_KEY"
+# OpenAI API key for semantic search system (retrieved from keychain)
+$env.OPENAI_API_KEY = (try {
+    let result = (^security find-generic-password -s "openai-api-key" -a "semantic-search" -w | complete)
+    if $result.exit_code == 0 {
+        $result.stdout | str trim
+    } else {
+        ""
+    }
+} catch {
+    ""
+})
 
 # PATH management
 let paths_to_add = [
@@ -36,11 +45,12 @@ let existing_path = ($env.PATH | split row (char esep))
 $env.PATH = ($paths_to_add | append $existing_path | uniq | str join (char esep))
 
 # Theme detection
-$env.MACOS_THEME = (defaults read -g AppleInterfaceStyle 2>/dev/null | str trim)
-if ($env.MACOS_THEME | is-empty) {
-    $env.MACOS_THEME = "light"
+let theme_result = (^defaults read -g AppleInterfaceStyle | complete)
+$env.MACOS_THEME = if $theme_result.exit_code == 0 {
+    let theme_value = ($theme_result.stdout | str trim)
+    if ($theme_value | str contains "Dark") { "dark" } else { "light" }
 } else {
-    $env.MACOS_THEME = "dark"
+    "light"  # Default to light if command fails
 }
 
 # Zoxide initialization

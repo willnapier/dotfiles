@@ -21,7 +21,7 @@ prepend_keymap = [
   { on = "s", run = """shell 'zellij action new-pane --floating --close-on-exit --width 90% --height 85% -- nu $HOME/.local/bin/zellij-skim-search.nu' --block""", desc = "Search: skim with full TTY environment" },
   { on = [ "s", "p" ], run = """shell 'zellij run --direction right --close-on-exit -- nu $HOME/.local/bin/yazi-project-file-search-floating.nu' --block""", desc = "Search: regular Pane (zellij run)" },
   { on = [ "s", "t" ], run = """shell 'zellij action new-tab --name "File Search"; zellij run -- nu $HOME/.local/bin/yazi-project-file-search-floating.nu' --block""", desc = "Search: new Tab (zellij run)" },
-  { on = "S", run = """shell 'zellij action new-pane --close-on-exit --floating --width 90% --height 85% -- bash -c "echo -n \"Search (use AND/OR for multiple terms): \"; read term; selected=$(nu $HOME/.local/bin/yazi-project-content-search.nu \"$term\" 2>/dev/null); [ -n \"$selected\" ] && hx \"$selected\""' --block""", desc = "Project-aware content search with floating pane" },
+  { on = "S", run = """shell 'zellij action new-pane --close-on-exit --floating --width 90% --height 85% -- bash -c "echo -n \"Search (use AND/OR for multiple terms): \"; read term; selected=$(nu $HOME/.local/bin/yazi-project-content-search.nu \"$term\"); [ -n \"$selected\" ] && hx \"$selected\""' --block""", desc = "Project-aware content search with floating pane" },
   { on = "R", run = """shell 'zellij action new-pane --close-on-exit --floating --width 90% --height 85% -- nu $HOME/.local/bin/yazi-recent-files.nu' --block""", desc = "Recent files (last 7 days) with floating pane" },
   # Quick navigation shortcuts (g prefix)
   { on = [ "g", "g" ], run = "arrow -999999999", desc = "Go to top" },

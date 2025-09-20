@@ -657,7 +657,7 @@ def note-week-find [] {
         | path basename
         | sort --reverse
         | str join "\n"
-        | ^env TERM=xterm TERMINFO="" TERMINFO_DIRS="" sk --preview $"bat --color=always ($weekly_dir)/{}" --height 60%
+        | ^env TERM=xterm TERMINFO="" TERMINFO_DIRS="" sk --preview $"mdcat --columns 80 ($weekly_dir)/{}" --height 60%
         | str trim
     )
     
@@ -738,7 +738,7 @@ def note-rename [old_name: string, new_name: string] {
 
 # Toggle todo checkbox in current line (for Helix integration)
 def note-toggle-todo [] {
-    print "Run in Helix: :pipe-to sed 's/\\[ \\]/[x]/g; s/\\[x\\]/[ ]/g'"
+    print "Run in Helix: :pipe-to sd '\\[ \\]' '[TEMP]' | sd '\\[x\\]' '[ ]' | sd '\\[TEMP\\]' '[x]'"
 }
 
 # Show all tags in vault
@@ -768,7 +768,14 @@ def note-tags [] {
     )
     
     if not ($selected | is-empty) {
-        note-grep $selected
+        # Use fsearch (universal content search) since note-grep was removed
+        print $"🔍 Searching for tag: ($selected)"
+        let results = (rg -i $selected $env.OBSIDIAN_VAULT --type md -l)
+        if not ($results | is-empty) {
+            $results | lines | each { |file| print $"📄 ($file)" }
+        } else {
+            print "❌ No files found with tag: ($selected)"
+        }
     }
 }
 
@@ -1013,7 +1020,7 @@ def fsh [] {
         print "fd and sk are required. Install with: brew install fd sk"
         return
     }
-    let file = (fd . --type f --hidden --exclude .git | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'bat --color=always {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📁 File Search: " | str trim)
+    let file = (fd . --type f --hidden --exclude .git | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'mdcat --columns 80 {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📁 File Search: " | str trim)
     if not ($file | is-empty) {
         print $"🚀 Opening ($file) in Helix..."
         hx $file
@@ -1023,7 +1030,7 @@ def fsh [] {
 # File wiki link + copy to clipboard (universal)
 def fwl [] {
     if not ($env.OBSIDIAN_VAULT? | is-empty) and ($env.OBSIDIAN_VAULT | path exists) {
-        let file = (fd . $env.OBSIDIAN_VAULT --type f --extension md | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'bat --color=always {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📝 Wiki Link: " | str trim)
+        let file = (fd . $env.OBSIDIAN_VAULT --type f --extension md | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'mdcat --columns 80 {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📝 Wiki Link: " | str trim)
         if not ($file | is-empty) {
             let filename = ($file | path basename | str replace ".md" "")
             let wikilink = $"[[($filename)]]"
@@ -1161,43 +1168,23 @@ def fcitz [] {
             return
         }
         
-        print $"📄 Opening: ($entry.key)"
-        
-        # Try to open the PDF file directly if available
-        if (not ($entry.file | is-empty)) and ($entry.file | path exists) {
-            print $"📂 Opening PDF: ($entry.file | path basename)"
-            
-            # Cross-platform file opening
-            let open_cmd = if $nu.os-info.name == "macos" {
-                "open"
-            } else if $nu.os-info.name == "linux" {
-                "xdg-open"
-            } else {
-                "start"  # Windows
-            }
-            ^$open_cmd $entry.file
-            print "✅ PDF opened directly"
-        } else {
-            # Fallback to Zotero select URL to highlight the item
-            print "🔍 Opening in Zotero library (PDF not found locally)..."
-            
-            # Use the select URL scheme which works better than search
-            # This will select the item in Zotero, then user can double-click to open PDF
-            let zotero_url = $"zotero://select/items/@($entry.key)"
-            
-            # Cross-platform URL opening
-            let open_cmd = if $nu.os-info.name == "macos" {
-                "open"
-            } else if $nu.os-info.name == "linux" {
-                "xdg-open"
-            } else {
-                "start"  # Windows
-            }
-            ^$open_cmd $zotero_url
-            
-            print "💡 Item selected in Zotero - double-click to open its PDF"
-            print $"💡 If not found, try searching for: ($entry.title)"
-        }
+        print $"📄 Selected: ($entry.key)"
+
+        # Create clean title for markdown link
+        let clean_title = $entry.title | str replace '"' '' | str replace '[' '' | str replace ']' ''
+
+        # Always create Zotero URL for selecting items (we'll automate the Enter keypress)
+        let url = $"zotero://select/items/@($entry.key)"
+        print $"🔗 Creating Zotero link with automated PDF opening"
+
+        # Create proper markdown link
+        let markdown_link = $"[($clean_title)]\(($url)\)"
+
+        # Copy the markdown link to clipboard
+        $markdown_link | pbcopy
+        print $"📋 Copied markdown link to clipboard"
+        print $"📝 Link: ($markdown_link)"
+        print "💡 Paste in Helix with Cmd+V - will appear as clean markdown!"
     }
 }
 
@@ -1207,16 +1194,22 @@ def fsem [] {
         print "❌ OPENAI_API_KEY not set for semantic search"
         return
     }
-    
+
     print "🧠 Semantic search in your vault..."
     let query = (input "🔍 Search concept: ")
     if ($query | is-empty) {
         return
     }
-    
+
     print $"🔍 Finding notes related to: ($query)"
     let results = try {
-        ^semantic-query --text $query --limit 20 2>/dev/null | lines | where $it != ""
+        let output = (^semantic-query --text $query --limit 20 | complete)
+        if $output.exit_code == 0 {
+            # Filter to only keep lines starting with scores (not the # heading lines)
+            $output.stdout | lines | where ($it =~ "^[0-9]\\.")
+        } else {
+            []
+        }
     } catch {
         print "❌ Semantic search failed. Check if semantic-indexer is set up."
         return
@@ -1227,9 +1220,15 @@ def fsem [] {
         return
     }
     
-    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'bat --color=always {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "🧠 Semantic: " | str trim)
+    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'title=$(echo {} | sd "^[0-9.]+[[:space:]]+" ""); file=$(fd -t f --full-path "$title.md" "$OBSIDIAN_VAULT" | head -1); if [ -f "$file" ]; then mdcat --columns 80 "$file"; else echo "Title extracted: [$title]"; echo "Searching for: $title.md"; echo "In vault: $OBSIDIAN_VAULT"; fd -t f "$title.md" "$OBSIDIAN_VAULT"; fi' --preview-window 'right:60%' --prompt "🧠 Semantic: " | str trim)
     if not ($selected | is-empty) {
-        let filename = ($selected | path basename | str replace ".md" "")
+        # Extract filename from semantic search result
+        # The selection is just the first line: "0.45  Title"
+        let lines = ($selected | lines)
+
+        # Extract title from the score line (format: "0.45  Title")
+        let filename = ($lines | get 0 | str replace "^[0-9.]+[[:space:]]+" "" | str trim)
+
         let wikilink = $"[[($filename)]]"
         $wikilink | pbcopy
         print $"📋 Copied to clipboard: ($wikilink)"
@@ -1243,16 +1242,22 @@ def fsemh [] {
         print "❌ OPENAI_API_KEY not set for semantic search"
         return
     }
-    
+
     print "🧠 Semantic search in your vault..."
     let query = (input "🔍 Search concept: ")
     if ($query | is-empty) {
         return
     }
-    
+
     print $"🔍 Finding notes related to: ($query)"
     let results = try {
-        ^semantic-query --text $query --limit 20 2>/dev/null | lines | where $it != ""
+        let output = (^semantic-query --text $query --limit 20 | complete)
+        if $output.exit_code == 0 {
+            # Filter to only keep lines starting with scores (not the # heading lines)
+            $output.stdout | lines | where ($it =~ "^[0-9]\\.")
+        } else {
+            []
+        }
     } catch {
         print "❌ Semantic search failed. Check if semantic-indexer is set up."
         return
@@ -1263,10 +1268,21 @@ def fsemh [] {
         return
     }
     
-    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'bat --color=always {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "🧠 Semantic: " | str trim)
+    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'title=$(echo {} | sd "^[0-9.]+[[:space:]]+" ""); file=$(fd -t f --full-path "$title.md" "$OBSIDIAN_VAULT" | head -1); if [ -f "$file" ]; then mdcat --columns 80 "$file"; else echo "Title extracted: [$title]"; echo "Searching for: $title.md"; echo "In vault: $OBSIDIAN_VAULT"; fd -t f "$title.md" "$OBSIDIAN_VAULT"; fi' --preview-window 'right:60%' --prompt "🧠 Semantic: " | str trim)
     if not ($selected | is-empty) {
-        print $"🚀 Opening ($selected) in Helix..."
-        hx $selected
+        # Extract filename from semantic search result
+        # The selection is just the first line: "0.45  Title"
+        let lines = ($selected | lines)
+        let filename = ($lines | get 0 | str replace "^[0-9.]+[[:space:]]+" "" | str trim)
+
+        # Find the full path and open in Helix
+        let filepath = (fd -t f --full-path $"($filename).md" $env.OBSIDIAN_VAULT | head -1)
+        if not ($filepath | is-empty) {
+            print $"🚀 Opening ($filename) in Helix..."
+            hx $filepath
+        } else {
+            print $"❌ File not found: ($filename).md"
+        }
     }
 }
 
@@ -1938,8 +1954,9 @@ def semantic-status [] {
 }
 
 # Clipboard aliases - force external command execution to prevent Nushell interception
-alias pbcopy = ^pbcopy
-alias pbpaste = ^pbpaste
+# Cross-platform clipboard aliases
+alias pbcopy = cross-platform-clipboard copy
+alias pbpaste = cross-platform-clipboard paste
 
 
 # Helix integration functions (project-aware file opening)
