@@ -187,10 +187,11 @@ depends = ["shared"]
 "systemd/zotero-pdf-watcher.service" = "~/.config/systemd/user/zotero-pdf-watcher.service"
 "systemd/zotero-bridge.service" = "~/.config/systemd/user/zotero-bridge.service"
 "linux/systemd/obsidian-link-manager.service" = "~/.config/systemd/user/obsidian-link-manager.service"
-# Wayland compositor configuration - DISABLED (using Niri, not River)
-# "wayland/river" = { target = "~/.config/river", type = "symbolic" }
-# "wayland/waybar" = { target = "~/.config/waybar", type = "symbolic" }
-# "wayland/foot" = { target = "~/.config/foot", type = "symbolic" }
+# Wayland compositor configuration - Niri + Waybar + Foot
+"niri/config.kdl" = "~/.config/niri/config.kdl"
+"waybar/config" = "~/.config/waybar/config"
+"waybar/style.css" = "~/.config/waybar/style.css"
+"wayland/foot/foot.ini" = "~/.config/foot/foot.ini"
 
 [linux.variables]
 opener_cmd = "xdg-open"
