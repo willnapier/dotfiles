@@ -45,7 +45,7 @@ let existing_path = ($env.PATH | split row (char esep))
 $env.PATH = ($paths_to_add | append $existing_path | uniq | str join (char esep))
 
 # Cross-platform theme detection
-let platform = (uname | str downcase)
+let platform = (uname | get operating-system | str downcase)
 $env.SYSTEM_THEME = if $platform == "darwin" {
     # macOS theme detection
     let theme_result = (^defaults read -g AppleInterfaceStyle | complete)
