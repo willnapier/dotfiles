@@ -1,0 +1,18 @@
+#!/usr/bin/env nu
+
+# Cross-platform file/URL opener
+# Usage: cross-platform-open "file.pdf"
+#        cross-platform-open "https://example.com"
+
+def main [target: string] {
+    if $nu.os-info.name == "macos" {
+        ^open $target
+    } else if $nu.os-info.name == "linux" {
+        ^xdg-open $target
+    } else if $nu.os-info.name == "windows" {
+        ^start $target
+    } else {
+        print $"❌ Unsupported platform: ($nu.os-info.name)"
+        print $"Manually open: ($target)"
+    }
+}

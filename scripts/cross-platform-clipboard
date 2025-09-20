@@ -1,0 +1,58 @@
+#!/usr/bin/env nu
+
+# Cross-platform clipboard utilities
+# Usage:
+#   echo "text" | cross-platform-clipboard copy
+#   cross-platform-clipboard paste
+
+def main [action: string] {
+    match $action {
+        "copy" => {
+            let input = $in
+            if $nu.os-info.name == "macos" {
+                $input | ^pbcopy
+            } else if $nu.os-info.name == "linux" {
+                # Try different Linux clipboard tools in order of preference
+                if (which wl-copy | is-not-empty) {
+                    # Wayland
+                    $input | ^wl-copy
+                } else if (which xclip | is-not-empty) {
+                    # X11
+                    $input | ^xclip -selection clipboard
+                } else if (which xsel | is-not-empty) {
+                    # X11 alternative
+                    $input | ^xsel --clipboard --input
+                } else {
+                    print "❌ No clipboard tool found. Install: sudo apt install wl-clipboard xclip"
+                    return
+                }
+            } else {
+                print "❌ Unsupported platform for clipboard operations"
+                return
+            }
+            print "✅ Copied to clipboard"
+        }
+        "paste" => {
+            if $nu.os-info.name == "macos" {
+                ^pbpaste
+            } else if $nu.os-info.name == "linux" {
+                if (which wl-paste | is-not-empty) {
+                    ^wl-paste
+                } else if (which xclip | is-not-empty) {
+                    ^xclip -selection clipboard -o
+                } else if (which xsel | is-not-empty) {
+                    ^xsel --clipboard --output
+                } else {
+                    print "❌ No clipboard tool found. Install: sudo apt install wl-clipboard xclip"
+                    return
+                }
+            } else {
+                print "❌ Unsupported platform for clipboard operations"
+                return
+            }
+        }
+        _ => {
+            print "Usage: cross-platform-clipboard [copy|paste]"
+        }
+    }
+}
