@@ -1,0 +1,22 @@
+[Unit]
+Description=Git Auto-Pull Watcher for Seamless Dotfiles Syncing
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/git-auto-pull-watcher
+Restart=always
+RestartSec=30
+Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=%h
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+# Nice to have
+Nice=15
+
+[Install]
+WantedBy=default.target

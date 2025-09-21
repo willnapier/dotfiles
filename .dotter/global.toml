@@ -117,6 +117,7 @@ depends = []
 "scripts/yazi-recent-files.nu" = "~/.local/bin/yazi-recent-files.nu"
 "scripts/simple-file-preview" = "~/.local/bin/simple-file-preview"
 "scripts/test-skim-floating" = "~/.local/bin/test-skim-floating"
+"scripts/git-auto-pull-watcher" = "~/.local/bin/git-auto-pull-watcher"
 "scripts/test-date-corruption-prevention" = "~/.local/bin/test-date-corruption-prevention"
 "scripts/word-wrap-preview.nu" = "~/.local/bin/word-wrap-preview.nu"
 "scripts/activity-duration-processor" = "~/.local/bin/activity-duration-processor"
@@ -191,6 +192,7 @@ depends = ["shared"]
 # Systemd user services - Re-nu Nushell-based watchers
 "systemd/dotter-realtime-watcher.service" = "~/.config/systemd/user/dotter-realtime-watcher.service"
 "systemd/dotter-sync-watcher.service" = "~/.config/systemd/user/dotter-sync-watcher.service"
+"systemd/git-auto-pull-watcher.service" = "~/.config/systemd/user/git-auto-pull-watcher.service"
 "systemd/syncthing-monitor.service" = "~/.config/systemd/user/syncthing-monitor.service"
 "scripts/dotter-sync-watcher" = "~/.local/bin/dotter-sync-watcher"
 "systemd/zotero-pdf-watcher.service" = "~/.config/systemd/user/zotero-pdf-watcher.service"
