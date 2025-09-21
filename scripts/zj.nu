@@ -22,9 +22,10 @@ def main [...args] {
     }
 
     # Known displays:
-    # - 32" Dell 6K: 6016 x 3384 (home)
-    # - 27" Apple Thunderbolt: 2560 x 1440 (flat)
-    # - 15" MacBook Air: 2880 x 1864 (mobile)
+    # - 32" Dell 6K: 6016 x 3384 (standard desktop - home office)
+    # - 27" Apple Thunderbolt: 2560 x 1440 (large laptop/secondary display)
+    # - 1920x1080: Standard laptop/small desktop
+    # - MacBook displays: Mobile/laptop
 
     # Get screen resolution using native Nushell (only if no override)
     let resolution = if ($nu.os-info.name == "macos") {
@@ -104,17 +105,17 @@ def main [...args] {
         print $"🎯 Using override layout: ($layout_override)"
         $layout_override
     } else if $resolution.width >= 6000 {
-        print $"🖥️  Detected ultrawide display: ($resolution.width)x($resolution.height)"
+        print $"🖥️  Detected standard desktop display (6K): ($resolution.width)x($resolution.height)"
         "desktop"
     } else if $resolution.width >= 3440 {
-        print $"🖥️  Detected wide display: ($resolution.width)x($resolution.height)"
+        print $"🖥️  Detected ultrawide display: ($resolution.width)x($resolution.height)"
         "desktop-27"
     } else if $resolution.width >= 2560 {
-        print $"💻 Detected large desktop display: ($resolution.width)x($resolution.height)"
+        print $"💻 Detected large laptop display: ($resolution.width)x($resolution.height)"
         "desktop-27"
     } else if $resolution.width >= 1920 {
-        print $"🖥️  Detected standard desktop display: ($resolution.width)x($resolution.height)"
-        "desktop"
+        print $"💻 Detected small desktop/laptop display: ($resolution.width)x($resolution.height)"
+        "laptop"
     } else {
         print $"📱 Detected mobile display: ($resolution.width)x($resolution.height)"
         "laptop"
