@@ -33,8 +33,21 @@ $env.OPENAI_API_KEY = (try {
     ""
 })
 
-# PATH management - cross-platform
+# PATH management - cross-platform with bootstrap fix for Linux
 let platform = (uname | get operating-system | str downcase)
+
+# Bootstrap fix: Ensure essential paths are available first
+if $platform == "linux" {
+    # Force critical paths for Nushell and scripts to be available
+    let bootstrap_paths = [
+        $"($env.HOME)/.cargo/bin"
+        $"($env.HOME)/.local/bin"
+    ]
+    let current_path = ($env.PATH | str join ":")
+    let bootstrap_path_str = ($bootstrap_paths | str join ":")
+    $env.PATH = ($bootstrap_path_str + ":" + $current_path | split row ":" | uniq | str join ":")
+}
+
 let paths_to_add = if $platform == "darwin" {
     [
         $"($env.HOME)/.local/bin"
