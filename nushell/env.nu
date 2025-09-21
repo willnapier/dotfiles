@@ -19,7 +19,7 @@ $env.VISUAL = "hx"
 $env.BROWSER = "open"
 
 # Forge knowledge base path (cross-platform)
-.FORGE = $"($env.HOME)/Forge"
+$env.FORGE = $"($env.HOME)/Forge"
 
 # OpenAI API key for semantic search system (retrieved from keychain)
 $env.OPENAI_API_KEY = (try {
