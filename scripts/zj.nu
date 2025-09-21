@@ -2,12 +2,31 @@
 # Smart Zellij launcher with screen-aware layout selection - Native Nushell implementation
 
 def main [...args] {
+    # Check if first argument is a layout override
+    let layout_override = if ($args | length) > 0 {
+        let first_arg = ($args | first)
+        if $first_arg in ["laptop", "desktop", "desktop-27", "desktop-quarters", "desktop-niri"] {
+            $first_arg
+        } else {
+            null
+        }
+    } else {
+        null
+    }
+
+    # Remove layout from args if it was provided as override
+    let remaining_args = if $layout_override != null {
+        $args | skip 1
+    } else {
+        $args
+    }
+
     # Known displays:
     # - 32" Dell 6K: 6016 x 3384 (home)
     # - 27" Apple Thunderbolt: 2560 x 1440 (flat)
     # - 15" MacBook Air: 2880 x 1864 (mobile)
 
-    # Get screen resolution using native Nushell
+    # Get screen resolution using native Nushell (only if no override)
     let resolution = if ($nu.os-info.name == "macos") {
         # macOS - parse system_profiler output
         try {
@@ -80,16 +99,22 @@ def main [...args] {
         }
     }
 
-    # Determine layout based on screen dimensions
-    let layout = if $resolution.width >= 6000 {
+    # Determine layout - use override if provided, otherwise auto-detect
+    let layout = if $layout_override != null {
+        print $"🎯 Using override layout: ($layout_override)"
+        $layout_override
+    } else if $resolution.width >= 6000 {
         print $"🖥️  Detected ultrawide display: ($resolution.width)x($resolution.height)"
-        "desktop-niri"
+        "desktop"
     } else if $resolution.width >= 3440 {
         print $"🖥️  Detected wide display: ($resolution.width)x($resolution.height)"
         "desktop-27"
     } else if $resolution.width >= 2560 {
-        print $"💻 Detected desktop display: ($resolution.width)x($resolution.height)"
-        "laptop"
+        print $"💻 Detected large desktop display: ($resolution.width)x($resolution.height)"
+        "desktop-27"
+    } else if $resolution.width >= 1920 {
+        print $"🖥️  Detected standard desktop display: ($resolution.width)x($resolution.height)"
+        "desktop"
     } else {
         print $"📱 Detected mobile display: ($resolution.width)x($resolution.height)"
         "laptop"
@@ -144,8 +169,8 @@ def main [...args] {
 
     # Launch Zellij with the appropriate layout
     print $"🚀 Starting Zellij session: ($session_name)"
-    let zellij_args = if ($args | length) > 0 {
-        [$"--session" $session_name "--layout" $layout] ++ $args
+    let zellij_args = if ($remaining_args | length) > 0 {
+        [$"--session" $session_name "--layout" $layout] ++ $remaining_args
     } else {
         [$"--session" $session_name "--layout" $layout]
     }
