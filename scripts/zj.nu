@@ -22,13 +22,16 @@ def main [...args] {
     }
 
     # Known displays:
-    # - 32" Dell 6K: 6016 x 3384 (standard desktop - home office)
-    # - 27" Apple Thunderbolt: 2560 x 1440 (large laptop/secondary display)
-    # - 1920x1080: Standard laptop/small desktop
+    # - Nimbini (Linux): 32" Dell 6K: 6016 x 3384 (standard desktop - home office)
+    # - macOS: 27" Apple Thunderbolt: 2560 x 1440 (large laptop/secondary display)
+    # - Other systems: 1920x1080: Standard laptop/small desktop
     # - MacBook displays: Mobile/laptop
 
     # Get screen resolution using native Nushell (only if no override)
-    let resolution = if ($nu.os-info.name == "macos") {
+    let resolution = if ($layout_override != null) {
+        # Skip detection if layout is overridden
+        {width: 0, height: 0}
+    } else if ($nu.os-info.name == "macos") {
         # macOS - parse system_profiler output
         try {
             let display_info = (^system_profiler SPDisplaysDataType | lines | where $it =~ "Resolution")
@@ -52,51 +55,63 @@ def main [...args] {
             {width: 2880, height: 1864}  # Error fallback
         }
     } else {
-        # Linux - Try Wayland (wlr-randr) first, fallback to X11 (xrandr)
-        try {
-            if (which wlr-randr | is-not-empty) {
-                # Wayland compositor (Niri, Sway, etc.)
-                let wlr_output = (^wlr-randr | lines | where $it =~ " current ")
-                if ($wlr_output | length) > 0 {
-                    let current_line = ($wlr_output | first)
-                    # Extract resolution like "6016x3384" from wlr-randr output
-                    let res_match = ($current_line | parse --regex '(\d+)x(\d+)')
-                    if ($res_match | length) > 0 {
-                        let parsed = ($res_match | first)
-                        {
-                            width: ($parsed.capture0 | into int),
-                            height: ($parsed.capture1 | into int)
-                        }
-                    } else {
-                        {width: 1920, height: 1080}  # Wayland fallback
-                    }
-                } else {
-                    {width: 1920, height: 1080}  # No current display
-                }
-            } else if (which xrandr | is-not-empty) {
-                # X11 fallback for systems not on Wayland
-                let xrandr_output = (^xrandr | lines | where $it =~ "connected")
-                if ($xrandr_output | length) > 0 {
-                    let conn_line = ($xrandr_output | first)
-                    # Extract resolution like "2560x1440" from xrandr output
-                    let res_match = ($conn_line | parse --regex '(\d+)x(\d+)')
-                    if ($res_match | length) > 0 {
-                        let parsed = ($res_match | first)
-                        {
-                            width: ($parsed.capture0 | into int),
-                            height: ($parsed.capture1 | into int)
-                        }
-                    } else {
-                        {width: 1920, height: 1080}  # X11 fallback
-                    }
-                } else {
-                    {width: 1920, height: 1080}  # No connected display
-                }
-            } else {
-                {width: 1920, height: 1080}  # No display tools available
-            }
+        # Linux - Check for known machines first, then try display detection
+        let hostname = try {
+            (open /etc/hostname | str trim)
         } catch {
-            {width: 1920, height: 1080}  # Error fallback
+            "unknown"
+        }
+
+        if $hostname == "nimbini" {
+            # Nimbini is always connected to the 6K Dell monitor
+            {width: 6016, height: 3384}
+        } else {
+            # Try Wayland (wlr-randr) first, fallback to X11 (xrandr)
+            try {
+                if (which wlr-randr | is-not-empty) {
+                    # Wayland compositor (Niri, Sway, etc.)
+                    let wlr_output = (^wlr-randr | lines | where $it =~ " current ")
+                    if ($wlr_output | length) > 0 {
+                        let current_line = ($wlr_output | first)
+                        # Extract resolution like "6016x3384" from wlr-randr output
+                        let res_match = ($current_line | parse --regex '(\d+)x(\d+)')
+                        if ($res_match | length) > 0 {
+                            let parsed = ($res_match | first)
+                            {
+                                width: ($parsed.capture0 | into int),
+                                height: ($parsed.capture1 | into int)
+                            }
+                        } else {
+                            {width: 1920, height: 1080}  # Wayland fallback
+                        }
+                    } else {
+                        {width: 1920, height: 1080}  # No current display
+                    }
+                } else if (which xrandr | is-not-empty) {
+                    # X11 fallback for systems not on Wayland
+                    let xrandr_output = (^xrandr | lines | where $it =~ "connected")
+                    if ($xrandr_output | length) > 0 {
+                        let conn_line = ($xrandr_output | first)
+                        # Extract resolution like "2560x1440" from xrandr output
+                        let res_match = ($conn_line | parse --regex '(\d+)x(\d+)')
+                        if ($res_match | length) > 0 {
+                            let parsed = ($res_match | first)
+                            {
+                                width: ($parsed.capture0 | into int),
+                                height: ($parsed.capture1 | into int)
+                            }
+                        } else {
+                            {width: 1920, height: 1080}  # X11 fallback
+                        }
+                    } else {
+                        {width: 1920, height: 1080}  # No connected display
+                    }
+                } else {
+                    {width: 1920, height: 1080}  # No display tools available
+                }
+            } catch {
+                {width: 1920, height: 1080}  # Error fallback
+            }
         }
     }
 
