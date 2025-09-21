@@ -1,0 +1,85 @@
+#!/usr/bin/env nu
+
+# Dotter Sync Watcher - Auto-deploy when dotfiles change
+# Watches ~/dotfiles for Syncthing updates and runs dotter deploy
+
+def main [] {
+    let dotfiles_dir = $"($env.HOME)/dotfiles"
+    let log_file = $"($env.HOME)/.local/share/dotter-sync-watcher.log"
+    let lock_file = "/tmp/dotter-sync-watcher.lock"
+    let last_deploy = "/tmp/dotter-last-deploy"
+
+    # Ensure log directory exists
+    mkdir ($log_file | path dirname)
+
+    # Check for existing instance
+    if ($lock_file | path exists) {
+        print "❌ Sync watcher already running"
+        exit 1
+    }
+
+    # Create lock file
+    "running" | save $lock_file
+
+    print "🚀 Starting Dotter sync watcher"
+    print $"👀 Watching: ($dotfiles_dir)"
+    print $"📝 Logging to: ($log_file)"
+
+    # Initial deploy timestamp
+    (date now | format date "%s") | save $last_deploy
+
+    # Use infinite loop with file change detection
+    # (Nushell doesn't have built-in file watching yet)
+    print "⚠️  Note: Using polling method (Nushell watch not yet available)"
+
+    mut last_check = (ls $dotfiles_dir/**/*.{toml,kdl,nu,sh,lua} | get modified | math max)
+
+    loop {
+        sleep 2sec
+
+        # Check for changes
+        let current_files = (ls $dotfiles_dir/**/*.{toml,kdl,nu,sh,lua} 2>/dev/null)
+        if ($current_files | is-empty) { continue }
+
+        let latest_change = ($current_files | get modified | math max)
+
+        if $latest_change > $last_check {
+            let now = (date now | format date "%s" | into int)
+            let last = (try { open $last_deploy | into int } catch { 0 })
+            let elapsed = $now - $last
+
+            # Debounce - only deploy once every 5 seconds
+            if $elapsed > 5 {
+                let timestamp = (date now | format date "%H:%M:%S")
+                let message = $"[($timestamp)] Change detected: ($path | path relative-to $dotfiles_dir)"
+                $message | save --append $log_file
+                print $message
+
+                # Run dotter deploy
+                print "🔄 Running dotter deploy..."
+                cd $dotfiles_dir
+                let result = (do { dotter deploy } | complete)
+
+                if $result.exit_code == 0 {
+                    let deploy_msg = $"[($timestamp)] ✅ Dotter deploy successful"
+                    $deploy_msg | save --append $log_file
+                    print "✅ Config updated!"
+                } else {
+                    let error_msg = $"[($timestamp)] ❌ Deploy failed: ($result.stderr)"
+                    $error_msg | save --append $log_file
+                    print $"❌ Deploy failed: ($result.stderr)"
+                }
+
+                # Update last deploy time
+                (date now | format date "%s") | save $last_deploy
+            }
+
+            # Update last check time
+            $last_check = $latest_change
+        }
+    }
+
+    # Cleanup on exit
+    rm -f $lock_file
+    print "🛑 Sync watcher stopped"
+}

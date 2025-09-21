@@ -1,0 +1,30 @@
+[Unit]
+Description=Forge Link Management Service
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/nu -c "link-service start"
+WorkingDirectory=%h
+Environment=PATH=/usr/bin:/bin:/usr/local/bin
+Environment=HOME=%h
+
+# Restart policy
+Restart=on-failure
+RestartSec=5
+
+# Logging
+StandardOutput=append:/home/%i/scripts/forge-link-manager/logs/systemd.out.log
+StandardError=append:/home/%i/scripts/forge-link-manager/logs/systemd.err.log
+
+# Process management
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Security settings (optional but recommended)
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

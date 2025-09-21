@@ -1,0 +1,23 @@
+[Unit]
+Description=Dotter Sync Auto-Deploy Watcher
+Documentation=Automatically deploys Dotter when Syncthing updates dotfiles
+After=syncthing.service
+Wants=syncthing.service
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/dotter-sync-watcher
+Restart=always
+RestartSec=10
+Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=%h
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+# Nice to have
+Nice=15
+
+[Install]
+WantedBy=default.target
