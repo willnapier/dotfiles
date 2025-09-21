@@ -30,7 +30,7 @@ def main [] {
     mut total_count = 0
     
     for file in $managed_files {
-        let source_path = $"/Users/williamnapier/dotfiles/($file)"
+        let source_path = $"/dotfiles/($file)"
         
         if ($source_path | path exists) {
             $total_count = $total_count + 1

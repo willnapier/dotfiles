@@ -19,7 +19,7 @@ VAULT_PATH=$(nu -c "source ~/.config/nushell/scripts/project-root-detection.nu; 
 # If not found from current location, check known vault locations
 if [[ -z "$VAULT_PATH" ]]; then
     # Check common vault locations
-    for possible_vault in "/Users/williamnapier/Obsidian.nosync/Forge" "/Users/williamnapier/Obsidian/Forge" "$HOME/Documents/Obsidian/Forge"; do
+    for possible_vault in "$HOME/Forge" "$HOME/Documents/Forge" "$HOME/Obsidian/Forge"; do
         if [[ -d "$possible_vault/.obsidian" ]]; then
             VAULT_PATH="$possible_vault"
             echo "📍 Using default vault location"

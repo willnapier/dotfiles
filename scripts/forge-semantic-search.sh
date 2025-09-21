@@ -110,7 +110,7 @@ preview_semantic() {
     local filename=$(echo "$line" | cut -c6- | sd '^\s+' '' | sd '\s+$' '')
     
     # Find the actual .md file (could be anywhere in the vault)
-    local vault_path="/Users/williamnapier/Obsidian.nosync/Forge"
+    local vault_path="$HOME/Forge"
     local found_file=$(fd -t f "^${filename}\.md$" "$vault_path" | head -1)
     
     if [[ -n "$found_file" ]]; then
@@ -128,7 +128,7 @@ preview_semantic() {
     if [[ -f "$full_path" ]]; then
         # Use Nushell word-wrapping for intelligent word-level wrapping
         if command -v nu >/dev/null 2>&1; then
-            nu /Users/williamnapier/.local/bin/word-wrap-preview.nu "$full_path" 80 2>/dev/null
+            nu /.local/bin/word-wrap-preview.nu "$full_path" 80 2>/dev/null
         elif command -v bat >/dev/null 2>&1; then
             # Fallback to bat with character wrapping
             bat --style=plain --color=always --line-range=:25 --wrap=character --terminal-width=80 "$full_path" 2>/dev/null

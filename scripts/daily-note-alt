@@ -1,7 +1,7 @@
 #!/bin/bash
 # Alternative daily-note with cursor marker approach
 
-VAULT_DIR="/Users/williamnapier/Obsidian.nosync/Forge"
+VAULT_DIR="$HOME/Forge"
 DAILY_DIR="$VAULT_DIR/NapierianLogs/DayPages"
 
 # Generate today's filename
@@ -14,7 +14,7 @@ if [[ ! -f "$DAILY_FILE" ]]; then
     mkdir -p "$DAILY_DIR"
     
     # Use template and keep a cursor marker
-    TEMPLATE_FILE="/Users/williamnapier/Obsidian.nosync/Forge/Areas/Obsidian/Templates/DayPage.md"
+    TEMPLATE_FILE="$HOME/Forge/Areas/Obsidian/Templates/DayPage.md"
     CURRENT_DATE="$TODAY"
     CURRENT_TIME=$(date "+%H:%M")
     

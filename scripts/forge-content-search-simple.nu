@@ -20,7 +20,7 @@ def main [] {
     print $"Searching for: ($query)"
     
     # Use ripgrep to search vault content
-    let vault = "/Users/williamnapier/Forge"
+    let vault = $"($env.HOME)/Forge"
     
     # Search with ripgrep and format for skim
     let results = (

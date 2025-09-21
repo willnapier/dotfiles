@@ -12,8 +12,8 @@ print "🔍 Detecting Forge..."
 
 # Check known vault locations directly
 let possible_vaults = [
-    "/Users/williamnapier/Forge"
-    "/Users/williamnapier/Obsidian/Forge" 
+    $"($env.HOME)/Forge"
+    $"($env.HOME)/Obsidian/Forge"
     ($env.HOME | path join "Documents/Obsidian/Forge")
 ]
 

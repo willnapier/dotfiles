@@ -6,7 +6,7 @@
 export TERM="xterm"
 export RUST_BACKTRACE=0
 
-VAULT="/Users/williamnapier/Obsidian.nosync/Forge"
+VAULT="$HOME/Forge"
 
 echo "🔍 Content Search with Wikilink Output"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -26,7 +26,7 @@ preview_content() {
         
         # Use Nushell word-wrapping for intelligent word-level wrapping
         if command -v nu >/dev/null 2>&1; then
-            nu /Users/williamnapier/.local/bin/word-wrap-preview.nu "$full_path" 80 2>/dev/null
+            nu /.local/bin/word-wrap-preview.nu "$full_path" 80 2>/dev/null
         elif command -v bat >/dev/null 2>&1; then
             # Fallback to bat with character wrapping
             bat --style=plain --color=always --line-range=:30 --wrap=character --terminal-width=80 "$full_path" 2>/dev/null

@@ -6,7 +6,7 @@ def main [] {
     print "🔍 COMPREHENSIVE DOTTER AUDIT SYSTEM"
     print "=====================================\n"
     
-    let dotfiles_root = "/Users/williamnapier/dotfiles"
+    let dotfiles_root = "/dotfiles"
     let dotter_config = $dotfiles_root + "/.dotter/global.toml"
     
     # Parse current Dotter config to get managed files

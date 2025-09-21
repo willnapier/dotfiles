@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-CLAUDE_DIR="/Users/williamnapier/Claude"
+CLAUDE_DIR="$HOME/Claude"
 LOG_FILE="/tmp/claude-docs-backup.log"
 
 # Function to log with timestamp

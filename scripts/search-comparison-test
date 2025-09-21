@@ -4,7 +4,7 @@
 # Tests which files are found by each method and measures performance
 
 def main [search_term: string] {
-    let vault_path = "/Users/williamnapier/Forge"
+    let vault_path = $"($env.HOME)/Forge"
     
     print $"=== SEARCH COMPARISON TEST FOR: '($search_term)' ==="
     print ""

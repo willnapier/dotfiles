@@ -7,7 +7,7 @@ def main [] {
     print "🔍 Scanning for legacy command patterns..."
     print "=" * 60
 
-    let dotfiles_path = "/Users/williamnapier/dotfiles"
+    let dotfiles_path = "/dotfiles"
 
     # Critical patterns that cause actual failures
     let critical_patterns = [

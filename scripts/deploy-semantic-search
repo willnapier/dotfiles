@@ -4,8 +4,8 @@
 
 set -e
 
-DOTFILES_DIR="/Users/williamnapier/dotfiles"
-SEMANTIC_DIR="/Users/williamnapier/.local/share/semantic-search"
+DOTFILES_DIR="/dotfiles"
+SEMANTIC_DIR="/.local/share/semantic-search"
 
 echo "🚀 Deploying semantic search system from dotfiles..."
 

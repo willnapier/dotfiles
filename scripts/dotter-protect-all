@@ -6,7 +6,7 @@
 echo "🚨 Comprehensive Dotter Protection System"
 echo "========================================="
 
-DOTFILES_ROOT="/Users/williamnapier/dotfiles"
+DOTFILES_ROOT="/dotfiles"
 
 # List of all Dotter-managed config files
 declare -a MANAGED_FILES=(

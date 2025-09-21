@@ -7,5 +7,5 @@
 
 def main [search_term: string] {
     # Use the unified yazi-search-renu.nu with content mode
-    nu /Users/williamnapier/dotfiles/scripts/yazi-search-renu.nu content $search_term
+    nu /dotfiles/scripts/yazi-search-renu.nu content $search_term
 }

@@ -14,7 +14,7 @@ def main [
     }
     print ""
 
-    let dotfiles_dir = "/Users/williamnapier/dotfiles"
+    let dotfiles_dir = "/dotfiles"
     let dotter_config = $"($dotfiles_dir)/.dotter/global.toml"
 
     # Define files that should definitely be under Dotter management

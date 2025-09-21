@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-CLAUDE_DIR="/Users/williamnapier/Claude"
+CLAUDE_DIR="/Claude"
 LOG_FILE="/tmp/claude-docs-backup.log"
 
 log() {

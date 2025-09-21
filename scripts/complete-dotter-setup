@@ -6,8 +6,8 @@ set -e
 echo "🔧 Setting up complete Dotter configuration management..."
 
 # Ensure the semantic search directory exists and is properly linked
-DOTFILES_DIR="/Users/williamnapier/dotfiles"
-TARGET_DIR="/Users/williamnapier/.local/share/semantic-search"
+DOTFILES_DIR="/dotfiles"
+TARGET_DIR="/.local/share/semantic-search"
 
 # Remove existing directory/symlink if it exists
 if [[ -e "$TARGET_DIR" ]]; then

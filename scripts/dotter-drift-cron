@@ -25,7 +25,7 @@ log "🔍 Starting scheduled drift audit"
 
 # Set up proper environment for cron
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
-export HOME="/Users/williamnapier"
+export HOME=""
 
 # Change to dotfiles directory
 cd "$HOME/dotfiles" || {

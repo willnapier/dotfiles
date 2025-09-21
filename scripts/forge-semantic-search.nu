@@ -153,7 +153,7 @@ def main [query?: string] {
         $formatted_results
         | to text
         | sk --prompt="🧠 Select file to link: "
-           --preview="nu /Users/williamnapier/.local/bin/obsidian-semantic-search.nu preview '{}'"
+           --preview="nu /.local/bin/obsidian-semantic-search.nu preview '{}'"
            --preview-window="right:60%"
            --bind="enter:accept"
            --header="Semantic search results - Enter=select and copy wikilink, Esc=cancel"

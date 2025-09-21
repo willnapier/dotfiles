@@ -23,7 +23,7 @@ def main [] {
     # Create the hook
     $"#!/bin/bash
 # Dotter Orphan Prevention Hook
-/Users/williamnapier/.local/bin/dotter-pre-commit-hook
+/.local/bin/dotter-pre-commit-hook
 " | save -f $pre_commit_hook
     
     chmod +x $pre_commit_hook

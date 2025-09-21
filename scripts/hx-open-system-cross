@@ -110,9 +110,9 @@ def find_file [path: string] {
     # Search in platform-appropriate vault paths
     let vault_paths = match (detect_platform) {
         "macos" => [
-            "/Users/williamnapier/Obsidian.nosync/Forge"
-            "/Users/williamnapier/Documents/Obsidian" 
-            "/Users/williamnapier/Obsidian"
+            "/Obsidian.nosync/Forge"
+            "/Documents/Obsidian" 
+            "/Obsidian"
         ],
         "linux" => [
             $"($env.HOME)/Obsidian/Forge"

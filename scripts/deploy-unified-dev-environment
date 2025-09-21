@@ -588,7 +588,7 @@ if [[ -f ~/.config/helix/obsidian-linker.sh ]]; then
     echo "🔗 Updating wiki link picker for dynamic vault detection..."
     
     # Update to use intelligent vault detection
-    sed -i.bak 's|VAULT_PATH="/Users/williamnapier/Obsidian.nosync/Forge"|VAULT_PATH=$(nu -c "source ~/.config/nushell/scripts/project-root-detection.nu; find-obsidian-vault" 2>/dev/null)|' ~/.config/helix/obsidian-linker.sh
+    sed -i.bak 's|VAULT_PATH="/Obsidian.nosync/Forge"|VAULT_PATH=$(nu -c "source ~/.config/nushell/scripts/project-root-detection.nu; find-obsidian-vault" 2>/dev/null)|' ~/.config/helix/obsidian-linker.sh
     
     # Add error handling
     cat >> ~/.config/helix/obsidian-linker.sh << 'WIKI_UPDATE'
@@ -612,7 +612,7 @@ if [[ -f ~/.config/helix/citation-picker.sh ]]; then
     echo "📚 Updating citation picker for dynamic vault detection..."
     
     # Similar update for citations
-    sed -i.bak 's|CITATIONS_FILE="/Users/williamnapier/Obsidian.nosync/Forge/ZET/citations.md"|VAULT_PATH=$(nu -c "source ~/.config/nushell/scripts/project-root-detection.nu; find-obsidian-vault" 2>/dev/null)|' ~/.config/helix/citation-picker.sh
+    sed -i.bak 's|CITATIONS_FILE="/Obsidian.nosync/Forge/ZET/citations.md"|VAULT_PATH=$(nu -c "source ~/.config/nushell/scripts/project-root-detection.nu; find-obsidian-vault" 2>/dev/null)|' ~/.config/helix/citation-picker.sh
     
     echo "✅ Citation picker updated for dynamic vault detection"
 fi

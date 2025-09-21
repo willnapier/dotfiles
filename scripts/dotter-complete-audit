@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-DOTFILES_DIR="/Users/williamnapier/dotfiles"
+DOTFILES_DIR="/dotfiles"
 DOTTER_CONFIG="$DOTFILES_DIR/.dotter/global.toml"
 REPORT_FILE="/tmp/dotter-complete-audit-report.md"
 

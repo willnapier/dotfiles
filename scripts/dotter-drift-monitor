@@ -132,7 +132,7 @@ def run_daemon_monitoring [] {
 }
 
 def get_dotter_managed_files [] {
-    let dotter_config_path = "/Users/williamnapier/dotfiles/.dotter/global.toml"
+    let dotter_config_path = "/dotfiles/.dotter/global.toml"
     
     if not ($dotter_config_path | path exists) {
         return []
@@ -172,7 +172,7 @@ def create_launchd_plist [] {
     <string>com.user.dotter-drift-monitor</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/williamnapier/.local/bin/dotter-drift-monitor</string>
+        <string>/.local/bin/dotter-drift-monitor</string>
         <string>--daemon</string>
     </array>
     <key>RunAtLoad</key>
@@ -180,9 +180,9 @@ def create_launchd_plist [] {
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/Users/williamnapier/.config/dotter-monitor/daemon.log</string>
+    <string>/.config/dotter-monitor/daemon.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/williamnapier/.config/dotter-monitor/daemon.error.log</string>
+    <string>/.config/dotter-monitor/daemon.error.log</string>
 </dict>
 </plist>'
     

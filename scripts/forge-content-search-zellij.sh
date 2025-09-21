@@ -13,7 +13,7 @@ if [[ -z "$query" ]]; then
     exit 0
 fi
 
-VAULT="/Users/williamnapier/Obsidian.nosync/Forge"
+VAULT="$HOME/Forge"
 
 echo "Searching for: $query"
 

@@ -8,9 +8,9 @@ echo "🔧 Setting up comprehensive drift monitoring system"
 echo "=================================================="
 
 # Make scripts executable
-chmod +x /Users/williamnapier/dotfiles/scripts/dotter-complete-audit
-chmod +x /Users/williamnapier/dotfiles/scripts/dotter-drift-watcher  
-chmod +x /Users/williamnapier/dotfiles/scripts/dotter-drift-cron
+chmod +x /dotfiles/scripts/dotter-complete-audit
+chmod +x /dotfiles/scripts/dotter-drift-watcher  
+chmod +x /dotfiles/scripts/dotter-drift-cron
 
 echo "✅ Scripts made executable"
 
@@ -27,7 +27,7 @@ cat > "$LAUNCH_AGENT_FILE" << 'EOF'
     
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/williamnapier/.local/bin/dotter-drift-watcher</string>
+        <string>/.local/bin/dotter-drift-watcher</string>
     </array>
     
     <key>RunAtLoad</key>
@@ -40,10 +40,10 @@ cat > "$LAUNCH_AGENT_FILE" << 'EOF'
     </dict>
     
     <key>StandardOutPath</key>
-    <string>/Users/williamnapier/.local/share/dotter-drift-watcher.stdout</string>
+    <string>/.local/share/dotter-drift-watcher.stdout</string>
     
     <key>StandardErrorPath</key>
-    <string>/Users/williamnapier/.local/share/dotter-drift-watcher.stderr</string>
+    <string>/.local/share/dotter-drift-watcher.stderr</string>
     
     <key>ProcessType</key>
     <string>Background</string>
@@ -63,7 +63,7 @@ echo "🕒 Setting up cron job for scheduled audits..."
 crontab -l 2>/dev/null | grep -v "dotter-drift-cron" > /tmp/current_crontab || echo "" > /tmp/current_crontab
 
 # Add new cron job - run every 6 hours
-echo "0 */6 * * * /Users/williamnapier/.local/bin/dotter-drift-cron" >> /tmp/current_crontab
+echo "0 */6 * * * /.local/bin/dotter-drift-cron" >> /tmp/current_crontab
 
 # Install the updated crontab
 crontab /tmp/current_crontab
