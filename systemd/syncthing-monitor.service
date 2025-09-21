@@ -1,0 +1,23 @@
+[Unit]
+Description=Syncthing Connection Monitor
+Documentation=Automatically monitors and heals Syncthing device connections
+After=syncthing.service
+Wants=syncthing.service
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/syncthing-connection-monitor
+Restart=always
+RestartSec=60
+Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=%h
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+# Nice to have
+Nice=15
+
+[Install]
+WantedBy=default.target

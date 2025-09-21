@@ -134,6 +134,9 @@ depends = []
 # Zotero automation - Native Nushell versions (no fswatch dependency)
 "scripts/zotero-pdf-watcher-renu" = "~/.local/bin/zotero-pdf-watcher-renu"
 "scripts/zotero-bridge-renu" = "~/.local/bin/zotero-bridge-renu"
+# Syncthing connection monitoring system
+"scripts/syncthing-connection-monitor" = "~/.local/bin/syncthing-connection-monitor"
+"scripts/setup-syncthing-monitor" = "~/.local/bin/setup-syncthing-monitor"
 
 # MEDIUM PRIORITY: Additional essential scripts (added 2025-09-16)
 "scripts/get-openai-key" = "~/.local/bin/get-openai-key"
@@ -167,6 +170,7 @@ depends = ["shared"]
 "wezterm/wezterm.lua" = "~/.config/wezterm/wezterm.lua"
 "ghostty/config" = "~/Library/Application Support/com.mitchellh.ghostty/config"
 "macos/launchd/com.williamnapier.forge-link-manager.plist" = "~/Library/LaunchAgents/com.williamnapier.forge-link-manager.plist"
+"macos/launchd/com.williamnapier.syncthing-monitor.plist" = "~/Library/LaunchAgents/com.williamnapier.syncthing-monitor.plist"
 # NOTE: Individual files managed in [shared.files] for better reliability
 # Removed directory symlinks that were causing orphan detection issues
 
@@ -187,6 +191,7 @@ depends = ["shared"]
 # Systemd user services - Re-nu Nushell-based watchers
 "systemd/dotter-realtime-watcher.service" = "~/.config/systemd/user/dotter-realtime-watcher.service"
 "systemd/dotter-sync-watcher.service" = "~/.config/systemd/user/dotter-sync-watcher.service"
+"systemd/syncthing-monitor.service" = "~/.config/systemd/user/syncthing-monitor.service"
 "scripts/dotter-sync-watcher" = "~/.local/bin/dotter-sync-watcher"
 "systemd/zotero-pdf-watcher.service" = "~/.config/systemd/user/zotero-pdf-watcher.service"
 "systemd/zotero-bridge.service" = "~/.config/systemd/user/zotero-bridge.service"

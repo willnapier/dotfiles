@@ -1,0 +1,119 @@
+#!/usr/bin/env nu
+
+# Syncthing Connection Monitor - Auto-heal disconnected devices
+# Monitors Syncthing connections and automatically restarts when devices disconnect
+
+def main [] {
+    let config_file = $"($env.HOME)/.config/syncthing-monitor/config.nu"
+    let log_file = $"($env.HOME)/.local/share/syncthing-monitor.log"
+    let api_key = get_syncthing_api_key
+
+    if ($api_key | is-empty) {
+        log_error "Failed to get Syncthing API key"
+        exit 1
+    }
+
+    # Ensure log directory exists
+    mkdir ($log_file | path dirname)
+
+    log_info "🔍 Starting Syncthing connection monitor"
+    log_info $"📊 API Key: ($api_key | str substring 0..8)..."
+    log_info $"📝 Logging to: ($log_file)"
+
+    loop {
+        let status = check_connections $api_key
+
+        if $status.needs_restart {
+            log_warning $"💔 Disconnected devices detected: ($status.disconnected | str join ', ')"
+            restart_syncthing $api_key
+            sleep 30sec  # Give it time to restart and reconnect
+        } else {
+            log_info $"✅ All devices connected: ($status.connected | str join ', ')"
+        }
+
+        sleep 5min  # Check every 5 minutes
+    }
+}
+
+# Get Syncthing API key from config
+def get_syncthing_api_key [] {
+    try {
+        let config_path = $"($env.HOME)/Library/Application Support/Syncthing/config.xml"
+        if not ($config_path | path exists) {
+            # Linux path
+            $config_path = $"($env.HOME)/.config/syncthing/config.xml"
+        }
+
+        open $config_path |
+        lines |
+        find "apikey" |
+        first |
+        parse "<apikey>{key}</apikey>" |
+        get key.0
+    } catch {
+        ""
+    }
+}
+
+# Check connection status of all devices
+def check_connections [api_key: string] {
+    try {
+        let connections = http get $"http://localhost:8384/rest/system/connections" --headers [X-API-Key $api_key]
+        let devices = $connections.connections | columns
+
+        let connected = $devices | where {|device|
+            ($connections.connections | get $device | get connected) == true
+        }
+
+        let disconnected = $devices | where {|device|
+            ($connections.connections | get $device | get connected) == false
+        }
+
+        {
+            connected: $connected,
+            disconnected: $disconnected,
+            needs_restart: (($disconnected | length) > 0)
+        }
+    } catch {
+        log_error "Failed to check connections - Syncthing may be down"
+        {
+            connected: [],
+            disconnected: [],
+            needs_restart: true
+        }
+    }
+}
+
+# Restart Syncthing to force device rediscovery
+def restart_syncthing [api_key: string] {
+    log_info "🔄 Restarting Syncthing to force device rediscovery..."
+
+    try {
+        http post $"http://localhost:8384/rest/system/restart" --headers [X-API-Key $api_key]
+        log_info "✅ Restart signal sent successfully"
+    } catch {
+        log_error "❌ Failed to restart Syncthing via API"
+    }
+}
+
+# Logging functions
+def log_info [message: string] {
+    let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
+    let log_entry = $"[($timestamp)] INFO: ($message)"
+    print $log_entry
+    $log_entry | save --append $"($env.HOME)/.local/share/syncthing-monitor.log"
+}
+
+def log_warning [message: string] {
+    let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
+    let log_entry = $"[($timestamp)] WARN: ($message)"
+    print $log_entry
+    $log_entry | save --append $"($env.HOME)/.local/share/syncthing-monitor.log"
+}
+
+def log_error [message: string] {
+    let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
+    let log_entry = $"[($timestamp)] ERROR: ($message)"
+    print $log_entry
+    $log_entry | save --append $"($env.HOME)/.local/share/syncthing-monitor.log"
+}

@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.williamnapier.syncthing-monitor</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/williamnapier/.local/bin/syncthing-connection-monitor</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StartInterval</key>
+    <integer>300</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/williamnapier/.local/share/syncthing-monitor-stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/williamnapier/.local/share/syncthing-monitor-stderr.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/williamnapier/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/williamnapier</string>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/williamnapier</string>
+
+    <key>Nice</key>
+    <integer>15</integer>
+</dict>
+</plist>
