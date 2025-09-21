@@ -12,21 +12,25 @@ layout {
         pane split_direction="vertical" {
             pane split_direction="horizontal" {
                 pane name="daily-note" {
-                    focus true
+                    focus=true
                     size "50%"
                     command "bash"
                     args "-c" "daily-note && exec helix \"$(daily-note --print-path)\" || exec nu"
                 }
                 pane name="main-editor" {
                     size "60%"
+                    command "nu"
                 }
             }
             pane split_direction="horizontal" {
                 pane name="files-browser" {
                     size "40%"
+                    command "bash"
+                    args "-c" "cd ~/Forge && exec yazi"
                 }
                 pane name="auxiliary" {
                     size "60%"
+                    command "nu"
                 }
             }
         }
