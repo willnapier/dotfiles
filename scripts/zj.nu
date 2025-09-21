@@ -120,7 +120,7 @@ def main [...args] {
         print $"🎯 Using override layout: ($layout_override)"
         $layout_override
     } else if $resolution.width >= 6000 {
-        print $"🖥️  Detected standard desktop display (6K): ($resolution.width)x($resolution.height)"
+        print $"🖥️  Detected standard desktop display 6K: ($resolution.width)x($resolution.height)"
         "desktop"
     } else if $resolution.width >= 3440 {
         print $"🖥️  Detected ultrawide display: ($resolution.width)x($resolution.height)"
