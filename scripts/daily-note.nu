@@ -2,7 +2,7 @@
 # Open today's daily note directly in Helix - Native Nushell implementation
 
 def main [--print-path] {
-    let vault_dir = $"($env.HOME)/Obsidian.nosync/Forge"
+    let vault_dir = $"($env.HOME)/Forge"
     let daily_dir = $"($vault_dir)/NapierianLogs/DayPages"
 
     # Generate today's filename
@@ -102,6 +102,6 @@ def main [--print-path] {
         $"($daily_file):($cursor_line):0"
     }
 
-    print $"DEBUG: Executing: hx ($position_spec)"
-    ^hx $position_spec
+    print $"DEBUG: Executing: helix ($position_spec)"
+    ^helix $position_spec
 }

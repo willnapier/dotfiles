@@ -13,14 +13,13 @@ layout {
         pane name="daily-note" {
             focus true
             command "bash"
-            args "-c" "/Users/williamnapier/.local/bin/daily-note && exec hx \"$(daily-note --print-path)\" || exec /opt/homebrew/bin/nu"
+            args "-c" "daily-note && exec helix \"$(daily-note --print-path)\" || exec nu"
         }
     }
     
     tab name="work" {
         // Regular work tab - starts in Forge vault for quick access
         pane name="workspace" {
-            cwd "/Users/williamnapier/Obsidian.nosync/Forge"
         }
     }
 }

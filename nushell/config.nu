@@ -347,7 +347,7 @@ let explore_colors = if ($env.SYSTEM_THEME? | default "light") == "dark" {
 
 $env.config = ($env.config | upsert explore $explore_colors)
 
-# Zettelkasten workflow commands for Obsidian Forge vault
+# Zettelkasten workflow commands for Forge
 # Use alias instead of function for cd commands (functions can't change parent shell directory)
 alias notes = cd $env.OBSIDIAN_VAULT
 
@@ -386,7 +386,7 @@ def hx-registers [] {
     }
 }
 
-# Create a new note in Forge vault
+# Create a new note in Forge
 def note-new [name?: string] {
     let note_name = if ($name == null) {
         print "Enter note name (without .md):"
@@ -462,7 +462,7 @@ def note-links [file: path] {
 
 def daily-note [] {
     let today = (date now | format date "%Y-%m-%d")
-    let daily_dir = "/Users/williamnapier/Obsidian.nosync/Forge/NapierianLogs/DayPages"
+    let daily_dir = $"($env.HOME)/Forge/NapierianLogs/DayPages"
     
     # Create daily directory if it doesn't exist
     if not ($daily_dir | path exists) {
@@ -473,7 +473,7 @@ def daily-note [] {
     
     # Create note with template if it doesn't exist
     if not ($note_path | path exists) {
-        let template_path = "/Users/williamnapier/Obsidian.nosync/Forge/Areas/Obsidian/Templates/DayPage.md"
+        let template_path = $"($env.HOME)/Forge/Areas/Obsidian/Templates/DayPage.md"
         
         if ($template_path | path exists) {
             # Read template from file and process variables
@@ -951,7 +951,7 @@ def hf [] {
     }
 }
 
-# Helix vault - fuzzy find any file in entire vault and open it
+# Helix Forge - fuzzy find any file in entire vault and open it
 def hv [] {
     if (which sk | is-empty) or (which fd | is-empty) {
         print "This command requires sk and fd. Install with: brew install sk fd"
@@ -1421,9 +1421,9 @@ if ($"($env.HOME)/.config/starship.toml" | path exists) {
 }
 
 # Zellij session management aliases
-alias zj-save = ~/.dotfiles/scripts/zellij-sync.nu save
-alias zj-restore = ~/.dotfiles/scripts/zellij-sync.nu restore  
-alias zj-remote = ~/.dotfiles/scripts/zellij-sync.nu remote
+alias zj-save = ~/dotfiles/scripts/zellij-sync.nu save
+alias zj-restore = ~/dotfiles/scripts/zellij-sync.nu restore
+alias zj-remote = ~/dotfiles/scripts/zellij-sync.nu remote
 
 # Quick aliases for common Zellij operations
 alias zj = zellij

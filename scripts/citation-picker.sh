@@ -13,8 +13,8 @@ export LINES=$(tput lines 2>/dev/null || echo 24)
 export COLUMNS=$(tput cols 2>/dev/null || echo 80)
 
 # Use intelligent vault detection to find citations file
-echo "🔍 Detecting Obsidian vault for citations..."
-VAULT_PATH=$(nu -c "source ~/.config/nushell/scripts/project-root-detection.nu; find-obsidian-vault" 2>/dev/null)
+echo "🔍 Detecting Forge for citations..."
+VAULT_PATH=$(nu -c "source ~/.config/nushell/scripts/project-root-detection.nu; find-forge" 2>/dev/null)
 
 # If not found from current location, check known vault locations
 if [[ -z "$VAULT_PATH" ]]; then

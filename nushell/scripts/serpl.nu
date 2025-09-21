@@ -9,7 +9,7 @@
 #
 # Key Features:
 # - Auto-detects project roots using configurable markers
-# - Supports Obsidian vaults, Git repos, Rust/Node.js/Python projects
+# - Supports Forges, Git repos, Rust/Node.js/Python projects
 # - Integrated with Zellij (Alt+r) and Helix (Space+r,r) keybindings
 # - Includes safety features like git snapshots before bulk operations
 #

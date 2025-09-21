@@ -8,11 +8,11 @@ $env.TERM = "xterm"
 $env.RUST_BACKTRACE = "0"
 
 # Detect Obsidian vault - use direct path for reliability in Zellij context
-print "🔍 Detecting Obsidian vault..."
+print "🔍 Detecting Forge..."
 
 # Check known vault locations directly
 let possible_vaults = [
-    "/Users/williamnapier/Obsidian.nosync/Forge"
+    "/Users/williamnapier/Forge"
     "/Users/williamnapier/Obsidian/Forge" 
     ($env.HOME | path join "Documents/Obsidian/Forge")
 ]

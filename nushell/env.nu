@@ -19,7 +19,7 @@ $env.VISUAL = "hx"
 $env.BROWSER = "open"
 
 # Forge knowledge base path (cross-platform)
-$env.OBSIDIAN_VAULT = $"($env.HOME)/Forge"
+.FORGE = $"($env.HOME)/Forge"
 
 # OpenAI API key for semantic search system (retrieved from keychain)
 $env.OPENAI_API_KEY = (try {
@@ -33,13 +33,22 @@ $env.OPENAI_API_KEY = (try {
     ""
 })
 
-# PATH management
-let paths_to_add = [
-    $"($env.HOME)/.local/bin"
-    $"($env.HOME)/.cargo/bin"
-    "/opt/homebrew/bin"
-    "/opt/homebrew/sbin"
-]
+# PATH management - cross-platform
+let platform = (uname | get operating-system | str downcase)
+let paths_to_add = if $platform == "darwin" {
+    [
+        $"($env.HOME)/.local/bin"
+        $"($env.HOME)/.cargo/bin"
+        "/opt/homebrew/bin"
+        "/opt/homebrew/sbin"
+    ]
+} else {
+    [
+        $"($env.HOME)/.local/bin"
+        $"($env.HOME)/.cargo/bin"
+        "/usr/local/bin"
+    ]
+}
 
 let existing_path = ($env.PATH | split row (char esep))
 $env.PATH = ($paths_to_add | append $existing_path | uniq | str join (char esep))

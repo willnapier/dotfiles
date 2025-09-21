@@ -85,7 +85,7 @@ def format-for-selection [results: list] {
 # Preview function for skim
 def preview-semantic-file [selection: string] {
     let filename = ($selection | split row " " | get 0)
-    let vault_path = "/Users/williamnapier/Obsidian.nosync/Forge"
+    let vault_path = $"($env.HOME)/Forge"
     let full_path = ($vault_path | path join $filename)
     
     if ($full_path | path exists) {

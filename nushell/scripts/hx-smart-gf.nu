@@ -41,7 +41,7 @@ def resolve-file-reference [text: string, root: string, type: string]: nothing -
     if ($clean_text | str contains "[[") and ($clean_text | str contains "]]") {
         let wiki_content = ($clean_text | str replace "[[" "" | str replace "]]" "")
         
-        if $type == "obsidian-vault" {
+        if $type == "forge" {
             # Look for exact match first
             let note_path = ($root | path join $"($wiki_content).md")
             if ($note_path | path exists) {

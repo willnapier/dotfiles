@@ -8,9 +8,6 @@
 # Native Nushell structured data types
 export def find-forge-directory [] {
     let forge_candidates = [
-        $"($env.HOME)/Obsidian.nosync/Forge",
-        $"($env.HOME)/Obsidian/Forge", 
-        $"($env.HOME)/Documents/Forge",
         $"($env.HOME)/Forge"
     ]
     
@@ -205,9 +202,6 @@ def main [] {
         print "❌ No Forge directory found"
         print "📝 Searched standard locations and current directory tree"  
         print "💡 Expected locations:"
-        print "   • ~/Obsidian.nosync/Forge"
-        print "   • ~/Obsidian/Forge" 
-        print "   • ~/Documents/Forge"
         print "   • ~/Forge"
         exit 1
     }

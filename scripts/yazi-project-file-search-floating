@@ -36,7 +36,7 @@ fi
 
 echo "🔍 Searching in: $PROJECT_ROOT" >&2
 
-# Terminal compatibility fixes for skim - following obsidian-linker pattern
+# Terminal compatibility fixes for skim - following forge-linker pattern
 export TERM="xterm"           # Use most basic, widely supported terminal type
 unset TERMINFO                # Clear any conflicting terminfo
 export COLORTERM=""           # Clear color term to avoid conflicts

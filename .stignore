@@ -1,0 +1,36 @@
+# Global Syncthing ignore patterns for home directory sync
+# Security exclusions
+.ssh/id_*
+.ssh/known_hosts
+.gnupg/
+.docker/
+.aws/credentials
+
+# System files
+.DS_Store
+.Trash/
+.cache/
+.npm/cache/
+.cargo/registry/
+.cargo/git/
+Library/
+*.log
+
+# Build artifacts
+node_modules/
+target/
+build/
+dist/
+.git/objects/
+.git/logs/
+
+# Temporary files
+*.tmp
+*.swp
+.vscode/extensions/
+
+# Large media (optional)
+*.mov
+*.mp4
+*.mkv
+Downloads/*/

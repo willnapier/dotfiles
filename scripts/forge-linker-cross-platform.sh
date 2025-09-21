@@ -1,5 +1,5 @@
 #!/bin/bash
-# obsidian-linker-cross-platform.sh - Cross-platform floating pane link picker
+# forge-linker-cross-platform.sh - Cross-platform floating pane link picker
 # Solves the terminal access issue by running in a dedicated floating pane
 
 # Load cross-platform paths
@@ -16,8 +16,8 @@ export LINES=$(tput lines 2>/dev/null || echo 24)
 export COLUMNS=$(tput cols 2>/dev/null || echo 80)
 
 # Use intelligent vault detection - find .obsidian folder from current location
-echo "🔍 Detecting Obsidian vault..."
-VAULT_PATH=$("$NU_PATH" -c "source $CONFIG_PATH/nushell/scripts/project-root-detection.nu; find-obsidian-vault" 2>/dev/null)
+echo "🔍 Detecting Forge..."
+VAULT_PATH=$("$NU_PATH" -c "source $CONFIG_PATH/nushell/scripts/project-root-detection.nu; find-forge" 2>/dev/null)
 
 # If not found from current location, check known vault locations
 if [[ -z "$VAULT_PATH" ]]; then

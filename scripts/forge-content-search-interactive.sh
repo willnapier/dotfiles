@@ -1,6 +1,6 @@
 #!/bin/bash
 # Interactive content search with live preview and wikilink output
-# Similar to obsidian-linker but for content search
+# Similar to forge-linker but for content search
 
 # Terminal setup
 export TERM="xterm"

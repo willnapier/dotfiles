@@ -28,6 +28,7 @@ depends = []
 "zellij/layouts/desktop-27.kdl" = "~/.config/zellij/layouts/desktop-27.kdl"
 "zellij/layouts/desktop-27-simple.kdl" = "~/.config/zellij/layouts/desktop-27-simple.kdl"
 "zellij/layouts/desktop-quarters.kdl" = "~/.config/zellij/layouts/desktop-quarters.kdl"
+"zellij/layouts/desktop-niri.kdl" = "~/.config/zellij/layouts/desktop-niri.kdl"
 "zellij/layouts/minimal-test.kdl" = "~/.config/zellij/layouts/minimal-test.kdl"
 "zellij/layouts/test-basic.kdl" = "~/.config/zellij/layouts/test-basic.kdl"
 # Helix themes - individual files for reliability (no more drift!)
@@ -56,8 +57,8 @@ depends = []
 "scripts/hx-insert-time" = "~/.local/bin/hx-insert-time"
 "scripts/hx-mark-revisit" = "~/.local/bin/hx-mark-revisit"
 "scripts/new-script" = "~/.local/bin/new-script"
-"scripts/obsidian-content-search-interactive.sh" = "~/.local/bin/obsidian-content-search-interactive.sh"
-"scripts/obsidian-semantic-search.sh" = "~/.local/bin/obsidian-semantic-search.sh"
+"scripts/forge-content-search-interactive.sh" = "~/.local/bin/forge-content-search-interactive"
+"scripts/forge-semantic-search.sh" = "~/.local/bin/forge-semantic-search"
 "scripts/link-service" = "~/.local/bin/link-service"
 "scripts/setup-link-service" = "~/.local/bin/setup-link-service"
 "nushell/scripts/quantified-tracking.nu" = "~/.config/nushell/scripts/quantified-tracking.nu"
@@ -75,18 +76,19 @@ depends = []
 "scripts/cross-platform-open" = "~/.local/bin/cross-platform-open"
 "scripts/test-nushell-function-completeness" = "~/.local/bin/test-nushell-function-completeness"
 "scripts/fix-linux-nushell-deployment" = "~/.local/bin/fix-linux-nushell-deployment"
-"scripts/obsidian-linker-cross-platform.sh" = "~/.local/bin/obsidian-linker-cross-platform.sh"
+"scripts/forge-linker-cross-platform.sh" = "~/.local/bin/forge-linker-cross-platform"
 "scripts/citation-picker-cross-platform.sh" = "~/.local/bin/citation-picker-cross-platform.sh"
 # Zellij zombie prevention system (cross-platform)
 "scripts/zellij-zombie-killer" = "~/.local/bin/zellij-zombie-killer" 
 "scripts/setup-zellij-zombie-prevention-cross-platform" = "~/.local/bin/setup-zellij-zombie-prevention-cross-platform"
 "scripts/hx-auto" = "~/.local/bin/hx-auto"
 "scripts/hx-wiki" = "~/.local/bin/hx-wiki"
-"scripts/obsidian-linker.sh" = "~/.local/bin/obsidian-linker.sh"
+"scripts/forge-linker.sh" = "~/.local/bin/forge-linker"
 "scripts/forge-linker.nu" = "~/.local/bin/forge-linker.nu"
 "scripts/semantic-indexer" = "~/.local/bin/semantic-indexer"
 "scripts/semantic-query" = "~/.local/bin/semantic-query"
-"scripts/zj" = "~/.local/bin/zj"
+"scripts/zj.nu" = "~/.local/bin/zj"
+"scripts/zj-debug.nu" = "~/.local/bin/zj-debug"
 "scripts/dotter-audit" = "~/.local/bin/dotter-audit"
 "scripts/dotter-add" = "~/.local/bin/dotter-add"
 "scripts/dotter-auto-onboard" = "~/.local/bin/dotter-auto-onboard"
@@ -164,7 +166,7 @@ depends = ["shared"]
 "shell/zshrc" = "~/.zshrc"
 "wezterm/wezterm.lua" = "~/.config/wezterm/wezterm.lua"
 "ghostty/config" = "~/Library/Application Support/com.mitchellh.ghostty/config"
-"macos/launchd/com.williamnapier.obsidian-link-manager.plist" = "~/Library/LaunchAgents/com.williamnapier.obsidian-link-manager.plist"
+"macos/launchd/com.williamnapier.forge-link-manager.plist" = "~/Library/LaunchAgents/com.williamnapier.forge-link-manager.plist"
 # NOTE: Individual files managed in [shared.files] for better reliability
 # Removed directory symlinks that were causing orphan detection issues
 
@@ -184,9 +186,11 @@ depends = ["shared"]
 "shell/bashrc" = "~/.bashrc"
 # Systemd user services - Re-nu Nushell-based watchers
 "systemd/dotter-realtime-watcher.service" = "~/.config/systemd/user/dotter-realtime-watcher.service"
+"systemd/dotter-sync-watcher.service" = "~/.config/systemd/user/dotter-sync-watcher.service"
+"scripts/dotter-sync-watcher" = "~/.local/bin/dotter-sync-watcher"
 "systemd/zotero-pdf-watcher.service" = "~/.config/systemd/user/zotero-pdf-watcher.service"
 "systemd/zotero-bridge.service" = "~/.config/systemd/user/zotero-bridge.service"
-"linux/systemd/obsidian-link-manager.service" = "~/.config/systemd/user/obsidian-link-manager.service"
+"linux/systemd/forge-link-manager.service" = "~/.config/systemd/user/forge-link-manager.service"
 # Wayland compositor configuration - Niri + Waybar + WezTerm
 "niri/config.kdl" = "~/.config/niri/config.kdl"
 "waybar/config" = "~/.config/waybar/config"

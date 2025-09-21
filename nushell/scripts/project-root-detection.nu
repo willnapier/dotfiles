@@ -8,7 +8,7 @@
 #
 # Supported Project Types:
 # - Git repositories (.git)
-# - Obsidian vaults (.obsidian)  
+# - Forges (.obsidian)  
 # - Rust projects (Cargo.toml)
 # - Node.js projects (package.json)
 # - Python projects (pyproject.toml)
@@ -17,7 +17,7 @@
 #
 # Key Functions:
 # - find-project-root [path]     # Find root from any path
-# - find-obsidian-vault [path]   # Find specifically Obsidian vault root
+# - find-forge [path]   # Find specifically Forge root
 # - find-git-root [path]         # Find specifically git repository root
 # - get-project-type [path]      # Determine what type of project
 # - list-project-markers         # Show all configured markers
@@ -85,8 +85,8 @@ def find-project-root [start_path?: path]: nothing -> string {
   $current_dir
 }
 
-# Find specifically an Obsidian vault root
-export def find-obsidian-vault [start_path?: path]: nothing -> string {
+# Find specifically an Forge root
+export def find-forge [start_path?: path]: nothing -> string {
   let start = ($start_path | default $env.PWD | path expand)
   
   mut current_dir = $start
@@ -140,7 +140,7 @@ export def get-project-type [start_path?: path]: nothing -> string {
   
   # Check for specific markers in priority order
   let markers_with_types = [
-    [".obsidian", "obsidian-vault"]
+    [".obsidian", "forge"]
     [".git", "git-repository"] 
     ["Cargo.toml", "rust-project"]
     ["package.json", "nodejs-project"]
@@ -179,7 +179,7 @@ export def list-project-markers []: nothing -> table {
         ".git" => "Git repository"
         ".hg" => "Mercurial repository" 
         ".svn" => "Subversion repository"
-        ".obsidian" => "Obsidian vault"
+        ".obsidian" => "Forge"
         ".vault-root" => "Custom vault marker"
         "Cargo.toml" => "Rust project"
         "package.json" => "Node.js project"
@@ -201,7 +201,7 @@ export def show-project-info [path?: path]: nothing -> record {
   let target_path = ($path | default $env.PWD | path expand)
   let root = (find-project-root $target_path)
   let project_type = (get-project-type $target_path)
-  let obsidian_vault = (find-obsidian-vault $target_path)
+  let obsidian_vault = (find-forge $target_path)
   let git_root = (find-git-root $target_path)
   
   {

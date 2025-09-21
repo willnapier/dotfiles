@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.williamnapier.obsidian-link-manager</string>
+    <string>com.williamnapier.forge-link-manager</string>
 
     <key>ProgramArguments</key>
     <array>
@@ -33,10 +33,10 @@
     </dict>
 
     <key>StandardOutPath</key>
-    <string>/Users/williamnapier/scripts/obsidian-link-manager/logs/launchd.out.log</string>
+    <string>/Users/williamnapier/scripts/forge-link-manager/logs/launchd.out.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/williamnapier/scripts/obsidian-link-manager/logs/launchd.err.log</string>
+    <string>/Users/williamnapier/scripts/forge-link-manager/logs/launchd.err.log</string>
 
     <key>ProcessType</key>
     <string>Background</string>

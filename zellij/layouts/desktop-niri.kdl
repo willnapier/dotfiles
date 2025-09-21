@@ -1,0 +1,38 @@
+// Desktop layout optimized for Niri window management
+// Since Niri handles tiling, keep Zellij layout simple
+layout {
+    default_tab_template {
+        children
+        pane size=2 borderless=true {
+            plugin location="zellij:status-bar"
+        }
+    }
+
+    tab name="main" focus=true {
+        pane split_direction="horizontal" {
+            pane name="editor" {
+                focus true
+                size "70%"
+                command "nu"
+            }
+            pane name="files" {
+                size "30%"
+                command "nu"
+            }
+        }
+    }
+
+    tab name="tools" {
+        pane split_direction="horizontal" {
+            pane name="daily" {
+                focus true
+                size "50%"
+                command "nu"
+            }
+            pane name="terminal" {
+                size "50%"
+                command "nu"
+            }
+        }
+    }
+}

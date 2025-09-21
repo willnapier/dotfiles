@@ -35,7 +35,7 @@ esac
 
 # Common derived paths
 export OBSIDIAN_VAULT_PATHS=(
-    "$USER_HOME/Obsidian.nosync/Forge"
+    "$USER_HOME/Forge"
     "$USER_HOME/Obsidian/Forge" 
     "$USER_HOME/Documents/Obsidian/Forge"
 )

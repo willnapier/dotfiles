@@ -49,7 +49,7 @@ fi
 # Clean the link
 clean_link=$(echo "$link" | sd '[#|].*' '')
 
-vault="$HOME/Obsidian.nosync/Forge"
+vault="$HOME/Forge"
 daily_dir="$vault/NapierianLogs/DayPages"
 
 # First, search for existing file anywhere in the vault - exact match

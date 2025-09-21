@@ -28,7 +28,7 @@ def find-project-root [] {
     # Fallback to sensible directories
     let home_dir = $env.HOME
     let candidates = [
-        ($home_dir | path join "Obsidian.nosync" "Forge"),
+        ($home_dir | path join "Forge"),
         ($home_dir | path join "Documents"),
         ($home_dir | path join "Projects"),
         ($home_dir | path join "Desktop")

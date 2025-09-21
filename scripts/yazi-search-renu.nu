@@ -59,7 +59,7 @@ export def find-project-root [] {
         
         # Check for Obsidian vault
         let vault_candidates = [
-            ($home_dir | path join "Obsidian.nosync" "Forge"),
+            ($home_dir | path join "Forge"),
             ($home_dir | path join "Obsidian" "Forge")
         ]
         

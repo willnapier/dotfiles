@@ -16,23 +16,22 @@ layout {
                 pane name="daily-note" {
                     size "50%"
                     focus true
-                    command "/opt/homebrew/bin/nu"
-                    args "-c" "source ~/.config/nushell/config.nu; /Users/williamnapier/.local/bin/daily-note"
+                    command "nu"
+                    args "-c" "source ~/.config/nushell/config.nu; daily-note"
                 }
                 pane name="main-editor" {
                     size "50%"
-                    command "/opt/homebrew/bin/nu"
+                    command "nu"
                 }
             }
             pane split_direction="horizontal" {
                 pane name="files-browser" {
                     size "50%"
-                    cwd "/Users/williamnapier/Obsidian.nosync/Forge"
                     command "y-wrapper"
                 }
                 pane name="auxiliary" {
                     size "50%"
-                    command "/opt/homebrew/bin/nu"
+                    command "nu"
                 }
             }
         }

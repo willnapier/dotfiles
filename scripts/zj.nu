@@ -32,9 +32,29 @@ def main [...args] {
             {width: 2880, height: 1864}  # Error fallback
         }
     } else {
-        # Linux - parse xrandr output
+        # Linux - Try Wayland (wlr-randr) first, fallback to X11 (xrandr)
         try {
-            if (which xrandr | is-not-empty) {
+            if (which wlr-randr | is-not-empty) {
+                # Wayland compositor (Niri, Sway, etc.)
+                let wlr_output = (^wlr-randr | lines | where $it =~ " current ")
+                if ($wlr_output | length) > 0 {
+                    let current_line = ($wlr_output | first)
+                    # Extract resolution like "6016x3384" from wlr-randr output
+                    let res_match = ($current_line | parse --regex '(\d+)x(\d+)')
+                    if ($res_match | length) > 0 {
+                        let parsed = ($res_match | first)
+                        {
+                            width: ($parsed.capture0 | into int),
+                            height: ($parsed.capture1 | into int)
+                        }
+                    } else {
+                        {width: 1920, height: 1080}  # Wayland fallback
+                    }
+                } else {
+                    {width: 1920, height: 1080}  # No current display
+                }
+            } else if (which xrandr | is-not-empty) {
+                # X11 fallback for systems not on Wayland
                 let xrandr_output = (^xrandr | lines | where $it =~ "connected")
                 if ($xrandr_output | length) > 0 {
                     let conn_line = ($xrandr_output | first)
@@ -47,13 +67,13 @@ def main [...args] {
                             height: ($parsed.capture1 | into int)
                         }
                     } else {
-                        {width: 1920, height: 1080}  # Linux fallback
+                        {width: 1920, height: 1080}  # X11 fallback
                     }
                 } else {
-                    {width: 1920, height: 1080}  # Linux fallback
+                    {width: 1920, height: 1080}  # No connected display
                 }
             } else {
-                {width: 1920, height: 1080}  # No xrandr fallback
+                {width: 1920, height: 1080}  # No display tools available
             }
         } catch {
             {width: 1920, height: 1080}  # Error fallback
@@ -63,7 +83,7 @@ def main [...args] {
     # Determine layout based on screen dimensions
     let layout = if $resolution.width >= 6000 {
         print $"🖥️  Detected ultrawide display: ($resolution.width)x($resolution.height)"
-        "desktop"
+        "desktop-niri"
     } else if $resolution.width >= 3440 {
         print $"🖥️  Detected wide display: ($resolution.width)x($resolution.height)"
         "desktop-27"

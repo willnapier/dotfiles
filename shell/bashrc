@@ -20,8 +20,8 @@ export PATH="$CARGO_HOME/bin:$PATH"
 # Local binaries
 export PATH="$HOME/.local/bin:$PATH"
 
-# Obsidian vault path (Linux)
-export OBSIDIAN_VAULT="$HOME/Obsidian/Forge"
+# Forge path (Linux)
+export FORGE="/Forge"
 
 # History configuration
 export HISTSIZE=10000

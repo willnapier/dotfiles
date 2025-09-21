@@ -13,9 +13,9 @@ layout {
             pane split_direction="horizontal" {
                 pane name="daily-note" {
                     focus true
-                    size "40%"
+                    size "50%"
                     command "bash"
-                    args "-c" "/Users/williamnapier/.local/bin/daily-note && exec hx \"$(daily-note --print-path)\" || exec /opt/homebrew/bin/nu"
+                    args "-c" "daily-note && exec helix \"$(daily-note --print-path)\" || exec nu"
                 }
                 pane name="main-editor" {
                     size "60%"

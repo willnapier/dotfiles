@@ -300,7 +300,7 @@ themes {
 }
 
 // General settings - Use Nushell as default shell (platform-specific path)  
-default_shell "/opt/homebrew/bin/nu"
+default_shell "nu"
 
 // Environment variables for proper terminal detection
 // Commented out to let WezTerm's native TERM pass through to Nushell

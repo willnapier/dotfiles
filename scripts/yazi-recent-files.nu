@@ -71,8 +71,8 @@ def find-safe-search-scope [home_dir: string] {
     # Priority order for search scope selection
     let scope_candidates = [
         {
-            path: ($home_dir | path join "Obsidian.nosync" "Forge"),
-            name: "Obsidian Vault",
+            path: ($home_dir | path join "Forge"),
+            name: "Forge",
             reason: "Primary knowledge base"
         },
         {

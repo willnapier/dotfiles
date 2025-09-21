@@ -1,7 +1,7 @@
 #!/bin/bash
 # Open today's daily note directly in Helix or print path
 
-VAULT_DIR="/Users/williamnapier/Obsidian.nosync/Forge"
+VAULT_DIR="$HOME/Forge"
 DAILY_DIR="$VAULT_DIR/NapierianLogs/DayPages"  # Adjust path as needed
 
 # Generate today's filename (adjust format as needed)
@@ -9,7 +9,7 @@ TODAY=$(date '+%Y-%m-%d')
 DAILY_FILE="$DAILY_DIR/$TODAY.md"
 
 # Calculate cursor position from template (always available)
-TEMPLATE_FILE="/Users/williamnapier/Obsidian.nosync/Forge/Areas/Obsidian/Templates/DayPage.md"
+TEMPLATE_FILE="$HOME/Forge/Areas/Obsidian/Templates/DayPage.md"
 CURSOR_LINE=$(grep -n "<cursor>" "$TEMPLATE_FILE" | cut -d: -f1)
 
 # Create the file if it doesn't exist
@@ -58,20 +58,20 @@ if [[ -n "$ZELLIJ" ]]; then
     echo "DEBUG: Inside Zellij - trying different positioning approaches" >&2
     # Try various approaches that might work better in Zellij
     if [[ -n "$CURSOR_LINE" ]]; then
-        echo "DEBUG: Zellij mode - trying: hx \"$DAILY_FILE:$CURSOR_LINE:1\"" >&2
-        exec hx "$DAILY_FILE:$CURSOR_LINE:1"
+        echo "DEBUG: Zellij mode - trying: helix \"$DAILY_FILE:$CURSOR_LINE:1\"" >&2
+        exec helix "$DAILY_FILE:$CURSOR_LINE:1"
     else
-        echo "DEBUG: Zellij mode - fallback: hx \"$DAILY_FILE:3:1\"" >&2
-        exec hx "$DAILY_FILE:3:1"
+        echo "DEBUG: Zellij mode - fallback: helix \"$DAILY_FILE:3:1\"" >&2
+        exec helix "$DAILY_FILE:3:1"
     fi
 else
     # Regular terminal - use standard line positioning
     if [[ -n "$CURSOR_LINE" ]]; then
-        echo "DEBUG: Regular terminal - Executing: hx \"$DAILY_FILE:$CURSOR_LINE:0\"" >&2
-        exec hx "$DAILY_FILE:$CURSOR_LINE:0"
+        echo "DEBUG: Regular terminal - Executing: helix \"$DAILY_FILE:$CURSOR_LINE:0\"" >&2
+        exec helix "$DAILY_FILE:$CURSOR_LINE:0"
     else
         # Fallback to line 3 if no cursor found in template
-        echo "DEBUG: Regular terminal - Executing fallback: hx \"$DAILY_FILE:3:0\"" >&2
-        exec hx "$DAILY_FILE:3:0"
+        echo "DEBUG: Regular terminal - Executing fallback: helix \"$DAILY_FILE:3:0\"" >&2
+        exec helix "$DAILY_FILE:3:0"
     fi
 fi

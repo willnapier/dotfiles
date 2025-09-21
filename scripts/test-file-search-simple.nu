@@ -5,7 +5,7 @@
 def main [] {
     print -e "🚀 Simple File Search Test"
     
-    let project_root = "/Users/williamnapier/Obsidian.nosync/Forge"
+    let project_root = "$"(.HOME)/Forge""
     print -e $"📁 Project root: ($project_root)"
     
     # Get first few files for testing
