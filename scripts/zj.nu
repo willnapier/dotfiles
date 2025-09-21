@@ -185,10 +185,11 @@ def main [...args] {
 
     # Launch Zellij with the appropriate layout
     print $"🚀 Starting Zellij session: ($session_name)"
+    # TEMP DEBUG: Remove layout to test session creation
     let zellij_args = if ($remaining_args | length) > 0 {
-        [$"--session" $session_name "--layout" $layout] ++ $remaining_args
+        [$"--session" $session_name] ++ $remaining_args
     } else {
-        [$"--session" $session_name "--layout" $layout]
+        [$"--session" $session_name]
     }
 
     print $"Executing: zellij (($zellij_args | str join ' '))"
