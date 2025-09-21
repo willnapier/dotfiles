@@ -194,4 +194,4 @@ def main [...args] {
     print $"Executing: zellij (($zellij_args | str join ' '))"
     let cmd = (["zellij"] | append $zellij_args)
     exec ...$cmd
-}
+}# Test comment - Sun 21 Sep 2025 15:00:49 BST
