@@ -8,7 +8,8 @@ layout {
         }
     }
     
-    tab name="daily" focus true {
+    tab name="daily" {
+        focus true
         // Single pane layout: daily note only
         pane name="daily-note" {
             focus true
