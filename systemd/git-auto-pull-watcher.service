@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/git-auto-pull-watcher
+ExecStart=%h/.cargo/bin/nu %h/.local/bin/git-auto-pull-watcher
 Restart=always
 RestartSec=30
 Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin
