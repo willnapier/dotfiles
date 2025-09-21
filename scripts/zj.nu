@@ -192,6 +192,18 @@ def main [...args] {
     }
 
     print $"Executing: zellij (($zellij_args | str join ' '))"
+
+    # Debug: Check if layout file exists
+    let layout_file = $"($env.HOME)/.config/zellij/layouts/($layout).kdl"
+    if ($layout_file | path exists) {
+        print $"✅ Layout file exists: ($layout_file)"
+    } else {
+        print $"❌ Layout file missing: ($layout_file)"
+        print "Available layouts:"
+        ls $"($env.HOME)/.config/zellij/layouts/*.kdl" | get name | each { |f| $f | path basename }
+        exit 1
+    }
+
     let cmd = (["zellij"] | append $zellij_args)
     exec ...$cmd
 }
