@@ -26,7 +26,7 @@ def main [] {
     print $"📝 Logging to: ($log_file)"
 
     # Initial deploy timestamp
-    (date now | format date "%s") | save $last_deploy
+    (date now | format date "%s") | save --force $last_deploy
 
     # Use infinite loop with file change detection
     # (Nushell doesn't have built-in file watching yet)
@@ -71,7 +71,7 @@ def main [] {
                 }
 
                 # Update last deploy time
-                (date now | format date "%s") | save $last_deploy
+                (date now | format date "%s") | save --force $last_deploy
             }
 
             # Update last check time
