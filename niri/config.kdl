@@ -71,7 +71,7 @@ layout {
     }
 
     border {
-        enable
+        enable true
         width 2
         // Solarized base01 for active, base02 for inactive
         active-color "#586e75"
@@ -104,7 +104,7 @@ window-rule {
 
 window-rule {
     match title="Picture-in-Picture"
-    open-floating
+    open-floating true
 }
 
 // Bindings
