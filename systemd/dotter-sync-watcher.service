@@ -6,7 +6,7 @@ Wants=syncthing.service
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/dotter-sync-watcher
+ExecStart=%h/.local/bin/dotter-sync-watcher-wrapper
 Restart=always
 RestartSec=10
 Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin

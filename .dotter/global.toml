@@ -200,6 +200,7 @@ depends = ["shared"]
 "systemd/git-auto-pull-watcher.service" = "~/.config/systemd/user/git-auto-pull-watcher.service"
 "systemd/syncthing-monitor.service" = "~/.config/systemd/user/syncthing-monitor.service"
 "scripts/dotter-sync-watcher" = "~/.local/bin/dotter-sync-watcher"
+"scripts/dotter-sync-watcher-wrapper" = "~/.local/bin/dotter-sync-watcher-wrapper"
 "systemd/zotero-pdf-watcher.service" = "~/.config/systemd/user/zotero-pdf-watcher.service"
 "systemd/zotero-bridge.service" = "~/.config/systemd/user/zotero-bridge.service"
 "linux/systemd/forge-link-manager.service" = "~/.config/systemd/user/forge-link-manager.service"

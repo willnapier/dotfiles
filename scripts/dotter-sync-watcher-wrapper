@@ -1,0 +1,9 @@
+#!/home/will/.cargo/bin/nu
+# Nushell wrapper for dotter-sync-watcher with fixed PATH
+# Uses absolute path to nu to avoid PATH bootstrap issues
+
+# Ensure critical paths are set for spawned processes
+$env.PATH = ($env.PATH | split row (char esep) | prepend ["/home/will/.cargo/bin" "/home/will/.local/bin"] | uniq | str join (char esep))
+
+# Execute the actual dotter-sync-watcher script
+source /home/will/.local/bin/dotter-sync-watcher
