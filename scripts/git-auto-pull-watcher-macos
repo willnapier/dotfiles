@@ -75,6 +75,7 @@ def main [] {
                 }
             }
         } else {
+            let timestamp = (date now | format date "%H:%M:%S")
             let error_msg = $"[($timestamp)] ❌ Fetch failed: ($fetch_result.stderr)"
             $error_msg | save --append $log_file
             print $"❌ Fetch failed: ($fetch_result.stderr)"
