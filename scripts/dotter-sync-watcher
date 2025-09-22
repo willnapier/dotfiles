@@ -32,13 +32,13 @@ def main [] {
     # (Nushell doesn't have built-in file watching yet)
     print "⚠️  Note: Using polling method (Nushell watch not yet available)"
 
-    mut last_check = (ls $dotfiles_dir/**/*.{toml,kdl,nu,sh,lua} | get modified | math max)
+    mut last_check = (ls $"($dotfiles_dir)/**/*.{toml,kdl,nu,sh,lua}" | get modified | math max)
 
     loop {
         sleep 2sec
 
         # Check for changes
-        let current_files = (ls $dotfiles_dir/**/*.{toml,kdl,nu,sh,lua} 2>/dev/null)
+        let current_files = (try { ls $"($dotfiles_dir)/**/*.{toml,kdl,nu,sh,lua}" } | default [])
         if ($current_files | is-empty) { continue }
 
         let latest_change = ($current_files | get modified | math max)
