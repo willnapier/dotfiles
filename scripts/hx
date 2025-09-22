@@ -1,0 +1,9 @@
+#!/bin/bash
+# Universal hx command that always uses hx-auto for theme detection
+# This ensures consistent behavior across macOS and Linux
+
+# Get the directory where this script lives
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Call hx-auto directly with its full path to avoid PATH recursion
+exec "$SCRIPT_DIR/hx-auto" "$@"

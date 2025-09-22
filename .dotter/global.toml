@@ -82,6 +82,7 @@ depends = []
 "scripts/zellij-zombie-killer" = "~/.local/bin/zellij-zombie-killer" 
 "scripts/setup-zellij-zombie-prevention-cross-platform" = "~/.local/bin/setup-zellij-zombie-prevention-cross-platform"
 "scripts/hx-auto" = "~/.local/bin/hx-auto"
+"scripts/hx" = "~/.local/bin/hx"  # Universal hx command wrapping hx-auto
 "scripts/get-system-theme.sh" = "~/.local/bin/get-system-theme.sh"
 "scripts/hx-wiki" = "~/.local/bin/hx-wiki"
 "scripts/forge-linker.sh" = "~/.local/bin/forge-linker"

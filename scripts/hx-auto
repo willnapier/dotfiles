@@ -28,18 +28,30 @@ else
 fi
 
 # Launch Helix with all arguments (cross-platform)
-# Try multiple command names and locations
-if command -v hx &> /dev/null; then
-    exec hx "$@"
-elif command -v helix &> /dev/null; then
-    exec helix "$@"
-elif [[ -x "/opt/homebrew/bin/hx" ]]; then
+# Look for the actual Helix binary, not our wrapper scripts
+# Check specific locations first to avoid finding our wrapper script
+if [[ -x "/opt/homebrew/bin/hx" ]]; then
+    # macOS with Homebrew
     exec /opt/homebrew/bin/hx "$@"
 elif [[ -x "/usr/bin/helix" ]]; then
+    # Linux standard location
     exec /usr/bin/helix "$@"
+elif [[ -x "/usr/local/bin/helix" ]]; then
+    # Linux alternative location
+    exec /usr/local/bin/helix "$@"
+elif [[ -x "$HOME/.cargo/bin/helix" ]]; then
+    # Rust cargo installation
+    exec "$HOME/.cargo/bin/helix" "$@"
 elif [[ -x "/usr/bin/hx" ]]; then
+    # Alternative Linux location
     exec /usr/bin/hx "$@"
 else
-    echo "Error: Helix (hx/helix) not found in PATH" >&2
-    exit 1
+    # Last resort: try to find helix (not hx to avoid recursion)
+    if command -v helix &> /dev/null; then
+        exec helix "$@"
+    else
+        echo "Error: Helix binary not found in standard locations" >&2
+        echo "Checked: /opt/homebrew/bin/hx, /usr/bin/helix, /usr/local/bin/helix, ~/.cargo/bin/helix" >&2
+        exit 1
+    fi
 fi

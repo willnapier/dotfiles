@@ -1,6 +1,9 @@
 #!/bin/bash
 # Open today's daily note directly in Helix or print path
 
+# Use universal hx command (wraps hx-auto for theme detection)
+HELIX_CMD="hx"
+
 VAULT_DIR="$HOME/Forge"
 DAILY_DIR="$VAULT_DIR/NapierianLogs/DayPages"  # Adjust path as needed
 
@@ -58,20 +61,20 @@ if [[ -n "$ZELLIJ" ]]; then
     echo "DEBUG: Inside Zellij - trying different positioning approaches" >&2
     # Try various approaches that might work better in Zellij
     if [[ -n "$CURSOR_LINE" ]]; then
-        echo "DEBUG: Zellij mode - trying: helix \"$DAILY_FILE:$CURSOR_LINE:1\"" >&2
-        exec helix "$DAILY_FILE:$CURSOR_LINE:1"
+        echo "DEBUG: Zellij mode - trying: $HELIX_CMD \"$DAILY_FILE:$CURSOR_LINE:1\"" >&2
+        exec $HELIX_CMD "$DAILY_FILE:$CURSOR_LINE:1"
     else
-        echo "DEBUG: Zellij mode - fallback: helix \"$DAILY_FILE:3:1\"" >&2
-        exec helix "$DAILY_FILE:3:1"
+        echo "DEBUG: Zellij mode - fallback: $HELIX_CMD \"$DAILY_FILE:3:1\"" >&2
+        exec $HELIX_CMD "$DAILY_FILE:3:1"
     fi
 else
     # Regular terminal - use standard line positioning
     if [[ -n "$CURSOR_LINE" ]]; then
-        echo "DEBUG: Regular terminal - Executing: helix \"$DAILY_FILE:$CURSOR_LINE:0\"" >&2
-        exec helix "$DAILY_FILE:$CURSOR_LINE:0"
+        echo "DEBUG: Regular terminal - Executing: $HELIX_CMD \"$DAILY_FILE:$CURSOR_LINE:0\"" >&2
+        exec $HELIX_CMD "$DAILY_FILE:$CURSOR_LINE:0"
     else
         # Fallback to line 3 if no cursor found in template
-        echo "DEBUG: Regular terminal - Executing fallback: helix \"$DAILY_FILE:3:0\"" >&2
-        exec helix "$DAILY_FILE:3:0"
+        echo "DEBUG: Regular terminal - Executing fallback: $HELIX_CMD \"$DAILY_FILE:3:0\"" >&2
+        exec $HELIX_CMD "$DAILY_FILE:3:0"
     fi
 fi

@@ -102,6 +102,7 @@ def main [--print-path] {
         $"($daily_file):($cursor_line):0"
     }
 
-    print $"DEBUG: Executing: helix ($position_spec)"
-    ^helix $position_spec
+    # Use universal hx command (wraps hx-auto for theme detection)
+    print $"DEBUG: Executing: hx ($position_spec)"
+    run-external hx $position_spec
 }
