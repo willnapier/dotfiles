@@ -1,0 +1,23 @@
+[Unit]
+Description=Git Auto-Push Watcher for Seamless Cross-Platform Syncing
+Documentation=Automatically pushes local dotfiles changes to GitHub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/git-auto-push-watcher-wrapper
+Restart=always
+RestartSec=10
+Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=%h
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+# Nice to have
+Nice=15
+
+[Install]
+WantedBy=default.target

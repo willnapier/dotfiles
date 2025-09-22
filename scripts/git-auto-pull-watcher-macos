@@ -1,0 +1,87 @@
+#!/opt/homebrew/bin/nu
+# Git Auto-Pull Watcher for macOS - Automatically pulls remote changes from GitHub
+# Monitors GitHub for remote changes and pulls them automatically
+
+def main [] {
+    let dotfiles_dir = $"($env.HOME)/dotfiles"
+    let log_file = $"($env.HOME)/.local/share/git-auto-pull-watcher.log"
+    let lock_file = "/tmp/git-auto-pull-watcher.lock"
+
+    # Ensure log directory exists
+    mkdir ($log_file | path dirname)
+
+    # Check for existing instance
+    if ($lock_file | path exists) {
+        print "❌ Auto-pull watcher already running"
+        exit 1
+    }
+
+    # Create lock file
+    "running" | save --force $lock_file
+
+    print "🚀 Starting Git auto-pull watcher (macOS)"
+    print $"👀 Watching: ($dotfiles_dir)"
+    print $"📝 Logging to: ($log_file)"
+
+    # Check for remote changes every 2 minutes
+    loop {
+        sleep 2min
+
+        cd $dotfiles_dir
+
+        # Fetch remote changes
+        let fetch_result = (do { git fetch origin main } | complete)
+
+        if $fetch_result.exit_code == 0 {
+            # Check if we're behind remote
+            let behind_result = (do { git rev-list --count HEAD..origin/main } | complete)
+
+            if $behind_result.exit_code == 0 {
+                let behind_count = ($behind_result.stdout | str trim | into int)
+
+                if $behind_count > 0 {
+                    let timestamp = (date now | format date "%H:%M:%S")
+                    let message = $"[($timestamp)] 📥 Remote changes detected: ($behind_count) commits behind"
+                    $message | save --append $log_file
+                    print $message
+
+                    # Pull changes
+                    print "⬇️ Pulling remote changes..."
+                    let pull_result = (do { git pull origin main } | complete)
+
+                    if $pull_result.exit_code == 0 {
+                        let success_msg = $"[($timestamp)] ✅ Successfully pulled changes"
+                        $success_msg | save --append $log_file
+                        print "✅ Changes pulled successfully"
+
+                        # Run dotter deploy to update configs
+                        print "🔄 Running dotter deploy..."
+                        let dotter_result = (do { dotter deploy } | complete)
+
+                        if $dotter_result.exit_code == 0 {
+                            let deploy_msg = $"[($timestamp)] ✅ Dotter deploy successful - configs updated"
+                            $deploy_msg | save --append $log_file
+                            print "✅ Configs deployed successfully"
+                        } else {
+                            let deploy_error = $"[($timestamp)] ❌ Dotter deploy failed: ($dotter_result.stderr)"
+                            $deploy_error | save --append $log_file
+                            print $"❌ Dotter deploy failed: ($dotter_result.stderr)"
+                        }
+                    } else {
+                        let error_msg = $"[($timestamp)] ❌ Pull failed: ($pull_result.stderr)"
+                        $error_msg | save --append $log_file
+                        print $"❌ Pull failed: ($pull_result.stderr)"
+                    }
+                }
+            }
+        } else {
+            let error_msg = $"[($timestamp)] ❌ Fetch failed: ($fetch_result.stderr)"
+            $error_msg | save --append $log_file
+            print $"❌ Fetch failed: ($fetch_result.stderr)"
+        }
+    }
+
+    # Cleanup on exit
+    rm -f $lock_file
+    print "🛑 Auto-pull watcher stopped"
+}
