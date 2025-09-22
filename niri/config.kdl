@@ -109,7 +109,7 @@ window-rule {
 // Bindings
 binds {
     // Mod key (Super/Windows key)
-    Mod+Shift+Slash { show-hotkey-overlay; }
+    Mod+Shift+Backslash { show-hotkey-overlay; }
 
     // Quit Niri
     Mod+Shift+Q { quit; }
