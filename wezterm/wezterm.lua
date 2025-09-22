@@ -44,6 +44,19 @@ end
 
 local mods = get_platform_modifiers()
 
+-- Cross-platform Nushell path detection
+local function get_nushell_path()
+  local is_macos = wezterm.target_triple:find("apple") ~= nil
+
+  if is_macos then
+    return '/opt/homebrew/bin/nu'
+  else -- Linux and other platforms
+    return 'nu'  -- Use PATH resolution for Linux
+  end
+end
+
+local nushell_path = get_nushell_path()
+
 -- Helper function to get appropriate window size based on screen resolution
 local function get_window_size()
   -- Use system_profiler to safely detect screen size
@@ -145,7 +158,7 @@ config.term = "wezterm"
 
 -- Default shell - Nushell directly (Zellij auto-start disabled for debugging)
 -- Use manual `zellij` command when you want multiplexing
-config.default_prog = { '/opt/homebrew/bin/nu' }
+config.default_prog = { nushell_path }
 
 -- Multiplexing domains
 config.ssh_domains = {
@@ -455,7 +468,7 @@ config.keys = {
     action = wezterm.action_callback(function(window, pane)
       window:perform_action(
         act.SplitVertical {
-          args = { '/opt/homebrew/bin/nu', '-c', 'daily-note' },
+          args = { nushell_path, '-c', 'daily-note' },
         },
         pane
       )
