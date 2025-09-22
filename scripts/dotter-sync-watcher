@@ -51,7 +51,7 @@ def main [] {
             # Debounce - only deploy once every 5 seconds
             if $elapsed > 5 {
                 let timestamp = (date now | format date "%H:%M:%S")
-                let message = $"[($timestamp)] Change detected: ($path | path relative-to $dotfiles_dir)"
+                let message = $"[($timestamp)] Change detected in dotfiles"
                 $message | save --append $log_file
                 print $message
 
