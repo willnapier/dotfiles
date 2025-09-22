@@ -71,7 +71,6 @@ layout {
     }
 
     border {
-        enable
         width 2
         // Solarized base01 for active, base02 for inactive
         active-color "#586e75"
