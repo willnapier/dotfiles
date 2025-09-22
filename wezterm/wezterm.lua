@@ -102,7 +102,7 @@ config.colors = {
 
 -- Font configuration
 config.font = wezterm.font("JetBrainsMono Nerd Font")
-config.font_size = 14
+config.font_size = 13
 config.line_height = 1.2
 
 -- Tab bar disabled (using Aerospace for window management instead)

@@ -1,6 +1,6 @@
 [symlinks]
 "aerospace/aerospace.toml" = "/Users/williamnapier/.config/aerospace/aerospace.toml"
-"ghostty/config" = "/Users/williamnapier/Library/Application Support/com.mitchellh.ghostty/config"
+"ghostty/config" = "/Users/williamnapier/.config/ghostty/config"
 "ghostty/themes/solarized-dark" = "/Users/williamnapier/.config/ghostty/themes/solarized-dark"
 "ghostty/themes/solarized-light" = "/Users/williamnapier/.config/ghostty/themes/solarized-light"
 "git/gitconfig" = "/Users/williamnapier/.gitconfig"
@@ -62,6 +62,8 @@
 "scripts/forge-linker.sh" = "/Users/williamnapier/.local/bin/forge-linker"
 "scripts/forge-semantic-search.sh" = "/Users/williamnapier/.local/bin/forge-semantic-search"
 "scripts/get-openai-key" = "/Users/williamnapier/.local/bin/get-openai-key"
+"scripts/get-system-theme.sh" = "/Users/williamnapier/.local/bin/get-system-theme.sh"
+"scripts/git-auto-pull-watcher" = "/Users/williamnapier/.local/bin/git-auto-pull-watcher"
 "scripts/helix-activity-watcher-renu" = "/Users/williamnapier/.local/bin/helix-activity-watcher-renu"
 "scripts/hx-auto" = "/Users/williamnapier/.local/bin/hx-auto"
 "scripts/hx-insert-date" = "/Users/williamnapier/.local/bin/hx-insert-date"

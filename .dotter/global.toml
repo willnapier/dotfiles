@@ -82,6 +82,7 @@ depends = []
 "scripts/zellij-zombie-killer" = "~/.local/bin/zellij-zombie-killer" 
 "scripts/setup-zellij-zombie-prevention-cross-platform" = "~/.local/bin/setup-zellij-zombie-prevention-cross-platform"
 "scripts/hx-auto" = "~/.local/bin/hx-auto"
+"scripts/get-system-theme.sh" = "~/.local/bin/get-system-theme.sh"
 "scripts/hx-wiki" = "~/.local/bin/hx-wiki"
 "scripts/forge-linker.sh" = "~/.local/bin/forge-linker"
 "scripts/forge-linker.nu" = "~/.local/bin/forge-linker.nu"
@@ -169,7 +170,7 @@ depends = ["shared"]
 [macos.files]
 "shell/zshrc" = "~/.zshrc"
 "wezterm/wezterm.lua" = "~/.config/wezterm/wezterm.lua"
-"ghostty/config" = "~/Library/Application Support/com.mitchellh.ghostty/config"
+"ghostty/config" = "~/.config/ghostty/config"
 "macos/launchd/com.williamnapier.forge-link-manager.plist" = "~/Library/LaunchAgents/com.williamnapier.forge-link-manager.plist"
 "macos/launchd/com.williamnapier.syncthing-monitor.plist" = "~/Library/LaunchAgents/com.williamnapier.syncthing-monitor.plist"
 # NOTE: Individual files managed in [shared.files] for better reliability

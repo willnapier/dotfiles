@@ -106,3 +106,4 @@ if (which vivid | is-not-empty) {
     let theme = if $env.SYSTEM_THEME == "dark" { "solarized-dark" } else { "solarized-light" }
     $env.LS_COLORS = (^vivid generate $theme)
 }
+$env.THEME_PREFERENCE = "dark"

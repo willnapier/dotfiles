@@ -163,32 +163,14 @@ def main [...args] {
         }
     }
 
-    # Generate unique session name
-    let base_name = $"zellij-($layout)"
-    let session_name = try {
-        let existing_sessions = (
-            ^zellij list-sessions --no-formatting
-            | lines
-            | each { |line| $line | split row ' ' | get 0 }
-        )
+    # Note: Zellij v0.43.1+ auto-names layout sessions, no manual session naming needed
 
-        if ($existing_sessions | where $it == $base_name | length) > 0 {
-            # Generate unique name with timestamp
-            let timestamp = (date now | format date "%H%M")
-            $"($base_name)-($timestamp)"
-        } else {
-            $base_name
-        }
-    } catch {
-        $base_name
-    }
-
-    # Launch Zellij with the appropriate layout
-    print $"🚀 Starting Zellij session: ($session_name)"
+    # Launch Zellij with the appropriate layout (let Zellij auto-name the session)
+    print $"🚀 Starting Zellij with layout: ($layout)"
     let zellij_args = if ($remaining_args | length) > 0 {
-        [$"--layout" $layout $"--session" $session_name] ++ $remaining_args
+        [$"--layout" $layout] ++ $remaining_args
     } else {
-        [$"--layout" $layout $"--session" $session_name]
+        [$"--layout" $layout]
     }
 
     print $"Executing: zellij (($zellij_args | str join ' '))"

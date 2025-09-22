@@ -9,22 +9,33 @@ if [ ! -f "$CONFIG_FILE" ] || [ -L "$CONFIG_FILE" ]; then
     CONFIG_FILE="$HOME/dotfiles/helix/config.toml"
 fi
 
-# Check macOS appearance
-# Note: AppleInterfaceStyle only exists when in Dark mode
-# When in Light mode, the key doesn't exist at all
-if defaults read -g AppleInterfaceStyle 2>/dev/null | rg -q "Dark"; then
+# Get system theme using cross-platform detection
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+THEME=$("$SCRIPT_DIR/get-system-theme.sh")
+
+if [[ "$THEME" == "dark" ]]; then
     # Dark mode detected
     sd 'theme = "solarized_light_modal"' 'theme = "solarized_dark_modal"' "$CONFIG_FILE"
     sd 'theme = "solarized_light"' 'theme = "solarized_dark"' "$CONFIG_FILE"
     # Debug output
     >&2 echo "hx-auto: Set dark theme"
 else
-    # Light mode (key doesn't exist)
+    # Light mode
     sd 'theme = "solarized_dark_modal"' 'theme = "solarized_light_modal"' "$CONFIG_FILE"
     sd 'theme = "solarized_dark"' 'theme = "solarized_light"' "$CONFIG_FILE"
     # Debug output
     >&2 echo "hx-auto: Set light theme"
 fi
 
-# Launch Helix with all arguments
-exec /opt/homebrew/bin/hx "$@"
+# Launch Helix with all arguments (cross-platform)
+# Try to find Helix in PATH first, fallback to known locations
+if command -v hx &> /dev/null; then
+    exec hx "$@"
+elif [[ -x "/opt/homebrew/bin/hx" ]]; then
+    exec /opt/homebrew/bin/hx "$@"
+elif [[ -x "/usr/bin/hx" ]]; then
+    exec /usr/bin/hx "$@"
+else
+    echo "Error: Helix (hx) not found in PATH" >&2
+    exit 1
+fi
