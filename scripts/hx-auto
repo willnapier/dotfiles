@@ -28,14 +28,18 @@ else
 fi
 
 # Launch Helix with all arguments (cross-platform)
-# Try to find Helix in PATH first, fallback to known locations
+# Try multiple command names and locations
 if command -v hx &> /dev/null; then
     exec hx "$@"
+elif command -v helix &> /dev/null; then
+    exec helix "$@"
 elif [[ -x "/opt/homebrew/bin/hx" ]]; then
     exec /opt/homebrew/bin/hx "$@"
+elif [[ -x "/usr/bin/helix" ]]; then
+    exec /usr/bin/helix "$@"
 elif [[ -x "/usr/bin/hx" ]]; then
     exec /usr/bin/hx "$@"
 else
-    echo "Error: Helix (hx) not found in PATH" >&2
+    echo "Error: Helix (hx/helix) not found in PATH" >&2
     exit 1
 fi
