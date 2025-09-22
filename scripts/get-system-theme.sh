@@ -14,8 +14,12 @@ elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
 
     # Try GNOME settings
     if command -v gsettings &> /dev/null; then
-        if gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null | grep -q "dark"; then
+        color_scheme=$(gsettings get org.gnome.desktop.interface color-scheme 2>/dev/null)
+        if echo "$color_scheme" | grep -q "dark"; then
             echo "dark"
+            exit 0
+        elif echo "$color_scheme" | grep -q "default"; then
+            echo "light"  # default usually means light theme
             exit 0
         fi
     fi
