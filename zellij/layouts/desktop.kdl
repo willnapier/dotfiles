@@ -8,8 +8,7 @@ layout {
         }
     }
     
-    tab name="workspace" {
-        focus true
+    tab name="workspace" focus=true {
         pane split_direction="vertical" {
             pane split_direction="horizontal" {
                 pane name="daily-note" {
