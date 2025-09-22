@@ -108,8 +108,11 @@ window-rule {
 
 // Bindings
 binds {
-    // Mod key (Super/Windows key)
+    // Mod key (Super/Windows key) - Multiple bindings for ZMK keyboard compatibility
+    Mod+Shift+Slash { show-hotkey-overlay; }
     Mod+Shift+Backslash { show-hotkey-overlay; }
+    Mod+Shift+Question { show-hotkey-overlay; }
+    Mod+H { show-hotkey-overlay; }  // Alternative: Mod+H for help
 
     // Quit Niri
     Mod+Shift+Q { quit; }
