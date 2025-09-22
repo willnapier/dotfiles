@@ -71,7 +71,7 @@ layout {
     }
 
     border {
-        enable true
+        enable
         width 2
         // Solarized base01 for active, base02 for inactive
         active-color "#586e75"
@@ -113,7 +113,7 @@ binds {
     Mod+Shift+Slash { show-hotkey-overlay; }
 
     // Quit Niri
-    Mod+Shift+E { quit; }
+    Mod+Shift+Q { quit; }
 
     // Close window
     Mod+Q { close-window; }
@@ -140,7 +140,7 @@ binds {
     Mod+Shift+Up    { move-window-up; }
     Mod+Shift+Right { move-column-right; }
     Mod+Shift+N { move-column-left; }
-    Mod+Shift+E { move-window-down; }
+    Mod+Shift+U { move-window-down; }
     Mod+Shift+I { move-window-up; }
     Mod+Shift+O { move-column-right; }
 
