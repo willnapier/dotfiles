@@ -1,0 +1,5 @@
+#!/bin/bash
+# Switch entire system to light theme
+gsettings set org.gnome.desktop.interface color-scheme 'prefer-light'
+echo "✅ System theme set to LIGHT"
+echo "Restart applications to apply theme changes"

@@ -1,0 +1,12 @@
+#!/bin/bash
+# Show current system theme status
+current=$(gsettings get org.gnome.desktop.interface color-scheme)
+detected=$(get-system-theme.sh)
+
+echo "🎨 System Theme Status:"
+echo "  GTK Setting: $current"
+echo "  Detected:    $detected"
+echo
+echo "💡 To change theme:"
+echo "  theme-dark   # Switch to dark theme"
+echo "  theme-light  # Switch to light theme"

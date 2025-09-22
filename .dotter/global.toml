@@ -139,6 +139,10 @@ depends = []
 # Syncthing connection monitoring system
 "scripts/syncthing-connection-monitor" = "~/.local/bin/syncthing-connection-monitor"
 "scripts/setup-syncthing-monitor" = "~/.local/bin/setup-syncthing-monitor"
+# System-wide theme management
+"scripts/theme-dark" = "~/.local/bin/theme-dark"
+"scripts/theme-light" = "~/.local/bin/theme-light"
+"scripts/theme-status" = "~/.local/bin/theme-status"
 
 # MEDIUM PRIORITY: Additional essential scripts (added 2025-09-16)
 "scripts/get-openai-key" = "~/.local/bin/get-openai-key"

@@ -1,0 +1,5 @@
+#!/bin/bash
+# Switch entire system to dark theme
+gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'
+echo "✅ System theme set to DARK"
+echo "Restart applications to apply theme changes"
