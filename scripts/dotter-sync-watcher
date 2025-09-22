@@ -58,7 +58,7 @@ def main [] {
                 # Run dotter deploy
                 print "🔄 Running dotter deploy..."
                 cd $dotfiles_dir
-                let result = (do { dotter deploy } | complete)
+                let result = (do { ~/.cargo/bin/dotter deploy } | complete)
 
                 if $result.exit_code == 0 {
                     let deploy_msg = $"[($timestamp)] ✅ Dotter deploy successful"
