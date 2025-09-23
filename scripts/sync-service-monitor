@@ -1,0 +1,325 @@
+#!/usr/bin/env nu
+
+# Sync Service Monitor - Comprehensive health monitoring for bidirectional sync
+# Monitors all sync services and provides health status, restart capabilities
+
+def main [action?: string] {
+    match $action {
+        "status" => { check_service_status }
+        "restart" => { restart_all_services }
+        "logs" => { show_recent_logs }
+        "health" => { comprehensive_health_check }
+        "clean" => { clean_stale_locks }
+        _ => { show_help }
+    }
+}
+
+def show_help [] {
+    print "🔧 Sync Service Monitor"
+    print ""
+    print "Commands:"
+    print "  status  - Show status of all sync services"
+    print "  restart - Restart all sync services"
+    print "  logs    - Show recent activity from all services"
+    print "  health  - Comprehensive health check"
+    print "  clean   - Clean all stale lock files"
+    print ""
+    print "Usage: sync-service-monitor [command]"
+}
+
+def check_service_status [] {
+    print "🔍 Checking Sync Service Status\n"
+
+    # Check macOS auto-pull service
+    print "📥 macOS Auto-Pull Service:"
+    check_macos_service
+    print ""
+
+    # Check Linux auto-push service via SSH
+    print "📤 Linux Auto-Push Service:"
+    check_linux_service
+    print ""
+
+    # Check dotter sync
+    print "🔄 Dotter Sync Service:"
+    check_dotter_service
+}
+
+def check_macos_service [] {
+    let plist_file = $"($env.HOME)/Library/LaunchAgents/com.williamnapier.git-auto-pull-watcher.plist"
+    let lock_file = "/tmp/git-auto-pull-watcher.lock"
+    let log_file = $"($env.HOME)/.local/share/git-auto-pull-watcher.log"
+
+    if ($plist_file | path exists) {
+        let loaded = (try { launchctl list | rg "git-auto-pull-watcher" } | default "")
+        if ($loaded | is-empty) {
+            print "❌ LaunchAgent not loaded"
+        } else {
+            print "✅ LaunchAgent loaded and running"
+        }
+    } else {
+        print "❌ LaunchAgent not installed"
+    }
+
+    if ($lock_file | path exists) {
+        let lock_age = ((date now) - (ls $lock_file | get 0.modified | first))
+        let age_minutes = ($lock_age / 1min | math round)
+        print ("🔒 Lock file exists (" + ($age_minutes | into string) + " minutes old)")
+    } else {
+        print "🆓 No lock file"
+    }
+
+    if ($log_file | path exists) {
+        let recent_entries = (try { tail -n 3 $log_file } | default "No recent entries")
+        print $"📝 Recent activity:\n($recent_entries)"
+    }
+}
+
+def check_linux_service [] {
+    let ssh_result = (try {
+        ssh will@nimbini "systemctl --user is-active git-auto-push-watcher.service || echo 'inactive'"
+    } | complete)
+
+    if $ssh_result.exit_code == 0 {
+        let status = ($ssh_result.stdout | str trim)
+        if $status == "active" {
+            print "✅ Linux systemd service active"
+        } else {
+            print $"❌ Linux systemd service: ($status)"
+        }
+    } else {
+        print "❌ Cannot connect to Linux system"
+    }
+
+    # Check lock file on Linux
+    let lock_check = (try {
+        ssh will@nimbini "if [ -f /tmp/git-auto-push-watcher.lock ]; then stat -c '%Y' /tmp/git-auto-push-watcher.lock; else echo 'none'; fi"
+    } | complete)
+
+    if $lock_check.exit_code == 0 {
+        let lock_status = ($lock_check.stdout | str trim)
+        if $lock_status == "none" {
+            print "🆓 No lock file on Linux"
+        } else {
+            let lock_timestamp = ($lock_status | into int)
+            let now = (date now | format date "%s" | into int)
+            let age_minutes = (($now - $lock_timestamp) / 60)
+            print ("🔒 Linux lock file exists (" + ($age_minutes | math round | into string) + " minutes old)")
+        }
+    }
+}
+
+def check_dotter_service [] {
+    let lock_file = "/tmp/dotter-sync-watcher.lock"
+
+    if ($lock_file | path exists) {
+        let lock_age = ((date now) - (ls $lock_file | get 0.modified | first))
+        let age_minutes = ($lock_age / 1min | math round)
+        print ("🔒 Dotter lock file exists (" + ($age_minutes | into string) + " minutes old)")
+    } else {
+        print "🆓 No dotter lock file"
+    }
+}
+
+def restart_all_services [] {
+    print "🔄 Restarting All Sync Services\n"
+
+    # Clean all lock files first
+    print "🧹 Cleaning stale lock files..."
+    clean_stale_locks
+
+    # Restart macOS service
+    print "\n📥 Restarting macOS auto-pull service..."
+    let plist_file = $"($env.HOME)/Library/LaunchAgents/com.williamnapier.git-auto-pull-watcher.plist"
+    if ($plist_file | path exists) {
+        try { launchctl unload $plist_file }
+        sleep 2sec
+        launchctl load $plist_file
+        print "✅ macOS service restarted"
+    } else {
+        print "❌ macOS LaunchAgent not found"
+    }
+
+    # Restart Linux service
+    print "\n📤 Restarting Linux auto-push service..."
+    let restart_result = (try {
+        ssh will@nimbini "systemctl --user restart git-auto-push-watcher.service"
+    } | complete)
+
+    if $restart_result.exit_code == 0 {
+        print "✅ Linux service restarted"
+    } else {
+        print $"❌ Linux service restart failed: ($restart_result.stderr)"
+    }
+
+    print "\n🎯 All services restart completed"
+}
+
+def show_recent_logs [] {
+    print "📝 Recent Sync Activity\n"
+
+    # macOS logs
+    let macos_log = $"($env.HOME)/.local/share/git-auto-pull-watcher.log"
+    if ($macos_log | path exists) {
+        print "📥 macOS Auto-Pull (last 5 entries):"
+        try { tail -n 5 $macos_log | each { |line| print $"  ($line)" } }
+    }
+
+    print ""
+
+    # Linux logs via SSH
+    print "📤 Linux Auto-Push (last 5 entries):"
+    let linux_logs = (try {
+        ssh will@nimbini "tail -n 5 ~/.local/share/git-auto-push-watcher.log 2>/dev/null || echo 'No logs found'"
+    } | complete)
+
+    if $linux_logs.exit_code == 0 {
+        $linux_logs.stdout | lines | each { |line| print $"  ($line)" }
+    } else {
+        print "  ❌ Cannot access Linux logs"
+    }
+}
+
+def comprehensive_health_check [] {
+    print "🏥 Comprehensive Health Check\n"
+
+    mut health_score = 0
+    let total_checks = 6
+
+    # Check 1: macOS service
+    print "🔍 Check 1: macOS auto-pull service"
+    let plist_file = $"($env.HOME)/Library/LaunchAgents/com.williamnapier.git-auto-pull-watcher.plist"
+    if ($plist_file | path exists) {
+        let loaded = (try { launchctl list | rg "git-auto-pull-watcher" } | default "")
+        if not ($loaded | is-empty) {
+            print "  ✅ PASS: Service loaded and running"
+            $health_score += 1
+        } else {
+            print "  ❌ FAIL: Service not running"
+        }
+    } else {
+        print "  ❌ FAIL: Service not installed"
+    }
+
+    # Check 2: Linux service
+    print "\n🔍 Check 2: Linux auto-push service"
+    let ssh_result = (try {
+        ssh will@nimbini "systemctl --user is-active git-auto-push-watcher.service"
+    } | complete)
+
+    if $ssh_result.exit_code == 0 and ($ssh_result.stdout | str trim) == "active" {
+        print "  ✅ PASS: Linux service active"
+        $health_score += 1
+    } else {
+        print "  ❌ FAIL: Linux service not active"
+    }
+
+    # Check 3: Recent activity
+    print "\n🔍 Check 3: Recent sync activity"
+    let macos_log = $"($env.HOME)/.local/share/git-auto-pull-watcher.log"
+    let has_recent_activity = if ($macos_log | path exists) {
+        let recent = (try { tail -n 10 $macos_log | rg "\\[\\d{2}:\\d{2}:\\d{2}\\]" } | default "")
+        not ($recent | is-empty)
+    } else { false }
+
+    if $has_recent_activity {
+        print "  ✅ PASS: Recent sync activity detected"
+        $health_score += 1
+    } else {
+        print "  ⚠️  WARN: No recent sync activity"
+    }
+
+    # Check 4: Git status
+    print "\n🔍 Check 4: Git repository status"
+    cd $"($env.HOME)/dotfiles"
+    let git_status = (try { git status --porcelain } | complete)
+    if $git_status.exit_code == 0 {
+        print "  ✅ PASS: Git repository accessible"
+        $health_score += 1
+    } else {
+        print "  ❌ FAIL: Git repository issues"
+    }
+
+    # Check 5: Stale locks
+    print "\n🔍 Check 5: Lock file health"
+    let stale_locks = check_for_stale_locks
+    if ($stale_locks | length) == 0 {
+        print "  ✅ PASS: No stale lock files"
+        $health_score += 1
+    } else {
+        print $"  ❌ FAIL: Found ($stale_locks | length) stale lock files"
+    }
+
+    # Check 6: Connectivity
+    print "\n🔍 Check 6: Cross-platform connectivity"
+    let connectivity = (try { ssh will@nimbini "echo 'connected'" } | complete)
+    if $connectivity.exit_code == 0 {
+        print "  ✅ PASS: SSH connectivity to Linux"
+        $health_score += 1
+    } else {
+        print "  ❌ FAIL: Cannot connect to Linux"
+    }
+
+    # Overall health
+    print $"\n🏥 Overall Health: ($health_score)/($total_checks)"
+    let health_percentage = ($health_score * 100 / $total_checks)
+
+    if $health_percentage >= 90 {
+        print "🟢 EXCELLENT: System operating optimally"
+    } else if $health_percentage >= 70 {
+        print "🟡 GOOD: System mostly functional"
+    } else if $health_percentage >= 50 {
+        print "🟠 FAIR: Some issues detected"
+    } else {
+        print "🔴 POOR: Significant issues require attention"
+    }
+}
+
+def check_for_stale_locks [] {
+    let lock_files = [
+        "/tmp/git-auto-pull-watcher.lock"
+        "/tmp/git-auto-push-watcher.lock"
+        "/tmp/dotter-sync-watcher.lock"
+    ]
+
+    mut stale_locks = []
+
+    for lock_file in $lock_files {
+        if ($lock_file | path exists) {
+            let lock_age = ((date now) - (ls $lock_file | get 0.modified | first))
+            let age_minutes = ($lock_age / 1min)
+
+            if $age_minutes > 10 {
+                $stale_locks = ($stale_locks | append $lock_file)
+            }
+        }
+    }
+
+    $stale_locks
+}
+
+def clean_stale_locks [] {
+    let stale_locks = check_for_stale_locks
+
+    if ($stale_locks | length) > 0 {
+        print $"🧹 Found ($stale_locks | length) stale lock files"
+        for lock_file in $stale_locks {
+            let lock_age = ((date now) - (ls $lock_file | get 0.modified | first))
+            let age_minutes = ($lock_age / 1min | math round)
+            print ("  Removing: " + $lock_file + " (" + ($age_minutes | into string) + " minutes old)")
+            rm -f $lock_file
+        }
+        print "✅ Stale locks cleaned"
+    } else {
+        print "✅ No stale lock files found"
+    }
+
+    # Also clean Linux locks via SSH
+    let linux_clean = (try {
+        ssh will@nimbini "find /tmp -name '*watcher.lock' -mmin +10 -delete 2>/dev/null || true"
+    } | complete)
+
+    if $linux_clean.exit_code == 0 {
+        print "✅ Linux stale locks cleaned"
+    }
+}

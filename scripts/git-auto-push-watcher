@@ -11,10 +11,21 @@ def main [] {
     # Ensure log directory exists
     mkdir ($log_file | path dirname)
 
-    # Check for existing instance
+    # Smart lock file handling with stale lock detection
     if ($lock_file | path exists) {
-        print "❌ Auto-push watcher already running"
-        exit 1
+        let lock_age = ((date now) - (ls $lock_file | get 0.modified | first))
+        let age_minutes = ($lock_age / 1min)
+
+        if $age_minutes > 10 {
+            let timestamp = (date now | format date "%H:%M:%S")
+            let cleanup_msg = $"[($timestamp)] 🧹 Cleaning up stale lock file (($age_minutes | math round) minutes old)"
+            $cleanup_msg | save --append $log_file
+            print $cleanup_msg
+            rm -f $lock_file
+        } else {
+            print "❌ Auto-push watcher already running (recent lock file)"
+            exit 1
+        }
     }
 
     # Create lock file

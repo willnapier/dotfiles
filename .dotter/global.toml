@@ -206,6 +206,7 @@ depends = ["shared"]
 "scripts/git-auto-push-watcher" = "~/.local/bin/git-auto-push-watcher"
 "scripts/git-auto-push-watcher-wrapper" = "~/.local/bin/git-auto-push-watcher-wrapper"
 "scripts/git-auto-pull-watcher-macos" = "~/.local/bin/git-auto-pull-watcher-macos"
+"scripts/sync-service-monitor" = "~/.local/bin/sync-service-monitor"
 "systemd/git-auto-push-watcher.service" = "~/.config/systemd/user/git-auto-push-watcher.service"
 "systemd/zotero-pdf-watcher.service" = "~/.config/systemd/user/zotero-pdf-watcher.service"
 "systemd/zotero-bridge.service" = "~/.config/systemd/user/zotero-bridge.service"

@@ -8,8 +8,33 @@ My personal dotfiles managed with [Dotter](https://github.com/SuperCuber/dotter)
 - **Helix** - Modal text editor with LSP support
 - **WezTerm** - GPU-accelerated terminal emulator
 - **Yazi** - File manager with image previews
+- **Zellij** - Terminal multiplexer with custom layouts
 - **Git** - Version control configuration
 - **Zsh** - Shell configuration
+
+## 🏆 Cross-Platform Academic Workflow (2025)
+
+This repository achieves **true cross-platform functionality** with identical behavior across macOS and Linux:
+
+### Universal Academic Tools
+- **`fcit`** - Citation picker (works on any platform, any terminal)
+- **`fcitz`** - PDF finder & opener with Zotero integration
+- **`fwl`** - Wiki link picker for knowledge navigation
+- **`fsem`** - AI semantic search (requires OPENAI_API_KEY)
+- **`fsh`** - File search and open in editor
+- **`fsearch`** - Content search across vault
+
+### Smart Session Management
+- **`zj`** - Smart Zellij launcher with screen-aware layout detection
+- **Daily note integration** - `zj laptop` opens daily note session automatically
+- **Theme synchronization** - Automatically matches system appearance
+- **SSH compatibility** - Full workflow available over SSH (tested London ↔ Linux via Tailscale)
+
+### Technical Achievements
+- **Universal `hx` command** - Abstraction layer handling `hx` (macOS) vs `helix` (Linux)
+- **Bidirectional sync** - Changes sync automatically between machines
+- **Zero configuration** - Identical setup process across platforms
+- **Remote development** - Full academic workflow available via SSH
 
 ## Usage
 
