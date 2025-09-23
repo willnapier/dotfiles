@@ -3,7 +3,7 @@
 # Simple Activity Duration Watcher
 # Uses watchexec to monitor markdown files and process activity durations
 
-VAULT_PATH="${1:-$HOME/Obsidian.nosync/Forge}"
+VAULT_PATH="${1:-$HOME/Forge}"
 DEBOUNCE_MS="${2:-2000}"
 
 echo "🚀 Starting Simple Activity Watcher"

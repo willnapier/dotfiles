@@ -10,7 +10,7 @@ def main [
 ] {
     # Auto-detect vault path if not provided
     let vault = if ($vault_path | is-empty) {
-        $"($env.HOME)/Obsidian.nosync/Forge"
+        $"($env.HOME)/Forge"
     } else {
         $vault_path
     }

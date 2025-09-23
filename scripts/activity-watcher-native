@@ -10,7 +10,7 @@ def main [] {
     print "⚡ No JSON parsing, no environment variables, just pure structured data!"
     print "🛑 Press Ctrl+C to stop\n"
     
-    let vault_path = $"($env.HOME)/Obsidian.nosync/Forge"
+    let vault_path = $"($env.HOME)/Forge"
     
     print $"📁 Watching: ($vault_path)"
     print "🎯 Filtering: **/*.md files only"  

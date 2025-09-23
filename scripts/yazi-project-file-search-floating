@@ -23,8 +23,8 @@ fi
 if [[ "$PROJECT_ROOT" == "$HOME" ]]; then
     echo "🏠 At home directory - checking for Obsidian vault..." >&2
     # Try to find Obsidian vault first
-    if [[ -d "$HOME/Obsidian.nosync/Forge" ]]; then
-        PROJECT_ROOT="$HOME/Obsidian.nosync/Forge"
+    if [[ -d "$HOME/Forge" ]]; then
+        PROJECT_ROOT="$HOME/Forge"
         echo "📝 Found Obsidian vault, using: $PROJECT_ROOT" >&2
     elif [[ -d "$HOME/Documents" ]]; then
         PROJECT_ROOT="$HOME/Documents"

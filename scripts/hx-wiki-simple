@@ -14,7 +14,7 @@ fi
 # Clean the link
 clean_link=$(echo "$link" | sd '[#|].*' '')
 
-vault="$HOME/Obsidian.nosync/Forge"
+vault="$HOME/Forge"
 file="$vault/$clean_link.md"
 
 # Create the file if it doesn't exist

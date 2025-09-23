@@ -5,7 +5,7 @@
 # Simple approach: scan everything, process what needs processing
 
 def main [] {
-    let vault_path = $"($env.HOME)/Obsidian.nosync/Forge"
+    let vault_path = $"($env.HOME)/Forge"
     
     # Find all markdown files in vault
     let files = (glob $"($vault_path)/**/*.md")

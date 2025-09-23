@@ -4,7 +4,7 @@
 
 def main [action?: string = "status"] {
     let link_manager_dir = $"($env.HOME)/scripts/obsidian-link-manager"
-    let vault_path = $"($env.HOME)/Obsidian.nosync/Forge"
+    let vault_path = $"($env.HOME)/Forge"
     let log_dir = $"($link_manager_dir)/logs"
 
     # Ensure log directory exists

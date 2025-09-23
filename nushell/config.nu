@@ -349,7 +349,7 @@ $env.config = ($env.config | upsert explore $explore_colors)
 
 # Zettelkasten workflow commands for Forge
 # Use alias instead of function for cd commands (functions can't change parent shell directory)
-alias notes = cd $env.OBSIDIAN_VAULT
+alias notes = cd $env.FORGE
 
 # Paste from Helix external registers
 def hx-paste [register?: string] {
@@ -402,7 +402,7 @@ def note-new [name?: string] {
         $"($note_name).md"
     }
     
-    let note_path = $"($env.OBSIDIAN_VAULT)/($filename)"
+    let note_path = $"($env.FORGE)/($filename)"
     
     # Check if file already exists
     if ($note_path | path exists) {
@@ -434,7 +434,7 @@ def note-search [query: string] {
         return
     }
     
-    fd --type f --extension md . $env.OBSIDIAN_VAULT 
+    fd --type f --extension md . $env.FORGE 
     | par-each { |file| 
         let content = (open $file | str downcase)
         let query_lower = ($query | str downcase)
@@ -540,7 +540,7 @@ def daily-open [date?: string] {
         $date
     }
     
-    let daily_dir = $"($env.OBSIDIAN_VAULT)/NapierianLogs/DayPages"
+    let daily_dir = $"($env.FORGE)/NapierianLogs/DayPages"
     let note_path = $"($daily_dir)/($target_date).md"
     
     if ($note_path | path exists) {
@@ -568,7 +568,7 @@ def daily-open [date?: string] {
 
 # Simple calendar view for daily notes
 def note-calendar [--month: int = 0] {
-    let vault_path = $env.OBSIDIAN_VAULT
+    let vault_path = $env.FORGE
     let daily_dir = $"($vault_path)/NapierianLogs/DayPages"
     
     # Get target year and month
@@ -627,11 +627,11 @@ def note-calendar [--month: int = 0] {
 # Go to this week's note
 def note-week [] {
     let week_num = (date now | format date "%Y-W%V")
-    let week_file = $"($env.OBSIDIAN_VAULT)/NapierianLogs/WeekPages/($week_num).md"
+    let week_file = $"($env.FORGE)/NapierianLogs/WeekPages/($week_num).md"
     
     if not ($week_file | path exists) {
         # Create week note from template if it doesn't exist
-        let template = $"($env.OBSIDIAN_VAULT)/Areas/Obsidian/Templates/WeekPage.md"
+        let template = $"($env.FORGE)/Areas/Obsidian/Templates/WeekPage.md"
         if ($template | path exists) {
             open $template | save $week_file
             print $"Created week note: ($week_num)"
@@ -645,7 +645,7 @@ def note-week [] {
 
 # Find weekly notes
 def note-week-find [] {
-    let weekly_dir = $"($env.OBSIDIAN_VAULT)/NapierianLogs/WeekPages"
+    let weekly_dir = $"($env.FORGE)/NapierianLogs/WeekPages"
     
     if not ($weekly_dir | path exists) {
         mkdir $weekly_dir
@@ -679,11 +679,11 @@ def note-backlinks [file?: path] {
     print $"Finding backlinks to: ($target)"
     
     # Search for [[target]] links
-    rg $"\\[\\[($target)\\]\\]" $env.OBSIDIAN_VAULT --type md -l
+    rg $"\\[\\[($target)\\]\\]" $env.FORGE --type md -l
     | lines
     | each { |f| 
         let content = (rg $"\\[\\[($target)\\]\\]" $f -C 1 | str join "\n")
-        {file: ($f | path relative-to $env.OBSIDIAN_VAULT), context: $content}
+        {file: ($f | path relative-to $env.FORGE), context: $content}
     }
     | to md
 }
@@ -704,7 +704,7 @@ def note-yank [file?: path] {
 
 # Rename note and update all references
 def note-rename [old_name: string, new_name: string] {
-    let vault = $env.OBSIDIAN_VAULT
+    let vault = $env.FORGE
     let old_file = $"($vault)/($old_name).md"
     let new_file = $"($vault)/($new_name).md"
     
@@ -746,7 +746,7 @@ def note-tags [] {
     print "Analyzing tags in vault..."
     
     let tags = (
-        rg "#[a-zA-Z][a-zA-Z0-9_-]*" $env.OBSIDIAN_VAULT --type md -o
+        rg "#[a-zA-Z][a-zA-Z0-9_-]*" $env.FORGE --type md -o
         | lines
         | sort
         | uniq -c
@@ -770,7 +770,7 @@ def note-tags [] {
     if not ($selected | is-empty) {
         # Use fsearch (universal content search) since note-grep was removed
         print $"🔍 Searching for tag: ($selected)"
-        let results = (rg -i $selected $env.OBSIDIAN_VAULT --type md -l)
+        let results = (rg -i $selected $env.FORGE --type md -l)
         if not ($results | is-empty) {
             $results | lines | each { |file| print $"📄 ($file)" }
         } else {
@@ -781,7 +781,7 @@ def note-tags [] {
 
 # Create note from template
 def note-template [template_name?: string] {
-    let template_dir = $"($env.OBSIDIAN_VAULT)/templates"
+    let template_dir = $"($env.FORGE)/templates"
     
     if not ($template_dir | path exists) {
         print "No templates directory found"
@@ -816,7 +816,7 @@ def note-template [template_name?: string] {
         return
     }
     
-    let note_path = $"($env.OBSIDIAN_VAULT)/($note_name).md"
+    let note_path = $"($env.FORGE)/($note_name).md"
     
     # Process template
     let content = (open $template_path)
@@ -844,7 +844,7 @@ def note-day-prev [] {
     
     let current_date = ($current | str substring 0..10 | into datetime)
     let prev_date = (($current_date - 1day) | format date "%Y-%m-%d")
-    let prev_file = $"($env.OBSIDIAN_VAULT)/NapierianLogs/DayPages/($prev_date).md"
+    let prev_file = $"($env.FORGE)/NapierianLogs/DayPages/($prev_date).md"
     
     if ($prev_file | path exists) {
         hx $prev_file
@@ -862,7 +862,7 @@ def note-day-next [] {
     
     let current_date = ($current | str substring 0..10 | into datetime)
     let next_date = (($current_date + 1day) | format date "%Y-%m-%d")
-    let next_file = $"($env.OBSIDIAN_VAULT)/NapierianLogs/DayPages/($next_date).md"
+    let next_file = $"($env.FORGE)/NapierianLogs/DayPages/($next_date).md"
     
     if ($next_file | path exists) {
         hx $next_file
@@ -879,7 +879,7 @@ def note-paste-image [name?: string] {
         $"($name).png"
     }
     
-    let img_dir = $"($env.OBSIDIAN_VAULT)/attachments"
+    let img_dir = $"($env.FORGE)/attachments"
     mkdir $img_dir
     let img_path = $"($img_dir)/($img_name)"
     
@@ -909,9 +909,9 @@ def note-same-date [date?: string] {
     
     print $"Finding notes modified on ($target_date)..."
     
-    fd . $env.OBSIDIAN_VAULT --type f --extension md --changed-on $target_date
+    fd . $env.FORGE --type f --extension md --changed-on $target_date
     | lines
-    | each { |f| $f | path relative-to $env.OBSIDIAN_VAULT }
+    | each { |f| $f | path relative-to $env.FORGE }
     | to md
 }
 
@@ -928,7 +928,7 @@ def --env cd-notes [] {
     }
     
     let dir = (
-        fd --type d . $env.OBSIDIAN_VAULT 
+        fd --type d . $env.FORGE 
         | ^env TERM=xterm-256color sk --preview $preview_cmd --height 60% 
         | str trim
     )
@@ -959,7 +959,7 @@ def hv [] {
     }
     
     let file = (
-        fd --type f . $env.OBSIDIAN_VAULT 
+        fd --type f . $env.FORGE 
         | ^env TERM=xterm TERMINFO="" TERMINFO_DIRS="" sk --preview 'head -20 {}' --height 60%
         | str trim
     )
@@ -1029,8 +1029,8 @@ def fsh [] {
 
 # File wiki link + copy to clipboard (universal)
 def fwl [] {
-    if not ($env.OBSIDIAN_VAULT? | is-empty) and ($env.OBSIDIAN_VAULT | path exists) {
-        let file = (fd . $env.OBSIDIAN_VAULT --type f --extension md | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'mdcat --columns 80 {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📝 Wiki Link: " | str trim)
+    if not ($env.FORGE? | is-empty) and ($env.FORGE | path exists) {
+        let file = (fd . $env.FORGE --type f --extension md | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'mdcat --columns 80 {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📝 Wiki Link: " | str trim)
         if not ($file | is-empty) {
             let filename = ($file | path basename | str replace ".md" "")
             let wikilink = $"[[($filename)]]"
@@ -1039,14 +1039,14 @@ def fwl [] {
             print "💡 Paste anywhere with Cmd+V"
         }
     } else {
-        print "❌ OBSIDIAN_VAULT not set or doesn't exist"
+        print "❌ FORGE not set or doesn't exist"
     }
 }
 
 # File citation + copy to clipboard (universal)
 def fcit [] {
     print "🔍 Loading citations..."
-    let citations_file = $"($env.OBSIDIAN_VAULT?)/ZET/citations.md"
+    let citations_file = $"($env.FORGE?)/ZET/citations.md"
     if not ($citations_file | path exists) {
         print $"❌ Citations file not found: ($citations_file)"
         return
@@ -1069,7 +1069,7 @@ def fcit [] {
 # File citation + open PDF in Zotero (searches library.bib)
 def fcitz [] {
     print "🔍 Loading Zotero library..."
-    let library_file = $"($env.OBSIDIAN_VAULT?)/ZET/library.bib"
+    let library_file = $"($env.FORGE?)/ZET/library.bib"
     if not ($library_file | path exists) {
         print $"❌ Library file not found: ($library_file)"
         return
@@ -1220,7 +1220,7 @@ def fsem [] {
         return
     }
     
-    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'title=$(echo {} | sd "^[0-9.]+[[:space:]]+" ""); file=$(fd -t f --full-path "$title.md" "$OBSIDIAN_VAULT" | head -1); if [ -f "$file" ]; then mdcat --columns 80 "$file"; else echo "Title extracted: [$title]"; echo "Searching for: $title.md"; echo "In vault: $OBSIDIAN_VAULT"; fd -t f "$title.md" "$OBSIDIAN_VAULT"; fi' --preview-window 'right:60%' --prompt "🧠 Semantic: " | str trim)
+    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'title=$(echo {} | sd "^[0-9.]+[[:space:]]+" ""); file=$(fd -t f --full-path "$title.md" "$FORGE" | head -1); if [ -f "$file" ]; then mdcat --columns 80 "$file"; else echo "Title extracted: [$title]"; echo "Searching for: $title.md"; echo "In vault: $FORGE"; fd -t f "$title.md" "$FORGE"; fi' --preview-window 'right:60%' --prompt "🧠 Semantic: " | str trim)
     if not ($selected | is-empty) {
         # Extract filename from semantic search result
         # The selection is just the first line: "0.45  Title"
@@ -1268,7 +1268,7 @@ def fsemh [] {
         return
     }
     
-    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'title=$(echo {} | sd "^[0-9.]+[[:space:]]+" ""); file=$(fd -t f --full-path "$title.md" "$OBSIDIAN_VAULT" | head -1); if [ -f "$file" ]; then mdcat --columns 80 "$file"; else echo "Title extracted: [$title]"; echo "Searching for: $title.md"; echo "In vault: $OBSIDIAN_VAULT"; fd -t f "$title.md" "$OBSIDIAN_VAULT"; fi' --preview-window 'right:60%' --prompt "🧠 Semantic: " | str trim)
+    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'title=$(echo {} | sd "^[0-9.]+[[:space:]]+" ""); file=$(fd -t f --full-path "$title.md" "$FORGE" | head -1); if [ -f "$file" ]; then mdcat --columns 80 "$file"; else echo "Title extracted: [$title]"; echo "Searching for: $title.md"; echo "In vault: $FORGE"; fd -t f "$title.md" "$FORGE"; fi' --preview-window 'right:60%' --prompt "🧠 Semantic: " | str trim)
     if not ($selected | is-empty) {
         # Extract filename from semantic search result
         # The selection is just the first line: "0.45  Title"
@@ -1276,7 +1276,7 @@ def fsemh [] {
         let filename = ($lines | get 0 | str replace "^[0-9.]+[[:space:]]+" "" | str trim)
 
         # Find the full path and open in Helix
-        let filepath = (fd -t f --full-path $"($filename).md" $env.OBSIDIAN_VAULT | head -1)
+        let filepath = (fd -t f --full-path $"($filename).md" $env.FORGE | head -1)
         if not ($filepath | is-empty) {
             print $"🚀 Opening ($filename) in Helix..."
             hx $filepath
@@ -1288,7 +1288,7 @@ def fsemh [] {
 
 # File content search + copy link to clipboard (universal)
 def fsearch [] {
-    if not ($env.OBSIDIAN_VAULT? | is-empty) and ($env.OBSIDIAN_VAULT | path exists) {
+    if not ($env.FORGE? | is-empty) and ($env.FORGE | path exists) {
         let query = (input "🔍 Search content: ")
         if ($query | is-empty) {
             return
@@ -1296,7 +1296,7 @@ def fsearch [] {
         
         print $"🔍 Searching for: ($query)"
         let results = try {
-            ^rg -i --type md -l $query $env.OBSIDIAN_VAULT | lines | where $it != ""
+            ^rg -i --type md -l $query $env.FORGE | lines | where $it != ""
         } catch {
             print "❌ Content search failed"
             return
@@ -1316,13 +1316,13 @@ def fsearch [] {
             print "💡 Paste anywhere with Cmd+V"
         }
     } else {
-        print "❌ OBSIDIAN_VAULT not set or doesn't exist"
+        print "❌ FORGE not set or doesn't exist"
     }
 }
 
 # File content search + open in Helix
 def fcsh [] {
-    if not ($env.OBSIDIAN_VAULT? | is-empty) and ($env.OBSIDIAN_VAULT | path exists) {
+    if not ($env.FORGE? | is-empty) and ($env.FORGE | path exists) {
         let query = (input "🔍 Search content: ")
         if ($query | is-empty) {
             return
@@ -1330,7 +1330,7 @@ def fcsh [] {
         
         print $"🔍 Searching for: ($query)"
         let results = try {
-            ^rg -i --type md -l $query $env.OBSIDIAN_VAULT | lines | where $it != ""
+            ^rg -i --type md -l $query $env.FORGE | lines | where $it != ""
         } catch {
             print "❌ Content search failed"
             return
@@ -1347,7 +1347,7 @@ def fcsh [] {
             hx $selected
         }
     } else {
-        print "❌ OBSIDIAN_VAULT not set or doesn't exist"
+        print "❌ FORGE not set or doesn't exist"
     }
 }
 

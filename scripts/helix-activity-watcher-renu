@@ -17,7 +17,7 @@ def main [] {
     print "⚡ Using native Nushell watch - no external dependencies!"
     print "🛑 Press Ctrl+C to stop\n"
     
-    let vault_path = $"($env.HOME)/Obsidian.nosync/Forge"
+    let vault_path = $"($env.HOME)/Forge"
     
     # Check if activity processor is available
     if (which activity-duration-processor | is-empty) {

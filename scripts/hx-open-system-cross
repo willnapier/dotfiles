@@ -110,7 +110,7 @@ def find_file [path: string] {
     # Search in platform-appropriate vault paths
     let vault_paths = match (detect_platform) {
         "macos" => [
-            "/Obsidian.nosync/Forge"
+            "/Forge"
             "/Documents/Obsidian" 
             "/Obsidian"
         ],

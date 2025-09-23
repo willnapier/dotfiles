@@ -5,7 +5,7 @@
 # Created: 2025-09-12 (emergency fix)
 
 def main [--dry-run] {
-    let vault_path = $"($env.HOME)/Obsidian.nosync/Forge"
+    let vault_path = $"($env.HOME)/Forge"
     
     print "🚨 Emergency Date Corruption Repair Tool"
     print "======================================="

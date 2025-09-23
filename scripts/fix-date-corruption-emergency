@@ -6,7 +6,7 @@
 # Created: 2025-09-12 EMERGENCY
 
 def main [--dry-run, --verbose] {
-    let vault_path = $"($env.HOME)/Obsidian.nosync/Forge"
+    let vault_path = $"($env.HOME)/Forge"
     
     print "🚨 EMERGENCY DATE CORRUPTION FIX"
     print "================================"

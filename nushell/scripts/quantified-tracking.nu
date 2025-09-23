@@ -286,10 +286,10 @@ export def test-sibling-parsing [] {
 
 # Parse today's entry
 # let today = (date now | format date '%Y-%m-%d')
-# let entries = (parse-daily-note $'($env.HOME)/Obsidian.nosync/Forge/NapierianLogs/DayPages/($today).md')
+# let entries = (parse-daily-note $'($env.HOME)/Forge/NapierianLogs/DayPages/($today).md')
 
 # Parse and summarize a month
-# let entries = (parse-tracking-folder ~/Obsidian.nosync/Forge/NapierianLogs/DayPages/)
+# let entries = (parse-tracking-folder ~/Forge/NapierianLogs/DayPages/)
 # summary-by-key $entries
 
 # Manual parse with explicit date

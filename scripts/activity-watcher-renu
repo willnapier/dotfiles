@@ -108,7 +108,7 @@ def main [
 # Cross-platform vault path detection with comprehensive search
 def detect_vault_path [] {
     let candidates = [
-        $"($env.HOME)/Obsidian.nosync/Forge",           # Current setup
+        $"($env.HOME)/Forge",           # Current setup
         $"($env.HOME)/Documents/Obsidian",              # Common location  
         $"($env.HOME)/Notes",                           # Simple notes folder
         $"($env.HOME)/Vault",                           # Generic vault
@@ -125,7 +125,7 @@ def detect_vault_path [] {
     }
     
     # Fallback to the configured path
-    $"($env.HOME)/Obsidian.nosync/Forge"
+    $"($env.HOME)/Forge"
 }
 
 # Enhanced logging with unified context

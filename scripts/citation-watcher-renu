@@ -116,7 +116,7 @@ def main [
 # Cross-platform library file detection for academic workflows
 def detect_library_file [] {
     let candidates = [
-        $"($env.HOME)/Obsidian.nosync/Forge/ZET/library.bib",     # Current setup
+        $"($env.HOME)/Forge/ZET/library.bib",     # Current setup
         $"($env.HOME)/Documents/library.bib",                     # Common location
         $"($env.HOME)/Papers/library.bib",                        # Academic folder
         $"($env.HOME)/Research/library.bib",                      # Research folder
@@ -131,7 +131,7 @@ def detect_library_file [] {
     }
     
     # Fallback to the configured path
-    $"($env.HOME)/Obsidian.nosync/Forge/ZET/library.bib"
+    $"($env.HOME)/Forge/ZET/library.bib"
 }
 
 # Logging function with academic context
