@@ -22,7 +22,7 @@ find_helix_pane() {
     fi
     
     # Method 2: Look for 'hx' or 'helix' in process or title - using modern tools
-    local pane_id=$(wezterm cli list | rg -E 'hx|helix|daily-note' | cut -d' ' -f3 | head -n1)
+    local pane_id=$(wezterm cli list | rg 'hx|helix|daily-note' | cut -d' ' -f3 | head -n1)
     
     if [ -n "$pane_id" ]; then
         echo "$pane_id"

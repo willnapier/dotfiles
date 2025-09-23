@@ -88,7 +88,7 @@ echo "✅ Search successful, processing results..."
 
 # Parse results for skim selection
 # Extract lines that start with score like: "0.52  Filename" - using modern tools
-results=$(rg -E "^[0-9]\.[0-9][0-9].*\.md|^[0-9]\.[0-9][0-9]  " "$TEMP_FILE" | head -10)
+results=$(rg "^[0-9]\.[0-9][0-9].*\.md|^[0-9]\.[0-9][0-9]  " "$TEMP_FILE" | head -10)
 
 if [[ -z "$results" ]]; then
     echo "❌ No semantic matches found for '$query'"
