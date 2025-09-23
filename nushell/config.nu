@@ -977,10 +977,6 @@ if (which git | is-not-empty) {
     alias gl = git log --oneline
     alias gd = git diff
 
-    # Compact ls for better SSH experience
-    alias ll = ls | select name size modified
-    alias la = ls -a | select name size modified
-    alias lc = ls | select name size  # Even more compact
     alias gco = git checkout
     alias gb = git branch
 }
@@ -992,13 +988,15 @@ if (which bat | is-not-empty) {
 
 if (which eza | is-not-empty) {
     alias ls = eza --color=auto --icons
-    alias ll = eza --color=auto --icons --long --all --git
-    alias la = eza --color=auto --icons --all
+    # Removed ll and la - defined below for consistency
     alias tree = eza --color=auto --icons --tree
-} else {
-    alias ll = ls -la
-    alias la = ls -a
 }
+
+# Compact ls aliases for better SSH experience (override any above)
+# These work consistently across platforms without external tools
+alias ll = ls | select name size modified
+alias la = ls -a | select name size modified
+alias lc = ls | select name size  # Even more compact
 
 if (which fd | is-not-empty) {
     alias find = fd
