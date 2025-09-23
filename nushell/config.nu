@@ -976,6 +976,11 @@ if (which git | is-not-empty) {
     alias gp = git push
     alias gl = git log --oneline
     alias gd = git diff
+
+    # Compact ls for better SSH experience
+    alias ll = ls | select name size modified | table -c
+    alias la = ls -a | select name size modified | table -c
+    alias lc = ls | select name size | table -c  # Even more compact
     alias gco = git checkout
     alias gb = git branch
 }
