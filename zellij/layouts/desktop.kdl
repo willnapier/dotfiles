@@ -12,7 +12,7 @@ layout {
         pane split_direction="vertical" {
             pane split_direction="horizontal" {
                 pane name="daily-note" {
-                    focus true
+                    focus=true
                     size "50%"
                     command "bash"
                     args "-c" "daily-note && exec helix \"$(daily-note --print-path)\" || exec nu"
