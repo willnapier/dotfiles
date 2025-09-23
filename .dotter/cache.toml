@@ -66,6 +66,7 @@
 "scripts/get-system-theme.sh" = "/home/will/.local/bin/get-system-theme.sh"
 "scripts/git-auto-pull-watcher" = "/home/will/.local/bin/git-auto-pull-watcher"
 "scripts/helix-activity-watcher-renu" = "/home/will/.local/bin/helix-activity-watcher-renu"
+"scripts/hx" = "/home/will/.local/bin/hx"
 "scripts/hx-auto" = "/home/will/.local/bin/hx-auto"
 "scripts/hx-insert-date" = "/home/will/.local/bin/hx-insert-date"
 "scripts/hx-insert-datetime" = "/home/will/.local/bin/hx-insert-datetime"

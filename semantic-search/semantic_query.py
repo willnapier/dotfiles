@@ -39,7 +39,10 @@ class SearchResult:
     def relative_path(self) -> str:
         """Path relative to vault root."""
         try:
-            vault_root = "/Users/williamnapier/Obsidian.nosync/Forge/"
+            # Use environment variable or home directory for cross-platform compatibility
+            vault_root = os.environ.get('FORGE', os.path.expanduser('~/Forge'))
+            if not vault_root.endswith('/'):
+                vault_root += '/'
             return os.path.relpath(self.file_path, vault_root)
         except:
             return self.file_path
