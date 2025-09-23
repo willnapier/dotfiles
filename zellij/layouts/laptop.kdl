@@ -11,7 +11,7 @@ layout {
     tab name="daily" focus=true {
         // Single pane layout: daily note only
         pane name="daily-note" {
-            focus=true
+            focus true
             command "bash"
             args "-c" "daily-note && exec helix \"$(daily-note --print-path)\" || exec nu"
         }
