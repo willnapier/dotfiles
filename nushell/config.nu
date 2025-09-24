@@ -992,11 +992,11 @@ if (which eza | is-not-empty) {
     alias tree = eza --color=auto --icons --tree
 }
 
-# Compact ls aliases for better SSH experience (override any above)
+# Compact ls commands for better SSH experience
 # These work consistently across platforms without external tools
-alias ll = (ls | select name size modified)
-alias la = (ls -a | select name size modified)
-alias lc = (ls | select name size)  # Even more compact
+def ll [] { ls | select name size modified }
+def la [] { ls -a | select name size modified }
+def lc [] { ls | select name size }  # Even more compact
 
 if (which fd | is-not-empty) {
     alias find = fd
