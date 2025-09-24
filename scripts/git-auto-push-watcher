@@ -19,7 +19,7 @@ def main [] {
         if $age_minutes > 10 {
             let timestamp = (date now | format date "%H:%M:%S")
             let age_rounded = ($age_minutes | math round)
-            let cleanup_msg = $"[($timestamp)] 🧹 Cleaning up stale lock file (($age_rounded) minutes old)"
+            let cleanup_msg = $"[($timestamp)] Cleaning up stale lock file (($age_rounded) minutes old)"
             $cleanup_msg | save --append $log_file
             print $cleanup_msg
             rm -f $lock_file
