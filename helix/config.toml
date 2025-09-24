@@ -1,6 +1,7 @@
 # ⚠️  CLAUDE CODE: THIS FILE IS DOTTER-MANAGED - EDIT HERE IN DOTFILES, NOT ~/.config/helix/
 # ⚠️  NEVER EDIT ~/.config/helix/config.toml - IT'S A SYMLINK TO THIS FILE
 # Helix Configuration for Colemak-DH
+# Sync test: $(date)
 
 # Use standard Solarized themes - change based on system appearance
 # For dark mode: theme = "solarized_dark" 
