@@ -13,7 +13,7 @@ def main [] {
 
     # Smart lock file handling with stale lock detection
     if ($lock_file | path exists) {
-        let lock_age = ((date now) - (ls $lock_file | get 0.modified | first))
+        let lock_age = ((date now) - (ls $lock_file | get 0.modified))
         let age_minutes = ($lock_age / 1min)
 
         if $age_minutes > 10 {
