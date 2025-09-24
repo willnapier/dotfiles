@@ -60,6 +60,44 @@ if $age_minutes > 10 {
 
 ---
 
+## 🐚 NUSHELL LESSON LEARNED - ALIASES vs DEF (2025-09-24)
+
+**Status**: ✅ **FUNDAMENTAL UNDERSTANDING CORRECTED** - Critical Nushell syntax knowledge documented
+
+### The Hard-Learned Rule
+**In Nushell, `alias` can ONLY alias simple commands, NOT pipelines.**
+
+```nushell
+# ✅ WORKS - Simple command aliasing
+alias vi = nvim
+alias g = git
+
+# ❌ FAILS - Cannot alias pipelines
+alias ll = ls | select name size modified  # Error: Can't alias expression
+
+# ✅ CORRECT - Use def for pipelines
+def ll [] { ls | select name size modified }
+```
+
+### What I Got Wrong (Multiple Times)
+1. **Yesterday**: Incorrectly thought `def` was "overengineering" when it was the correct solution
+2. **Today**: Tried wrong approaches (parentheses, quotes) before accepting `def` is required
+3. **Created unnecessary script files** as workaround when built-in `def` was the right answer
+
+### Why This Matters
+- **Fundamental Nushell design**: Aliases are for simple command substitution only
+- **`def` is not complexity** - it's the ONLY way to create custom commands with pipelines
+- **Different from bash/zsh** where aliases can contain complex command chains
+
+### The Resolution
+- Removed redundant script files (`scripts/ll`, `scripts/la`, `scripts/lc`)
+- Used correct `def` syntax: `def ll [] { ls | select name size modified }`
+- Commands now work properly across SSH and all contexts
+
+**Lesson**: When in Nushell, if you need a pipeline in a shortcut, use `def` - it's not complex, it's correct.
+
+---
+
 ## 🎓 CROSS-PLATFORM ACADEMIC WORKFLOW - COMPLETED (2025-09-18)
 
 **Status**: ✅ **UNIVERSAL ACADEMIC TOOLS PERFECTED** - Complete cross-platform research workflow
