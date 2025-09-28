@@ -1,0 +1,5 @@
+#!/bin/bash
+# Minimal test script for debugging pipe-to issues
+input=$(cat)
+echo "Script executed at $(date) with input: $input" >> /tmp/helix-pipe-debug.log
+echo "TRANSFORMED: $input"

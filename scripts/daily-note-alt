@@ -14,15 +14,15 @@ if [[ ! -f "$DAILY_FILE" ]]; then
     mkdir -p "$DAILY_DIR"
     
     # Use template and keep a cursor marker
-    TEMPLATE_FILE="$HOME/Forge/Areas/Obsidian/Templates/DayPage.md"
+    TEMPLATE_FILE="$HOME/Forge/Areas/PKMStrategies/Templates/DayPage.md"
     CURRENT_DATE="$TODAY"
     CURRENT_TIME=$(date "+%H:%M")
     
     # Cross-platform date parsing
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        HUMAN_DATE=$(date -j -f "%Y-%m-%d" "$TODAY" "+%A")
+        HUMAN_DATE=$(date -j -f "%Y-%m-%d" "$TODAY" "+%A, %B %d, %Y")
     else
-        HUMAN_DATE=$(date -d "$TODAY" "+%A")
+        HUMAN_DATE=$(date -d "$TODAY" "+%A, %B %d, %Y")
     fi
     
     # Process template but keep cursor marker temporarily

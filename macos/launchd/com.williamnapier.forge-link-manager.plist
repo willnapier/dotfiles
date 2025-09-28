@@ -9,7 +9,7 @@
     <array>
         <string>/opt/homebrew/bin/nu</string>
         <string>-c</string>
-        <string>link-service start</string>
+        <string>/Users/williamnapier/.local/bin/link-service start</string>
     </array>
 
     <key>WorkingDirectory</key>
@@ -18,7 +18,7 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <string>/Users/williamnapier/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
         <key>HOME</key>
         <string>/Users/williamnapier</string>
     </dict>

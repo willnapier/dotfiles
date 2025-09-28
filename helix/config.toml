@@ -75,8 +75,8 @@ L = "till_prev_char"       # pair with 'l' (till forward)
 T = "insert_at_line_start"  # was on 'I' (Insert at line start)
 
 [keys.normal.space]
-# Toggle todo checkbox - Space+t
-t = ["extend_to_line_bounds", ":pipe-to sd '\\[ \\]' '[TEMP]' | sd '\\[x\\]' '[ ]' | sd '\\[TEMP\\]' '[x]'"]
+# Toggle todo checkbox - Space+t (3-state: no checkbox → unchecked → checked → unchecked)
+t = ["extend_to_line_bounds", ":pipe hx-toggle-todo"]
 
 # Manual theme refresh - Space+T (capital T)  
 T = ":config-reload"
@@ -87,7 +87,7 @@ x = [":sh trash %{buffer_name}", ":quit!"]
 # Export selection to external register - Space+E (then type register letter)
 E = ":pipe-to hx-register-export"
 # Wiki link navigation - Space+w
-w = ["extend_to_line_bounds", ":sh echo %{selection.column.0} > /tmp/helix-cursor-col.txt", ":pipe-to ~/.local/bin/hx-wiki", ":buffer-close /tmp/helix-current-link.md", ":open /tmp/helix-current-link.md"]
+w = ["extend_to_line_bounds", ":sh echo %{selection.column.0} > /tmp/helix-cursor-col.txt", ":pipe-to ~/.local/bin/hx-wiki", ":buffer-close!", ":open /tmp/helix-current-link.md"]
 # Smart file opener - Space+o (handles all file types and wiki links)
 o = ["extend_to_line_bounds", ":pipe-to hx-open-system-rust"]  # Open in system app (Preview, Excel, etc.)
 # Fuzzy link insertion - Space+l (Zellij floating pane)

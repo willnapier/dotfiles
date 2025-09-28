@@ -1,0 +1,269 @@
+#!/usr/bin/env nu
+# Git Push Reliability Monitor - Monitor and manage enhanced auto-push system
+# Provides status, statistics, and management commands for 100% reliability system
+
+def main [action?: string] {
+    match $action {
+        "status" => { show_status }
+        "stats" => { show_statistics }
+        "reset" => { reset_failure_count }
+        "test" => { test_push_system }
+        "logs" => { show_recent_logs }
+        "alert" => { check_active_alerts }
+        "health" => { comprehensive_health_check }
+        _ => { show_help }
+    }
+}
+
+def show_help [] {
+    print "Git Push Reliability Monitor - Enhanced Auto-Push System Management"
+    print ""
+    print "USAGE:"
+    print "  git-push-reliability-monitor [COMMAND]"
+    print ""
+    print "COMMANDS:"
+    print "  status    - Show current service status and failure count"
+    print "  stats     - Show push success/failure statistics"
+    print "  reset     - Reset failure counter to zero"
+    print "  test      - Test push system by creating a dummy commit"
+    print "  logs      - Show recent auto-push activity logs"
+    print "  alert     - Check for active failure alerts"
+    print "  health    - Comprehensive system health check"
+    print ""
+    print "EXAMPLES:"
+    print "  git-push-reliability-monitor status    # Quick status check"
+    print "  git-push-reliability-monitor health    # Full diagnostic"
+    print "  git-push-reliability-monitor reset     # Clear failure count"
+}
+
+def show_status [] {
+    print "🔍 Git Auto-Push System Status\n"
+
+    # Check if service is running
+    let lock_exists = ("/tmp/git-auto-push-watcher.lock" | path exists)
+    if $lock_exists {
+        print "✅ Service Status: RUNNING"
+        let lock_age = ((date now) - (ls "/tmp/git-auto-push-watcher.lock" | get 0.modified))
+        let age_minutes = ($lock_age / 1min | math round)
+        print $"⏱️  Running for: ($age_minutes) minutes"
+    } else {
+        print "❌ Service Status: NOT RUNNING"
+    }
+
+    # Check failure count
+    let failure_file = "/tmp/git-auto-push-failures"
+    if ($failure_file | path exists) {
+        let failures = (open $failure_file | into int)
+        if $failures > 0 {
+            print $"⚠️  Consecutive Failures: ($failures)"
+            if $failures >= 3 {
+                print "🚨 ALERT: Multiple failures detected!"
+            }
+        } else {
+            print "✅ Consecutive Failures: 0"
+        }
+    } else {
+        print "✅ Consecutive Failures: 0 (no failure tracking file)"
+    }
+
+    # Check last push attempt
+    let last_push_file = "/tmp/git-last-push"
+    if ($last_push_file | path exists) {
+        let last_push_timestamp = (open $last_push_file | into int)
+        let last_push_date = ($last_push_timestamp | into datetime)
+        let time_since = ((date now) - $last_push_date)
+        let minutes_since = ($time_since / 1min | math round)
+        print $"📤 Last Push Attempt: ($minutes_since) minutes ago"
+    } else {
+        print "📤 Last Push Attempt: No record found"
+    }
+}
+
+def show_statistics [] {
+    print "📊 Git Auto-Push System Statistics\n"
+
+    let log_file = $"($env.HOME)/.local/share/git-auto-push-watcher.log"
+    if not ($log_file | path exists) {
+        print "❌ No log file found. Service may not have started yet."
+        return
+    }
+
+    let log_content = (open $log_file)
+    let log_lines = ($log_content | lines)
+
+    # Count different types of events
+    let total_lines = ($log_lines | length)
+    let success_pushes = ($log_lines | where $it =~ "✅ Successfully pushed" | length)
+    let failed_pushes = ($log_lines | where $it =~ "❌.*failed" | length)
+    let retry_attempts = ($log_lines | where $it =~ "Push attempt" | length)
+    let network_errors = ($log_lines | where $it =~ "Network issue detected" | length)
+
+    print $"📈 Total Log Entries: ($total_lines)"
+    print $"✅ Successful Pushes: ($success_pushes)"
+    print $"❌ Failed Pushes: ($failed_pushes)"
+    print $"🔄 Retry Attempts: ($retry_attempts)"
+    print $"🌐 Network Errors: ($network_errors)"
+
+    if ($success_pushes + $failed_pushes) > 0 {
+        let success_rate = (($success_pushes / ($success_pushes + $failed_pushes)) * 100 | math round)
+        print $"🎯 Success Rate: ($success_rate)%"
+
+        if $success_rate >= 99 {
+            print "🏆 EXCELLENT: Near-perfect reliability achieved!"
+        } else if $success_rate >= 95 {
+            print "✅ GOOD: High reliability maintained"
+        } else {
+            print "⚠️ NEEDS ATTENTION: Reliability below target"
+        }
+    }
+}
+
+def reset_failure_count [] {
+    print "🔄 Resetting failure counter..."
+    "0" | save --force "/tmp/git-auto-push-failures"
+
+    # Remove alert file if it exists
+    let alert_file = "/tmp/git-auto-push-alert"
+    if ($alert_file | path exists) {
+        rm $alert_file
+        print "🔔 Removed active alert file"
+    }
+
+    print "✅ Failure counter reset to zero"
+    print "📋 Next successful push will confirm system recovery"
+}
+
+def test_push_system [] {
+    print "🧪 Testing Git Auto-Push System\n"
+
+    cd ~/dotfiles
+
+    # Create test file
+    let test_file = $"reliability-test-(date now | format date '%Y%m%d-%H%M%S').md"
+    let test_content = $"# Reliability Test
+
+Created: (date now | format date '%Y-%m-%d %H:%M:%S')
+Purpose: Test enhanced auto-push reliability system
+Random ID: (random int 10000..99999)
+
+This file tests the enhanced retry logic and failure notification system.
+"
+
+    $test_content | save $test_file
+    print $"✅ Created test file: ($test_file)"
+
+    print "⏳ Waiting for auto-push system to detect and process..."
+    print "💡 Monitor with: git-push-reliability-monitor logs"
+    print "🗑️  Remember to clean up test files later!"
+}
+
+def show_recent_logs [] {
+    print "📝 Recent Git Auto-Push Activity\n"
+
+    let log_file = $"($env.HOME)/.local/share/git-auto-push-watcher.log"
+    if not ($log_file | path exists) {
+        print "❌ No log file found"
+        return
+    }
+
+    # Show last 15 lines with timestamps highlighted
+    let recent_logs = (tail -15 $log_file)
+    $recent_logs
+
+    print $"\n📁 Full logs: ($log_file)"
+}
+
+def check_active_alerts [] {
+    print "🔔 Checking for Active Alerts\n"
+
+    let alert_file = "/tmp/git-auto-push-alert"
+    if ($alert_file | path exists) {
+        let alert_content = (open $alert_file)
+        print $"🚨 ACTIVE ALERT: ($alert_content)"
+
+        let failure_report = $"($env.HOME)/.local/share/git-auto-push-failure-report.txt"
+        if ($failure_report | path exists) {
+            print $"📋 Detailed report available: ($failure_report)"
+
+            # Show summary from report
+            print "\n📊 Alert Summary:"
+            let report_lines = (open $failure_report | lines | first 10)
+            for line in $report_lines {
+                print $line
+            }
+        }
+    } else {
+        print "✅ No active alerts"
+        print "🎯 System operating normally"
+    }
+}
+
+def comprehensive_health_check [] {
+    print "🩺 Comprehensive Git Auto-Push Health Check\n"
+
+    # 1. Service Status
+    print "1️⃣ SERVICE STATUS:"
+    show_status
+    print ""
+
+    # 2. Network Connectivity
+    print "2️⃣ NETWORK CONNECTIVITY:"
+    let ping_result = (do { timeout 10s ping -c 3 github.com } | complete)
+    if $ping_result.exit_code == 0 {
+        print "✅ GitHub connectivity: OK"
+    } else {
+        print "❌ GitHub connectivity: FAILED"
+        print $"   Error: ($ping_result.stderr)"
+    }
+
+    # 3. Git Authentication
+    print "\n3️⃣ GIT AUTHENTICATION:"
+    let auth_result = (do { timeout 10s ssh -T git@github.com } | complete)
+    if ($auth_result.stderr | str contains "successfully authenticated") {
+        print "✅ GitHub SSH authentication: OK"
+    } else {
+        print "❌ GitHub SSH authentication: FAILED"
+        print $"   Output: ($auth_result.stderr)"
+    }
+
+    # 4. Repository Status
+    print "\n4️⃣ REPOSITORY STATUS:"
+    cd ~/dotfiles
+    let repo_status = (do { git status --porcelain } | complete)
+    if $repo_status.exit_code == 0 {
+        let changes = ($repo_status.stdout | str length)
+        if $changes > 0 {
+            print $"⚠️ Uncommitted changes detected: ($repo_status.stdout | lines | length) files"
+        } else {
+            print "✅ Repository clean: No uncommitted changes"
+        }
+    } else {
+        print "❌ Git repository check failed"
+    }
+
+    # 5. File Permissions
+    print "\n5️⃣ FILE PERMISSIONS:"
+    let script_file = "~/dotfiles/scripts/git-auto-push-watcher"
+    if ($script_file | path exists) and ($script_file | path type) == "file" {
+        print "✅ Auto-push script exists and accessible"
+    } else {
+        print "❌ Auto-push script missing or inaccessible"
+    }
+
+    # 6. Overall Assessment
+    print "\n6️⃣ OVERALL ASSESSMENT:"
+    let current_failures = (try { open "/tmp/git-auto-push-failures" | into int } catch { 0 })
+    let has_alert = ("/tmp/git-auto-push-alert" | path exists)
+    let service_running = ("/tmp/git-auto-push-watcher.lock" | path exists)
+
+    if $current_failures == 0 and not $has_alert and $service_running {
+        print "🏆 EXCELLENT: System operating at optimal reliability"
+        print "✅ Ready for production use with 100% reliability confidence"
+    } else if $current_failures < 3 and $service_running {
+        print "✅ GOOD: System operational with minor issues"
+        print "📈 Monitor for improvement over next few cycles"
+    } else {
+        print "⚠️ NEEDS ATTENTION: System requires intervention"
+        print "🔧 Check logs and consider manual troubleshooting"
+    }
+}

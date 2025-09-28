@@ -12,7 +12,7 @@ TODAY=$(date '+%Y-%m-%d')
 DAILY_FILE="$DAILY_DIR/$TODAY.md"
 
 # Calculate cursor position from template (always available)
-TEMPLATE_FILE="$HOME/Forge/Areas/Obsidian/Templates/DayPage.md"
+TEMPLATE_FILE="$HOME/Forge/Areas/PKMStrategies/Templates/DayPage.md"
 CURSOR_LINE=$(grep -n "<cursor>" "$TEMPLATE_FILE" | cut -d: -f1)
 
 # Create the file if it doesn't exist
@@ -27,10 +27,10 @@ if [[ ! -f "$DAILY_FILE" ]]; then
     # Cross-platform date parsing - full format with day name
     if [[ "$OSTYPE" == "darwin"* ]]; then
         # macOS
-        HUMAN_DATE=$(date -j -f "%Y-%m-%d" "$TODAY" "+%A")
+        HUMAN_DATE=$(date -j -f "%Y-%m-%d" "$TODAY" "+%A, %B %d, %Y")
     else
         # Linux
-        HUMAN_DATE=$(date -d "$TODAY" "+%A")
+        HUMAN_DATE=$(date -d "$TODAY" "+%A, %B %d, %Y")
     fi
     
     # Process the template

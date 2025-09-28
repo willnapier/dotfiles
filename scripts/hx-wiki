@@ -175,6 +175,9 @@ social_connection: false
 ## Links
 - Previous: [[$prev_date]]
 - Next: [[$next_date]]
+
+## Backlinks
+
 EOF
 
     # Create symlink for Helix
@@ -188,18 +191,53 @@ else
     note_dir=$(dirname "$file")
     mkdir -p "$note_dir"
     
-    # Create the note with basic frontmatter
+    # Create the note with basic frontmatter and H2 backlinks section
     cat > "$file" << EOF
 ---
 tags:
-- 
+-
 date created: $current_date $current_time
 date modified: $current_date $current_time
 ---
 # $clean_link
 
+
+
+## Backlinks
+
 EOF
     
     # Create symlink for Helix
     ln -sf "$file" "$target_file"
+
+    # Trigger immediate backlink population for the new file
+    # Run in background to avoid blocking the editor
+    (cd ~/scripts/obsidian-link-manager && \
+     source venv/bin/activate && \
+     python3 -c "
+import sys
+sys.path.insert(0, '.')
+from pathlib import Path
+from backlinks_collections import BacklinksManager, BacklinksConfig, load_backlinks_collections_config
+from link_manager import ColorLogger
+
+vault_path = Path('$vault')
+file_path = Path('$file')
+logger = ColorLogger()
+config = BacklinksConfig()
+manager = BacklinksManager(vault_path, config, logger)
+
+# Update backlinks for the newly created file
+manager.update_backlinks_section(file_path)
+
+# Also update backlinks for files that link to this new file
+for other_file in vault_path.rglob('*.md'):
+    if other_file != file_path:
+        try:
+            content = other_file.read_text(encoding='utf-8')
+            if '[[${clean_link}]]' in content or '?[[${clean_link}]]' in content:
+                manager.update_backlinks_section(other_file)
+        except:
+            pass
+" 2>/dev/null &)
 fi

@@ -473,7 +473,7 @@ def daily-note [] {
     
     # Create note with template if it doesn't exist
     if not ($note_path | path exists) {
-        let template_path = $"($env.HOME)/Forge/Areas/Obsidian/Templates/DayPage.md"
+        let template_path = $"($env.HOME)/Forge/Areas/PKMStrategies/Templates/DayPage.md"
         
         if ($template_path | path exists) {
             # Read template from file and process variables

@@ -1,0 +1,116 @@
+#!/usr/bin/env nu
+# Cross-platform setup for Forge link management service
+# Automatically starts on boot for both macOS and Linux
+
+def main [action: string = "install"] {
+    let os_info = (sys host | get name)
+
+    print $"🔗 Setting up Forge link management service for ($os_info)..."
+
+    match $action {
+        "install" => {
+            if ($os_info == "Darwin") {
+                setup_macos_service
+            } else if ($os_info == "Linux") {
+                setup_linux_service
+            } else {
+                print $"❌ Unsupported platform: ($os_info)"
+                exit 1
+            }
+        }
+        "uninstall" => {
+            if ($os_info == "Darwin") {
+                uninstall_macos_service
+            } else if ($os_info == "Linux") {
+                uninstall_linux_service
+            } else {
+                print $"❌ Unsupported platform: ($os_info)"
+                exit 1
+            }
+        }
+        "status" => {
+            check_service_status
+        }
+        _ => {
+            print "Usage: setup-forge-link-service [install|uninstall|status]"
+            exit 1
+        }
+    }
+}
+
+def setup_macos_service [] {
+    let plist_file = $"($env.HOME)/Library/LaunchAgents/com.williamnapier.forge-link-manager.plist"
+
+    if ($plist_file | path exists) {
+        print "✅ LaunchAgent already configured"
+
+        # Unload if already loaded
+        ^launchctl unload $plist_file | ignore
+
+        # Load the service
+        ^launchctl load $plist_file
+        print "🚀 macOS LaunchAgent loaded and will start on login"
+    } else {
+        print $"❌ LaunchAgent plist not found at ($plist_file)"
+        print "💡 Ensure dotfiles are deployed with: cd ~/dotfiles && dotter deploy"
+        exit 1
+    }
+}
+
+def setup_linux_service [] {
+    let service_file = $"($env.HOME)/.config/systemd/user/forge-link-manager.service"
+
+    if ($service_file | path exists) {
+        print "✅ Systemd service file found"
+
+        # Enable and start the service
+        ^systemctl --user daemon-reload
+        ^systemctl --user enable forge-link-manager.service
+        ^systemctl --user start forge-link-manager.service
+
+        print "🚀 Linux systemd service enabled and started"
+    } else {
+        print $"❌ Systemd service file not found at ($service_file)"
+        print "💡 Ensure dotfiles are deployed with: cd ~/dotfiles && dotter deploy"
+        exit 1
+    }
+}
+
+def uninstall_macos_service [] {
+    let plist_file = $"($env.HOME)/Library/LaunchAgents/com.williamnapier.forge-link-manager.plist"
+
+    ^launchctl unload $plist_file | ignore
+    print "🛑 macOS LaunchAgent unloaded"
+}
+
+def uninstall_linux_service [] {
+    ^systemctl --user stop forge-link-manager.service | ignore
+    ^systemctl --user disable forge-link-manager.service | ignore
+    print "🛑 Linux systemd service stopped and disabled"
+}
+
+def check_service_status [] {
+    let os_info = (sys host | get name)
+
+    if ($os_info == "Darwin") {
+        let status = (^launchctl list | rg "forge-link-manager" | complete)
+        if ($status.exit_code == 0) {
+            print "✅ macOS LaunchAgent: RUNNING"
+            print $status.stdout
+        } else {
+            print "❌ macOS LaunchAgent: NOT RUNNING"
+        }
+    } else if ($os_info == "Linux") {
+        let status = (^systemctl --user is-active forge-link-manager.service | complete)
+        if ($status.exit_code == 0) {
+            print $"✅ Linux systemd service: ($status.stdout | str trim)"
+            ^systemctl --user status forge-link-manager.service --no-pager -l
+        } else {
+            print "❌ Linux systemd service: NOT RUNNING"
+        }
+    }
+
+    # Check if the actual link-service is running
+    print "\n🔍 Link service status:"
+    ^link-service status | complete | get stdout | print
+}

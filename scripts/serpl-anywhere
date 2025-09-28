@@ -1,0 +1,5 @@
+#!/usr/bin/env nu
+use ~/.config/nushell/scripts/serpl.nu *
+# Pass-through: accepts optional arg (start dir)
+let start = (if ($env | has "nu.cli_args") and ($nu.cli_args | length) > 0 { $nu.cli_args.0 } else { $env.PWD })
+serpl-anywhere --from $start

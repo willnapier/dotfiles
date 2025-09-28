@@ -26,7 +26,7 @@
 # Integration:
 # - Zellij: Alt+r opens serpl in floating pane
 # - Helix: Space+r,r opens serpl with auto-reload and git safety
-# - Standalone: ~/bin/serpl-anywhere.nu script
+# - Standalone: ~/.local/bin/serpl-anywhere script (managed by Dotter)
 #
 
 # Import unified root detection system
