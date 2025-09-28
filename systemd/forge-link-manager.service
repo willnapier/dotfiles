@@ -1,0 +1,21 @@
+[Unit]
+Description=Forge Link Manager - Bidirectional Link Management Service
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=%h
+ExecStart=/usr/bin/nu -c "link-service start"
+Restart=on-failure
+RestartSec=30
+Nice=10
+
+Environment="PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="HOME=%h"
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

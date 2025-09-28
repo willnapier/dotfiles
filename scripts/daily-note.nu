@@ -10,7 +10,7 @@ def main [--print-path] {
     let daily_file = $"($daily_dir)/($today).md"
 
     # Template processing
-    let template_file = $"($vault_dir)/Areas/Obsidian/Templates/DayPage.md"
+    let template_file = $"($vault_dir)/Areas/PKMStrategies/Templates/DayPage.md"
 
     # Find cursor line using native Nushell (no grep/cut needed)
     let cursor_line = if ($template_file | path exists) {
@@ -37,7 +37,7 @@ def main [--print-path] {
         let current_time = (date now | format date "%H:%M")
 
         # Get human readable date
-        let human_date = (date now | format date "%A")
+        let human_date = (date now | format date "%A, %B %d, %Y")
 
         # Process template with native Nushell string replacement
         if ($template_file | path exists) {

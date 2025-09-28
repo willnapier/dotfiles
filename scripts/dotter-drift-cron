@@ -18,7 +18,8 @@ log() {
 
 # Alert function
 alert() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - ALERT: $1" | tee -a "$ALERT_FILE" -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - ALERT: $1" | tee -a "$ALERT_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - ALERT: $1" >> "$LOG_FILE"
 }
 
 log "🔍 Starting scheduled drift audit"

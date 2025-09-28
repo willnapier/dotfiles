@@ -218,12 +218,12 @@ def main [
     
     # Check orphan status
     print "\n🔍 Checking for configuration orphans..."
-    let orphan_check = (do { ^dotter-orphan-detector --quiet } | complete)
+    let orphan_check = (do { ^dotter-orphan-detector-v2 --quiet } | complete)
     if $orphan_check.exit_code == 0 and ($orphan_check.stdout | str trim | is-empty) {
         print "✅ No orphaned configuration files"
     } else {
         print "⚠️  Some configuration files may be orphaned"
-        print "💡 Run: dotter-orphan-detector"
+        print "💡 Run: dotter-orphan-detector-v2"
     }
     
     # 9. SUCCESS SUMMARY

@@ -1,0 +1,143 @@
+#!/opt/homebrew/bin/nu
+# Git Auto-Commit Watcher for macOS - Automatically commits and pushes local changes
+# Monitors dotfiles for local changes and commits/pushes them automatically
+
+def main [] {
+    let dotfiles_dir = $"($env.HOME)/dotfiles"
+    let log_file = $"($env.HOME)/.local/share/git-auto-commit-watcher.log"
+    let lock_file = "/tmp/git-auto-commit-watcher.lock"
+    let last_check_file = "/tmp/git-auto-commit-last-check"
+
+    # Ensure log directory exists
+    mkdir ($log_file | path dirname)
+
+    # Smart lock file handling with stale lock detection
+    if ($lock_file | path exists) {
+        let lock_age = ((date now) - (ls $lock_file | get 0.modified))
+        let age_minutes = ($lock_age / 1min)
+
+        if $age_minutes > 10 {
+            let timestamp = (date now | format date "%H:%M:%S")
+            let age_rounded = ($age_minutes | math round)
+            let cleanup_msg = $"[($timestamp)] 🧹 Cleaning up stale lock file \(($age_rounded) minutes old\)"
+            $cleanup_msg | save --append $log_file
+            print $cleanup_msg
+            rm -f $lock_file
+        } else {
+            print "❌ Auto-commit watcher already running (recent lock file)"
+            exit 1
+        }
+    }
+
+    # Create lock file
+    "running" | save --force $lock_file
+
+    print "🚀 Starting Git auto-commit watcher (macOS)"
+    print $"👀 Watching: ($dotfiles_dir)"
+    print $"📝 Logging to: ($log_file)"
+
+    # Initialize last check time
+    (date now | format date "%s") | save --force $last_check_file
+
+    # Main monitoring loop - check every 2 minutes for changes
+    loop {
+        sleep 2min
+
+        cd $dotfiles_dir
+
+        # Check for uncommitted changes
+        let status_result = (do { git status --porcelain } | complete)
+
+        if $status_result.exit_code == 0 and not ($status_result.stdout | is-empty) {
+            let timestamp = (date now | format date "%H:%M:%S")
+            let datestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
+
+            # Count changed files
+            let changed_files = ($status_result.stdout | lines | length)
+            let change_msg = $"[($timestamp)] 📝 Detected ($changed_files) changed files"
+            $change_msg | save --append $log_file
+            print $change_msg
+
+            # Add all changes
+            print "➕ Adding changes..."
+            let add_result = (do { git add -A } | complete)
+
+            if $add_result.exit_code == 0 {
+                # Create commit message
+                let commit_msg = $"Auto-commit: ($changed_files) files changed on macOS
+
+Changes detected at ($datestamp)
+Automated by git-auto-commit-watcher
+
+🤖 Generated with Claude Code"
+
+                # Commit changes (using --no-verify to bypass pre-commit hooks)
+                print "💾 Committing changes..."
+                let commit_result = (do { git commit --no-verify -m $commit_msg } | complete)
+
+                if $commit_result.exit_code == 0 {
+                    let commit_success = $"[($timestamp)] ✅ Changes committed successfully"
+                    $commit_success | save --append $log_file
+                    print "✅ Changes committed"
+
+                    # Push to remote with retry logic
+                    print "📤 Pushing to GitHub..."
+                    mut push_attempts = 0
+                    mut push_success = false
+
+                    while $push_attempts < 3 and not $push_success {
+                        let push_result = (do { git push origin main } | complete)
+
+                        if $push_result.exit_code == 0 {
+                            $push_success = true
+                            let push_msg = $"[($timestamp)] ✅ Successfully pushed to GitHub"
+                            $push_msg | save --append $log_file
+                            print "✅ Pushed to GitHub successfully"
+                        } else {
+                            $push_attempts = $push_attempts + 1
+                            if $push_attempts < 3 {
+                                let retry_msg = $"[($timestamp)] ⚠️ Push failed, attempt ($push_attempts)/3: ($push_result.stderr)"
+                                $retry_msg | save --append $log_file
+                                print $"⚠️ Push failed, retrying in 30 seconds..."
+                                sleep 30sec
+                            } else {
+                                let fail_msg = $"[($timestamp)] ❌ Push failed after 3 attempts: ($push_result.stderr)"
+                                $fail_msg | save --append $log_file
+                                print $"❌ Push failed after 3 attempts"
+                            }
+                        }
+                    }
+                } else {
+                    let commit_error = $"[($timestamp)] ❌ Commit failed: ($commit_result.stderr)"
+                    $commit_error | save --append $log_file
+                    print $"❌ Commit failed: ($commit_result.stderr)"
+                }
+            } else {
+                let add_error = $"[($timestamp)] ❌ Git add failed: ($add_result.stderr)"
+                $add_error | save --append $log_file
+                print $"❌ Git add failed: ($add_result.stderr)"
+            }
+        }
+
+        # Also check if we're behind remote (for safety)
+        let fetch_result = (do { git fetch origin main } | complete)
+        if $fetch_result.exit_code == 0 {
+            let behind_result = (do { git rev-list --count HEAD..origin/main } | complete)
+            if $behind_result.exit_code == 0 {
+                let behind_count = ($behind_result.stdout | str trim | into int)
+                if $behind_count > 0 {
+                    let timestamp = (date now | format date "%H:%M:%S")
+                    let warn_msg = $"[($timestamp)] ⚠️ Warning: Local is ($behind_count) commits behind remote"
+                    $warn_msg | save --append $log_file
+                    print $"⚠️ Warning: Behind remote by ($behind_count) commits - pull may be needed"
+                }
+            }
+        }
+    }
+
+    # Cleanup on exit
+    rm -f $lock_file
+    print "🛑 Auto-commit watcher stopped"
+}
+
+main

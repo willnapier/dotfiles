@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# hx-toggle-todo - Enhanced todo checkbox toggle for Helix
+# 5-state cycle: plain text → unchecked → checked → plain list → plain text → (repeat)
+# Uses modern Rust tools (rg, sd) instead of legacy Unix tools
+
+# Read the input line
+line=$(cat)
+
+# Check if line already has a checkbox pattern
+if echo "$line" | rg -q "^[[:space:]]*[-\*][[:space:]]\[[ x]\]"; then
+    # Line has a checkbox - determine current state and transition
+    if echo "$line" | rg -q "^[[:space:]]*[-\*][[:space:]]\[ \]"; then
+        # State 2: [ ] → [x] (unchecked to checked)
+        echo "$line" | sd '\[ \]' '[x]'
+    elif echo "$line" | rg -q "^[[:space:]]*[-\*][[:space:]]\[x\]"; then
+        # State 3: [x] → plain list item (remove checkbox, keep list marker)
+        if echo "$line" | rg -q "^[[:space:]]*[-\*][[:space:]]\[x\][[:space:]]*$"; then
+            # Just checkbox with no text - remove to plain list marker
+            echo "$line" | sd '^([[:space:]]*[-\*])[[:space:]]*\[x\][[:space:]]*$' '$1 '
+        else
+            # Has text after checkbox - remove checkbox but keep list marker and text
+            echo "$line" | sd '^([[:space:]]*[-\*])[[:space:]]*\[x\][[:space:]]*(.*)' '$1 $2'
+        fi
+    fi
+else
+    # No checkbox found - determine what to do
+    # Check if line is a plain list item (- or * but no checkbox)
+    if echo "$line" | rg -q "^[[:space:]]*[-\*][[:space:]]" && ! echo "$line" | rg -q "\["; then
+        # State 4: plain list item → plain text (remove list marker entirely)
+        if echo "$line" | rg -q "^[[:space:]]*[-\*][[:space:]]*$"; then
+            # Just list marker with no content - return empty line
+            echo ""
+        else
+            # Has content - remove list marker, keep content
+            echo "$line" | sd '^[[:space:]]*[-\*][[:space:]]*(.*)' '$1'
+        fi
+    # Check if line starts with a list marker (- or *)
+    elif echo "$line" | rg -q "^[[:space:]]*[-\*][[:space:]]"; then
+        # Line has a list marker - add checkbox after it
+        echo "$line" | sd '^([[:space:]]*[-\*][[:space:]])(.*)' '$1[ ] $2'
+    elif echo "$line" | rg -q "^[[:space:]]*[0-9]+\.[[:space:]]"; then
+        # Line has a numbered list marker - add checkbox after it
+        echo "$line" | sd '^([[:space:]]*[0-9]+\.[[:space:]])(.*)' '$1[ ] $2'
+    elif echo "$line" | rg -q "^[[:space:]]*$"; then
+        # Empty or whitespace-only line - create new todo item
+        echo "- [ ] "
+    else
+        # Line has content but no list marker - add checkbox at beginning
+        echo "$line" | sd '^([[:space:]]*)(.+)' '$1- [ ] $2'
+    fi
+fi

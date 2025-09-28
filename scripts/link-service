@@ -39,7 +39,7 @@ def main [action?: string = "status"] {
             # Save PID to file
             $pid | save --force $pid_file
 
-            print $"✅ Link management service started (PID: ($pid))"
+            print $"✅ Link management service started PID: ($pid)"
             print $"📝 Logs: ($log_file)"
             print $"❌ Errors: ($err_file)"
         }

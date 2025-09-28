@@ -500,16 +500,8 @@ EOF
 chmod +x ~/.local/bin/hx-smart-gf-rust
 chmod +x ~/.local/bin/hx-open-url-rust
 
-# 6. Create standalone serpl script
-mkdir -p ~/bin
-cat > ~/bin/serpl-anywhere.nu << 'EOF'
-#!/usr/bin/env nu
-use ~/.config/nushell/scripts/serpl.nu *
-# Pass-through: accepts optional arg (start dir)
-let start = (if ($env | has "nu.cli_args") and ($nu.cli_args | length) > 0 { $nu.cli_args.0 } else { $env.PWD })
-serpl-anywhere --from $start
-EOF
-chmod +x ~/bin/serpl-anywhere.nu
+# 6. serpl-anywhere script is now managed by Dotter in ~/.local/bin/
+echo "✅ serpl-anywhere script managed by Dotter (see scripts/serpl-anywhere)"
 
 echo "✅ Unified root detection system deployed!"
 
