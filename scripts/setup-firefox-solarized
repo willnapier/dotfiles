@@ -1,0 +1,208 @@
+#!/usr/bin/env bash
+# Setup Solarized theme for Firefox with automatic switching
+# Works on both macOS and Linux
+
+set -e
+
+echo "🦊 Firefox Solarized Theme Setup"
+echo "================================"
+echo ""
+
+# Detect platform
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    PLATFORM="macOS"
+    FIREFOX_APP="/Applications/Firefox.app/Contents/MacOS/firefox"
+elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    PLATFORM="Linux"
+    FIREFOX_APP="firefox"
+else
+    echo "❌ Unsupported platform: $OSTYPE"
+    exit 1
+fi
+
+echo "🖥️  Platform: $PLATFORM"
+echo ""
+
+# Function to open Firefox with a specific URL
+open_firefox_url() {
+    local url="$1"
+    echo "📂 Opening: $url"
+
+    if [[ "$PLATFORM" == "macOS" ]]; then
+        open -a Firefox "$url" 2>/dev/null || open "$url"
+    else
+        firefox "$url" &>/dev/null &
+    fi
+
+    sleep 2
+}
+
+# Check if Firefox is installed
+if [[ "$PLATFORM" == "macOS" ]]; then
+    if [[ ! -d "/Applications/Firefox.app" ]]; then
+        echo "❌ Firefox not found. Please install Firefox first."
+        exit 1
+    fi
+else
+    if ! command -v firefox &> /dev/null; then
+        echo "❌ Firefox not found. Please install Firefox first."
+        exit 1
+    fi
+fi
+
+echo "✅ Firefox is installed"
+echo ""
+
+# Theme options with direct addon URLs
+echo "📋 Theme Options:"
+echo ""
+echo "1. Zenfox - Dynamic Solarized (Recommended)"
+echo "   • Auto-switches based on system theme"
+echo "   • Manual toggle via toolbar button"
+echo "   • Time-based switching option"
+echo "   • Weather-based switching (!)"
+echo ""
+echo "2. Solarized Light/Dark Auto"
+echo "   • Simple auto-switching"
+echo "   • Follows system preferences"
+echo "   • Minimal configuration"
+echo ""
+echo "3. Individual Themes (Manual)"
+echo "   • Solarized Light only"
+echo "   • Solarized Dark only"
+echo "   • No automatic switching"
+echo ""
+
+# Prompt for choice
+read -p "Select option (1-3) [1]: " choice
+choice=${choice:-1}
+
+case $choice in
+    1)
+        echo ""
+        echo "🎨 Installing Zenfox - Dynamic Solarized Theme"
+        echo ""
+        echo "This will open Firefox to the addon page."
+        echo "Click 'Add to Firefox' to install."
+        echo ""
+        read -p "Press Enter to continue..."
+
+        # Open Zenfox addon page
+        open_firefox_url "https://addons.mozilla.org/en-US/firefox/addon/zen-fox/"
+
+        echo ""
+        echo "📝 After installation:"
+        echo "1. Click the Zenfox icon in the toolbar"
+        echo "2. Select 'System' mode for automatic switching"
+        echo "3. Or use 'Time' mode to set specific times"
+        echo ""
+        ;;
+
+    2)
+        echo ""
+        echo "🎨 Installing Solarized Light/Dark Auto"
+        echo ""
+        echo "This will open Firefox to the addon page."
+        echo "Click 'Add to Firefox' to install."
+        echo ""
+        read -p "Press Enter to continue..."
+
+        # Open auto-switching theme page
+        open_firefox_url "https://addons.mozilla.org/en-US/firefox/addon/solarized-light-dark/"
+
+        echo ""
+        echo "📝 Theme will automatically switch based on system preferences"
+        echo ""
+        ;;
+
+    3)
+        echo ""
+        echo "🎨 Installing Individual Solarized Themes"
+        echo ""
+        echo "This will open both Light and Dark theme pages."
+        echo "Install one or both as desired."
+        echo ""
+        read -p "Press Enter to continue..."
+
+        # Open both theme pages
+        open_firefox_url "https://addons.mozilla.org/en-US/firefox/addon/solarized-light-theme/"
+        sleep 3
+        open_firefox_url "https://addons.mozilla.org/en-US/firefox/addon/sol-dark/"
+
+        echo ""
+        echo "📝 Switch themes manually via Firefox settings"
+        echo ""
+        ;;
+
+    *)
+        echo "❌ Invalid choice"
+        exit 1
+        ;;
+esac
+
+echo "🔧 Additional Setup:"
+echo ""
+echo "For best integration with your system theme:"
+echo ""
+
+if [[ "$PLATFORM" == "macOS" ]]; then
+    echo "macOS System Integration:"
+    echo "1. System Preferences → Appearance → Auto (light/dark)"
+    echo "2. Firefox will follow system theme changes"
+    echo ""
+    echo "Your Helix theme detection (hx-auto) will sync with this!"
+else
+    echo "Linux System Integration:"
+    echo "1. Your desktop environment's theme settings"
+    echo "2. For GNOME: Settings → Appearance → Light/Dark"
+    echo "3. For KDE: System Settings → Appearance → Global Theme"
+    echo ""
+    echo "Niri users: Theme follows gsettings color-scheme preference"
+fi
+
+echo ""
+echo "🎯 Cross-Platform Sync:"
+echo "Install the same theme/addon on both macOS and Linux"
+echo "for consistent appearance across your systems."
+echo ""
+
+# Create a reference file for documentation
+cat > /tmp/firefox-solarized-setup.md << 'EOF'
+# Firefox Solarized Theme Setup
+
+## Installed Theme
+EOF
+
+case $choice in
+    1) echo "Zenfox - Dynamic Solarized Theme" >> /tmp/firefox-solarized-setup.md ;;
+    2) echo "Solarized Light/Dark Auto" >> /tmp/firefox-solarized-setup.md ;;
+    3) echo "Individual Solarized Light and Dark Themes" >> /tmp/firefox-solarized-setup.md ;;
+esac
+
+cat >> /tmp/firefox-solarized-setup.md << EOF
+
+## Platform: $PLATFORM
+## Date: $(date "+%Y-%m-%d")
+
+## Configuration
+- Theme follows system appearance settings
+- Automatic switching between light/dark modes
+- Consistent with terminal and editor themes
+
+## URLs for Manual Installation
+- Zenfox: https://addons.mozilla.org/en-US/firefox/addon/zen-fox/
+- Auto Light/Dark: https://addons.mozilla.org/en-US/firefox/addon/solarized-light-dark/
+- Light Only: https://addons.mozilla.org/en-US/firefox/addon/solarized-light-theme/
+- Dark Only: https://addons.mozilla.org/en-US/firefox/addon/sol-dark/
+
+## Integration Notes
+- Works with hx-auto theme detection
+- Syncs with system appearance preferences
+- Cross-platform compatible (macOS/Linux)
+EOF
+
+echo "📄 Setup notes saved to: /tmp/firefox-solarized-setup.md"
+echo ""
+echo "✅ Firefox Solarized theme setup complete!"
+echo ""
+echo "Run this script on your other platform for consistency."
