@@ -1229,8 +1229,9 @@ def fsem [] {
         # The selection is just the first line: "0.45  Title"
         let lines = ($selected | lines)
 
-        # Extract title from the score line (format: "0.45  Title")
-        let filename = ($lines | get 0 | str replace "^[0-9.]+[[:space:]]+" "" | str trim)
+        # Extract title from the score line (format: "0.45  Title" or "1. 0.45  Title")
+        # Strip both list numbers and scores
+        let filename = ($lines | get 0 | sd '^\d+\.\s+' '' | sd '^[0-9.]+\s+' '' | str trim)
 
         let wikilink = $"[[($filename)]]"
         $wikilink | pbcopy
@@ -1274,9 +1275,10 @@ def fsemh [] {
     let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'title=$(echo {} | sd "^[0-9.]+[[:space:]]+" ""); file=$(fd -t f --full-path "$title.md" "$FORGE" | head -1); if [ -f "$file" ]; then mdcat --columns 80 "$file"; else echo "Title extracted: [$title]"; echo "Searching for: $title.md"; echo "In vault: $FORGE"; fd -t f "$title.md" "$FORGE"; fi' --preview-window 'right:60%' --prompt "🧠 Semantic: " | str trim)
     if not ($selected | is-empty) {
         # Extract filename from semantic search result
-        # The selection is just the first line: "0.45  Title"
+        # The selection is just the first line: "0.45  Title" or "1. 0.45  Title"
+        # Strip both list numbers and scores
         let lines = ($selected | lines)
-        let filename = ($lines | get 0 | str replace "^[0-9.]+[[:space:]]+" "" | str trim)
+        let filename = ($lines | get 0 | sd '^\d+\.\s+' '' | sd '^[0-9.]+\s+' '' | str trim)
 
         # Find the full path and open in Helix
         let filepath = (fd -t f --full-path $"($filename).md" $env.FORGE | head -1)
