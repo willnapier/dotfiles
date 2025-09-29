@@ -114,6 +114,10 @@ v = ":sh hx-mark-revisit %{buffer_name}"   # Add today to revisited dates
 q = [":write", ":buffer-previous"]         # Save then go to previous buffer
 Q = ":quit!"                                # Force quit without saving
 
+# Navigation commands - Space+j (jumplist navigation)
+j = ":jump-backward"                      # Go back in jumplist (like Ctrl+O in other editors)
+J = ":jump-forward"                       # Go forward in jumplist (like Ctrl+I in other editors)
+
 # Custom g-prefix commands
 [keys.normal.g]
 f = ["extend_to_line_bounds", ":pipe-to hx-smart-gf-rust", ":open /tmp/helix-gf-target.md"]  # Smart file opener (Rust/Nushell version with fd, rg)
