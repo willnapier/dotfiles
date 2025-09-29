@@ -118,6 +118,10 @@ Q = ":quit!"                                # Force quit without saving
 j = ":jump-backward"                      # Go back in jumplist (like Ctrl+O in other editors)
 J = ":jump-forward"                       # Go forward in jumplist (like Ctrl+I in other editors)
 
+# Buffer navigation - Space+backspace/tab (intuitive back/forward)
+"backspace" = ":buffer-previous"          # Quick back to previous buffer
+"tab" = ":buffer-next"                    # Quick forward to next buffer
+
 # Custom g-prefix commands
 [keys.normal.g]
 f = ["extend_to_line_bounds", ":pipe-to hx-smart-gf-rust", ":open /tmp/helix-gf-target.md"]  # Smart file opener (Rust/Nushell version with fd, rg)
