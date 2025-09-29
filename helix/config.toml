@@ -87,7 +87,7 @@ x = [":sh trash %{buffer_name}", ":quit!"]
 # Export selection to external register - Space+E (then type register letter)
 E = ":pipe-to hx-register-export"
 # Wiki link navigation - Space+w
-w = ["extend_to_line_bounds", ":sh echo %{selection.column.0} > /tmp/helix-cursor-col.txt", ":pipe-to ~/.local/bin/hx-wiki", ":buffer-close!", ":open /tmp/helix-current-link.md"]
+w = ["extend_to_line_bounds", ":sh echo %{selection.column.0} > /tmp/helix-cursor-col.txt", ":pipe-to ~/.local/bin/hx-wiki", ":open /tmp/helix-current-link.md"]
 # Smart file opener - Space+o (handles all file types and wiki links)
 o = ["extend_to_line_bounds", ":pipe-to hx-open-system-rust"]  # Open in system app (Preview, Excel, etc.)
 # Fuzzy link insertion - Space+l (Zellij floating pane)
