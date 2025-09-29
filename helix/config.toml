@@ -110,12 +110,12 @@ c = ":insert-output hx-insert-date"        # Insert current date (YYYY-MM-DD)
 v = ":sh hx-mark-revisit %{buffer_name}"   # Add today to revisited dates
 
 # Navigation commands - Space+j (jumplist navigation)
-j = "jump_backward"                       # Go back in jumplist (like Ctrl+O in other editors)
-J = "jump_forward"                        # Go forward in jumplist (like Ctrl+I in other editors)
+j = ":jump-backward"                      # Go back in jumplist (like Ctrl+O in other editors)
+J = ":jump-forward"                       # Go forward in jumplist (like Ctrl+I in other editors)
 
 # Buffer navigation - Space+backspace/tab (intuitive back/forward)
-"backspace" = "buffer_previous"           # Quick back to previous buffer
-"tab" = "buffer_next"                     # Quick forward to next buffer
+backspace = ":buffer-previous"            # Quick back to previous buffer
+tab = ":buffer-next"                      # Quick forward to next buffer
 
 # Save and return to previous buffer - Space+q
 q = [":write", ":buffer-previous"]         # Save then go to previous buffer
