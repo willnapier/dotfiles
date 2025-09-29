@@ -2033,3 +2033,88 @@ def hx-smart-gf [] {
     $target_file | save -f /tmp/helix-gf-target.md
     print $"Resolved: ($input_text) -> ($target_file)"
 }
+
+# Wiki navigation - Universal tool for following wiki links
+# Usage: wiki-nav [file]  (opens file, then on exit lets you follow links)
+def wiki-nav [file?: string] {
+    let vault = $"($env.HOME)/Forge"
+    let target_file = if ($file | is-empty) {
+        # No file specified - start with daily note
+        let today = (date now | format date "%Y-%m-%d")
+        $"($vault)/NapierianLogs/DayPages/($today).md"
+    } else if ($file | path type) == "file" {
+        $file
+    } else {
+        # Treat as wiki link name
+        let search_result = (fd -t f --full-path $"($file).md" $vault | lines | first)
+        if ($search_result | is-empty) {
+            print $"❌ File not found: ($file)"
+            return
+        }
+        $search_result
+    }
+
+    # Open in Helix
+    hx $target_file
+
+    # After Helix exits, offer to follow links
+    print "\n📖 Extract wiki links from this file?"
+    let choice = (["Yes", "No"] | input list "Follow links? ")
+
+    if $choice == "No" {
+        return
+    }
+
+    # Extract all wiki links from the file
+    let links = (open $target_file | rg -o '\[\[([^\]]+)\]\]' --replace '$1' | lines | uniq)
+
+    if ($links | is-empty) {
+        print "No wiki links found in file"
+        return
+    }
+
+    # Let user pick a link
+    print $"\n🔗 Found ($links | length) wiki links"
+    let selected = ($links | input list "Follow which link? ")
+
+    if ($selected | is-empty) {
+        return
+    }
+
+    # Find or create the target file
+    let clean_link = ($selected | str replace -r '[#|].*' '')
+    let existing = (fd -t f --full-path $"($clean_link).md" $vault | lines | first)
+
+    let next_file = if not ($existing | is-empty) {
+        $existing
+    } else {
+        # Create new file in appropriate location
+        let new_path = $"($vault)/($clean_link).md"
+        let dir = ($new_path | path dirname)
+        mkdir $dir
+
+        let today = (date now | format date "%Y-%m-%d")
+        let now = (date now | format date "%H:%M")
+
+        # Create file with frontmatter
+        $"---
+tags:
+-
+date created: ($today) ($now)
+date modified: ($today) ($now)
+---
+# ($clean_link)
+
+
+
+## Backlinks
+
+" | save $new_path
+
+        print $"✨ Created new file: ($clean_link)"
+        $new_path
+    }
+
+    # Recursively call wiki-nav on the new file
+    wiki-nav $next_file
+}
