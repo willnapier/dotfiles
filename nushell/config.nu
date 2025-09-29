@@ -2035,7 +2035,8 @@ def hx-smart-gf [] {
 }
 
 # Wiki navigation - Universal tool for following wiki links
-# Usage: wiki-nav [file]  (opens file, then on exit lets you follow links)
+# Designed for Zellij workflow: Helix in left pane, run this in right pane
+# Usage: wiki-nav [file]  (extracts links from file, opens selected in Helix)
 def wiki-nav [file?: string] {
     let vault = $"($env.HOME)/Forge"
     let target_file = if ($file | is-empty) {
@@ -2054,18 +2055,7 @@ def wiki-nav [file?: string] {
         $search_result
     }
 
-    # Open in Helix
-    hx $target_file
-
-    # After Helix exits, offer to follow links
-    print "\n📖 Extract wiki links from this file?"
-    let choice = (["Yes", "No"] | input list "Follow links? ")
-
-    if $choice == "No" {
-        return
-    }
-
-    # Extract all wiki links from the file
+    # Extract all wiki links from the file (read from disk - always fresh!)
     let links = (open $target_file | rg -o '\[\[([^\]]+)\]\]' --replace '$1' | lines | uniq)
 
     if ($links | is-empty) {
@@ -2073,13 +2063,16 @@ def wiki-nav [file?: string] {
         return
     }
 
-    # Let user pick a link
-    print $"\n🔗 Found ($links | length) wiki links"
-    let selected = ($links | input list "Follow which link? ")
+    # Let user pick a link with skim (fast fuzzy finding)
+    print $"🔗 Found ($links | length) wiki links in ($target_file | path basename)"
+    let selected = ($links | str join "\n" | sk --prompt "📖 Follow link: ")
 
     if ($selected | is-empty) {
+        print "❌ No link selected"
         return
     }
+
+    print $"➡️  Following: ($selected)"
 
     # Find or create the target file
     let clean_link = ($selected | str replace -r '[#|].*' '')
@@ -2115,6 +2108,7 @@ date modified: ($today) ($now)
         $new_path
     }
 
-    # Recursively call wiki-nav on the new file
-    wiki-nav $next_file
+    # Open in Helix (will replace current buffer or open new one)
+    print $"📂 Opening: ($next_file | path basename)"
+    hx $next_file
 }
