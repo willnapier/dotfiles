@@ -110,11 +110,11 @@ c = ":insert-output hx-insert-date"        # Insert current date (YYYY-MM-DD)
 v = ":sh hx-mark-revisit %{buffer_name}"   # Add today to revisited dates
 
 # Buffer navigation - Space+backspace/tab (intuitive back/forward)
-backspace = "buffer_previous"            # Quick back to previous buffer
-tab = "buffer_next"                      # Quick forward to next buffer
+backspace = "goto_previous_buffer"       # Quick back to previous buffer (MRU)
+tab = "goto_next_buffer"                 # Quick forward to next buffer
 
 # Save and return to previous buffer - Space+q
-q = [":write", ":buffer-previous"]         # Save then go to previous buffer
+q = [":write", "goto_previous_buffer"]     # Save then go to previous buffer
 Q = ":quit!"                                # Force quit without saving
 
 # Custom g-prefix commands
