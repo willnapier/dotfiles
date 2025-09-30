@@ -2037,12 +2037,26 @@ def hx-smart-gf [] {
 # Wiki navigation - Universal tool for following wiki links
 # Designed for Zellij workflow: Helix in left pane, run this in right pane
 # Usage: wiki-nav [file]  (extracts links from file, opens selected in Helix)
+# If no file specified, reads from /tmp/helix-current-file.txt (set by Space+. in Helix)
 def wiki-nav [file?: string] {
     let vault = $"($env.HOME)/Forge"
     let target_file = if ($file | is-empty) {
-        # No file specified - start with daily note
-        let today = (date now | format date "%Y-%m-%d")
-        $"($vault)/NapierianLogs/DayPages/($today).md"
+        # Try to read from Helix export file first
+        if ("/tmp/helix-current-file.txt" | path exists) {
+            let helix_file = (open /tmp/helix-current-file.txt | str trim)
+            if not ($helix_file | is-empty) {
+                print $"📖 Using file from Helix: ($helix_file | path basename)"
+                $helix_file
+            } else {
+                # Fallback to daily note
+                let today = (date now | format date "%Y-%m-%d")
+                $"($vault)/NapierianLogs/DayPages/($today).md"
+            }
+        } else {
+            # Fallback to daily note
+            let today = (date now | format date "%Y-%m-%d")
+            $"($vault)/NapierianLogs/DayPages/($today).md"
+        }
     } else if ($file | path type) == "file" {
         $file
     } else {
