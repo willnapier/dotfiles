@@ -2037,9 +2037,9 @@ def hx-smart-gf [] {
 # Wiki navigation - Universal tool for following wiki links
 # Designed for Zellij workflow: Helix in left pane, run this in right pane
 # Usage:
-#   wiki-nav           - Auto-detects most recently modified .md file in Forge
+#   wiki-nav           - Uses file exported by Space+w, or auto-detects most recent
 #   wiki-nav [file]    - Extracts links from specified file
-# Leverages Helix auto-save (500ms) to always read from most recent file
+# Hybrid approach: Space+w auto-exports current file for reliable detection
 def wiki-nav [file?: string] {
     let vault = $"($env.HOME)/Forge"
     let target_file = if ($file | is-empty) {
