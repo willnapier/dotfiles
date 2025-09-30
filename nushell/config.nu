@@ -2127,3 +2127,10 @@ date modified: ($today) ($now)
     print $"📂 Opening: ($next_file | path basename)"
     hx $next_file
 }
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Wiki Navigation Aliases - Quick access
+# ═══════════════════════════════════════════════════════════════════════════
+
+alias wn = wiki-nav        # Navigate to wiki links from current file
+# alias wb = wiki-back     # Go back in navigation history (to be implemented)
