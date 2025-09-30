@@ -2142,6 +2142,118 @@ date modified: ($today) ($now)
     hx $next_file
 }
 
+# Wiki navigation - right pane (creates new pane to the right)
+# Usage: wiki-nav-right (or wnr)
+# Opens selected link in a NEW pane to the right for rightward exploration chains
+def wiki-nav-right [file?: string] {
+    let vault = $"($env.HOME)/Forge"
+    let target_file = if ($file | is-empty) {
+        # Try exported file from Helix first (set by Space+w)
+        if ("/tmp/helix-current-file.txt" | path exists) {
+            let exported = (open /tmp/helix-current-file.txt | str trim)
+            if not ($exported | is-empty) {
+                print $"📖 Using exported file: ($exported | path basename)"
+                $exported
+            } else {
+                # Fallback: find most recently modified .md file in Forge
+                print "🔍 Finding most recently modified note..."
+                let recent = (glob $"($vault)/**/*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
+                print $"📖 Using: ($recent | path basename)"
+                $recent
+            }
+        } else {
+            # Fallback: find most recently modified .md file in Forge
+            print "🔍 Finding most recently modified note..."
+            let recent = (glob $"($vault)/**/*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
+            print $"📖 Using: ($recent | path basename)"
+            $recent
+        }
+    } else if ($file | path type) == "file" {
+        $file
+    } else {
+        # Treat as wiki link name
+        let search_result = (fd -t f --full-path $"($file).md" $vault | lines | first)
+        if ($search_result | is-empty) {
+            print $"❌ File not found: ($file)"
+            return
+        }
+        $search_result
+    }
+
+    # Extract all wiki links from the file (read from disk - always fresh!)
+    let links = (open $target_file | rg -o '\[\[([^\]]+)\]\]' --replace '$1' | lines | uniq)
+
+    if ($links | is-empty) {
+        print "No wiki links found in file"
+        return
+    }
+
+    # Let user pick a link with skim (fast fuzzy finding)
+    print $"🔗 Found ($links | length) wiki links in ($target_file | path basename)"
+    let selected = ($links | to text | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --prompt "Follow link: ")
+
+    if ($selected | is-empty) {
+        print "❌ No link selected"
+        return
+    }
+
+    print $"➡️  Following: ($selected)"
+
+    # Find or create the target file
+    let clean_link = ($selected | str replace -r '[#|].*' '')
+    let existing_results = (fd -t f --full-path $"($clean_link).md" $vault | lines)
+    let existing = if ($existing_results | is-empty) { "" } else { $existing_results | first }
+
+    let next_file = if not ($existing | is-empty) {
+        $existing
+    } else {
+        # Create new file in appropriate location
+        let new_path = $"($vault)/($clean_link).md"
+        let dir = ($new_path | path dirname)
+        mkdir $dir
+
+        let today = (date now | format date "%Y-%m-%d")
+        let now = (date now | format date "%H:%M")
+
+        # Create file with frontmatter
+        $"---
+tags:
+-
+date created: ($today) ($now)
+date modified: ($today) ($now)
+---
+# ($clean_link)
+
+
+
+## Backlinks
+
+" | save $new_path
+
+        print $"✨ Created new file: ($clean_link)"
+        $new_path
+    }
+
+    # Track this navigation in history before opening
+    let history_file = "/tmp/wiki-nav-history.txt"
+
+    # Add current file to history (before navigating away)
+    if ($target_file | path exists) {
+        $target_file | save --append $history_file
+    }
+
+    # Create new pane to the right and open file there
+    print $"📂 Opening in new pane to the right: ($next_file | path basename)"
+
+    # Create new pane to the right, then send hx command to it
+    zellij action new-pane --direction right
+    sleep 0.2sec
+    zellij action write-chars $"hx ($next_file)"
+    zellij action write 13  # ENTER key
+}
+
+alias wnr = wiki-nav-right
+
 # Wiki back - Navigate backwards through history
 # Usage: wiki-back (or wb)
 # Sends :open command directly to Helix pane via WezTerm CLI
