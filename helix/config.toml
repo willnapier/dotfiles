@@ -86,8 +86,8 @@ p = [":write!", ":sh sleep 1 && sync", ":sh hx-process-durations-wezterm %{buffe
 x = [":sh trash %{buffer_name}", ":quit!"]
 # Export selection to external register - Space+E (then type register letter)
 E = ":pipe-to hx-register-export"
-# Wiki link navigation - Space+w (auto-exports current file for wn command)
-w = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":write", "extend_to_line_bounds", ":sh echo %{selection.column.0} > /tmp/helix-cursor-col.txt", ":pipe-to ~/.local/bin/hx-wiki", ":open /tmp/helix-current-link.md"]
+# Wiki link navigation - Space+w (auto-exports + tracks history for wb)
+w = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", "extend_to_line_bounds", ":sh echo %{selection.column.0} > /tmp/helix-cursor-col.txt", ":pipe-to ~/.local/bin/hx-wiki", ":open /tmp/helix-current-link.md"]
 # Smart file opener - Space+o (handles all file types and wiki links)
 o = ["extend_to_line_bounds", ":pipe-to hx-open-system-rust"]  # Open in system app (Preview, Excel, etc.)
 # Fuzzy link insertion - Space+l (Zellij floating pane)
