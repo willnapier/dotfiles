@@ -2043,11 +2043,26 @@ def hx-smart-gf [] {
 def wiki-nav [file?: string] {
     let vault = $"($env.HOME)/Forge"
     let target_file = if ($file | is-empty) {
-        # Automatically find most recently modified .md file in Forge
-        print "🔍 Finding most recently modified note..."
-        let recent = (glob $"($vault)/**/*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
-        print $"📖 Using: ($recent | path basename)"
-        $recent
+        # Try exported file from Helix first (set by Space+w)
+        if ("/tmp/helix-current-file.txt" | path exists) {
+            let exported = (open /tmp/helix-current-file.txt | str trim)
+            if not ($exported | is-empty) {
+                print $"📖 Using exported file: ($exported | path basename)"
+                $exported
+            } else {
+                # Fallback: find most recently modified .md file in Forge
+                print "🔍 Finding most recently modified note..."
+                let recent = (glob $"($vault)/**/*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
+                print $"📖 Using: ($recent | path basename)"
+                $recent
+            }
+        } else {
+            # Fallback: find most recently modified .md file in Forge
+            print "🔍 Finding most recently modified note..."
+            let recent = (glob $"($vault)/**/*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
+            print $"📖 Using: ($recent | path basename)"
+            $recent
+        }
     } else if ($file | path type) == "file" {
         $file
     } else {
