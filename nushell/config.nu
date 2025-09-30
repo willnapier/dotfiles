@@ -2161,7 +2161,15 @@ def wiki-back [] {
     }
 
     # Get the last file from history
-    let previous_file = ($history | last)
+    let previous_file_raw = ($history | last)
+
+    # Ensure we have an absolute path
+    let previous_file = if ($previous_file_raw | path type) == "file" {
+        $previous_file_raw | path expand
+    } else {
+        # If not absolute, make it relative to home/Forge
+        $"($env.HOME)/($previous_file_raw)"
+    }
 
     # Remove the last line from history
     let new_history = ($history | drop)
@@ -2183,7 +2191,10 @@ def wiki-back [] {
     # Press ESC to ensure we're in normal mode, then type the command
     zellij action write 27  # ESC key
     sleep 0.1sec
-    zellij action write-chars $":open ($previous_file)"
+
+    # Build the :open command with absolute path
+    let open_cmd = $":open ($previous_file)"
+    zellij action write-chars $open_cmd
     zellij action write 13  # ENTER key
     sleep 0.1sec
 
