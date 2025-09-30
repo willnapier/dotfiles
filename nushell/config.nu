@@ -2076,7 +2076,8 @@ def wiki-nav [file?: string] {
 
     # Find or create the target file
     let clean_link = ($selected | str replace -r '[#|].*' '')
-    let existing = (fd -t f --full-path $"($clean_link).md" $vault | lines | first)
+    let existing_results = (fd -t f --full-path $"($clean_link).md" $vault | lines)
+    let existing = if ($existing_results | is-empty) { "" } else { $existing_results | first }
 
     let next_file = if not ($existing | is-empty) {
         $existing
