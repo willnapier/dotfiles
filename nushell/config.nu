@@ -2123,9 +2123,53 @@ date modified: ($today) ($now)
         $new_path
     }
 
+    # Track this navigation in history before opening
+    let history_file = "/tmp/wiki-nav-history.txt"
+
+    # Add current file to history (before navigating away)
+    if ($target_file | path exists) {
+        $target_file | save --append $history_file
+    }
+
     # Open in Helix (will replace current buffer or open new one)
     print $"📂 Opening: ($next_file | path basename)"
     hx $next_file
+}
+
+# Wiki back - Navigate backwards through history
+# Usage: wiki-back (or wb)
+def wiki-back [] {
+    let history_file = "/tmp/wiki-nav-history.txt"
+
+    if not ($history_file | path exists) {
+        print "❌ No navigation history yet"
+        return
+    }
+
+    let history = (open $history_file | lines)
+
+    if ($history | is-empty) {
+        print "❌ No previous files in history"
+        return
+    }
+
+    # Get the last file from history
+    let previous_file = ($history | last)
+
+    # Remove the last line from history
+    let new_history = ($history | drop)
+
+    if ($new_history | is-empty) {
+        # If history is now empty, delete the file
+        rm $history_file
+    } else {
+        # Save updated history
+        $new_history | str join "\n" | save -f $history_file
+    }
+
+    # Open the previous file
+    print $"⬅️  Going back to: ($previous_file | path basename)"
+    hx $previous_file
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2133,4 +2177,4 @@ date modified: ($today) ($now)
 # ═══════════════════════════════════════════════════════════════════════════
 
 alias wn = wiki-nav        # Navigate to wiki links from current file
-# alias wb = wiki-back     # Go back in navigation history (to be implemented)
+alias wb = wiki-back       # Go back in navigation history
