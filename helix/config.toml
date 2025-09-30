@@ -87,7 +87,8 @@ x = [":sh trash %{buffer_name}", ":quit!"]
 # Export selection to external register - Space+E (then type register letter)
 E = ":pipe-to hx-register-export"
 # Wiki link navigation - Space+w (auto-exports + tracks history for wb)
-w = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", ":sh echo %{selection.column.0} > /tmp/helix-cursor-col.txt", "extend_to_line_bounds", ":pipe-to ~/.local/bin/hx-wiki", ":open /tmp/helix-current-link.md"]
+# Critical: move_next_word_start moves cursor off column 0 to prevent extend_to_line_bounds selecting previous line
+w = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", "move_next_word_start", "move_prev_word_start", ":sh echo %{selection.column.0} > /tmp/helix-cursor-col.txt", "extend_to_line_bounds", ":pipe-to ~/.local/bin/hx-wiki", ":open /tmp/helix-current-link.md"]
 # Smart file opener - Space+o (handles all file types and wiki links)
 o = ["extend_to_line_bounds", ":pipe-to hx-open-system-rust"]  # Open in system app (Preview, Excel, etc.)
 # Fuzzy link insertion - Space+l (Zellij floating pane)
