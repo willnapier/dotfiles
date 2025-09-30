@@ -2177,12 +2177,10 @@ def wiki-back [] {
     # Send :open command to Helix pane via WezTerm CLI
     print $"⬅️  Going back to: ($previous_file | path basename)"
 
-    # Get current pane ID
-    let pane_id = (wezterm cli list | from ssv | where is_active == true | get pane_id | first)
-
-    # Find the leftmost pane (where Helix is typically running)
-    # Assume pane 0 is Helix, or we could make this smarter
-    let helix_pane = (wezterm cli list | from ssv | where pane_index == 0 | get pane_id | first)
+    # Find Helix pane by looking for "daily-note" in title (Zellij session name)
+    # Parse wezterm output: WINID TABID PANEID WORKSPACE SIZE TITLE CWD
+    let panes = (wezterm cli list --format json | from json)
+    let helix_pane = ($panes | where title =~ "daily-note" | get pane_id | first)
 
     # Send the :open command to Helix
     let cmd = $":open ($previous_file)\r"
