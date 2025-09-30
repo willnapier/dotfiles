@@ -97,7 +97,7 @@ l = ":insert-output pbpaste"
 # Show real file name - Space+i (Info about current file)
 i = ":sh hx-show-real-file %{buffer_name}"
 # Quick save commands - Space+m ("memorize" or "save to memory")
-m = ":write"                                # Quick save current file
+m = [":write", ":sh echo %{buffer_name} > /tmp/helix-current-file.txt"]  # Quick save + export for external tools
 M = ":write-all"                            # Save all modified files
 
 # Date and time insertion - Space+c ("calendar" or "chronos")
