@@ -2045,7 +2045,7 @@ def wiki-nav [file?: string] {
     let target_file = if ($file | is-empty) {
         # Automatically find most recently modified .md file in Forge
         print "🔍 Finding most recently modified note..."
-        let recent = (ls -s $"($vault)/**/*.md" | sort-by modified -r | first | get name)
+        let recent = (glob $"($vault)/**/*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
         print $"📖 Using: ($recent | path basename)"
         $recent
     } else if ($file | path type) == "file" {
