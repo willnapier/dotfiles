@@ -2134,7 +2134,7 @@ date modified: ($today) ($now)
 
     # Add current file to history (before navigating away)
     if ($target_file | path exists) {
-        $target_file | save --append $history_file
+        $"($target_file)\n" | save --raw --append $history_file
     }
 
     # Open in Helix (will replace current buffer or open new one)
@@ -2239,7 +2239,7 @@ date modified: ($today) ($now)
 
     # Add current file to history (before navigating away)
     if ($target_file | path exists) {
-        $target_file | save --append $history_file
+        $"($target_file)\n" | save --raw --append $history_file
     }
 
     # Create new pane to the right and open file there
@@ -2351,7 +2351,7 @@ date modified: ($today) ($now)
 
     # Add current file to history (before navigating away)
     if ($target_file | path exists) {
-        $target_file | save --append $history_file
+        $"($target_file)\n" | save --raw --append $history_file
     }
 
     # Create new tab and open file there
@@ -2463,7 +2463,7 @@ date modified: ($today) ($now)
 
     # Add current file to history (before navigating away)
     if ($target_file | path exists) {
-        $target_file | save --append $history_file
+        $"($target_file)\n" | save --raw --append $history_file
     }
 
     # Create floating pane and open file there
