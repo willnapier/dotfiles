@@ -97,8 +97,8 @@ l = ":insert-output pbpaste"
 # Show real file name - Space+i (Info about current file)
 i = ":sh hx-show-real-file %{buffer_name}"
 # Quick save commands - Space+m ("memorize" or "save to memory")
-m = [":write", ":sh echo %{buffer_name} > /tmp/helix-current-file.txt"]  # Quick save + export for external tools
-M = ":write-all"                            # Save all modified files
+m = ":write"         # Quick save current file
+M = ":write-all"     # Save all modified files
 
 # Date and time insertion - Space+c ("calendar" or "chronos")
 # Moved from Space+d to avoid conflict with diagnostic picker (important for Rust LSP)
@@ -109,8 +109,7 @@ c = ":insert-output hx-insert-date"        # Insert current date (YYYY-MM-DD)
 # Mark file as revisited - using 'v' for 'visited'
 v = ":sh hx-mark-revisit %{buffer_name}"   # Add today to revisited dates
 
-# Export current filename for external tools - Space+. (like "current")
-"." = ":sh echo %{buffer_name} > /tmp/helix-current-file.txt"  # Write current file path
+# Removed: Space+. export (wiki-nav now auto-detects most recent file)
 
 # Buffer navigation - Space+b for back (intuitive)
 b = [":write-all", "goto_previous_buffer", ":sh sleep 0.5", ":reload-all"]  # Save all, go back, wait for backlinks, reload all
