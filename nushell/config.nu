@@ -2172,9 +2172,42 @@ def wiki-back [] {
     hx $previous_file
 }
 
+# File operations - Toggle todo checkbox on cursor line
+# Usage: ftodo  (toggles the line where cursor currently is in most recent file)
+# Requires: hx-toggle-todo script (processes entire file, toggles line under cursor)
+def ftodo [] {
+    let vault = $"($env.HOME)/Forge"
+
+    # Find most recently modified .md file in Forge
+    let target_file = (
+        fd -t f -e md . $vault
+        | lines
+        | each { |f| {file: $f, modified: (ls $f | get modified | first)} }
+        | sort-by modified
+        | reverse
+        | first
+        | get file
+    )
+
+    if ($target_file | is-empty) {
+        print "❌ No markdown files found in Forge"
+        return
+    }
+
+    print $"📝 Toggling todo in: ($target_file | path basename)"
+    print "⚠️  Note: Use Space+t in Helix for cursor-aware toggle"
+    print "   ftodo is best for batch operations on saved files"
+
+    # Call existing hx-toggle-todo script on the file
+    # This script expects stdin, processes line by line
+    open $target_file | hx-toggle-todo | save -f $target_file
+    print "✅ Processed file"
+}
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Wiki Navigation Aliases - Quick access
 # ═══════════════════════════════════════════════════════════════════════════
 
 alias wn = wiki-nav        # Navigate to wiki links from current file
 alias wb = wiki-back       # Go back in navigation history
+alias ft = ftodo           # Toggle todo checkbox
