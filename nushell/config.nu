@@ -2178,13 +2178,15 @@ def wiki-back [] {
     print $"⬅️  Going back to: ($previous_file | path basename)"
 
     # Move focus to left pane (where Helix is), send command, then return focus
-    # Store the open command in a temp file to avoid quoting issues
-    let temp_cmd = "/tmp/helix-open-cmd.txt"
-    $":open ($previous_file)\n" | save -f $temp_cmd
-
-    # Focus left pane, send command, focus back right
     zellij action move-focus left
-    zellij action write-chars (open $temp_cmd)
+
+    # Press ESC to ensure we're in normal mode, then type the command
+    zellij action write 27  # ESC key
+    sleep 0.1sec
+    zellij action write-chars $":open ($previous_file)"
+    zellij action write 13  # ENTER key
+    sleep 0.1sec
+
     zellij action move-focus right
 }
 
