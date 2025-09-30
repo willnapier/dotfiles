@@ -2174,17 +2174,18 @@ def wiki-back [] {
         $new_history | str join "\n" | save -f $history_file
     }
 
-    # Send :open command to Helix pane via WezTerm CLI
+    # Send :open command to Helix pane via Zellij
     print $"⬅️  Going back to: ($previous_file | path basename)"
 
-    # Find Helix pane by looking for "daily-note" in title (Zellij session name)
-    # Parse wezterm output: WINID TABID PANEID WORKSPACE SIZE TITLE CWD
-    let panes = (wezterm cli list --format json | from json)
-    let helix_pane = ($panes | where title =~ "daily-note" | get pane_id | first)
+    # Move focus to left pane (where Helix is), send command, then return focus
+    # Store the open command in a temp file to avoid quoting issues
+    let temp_cmd = "/tmp/helix-open-cmd.txt"
+    $":open ($previous_file)\n" | save -f $temp_cmd
 
-    # Send the :open command to Helix
-    let cmd = $":open ($previous_file)\r"
-    wezterm cli send-text --pane-id $helix_pane --no-paste $cmd
+    # Focus left pane, send command, focus back right
+    zellij action move-focus left
+    zellij action write-chars (open $temp_cmd)
+    zellij action move-focus right
 }
 
 # File operations - Toggle todo checkbox on cursor line
