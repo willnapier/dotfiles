@@ -2144,6 +2144,7 @@ date modified: ($today) ($now)
 
 # Wiki back - Navigate backwards through history
 # Usage: wiki-back (or wb)
+# Sends :open command directly to Helix pane via WezTerm CLI
 def wiki-back [] {
     let history_file = "/tmp/wiki-nav-history.txt"
 
@@ -2173,9 +2174,19 @@ def wiki-back [] {
         $new_history | str join "\n" | save -f $history_file
     }
 
-    # Open the previous file
+    # Send :open command to Helix pane via WezTerm CLI
     print $"⬅️  Going back to: ($previous_file | path basename)"
-    hx $previous_file
+
+    # Get current pane ID
+    let pane_id = (wezterm cli list | from ssv | where is_active == true | get pane_id | first)
+
+    # Find the leftmost pane (where Helix is typically running)
+    # Assume pane 0 is Helix, or we could make this smarter
+    let helix_pane = (wezterm cli list | from ssv | where pane_index == 0 | get pane_id | first)
+
+    # Send the :open command to Helix
+    let cmd = $":open ($previous_file)\r"
+    wezterm cli send-text --pane-id $helix_pane --no-paste $cmd
 }
 
 # File operations - Toggle todo checkbox on cursor line
