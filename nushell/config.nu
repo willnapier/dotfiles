@@ -2070,7 +2070,7 @@ def wiki-nav [file?: string] {
 
     # Let user pick a link with skim (fast fuzzy finding)
     print $"🔗 Found ($links | length) wiki links in ($target_file | path basename)"
-    let selected = ($links | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --prompt "📖 Follow link: ")
+    let selected = ($links | to text | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --prompt "Follow link: ")
 
     if ($selected | is-empty) {
         print "❌ No link selected"
