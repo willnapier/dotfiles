@@ -1,0 +1,89 @@
+// ⚠️  CLAUDE CODE: THIS FILE IS DOTTER-MANAGED - EDIT HERE IN DOTFILES, NOT ~/.config/zed/
+// ⚠️  NEVER EDIT ~/.config/zed/keymap.json - IT'S A SYMLINK TO THIS FILE
+// Zed Keymap for Colemak-DH + Miryoku
+// Matches Helix configuration with neio navigation
+// Documentation: https://zed.dev/docs/key-bindings
+
+[
+  // ═══════════════════════════════════════════════════════════
+  // NORMAL MODE - Navigation and Commands
+  // ═══════════════════════════════════════════════════════════
+
+  // Core navigation (neio for hjkl)
+  {
+    "context": "vim_mode == normal",
+    "bindings": {
+      "n": "vim::Left",      // move_char_left
+      "e": "vim::Down",      // move_line_down
+      "i": "vim::Up",        // move_line_up
+      "o": "vim::Right"      // move_char_right
+    }
+  },
+
+  // Shifted navigation (extend/visual mode)
+  {
+    "context": "vim_mode == normal",
+    "bindings": {
+      "shift-n": "vim::Left",   // Vim doesn't have separate extend, uses visual mode
+      "shift-e": "vim::Down",
+      "shift-i": "vim::Up",
+      "shift-o": "vim::Right"
+    }
+  },
+
+  // Displaced commands (maintain Helix patterns)
+  {
+    "context": "vim_mode == normal",
+    "bindings": {
+      "h": "vim::InsertLineBelow",           // open_below (was on 'o')
+      "shift-h": "vim::InsertLineAbove",     // open_above (was on 'O')
+      "j": "vim::MoveToNextMatch",           // search_next (was on 'n')
+      "shift-j": "vim::MoveToPreviousMatch", // search_prev (was on 'N')
+      "k": "vim::NextSubwordEnd",            // move_next_word_end (was on 'e')
+      "shift-k": "vim::NextSubwordEnd",      // extend version
+      "l": "vim::PushSneak",                 // find_till_char (was on 't')
+      "shift-l": "vim::PushSneakBackward",   // till_prev_char (was on 'T')
+      "t": "vim::InsertBefore",              // insert_mode (was on 'i')
+      "shift-t": "vim::InsertFirstNonWhitespace" // insert_at_line_start (was on 'I')
+    }
+  },
+
+  // ═══════════════════════════════════════════════════════════
+  // VISUAL MODE - Selection Navigation
+  // ═══════════════════════════════════════════════════════════
+
+  {
+    "context": "vim_mode == visual",
+    "bindings": {
+      "n": "vim::Left",
+      "e": "vim::Down",
+      "i": "vim::Up",
+      "o": "vim::Right",
+
+      // Displaced commands in visual mode
+      "h": "vim::InsertLineBelow",
+      "j": "vim::MoveToNextMatch",
+      "k": "vim::NextSubwordEnd",
+      "l": "vim::PushSneak",
+      "shift-l": "vim::PushSneakBackward",
+      "t": "vim::NormalBefore",       // Switch to normal mode
+      "shift-t": "vim::InsertFirstNonWhitespace"
+    }
+  },
+
+  // ═══════════════════════════════════════════════════════════
+  // OPERATOR PENDING MODE
+  // ═══════════════════════════════════════════════════════════
+
+  {
+    "context": "vim_operator == pending",
+    "bindings": {
+      "n": "vim::Left",
+      "e": "vim::Down",
+      "i": "vim::Up",
+      "o": "vim::Right",
+      "l": "vim::PushSneak",
+      "shift-l": "vim::PushSneakBackward"
+    }
+  }
+]

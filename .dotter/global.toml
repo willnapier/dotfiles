@@ -47,6 +47,9 @@ depends = []
 "ghostty/themes/solarized-dark" = "~/.config/ghostty/themes/solarized-dark"
 "ghostty/themes/solarized-light" = "~/.config/ghostty/themes/solarized-light"
 "karabiner/karabiner.json" = "~/.config/karabiner/karabiner.json"
+# Zed editor configuration (added 2025-10-01)
+"zed/keymap.json" = "~/.config/zed/keymap.json"
+"zed/settings.json" = "~/.config/zed/settings.json"
 
 # Essential scripts (most commonly used)
 "scripts/daily-note.nu" = "~/.local/bin/daily-note"
