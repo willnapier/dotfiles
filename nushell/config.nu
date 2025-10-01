@@ -1134,11 +1134,20 @@ def fcitz [] {
 
         if not ($file_path | is-empty) and ($file_path | path exists) {
             print $"📂 Opening PDF: ($file_path)"
-            open $file_path
+            # Use system open command to open in default PDF viewer
+            if (sys host | get name) == "Darwin" {
+                ^open $file_path
+            } else {
+                ^xdg-open $file_path
+            }
         } else {
             print $"⚠️  PDF file not found at: ($file_path)"
             print $"🔗 Opening Zotero instead..."
-            open $"zotero://select/items/@($zotero_key)"
+            if (sys host | get name) == "Darwin" {
+                ^open $"zotero://select/items/@($zotero_key)"
+            } else {
+                ^xdg-open $"zotero://select/items/@($zotero_key)"
+            }
         }
     }
 }
