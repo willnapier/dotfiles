@@ -52,11 +52,18 @@ def sync-push [] {
     print "✅ Dotfiles pushed to GitHub"
 }
 
-def sync-pull [] { 
+def sync-pull [] {
     cd ~/dotfiles
     git pull
     dotter deploy
     print "✅ Dotfiles pulled and deployed"
+}
+
+# ---- Editor Workflow Functions ----
+# Open daily note in Zed
+def zed-daily [] {
+    let daily_file = (daily-note --print-path)
+    zed $daily_file
 }
 
 # ---- Unified Project Root Detection & Tools ----
