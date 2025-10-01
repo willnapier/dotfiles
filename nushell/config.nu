@@ -1070,131 +1070,65 @@ def fcit [] {
     
     let selected = ($citations | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'echo {}' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📚 Citation: " | str trim)
     if not ($selected | is-empty) {
-        $selected | pbcopy
-        print $"📋 Copied to clipboard: ($selected)"
+        # Extract just the clean key (first word before square bracket)
+        let clean_key = ($selected | split row ' ' | first)
+        $clean_key | pbcopy
+        print $"📋 Copied to clipboard: ($clean_key)"
+        print $"📄 Full entry: ($selected)"
         print "💡 Paste anywhere with Cmd+V"
     }
 }
 
-# File citation + open PDF in Zotero (searches library.bib)
+# File citation + open PDF in Zotero (uses citations.md)
 def fcitz [] {
-    print "🔍 Loading Zotero library..."
+    print "🔍 Loading citations..."
+    let citations_file = $"($env.FORGE?)/ZET/citations.md"
     let library_file = $"($env.FORGE?)/ZET/library.bib"
+
+    if not ($citations_file | path exists) {
+        print $"❌ Citations file not found: ($citations_file)"
+        return
+    }
+
     if not ($library_file | path exists) {
         print $"❌ Library file not found: ($library_file)"
         return
     }
-    
-    print "📚 Extracting citations from BibTeX library..."
-    # Simple approach: extract keys, then get metadata for each
-    let entries = (
-        rg '@\w+\{([^,]+),' $library_file -o --replace '$1' --no-line-number
-        | lines
-        | uniq
-        | each { |key|
-            # Get the full entry for this key
-            let entry_text = (rg -A 20 $"@\\w+\\{($key)," $library_file | str join ' ')
-            
-            # Extract title
-            let title = (
-                $entry_text 
-                | parse --regex 'title\s*=\s*\{([^}]+(?:\{\{[^}]+\}\}[^}]+)*)\}' 
-                | get -o 0.capture0? 
-                | default ""
-                | str replace --all '\{\{' '' 
-                | str replace --all '\}\}' ''
-            )
-            
-            # Extract file path
-            let file_path = (
-                $entry_text 
-                | parse --regex 'file\s*=\s*\{([^}]+)\}' 
-                | get -o 0.capture0? 
-                | default ""
-            )
-            
-            # Extract author
-            let author = (
-                $entry_text 
-                | parse --regex 'author\s*=\s*\{([^}]+)\}' 
-                | get -o 0.capture0? 
-                | default ""
-                | split row ' and ' 
-                | get -o 0? 
-                | default ""
-                | split row ',' 
-                | get -o 0? 
-                | default ""
-            )
-            
-            # Extract year  
-            let year = (
-                $entry_text 
-                | parse --regex 'year\s*=\s*\{(\d+)\}' 
-                | get -o 0.capture0? 
-                | default ""
-            )
-            
-            # Create display string
-            let display = if ($title | is-empty) {
-                $key
-            } else if (not ($author | is-empty)) and (not ($year | is-empty)) {
-                $"($key) | ($author) (($year)) - ($title)"
-            } else if not ($year | is-empty) {
-                $"($key) | (($year)) - ($title)"
-            } else {
-                $"($key) | ($title)"
-            }
-            
-            {key: $key, title: $title, file: $file_path, display: $display}
-        }
-    )
-    
-    if ($entries | is-empty) {
-        print "❌ No citations found in library.bib"
+
+    # Load citations (same as fcit for consistency)
+    let citations = (open $citations_file | lines | where $it != "" | where ($it | str starts-with "#") == false | where ($it | str trim) != "")
+    if ($citations | is-empty) {
+        print "❌ No citations found"
         return
     }
-    
-    print $"📖 Found (($entries | length)) entries"
-    
-    # Create selection list
-    let selected = (
-        $entries 
-        | get display 
-        | str join "\n" 
-        | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk 
-            --preview 'echo {}' 
-            --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' 
-            --prompt "📚 Citation → PDF: " 
-        | str trim
-    )
-    
+
+    # Select citation
+    let selected = ($citations | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'echo {}' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📚 Citation → PDF: " | str trim)
+
     if not ($selected | is-empty) {
-        # Find the matching entry
-        let entry = ($entries | where { |it| $it.display == $selected } | get -o 0?)
-        
-        if ($entry | is-empty) {
-            print "❌ Could not find entry data"
+        # Extract clean key and Zotero key from format: "CleanKey [ZoteroKey] Title"
+        let clean_key = ($selected | split row ' ' | first)
+        let zotero_key = ($selected | parse --regex '\[([^\]]+)\]' | get -o 0.capture0? | default "")
+
+        if ($zotero_key | is-empty) {
+            print "❌ Could not extract Zotero key from citation"
             return
         }
-        
-        print $"📄 Selected: ($entry.key)"
 
-        # Create clean title for markdown link
-        let clean_title = $entry.title | str replace '"' '' | str replace '[' '' | str replace ']' ''
+        print $"📄 Selected: ($clean_key) → ($zotero_key)"
 
-        # Always create Zotero URL for selecting items (we'll automate the Enter keypress)
-        let url = $"zotero://select/items/@($entry.key)"
-        print $"🔗 Creating Zotero link with automated PDF opening"
+        # Find PDF path in library.bib
+        let entry_text = (rg -A 20 $"@\\w+\\{($zotero_key)," $library_file | str join ' ')
+        let file_path = ($entry_text | parse --regex 'file\s*=\s*\{([^}]+)\}' | get -o 0.capture0? | default "")
 
-        # Create proper markdown link
-        let markdown_link = $"[($clean_title)]\(($url)\)"
-
-        # Copy the markdown link to clipboard
-        $markdown_link | pbcopy
-        print $"📋 Copied markdown link to clipboard"
-        print $"📝 Link: ($markdown_link)"
-        print "💡 Paste in Helix with Cmd+V - will appear as clean markdown!"
+        if not ($file_path | is-empty) and ($file_path | path exists) {
+            print $"📂 Opening PDF: ($file_path)"
+            open $file_path
+        } else {
+            print $"⚠️  PDF file not found at: ($file_path)"
+            print $"🔗 Opening Zotero instead..."
+            open $"zotero://select/items/@($zotero_key)"
+        }
     }
 }
 
