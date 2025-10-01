@@ -2102,14 +2102,16 @@ def wiki-nav [file?: string] {
     print $"➡️  Following: ($selected)"
 
     # Find or create the target file
-    let clean_link = ($selected | str replace -r '[#|].*' '')
-    let existing_results = (fd -t f --full-path $"($clean_link).md" $vault | lines)
+    let clean_link = ($selected | str replace -r '[#|].*' '' | str trim)
+
+    # Search for existing file by basename only (more reliable than --full-path)
+    let existing_results = (fd -t f -e md $"^($clean_link).md$" $vault | lines)
     let existing = if ($existing_results | is-empty) { "" } else { $existing_results | first }
 
     let next_file = if not ($existing | is-empty) {
         $existing
     } else {
-        # Create new file in appropriate location
+        # Create new file in root of vault (simple approach - no nested paths from link names)
         let new_path = $"($vault)/($clean_link).md"
         let dir = ($new_path | path dirname)
         mkdir $dir
@@ -2144,9 +2146,17 @@ date modified: ($today) ($now)
         $"($target_file)\n" | save --raw --append $history_file
     }
 
-    # Open in Helix (will replace current buffer or open new one)
+    # Open file - context-aware (Zellij or standalone)
     print $"📂 Opening: ($next_file | path basename)"
-    hx $next_file
+
+    if ($env.ZELLIJ? | is-not-empty) {
+        # In Zellij: open in current editor instance (Helix assumed)
+        hx $next_file
+    } else {
+        # Standalone terminal: launch $EDITOR
+        let editor = ($env.EDITOR? | default "hx")
+        ^$editor $next_file
+    }
 }
 
 # Wiki navigation - right pane (creates new pane to the right)
@@ -2525,23 +2535,30 @@ def wiki-back [] {
         $new_history | str join "\n" | save -f $history_file
     }
 
-    # Send :open command to Helix pane via Zellij
+    # Open previous file - context-aware (Zellij or standalone)
     print $"⬅️  Going back to: ($previous_file | path basename)"
 
-    # Move focus to left pane (where Helix is), send command, then return focus
-    zellij action move-focus left
+    if ($env.ZELLIJ? | is-not-empty) {
+        # In Zellij: Send :open command to Helix pane via Zellij
+        # Move focus to left pane (where Helix is), send command, then return focus
+        zellij action move-focus left
 
-    # Press ESC to ensure we're in normal mode, then type the command
-    zellij action write 27  # ESC key
-    sleep 0.1sec
+        # Press ESC to ensure we're in normal mode, then type the command
+        zellij action write 27  # ESC key
+        sleep 0.1sec
 
-    # Build the :open command with absolute path
-    let open_cmd = $":open ($previous_file)"
-    zellij action write-chars $open_cmd
-    zellij action write 13  # ENTER key
-    sleep 0.1sec
+        # Build the :open command with absolute path
+        let open_cmd = $":open ($previous_file)"
+        zellij action write-chars $open_cmd
+        zellij action write 13  # ENTER key
+        sleep 0.1sec
 
-    zellij action move-focus right
+        zellij action move-focus right
+    } else {
+        # Standalone terminal: launch $EDITOR
+        let editor = ($env.EDITOR? | default "hx")
+        ^$editor $previous_file
+    }
 }
 
 # File operations - Toggle todo checkbox on cursor line
