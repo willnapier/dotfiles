@@ -134,6 +134,8 @@
 "yazi/keymap.toml" = "/Users/williamnapier/.config/yazi/keymap.toml"
 "yazi/theme.toml" = "/Users/williamnapier/.config/yazi/theme.toml"
 "yazi/yazi.toml" = "/Users/williamnapier/.config/yazi/yazi.toml"
+"zed/keymap.json" = "/Users/williamnapier/.config/zed/keymap.json"
+"zed/settings.json" = "/Users/williamnapier/.config/zed/settings.json"
 "zellij/config.kdl" = "/Users/williamnapier/.config/zellij/config.kdl"
 "zellij/layouts/desktop-27-simple.kdl" = "/Users/williamnapier/.config/zellij/layouts/desktop-27-simple.kdl"
 "zellij/layouts/desktop-27.kdl" = "/Users/williamnapier/.config/zellij/layouts/desktop-27.kdl"
