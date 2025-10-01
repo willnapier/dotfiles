@@ -2052,8 +2052,15 @@ def wiki-nav [file?: string] {
     let target_file = if ($file | is-empty) {
         # Try exported file from Helix first (set by Space+w)
         if ("/tmp/helix-current-file.txt" | path exists) {
-            let exported = (open /tmp/helix-current-file.txt | str trim)
-            if not ($exported | is-empty) {
+            let exported_raw = (open /tmp/helix-current-file.txt | str trim)
+            if not ($exported_raw | is-empty) {
+                # Ensure absolute path (exported might be relative like "Forge/file.md")
+                let exported = if ($exported_raw | path type) == "file" {
+                    $exported_raw | path expand
+                } else {
+                    # Relative path - expand from home
+                    $"($env.HOME)/($exported_raw)" | path expand
+                }
                 print $"📖 Using exported file: ($exported | path basename)"
                 $exported
             } else {
@@ -2167,8 +2174,15 @@ def wiki-nav-right [file?: string] {
     let target_file = if ($file | is-empty) {
         # Try exported file from Helix first (set by Space+w)
         if ("/tmp/helix-current-file.txt" | path exists) {
-            let exported = (open /tmp/helix-current-file.txt | str trim)
-            if not ($exported | is-empty) {
+            let exported_raw = (open /tmp/helix-current-file.txt | str trim)
+            if not ($exported_raw | is-empty) {
+                # Ensure absolute path (exported might be relative like "Forge/file.md")
+                let exported = if ($exported_raw | path type) == "file" {
+                    $exported_raw | path expand
+                } else {
+                    # Relative path - expand from home
+                    $"($env.HOME)/($exported_raw)" | path expand
+                }
                 print $"📖 Using exported file: ($exported | path basename)"
                 $exported
             } else {
@@ -2279,8 +2293,15 @@ def wiki-nav-tab [file?: string] {
     let target_file = if ($file | is-empty) {
         # Try exported file from Helix first (set by Space+w)
         if ("/tmp/helix-current-file.txt" | path exists) {
-            let exported = (open /tmp/helix-current-file.txt | str trim)
-            if not ($exported | is-empty) {
+            let exported_raw = (open /tmp/helix-current-file.txt | str trim)
+            if not ($exported_raw | is-empty) {
+                # Ensure absolute path (exported might be relative like "Forge/file.md")
+                let exported = if ($exported_raw | path type) == "file" {
+                    $exported_raw | path expand
+                } else {
+                    # Relative path - expand from home
+                    $"($env.HOME)/($exported_raw)" | path expand
+                }
                 print $"📖 Using exported file: ($exported | path basename)"
                 $exported
             } else {
@@ -2391,8 +2412,15 @@ def wiki-nav-floating [file?: string] {
     let target_file = if ($file | is-empty) {
         # Try exported file from Helix first (set by Space+w)
         if ("/tmp/helix-current-file.txt" | path exists) {
-            let exported = (open /tmp/helix-current-file.txt | str trim)
-            if not ($exported | is-empty) {
+            let exported_raw = (open /tmp/helix-current-file.txt | str trim)
+            if not ($exported_raw | is-empty) {
+                # Ensure absolute path (exported might be relative like "Forge/file.md")
+                let exported = if ($exported_raw | path type) == "file" {
+                    $exported_raw | path expand
+                } else {
+                    # Relative path - expand from home
+                    $"($env.HOME)/($exported_raw)" | path expand
+                }
                 print $"📖 Using exported file: ($exported | path basename)"
                 $exported
             } else {
