@@ -121,6 +121,7 @@ Q = ":quit!"                                # Force quit without saving
 
 # Custom g-prefix commands
 [keys.normal.g]
+R = ":reload-all"  # Reload all buffers (refresh external changes)
 f = ["extend_to_line_bounds", ":pipe-to hx-smart-gf-rust", ":open /tmp/helix-gf-target.md"]  # Smart file opener (Rust/Nushell version with fd, rg)
 x = ["extend_to_line_bounds", ":pipe-to hx-open-url"]  # Open URLs
 w = ["extend_to_line_bounds", ":pipe-to hx-wiki", ":open /tmp/helix-current-link.md"]  # Wiki link navigation (opens via temp symlink)
