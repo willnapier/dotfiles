@@ -17,34 +17,35 @@ let files_with_markers = (rg '\?\[\[' --type md --files-with-matches $forge | li
 print $"📊 Found ($files_with_markers | length) files with ? markers"
 print ""
 
-let total_cleaned = mut 0
-let total_kept = mut 0
+mut total_cleaned = 0
+mut total_kept = 0
 
 for file in $files_with_markers {
     print $"📄 Processing: ($file | path relative-to $forge)"
 
     let content = (open $file)
-    let mut new_content = $content
+    mut new_content = $content
 
     # Find all ?[[ markers
     let markers = ($content | rg '\?\[\[([^\]]+)\]\]' --only-matching --no-filename | lines)
 
     for marker in $markers {
-        # Extract the link target
-        let target = ($marker | str replace '?\[\[' '' | str replace ']]' '' | str trim)
+        # Extract the link target - remove ?[[ prefix and ]] suffix
+        let target = ($marker | str replace --regex '^\?\[\[' '' | str replace --regex '\]\]$' '' | str trim)
 
-        # Search for the file recursively
-        let matching_files = (fd --type f --extension md $"^($target).md$" $forge)
+        # Search for the file recursively (use glob pattern to avoid regex issues)
+        let matching_files = (fd --type f --extension md --glob $"($target).md" $forge | lines)
 
-        if ($matching_files | is-empty | not) {
+        if not ($matching_files | is-empty) {
             # File exists! Remove the ?
             $new_content = ($new_content | str replace --all $marker $"[[($target)]]")
             $total_cleaned += 1
-            print $"  ✅ Cleaned: ($target) (found at ($matching_files | first))"
+            print $"  ✅ Cleaned: ($target)"
+            print $"     Found at: ($matching_files | first)"
         } else {
             # File doesn't exist - keep the ?
             $total_kept += 1
-            print $"  ⚠️  Kept: ($target) (truly unresolved)"
+            print $"  ⚠️  Kept: ($target) - truly unresolved"
         }
     }
 
@@ -55,6 +56,6 @@ for file in $files_with_markers {
 }
 
 print ""
-print $"🎉 Cleanup complete!"
+print "🎉 Cleanup complete!"
 print $"  ✅ Cleaned: ($total_cleaned) false positives"
 print $"  ⚠️  Kept: ($total_kept) truly unresolved links"
