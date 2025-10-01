@@ -1,9 +1,14 @@
 #!/bin/bash
 
-# Smart wiki link handler for Helix with cursor awareness
-# Finds the wiki link nearest to cursor position
+# Smart wiki link handler for Helix
+# If selection contains a link, uses that
+# Otherwise finds first link on current line/selection
 
 line=$(cat)
+
+# If input is just a cursor position (single character), it won't have links
+# In that case, we'd need the whole line, but Helix doesn't give us that
+# So this script expects either: a full line, or a selected [[link]]
 
 # Clear any old temp file first
 rm -f /tmp/helix-current-link.md

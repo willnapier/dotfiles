@@ -87,7 +87,7 @@ x = [":sh trash %{buffer_name}", ":quit!"]
 # Export selection to external register - Space+E (then type register letter)
 E = ":pipe-to hx-register-export"
 # Wiki link navigation - Space+w (auto-exports + tracks history for wb)
-# Note: Cursor position detection not available in Helix, uses first link on line as fallback
+# In normal mode: expands to line. In visual mode: uses selection.
 w = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", "extend_to_line_bounds", ":pipe-to ~/.local/bin/hx-wiki", ":open /tmp/helix-current-link.md"]
 # Smart file opener - Space+o (handles all file types and wiki links)
 o = ["extend_to_line_bounds", ":pipe-to hx-open-system-rust"]  # Open in system app (Preview, Excel, etc.)
@@ -151,3 +151,7 @@ l = "find_till_char"       # was on 't' (tilL)
 L = "till_prev_char"       # was on 'T' (till backward)
 t = "insert_mode"          # was on 'i' (inserT)
 T = "insert_at_line_start"  # was on 'I' (Insert at line start)
+
+# Visual mode Space+w: use selection as-is (no line expansion)
+[keys.select.space]
+w = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", ":pipe-to ~/.local/bin/hx-wiki", ":open /tmp/helix-current-link.md"]
