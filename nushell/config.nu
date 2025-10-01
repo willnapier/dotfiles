@@ -60,10 +60,10 @@ def sync-pull [] {
 }
 
 # ---- Editor Workflow Functions ----
-# Open daily note in Zed
+# Open daily note in Zed (cursor at line 3)
 def zed-daily [] {
     let daily_file = (^~/.local/bin/daily-note --print-path)
-    zed $daily_file
+    zed $"($daily_file):3"
 }
 
 # ---- Unified Project Root Detection & Tools ----
