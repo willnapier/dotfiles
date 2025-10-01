@@ -1070,11 +1070,22 @@ def fcit [] {
     
     let selected = ($citations | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'echo {}' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📚 Citation: " | str trim)
     if not ($selected | is-empty) {
-        # Extract just the clean key (first word before square bracket)
-        let clean_key = ($selected | split row ' ' | first)
-        $clean_key | pbcopy
-        print $"📋 Copied to clipboard: ($clean_key)"
-        print $"📄 Full entry: ($selected)"
+        # Extract clean key and title, removing the [ZoteroKey] part
+        # Format: "CleanKey [ZoteroKey] Title - keywords" → "CleanKey Title"
+        let citation_text = ($selected | parse --regex '^([^\[]+)\[([^\]]+)\]\s*(.*)$' | get -o 0?)
+
+        if not ($citation_text | is-empty) {
+            let clean_key = ($citation_text.capture0 | str trim)
+            let title_and_keywords = ($citation_text.capture2 | str trim)
+            let readable_citation = $"($clean_key) ($title_and_keywords)"
+
+            $readable_citation | pbcopy
+            print $"📋 Copied to clipboard: ($readable_citation)"
+        } else {
+            # Fallback: just copy the whole line if parsing fails
+            $selected | pbcopy
+            print $"📋 Copied to clipboard: ($selected)"
+        }
         print "💡 Paste anywhere with Cmd+V"
     }
 }
