@@ -6,6 +6,9 @@
 
 line=$(cat)
 
+# Debug: log what we received
+echo "DEBUG: Received input: $line" >> /tmp/hx-wiki-debug.log
+
 # If input is just a cursor position (single character), it won't have links
 # In that case, we'd need the whole line, but Helix doesn't give us that
 # So this script expects either: a full line, or a selected [[link]]
