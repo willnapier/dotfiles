@@ -90,7 +90,8 @@ E = ":pipe-to hx-register-export"
 # In normal mode: expands to line. In visual mode: uses selection.
 w = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", "extend_to_line_bounds", ":pipe-to ~/.local/bin/hx-wiki", ":sh sleep 0.1", ":open /tmp/helix-current-link.md"]
 # Wiki link navigation to NEW PANE RIGHT - Space+W (Zellij-only, for recursive exploration)
-W = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", "extend_to_line_bounds", ":pipe-to ~/.local/bin/hx-wiki", ":sh sleep 0.1", ":sh zellij run --direction right -- helix /tmp/helix-current-link.md"]
+# Note: Uses same approach as regular Space+w but creates new pane first
+W = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", "extend_to_line_bounds", ":pipe-to ~/.local/bin/hx-wiki", ":sh sleep 0.1", ":sh zellij action new-pane --direction right", ":sh sleep 0.5", ":sh zellij action move-focus right", ":sh sleep 0.2", ":sh zellij action write-chars 'helix /tmp/helix-current-link.md'", ":sh zellij action write 13"]
 # Smart file opener - Space+o (handles all file types and wiki links)
 o = ["extend_to_line_bounds", ":pipe-to hx-open-system-rust"]  # Open in system app (Preview, Excel, etc.)
 # Fuzzy link insertion - Space+l (Zellij floating pane)
