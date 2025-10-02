@@ -2045,15 +2045,10 @@ def wiki-nav [file?: string] {
                 print $"📖 Using local file: ($local_file | path basename)"
                 $local_file
             } else if ($local_mds | length) > 1 {
-                # Multiple .md files - show picker for just these
-                print $"📁 Found ($local_mds | length) markdown files in current directory"
-                let selected = ($local_mds | to text | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --prompt "Local files: ")
-                if not ($selected | is-empty) {
-                    print $"📖 Selected: ($selected | path basename)"
-                    $selected
-                } else {
-                    null
-                }
+                # Multiple .md files - use most recently modified
+                let local_recent = ($local_mds | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
+                print $"📖 Using local recent: ($local_recent | path basename)"
+                $local_recent
             } else {
                 null
             }
@@ -2201,15 +2196,10 @@ def wiki-nav-right [file?: string] {
                 print $"📖 Using local file: ($local_file | path basename)"
                 $local_file
             } else if ($local_mds | length) > 1 {
-                # Multiple .md files - show picker for just these
-                print $"📁 Found ($local_mds | length) markdown files in current directory"
-                let selected = ($local_mds | to text | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --prompt "Local files: ")
-                if not ($selected | is-empty) {
-                    print $"📖 Selected: ($selected | path basename)"
-                    $selected
-                } else {
-                    null
-                }
+                # Multiple .md files - use most recently modified
+                let local_recent = ($local_mds | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
+                print $"📖 Using local recent: ($local_recent | path basename)"
+                $local_recent
             } else {
                 null
             }
@@ -2354,15 +2344,10 @@ def wiki-nav-tab [file?: string] {
                 print $"📖 Using local file: ($local_file | path basename)"
                 $local_file
             } else if ($local_mds | length) > 1 {
-                # Multiple .md files - show picker for just these
-                print $"📁 Found ($local_mds | length) markdown files in current directory"
-                let selected = ($local_mds | to text | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --prompt "Local files: ")
-                if not ($selected | is-empty) {
-                    print $"📖 Selected: ($selected | path basename)"
-                    $selected
-                } else {
-                    null
-                }
+                # Multiple .md files - use most recently modified
+                let local_recent = ($local_mds | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
+                print $"📖 Using local recent: ($local_recent | path basename)"
+                $local_recent
             } else {
                 null
             }
@@ -2507,15 +2492,10 @@ def wiki-nav-floating [file?: string] {
                 print $"📖 Using local file: ($local_file | path basename)"
                 $local_file
             } else if ($local_mds | length) > 1 {
-                # Multiple .md files - show picker for just these
-                print $"📁 Found ($local_mds | length) markdown files in current directory"
-                let selected = ($local_mds | to text | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --prompt "Local files: ")
-                if not ($selected | is-empty) {
-                    print $"📖 Selected: ($selected | path basename)"
-                    $selected
-                } else {
-                    null
-                }
+                # Multiple .md files - use most recently modified
+                let local_recent = ($local_mds | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
+                print $"📖 Using local recent: ($local_recent | path basename)"
+                $local_recent
             } else {
                 null
             }
