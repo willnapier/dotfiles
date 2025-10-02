@@ -2038,12 +2038,11 @@ def wiki-nav [file?: string] {
             }
         )
         | default (
-            # Layer 3: Check current directory for .md files - most recently modified
-            glob "*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | get 0?.name?
-        )
-        | default (
             # Layer 4: Fallback to most recently modified file in vault
-            glob $"($vault)/**/*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name
+            print "🔍 Finding most recently modified note in vault..."
+            let recent = (glob $"($vault)/**/*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
+            print $"📖 Using: ($recent | path basename)"
+            $recent
         )
     } else if ($file | path type) == "file" {
         $file
@@ -2174,12 +2173,11 @@ def wiki-nav-right [file?: string] {
             }
         )
         | default (
-            # Layer 3: Check current directory for .md files - most recently modified
-            glob "*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | get 0?.name?
-        )
-        | default (
             # Layer 4: Fallback to most recently modified file in vault
-            glob $"($vault)/**/*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name
+            print "🔍 Finding most recently modified note in vault..."
+            let recent = (glob $"($vault)/**/*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
+            print $"📖 Using: ($recent | path basename)"
+            $recent
         )
     } else if ($file | path type) == "file" {
         $file
@@ -2307,12 +2305,11 @@ def wiki-nav-tab [file?: string] {
             }
         )
         | default (
-            # Layer 3: Check current directory for .md files - most recently modified
-            glob "*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | get 0?.name?
-        )
-        | default (
             # Layer 4: Fallback to most recently modified file in vault
-            glob $"($vault)/**/*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name
+            print "🔍 Finding most recently modified note in vault..."
+            let recent = (glob $"($vault)/**/*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
+            print $"📖 Using: ($recent | path basename)"
+            $recent
         )
     } else if ($file | path type) == "file" {
         $file
@@ -2440,12 +2437,11 @@ def wiki-nav-floating [file?: string] {
             }
         )
         | default (
-            # Layer 3: Check current directory for .md files - most recently modified
-            glob "*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | get 0?.name?
-        )
-        | default (
             # Layer 4: Fallback to most recently modified file in vault
-            glob $"($vault)/**/*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name
+            print "🔍 Finding most recently modified note in vault..."
+            let recent = (glob $"($vault)/**/*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
+            print $"📖 Using: ($recent | path basename)"
+            $recent
         )
     } else if ($file | path type) == "file" {
         $file
@@ -2524,8 +2520,11 @@ date modified: ($today) ($now)
     # Create floating pane and open file there
     print $"📂 Opening in floating pane: ($next_file | path basename)"
 
-    # Create floating pane (80% width, 80% height) and run hx command directly
-    zellij action new-pane --floating --width "80%" --height "80%" -- hx ($next_file)
+    # Create floating pane (80% width, 80% height), then send hx command to it
+    zellij action new-pane --floating --width "80%" --height "80%"
+    sleep 0.2sec
+    zellij action write-chars $"hx ($next_file)"
+    zellij action write 13  # ENTER key
 }
 
 alias wnf = wiki-nav-floating

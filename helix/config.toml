@@ -87,8 +87,11 @@ x = [":sh trash %{buffer_name}", ":quit!"]
 # Export selection to external register - Space+E (then type register letter)
 E = ":pipe-to hx-register-export"
 # Wiki link navigation - Space+w (auto-exports + tracks history for wb)
-# Critical: move_next_word_start moves cursor off column 0 to prevent extend_to_line_bounds selecting previous line
-w = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", "move_next_word_start", "move_prev_word_start", ":sh echo %{selection.column.0} > /tmp/helix-cursor-col.txt", "extend_to_line_bounds", ":pipe-to ~/.local/bin/hx-wiki", ":open /tmp/helix-current-link.md"]
+# In normal mode: expands to line. In visual mode: uses selection.
+w = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", "extend_to_line_bounds", ":pipe-to ~/.local/bin/hx-wiki", ":sh sleep 0.1", ":open /tmp/helix-current-link.md"]
+# Wiki link navigation to NEW PANE RIGHT - Space+W (Zellij-only, for recursive exploration)
+# Creates new pane and runs hx-wiki-open-right script there
+W = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", "extend_to_line_bounds", ":pipe-to ~/.local/bin/hx-wiki", ":sh sleep 0.1", ":sh zellij action new-pane --direction right -- hx-wiki-open-right"]
 # Smart file opener - Space+o (handles all file types and wiki links)
 o = ["extend_to_line_bounds", ":pipe-to hx-open-system-rust"]  # Open in system app (Preview, Excel, etc.)
 # Fuzzy link insertion - Space+l (Zellij floating pane)
@@ -121,6 +124,7 @@ Q = ":quit!"                                # Force quit without saving
 
 # Custom g-prefix commands
 [keys.normal.g]
+R = ":reload-all"  # Reload all buffers (refresh external changes)
 f = ["extend_to_line_bounds", ":pipe-to hx-smart-gf-rust", ":open /tmp/helix-gf-target.md"]  # Smart file opener (Rust/Nushell version with fd, rg)
 x = ["extend_to_line_bounds", ":pipe-to hx-open-url"]  # Open URLs
 w = ["extend_to_line_bounds", ":pipe-to hx-wiki", ":open /tmp/helix-current-link.md"]  # Wiki link navigation (opens via temp symlink)
@@ -150,3 +154,8 @@ l = "find_till_char"       # was on 't' (tilL)
 L = "till_prev_char"       # was on 'T' (till backward)
 t = "insert_mode"          # was on 'i' (inserT)
 T = "insert_at_line_start"  # was on 'I' (Insert at line start)
+
+# Visual mode Space+w: use selection as-is (no line expansion)
+[keys.select.space]
+w = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", ":pipe-to ~/.local/bin/hx-wiki", ":sh sleep 0.1", ":open /tmp/helix-current-link.md"]
+W = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", ":pipe-to ~/.local/bin/hx-wiki", ":sh sleep 0.1", ":sh zellij action new-pane --direction right -- hx-wiki-open-right"]
