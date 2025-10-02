@@ -2466,33 +2466,67 @@ alias wnt = wiki-nav-tab
 def wiki-nav-floating [file?: string] {
     let vault = $"($env.HOME)/Forge"
     let target_file = if ($file | is-empty) {
-        # Try exported file from Helix first (set by Space+w)
-        if ("/tmp/helix-current-file.txt" | path exists) {
-            let exported_raw = (open /tmp/helix-current-file.txt | str trim)
-            if not ($exported_raw | is-empty) {
-                # Ensure absolute path (exported might be relative like "Forge/file.md")
-                let exported = if ($exported_raw | path type) == "file" {
-                    $exported_raw | path expand
-                } else {
-                    # Relative path - expand from home
-                    $"($env.HOME)/($exported_raw)" | path expand
-                }
-                print $"📖 Using exported file: ($exported | path basename)"
-                $exported
+        # Layer 1: Check helix-current-link.md symlink (most recent Space+w target)
+        if ("/tmp/helix-current-link.md" | path exists) {
+            let link_target = (^readlink /tmp/helix-current-link.md | str trim)
+            if ($link_target | path exists) {
+                print $"📖 Using recent link target: ($link_target | path basename)"
+                $link_target
             } else {
-                # Fallback: find most recently modified .md file in Forge
-                print "🔍 Finding most recently modified note..."
-                let recent = (glob $"($vault)/**/*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
-                print $"📖 Using: ($recent | path basename)"
-                $recent
+                null
             }
         } else {
-            # Fallback: find most recently modified .md file in Forge
-            print "🔍 Finding most recently modified note..."
+            null
+        }
+        | default (
+            # Layer 2: Check exported file from Helix (set by Space+w)
+            if ("/tmp/helix-current-file.txt" | path exists) {
+                let exported_raw = (open /tmp/helix-current-file.txt | str trim)
+                if not ($exported_raw | is-empty) {
+                    # Ensure absolute path (exported might be relative like "Forge/file.md")
+                    let exported = if ($exported_raw | path type) == "file" {
+                        $exported_raw | path expand
+                    } else {
+                        # Relative path - expand from home
+                        $"($env.HOME)/($exported_raw)" | path expand
+                    }
+                    print $"📖 Using exported file: ($exported | path basename)"
+                    $exported
+                } else {
+                    null
+                }
+            } else {
+                null
+            }
+        )
+        | default (
+            # Layer 3: Check current directory for .md files
+            let local_mds = (glob "*.md")
+            if ($local_mds | length) == 1 {
+                let local_file = ($local_mds | first)
+                print $"📖 Using local file: ($local_file | path basename)"
+                $local_file
+            } else if ($local_mds | length) > 1 {
+                # Multiple .md files - show picker for just these
+                print $"📁 Found ($local_mds | length) markdown files in current directory"
+                let selected = ($local_mds | to text | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --prompt "Local files: ")
+                if not ($selected | is-empty) {
+                    print $"📖 Selected: ($selected | path basename)"
+                    $selected
+                } else {
+                    null
+                }
+            } else {
+                null
+            }
+        )
+        | default (
+            # Layer 4: Fallback to most recently modified file in vault
+            print "🔍 Finding most recently modified note in vault..."
             let recent = (glob $"($vault)/**/*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
             print $"📖 Using: ($recent | path basename)"
             $recent
-        }
+        )
     } else if ($file | path type) == "file" {
         $file
     } else {
