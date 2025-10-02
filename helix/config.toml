@@ -157,4 +157,4 @@ T = "insert_at_line_start"  # was on 'I' (Insert at line start)
 # Visual mode Space+w: use selection as-is (no line expansion)
 [keys.select.space]
 w = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", ":pipe-to ~/.local/bin/hx-wiki", ":sh sleep 0.1", ":open /tmp/helix-current-link.md"]
-W = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", ":pipe-to ~/.local/bin/hx-wiki", ":sh sleep 0.1", ":sh zellij action new-pane --direction right", ":sh sleep 0.3", ":sh zellij action write-chars \"hx $(readlink /tmp/helix-current-link.md)\"", ":sh zellij action write 13"]
+W = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", ":pipe-to ~/.local/bin/hx-wiki", ":sh sleep 0.1", ":sh zellij action new-pane --direction right", ":sh sleep 0.3", ":sh zellij action write-chars 'hx-wiki-open-right'", ":sh zellij action write 13"]
