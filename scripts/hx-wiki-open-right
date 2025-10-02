@@ -1,0 +1,12 @@
+#!/bin/bash
+
+# Helper script for Space+W - opens wiki link in new Zellij pane to the right
+# Reads the symlink and opens the actual file in Helix
+
+if [ -L "/tmp/helix-current-link.md" ]; then
+    target=$(readlink "/tmp/helix-current-link.md")
+    hx "$target"
+else
+    echo "Error: /tmp/helix-current-link.md not found or not a symlink"
+    sleep 2
+fi
