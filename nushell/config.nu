@@ -2039,10 +2039,7 @@ def wiki-nav [file?: string] {
         )
         | default (
             # Layer 4: Fallback to most recently modified file in vault
-            print "🔍 Finding most recently modified note in vault..."
-            let recent = (glob $"($vault)/**/*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
-            print $"📖 Using: ($recent | path basename)"
-            $recent
+            glob $"($vault)/**/*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name
         )
     } else if ($file | path type) == "file" {
         $file
@@ -2174,10 +2171,7 @@ def wiki-nav-right [file?: string] {
         )
         | default (
             # Layer 4: Fallback to most recently modified file in vault
-            print "🔍 Finding most recently modified note in vault..."
-            let recent = (glob $"($vault)/**/*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
-            print $"📖 Using: ($recent | path basename)"
-            $recent
+            glob $"($vault)/**/*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name
         )
     } else if ($file | path type) == "file" {
         $file
@@ -2306,10 +2300,7 @@ def wiki-nav-tab [file?: string] {
         )
         | default (
             # Layer 4: Fallback to most recently modified file in vault
-            print "🔍 Finding most recently modified note in vault..."
-            let recent = (glob $"($vault)/**/*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
-            print $"📖 Using: ($recent | path basename)"
-            $recent
+            glob $"($vault)/**/*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name
         )
     } else if ($file | path type) == "file" {
         $file
@@ -2438,10 +2429,7 @@ def wiki-nav-floating [file?: string] {
         )
         | default (
             # Layer 4: Fallback to most recently modified file in vault
-            print "🔍 Finding most recently modified note in vault..."
-            let recent = (glob $"($vault)/**/*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
-            print $"📖 Using: ($recent | path basename)"
-            $recent
+            glob $"($vault)/**/*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name
         )
     } else if ($file | path type) == "file" {
         $file
