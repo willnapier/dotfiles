@@ -5,7 +5,7 @@
 
 if [ -L "/tmp/helix-current-link.md" ]; then
     target=$(readlink "/tmp/helix-current-link.md")
-    hx "$target"
+    exec helix "$target"
 else
     echo "Error: /tmp/helix-current-link.md not found or not a symlink"
     sleep 2
