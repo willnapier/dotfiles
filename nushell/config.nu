@@ -2039,7 +2039,7 @@ def wiki-nav [file?: string] {
         )
         | default (
             # Layer 3: Check current directory for .md files
-            let local_mds = (glob "*.md" | to text | lines)
+            let local_mds = (glob "*.md")
             if ($local_mds | length) == 1 {
                 let local_file = ($local_mds | first)
                 print $"📖 Using local file: ($local_file | path basename)"
@@ -2190,7 +2190,7 @@ def wiki-nav-right [file?: string] {
         )
         | default (
             # Layer 3: Check current directory for .md files
-            let local_mds = (glob "*.md" | to text | lines)
+            let local_mds = (glob "*.md")
             if ($local_mds | length) == 1 {
                 let local_file = ($local_mds | first)
                 print $"📖 Using local file: ($local_file | path basename)"
@@ -2338,7 +2338,7 @@ def wiki-nav-tab [file?: string] {
         )
         | default (
             # Layer 3: Check current directory for .md files
-            let local_mds = (glob "*.md" | to text | lines)
+            let local_mds = (glob "*.md")
             if ($local_mds | length) == 1 {
                 let local_file = ($local_mds | first)
                 print $"📖 Using local file: ($local_file | path basename)"
@@ -2486,7 +2486,7 @@ def wiki-nav-floating [file?: string] {
         )
         | default (
             # Layer 3: Check current directory for .md files
-            let local_mds = (glob "*.md" | to text | lines)
+            let local_mds = (glob "*.md")
             if ($local_mds | length) == 1 {
                 let local_file = ($local_mds | first)
                 print $"📖 Using local file: ($local_file | path basename)"
