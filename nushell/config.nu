@@ -2039,7 +2039,7 @@ def wiki-nav [file?: string] {
         )
         | default (
             # Layer 3: Check current directory for .md files - most recently modified
-            glob "*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name?
+            glob "*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first? | get name?
         )
         | default (
             # Layer 4: Fallback to most recently modified file in vault
@@ -2175,7 +2175,7 @@ def wiki-nav-right [file?: string] {
         )
         | default (
             # Layer 3: Check current directory for .md files - most recently modified
-            glob "*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name?
+            glob "*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first? | get name?
         )
         | default (
             # Layer 4: Fallback to most recently modified file in vault
@@ -2308,7 +2308,7 @@ def wiki-nav-tab [file?: string] {
         )
         | default (
             # Layer 3: Check current directory for .md files - most recently modified
-            glob "*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name?
+            glob "*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first? | get name?
         )
         | default (
             # Layer 4: Fallback to most recently modified file in vault
@@ -2441,7 +2441,7 @@ def wiki-nav-floating [file?: string] {
         )
         | default (
             # Layer 3: Check current directory for .md files - most recently modified
-            glob "*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name?
+            glob "*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first? | get name?
         )
         | default (
             # Layer 4: Fallback to most recently modified file in vault
