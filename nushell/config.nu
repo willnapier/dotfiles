@@ -2039,14 +2039,14 @@ def wiki-nav [file?: string] {
         )
         | default (
             # Layer 3: Check current directory for .md files
-            let local_mds = (glob "*.md")
-            if ($local_mds | length) == 1 {
-                let local_file = ($local_mds | first)
+            let local_count = (glob "*.md" | length)
+            if $local_count == 1 {
+                let local_file = (glob "*.md" | first)
                 print $"📖 Using local file: ($local_file | path basename)"
                 $local_file
-            } else if ($local_mds | length) > 1 {
+            } else if $local_count > 1 {
                 # Multiple .md files - use most recently modified
-                let local_recent = ($local_mds | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
+                let local_recent = (glob "*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
                 print $"📖 Using local recent: ($local_recent | path basename)"
                 $local_recent
             } else {
@@ -2190,14 +2190,14 @@ def wiki-nav-right [file?: string] {
         )
         | default (
             # Layer 3: Check current directory for .md files
-            let local_mds = (glob "*.md")
-            if ($local_mds | length) == 1 {
-                let local_file = ($local_mds | first)
+            let local_count = (glob "*.md" | length)
+            if $local_count == 1 {
+                let local_file = (glob "*.md" | first)
                 print $"📖 Using local file: ($local_file | path basename)"
                 $local_file
-            } else if ($local_mds | length) > 1 {
+            } else if $local_count > 1 {
                 # Multiple .md files - use most recently modified
-                let local_recent = ($local_mds | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
+                let local_recent = (glob "*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
                 print $"📖 Using local recent: ($local_recent | path basename)"
                 $local_recent
             } else {
@@ -2338,14 +2338,14 @@ def wiki-nav-tab [file?: string] {
         )
         | default (
             # Layer 3: Check current directory for .md files
-            let local_mds = (glob "*.md")
-            if ($local_mds | length) == 1 {
-                let local_file = ($local_mds | first)
+            let local_count = (glob "*.md" | length)
+            if $local_count == 1 {
+                let local_file = (glob "*.md" | first)
                 print $"📖 Using local file: ($local_file | path basename)"
                 $local_file
-            } else if ($local_mds | length) > 1 {
+            } else if $local_count > 1 {
                 # Multiple .md files - use most recently modified
-                let local_recent = ($local_mds | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
+                let local_recent = (glob "*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
                 print $"📖 Using local recent: ($local_recent | path basename)"
                 $local_recent
             } else {
@@ -2486,14 +2486,14 @@ def wiki-nav-floating [file?: string] {
         )
         | default (
             # Layer 3: Check current directory for .md files
-            let local_mds = (glob "*.md")
-            if ($local_mds | length) == 1 {
-                let local_file = ($local_mds | first)
+            let local_count = (glob "*.md" | length)
+            if $local_count == 1 {
+                let local_file = (glob "*.md" | first)
                 print $"📖 Using local file: ($local_file | path basename)"
                 $local_file
-            } else if ($local_mds | length) > 1 {
+            } else if $local_count > 1 {
                 # Multiple .md files - use most recently modified
-                let local_recent = ($local_mds | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
+                let local_recent = (glob "*.md" | each { |f| {name: $f, modified: (ls $f | get modified | first)} } | sort-by modified -r | first | get name)
                 print $"📖 Using local recent: ($local_recent | path basename)"
                 $local_recent
             } else {
