@@ -2524,11 +2524,8 @@ date modified: ($today) ($now)
     # Create floating pane and open file there
     print $"📂 Opening in floating pane: ($next_file | path basename)"
 
-    # Create floating pane (80% width, 80% height), then send hx command to it
-    zellij action new-pane --floating --width "80%" --height "80%"
-    sleep 0.2sec
-    zellij action write-chars $"hx ($next_file)"
-    zellij action write 13  # ENTER key
+    # Create floating pane (80% width, 80% height) and run hx command directly
+    zellij action new-pane --floating --width "80%" --height "80%" -- hx ($next_file)
 }
 
 alias wnf = wiki-nav-floating
