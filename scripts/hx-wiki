@@ -1,53 +1,31 @@
 #!/bin/bash
 
-# Smart wiki link handler for Helix
-# If selection contains a link, uses that
-# Otherwise finds first link on current line/selection
+# Wiki link handler for Helix
+# Extracts the FIRST wiki link from the current line and opens it
+# For multi-link lines, use 'wn' command in terminal for interactive selection
+#
+# Usage: Called by Space+w in Helix (see helix/config.toml)
 
 line=$(cat)
 
 # Debug: log what we received
 echo "DEBUG: Received input: $line" >> /tmp/hx-wiki-debug.log
 
-# If input is just a cursor position (single character), it won't have links
-# In that case, we'd need the whole line, but Helix doesn't give us that
-# So this script expects either: a full line, or a selected [[link]]
-
 # Clear any old temp file first
 rm -f /tmp/helix-current-link.md
 target_file="/tmp/helix-current-link.md"
 
-# Get cursor column if available
-cursor_col=0
-if [ -f /tmp/helix-cursor-col.txt ]; then
-    cursor_col=$(cat /tmp/helix-cursor-col.txt)
-    rm -f /tmp/helix-cursor-col.txt
-fi
+# Extract first wiki link from the line (using ripgrep)
+# Note: Helix doesn't expose cursor position, so we always take the first link
+first_link=$(echo "$line" | rg -o '!?\[\[[^]]+\]\]' 2>/dev/null | head -1)
 
-# Extract all wiki links with their positions (using ripgrep for better performance)
-links_with_positions=$(echo "$line" | rg -o --byte-offset '!?\[\[[^]]+\]\]' 2>/dev/null || echo "")
-
-# If no links found, exit
-if [ -z "$links_with_positions" ]; then
+# If no link found, exit
+if [ -z "$first_link" ]; then
     exit 0
 fi
 
-# Find the link nearest to cursor position
-nearest_link=""
-min_distance=999999
-
-while IFS=: read -r pos link_text; do
-    # Calculate distance from cursor to start of link
-    distance=$((cursor_col > pos ? cursor_col - pos : pos - cursor_col))
-
-    if [ $distance -lt $min_distance ]; then
-        min_distance=$distance
-        nearest_link="$link_text"
-    fi
-done <<< "$links_with_positions"
-
 # Extract just the link content from [[link]]
-link=$(echo "$nearest_link" | sd '!*\[\[(.*)\]\]' '$1')
+link=$(echo "$first_link" | sd '!*\[\[(.*)\]\]' '$1')
 
 if [ -z "$link" ]; then
     # No wiki link found - do nothing
