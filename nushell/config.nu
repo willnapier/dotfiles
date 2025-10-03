@@ -2738,26 +2738,19 @@ def ftodo [file?: string] {
         }
         | default (
             # Layer 2: Current directory most recent .md
-            let local = (glob "*.md" | each {|f| {name: $f, mod: (ls $f | get modified | first)}} | sort-by mod -r | get 0?.name?)
-            if ($local | is-not-empty) {
-                print $"📂 Using current directory: ($local | path basename)"
-            }
-            $local
+            glob "*.md"
+            | each {|f| {name: $f, mod: (ls $f | get modified | first)}}
+            | sort-by mod -r
+            | get 0?.name?
         )
         | default (
             # Layer 3: Vault most recent .md
-            let recent = (
-                fd -t f -e md . $vault
-                | lines
-                | each {|f| {file: $f, modified: (ls $f | get modified | first)}}
-                | sort-by modified -r
-                | first
-                | get file
-            )
-            if ($recent | is-not-empty) {
-                print $"🔍 Using vault recent: ($recent | path basename)"
-            }
-            $recent
+            fd -t f -e md . $vault
+            | lines
+            | each {|f| {file: $f, modified: (ls $f | get modified | first)}}
+            | sort-by modified -r
+            | first
+            | get file?
         )
     } else {
         $file
@@ -2804,26 +2797,19 @@ def fmark [file?: string] {
         }
         | default (
             # Layer 2: Current directory most recent .md
-            let local = (glob "*.md" | each {|f| {name: $f, mod: (ls $f | get modified | first)}} | sort-by mod -r | get 0?.name?)
-            if ($local | is-not-empty) {
-                print $"📂 Using current directory: ($local | path basename)"
-            }
-            $local
+            glob "*.md"
+            | each {|f| {name: $f, mod: (ls $f | get modified | first)}}
+            | sort-by mod -r
+            | get 0?.name?
         )
         | default (
             # Layer 3: Vault most recent .md
-            let recent = (
-                fd -t f -e md . $vault
-                | lines
-                | each {|f| {file: $f, modified: (ls $f | get modified | first)}}
-                | sort-by modified -r
-                | first
-                | get file
-            )
-            if ($recent | is-not-empty) {
-                print $"🔍 Using vault recent: ($recent | path basename)"
-            }
-            $recent
+            fd -t f -e md . $vault
+            | lines
+            | each {|f| {file: $f, modified: (ls $f | get modified | first)}}
+            | sort-by modified -r
+            | first
+            | get file?
         )
     } else {
         $file
