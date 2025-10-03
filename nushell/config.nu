@@ -2775,11 +2775,11 @@ def ftodo [file?: string] {
         return
     }
 
-    # Use skim to select line
+    # Use skim to select line (with TERM override for compatibility)
     let selected = (
         $lines_with_numbers
         | str join "\n"
-        | sk --prompt "Select line to toggle> "
+        | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --prompt "Select line to toggle> "
     )
 
     if ($selected | is-empty) {
