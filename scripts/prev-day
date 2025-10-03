@@ -1,0 +1,4 @@
+#!/bin/bash
+# Wrapper script for Helix to call Nushell prev-day function
+
+nu -c "prev-day"

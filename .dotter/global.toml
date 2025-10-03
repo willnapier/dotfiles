@@ -54,6 +54,8 @@ depends = []
 # Essential scripts (most commonly used)
 "scripts/daily-note.nu" = "~/.local/bin/daily-note"
 "scripts/daypage-template" = "~/.local/bin/daypage-template"
+"scripts/prev-day" = "~/.local/bin/prev-day"
+"scripts/next-day" = "~/.local/bin/next-day"
 "scripts/hx-insert-date" = "~/.local/bin/hx-insert-date"
 "scripts/hx-insert-datetime" = "~/.local/bin/hx-insert-datetime"
 "scripts/search-comparison-test" = "~/.local/bin/search-comparison-test"

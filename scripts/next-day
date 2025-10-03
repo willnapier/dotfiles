@@ -1,0 +1,4 @@
+#!/bin/bash
+# Wrapper script for Helix to call Nushell next-day function
+
+nu -c "next-day"
