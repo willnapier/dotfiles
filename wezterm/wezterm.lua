@@ -175,6 +175,14 @@ config.leader = { key = 'b', mods = 'CTRL', timeout_milliseconds = 1000 }
 
 -- Cross-platform key bindings
 config.keys = {
+  -- Disable Ctrl+Z to prevent accidental process suspension
+  -- Especially important in Claude Code where accidental suspension breaks flow
+  {
+    key = 'z',
+    mods = 'CTRL',
+    action = act.DisableDefaultAssignment,
+  },
+
   -- Cross-platform word navigation (Alt on all platforms, Option on macOS)
   {
     key = 'LeftArrow',

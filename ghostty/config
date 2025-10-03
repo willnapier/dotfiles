@@ -47,3 +47,7 @@ scroll-to-bottom =
 # Mouse behavior for better Claude Code compatibility
 mouse-hide-while-typing = false
 mouse-shift-capture = false
+
+# Disable Ctrl+Z to prevent accidental process suspension
+# Especially important in Claude Code where accidental suspension breaks flow
+keybind = ctrl+z=unbind
