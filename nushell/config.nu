@@ -248,7 +248,7 @@ $env.config = {
             modifier: control
             keycode: char_z
             mode: [emacs, vi_normal, vi_insert]
-            event: { send: none }  # Disable Ctrl+Z to prevent accidental suspension
+            event: null  # Disable Ctrl+Z to prevent accidental suspension
         }
     ]
 
