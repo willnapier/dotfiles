@@ -563,6 +563,104 @@ def daily-open [date?: string] {
     }
 }
 
+# Navigate to previous day's note (creates if needed)
+# Usage: prev-day [--days 1]
+def prev-day [--days: int = 1] {
+    let target_date = (date now | date sub (($days) * 1day) | format date "%Y-%m-%d")
+    let daily_dir = $"($env.HOME)/Forge/NapierianLogs/DayPages"
+    let note_path = $"($daily_dir)/($target_date).md"
+
+    # Create directory if needed
+    if not ($daily_dir | path exists) {
+        mkdir $daily_dir
+    }
+
+    # Create note with template if it doesn't exist
+    if not ($note_path | path exists) {
+        let template_path = $"($env.HOME)/Forge/Areas/PKMStrategies/Templates/DayPage.md"
+        let readable_date = (date now | date sub (($days) * 1day) | format date "%A, %B %d, %Y")
+        let current_time = (date now | format date "%H:%M")
+
+        if ($template_path | path exists) {
+            let template_content = (open $template_path)
+            let processed = (
+                $template_content
+                | str replace --all "\{\{date\}\}" $target_date
+                | str replace --all "\{\{time24\}\}" $current_time
+                | str replace --all "\{\{hdate\}\}" $readable_date
+                | str replace --all "<cursor>" ""
+            )
+            $processed | save $note_path
+            print $"📝 Created: ($target_date)"
+        } else {
+            # Fallback template
+            let template = $"---
+tags:
+- journal
+date created: ($target_date) ($current_time)
+date modified: ($target_date) ($current_time)
+---
+# ($readable_date)
+
+"
+            $template | save $note_path
+            print $"📝 Created: ($target_date)"
+        }
+    }
+
+    print $"📅 Opening: ($target_date)"
+    hx $note_path
+}
+
+# Navigate to next day's note (creates if needed)
+# Usage: next-day [--days 1]
+def next-day [--days: int = 1] {
+    let target_date = (date now | date add (($days) * 1day) | format date "%Y-%m-%d")
+    let daily_dir = $"($env.HOME)/Forge/NapierianLogs/DayPages"
+    let note_path = $"($daily_dir)/($target_date).md"
+
+    # Create directory if needed
+    if not ($daily_dir | path exists) {
+        mkdir $daily_dir
+    }
+
+    # Create note with template if it doesn't exist
+    if not ($note_path | path exists) {
+        let template_path = $"($env.HOME)/Forge/Areas/PKMStrategies/Templates/DayPage.md"
+        let readable_date = (date now | date add (($days) * 1day) | format date "%A, %B %d, %Y")
+        let current_time = (date now | format date "%H:%M")
+
+        if ($template_path | path exists) {
+            let template_content = (open $template_path)
+            let processed = (
+                $template_content
+                | str replace --all "\{\{date\}\}" $target_date
+                | str replace --all "\{\{time24\}\}" $current_time
+                | str replace --all "\{\{hdate\}\}" $readable_date
+                | str replace --all "<cursor>" ""
+            )
+            $processed | save $note_path
+            print $"📝 Created: ($target_date)"
+        } else {
+            # Fallback template
+            let template = $"---
+tags:
+- journal
+date created: ($target_date) ($current_time)
+date modified: ($target_date) ($current_time)
+---
+# ($readable_date)
+
+"
+            $template | save $note_path
+            print $"📝 Created: ($target_date)"
+        }
+    }
+
+    print $"📅 Opening: ($target_date)"
+    hx $note_path
+}
+
 # Redundant note search functions removed - use Yazi equivalents instead:
 # - note-find → 's' key in Yazi (project-aware file search)
 # - note-grep → 'S' key in Yazi (project-aware content search) 
