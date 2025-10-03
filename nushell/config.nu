@@ -3,15 +3,6 @@
 # Nushell Config File
 # version = "0.106.1"
 
-# Disable Ctrl+Z suspend behavior (prevents accidentally suspending Claude Code)
-# Must be in config.nu (interactive context) not env.nu
-# Using ^undef (the literal character) to disable the suspend key
-if (which stty | is-not-empty) {
-    try {
-        ^stty susp '^-'
-    }
-}
-
 # Load vendor autoload scripts conditionally
 # Check for and source Starship prompt if available
 if ($"($env.HOME)/.cache/nushell/starship-init.nu" | path exists) {
@@ -372,6 +363,12 @@ let explore_colors = if ($env.SYSTEM_THEME? | default "light") == "dark" {
 }
 
 $env.config = ($env.config | upsert explore $explore_colors)
+
+# Disable Ctrl+Z at terminal level (for subprocesses like Claude Code)
+# The keybinding above only disables it in Nushell itself
+if (which stty | is-not-empty) {
+    try { ^stty susp undef } catch { }
+}
 
 # Zettelkasten workflow commands for Forge
 # Use alias instead of function for cd commands (functions can't change parent shell directory)
