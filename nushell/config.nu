@@ -241,7 +241,17 @@ $env.config = {
     }
     
     edit_mode: emacs  # Use emacs mode for cross-platform text navigation compatibility
-    
+
+    keybindings: [
+        {
+            name: disable_ctrl_z
+            modifier: control
+            keycode: char_z
+            mode: [emacs, vi_normal, vi_insert]
+            event: { send: none }  # Disable Ctrl+Z to prevent accidental suspension
+        }
+    ]
+
     completions: {
         case_sensitive: false
         quick: true
