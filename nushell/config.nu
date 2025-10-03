@@ -566,7 +566,7 @@ def daily-open [date?: string] {
 # Navigate to previous day's note (creates if needed)
 # Usage: prev-day [--days 1]
 def prev-day [--days: int = 1] {
-    let target_date = (date now | date sub (($days) * 1day) | format date "%Y-%m-%d")
+    let target_date = ((date now) - ($days * 1day) | format date "%Y-%m-%d")
     let daily_dir = $"($env.HOME)/Forge/NapierianLogs/DayPages"
     let note_path = $"($daily_dir)/($target_date).md"
 
@@ -578,7 +578,7 @@ def prev-day [--days: int = 1] {
     # Create note with template if it doesn't exist
     if not ($note_path | path exists) {
         let template_path = $"($env.HOME)/Forge/Areas/PKMStrategies/Templates/DayPage.md"
-        let readable_date = (date now | date sub (($days) * 1day) | format date "%A, %B %d, %Y")
+        let readable_date = ((date now) - ($days * 1day) | format date "%A, %B %d, %Y")
         let current_time = (date now | format date "%H:%M")
 
         if ($template_path | path exists) {
@@ -615,7 +615,7 @@ date modified: ($target_date) ($current_time)
 # Navigate to next day's note (creates if needed)
 # Usage: next-day [--days 1]
 def next-day [--days: int = 1] {
-    let target_date = (date now | date add (($days) * 1day) | format date "%Y-%m-%d")
+    let target_date = ((date now) + ($days * 1day) | format date "%Y-%m-%d")
     let daily_dir = $"($env.HOME)/Forge/NapierianLogs/DayPages"
     let note_path = $"($daily_dir)/($target_date).md"
 
@@ -627,7 +627,7 @@ def next-day [--days: int = 1] {
     # Create note with template if it doesn't exist
     if not ($note_path | path exists) {
         let template_path = $"($env.HOME)/Forge/Areas/PKMStrategies/Templates/DayPage.md"
-        let readable_date = (date now | date add (($days) * 1day) | format date "%A, %B %d, %Y")
+        let readable_date = ((date now) + ($days * 1day) | format date "%A, %B %d, %Y")
         let current_time = (date now | format date "%H:%M")
 
         if ($template_path | path exists) {
