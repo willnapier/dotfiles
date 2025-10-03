@@ -82,12 +82,6 @@ $env.SYSTEM_THEME = if $platform == "darwin" {
     "dark"
 }
 
-# Disable Ctrl+Z suspend behavior (prevents accidentally suspending Claude Code)
-if (which stty | is-not-empty) {
-    ^stty -g | save -f ~/.stty-settings  # Save current settings for restoration if needed
-    ^stty susp ''  # Disable Ctrl+Z suspension by setting to empty string
-}
-
 # Zoxide initialization
 if (which zoxide | is-not-empty) {
     zoxide init nushell | save -f ~/.zoxide.nu

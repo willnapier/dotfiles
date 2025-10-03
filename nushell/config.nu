@@ -3,6 +3,12 @@
 # Nushell Config File
 # version = "0.106.1"
 
+# Disable Ctrl+Z suspend behavior (prevents accidentally suspending Claude Code)
+# Must be in config.nu (interactive context) not env.nu
+if (which stty | is-not-empty) {
+    ^stty susp undef
+}
+
 # Load vendor autoload scripts conditionally
 # Check for and source Starship prompt if available
 if ($"($env.HOME)/.cache/nushell/starship-init.nu" | path exists) {
