@@ -565,7 +565,7 @@ def daily-open [date?: string] {
 
 # Navigate to previous day's note (creates if needed)
 # Usage: prev-day [--days 1]
-def prev-day [--days: int = 1] {
+def prev-day [--days: int = 1, --helix] {
     let target_date = ((date now) - ($days * 1day) | format date "%Y-%m-%d")
     let daily_dir = $"($env.HOME)/Forge/NapierianLogs/DayPages"
     let note_path = $"($daily_dir)/($target_date).md"
@@ -608,13 +608,18 @@ date modified: ($target_date) ($current_time)
         }
     }
 
-    print $"📅 Opening: ($target_date)"
-    hx $note_path
+    # Helix mode: write path to temp file for Helix to open
+    if $helix {
+        $note_path | save -f /tmp/helix-day-target.md
+    } else {
+        print $"📅 Opening: ($target_date)"
+        hx $note_path
+    }
 }
 
 # Navigate to next day's note (creates if needed)
 # Usage: next-day [--days 1]
-def next-day [--days: int = 1] {
+def next-day [--days: int = 1, --helix] {
     let target_date = ((date now) + ($days * 1day) | format date "%Y-%m-%d")
     let daily_dir = $"($env.HOME)/Forge/NapierianLogs/DayPages"
     let note_path = $"($daily_dir)/($target_date).md"
@@ -657,8 +662,13 @@ date modified: ($target_date) ($current_time)
         }
     }
 
-    print $"📅 Opening: ($target_date)"
-    hx $note_path
+    # Helix mode: write path to temp file for Helix to open
+    if $helix {
+        $note_path | save -f /tmp/helix-day-target.md
+    } else {
+        print $"📅 Opening: ($target_date)"
+        hx $note_path
+    }
 }
 
 # Redundant note search functions removed - use Yazi equivalents instead:
