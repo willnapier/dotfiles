@@ -123,8 +123,8 @@ q = [":write", ":buffer-previous"]       # Save then go to previous buffer
 Q = ":quit!"                                # Force quit without saving
 
 # Day navigation - Space+[ and Space+]
-"[" = [":sh prev-day", ":sh sleep 0.1", ":open /tmp/helix-day-target.md"]    # Previous day's note (creates if needed)
-"]" = [":sh next-day", ":sh sleep 0.1", ":open /tmp/helix-day-target.md"]    # Next day's note (creates if needed)
+"[" = [":sh prev-day", ":sh sleep 0.1", ":buffer-close! /tmp/helix-day-target.md", ":open /tmp/helix-day-target.md"]    # Previous day's note (creates if needed)
+"]" = [":sh next-day", ":sh sleep 0.1", ":buffer-close! /tmp/helix-day-target.md", ":open /tmp/helix-day-target.md"]    # Next day's note (creates if needed)
 
 # Custom g-prefix commands
 [keys.normal.g]
