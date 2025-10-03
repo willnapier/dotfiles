@@ -2794,18 +2794,57 @@ def ftodo [file?: string] {
     let all_lines = (open $target_file | lines)
 
     # Get the specific line (0-indexed, so subtract 1)
-    let target_line = ($all_lines | get ($line_num - 1))
+    let original_line = ($all_lines | get ($line_num - 1))
 
-    # Toggle that line using hx-toggle-todo
-    let toggled_line = ($target_line | hx-toggle-todo)
+    # Show current line and prompt for desired state
+    print $"\n📝 Current line ($line_num): ($original_line)"
+    print "\nSelect desired state:"
+    print "  1 - Plain text (no markers)"
+    print "  2 - Unchecked todo: - [ ] text"
+    print "  3 - Checked todo: - [x] text"
+    print "  4 - Plain list item: - text"
+    print "  5 - Cancel (no change)"
+    print -n "\nEnter choice (1-5): "
 
-    # Rebuild file with toggled line
+    let choice = (input)
+
+    let new_line = match $choice {
+        "1" => {
+            # Plain text - remove all markers
+            $original_line | sd '^[[:space:]]*[-\*][[:space:]]*\[[x ]\][[:space:]]*' '' | sd '^[[:space:]]*[-\*][[:space:]]*' ''
+        }
+        "2" => {
+            # Unchecked todo
+            let stripped = ($original_line | sd '^[[:space:]]*[-\*][[:space:]]*\[[x ]\][[:space:]]*' '' | sd '^[[:space:]]*[-\*][[:space:]]*' '')
+            $"- [ ] ($stripped)"
+        }
+        "3" => {
+            # Checked todo
+            let stripped = ($original_line | sd '^[[:space:]]*[-\*][[:space:]]*\[[x ]\][[:space:]]*' '' | sd '^[[:space:]]*[-\*][[:space:]]*' '')
+            $"- [x] ($stripped)"
+        }
+        "4" => {
+            # Plain list item
+            let stripped = ($original_line | sd '^[[:space:]]*[-\*][[:space:]]*\[[x ]\][[:space:]]*' '' | sd '^[[:space:]]*[-\*][[:space:]]*' '')
+            $"- ($stripped)"
+        }
+        "5" => {
+            print "❌ Cancelled"
+            return
+        }
+        _ => {
+            print "❌ Invalid choice, no changes made"
+            return
+        }
+    }
+
+    # Rebuild file with new line
     let new_content = (
         $all_lines
         | enumerate
         | each {|item|
             if $item.index == ($line_num - 1) {
-                $toggled_line
+                $new_line
             } else {
                 $item.item
             }
@@ -2816,7 +2855,7 @@ def ftodo [file?: string] {
     # Save back to file
     $new_content | save -f $target_file
 
-    print $"✅ Toggled line ($line_num): ($toggled_line)"
+    print $"✅ Updated line ($line_num): ($new_line)"
 }
 
 # Mark file as revisited - Universal tool with context detection
