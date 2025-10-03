@@ -2709,12 +2709,11 @@ def wiki-back [] {
 # File operations - Toggle todo checkbox on cursor line
 # Usage: ftodo  (toggles the line where cursor currently is in most recent file)
 # Requires: hx-toggle-todo script (processes entire file, toggles line under cursor)
-# Toggle todo checkbox - Universal tool with context detection
+# Toggle todo checkbox - Interactive picker with context detection
 # Usage:
-#   ftodo           - Auto-detect file using 4-layer context detection
-#   ftodo file.md   - Toggle todos in specific file
-#   ftodo --line N file.md - Toggle specific line (future enhancement)
-# Essential for scripting: glob "*.md" | each {|f| ftodo $f}
+#   ftodo           - Auto-detect file, show picker to select line to toggle
+#   ftodo file.md   - Show picker for specific file
+# Interactive: presents all lines, select which to toggle (like wn for wiki links)
 def ftodo [file?: string] {
     let vault = $"($env.HOME)/Forge"
 
@@ -2761,12 +2760,63 @@ def ftodo [file?: string] {
         return
     }
 
-    print $"📝 Toggling todos in: ($target_file | path basename)"
-    print "⚠️  Note: Space+t in Helix is cursor-aware, ftodo processes whole file"
+    print $"📝 Select line to toggle in: ($target_file | path basename)"
 
-    # Call existing hx-toggle-todo script on the file
-    open $target_file | hx-toggle-todo | save -f $target_file
-    print "✅ Done"
+    # Read file with line numbers
+    let lines_with_numbers = (
+        open $target_file
+        | lines
+        | enumerate
+        | each {|item| $"($item.index + 1): ($item.item)"}
+    )
+
+    if ($lines_with_numbers | is-empty) {
+        print "❌ File is empty"
+        return
+    }
+
+    # Use skim to select line
+    let selected = (
+        $lines_with_numbers
+        | str join "\n"
+        | sk --prompt "Select line to toggle> "
+    )
+
+    if ($selected | is-empty) {
+        print "❌ No selection made"
+        return
+    }
+
+    # Extract line number from selection (format: "123: content")
+    let line_num = ($selected | parse "{num}: {content}" | get num.0 | into int)
+
+    # Read all lines
+    let all_lines = (open $target_file | lines)
+
+    # Get the specific line (0-indexed, so subtract 1)
+    let target_line = ($all_lines | get ($line_num - 1))
+
+    # Toggle that line using hx-toggle-todo
+    let toggled_line = ($target_line | hx-toggle-todo)
+
+    # Rebuild file with toggled line
+    let new_content = (
+        $all_lines
+        | enumerate
+        | each {|item|
+            if $item.index == ($line_num - 1) {
+                $toggled_line
+            } else {
+                $item.item
+            }
+        }
+        | str join "\n"
+    )
+
+    # Save back to file
+    $new_content | save -f $target_file
+
+    print $"✅ Toggled line ($line_num): ($toggled_line)"
 }
 
 # Mark file as revisited - Universal tool with context detection
