@@ -5,8 +5,11 @@
 
 # Disable Ctrl+Z suspend behavior (prevents accidentally suspending Claude Code)
 # Must be in config.nu (interactive context) not env.nu
+# Using ^undef (the literal character) to disable the suspend key
 if (which stty | is-not-empty) {
-    ^stty susp undef
+    try {
+        ^stty susp '^-'
+    }
 }
 
 # Load vendor autoload scripts conditionally
