@@ -2709,33 +2709,163 @@ def wiki-back [] {
 # File operations - Toggle todo checkbox on cursor line
 # Usage: ftodo  (toggles the line where cursor currently is in most recent file)
 # Requires: hx-toggle-todo script (processes entire file, toggles line under cursor)
-def ftodo [] {
+# Toggle todo checkbox - Universal tool with context detection
+# Usage:
+#   ftodo           - Auto-detect file using 4-layer context detection
+#   ftodo file.md   - Toggle todos in specific file
+#   ftodo --line N file.md - Toggle specific line (future enhancement)
+# Essential for scripting: glob "*.md" | each {|f| ftodo $f}
+def ftodo [file?: string] {
     let vault = $"($env.HOME)/Forge"
 
-    # Find most recently modified .md file in Forge
-    let target_file = (
-        fd -t f -e md . $vault
-        | lines
-        | each { |f| {file: $f, modified: (ls $f | get modified | first)} }
-        | sort-by modified
-        | reverse
-        | first
-        | get file
-    )
+    let target_file = if ($file | is-empty) {
+        # Layer 1: Recent Helix action (exported by Space+w)
+        if ("/tmp/helix-current-file.txt" | path exists) {
+            let exported_raw = (open /tmp/helix-current-file.txt | str trim)
+            if not ($exported_raw | is-empty) {
+                let exported = if ($exported_raw | path type) == "file" {
+                    $exported_raw | path expand
+                } else {
+                    $"($env.HOME)/($exported_raw)" | path expand
+                }
+                print $"📖 Using Helix context: ($exported | path basename)"
+                $exported
+            } else {
+                null
+            }
+        } else {
+            null
+        }
+        | default (
+            # Layer 2: Current directory most recent .md
+            let local = (glob "*.md" | each {|f| {name: $f, mod: (ls $f | get modified | first)}} | sort-by mod -r | get 0?.name?)
+            if ($local | is-not-empty) {
+                print $"📂 Using current directory: ($local | path basename)"
+            }
+            $local
+        )
+        | default (
+            # Layer 3: Vault most recent .md
+            let recent = (
+                fd -t f -e md . $vault
+                | lines
+                | each {|f| {file: $f, modified: (ls $f | get modified | first)}}
+                | sort-by modified -r
+                | first
+                | get file
+            )
+            if ($recent | is-not-empty) {
+                print $"🔍 Using vault recent: ($recent | path basename)"
+            }
+            $recent
+        )
+    } else {
+        $file
+    }
 
     if ($target_file | is-empty) {
-        print "❌ No markdown files found in Forge"
+        print "❌ No markdown files found"
         return
     }
 
-    print $"📝 Toggling todo in: ($target_file | path basename)"
-    print "⚠️  Note: Use Space+t in Helix for cursor-aware toggle"
-    print "   ftodo is best for batch operations on saved files"
+    print $"📝 Toggling todos in: ($target_file | path basename)"
+    print "⚠️  Note: Space+t in Helix is cursor-aware, ftodo processes whole file"
 
     # Call existing hx-toggle-todo script on the file
-    # This script expects stdin, processes line by line
     open $target_file | hx-toggle-todo | save -f $target_file
-    print "✅ Processed file"
+    print "✅ Done"
+}
+
+# Mark file as revisited - Universal tool with context detection
+# Usage:
+#   fmark           - Auto-detect file and mark as revisited today
+#   fmark file.md   - Mark specific file as revisited
+# Essential for scripting: glob "reading-list/*.md" | each {|f| fmark $f}
+def fmark [file?: string] {
+    let vault = $"($env.HOME)/Forge"
+
+    let target_file = if ($file | is-empty) {
+        # Layer 1: Recent Helix action (exported by Space+w)
+        if ("/tmp/helix-current-file.txt" | path exists) {
+            let exported_raw = (open /tmp/helix-current-file.txt | str trim)
+            if not ($exported_raw | is-empty) {
+                let exported = if ($exported_raw | path type) == "file" {
+                    $exported_raw | path expand
+                } else {
+                    $"($env.HOME)/($exported_raw)" | path expand
+                }
+                print $"📖 Using Helix context: ($exported | path basename)"
+                $exported
+            } else {
+                null
+            }
+        } else {
+            null
+        }
+        | default (
+            # Layer 2: Current directory most recent .md
+            let local = (glob "*.md" | each {|f| {name: $f, mod: (ls $f | get modified | first)}} | sort-by mod -r | get 0?.name?)
+            if ($local | is-not-empty) {
+                print $"📂 Using current directory: ($local | path basename)"
+            }
+            $local
+        )
+        | default (
+            # Layer 3: Vault most recent .md
+            let recent = (
+                fd -t f -e md . $vault
+                | lines
+                | each {|f| {file: $f, modified: (ls $f | get modified | first)}}
+                | sort-by modified -r
+                | first
+                | get file
+            )
+            if ($recent | is-not-empty) {
+                print $"🔍 Using vault recent: ($recent | path basename)"
+            }
+            $recent
+        )
+    } else {
+        $file
+    }
+
+    if ($target_file | is-empty) {
+        print "❌ No markdown files found"
+        return
+    }
+
+    print $"📅 Marking as revisited: ($target_file | path basename)"
+
+    # Call existing hx-mark-revisit script
+    ^hx-mark-revisit $target_file
+    print "✅ Done"
+}
+
+# Date stamp - Output current date for piping/insertion
+# Usage:
+#   dstamp                    - Output: 2025-10-03
+#   dstamp | pbcopy          - Copy to clipboard
+#   echo (dstamp) >> file.md - Append to file
+def dstamp [] {
+    date now | format date "%Y-%m-%d"
+}
+
+# Time stamp - Output current time for piping/insertion
+# Usage:
+#   tstamp                    - Output: 14:30
+#   tstamp | pbcopy          - Copy to clipboard
+#   echo (tstamp) >> file.md - Append to file
+def tstamp [] {
+    date now | format date "%H:%M"
+}
+
+# DateTime stamp - Output current date and time for piping/insertion
+# Usage:
+#   dtstamp                      - Output: 2025-10-03 14:30
+#   dtstamp | pbcopy            - Copy to clipboard
+#   echo (dtstamp) >> file.md   - Append to file
+def dtstamp [] {
+    date now | format date "%Y-%m-%d %H:%M"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
