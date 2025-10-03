@@ -1,0 +1,26 @@
+# Helix Language Server Configuration
+# Use ONLY markdown-oxide (Rust) - NO marksman bloat
+
+[language-server.markdown-oxide]
+command = "markdown-oxide"
+timeout = 60  # Increase timeout for large vaults (6,400+ files)
+
+[[language]]
+name = "markdown"
+scope = "source.md"
+file-types = ["md", "markdown", "mkd", "mdwn", "mdown", "markdn", "mdtxt", "mdtext", "workbook"]
+roots = [".git"]
+language-servers = ["markdown-oxide"]  # ONLY markdown-oxide, NO marksman
+soft-wrap.enable = true
+soft-wrap.wrap-at-text-width = false
+soft-wrap.max-wrap = 25
+soft-wrap.wrap-indicator = ""
+
+[[language]]
+name = "text"
+scope = "text.plain"
+file-types = ["txt", "text"]
+roots = []
+soft-wrap.enable = true
+soft-wrap.max-wrap = 25
+soft-wrap.wrap-indicator = ""

@@ -7,6 +7,7 @@ depends = []
 [shared.files]
 "git/gitconfig" = "~/.gitconfig"
 "helix/config.toml" = "~/.config/helix/config.toml"
+"helix/languages.toml" = "~/.config/helix/languages.toml"
 "nushell/config.nu" = "~/.config/nushell/config.nu"
 "nushell/env.nu" = "~/.config/nushell/env.nu"
 "yazi/yazi.toml" = "~/.config/yazi/yazi.toml"
