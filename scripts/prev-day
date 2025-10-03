@@ -1,43 +1,5 @@
-#!/bin/bash
-# Wrapper script for Helix day navigation
+#!/usr/bin/env nu
+# Wrapper script for Helix to call Nushell prev-day function
+# Calls the function with --helix flag to create symlink instead of opening editor
 
-# Calculate target date
-days=${1:-1}
-target_date=$(date -v-${days}d +%Y-%m-%d)
-daily_dir="$HOME/Forge/NapierianLogs/DayPages"
-note_path="$daily_dir/${target_date}.md"
-
-# Create directory if needed
-mkdir -p "$daily_dir"
-
-# Create note from template if it doesn't exist
-if [ ! -f "$note_path" ]; then
-    template_path="$HOME/Forge/Areas/PKMStrategies/Templates/DayPage.md"
-    readable_date=$(date -v-${days}d +"%A, %B %d, %Y")
-    current_time=$(date +%H:%M)
-
-    if [ -f "$template_path" ]; then
-        # Process template
-        sed -e "s/{{date}}/${target_date}/g" \
-            -e "s/{{time24}}/${current_time}/g" \
-            -e "s/{{hdate}}/${readable_date}/g" \
-            -e "s/<cursor>//g" \
-            "$template_path" > "$note_path"
-    else
-        # Fallback template
-        cat > "$note_path" <<EOF
----
-tags:
-- journal
-date created: ${target_date} ${current_time}
-date modified: ${target_date} ${current_time}
----
-# ${readable_date}
-
-EOF
-    fi
-fi
-
-# Create symlink for Helix to open
-rm -f /tmp/helix-day-target.md
-ln -sf "$note_path" /tmp/helix-day-target.md
+prev-day --helix
