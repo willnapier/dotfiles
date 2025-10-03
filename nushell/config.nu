@@ -608,9 +608,10 @@ date modified: ($target_date) ($current_time)
         }
     }
 
-    # Helix mode: write path to temp file for Helix to open
+    # Helix mode: create symlink for Helix to open
     if $helix {
-        $note_path | save -f /tmp/helix-day-target.md
+        rm -f /tmp/helix-day-target.md
+        ^ln -sf $note_path /tmp/helix-day-target.md
     } else {
         print $"📅 Opening: ($target_date)"
         hx $note_path
@@ -662,9 +663,10 @@ date modified: ($target_date) ($current_time)
         }
     }
 
-    # Helix mode: write path to temp file for Helix to open
+    # Helix mode: create symlink for Helix to open
     if $helix {
-        $note_path | save -f /tmp/helix-day-target.md
+        rm -f /tmp/helix-day-target.md
+        ^ln -sf $note_path /tmp/helix-day-target.md
     } else {
         print $"📅 Opening: ($target_date)"
         hx $note_path
