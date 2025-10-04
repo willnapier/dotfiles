@@ -185,8 +185,8 @@ config.keys = {
     action = act.DisableDefaultAssignment,
   },
 
-  -- Disable Ctrl+/- font size controls to pass through to Zellij for pane resizing
-  -- Move font controls to Cmd+/- (macOS standard) instead
+  -- Disable ALL default font size controls (Ctrl and Cmd/Super)
+  -- We'll reassign them below to platform-specific modifiers
   {
     key = '-',
     mods = 'CTRL',
@@ -198,6 +198,11 @@ config.keys = {
     action = act.DisableDefaultAssignment,
   },
   {
+    key = '-',
+    mods = 'SUPER',  -- Cmd on macOS
+    action = act.DisableDefaultAssignment,
+  },
+  {
     key = '=',
     mods = 'CTRL',
     action = act.DisableDefaultAssignment,
@@ -205,11 +210,26 @@ config.keys = {
   {
     key = '=',
     mods = 'SHIFT|CTRL',
+    action = act.DisableDefaultAssignment,
+  },
+  {
+    key = '=',
+    mods = 'SUPER',  -- Cmd on macOS
+    action = act.DisableDefaultAssignment,
+  },
+  {
+    key = '+',
+    mods = 'CTRL',
     action = act.DisableDefaultAssignment,
   },
   {
     key = '+',
     mods = 'SHIFT|CTRL',
+    action = act.DisableDefaultAssignment,
+  },
+  {
+    key = '+',
+    mods = 'SUPER',  -- Cmd on macOS
     action = act.DisableDefaultAssignment,
   },
 
