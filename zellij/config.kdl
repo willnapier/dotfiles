@@ -269,13 +269,22 @@ themes {
         bg 0 43 54          // base03
         black 7 54 66       // base02
         red 220 50 47       // red
-        green 133 153 0     // green  
+        green 133 153 0     // green
         yellow 181 137 0    // yellow
         blue 38 139 210     // blue
         magenta 211 54 130  // magenta
         cyan 42 161 152     // cyan
         white 238 232 213   // base2
         orange 203 75 22    // orange
+        // Status bar mode indicator colors (the grey you're looking for!)
+        ribbon_selected {
+            base 147 161 161      // base0 - active mode text (bright)
+            background 0 43 54    // base03 - active mode background
+        }
+        ribbon_unselected {
+            base 88 110 117       // base01 - inactive mode text (grey)
+            background 7 54 66    // base02 - inactive mode background
+        }
         // Enhanced pane frame colors for better focus visibility
         frame 38 139 210         // blue - focused pane border (much more visible)
         frame_inactive 88 110 117   // base01 - inactive pane border (dimmer)

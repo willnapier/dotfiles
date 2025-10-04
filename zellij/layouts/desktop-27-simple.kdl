@@ -1,8 +1,8 @@
 // Desktop layout - simplified version for testing
 layout {
     default_tab_template {
-        pane size=1 borderless=true {
-            plugin location="zellij:compact-bar"
+        pane size=2 borderless=true {
+            plugin location="zellij:status-bar"
         }
         children
     }
