@@ -185,41 +185,32 @@ config.keys = {
     action = act.DisableDefaultAssignment,
   },
 
-  -- Disable ALL default font size controls (Ctrl and Cmd/Super)
-  -- We'll reassign them below to platform-specific modifiers
+  -- Pass Ctrl +/- through to Zellij (instead of WezTerm font controls)
+  -- Send the actual key combo to the terminal application
   {
     key = '-',
     mods = 'CTRL',
-    action = act.DisableDefaultAssignment,
-  },
-  {
-    key = '-',
-    mods = 'SHIFT|CTRL',
-    action = act.DisableDefaultAssignment,
-  },
-  {
-    key = '-',
-    mods = 'SUPER',  -- Cmd on macOS
-    action = act.DisableDefaultAssignment,
+    action = act.SendKey { key = '-', mods = 'CTRL' },
   },
   {
     key = '=',
     mods = 'CTRL',
-    action = act.DisableDefaultAssignment,
-  },
-  {
-    key = '=',
-    mods = 'SHIFT|CTRL',
-    action = act.DisableDefaultAssignment,
-  },
-  {
-    key = '=',
-    mods = 'SUPER',  -- Cmd on macOS
-    action = act.DisableDefaultAssignment,
+    action = act.SendKey { key = '=', mods = 'CTRL' },
   },
   {
     key = '+',
     mods = 'CTRL',
+    action = act.SendKey { key = '+', mods = 'CTRL' },
+  },
+  -- Disable SHIFT|CTRL combinations (not needed for Zellij)
+  {
+    key = '-',
+    mods = 'SHIFT|CTRL',
+    action = act.DisableDefaultAssignment,
+  },
+  {
+    key = '=',
+    mods = 'SHIFT|CTRL',
     action = act.DisableDefaultAssignment,
   },
   {
@@ -227,9 +218,20 @@ config.keys = {
     mods = 'SHIFT|CTRL',
     action = act.DisableDefaultAssignment,
   },
+  -- Disable SUPER (Cmd) font controls - we'll reassign below
+  {
+    key = '-',
+    mods = 'SUPER',
+    action = act.DisableDefaultAssignment,
+  },
+  {
+    key = '=',
+    mods = 'SUPER',
+    action = act.DisableDefaultAssignment,
+  },
   {
     key = '+',
-    mods = 'SUPER',  -- Cmd on macOS
+    mods = 'SUPER',
     action = act.DisableDefaultAssignment,
   },
 
