@@ -32,12 +32,14 @@ local function get_platform_modifiers()
       word_mod = 'OPT',      -- Option/Alt on macOS
       line_mod = 'CMD',      -- Command on macOS
       primary_mod = 'CMD',   -- Primary modifier (Cmd on macOS)
+      font_mod = 'CMD',      -- Font controls (Cmd on macOS)
     }
   else -- Linux and other platforms
     return {
       word_mod = 'ALT',      -- Alt on Linux
       line_mod = 'CTRL',     -- Ctrl on Linux
       primary_mod = 'CTRL',  -- Primary modifier (Ctrl on Linux)
+      font_mod = 'ALT',      -- Font controls (Alt on Linux, won't conflict with Zellij)
     }
   end
 end
@@ -211,25 +213,25 @@ config.keys = {
     action = act.DisableDefaultAssignment,
   },
 
-  -- Font size controls moved to Cmd (standard macOS pattern)
+  -- Font size controls (cross-platform: Cmd on macOS, Alt on Linux)
   {
     key = '-',
-    mods = 'CMD',
+    mods = mods.font_mod,
     action = act.DecreaseFontSize,
   },
   {
     key = '=',
-    mods = 'CMD',
+    mods = mods.font_mod,
     action = act.IncreaseFontSize,
   },
   {
     key = '+',
-    mods = 'CMD',
+    mods = mods.font_mod,
     action = act.IncreaseFontSize,
   },
   {
     key = '0',
-    mods = 'CMD',
+    mods = mods.font_mod,
     action = act.ResetFontSize,
   },
 
