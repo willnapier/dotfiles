@@ -1,0 +1,1 @@
+/Users/williamnapier/Claude/ZELLIJ-KEYBINDINGS.md
