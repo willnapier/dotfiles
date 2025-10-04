@@ -1150,6 +1150,15 @@ if (which btop | is-not-empty) {
 # 🔥 UNIVERSAL COMMAND-LINE SEARCH SUITE 🔥
 # Replacements for Alt commands with universal clipboard support
 
+# View Zellij keybindings cheat sheet in inlyne
+def zkeys [] {
+    if (which inlyne | is-empty) {
+        print "inlyne not found. Install with: brew install inlyne"
+        return
+    }
+    inlyne ~/Claude/ZELLIJ-KEYBINDINGS.md
+}
+
 # File search + open in Helix
 def fsh [] {
     if (which fd | is-empty) or (which sk | is-empty) {
