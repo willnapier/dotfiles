@@ -202,21 +202,21 @@ config.keys = {
     mods = 'CTRL',
     action = act.SendKey { key = '+', mods = 'CTRL' },
   },
-  -- Disable SHIFT|CTRL combinations (not needed for Zellij)
-  {
-    key = '-',
-    mods = 'SHIFT|CTRL',
-    action = act.DisableDefaultAssignment,
-  },
+  -- Pass Ctrl Shift +/= through to Zellij as well (for Ctrl + which is Ctrl Shift =)
   {
     key = '=',
     mods = 'SHIFT|CTRL',
-    action = act.DisableDefaultAssignment,
+    action = act.SendKey { key = '=', mods = 'CTRL' },  -- Send as Ctrl = (Zellij sees it as increase)
   },
   {
     key = '+',
     mods = 'SHIFT|CTRL',
-    action = act.DisableDefaultAssignment,
+    action = act.SendKey { key = '=', mods = 'CTRL' },  -- Send as Ctrl = (same as above)
+  },
+  {
+    key = '-',
+    mods = 'SHIFT|CTRL',
+    action = act.DisableDefaultAssignment,  -- Ctrl Shift - not needed
   },
   -- Disable SUPER (Cmd) font controls - we'll reassign below
   {
