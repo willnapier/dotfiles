@@ -302,6 +302,15 @@ themes {
         cyan 42 161 152     // cyan
         white 238 232 213   // base2
         orange 203 75 22    // orange
+        // Status bar mode indicator colors (the grey you're looking for!)
+        ribbon_selected {
+            base 101 123 131      // base00 - active mode text (dark)
+            background 253 246 227  // base3 - active mode background
+        }
+        ribbon_unselected {
+            base 147 161 161       // base0 - inactive mode text (grey)
+            background 238 232 213  // base2 - inactive mode background
+        }
         // Enhanced pane frame colors for better focus visibility
         frame 38 139 210         // blue - focused pane border (much more visible)
         frame_inactive 147 161 161  // base0 - inactive pane border (subtle for light mode)
@@ -329,7 +338,7 @@ scroll_buffer_size 10000
 
 // Pane settings
 pane_frames true
-simplified_ui true
+simplified_ui false
 
 // Plugin settings - tab-bar removed to prevent duplicate mode indicators
 plugins {
