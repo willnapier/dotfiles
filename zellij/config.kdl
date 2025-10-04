@@ -280,10 +280,18 @@ themes {
         ribbon_selected {
             base 147 161 161      // base0 - active mode text (bright)
             background 0 43 54    // base03 - active mode background
+            emphasis_0 38 139 210   // blue
+            emphasis_1 133 153 0    // green
+            emphasis_2 203 75 22    // orange
+            emphasis_3 42 161 152   // cyan
         }
         ribbon_unselected {
             base 88 110 117       // base01 - inactive mode text (grey)
             background 7 54 66    // base02 - inactive mode background
+            emphasis_0 88 110 117   // base01
+            emphasis_1 88 110 117   // base01
+            emphasis_2 88 110 117   // base01
+            emphasis_3 88 110 117   // base01
         }
         // Enhanced pane frame colors for better focus visibility
         frame 38 139 210         // blue - focused pane border (much more visible)
@@ -306,10 +314,18 @@ themes {
         ribbon_selected {
             base 101 123 131      // base00 - active mode text (dark)
             background 253 246 227  // base3 - active mode background
+            emphasis_0 38 139 210   // blue
+            emphasis_1 133 153 0    // green
+            emphasis_2 203 75 22    // orange
+            emphasis_3 42 161 152   // cyan
         }
         ribbon_unselected {
             base 147 161 161       // base0 - inactive mode text (grey)
             background 238 232 213  // base2 - inactive mode background
+            emphasis_0 147 161 161  // base0
+            emphasis_1 147 161 161  // base0
+            emphasis_2 147 161 161  // base0
+            emphasis_3 147 161 161  // base0
         }
         // Enhanced pane frame colors for better focus visibility
         frame 38 139 210         // blue - focused pane border (much more visible)
