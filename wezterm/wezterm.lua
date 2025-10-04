@@ -184,9 +184,15 @@ config.keys = {
   },
 
   -- Disable Ctrl+/- font size controls to pass through to Zellij for pane resizing
+  -- Move font controls to Cmd+/- (macOS standard) instead
   {
     key = '-',
     mods = 'CTRL',
+    action = act.DisableDefaultAssignment,
+  },
+  {
+    key = '-',
+    mods = 'SHIFT|CTRL',
     action = act.DisableDefaultAssignment,
   },
   {
@@ -195,9 +201,36 @@ config.keys = {
     action = act.DisableDefaultAssignment,
   },
   {
-    key = '+',
-    mods = 'CTRL',
+    key = '=',
+    mods = 'SHIFT|CTRL',
     action = act.DisableDefaultAssignment,
+  },
+  {
+    key = '+',
+    mods = 'SHIFT|CTRL',
+    action = act.DisableDefaultAssignment,
+  },
+
+  -- Font size controls moved to Cmd (standard macOS pattern)
+  {
+    key = '-',
+    mods = 'CMD',
+    action = act.DecreaseFontSize,
+  },
+  {
+    key = '=',
+    mods = 'CMD',
+    action = act.IncreaseFontSize,
+  },
+  {
+    key = '+',
+    mods = 'CMD',
+    action = act.IncreaseFontSize,
+  },
+  {
+    key = '0',
+    mods = 'CMD',
+    action = act.ResetFontSize,
   },
 
   -- Cross-platform word navigation (Alt on all platforms, Option on macOS)
