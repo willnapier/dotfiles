@@ -332,8 +332,13 @@ themes {
     }
 }
 
-// General settings - Use Nushell as default shell (platform-specific path)  
+// General settings - Use Nushell as default shell (platform-specific path)
 default_shell "nu"
+
+// Disable stacked resize for smaller, more controlled resize increments
+// Stacked resize uses 30% of screen by default which is too large
+// With this disabled, resize uses smaller character-based increments
+stacked_resize false
 
 // Environment variables for proper terminal detection
 // Commented out to let WezTerm's native TERM pass through to Nushell
