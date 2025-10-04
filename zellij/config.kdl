@@ -24,8 +24,8 @@ keybinds {
         
         // Quick non-directional resize with Ctrl+/- (replaces non-working directional resize)
         // Directional resize only works in resize mode - use Ctrl+r to enter resize mode
-        bind "Ctrl Minus" { Resize "Decrease"; }
-        bind "Ctrl Equal" { Resize "Increase"; }  // Ctrl+= (also captures Ctrl+Shift+= which is Ctrl+Plus)
+        bind "Ctrl -" { Resize "Decrease"; }
+        bind "Ctrl =" { Resize "Increase"; }  // Ctrl+= (also captures Ctrl+Shift+= which is Ctrl+Plus)
         
         // Alpha key commands removed from normal mode to prevent typing interference
         // Use Ctrl+p to enter pane mode for pane management (h, v, etc.)
