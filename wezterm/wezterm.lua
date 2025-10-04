@@ -183,6 +183,23 @@ config.keys = {
     action = act.DisableDefaultAssignment,
   },
 
+  -- Disable Ctrl+/- font size controls to pass through to Zellij for pane resizing
+  {
+    key = '-',
+    mods = 'CTRL',
+    action = act.DisableDefaultAssignment,
+  },
+  {
+    key = '=',
+    mods = 'CTRL',
+    action = act.DisableDefaultAssignment,
+  },
+  {
+    key = '+',
+    mods = 'CTRL',
+    action = act.DisableDefaultAssignment,
+  },
+
   -- Cross-platform word navigation (Alt on all platforms, Option on macOS)
   {
     key = 'LeftArrow',
