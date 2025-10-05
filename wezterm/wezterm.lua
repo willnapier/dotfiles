@@ -5,12 +5,38 @@ local wezterm = require 'wezterm'
 local act = wezterm.action
 local mux = wezterm.mux
 
--- Helper function to get macOS appearance
+-- Helper function to get system appearance (cross-platform)
 local function get_appearance()
-  if wezterm.gui then
-    return wezterm.gui.get_appearance()
+  local is_macos = wezterm.target_triple:find("apple") ~= nil
+  local is_linux = wezterm.target_triple:find("linux") ~= nil
+
+  if is_macos then
+    -- macOS: Use native appearance detection
+    if wezterm.gui then
+      return wezterm.gui.get_appearance()
+    end
+    return 'Light'
+  elseif is_linux then
+    -- Linux: Check GNOME color-scheme setting
+    local success, stdout, stderr = wezterm.run_child_process({
+      'gsettings', 'get', 'org.gnome.desktop.interface', 'color-scheme'
+    })
+
+    if success and stdout then
+      -- Output is like: 'prefer-dark' or 'prefer-light' or 'default'
+      if stdout:match('dark') then
+        return 'Dark'
+      else
+        return 'Light'
+      end
+    end
+
+    -- Fallback to dark if gsettings unavailable
+    return 'Dark'
+  else
+    -- Unknown platform: default to Light
+    return 'Light'
   end
-  return 'Light'
 end
 
 -- Helper function to select theme based on appearance
