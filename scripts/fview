@@ -1,0 +1,24 @@
+#!/usr/bin/env nu
+
+# Find and view markdown files in Inlyne (read-only reference viewing)
+
+def main [
+    path?: string  # Optional: directory to search (default: current)
+] {
+    let search_path = if ($path != null) { $path } else { "." }
+    
+    # Find markdown files and let user select
+    let selected = (
+        fd -e md -e markdown . $search_path
+        | lines
+        | sk --prompt "View in Inlyne: "
+    )
+    
+    if ($selected | is-empty) {
+        print "No file selected"
+        return
+    }
+    
+    # Open in Inlyne
+    inlyne $selected
+}

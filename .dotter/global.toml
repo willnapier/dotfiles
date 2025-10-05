@@ -153,6 +153,7 @@ depends = []
 "scripts/daily-note" = "~/.local/bin/daily-note"
 "scripts/zj" = "~/.local/bin/zj"
 "scripts/theme-status" = "~/.local/bin/theme-status"
+"scripts/fview" = "~/.local/bin/fview"
 
 # MEDIUM PRIORITY: Additional essential scripts (added 2025-09-16)
 "scripts/get-openai-key" = "~/.local/bin/get-openai-key"
