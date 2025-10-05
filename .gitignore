@@ -12,3 +12,37 @@ karabiner/automatic_backups/
 # Temporary/backup files
 *.backup
 *.backup-*
+
+# Legacy/unused configurations (not actively deployed)
+# Neovim - User primarily uses Helix
+nvim/
+
+# Karabiner - User now uses ZMK keyboards
+karabiner/assets/complex_modifications/
+karabiner/backups/
+
+# Sketchybar - macOS-only, not actively used on current setup
+sketchybar/
+
+# Legacy/test scripts (not in active use)
+scripts/*-debug*
+scripts/*-test*
+scripts/*-alt*
+scripts/*-simple*
+scripts/*-legacy*
+scripts/*-fixed*
+scripts/*-native*
+scripts/*-batch*
+scripts/*conflict*
+scripts/deploy-*
+scripts/setup-*
+scripts/complete-*
+scripts/debug-*
+scripts/fix-*
+scripts/test-*
+
+# Yazi flavor theme files (managed as directory symlinks)
+yazi/flavors/*/
+
+# Wayland-specific configs (Linux-only, platform-specific)
+wayland/

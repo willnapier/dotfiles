@@ -1,5 +1,0 @@
-#!/bin/bash
-# Test script to verify cross-platform sync pipeline
-echo "🧪 Testing cross-platform sync pipeline..."
-echo "Timestamp: $(date)"
-echo "This should appear on Linux within 2 minutes"
