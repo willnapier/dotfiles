@@ -158,18 +158,6 @@ depends = []
 "scripts/get-openai-key" = "~/.local/bin/get-openai-key"
 "scripts/semantic-auto-update" = "~/.local/bin/semantic-auto-update"
 
-# ESSENTIAL SKETCHYBAR CONFIGURATION (added 2025-09-16)
-"sketchybar/sketchybarrc" = "~/.config/sketchybar/sketchybarrc"
-"sketchybar/colors.sh" = "~/.config/sketchybar/colors.sh"
-"sketchybar/items/aerospace.sh" = "~/.config/sketchybar/items/aerospace.sh"
-"sketchybar/items/battery.sh" = "~/.config/sketchybar/items/battery.sh"
-"sketchybar/items/calendar.sh" = "~/.config/sketchybar/items/calendar.sh"
-"sketchybar/items/clock.sh" = "~/.config/sketchybar/items/clock.sh"
-"sketchybar/plugins/aerospace.sh" = "~/.config/sketchybar/plugins/aerospace.sh"
-"sketchybar/plugins/battery.sh" = "~/.config/sketchybar/plugins/battery.sh"
-"sketchybar/plugins/calendar.sh" = "~/.config/sketchybar/plugins/calendar.sh"
-"sketchybar/plugins/clock.sh" = "~/.config/sketchybar/plugins/clock.sh"
-
 # Semantic search system - managed separately (has virtual environment)
 
 [shared.variables]
