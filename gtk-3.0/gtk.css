@@ -1,0 +1,21 @@
+/* GTK3 Custom Styling */
+/* Reduce title bar/headerbar height by 33% (from ~46px to ~30px) */
+
+headerbar {
+    min-height: 30px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+}
+
+headerbar button {
+    min-height: 24px;
+    min-width: 24px;
+    padding: 2px;
+}
+
+/* Ensure window controls (close button) are properly sized */
+.titlebutton {
+    min-height: 24px;
+    min-width: 24px;
+    padding: 2px;
+}
