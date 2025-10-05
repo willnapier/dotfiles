@@ -1,26 +1,29 @@
 #!/opt/homebrew/bin/nu
 
-# Dotter Orphan Detector v2 - Simple and Working
+# Dotter Orphan Detector v2 - Enhanced with Symbolic Directory Detection
 # Finds config files in dotfiles repo that aren't managed by Dotter
+# Properly handles files inside directories managed as symbolic links
 
 def main [] {
     print "🔍 Scanning for unmanaged config files in dotfiles..."
-    
+
     cd ~/dotfiles
-    
+
     # Get important config files (not docs/build files)
     let config_files = (
-        fd --type f 
-           --exclude ".git" --exclude ".DS_Store" --exclude "*.md" 
+        fd --type f
+           --exclude ".git" --exclude ".DS_Store" --exclude "*.md"
            --exclude "CLAUDE.md" --exclude ".dotter" --exclude "docs"
            . helix nushell yazi zellij scripts nvim wezterm ghostty karabiner aerospace sketchybar wayland 2>/dev/null
         | lines
         | where { |f| not ($f | str ends-with "~") }  # Exclude backup files
         | sort
     )
-    
-    # Get managed files from Dotter config
+
+    # Get managed files and symbolic directories from Dotter config
     let dotter_config = (open .dotter/global.toml)
+
+    # Extract explicitly managed files
     let managed_files = (
         [
             ($dotter_config.shared?.files? | default {} | columns),
@@ -31,12 +34,56 @@ def main [] {
         | uniq
         | sort
     )
+
+    # Extract directories managed as symbolic links
+    let symbolic_dirs = (
+        [
+            (
+                $dotter_config.shared?.files? | default {}
+                | transpose key value
+                | where { |row| ($row.value | describe) == "record" and ($row.value.type? | default "" | str downcase) == "symbolic" }
+                | get key
+            ),
+            (
+                $dotter_config.macos?.files? | default {}
+                | transpose key value
+                | where { |row| ($row.value | describe) == "record" and ($row.value.type? | default "" | str downcase) == "symbolic" }
+                | get key
+            ),
+            (
+                $dotter_config.linux?.files? | default {}
+                | transpose key value
+                | where { |row| ($row.value | describe) == "record" and ($row.value.type? | default "" | str downcase) == "symbolic" }
+                | get key
+            )
+        ]
+        | flatten
+        | uniq
+        | sort
+    )
     
     print $"📋 Found ($config_files | length) config files in dotfiles"
     print $"🔗 Found ($managed_files | length) files managed by Dotter"
-    
-    # Find orphans
-    let orphans = ($config_files | where { |file| $file not-in $managed_files })
+    print $"📁 Found ($symbolic_dirs | length) directories managed as symbolic links"
+
+    # Helper function to check if a file is inside a symbolic directory
+    def is_inside_symbolic_dir [file: string, symbolic_dirs: list<string>] {
+        $symbolic_dirs | any { |dir|
+            # Add trailing slash to ensure we match directory boundaries
+            # e.g., "yazi/flavors/dracula.yazi/LICENSE" starts with "yazi/flavors/dracula.yazi/"
+            $file | str starts-with $"($dir)/"
+        }
+    }
+
+    # Find orphans - files that are:
+    # 1. NOT explicitly managed in Dotter
+    # 2. NOT inside a directory managed as a symbolic link
+    let orphans = (
+        $config_files
+        | where { |file|
+            ($file not-in $managed_files) and (not (is_inside_symbolic_dir $file $symbolic_dirs))
+        }
+    )
     
     if ($orphans | is-empty) {
         print "✅ All config files are managed by Dotter! No orphans found."
