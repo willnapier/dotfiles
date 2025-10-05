@@ -30,6 +30,25 @@ layout {
     default-column-width { proportion 0.5; }
 }
 
+// ---- Appearance ----
+// Solarized Dark color scheme
+
+// Focus ring (indicator around active window)
+focus-ring {
+    width 4
+    // Solarized Dark: base03 (dark teal) for active, base02 for inactive
+    active-color "#002b36"      // Solarized Dark teal
+    inactive-color "#073642"    // Solarized Dark base02 (slightly lighter)
+}
+
+// Window borders (drawn around all windows)
+border {
+    off  // Disable borders, use focus-ring only for cleaner look
+}
+
+// Prefer windows without client-side decorations (cleaner appearance)
+prefer-no-csd
+
 // ---- Window rules ----
 window-rule {
     match app-id="firefox";
@@ -170,5 +189,7 @@ animations {
 
 // ---- Autostart ----
 spawn-at-startup "dbus-update-activation-environment" "--systemd" "WAYLAND_DISPLAY" "XDG_CURRENT_DESKTOP=niri";
+// Solarized Dark teal background (#002b36)
+spawn-at-startup "swaybg" "-c" "#002b36";
 spawn-at-startup "waybar";
 spawn-at-startup "mako";
