@@ -1159,6 +1159,25 @@ def zkeys [] {
     inlyne ~/dotfiles/zellij/KEYBINDINGS.md
 }
 
+# Theme switching (Linux only - uses dconf for system-wide dark/light mode)
+def tdark [] {
+    if (which dconf | is-empty) {
+        print "⚠️  dconf not found (Linux/GNOME only)"
+        return
+    }
+    dconf write /org/gnome/desktop/interface/color-scheme '"prefer-dark"'
+    print "🌙 Switched to dark theme"
+}
+
+def tlight [] {
+    if (which dconf | is-empty) {
+        print "⚠️  dconf not found (Linux/GNOME only)"
+        return
+    }
+    dconf write /org/gnome/desktop/interface/color-scheme '"prefer-light"'
+    print "☀️  Switched to light theme"
+}
+
 # File search + open in Helix
 def fsh [] {
     if (which fd | is-empty) or (which sk | is-empty) {
