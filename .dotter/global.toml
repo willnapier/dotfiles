@@ -156,7 +156,6 @@ depends = []
 "scripts/theme-light" = "~/.local/bin/theme-light"
 # Additional actively-used scripts
 "scripts/activity-processor-periodic" = "~/.local/bin/activity-processor-periodic"
-"scripts/activity-watcher-simple" = "~/.local/bin/activity-watcher-simple"
 "scripts/citation-picker.nu" = "~/.local/bin/citation-picker.nu"
 "scripts/git-push-reliability-monitor" = "~/.local/bin/git-push-reliability-monitor"
 "scripts/hx-wiki-open-right" = "~/.local/bin/hx-wiki-open-right"
