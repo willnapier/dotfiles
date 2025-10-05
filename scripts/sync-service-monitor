@@ -184,7 +184,7 @@ def comprehensive_health_check [] {
     print "🏥 Comprehensive Health Check\n"
 
     mut health_score = 0
-    let total_checks = 6
+    let total_checks = 7
 
     # Check 1: macOS service
     print "🔍 Check 1: macOS auto-pull service"
@@ -258,6 +258,40 @@ def comprehensive_health_check [] {
         $health_score += 1
     } else {
         print "  ❌ FAIL: Cannot connect to Linux"
+    }
+
+    # Check 7: Dotter platform configuration
+    print "\n🔍 Check 7: Dotter platform configuration"
+    let local_toml = $"($env.HOME)/.dotter/local.toml"
+    if ($local_toml | path exists) {
+        let expected_platform = if $nu.os-info.name == "macos" { "macos" } else { "linux" }
+        let content = (open $local_toml | to text)
+        if ($content | str contains $expected_platform) {
+            print $"  ✅ PASS: Platform set to '($expected_platform)'"
+            $health_score += 1
+        } else {
+            print $"  ❌ FAIL: Wrong platform in local.toml (expected '($expected_platform)')"
+        }
+    } else {
+        print "  ❌ FAIL: Missing ~/.dotter/local.toml (platform-specific configs won't deploy!)"
+    }
+
+    # Check Dotter platform config on Linux too
+    if $connectivity.exit_code == 0 {
+        let linux_check = (try {
+            ssh will@nimbini "if [ -f ~/.dotter/local.toml ]; then cat ~/.dotter/local.toml | grep -q 'linux' && echo 'ok' || echo 'wrong'; else echo 'missing'; fi"
+        } | complete)
+
+        if $linux_check.exit_code == 0 {
+            let linux_status = ($linux_check.stdout | str trim)
+            if $linux_status == "ok" {
+                print "  ✅ BONUS: Linux platform config correct"
+            } else if $linux_status == "wrong" {
+                print "  ⚠️  WARN: Linux has wrong platform in local.toml"
+            } else {
+                print "  ⚠️  WARN: Linux missing ~/.dotter/local.toml"
+            }
+        }
     }
 
     # Overall health
