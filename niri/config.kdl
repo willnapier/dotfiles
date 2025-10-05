@@ -35,7 +35,7 @@ layout {
 
 // Focus ring (indicator around active window)
 focus-ring {
-    width 4
+    width 3  // Reduced from 4px (33% thinner for more subtle appearance)
     // Solarized Dark: base03 (dark teal) for active, base02 for inactive
     active-color "#002b36"      // Solarized Dark teal
     inactive-color "#073642"    // Solarized Dark base02 (slightly lighter)
