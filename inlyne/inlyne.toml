@@ -1,9 +1,9 @@
 # Cross-platform inlyne configuration
 # Larger scale factor for better readability
-scale = 1.5
+scale = 2.0
 
-# Auto-detect system theme
-theme = "Auto"
+# Force dark theme (Auto detection doesn't work reliably on Niri)
+theme = "Dark"
 
 # Smooth scrolling
 lines-to-scroll = 3.0
@@ -38,4 +38,6 @@ checkbox-color = 0x27ae60
 code-highlighter = "solarized-light"
 
 [font-options]
-# Use system fonts for best cross-platform compatibility
+# JetBrains Mono Nerd Font for consistent display across platforms
+regular-font = "JetBrainsMono Nerd Font"
+monospace-font = "JetBrainsMono Nerd Font Mono"
