@@ -46,3 +46,9 @@ yazi/flavors/*/
 
 # Wayland-specific configs (Linux-only, platform-specific)
 wayland/
+
+# Old/unused service files
+macos/launchd/com.williamnapier.git-auto-commit-watcher.plist
+
+# Backup/test configs
+niri/config-minimal.kdl
