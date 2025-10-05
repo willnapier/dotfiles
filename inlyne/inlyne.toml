@@ -1,0 +1,41 @@
+# Cross-platform inlyne configuration
+# Larger scale factor for better readability
+scale = 1.5
+
+# Auto-detect system theme
+theme = "Auto"
+
+# Smooth scrolling
+lines-to-scroll = 3.0
+
+[dark-theme]
+# Regular text color
+text-color = 0x9dacbb
+# Background canvas color
+background-color = 0x1a1d22
+# Inline code text color
+code-color = 0xb38fac
+# Quote block background color
+quote-block-color = 0x1d2025
+# Hyperlink text color
+link-color = 0x4182eb
+# Text selection color
+select-color = 0x3675cb
+# Checkbox ticked background color (bright green for visibility!)
+checkbox-color = 0x2ecc71
+# Solarized Dark syntax highlighting
+code-highlighter = "solarized-dark"
+
+[light-theme]
+text-color = 0x000000
+background-color = 0xffffff
+code-color = 0x95114e
+quote-block-color = 0xeef9fe
+link-color = 0x5466ff
+select-color = 0xcde8f0
+# Checkbox ticked background color (bright green!)
+checkbox-color = 0x27ae60
+code-highlighter = "solarized-light"
+
+[font-options]
+# Use system fonts for best cross-platform compatibility
