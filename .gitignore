@@ -1,2 +1,14 @@
 # Dotter cache files - auto-generated on each machine
 .dotter/cache.toml
+
+# Neovim auto-generated files
+nvim/doc/tags
+nvim/spell/*.spl
+nvim/last_session.vim
+
+# Karabiner automatic backups
+karabiner/automatic_backups/
+
+# Temporary/backup files
+*.backup
+*.backup-*
