@@ -162,6 +162,8 @@ depends = []
 "scripts/skim-with-preview" = "~/.local/bin/skim-with-preview"
 "scripts/yazi-project-content-search.nu" = "~/.local/bin/yazi-project-content-search.nu"
 "scripts/zellij-skim-search.nu" = "~/.local/bin/zellij-skim-search.nu"
+"scripts/daily-note" = "~/.local/bin/daily-note"
+"scripts/zj" = "~/.local/bin/zj"
 "scripts/theme-status" = "~/.local/bin/theme-status"
 
 # MEDIUM PRIORITY: Additional essential scripts (added 2025-09-16)
@@ -215,6 +217,8 @@ depends = ["shared"]
 
 [linux.files]
 "shell/bashrc" = "~/.bashrc"
+# Wayland/Linux terminal configs
+"wayland/foot/foot.ini" = "~/.config/foot/foot.ini"
 # Systemd user services - Re-nu Nushell-based watchers
 "systemd/dotter-realtime-watcher.service" = "~/.config/systemd/user/dotter-realtime-watcher.service"
 "systemd/dotter-sync-watcher.service" = "~/.config/systemd/user/dotter-sync-watcher.service"
