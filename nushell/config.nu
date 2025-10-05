@@ -1153,10 +1153,10 @@ if (which btop | is-not-empty) {
 # View Zellij keybindings cheat sheet in inlyne
 def zkeys [] {
     if (which inlyne | is-empty) {
-        print "inlyne not found. Install with: brew install inlyne"
+        print "inlyne not found. Install with: brew install inlyne or yay -S inlyne-bin"
         return
     }
-    inlyne ~/Claude/ZELLIJ-KEYBINDINGS.md
+    inlyne ~/dotfiles/zellij/KEYBINDINGS.md
 }
 
 # File search + open in Helix
