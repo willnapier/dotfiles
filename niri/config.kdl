@@ -72,19 +72,24 @@ binds {
     Mod+Alt+Ctrl+Shift+Q { quit; }
 
     // Launcher / Terminal / Lock
+    Mod+Space      { spawn "rofi" "-show" "window"; }
     Mod+Alt+D      { spawn "fuzzel"; }
     Mod+Alt+Return { spawn "wezterm"; }
     Mod+Alt+L      { spawn "wlogout"; }
 
-    // Focus (NEIO + arrows)
-    Mod+Alt+Left  { focus-column-left; }
-    Mod+Alt+Down  { focus-window-down; }
-    Mod+Alt+Up    { focus-window-up; }
-    Mod+Alt+Right { focus-column-right; }
-    Mod+Alt+N     { focus-column-left; }
-    Mod+Alt+E     { focus-window-down; }
-    Mod+Alt+I     { focus-window-up; }
-    Mod+Alt+O     { focus-column-right; }
+    // Focus (NEIO + arrows) - Mod+Shift for consistency
+    Mod+Shift+Left  { focus-column-left; }
+    Mod+Shift+Down  { focus-window-down-or-top; }
+    Mod+Shift+Up    { focus-window-up-or-bottom; }
+    Mod+Shift+Right { focus-column-right; }
+    Mod+Shift+N     { focus-column-left; }
+    Mod+Shift+E     { focus-window-down-or-top; }
+    Mod+Shift+I     { focus-window-up-or-bottom; }
+    Mod+Shift+O     { focus-column-right; }
+
+    // Window cycling (keyboard compatibility - triggered by S+` on keyboard)
+    Mod+Grave       { focus-window-down-or-top; }
+    Mod+Shift+Grave { focus-window-up-or-bottom; }
 
     // Move (NEIO + arrows) — within current structure
     Mod+Alt+Shift+Left  { move-column-left; }
