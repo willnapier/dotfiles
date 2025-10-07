@@ -72,7 +72,8 @@ binds {
     Mod+Alt+Ctrl+Shift+Q { quit; }
 
     // Launcher / Terminal / Lock
-    Mod+Space      { spawn "rofi" "-show" "window"; }
+    Mod+Space      { spawn "anyrun"; }  // Primary: Rust-based with niri-focus plugin
+    // Mod+Space   { spawn "rofi" "-show" "window"; }  // Fallback: if anyrun has issues
     Mod+Alt+D      { spawn "fuzzel"; }
     Mod+Alt+Return { spawn "wezterm"; }
     Mod+Alt+L      { spawn "wlogout"; }
