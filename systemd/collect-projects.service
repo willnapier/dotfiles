@@ -1,0 +1,10 @@
+[Unit]
+Description=Collect P. notation project entries from journal
+Documentation=file:///home/will/Forge/Projects/project-architecture.setup.md
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/collect-projects-cron
+
+[Install]
+WantedBy=default.target

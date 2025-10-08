@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily project collection timer
+Documentation=file:///home/will/Forge/Projects/project-architecture.setup.md
+
+[Timer]
+OnCalendar=daily
+OnCalendar=*-*-* 23:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

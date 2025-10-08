@@ -154,6 +154,14 @@ depends = []
 "scripts/zj" = "~/.local/bin/zj"
 "scripts/theme-status" = "~/.local/bin/theme-status"
 "scripts/fview" = "~/.local/bin/fview"
+# P. notation project collection system (added 2025-10-08)
+"scripts/collect-projects" = "~/.local/bin/collect-projects"
+"scripts/collect-projects-auto" = "~/.local/bin/collect-projects-auto"
+"scripts/collect-projects-cron" = "~/.local/bin/collect-projects-cron"
+"scripts/para-projects" = "~/.local/bin/para-projects"
+"scripts/para-areas" = "~/.local/bin/para-areas"
+"scripts/para-connect" = "~/.local/bin/para-connect"
+"scripts/para-archive" = "~/.local/bin/para-archive"
 
 # MEDIUM PRIORITY: Additional essential scripts (added 2025-09-16)
 "scripts/get-openai-key" = "~/.local/bin/get-openai-key"
@@ -174,6 +182,7 @@ depends = ["shared"]
 "macos/launchd/com.williamnapier.forge-link-manager.plist" = "~/Library/LaunchAgents/com.williamnapier.forge-link-manager.plist"
 "macos/launchd/com.williamnapier.syncthing-monitor.plist" = "~/Library/LaunchAgents/com.williamnapier.syncthing-monitor.plist"
 "macos/LaunchAgents/com.williamnapier.git-auto-pull-watcher.plist" = "~/Library/LaunchAgents/com.williamnapier.git-auto-pull-watcher.plist"
+"launchagents/com.user.collect-projects.plist" = "~/Library/LaunchAgents/com.user.collect-projects.plist"
 # NOTE: Individual files managed in [shared.files] for better reliability
 # Removed directory symlinks that were causing orphan detection issues
 
@@ -204,11 +213,13 @@ depends = ["shared"]
 "scripts/git-auto-push-watcher-wrapper" = "~/.local/bin/git-auto-push-watcher-wrapper"
 "scripts/git-auto-pull-watcher-macos" = "~/.local/bin/git-auto-pull-watcher-macos"
 "scripts/sync-service-monitor" = "~/.local/bin/sync-service-monitor"
-"scripts/setup-forge-link-service" = "~/.local/bin/setup-forge-link-service"
+# "scripts/setup-forge-link-service" = "~/.local/bin/setup-forge-link-service"  # Missing file - temporarily disabled
 "systemd/git-auto-push-watcher.service" = "~/.config/systemd/user/git-auto-push-watcher.service"
 "systemd/zotero-pdf-watcher.service" = "~/.config/systemd/user/zotero-pdf-watcher.service"
 "systemd/zotero-bridge.service" = "~/.config/systemd/user/zotero-bridge.service"
 "systemd/forge-link-manager.service" = "~/.config/systemd/user/forge-link-manager.service"
+"systemd/collect-projects.service" = "~/.config/systemd/user/collect-projects.service"
+"systemd/collect-projects.timer" = "~/.config/systemd/user/collect-projects.timer"
 # Wayland compositor configuration - Niri + Waybar + WezTerm
 "niri/config.kdl" = "~/.config/niri/config.kdl"
 "waybar/config" = "~/.config/waybar/config"
