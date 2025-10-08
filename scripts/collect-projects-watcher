@@ -31,7 +31,7 @@ def main [
     # Start appropriate watcher based on platform
     if $platform == "Darwin" {
         start_fswatch_macos $watch_path $log_file $verbose
-    } else if $platform == "Linux" {
+    } else if ($platform | str contains "Linux") {
         start_inotifywait_linux $watch_path $log_file $verbose
     } else {
         print $"Error: Unsupported platform: ($platform)"
