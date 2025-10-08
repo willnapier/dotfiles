@@ -57,7 +57,7 @@ def start_fswatch_macos [watch_path: string, log_file: string, verbose: bool] {
 
     # Start fswatch with debouncing (0.5 second latency)
     # Only watch .md files for efficiency
-    ^fswatch -r -l 0.5 -e ".*" -i "\.md$" $watch_path
+    ^fswatch -r -l 0.5 -e '.*' -i '\.md$' $watch_path
     | lines
     | each { |file|
         let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
