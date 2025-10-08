@@ -93,6 +93,7 @@ def collect_project_entries [journal_path: string, verbose: bool] {
     }
     | flatten
     | compact
+    | uniq-by key content  # Deduplicate identical entries from same journal file
 }
 
 # Parse a line with P. notation
@@ -228,12 +229,25 @@ def append_entries_to_project [filepath: string, entries: list] {
         $updated | save -f $filepath
     }
 
+    # Filter out duplicates by checking if entry content already exists
+    let new_entries = ($entries | where {|entry|
+        # Create the entry line format that would appear in the file
+        let entry_line = $"- ($entry.content)"
+        # Check if this exact line already exists in the file
+        not ($existing | str contains $entry_line)
+    })
+
+    # Only append if there are new entries
+    if ($new_entries | is-empty) {
+        return
+    }
+
     # Format new entries
-    let new_entries = format_entries $entries
+    let formatted_entries = format_entries $new_entries
 
     # Append to file
     let content = (open $filepath)
-    $"($content)\n($new_entries)" | save -f $filepath
+    $"($content)\n($formatted_entries)" | save -f $filepath
 }
 
 # Format entries for journal section

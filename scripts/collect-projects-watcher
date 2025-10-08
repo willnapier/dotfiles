@@ -55,12 +55,41 @@ def start_fswatch_macos [watch_path: string, log_file: string, verbose: bool] {
         print ""
     }
 
-    # Start fswatch with debouncing (0.5 second latency)
+    # Start fswatch with debouncing (2 second latency to prevent rapid-fire events)
     # Only watch .md files for efficiency
-    ^fswatch -r -l 0.5 -e '.*' -i '\.md$' $watch_path
+    # Use temp file for debouncing state
+    let state_file = ([$env.HOME ".local" "share" "collect-projects-debounce.json"] | path join)
+
+    # Create initial state file if it doesn't exist
+    if not ($state_file | path exists) {
+        "{}" | save $state_file
+    }
+
+    ^fswatch -r -l 2.0 -e '.*' -i '\.md$' --event Updated $watch_path
     | lines
     | each { |file|
         let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
+        let now = (date now)
+
+        # Read current debounce state
+        let last_collection = (open --raw $state_file | from json)
+
+        # Check if we collected this file recently (within 2 seconds)
+        let should_collect = if ($file in $last_collection) {
+            let last_time_str = ($last_collection | get $file)
+            let last_time = ($last_time_str | into datetime)
+            let elapsed = ($now - $last_time) | into int | $in / 1_000_000_000  # Convert to seconds
+            $elapsed > 2
+        } else {
+            true
+        }
+
+        if not $should_collect {
+            if $verbose {
+                print $"($timestamp) - Skipping duplicate event: ($file)"
+            }
+            return
+        }
 
         if $verbose {
             print $"($timestamp) - Change detected: ($file)"
@@ -78,7 +107,12 @@ def start_fswatch_macos [watch_path: string, log_file: string, verbose: bool] {
             $error_msg | save --append $log_file
         } else if $verbose {
             print $"($timestamp) - Collection completed"
+            $"($timestamp) - Collection completed" | save --append $log_file
         }
+
+        # Update debounce state
+        let updated_state = ($last_collection | upsert $file ($now | format date "%Y-%m-%dT%H:%M:%S"))
+        $updated_state | to json | save -f $state_file
 
         $file
     }
@@ -102,6 +136,14 @@ def start_inotifywait_linux [watch_path: string, log_file: string, verbose: bool
 
     # Start inotifywait with recursive monitoring
     # Watch for modify, close_write, and move events on .md files
+    # Use temp file for debouncing state
+    let state_file = ([$env.HOME ".local" "share" "collect-projects-debounce.json"] | path join)
+
+    # Create initial state file if it doesn't exist
+    if not ($state_file | path exists) {
+        "{}" | save $state_file
+    }
+
     ^inotifywait -m -r -e modify -e close_write -e moved_to --format '%w%f %e' $watch_path
     | lines
     | each { |event|
@@ -110,7 +152,30 @@ def start_inotifywait_linux [watch_path: string, log_file: string, verbose: bool
             return
         }
 
+        # Extract filename from event (format is "path/file.md EVENT")
+        let file = ($event | split row ' ' | first)
         let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
+        let now = (date now)
+
+        # Read current debounce state
+        let last_collection = (open --raw $state_file | from json)
+
+        # Check if we collected this file recently (within 2 seconds)
+        let should_collect = if ($file in $last_collection) {
+            let last_time_str = ($last_collection | get $file)
+            let last_time = ($last_time_str | into datetime)
+            let elapsed = ($now - $last_time) | into int | $in / 1_000_000_000  # Convert to seconds
+            $elapsed > 2
+        } else {
+            true
+        }
+
+        if not $should_collect {
+            if $verbose {
+                print $"($timestamp) - Skipping duplicate event: ($file)"
+            }
+            return
+        }
 
         if $verbose {
             print $"($timestamp) - Change detected: ($event)"
@@ -131,6 +196,11 @@ def start_inotifywait_linux [watch_path: string, log_file: string, verbose: bool
             $error_msg | save --append $log_file
         } else if $verbose {
             print $"($timestamp) - Collection completed"
+            $"($timestamp) - Collection completed" | save --append $log_file
         }
+
+        # Update debounce state
+        let updated_state = ($last_collection | upsert $file ($now | format date "%Y-%m-%dT%H:%M:%S"))
+        $updated_state | to json | save -f $state_file
     }
 }
