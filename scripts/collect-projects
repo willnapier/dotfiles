@@ -83,31 +83,44 @@ def collect_project_entries [journal_path: string, verbose: bool] {
         | each {|row|
             let parsed = (parse_project_line $row.item)
             if ($parsed | is-not-empty) {
-                $parsed | merge {
-                    file: $file
-                    date: $date
-                    line_number: $row.index
+                # parse_project_line returns a list of matches (handles multiple per line)
+                $parsed | each {|entry|
+                    $entry | merge {
+                        file: $file
+                        date: $date
+                        line_number: $row.index
+                    }
                 }
             }
         }
     }
     | flatten
+    | flatten  # Extra flatten for multi-entry lines
     | compact
     | uniq-by key content  # Deduplicate identical entries from same journal file
 }
 
 # Parse a line with P. notation
+# Uses unified syntax: period and comma are delimiters, space separates attributes
+# Supports: P.project:: 2hr description-with-hyphens
+#          P.project:: description 2hr (flexible ordering)
+#          P.proj1:: 1hr work. P.proj2:: 30min other. (period-separated)
+#          P.parent:: child1:: 1hr, child2:: 30min (comma-separated siblings)
 def parse_project_line [line: string] {
-    let matches = ($line | parse --regex '(P\.[a-z0-9.-]+)::([^.]+)\.')
+    # Split on periods and commas to get individual entries
+    # Pattern: captures P.project-name:: followed by content until delimiter (. or ,)
+    let matches = ($line | parse --regex '(P\.[a-z0-9.-]+)::\s*([^.,]+)')
 
     if ($matches | is-empty) {
         return null
     }
 
-    let match = ($matches | first)
-    {
-        key: $match.capture0
-        content: ($match.capture1 | str trim)
+    # Return all matches found (handles multiple projects per line)
+    $matches | each {|match|
+        {
+            key: $match.capture0
+            content: ($match.capture1 | str trim)
+        }
     }
 }
 
