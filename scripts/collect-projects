@@ -7,7 +7,7 @@ def main [
     --dry-run (-d)      # Show what would be collected without writing
 ] {
     let forge_root = ([$env.HOME "Forge"] | path join)
-    let journal_path = ([$forge_root "Areas" "Journal"] | path join)
+    let journal_path = ([$forge_root "NapierianLogs" "DayPages"] | path join)
     let projects_path = ([$forge_root "Projects"] | path join)
 
     if not ($journal_path | path exists) {

@@ -1,0 +1,18 @@
+[Unit]
+Description=P. notation collection file watcher
+Documentation=file:///home/will/Forge/Projects/project-architecture.setup.md
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/collect-projects-watcher --verbose
+Restart=always
+RestartSec=10
+
+# Security settings
+ProtectSystem=strict
+ReadWritePaths=%h/Forge
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

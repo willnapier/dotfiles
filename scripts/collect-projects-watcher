@@ -1,0 +1,136 @@
+#!/usr/bin/env nu
+# File watcher for near-instant P. notation collection
+# Watches NapierianLogs/DayPages for changes and triggers collection
+# Cross-platform: uses fswatch (macOS) or inotifywait (Linux)
+
+def main [
+    --verbose (-v)      # Show detailed output
+] {
+    let forge_root = ([$env.HOME "Forge"] | path join)
+    let watch_path = ([$forge_root "NapierianLogs" "DayPages"] | path join)
+    let log_file = ([$env.HOME ".local" "share" "collect-projects-watcher.log"] | path join)
+
+    # Ensure watch directory exists
+    if not ($watch_path | path exists) {
+        print $"Error: Watch path not found: ($watch_path)"
+        print "Creating directory..."
+        mkdir $watch_path
+    }
+
+    # Detect platform and choose watcher
+    let platform = (sys host | get name)
+
+    if $verbose {
+        print $"Starting P. notation collection watcher"
+        print $"Platform: ($platform)"
+        print $"Watching: ($watch_path)"
+        print $"Log file: ($log_file)"
+        print ""
+    }
+
+    # Start appropriate watcher based on platform
+    if $platform == "Darwin" {
+        start_fswatch_macos $watch_path $log_file $verbose
+    } else if $platform == "Linux" {
+        start_inotifywait_linux $watch_path $log_file $verbose
+    } else {
+        print $"Error: Unsupported platform: ($platform)"
+        exit 1
+    }
+}
+
+# macOS file watching with fswatch
+def start_fswatch_macos [watch_path: string, log_file: string, verbose: bool] {
+    # Check if fswatch is available
+    let fswatch_path = (try { which fswatch | get path.0 } catch { null })
+
+    if $fswatch_path == null {
+        print "Error: fswatch not found. Install with: brew install fswatch"
+        exit 1
+    }
+
+    if $verbose {
+        print "Using fswatch (macOS)"
+        print "Watching for .md file changes..."
+        print ""
+    }
+
+    # Start fswatch with debouncing (0.5 second latency)
+    # Only watch .md files for efficiency
+    ^fswatch -r -l 0.5 -e ".*" -i "\.md$" $watch_path
+    | lines
+    | each { |file|
+        let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
+
+        if $verbose {
+            print $"($timestamp) - Change detected: ($file)"
+        }
+
+        # Log the event
+        $"($timestamp) - Change detected: ($file)" | save --append $log_file
+
+        # Trigger collection (silent mode)
+        let result = (do { collect-projects-auto } | complete)
+
+        if $result.exit_code != 0 {
+            let error_msg = $"($timestamp) - Collection failed: ($result.stderr)"
+            print $error_msg
+            $error_msg | save --append $log_file
+        } else if $verbose {
+            print $"($timestamp) - Collection completed"
+        }
+
+        $file
+    }
+}
+
+# Linux file watching with inotifywait
+def start_inotifywait_linux [watch_path: string, log_file: string, verbose: bool] {
+    # Check if inotifywait is available
+    let inotify_path = (try { which inotifywait | get path.0 } catch { null })
+
+    if $inotify_path == null {
+        print "Error: inotifywait not found. Install with: sudo apt install inotify-tools"
+        exit 1
+    }
+
+    if $verbose {
+        print "Using inotifywait (Linux)"
+        print "Watching for .md file changes..."
+        print ""
+    }
+
+    # Start inotifywait with recursive monitoring
+    # Watch for modify, close_write, and move events on .md files
+    ^inotifywait -m -r -e modify -e close_write -e moved_to --format '%w%f %e' $watch_path
+    | lines
+    | each { |event|
+        # Only process .md files
+        if not ($event | str contains ".md") {
+            return
+        }
+
+        let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
+
+        if $verbose {
+            print $"($timestamp) - Change detected: ($event)"
+        }
+
+        # Log the event
+        $"($timestamp) - Change detected: ($event)" | save --append $log_file
+
+        # Small delay to ensure file write is complete
+        sleep 100ms
+
+        # Trigger collection (silent mode)
+        let result = (do { collect-projects-auto } | complete)
+
+        if $result.exit_code != 0 {
+            let error_msg = $"($timestamp) - Collection failed: ($result.stderr)"
+            print $error_msg
+            $error_msg | save --append $log_file
+        } else if $verbose {
+            print $"($timestamp) - Collection completed"
+        }
+    }
+}

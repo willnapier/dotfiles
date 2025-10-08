@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.collect-projects-watcher</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/williamnapier/.local/bin/collect-projects-watcher</string>
+        <string>--verbose</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/williamnapier/.local/share/collect-projects-watcher.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/williamnapier/.local/share/collect-projects-watcher.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/Users/williamnapier/.cargo/bin:/Users/williamnapier/.local/bin</string>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Interactive</string>
+</dict>
+</plist>
