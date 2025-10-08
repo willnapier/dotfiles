@@ -6,9 +6,9 @@ def main [
     --verbose (-v)      # Show detailed output
     --dry-run (-d)      # Show what would be collected without writing
 ] {
-    let forge_root = $"($env.HOME)/Forge"
-    let journal_path = $"($forge_root)/Areas/Journal"
-    let projects_path = $"($forge_root)/Projects"
+    let forge_root = ([$env.HOME "Forge"] | path join)
+    let journal_path = ([$forge_root "Areas" "Journal"] | path join)
+    let projects_path = ([$forge_root "Projects"] | path join)
 
     if not ($journal_path | path exists) {
         print $"Error: Journal path not found: ($journal_path)"
@@ -65,7 +65,7 @@ def main [
 
 # Extract P. entries from journal files
 def collect_project_entries [journal_path: string, verbose: bool] {
-    let files = (ls $"($journal_path)/**/*.md" | get name)
+    let files = (glob ([$journal_path "**" "*.md"] | path join))
 
     if $verbose {
         print $"Scanning ($files | length) journal files..."
