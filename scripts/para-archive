@@ -1,0 +1,76 @@
+#!/usr/bin/env nu
+# Archive (trash) a completed project
+# True projects should be disposable - insights preserved in Resources
+
+def main [
+    project: string     # Project name to archive
+    --confirm (-y)      # Skip confirmation prompt
+] {
+    let projects_path = $"($env.HOME)/Forge/Projects"
+    let project_file = $"($projects_path)/($project).md"
+
+    # Check if project exists
+    if not ($project_file | path exists) {
+        # Try fuzzy match
+        let matches = (
+            ls $"($projects_path)/*.md"
+            | where name =~ $project
+        )
+
+        if ($matches | is-empty) {
+            print $"Project not found: ($project)"
+            print "\nAvailable projects:"
+            ls $"($projects_path)/*.md" | get name | each {|f| path basename }
+            return
+        } else if ($matches | length) > 1 {
+            print $"Multiple projects match '($project)':"
+            $matches | each {|f| print $"  ($f.name | path basename)"}
+            print "\nPlease be more specific"
+            return
+        } else {
+            let project_file = ($matches | first | get name)
+        }
+    }
+
+    let project_name = ($project_file | path basename | str replace '.md' '')
+
+    # Show preview
+    print $"Project: ($project_name)"
+    print "─" * 60
+    open $project_file | lines | first 20 | each {|line| print $line}
+    print "─" * 60
+    print ""
+
+    # Confirm unless --confirm flag
+    if not $confirm {
+        print "This will TRASH the project file (not archive to folder)."
+        print "Insights should already be preserved in Resources."
+        print ""
+        let response = (input "Archive (trash) this project? [y/N]: ")
+
+        if ($response | str downcase) != 'y' {
+            print "Cancelled"
+            return
+        }
+    }
+
+    # Move to trash (macOS)
+    if $nu.os-info.name == 'macos' {
+        ^osascript -e $'tell application "Finder" to delete POSIX file "($project_file)"'
+        print $"✓ Moved ($project_name) to Trash"
+    } else {
+        # Linux: use trash-cli if available, otherwise rm
+        if (which trash | is-not-empty) {
+            ^trash $project_file
+            print $"✓ Moved ($project_name) to Trash"
+        } else {
+            rm $project_file
+            print $"✓ Deleted ($project_name)"
+            print "  (Install trash-cli for safer trash operation)"
+        }
+    }
+
+    print ""
+    print "Remember: Completed projects should be disposable."
+    print "If you need this again, insights belong in Resources."
+}

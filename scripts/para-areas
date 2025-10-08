@@ -1,0 +1,46 @@
+#!/usr/bin/env nu
+# Show recurring activity domains from quantified tracking
+# Counts all :: activity entries from journal
+
+def main [
+    --min (-m): int = 5     # Minimum occurrences to show
+    --limit (-l): int = 30  # Number of top activities to show
+] {
+    let journal_path = $"($env.HOME)/Forge/Areas/Journal"
+
+    if not ($journal_path | path exists) {
+        print $"Journal path not found: ($journal_path)"
+        return
+    }
+
+    # Find all activity entries (e.g., p::, t::, r::, etc.)
+    let activities = (
+        rg '^[a-z.]+::' $journal_path
+            --no-heading
+            --only-matching
+        | lines
+        | parse '{key}::'
+    )
+
+    if ($activities | is-empty) {
+        print "No activity entries found with :: notation"
+        return
+    }
+
+    # Count occurrences and sort by frequency
+    let summary = (
+        $activities
+        | group-by key
+        | transpose key entries
+        | insert count {|row| $row.entries | length}
+        | where count >= $min
+        | sort-by count --reverse
+        | first $limit
+        | select key count
+    )
+
+    print "Recurring Activity Domains (Areas):"
+    print $"Showing activities with ($min)+ occurrences\n"
+
+    $summary
+}

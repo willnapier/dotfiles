@@ -1,0 +1,283 @@
+#!/usr/bin/env nu
+# Collect P. notation entries from journal to project files
+# Three-tier automation: manual, cron, or auto-save trigger
+
+def main [
+    --verbose (-v)      # Show detailed output
+    --dry-run (-d)      # Show what would be collected without writing
+] {
+    let forge_root = $"($env.HOME)/Forge"
+    let journal_path = $"($forge_root)/Areas/Journal"
+    let projects_path = $"($forge_root)/Projects"
+
+    if not ($journal_path | path exists) {
+        print $"Error: Journal path not found: ($journal_path)"
+        return
+    }
+
+    # Ensure Projects directory exists
+    mkdir $projects_path
+
+    if $verbose {
+        print "=== Project Collection Started ==="
+        print $"Journal: ($journal_path)"
+        print $"Projects: ($projects_path)\n"
+    }
+
+    # Find all P. entries in journal files
+    let entries = (
+        collect_project_entries $journal_path $verbose
+    )
+
+    if ($entries | is-empty) {
+        if $verbose { print "No project entries found" }
+        return
+    }
+
+    if $verbose {
+        print $"Found ($entries | length) project entries\n"
+    }
+
+    # Group by project hierarchy
+    let projects = (
+        $entries
+        | group-by {|entry|
+            parse_project_hierarchy $entry.key | get filepath
+        }
+    )
+
+    # Process each project
+    $projects | transpose filepath entries | each {|project|
+        let hierarchy = (parse_project_hierarchy ($project.entries | first | get key))
+
+        if $dry_run {
+            print $"Would update: ($hierarchy.filepath).md"
+            print $"  Entries: ($project.entries | length)"
+        } else {
+            update_project_file $projects_path $hierarchy $project.entries $verbose
+        }
+    }
+
+    if $verbose {
+        print "\n=== Collection Complete ==="
+    }
+}
+
+# Extract P. entries from journal files
+def collect_project_entries [journal_path: string, verbose: bool] {
+    let files = (ls $"($journal_path)/**/*.md" | get name)
+
+    if $verbose {
+        print $"Scanning ($files | length) journal files..."
+    }
+
+    $files | each {|file|
+        let content = (open $file)
+        let date = extract_date_from_filename $file
+
+        # Find all P. entries in this file
+        $content
+        | lines
+        | enumerate
+        | where {|row| $row.item =~ 'P\.[a-z0-9.-]+::'}
+        | each {|row|
+            let parsed = (parse_project_line $row.item)
+            if ($parsed | is-not-empty) {
+                $parsed | merge {
+                    file: $file
+                    date: $date
+                    line_number: $row.index
+                }
+            }
+        }
+    }
+    | flatten
+    | compact
+}
+
+# Parse a line with P. notation
+def parse_project_line [line: string] {
+    let matches = ($line | parse --regex '(P\.[a-z0-9.-]+)::([^.]+)\.')
+
+    if ($matches | is-empty) {
+        return null
+    }
+
+    let match = ($matches | first)
+    {
+        key: $match.capture0
+        content: ($match.capture1 | str trim)
+    }
+}
+
+# Parse hierarchy from project key
+def parse_project_hierarchy [key: string] {
+    let parts = ($key | str replace 'P.' '' | split row '.')
+
+    {
+        root: ($parts | first)
+        subproject: ($parts | skip 1 | str join '.')
+        filepath: ($parts | str join '.')
+        depth: ($parts | length)
+    }
+}
+
+# Extract date from journal filename (assumes YYYY-MM-DD format)
+def extract_date_from_filename [filepath: string] {
+    let filename = ($filepath | path basename | str replace '.md' '')
+
+    # Try to parse YYYY-MM-DD format
+    let date_match = ($filename | parse --regex '(\d{4}-\d{2}-\d{2})')
+
+    if ($date_match | is-not-empty) {
+        $date_match | first | get capture0
+    } else {
+        # Fallback to file modification time
+        ls $filepath | first | get modified | format date "%Y-%m-%d"
+    }
+}
+
+# Update or create project file
+def update_project_file [
+    projects_path: string
+    hierarchy: record
+    entries: list
+    verbose: bool
+] {
+    let filepath = $"($projects_path)/($hierarchy.filepath).md"
+    let project_name = $hierarchy.root
+
+    # Check if file exists
+    let exists = ($filepath | path exists)
+
+    if not $exists {
+        # Create new project file
+        if $verbose {
+            print $"Creating: ($hierarchy.filepath).md"
+        }
+
+        let content = generate_project_template $hierarchy $entries
+        $content | save $filepath
+    } else {
+        # Append new entries
+        if $verbose {
+            print $"Updating: ($hierarchy.filepath).md with ($entries | length) entries"
+        }
+
+        append_entries_to_project $filepath $entries
+    }
+
+    # Update parent with subproject link if needed
+    if $hierarchy.depth > 1 {
+        let parent_path = $"($projects_path)/($hierarchy.root).md"
+        if ($parent_path | path exists) {
+            add_subproject_to_parent $parent_path $hierarchy.filepath
+        }
+    }
+}
+
+# Generate new project file from template
+def generate_project_template [hierarchy: record, entries: list] {
+    let today = (date now | format date "%Y-%m-%d")
+    let project_name = $hierarchy.filepath
+
+    let header = if $hierarchy.depth == 1 {
+        # Root project
+        $"# ($project_name)
+
+**Type**: {type}
+**Status**: Active
+**Created**: ($today)
+**Updated**: ($today)
+
+## Overview
+
+{Project description}
+
+## Subprojects
+
+{Auto-generated}
+
+## Journal Entries
+"
+    } else {
+        # Subproject
+        $"# ($project_name)
+
+**Parent**: [[($hierarchy.root)]]
+**Status**: Active
+**Created**: ($today)
+
+## Journal Entries
+"
+    }
+
+    let entries_text = format_entries $entries
+
+    $"($header)\n($entries_text)"
+}
+
+# Append entries to existing project file
+def append_entries_to_project [filepath: string, entries: list] {
+    let existing = (open $filepath)
+
+    # Check for ## Journal Entries section
+    if not ($existing =~ '## Journal Entries') {
+        # Add section if missing
+        let updated = $"($existing)\n\n## Journal Entries\n"
+        $updated | save -f $filepath
+    }
+
+    # Format new entries
+    let new_entries = format_entries $entries
+
+    # Append to file
+    let content = (open $filepath)
+    $"($content)\n($new_entries)" | save -f $filepath
+}
+
+# Format entries for journal section
+def format_entries [entries: list] {
+    $entries
+    | group-by date
+    | transpose date entries
+    | sort-by date --reverse
+    | each {|day|
+        let entry_lines = (
+            $day.entries
+            | each {|entry|
+                $"- ($entry.content)"
+            }
+            | str join "\n"
+        )
+
+        $"### ($day.date)\n($entry_lines)"
+    }
+    | str join "\n\n"
+}
+
+# Add subproject link to parent file
+def add_subproject_to_parent [parent_file: string, subproject_name: string] {
+    let content = (open $parent_file)
+
+    # Check if already listed
+    let link = $"[[($subproject_name)]]"
+    if ($content =~ $link) {
+        return  # Already there
+    }
+
+    # Find ## Subprojects section
+    if not ($content =~ '## Subprojects') {
+        # Section doesn't exist, skip for now
+        # (Could add it, but that's more complex)
+        return
+    }
+
+    # Add link under Subprojects section
+    let updated = (
+        $content
+        | str replace '## Subprojects' $"## Subprojects\n- [[($subproject_name)]]"
+    )
+
+    $updated | save -f $parent_file
+}

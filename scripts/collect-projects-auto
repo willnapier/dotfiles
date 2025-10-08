@@ -1,0 +1,20 @@
+#!/usr/bin/env nu
+# Auto-trigger for project collection (called by Helix auto-save hook)
+# Runs silently, only shows errors
+
+# Quick check: only run if journal file was modified
+let current_file = $env.PWD
+
+if not ($current_file =~ 'Journal') {
+    exit 0  # Not a journal file, skip
+}
+
+# Run collection silently
+try {
+    collect-projects
+} catch {
+    # Log error but don't interrupt workflow
+    let error_log = $"($env.HOME)/.local/share/collect-projects-errors.log"
+    let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
+    $"($timestamp): Collection failed - ($in)\n" | save --append $error_log
+}

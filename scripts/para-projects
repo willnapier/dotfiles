@@ -1,0 +1,41 @@
+#!/usr/bin/env nu
+# Show all active project entries with P. notation
+# Part of PARA dynamic query system
+
+def main [
+    --all (-a)           # Show all projects including archived
+    --limit (-l): int = 20  # Number of recent entries to show
+] {
+    let forge_root = $"($env.HOME)/Forge"
+
+    # Search for P. entries across Projects/ and Journal/
+    let entries = (
+        rg 'P\.[a-z0-9.-]+::' $forge_root
+            --no-heading
+            --line-number
+            --with-filename
+        | lines
+        | parse '{file}:{line}:{content}'
+    )
+
+    if ($entries | is-empty) {
+        print "No project entries found with P. notation"
+        return
+    }
+
+    # Filter archived projects unless --all flag
+    let filtered = if $all {
+        $entries
+    } else {
+        $entries | where {|row|
+            let file_content = (open $row.file | str downcase)
+            not ($file_content =~ 'status.*archived')
+        }
+    }
+
+    # Show most recent first, limit results
+    $filtered
+    | last $limit
+    | reverse
+    | select file line content
+}

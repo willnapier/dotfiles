@@ -1,0 +1,88 @@
+#!/usr/bin/env nu
+# Find resources related to a project
+# Uses semantic search (fsem) if available, falls back to text search
+
+def main [
+    project: string     # Project name or fragment
+] {
+    let projects_path = $"($env.HOME)/Forge/Projects"
+
+    # Find project file
+    let project_files = (
+        ls $"($projects_path)/*.md"
+        | where name =~ $project
+    )
+
+    if ($project_files | is-empty) {
+        print $"No project found matching: ($project)"
+        print "\nAvailable projects:"
+        ls $"($projects_path)/*.md" | get name | each {|f| path basename }
+        return
+    }
+
+    let project_file = ($project_files | first | get name)
+    let project_name = ($project_file | path basename | str replace '.md' '')
+
+    print $"Finding resources related to: ($project_name)\n"
+
+    # Check if fsem (semantic search) is available
+    if (which fsem | is-not-empty) {
+        print "Using semantic search...\n"
+
+        # Extract key concepts from project file for query
+        let overview = (
+            open $project_file
+            | lines
+            | where {|line| $line starts-with '##' or ($line | str length) > 50}
+            | first 5
+            | str join ' '
+        )
+
+        # Use semantic search to find related notes
+        fsem $overview
+    } else {
+        # Fallback: Extract keywords and use ripgrep
+        print "Semantic search not available, using text search...\n"
+
+        let content = (open $project_file)
+
+        # Extract meaningful words (5+ characters, excluding common words)
+        let keywords = (
+            $content
+            | str replace --all --regex '[^a-zA-Z\s]' ' '
+            | split row ' '
+            | where {|w| ($w | str length) >= 5}
+            | where {|w| $w not-in ['Status' 'Created' 'Updated' 'Overview' 'Project' 'Journal' 'Entries']}
+            | uniq
+            | first 10
+        )
+
+        if ($keywords | is-empty) {
+            print "Could not extract keywords from project file"
+            return
+        }
+
+        print $"Searching for: ($keywords | str join ', ')\n"
+
+        # Search across Areas and Resources
+        let areas_path = $"($env.HOME)/Forge/Areas"
+        let resources_path = $"($env.HOME)/Forge/Resources"
+
+        let results = (
+            $keywords
+            | each {|keyword|
+                rg -i $keyword $areas_path $resources_path --files-with-matches 2>/dev/null
+                | lines
+            }
+            | flatten
+            | uniq
+        )
+
+        if ($results | is-empty) {
+            print "No related resources found"
+        } else {
+            print $"Found ($results | length) related files:\n"
+            $results | each {|f| print $"  ($f)"}
+        }
+    }
+}
