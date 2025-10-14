@@ -1531,6 +1531,48 @@ def fcitz [] {
     }
 }
 
+# File citation + copy Zotero link to clipboard (clickable markdown link)
+def fcitzl [] {
+    print "🔍 Loading citations..."
+    let citations_file = $"($env.FORGE?)/LIT/citations.md"
+
+    if not ($citations_file | path exists) {
+        print $"❌ Citations file not found: ($citations_file)"
+        return
+    }
+
+    # Load citations (same as fcit for consistency)
+    let citations = (open $citations_file | lines | where $it != "" | where ($it | str starts-with "#") == false | where ($it | str trim) != "")
+    if ($citations | is-empty) {
+        print "❌ No citations found"
+        return
+    }
+
+    # Select citation
+    let selected = ($citations | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'echo {}' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📚 Citation → Link: " | str trim)
+
+    if not ($selected | is-empty) {
+        # Extract clean key and Zotero key from format: "CleanKey [ZoteroKey] Title"
+        let citation_info = ($selected | parse --regex '^([^\[]+)\[([^\]]+)\]\s*(.*)$' | get -o 0?)
+
+        if not ($citation_info | is-empty) {
+            let clean_key = ($citation_info.capture0 | str trim)
+            let zotero_key = ($citation_info.capture1 | str trim)
+            let title = ($citation_info.capture2 | str trim)
+
+            # Create markdown link: [CleanKey Title](zotero://select/items/@key)
+            let zotero_link = $"[($clean_key) ($title)](zotero://select/items/@($zotero_key))"
+
+            $zotero_link | pbcopy
+            print $"📋 Copied Zotero link to clipboard:"
+            print $"   ($zotero_link)"
+            print "💡 Paste into your notes - clicking opens Zotero"
+        } else {
+            print "❌ Could not parse citation format"
+        }
+    }
+}
+
 # File semantic search + copy link to clipboard (universal)
 def fsem [] {
     if ($env.OPENAI_API_KEY? | is-empty) {
