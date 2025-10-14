@@ -1416,8 +1416,8 @@ def gsh [] {
     }
 }
 
-# File wiki link + copy to clipboard (universal)
-def fwl [] {
+# Forge search + copy link to clipboard (universal)
+def fsl [] {
     if not ($env.FORGE? | is-empty) and ($env.FORGE | path exists) {
         let file = (fd . $env.FORGE --type f --extension md | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'mdcat --columns 80 {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📝 Wiki Link: " | str trim)
         if not ($file | is-empty) {
@@ -1432,8 +1432,8 @@ def fwl [] {
     }
 }
 
-# File citation + copy to clipboard (universal)
-def fcit [] {
+# Citation + copy to clipboard (plain text)
+def cit [] {
     print "🔍 Loading citations..."
     let citations_file = $"($env.FORGE?)/LIT/citations.md"
     if not ($citations_file | path exists) {
@@ -1469,8 +1469,36 @@ def fcit [] {
     }
 }
 
-# File citation + open PDF in Zotero (uses citations.md)
-def fcitz [] {
+# Citation + copy wiki link to literature note
+def cil [] {
+    print "🔍 Loading citations..."
+    let citations_file = $"($env.FORGE?)/LIT/citations.md"
+    if not ($citations_file | path exists) {
+        print $"❌ Citations file not found: ($citations_file)"
+        return
+    }
+
+    let citations = (open $citations_file | lines | where $it != "" | where ($it | str starts-with "#") == false | where ($it | str trim) != "")
+    if ($citations | is-empty) {
+        print "❌ No citations found"
+        return
+    }
+
+    let selected = ($citations | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'echo {}' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📚 Citation → Link: " | str trim)
+    if not ($selected | is-empty) {
+        # Extract clean key (e.g., "Zamoyski2009") for wiki link to literature note
+        # Assumes literature notes are named with the citation key (e.g., Zamoyski2009.md)
+        let clean_key = ($selected | split row ' ' | first)
+        let wikilink = $"[[($clean_key)]]"
+
+        $wikilink | pbcopy
+        print $"📋 Copied wiki link to clipboard: ($wikilink)"
+        print "💡 Links to your literature note file"
+    }
+}
+
+# Citation + open PDF in Zotero
+def ciz [] {
     print "🔍 Loading citations..."
     let citations_file = $"($env.FORGE?)/LIT/citations.md"
     let library_file = $"($env.FORGE?)/LIT/library.bib"
@@ -1531,8 +1559,8 @@ def fcitz [] {
     }
 }
 
-# File citation + copy Zotero link to clipboard (clickable markdown link)
-def fcitzl [] {
+# Citation + copy Zotero link to clipboard (clickable markdown link)
+def cizl [] {
     print "🔍 Loading citations..."
     let citations_file = $"($env.FORGE?)/LIT/citations.md"
 
@@ -1573,8 +1601,8 @@ def fcitzl [] {
     }
 }
 
-# File semantic search + copy link to clipboard (universal)
-def fsem [] {
+# Forge semantic search + copy link to clipboard
+def fsel [] {
     if ($env.OPENAI_API_KEY? | is-empty) {
         print "❌ OPENAI_API_KEY not set for semantic search"
         return
@@ -1622,8 +1650,8 @@ def fsem [] {
     }
 }
 
-# File semantic search + open in Helix
-def fsemh [] {
+# Forge semantic search + open in Helix
+def fseh [] {
     if ($env.OPENAI_API_KEY? | is-empty) {
         print "❌ OPENAI_API_KEY not set for semantic search"
         return
@@ -1673,8 +1701,8 @@ def fsemh [] {
     }
 }
 
-# File content search + copy link to clipboard (universal)
-def fsearch [] {
+# Forge content search + copy link to clipboard
+def fcl [] {
     if not ($env.FORGE? | is-empty) and ($env.FORGE | path exists) {
         let query = (input "🔍 Search content: ")
         if ($query | is-empty) {
