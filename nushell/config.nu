@@ -66,6 +66,214 @@ def zed-daily [] {
     zed $"($daily_file):3"
 }
 
+# ---- Zettelkasten Workflow Functions ----
+# Promote fleeting note to permanent Zettelkasten
+# Usage: promote note-name (without .md extension)
+def promote [note_name: string] {
+    let fleeting_path = $"($env.HOME)/Forge/fleeting/($note_name).md"
+    let permanent_path = $"($env.HOME)/Forge/($note_name).md"
+
+    if not ($fleeting_path | path exists) {
+        print $"❌ Note not found: ($note_name)"
+        print $"   (Looking in ~/Forge/fleeting/)"
+        return
+    }
+
+    if ($permanent_path | path exists) {
+        print $"⚠️  Permanent note already exists: ($note_name)"
+        print $"   Use a different name or manually resolve conflict"
+        return
+    }
+
+    mv $fleeting_path $permanent_path
+    print $"✓ Promoted: ($note_name)"
+    print $"  From: fleeting/($note_name).md"
+    print $"  To:   ($note_name).md"
+}
+
+# Review fleeting notes inbox
+def fleeting [] {
+    let fleeting_dir = $"($env.HOME)/Forge/fleeting"
+
+    if not ($fleeting_dir | path exists) {
+        print "No fleeting notes directory found"
+        print $"Create it with: mkdir ($fleeting_dir)"
+        return
+    }
+
+    let count = (ls $fleeting_dir | where type == file | length)
+
+    if $count == 0 {
+        print "📭 Inbox empty - no fleeting notes to process"
+        return
+    }
+
+    print $"📬 ($count) fleeting notes in inbox:\n"
+    let notes = (ls $fleeting_dir | where type == file | get name | each {|n| $"  - ($n | path basename)"})
+    print ($notes | str join "\n")
+    print $"\nUse 'cd ~/Forge/fleeting && fsh' to browse, or 'promote <name>' to promote"
+}
+
+# ---- Quick Logging Functions ----
+# Log entry directly to today's DayPage and trigger collection
+# Usage: log "P.website:: 2hr implemented-nav"
+#        log "p.c:: 45min Bach-Prelude"
+def log [entry: string] {
+    let today = (date now | format date "%Y-%m-%d")
+    let daypage = $"($env.HOME)/Forge/NapierianLogs/DayPages/($today).md"
+
+    # Ensure DayPages directory exists
+    let daypage_dir = ($daypage | path dirname)
+    if not ($daypage_dir | path exists) {
+        mkdir $daypage_dir
+    }
+
+    # Append entry with blank line for spacing
+    $"\n($entry)" | save --append $daypage
+
+    # Trigger collection silently
+    try {
+        ^collect-entries out+err> /dev/null
+    } catch {
+        # Collection errors logged separately, don't interrupt workflow
+    }
+
+    print $"✓ Logged to ($today): ($entry)"
+}
+
+# Pomodoro timer with automatic logging (background job)
+# Usage: pomo "P.website" "implement-navigation"
+#        pomo "p.c" "Bach-Prelude-practice"
+#        pomo-status  # Check current pomodoro
+def pomo [
+    project: string   # Project/activity key (P.name or p.c, etc.)
+    task: string      # Task description (use-hyphens for multi-word)
+] {
+    let state_file = $"($env.HOME)/.local/share/pomo-state.json"
+
+    # Check if pomodoro already running
+    if ($state_file | path exists) {
+        let current = (open $state_file | from json)
+        print $"⚠️  Pomodoro already running: ($current.project) - ($current.task)"
+        print $"   Started at ($current.start_time)"
+        return
+    }
+
+    # Save pomodoro state
+    {
+        project: $project,
+        task: $task,
+        start_time: (date now | format date "%H:%M"),
+        start_timestamp: (date now | into int)
+    } | to json | save $state_file
+
+    print $"🍅 Starting 25min Pomodoro: ($project) - ($task)"
+    print $"   Focus time begins now. Terminal remains available for work.\n"
+
+    # Capture variables for closure
+    let proj = $project
+    let tsk = $task
+    let state = $state_file
+
+    # Launch background timer job
+    let job_id = (job spawn --tag $"pomo-($project)" {
+        sleep 25min
+
+        # Auto-log the completed pomodoro
+        let today = (date now | format date "%Y-%m-%d")
+        let daypage = $"($env.HOME)/Forge/NapierianLogs/DayPages/($today).md"
+        $"\n($proj):: 25min ($tsk)" | save --append $daypage
+
+        # Trigger collection
+        try {
+            ^collect-entries out+err> /dev/null
+        }
+
+        # Desktop notification (cross-platform)
+        try {
+            if (which osascript | is-not-empty) {
+                ^osascript -e $'display notification "($tsk)" with title "🍅 Pomodoro Complete!" sound name "Glass"'
+            } else if (which notify-send | is-not-empty) {
+                ^notify-send -u critical "🍅 Pomodoro Complete!" $"($tsk)"
+            }
+        }
+
+        # Clean up state file
+        if ($state | path exists) {
+            rm $state
+        }
+    })
+
+    print $"   Timer running in background (Job ID: ($job_id))"
+    print $"   Use 'pomo-status' to check current session"
+    print $"   Use 'job list' to see all background jobs"
+}
+
+# Check current pomodoro status
+def pomo-status [] {
+    let state_file = $"($env.HOME)/.local/share/pomo-state.json"
+
+    if not ($state_file | path exists) {
+        print "No active pomodoro session"
+        return
+    }
+
+    let current = (open $state_file | from json)
+    let now_ts = (date now | into int)
+    let elapsed_ns = ($now_ts - $current.start_timestamp)
+    let elapsed_min = ($elapsed_ns / 1_000_000_000 / 60 | math round)
+    let remaining_min = (25 - $elapsed_min)
+
+    print $"🍅 Active Pomodoro:"
+    print $"   Project: ($current.project)"
+    print $"   Task: ($current.task)"
+    print $"   Started: ($current.start_time)"
+    print $"   Elapsed: ($elapsed_min) minutes"
+    print $"   Remaining: ($remaining_min) minutes"
+}
+
+# End current pomodoro early and log actual time worked
+def pomo-end [] {
+    let state_file = $"($env.HOME)/.local/share/pomo-state.json"
+
+    if not ($state_file | path exists) {
+        print "No active pomodoro to end"
+        return
+    }
+
+    let current = (open $state_file | from json)
+
+    # Calculate actual elapsed time
+    let now_ts = (date now | into int)
+    let elapsed_ns = ($now_ts - $current.start_timestamp)
+    let elapsed_min = ($elapsed_ns / 1_000_000_000 / 60 | math round)
+
+    # Log with actual duration
+    log $"($current.project):: ($elapsed_min)min ($current.task)"
+
+    # Clean up state
+    rm $state_file
+
+    print $"✓ Pomodoro ended early: ($current.project) - ($current.task)"
+    print $"   Logged ($elapsed_min)min (instead of 25min)"
+}
+
+# Cancel current pomodoro (without logging)
+def pomo-cancel [] {
+    let state_file = $"($env.HOME)/.local/share/pomo-state.json"
+
+    if not ($state_file | path exists) {
+        print "No active pomodoro to cancel"
+        return
+    }
+
+    let current = (open $state_file | from json)
+    rm $state_file
+
+    print $"❌ Cancelled pomodoro: ($current.project) - ($current.task)"
+    print $"   (Not logged)"
+}
+
 # ---- Unified Project Root Detection & Tools ----
 use ~/.config/nushell/scripts/project-root-detection.nu *
 use ~/.config/nushell/scripts/serpl.nu *
@@ -1184,7 +1392,24 @@ def fsh [] {
         print "fd and sk are required. Install with: brew install fd sk"
         return
     }
-    let file = (fd . --type f --hidden --exclude .git | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'mdcat --columns 80 {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📁 File Search: " | str trim)
+    if not ($env.FORGE? | is-empty) and ($env.FORGE | path exists) {
+        let file = (fd . $env.FORGE --type f --hidden --exclude .git | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'mdcat --columns 80 {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📁 Forge File: " | str trim)
+        if not ($file | is-empty) {
+            print $"🚀 Opening ($file) in Helix..."
+            hx $file
+        }
+    } else {
+        print "❌ FORGE not set or doesn't exist"
+    }
+}
+
+# Global file search (from current directory)
+def gsh [] {
+    if (which fd | is-empty) or (which sk | is-empty) {
+        print "fd and sk are required. Install with: brew install fd sk"
+        return
+    }
+    let file = (fd . --type f --hidden --exclude .git --exclude Library/CloudStorage/Dropbox | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'mdcat --columns 80 {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "🌍 Global Search: " | str trim)
     if not ($file | is-empty) {
         print $"🚀 Opening ($file) in Helix..."
         hx $file
@@ -1210,7 +1435,7 @@ def fwl [] {
 # File citation + copy to clipboard (universal)
 def fcit [] {
     print "🔍 Loading citations..."
-    let citations_file = $"($env.FORGE?)/ZET/citations.md"
+    let citations_file = $"($env.FORGE?)/LIT/citations.md"
     if not ($citations_file | path exists) {
         print $"❌ Citations file not found: ($citations_file)"
         return
@@ -1247,8 +1472,8 @@ def fcit [] {
 # File citation + open PDF in Zotero (uses citations.md)
 def fcitz [] {
     print "🔍 Loading citations..."
-    let citations_file = $"($env.FORGE?)/ZET/citations.md"
-    let library_file = $"($env.FORGE?)/ZET/library.bib"
+    let citations_file = $"($env.FORGE?)/LIT/citations.md"
+    let library_file = $"($env.FORGE?)/LIT/library.bib"
 
     if not ($citations_file | path exists) {
         print $"❌ Citations file not found: ($citations_file)"
