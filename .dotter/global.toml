@@ -91,6 +91,7 @@ depends = []
 "scripts/get-system-theme.sh" = "~/.local/bin/get-system-theme.sh"
 "scripts/hx-wiki" = "~/.local/bin/hx-wiki"
 "scripts/hx-wiki.nu" = "~/.local/bin/hx-wiki.nu"
+"scripts/forge-link-manager" = "~/.local/bin/forge-link-manager"
 "scripts/forge-linker.sh" = "~/.local/bin/forge-linker"
 "scripts/forge-linker.nu" = "~/.local/bin/forge-linker.nu"
 "scripts/semantic-indexer" = "~/.local/bin/semantic-indexer"
