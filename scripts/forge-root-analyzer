@@ -1,0 +1,217 @@
+#!/usr/bin/env nu
+# Forge Root Analyzer - Analyze permanent notes directory to identify content types
+# Usage: forge-root-analyzer [--sample-size 100]
+
+def main [
+    --sample-size: int = 100  # Number of files to sample
+] {
+    let forge_root = $"($env.HOME)/Forge"
+
+    print $"(ansi cyan)═══ Forge Root Analysis ═══(ansi reset)\n"
+
+    # Get all markdown files at root (not in subdirectories)
+    let all_files = (glob $"($forge_root)/*.md")
+    let total_count = ($all_files | length)
+
+    print $"Total files at Forge root: (ansi green)($total_count)(ansi reset)\n"
+
+    # Select random sample
+    let sample_files = ($all_files | shuffle | first $sample_size)
+    print $"(ansi yellow)Analyzing random sample of ($sample_files | length) files...(ansi reset)\n"
+
+    # Analyze each file
+    mut categories = {}
+    mut all_tags = []
+    mut examples = {}
+
+    for file in $sample_files {
+        let result = (analyze_file $file)
+
+        # Count categories
+        let cat = $result.category
+        if ($categories | get --optional $cat | is-empty) {
+            $categories = ($categories | insert $cat 1)
+        } else {
+            let count = ($categories | get $cat)
+            $categories = ($categories | upsert $cat ($count + 1))
+        }
+
+        # Collect tags
+        $all_tags = ($all_tags | append $result.tags)
+
+        # Store examples
+        if ($examples | get --optional $cat | is-empty) {
+            $examples = ($examples | insert $cat [$result])
+        } else {
+            let current = ($examples | get $cat)
+            if (($current | length) < 5) {
+                $examples = ($examples | upsert $cat ($current | append $result))
+            }
+        }
+    }
+
+    # Print results
+    print $"\n(ansi cyan)═══ Analysis Results ═══(ansi reset)\n"
+
+    print $"(ansi green_bold)Content Type Distribution:(ansi reset)"
+    $categories
+    | transpose category count
+    | sort-by count --reverse
+    | each { |row|
+        print $"  ($row.category): ($row.count) files"
+    }
+
+    print ""
+
+    # Tag frequency
+    print $"(ansi green_bold)Most Common Tags:(ansi reset)"
+    $all_tags
+    | flatten
+    | group-by
+    | transpose tag occurrences
+    | update occurrences { |row| $row.occurrences | length }
+    | sort-by occurrences --reverse
+    | first 15
+    | each { |row|
+        print $"  #($row.tag): ($row.occurrences) occurrences"
+    }
+
+    print ""
+
+    # Show examples
+    print $"(ansi green_bold)Sample Files by Category:(ansi reset)"
+    for cat in ($categories | transpose category count | sort-by count --reverse | get category) {
+        print $"\n(ansi yellow)($cat):(ansi reset)"
+        let items = ($examples | get $cat)
+        for item in $items {
+            let basename = ($item.filename | path basename)
+            print $"  - ($basename)"
+            if not ($item.tags | is-empty) {
+                print $"    Tags: ($item.tags | str join ', ')"
+            }
+            print $"    Length: ($item.word_count) words, Links: ($item.link_count)"
+        }
+    }
+}
+
+# Analyze a single file
+def analyze_file [filepath: string] {
+    let content = (open $filepath)
+    let basename = ($filepath | path basename)
+
+    # Extract frontmatter
+    let frontmatter = (extract_frontmatter $content)
+
+    # Basic metrics
+    let word_count = ($content | split row ' ' | length)
+    let links = ($content | str replace --all --regex '\[\[([^\]]+)\]\]' "\n" | split row "\n")
+    let link_count = (($links | length) - 1)
+
+    # Get tags
+    let tags = ($frontmatter | get --optional tags | default [])
+
+    # Categorize
+    let category = (categorize_file $basename $tags $content $word_count $link_count)
+
+    {
+        filename: $filepath
+        category: $category
+        tags: $tags
+        word_count: $word_count
+        link_count: $link_count
+    }
+}
+
+# Extract YAML frontmatter tags
+def extract_frontmatter [content: string] {
+    let fm_match = ($content | parse --regex '(?s)^---\n(.*?)\n---')
+
+    if ($fm_match | is-empty) {
+        return {tags: []}
+    }
+
+    let yaml = ($fm_match | first | get capture0)
+
+    # Simple tag extraction
+    mut tags = []
+    mut in_tags = false
+
+    for line in ($yaml | split row "\n") {
+        if ($line | str starts-with 'tags:') {
+            $in_tags = true
+        } else if ($in_tags and ($line | str starts-with '- ')) {
+            let tag = ($line | str replace '^- ' '' | str trim)
+            $tags = ($tags | append $tag)
+        } else if ($in_tags and not ($line | str starts-with ' ') and not ($line | str starts-with '-')) {
+            $in_tags = false
+        }
+    }
+
+    {tags: $tags}
+}
+
+# Categorize file
+def categorize_file [
+    filename: string
+    tags: list
+    content: string
+    word_count: int
+    link_count: int
+] {
+    # Date-based filename
+    if ($filename =~ '\d{4}-\d{2}-\d{2}') {
+        return "📅 Daily/Journal (date in filename)"
+    }
+
+    # Tag-based categories
+    if ($tags | any { |t| $t in ['journal', 'daypage', 'diary', 'personal'] }) {
+        return "📔 Journal/Personal"
+    }
+
+    if ($tags | any { |t| $t in ['fleeting', 'capture', 'inbox', 'todo', 'draft'] }) {
+        return "📥 Fleeting/Capture"
+    }
+
+    if ($tags | any { |t| $t in ['project', 'initiative'] }) {
+        return "🎯 Project"
+    }
+
+    if ($tags | any { |t| $t in ['literature', 'reading', 'source', 'book', 'paper'] }) {
+        return "📚 Literature Note"
+    }
+
+    if ($tags | any { |t| $t in ['pkm', 'obsidian', 'zettelkasten', 'workflow', 'meta'] }) {
+        return "🛠️ PKM Meta/System"
+    }
+
+    if ($tags | any { |t| $t in ['scenarios', 'planning', 'resourcing'] }) {
+        return "💭 Scenario/Planning"
+    }
+
+    if ($tags | any { |t| $t in ['people', 'person', 'relationship', 'social'] }) {
+        return "👤 People/Social"
+    }
+
+    # Content heuristics
+    if ($word_count < 100) {
+        return "📝 Stub/Short Note"
+    }
+
+    if ($link_count == 0 and $word_count < 300) {
+        return "🔸 Isolated Short Note"
+    }
+
+    if ($link_count >= 5) {
+        return "🔗 Well-Connected Note (5+ links)"
+    }
+
+    if ($link_count >= 2) {
+        return "🔗 Connected Note (2-4 links)"
+    }
+
+    if ($word_count >= 200 and $link_count >= 1) {
+        return "✨ Potential Zettelkasten"
+    }
+
+    return "❓ Unclassified"
+}

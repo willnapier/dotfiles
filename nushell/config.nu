@@ -1386,8 +1386,8 @@ def tlight [] {
     print "☀️  Switched to light theme"
 }
 
-# File search + open in Helix
-def fsh [] {
+# Forge file search + open in editor
+def fse [] {
     if (which fd | is-empty) or (which sk | is-empty) {
         print "fd and sk are required. Install with: brew install fd sk"
         return
@@ -1395,24 +1395,61 @@ def fsh [] {
     if not ($env.FORGE? | is-empty) and ($env.FORGE | path exists) {
         let file = (fd . $env.FORGE --type f --hidden --exclude .git | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'mdcat --columns 80 {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📁 Forge File: " | str trim)
         if not ($file | is-empty) {
-            print $"🚀 Opening ($file) in Helix..."
-            hx $file
+            let editor = (if ($env.EDITOR? | is-empty) { "vi" } else { $env.EDITOR })
+            print $"🚀 Opening ($file) in editor..."
+            ^$editor $file
         }
     } else {
         print "❌ FORGE not set or doesn't exist"
     }
 }
 
-# Global file search (from current directory)
-def gsh [] {
+# Global file search + open with appropriate application
+def gso [] {
     if (which fd | is-empty) or (which sk | is-empty) {
         print "fd and sk are required. Install with: brew install fd sk"
         return
     }
     let file = (fd . --type f --hidden --exclude .git --exclude Library/CloudStorage/Dropbox | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'mdcat --columns 80 {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "🌍 Global Search: " | str trim)
     if not ($file | is-empty) {
-        print $"🚀 Opening ($file) in Helix..."
-        hx $file
+        print $"🚀 Opening ($file)..."
+        if (sys | get host.name) == "Darwin" {
+            open $file
+        } else {
+            xdg-open $file
+        }
+    }
+}
+
+# Global content search + open with appropriate application
+def gco [] {
+    if (which rg | is-empty) or (which sk | is-empty) {
+        print "rg and sk are required. Install with: brew install ripgrep sk"
+        return
+    }
+    let query = (input "🔍 Search content: ")
+    if ($query | is-empty) {
+        return
+    }
+    print $"🔍 Searching for: ($query)"
+    let results = try {
+        ^rg -i -l $query . --glob '!Library/CloudStorage/Dropbox/**' | lines | where $it != ""
+    } catch {
+        print "❌ Content search failed"
+        return
+    }
+    if ($results | is-empty) {
+        print "❌ No matches found"
+        return
+    }
+    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview $"rg --color=always -i -C 3 '($query)' {}" --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "🌍 Global Content: " | str trim)
+    if not ($selected | is-empty) {
+        print $"🚀 Opening ($selected)..."
+        if (sys | get host.name) == "Darwin" {
+            open $selected
+        } else {
+            xdg-open $selected
+        }
     }
 }
 
@@ -1602,7 +1639,7 @@ def cizl [] {
 }
 
 # Forge semantic search + copy link to clipboard
-def fsel [] {
+def fsml [] {
     if ($env.OPENAI_API_KEY? | is-empty) {
         print "❌ OPENAI_API_KEY not set for semantic search"
         return
@@ -1650,8 +1687,8 @@ def fsel [] {
     }
 }
 
-# Forge semantic search + open in Helix
-def fseh [] {
+# Forge semantic search + open in editor
+def fsme [] {
     if ($env.OPENAI_API_KEY? | is-empty) {
         print "❌ OPENAI_API_KEY not set for semantic search"
         return
@@ -1676,13 +1713,13 @@ def fseh [] {
         print "❌ Semantic search failed. Check if semantic-indexer is set up."
         return
     }
-    
+
     if ($results | is-empty) {
         print "❌ No semantic matches found"
         return
     }
-    
-    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'title=$(echo {} | sd "^[0-9.]+[[:space:]]+" ""); file=$(fd -t f --full-path "$title.md" "$FORGE" | head -1); if [ -f "$file" ]; then mdcat --columns 80 "$file"; else echo "Title extracted: [$title]"; echo "Searching for: $title.md"; echo "In vault: $FORGE"; fd -t f "$title.md" "$FORGE"; fi' --preview-window 'right:60%' --prompt "🧠 Semantic: " | str trim)
+
+    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'title=$(echo {} | sd "^[0-9.]+[[:space:]]+" ""); file=$(fd -t f --full-path "$title.md" "$FORGE" | head -1); if [ -f "$file" ]; then mdcat --columns 80 "$file"; else echo "Title extracted: [$title]"; echo "Searching for: $title.md"; echo "In vault: $FORGE"; fd -t f "$title.md" "$FORGE"; fi' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "🧠 Semantic: " | str trim)
     if not ($selected | is-empty) {
         # Extract filename from semantic search result
         # The selection is just the first line: "0.45  Title" or "1. 0.45  Title"
@@ -1690,11 +1727,12 @@ def fseh [] {
         let lines = ($selected | lines)
         let filename = ($lines | get 0 | sd '^\d+\.\s+' '' | sd '^[0-9.]+\s+' '' | str trim)
 
-        # Find the full path and open in Helix
+        # Find the full path and open in editor
         let filepath = (fd -t f --full-path $"($filename).md" $env.FORGE | head -1)
         if not ($filepath | is-empty) {
-            print $"🚀 Opening ($filename) in Helix..."
-            hx $filepath
+            let editor = (if ($env.EDITOR? | is-empty) { "vi" } else { $env.EDITOR })
+            print $"🚀 Opening ($filename) in editor..."
+            ^$editor $filepath
         } else {
             print $"❌ File not found: ($filename).md"
         }
@@ -1735,14 +1773,14 @@ def fcl [] {
     }
 }
 
-# File content search + open in Helix
-def fcsh [] {
+# Forge content search + open in editor
+def fce [] {
     if not ($env.FORGE? | is-empty) and ($env.FORGE | path exists) {
         let query = (input "🔍 Search content: ")
         if ($query | is-empty) {
             return
         }
-        
+
         print $"🔍 Searching for: ($query)"
         let results = try {
             ^rg -i --type md -l $query $env.FORGE | lines | where $it != ""
@@ -1750,16 +1788,17 @@ def fcsh [] {
             print "❌ Content search failed"
             return
         }
-        
+
         if ($results | is-empty) {
             print "❌ No matches found"
             return
         }
-        
+
         let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview $"rg --color=always -i -C 3 '($query)' {}" --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📄 Content: " | str trim)
         if not ($selected | is-empty) {
-            print $"🚀 Opening ($selected) in Helix..."
-            hx $selected
+            let editor = (if ($env.EDITOR? | is-empty) { "vi" } else { $env.EDITOR })
+            print $"🚀 Opening ($selected) in editor..."
+            ^$editor $selected
         }
     } else {
         print "❌ FORGE not set or doesn't exist"

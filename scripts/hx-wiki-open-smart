@@ -1,0 +1,12 @@
+#!/bin/bash
+# Smart wrapper for opening wiki links
+# Opens text files in Helix floating pane, media files in system viewer
+
+# Check if temp file exists (created by hx-wiki for text files)
+if [ -f /tmp/helix-current-link.md ]; then
+    # Text file - open in floating Helix
+    zellij run --floating -- hx /tmp/helix-current-link.md
+else
+    # Media file - already opened by hx-wiki script, do nothing
+    :
+fi

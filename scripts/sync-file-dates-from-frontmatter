@@ -1,0 +1,151 @@
+#!/usr/bin/env nu
+
+# Sync filesystem dates with frontmatter creation dates
+# Reads 'created:' or 'date created:' from YAML frontmatter and updates file timestamps
+
+def main [
+    path?: string  # Path to file or directory (default: current directory)
+    --dry-run      # Show what would be changed without making changes
+] {
+    let target_path = if ($path | is-empty) { "." } else { $path }
+
+    print $"Scanning for markdown files in: ($target_path)"
+
+    # Find all markdown files
+    let files = if ($target_path | path type) == "file" {
+        [$target_path]
+    } else {
+        glob $"($target_path)/**/*.md"
+    }
+
+    let total = ($files | length)
+    print $"Found ($total) markdown files\n"
+
+    # Process each file and collect results
+    let results = $files | enumerate | each {|item|
+        let idx = $item.index + 1
+        let file = $item.item
+
+        # Read first 20 lines to get frontmatter
+        let content = try {
+            open $file | lines | first 20
+        } catch {
+            return {
+                file: $file
+                status: "error"
+                message: "Could not read file"
+                index: $idx
+            }
+        }
+
+        # Check if file has frontmatter
+        if ($content | first) != "---" {
+            return {
+                file: $file
+                status: "skip"
+                message: "No frontmatter"
+                index: $idx
+            }
+        }
+
+        # Extract frontmatter (between first and second ---)
+        let frontmatter_indices = ($content | skip 1 | enumerate | where item == "---")
+        if ($frontmatter_indices | is-empty) {
+            return {
+                file: $file
+                status: "skip"
+                message: "Incomplete frontmatter"
+                index: $idx
+            }
+        }
+
+        let frontmatter_end = ($frontmatter_indices | first | get index)
+        let frontmatter = ($content | skip 1 | first $frontmatter_end)
+
+        # Look for created: or date created: field
+        let date_lines = ($frontmatter | where $it =~ "created:")
+        if ($date_lines | is-empty) {
+            return {
+                file: $file
+                status: "skip"
+                message: "No created date"
+                index: $idx
+            }
+        }
+
+        let date_line = ($date_lines | first)
+
+        # Extract date from line
+        let date_str = ($date_line | str replace --regex '^.*created:\s*' '' | str trim)
+
+        # Parse date
+        let parsed_date = try {
+            $date_str | into datetime
+        } catch {
+            return {
+                file: $file
+                status: "error"
+                message: $"Could not parse date: ($date_str)"
+                index: $idx
+            }
+        }
+
+        # Format for touch command (YYYYMMDDhhmm)
+        let touch_format = ($parsed_date | format date "%Y%m%d%H%M")
+
+        if $dry_run {
+            print $"🔍 [($idx)/($total)] Would update: ($file)"
+            print $"   Date: ($date_str)"
+            return {
+                file: $file
+                status: "would_update"
+                date: $date_str
+                index: $idx
+            }
+        } else {
+            # Update file modification time
+            try {
+                ^touch -t $touch_format $file
+                print $"✓ [($idx)/($total)] Updated: ($file)"
+                print $"   Date: ($date_str)"
+                return {
+                    file: $file
+                    status: "updated"
+                    date: $date_str
+                    index: $idx
+                }
+            } catch {
+                return {
+                    file: $file
+                    status: "error"
+                    message: "Failed to update timestamp"
+                    index: $idx
+                }
+            }
+        }
+    }
+
+    # Print summary
+    print "\n=== SUMMARY ==="
+    print $"Total files scanned: ($total)"
+
+    let updated = ($results | where status == "updated" | length)
+    let would_update = ($results | where status == "would_update" | length)
+    let errors = ($results | where status == "error" | length)
+    let skipped = ($results | where status == "skip" | length)
+
+    if $dry_run {
+        print $"Files that would be updated: ($would_update)"
+    } else {
+        print $"Files updated: ($updated)"
+    }
+    print $"Files skipped: ($skipped)"
+    print $"Errors: ($errors)"
+
+    if $errors > 0 {
+        print "\nErrors encountered:"
+        $results | where status == "error" | each {|r|
+            print $"  - ($r.file): ($r.message)"
+        }
+    }
+}

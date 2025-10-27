@@ -1,0 +1,327 @@
+#!/usr/bin/env nu
+# audit-linked-media - Interactive classification tool for linked_media files
+#
+# Purpose: Distinguish embedded/integral media (stays in linked_media) from
+#          standalone media (should move to ~/Admin or ~/Personal)
+#
+# Usage: audit-linked-media [--auto-only]
+#   --auto-only: Only run automated classification, skip manual review
+
+def main [--auto-only] {
+    # Verify FORGE is set
+    if ($env.FORGE? | is-empty) {
+        print "❌ FORGE environment variable not set"
+        return
+    }
+
+    let linked_media = ([$env.FORGE, "linked_media"] | path join)
+
+    if not ($linked_media | path exists) {
+        print $"❌ linked_media directory not found: ($linked_media)"
+        return
+    }
+
+    print "🔍 Auditing linked_media files..."
+    print $"📁 Location: ($linked_media)\n"
+
+    cd $linked_media
+
+    # Find all files
+    let all_files = (fd -t f . | lines)
+    let total = ($all_files | length)
+
+    if $total == 0 {
+        print "📭 No files found in linked_media"
+        return
+    }
+
+    print $"📊 Found ($total) files to classify\n"
+
+    # Classify all files
+    print "⚙️  Running classification algorithms..."
+    let classified = ($all_files | each { |file|
+        classify-file $file
+    })
+
+    # Group by confidence
+    let high_confidence = ($classified | where confidence == "high")
+    let medium_confidence = ($classified | where confidence == "medium")
+    let low_confidence = ($classified | where confidence == "low" or classification == "unclear")
+
+    # Show summary
+    print "\n📊 Classification Results:"
+    print $"  ✅ High confidence: ($high_confidence | length) files"
+    print $"  ⚠️  Medium confidence: ($medium_confidence | length) files"
+    print $"  🤔 Needs review: ($low_confidence | length) files"
+
+    # Show breakdown by classification
+    let embedded_count = ($classified | where classification == "embedded" | length)
+    let standalone_count = ($classified | where classification == "standalone" | length)
+    let unclear_count = ($classified | where classification == "unclear" | length)
+
+    print "\n📈 Classification Breakdown:"
+    print $"  🖼️  Embedded \(keep\): ($embedded_count)"
+    print $"  📦 Standalone \(move\): ($standalone_count)"
+    print $"  ❓ Unclear: ($unclear_count)"
+
+    # Save results
+    print "\n💾 Saving results..."
+    $high_confidence | save -f /tmp/linked-media-high-confidence.json
+    $medium_confidence | save -f /tmp/linked-media-medium-confidence.json
+    $low_confidence | save -f /tmp/linked-media-needs-review.json
+    $classified | save -f /tmp/linked-media-all-results.json
+
+    print "   Saved to /tmp/linked-media-*.json"
+
+    # Interactive review if not auto-only
+    if not $auto_only and ($low_confidence | length) > 0 {
+        print "\n" + "=" * 60
+        print "🤔 MANUAL REVIEW - Unclear Classifications"
+        print "=" * 60
+        print "\nThese files need your decision:\n"
+
+        mut reviewed = []
+
+        for file in $low_confidence {
+            print $"\n📄 File: ($file.file)"
+            print $"   Path: ($linked_media)/($file.file)"
+            print $"   Scores: Embedded=($file.embedded_score) | Standalone=($file.standalone_score)"
+            print $"   Signals:"
+            print $"     - Reference type: ($file.signals.reference)"
+            print $"     - Path location: ($file.signals.path)"
+            print $"     - Filename pattern: ($file.signals.name)"
+            print $"     - File type: ($file.signals.type)"
+
+            # Show references
+            let filename = ($file.file | path basename)
+            let refs = try {
+                rg -n $filename $env.FORGE --type md -m 3 | lines
+            } catch {
+                []
+            }
+
+            if not ($refs | is-empty) {
+                print "   📝 References in notes:"
+                for ref in $refs {
+                    print $"     ($ref)"
+                }
+            } else {
+                print "   ⚠️  No references found in Forge notes"
+            }
+
+            # Get user decision
+            print ""
+            let decision = (input "   Decision? [e=embedded/keep, s=standalone/move, skip=decide later]: ")
+
+            let updated_file = match $decision {
+                "e" | "embedded" => {
+                    print "   ✅ Marked as EMBEDDED (will stay in linked_media)"
+                    $file | upsert manual_classification "embedded"
+                }
+                "s" | "standalone" => {
+                    print "   📦 Marked as STANDALONE (should move to ~/Admin or ~/Personal)"
+                    $file | upsert manual_classification "standalone"
+                }
+                _ => {
+                    print "   ⏭️  Skipped (will remain unclear)"
+                    $file | upsert manual_classification "skipped"
+                }
+            }
+
+            $reviewed = ($reviewed | append $updated_file)
+        }
+
+        # Save manual review results
+        if ($reviewed | length) > 0 {
+            print "\n💾 Saving manual review decisions..."
+            $reviewed | save -f /tmp/linked-media-manual-review.json
+            print "   Saved to /tmp/linked-media-manual-review.json"
+        }
+    }
+
+    # Final summary
+    print "\n" + "=" * 60
+    print "✅ AUDIT COMPLETE"
+    print "=" * 60
+    print "\nNext steps:"
+    print "1. Review high-confidence results:"
+    print "   open /tmp/linked-media-high-confidence.json | from json"
+    print "\n2. Review all classifications:"
+    print "   open /tmp/linked-media-all-results.json | from json"
+    print "\n3. Generate migration plan (when ready):"
+    print "   migrate-linked-media (script not yet created)"
+}
+
+# Classify a single file using multiple signals
+def classify-file [filepath: string] {
+    let ref_signal = (classify-by-reference $filepath)
+    let path_signal = (classify-by-path $filepath)
+    let name_signal = (classify-by-name $filepath)
+    let type_signal = (classify-by-type $filepath)
+
+    # Score based on signals
+    mut embedded_score = 0
+    mut standalone_score = 0
+
+    # Reference type is strongest signal (weight: 10)
+    if $ref_signal == "embedded" { $embedded_score = $embedded_score + 10 }
+    if $ref_signal == "standalone" { $standalone_score = $standalone_score + 10 }
+
+    # Path location is strong signal (weight: 5)
+    if $path_signal == "embedded" { $embedded_score = $embedded_score + 5 }
+    if $path_signal == "standalone" { $standalone_score = $standalone_score + 5 }
+
+    # Filename pattern is moderate signal (weight: 3)
+    if $name_signal == "embedded" { $embedded_score = $embedded_score + 3 }
+    if $name_signal == "standalone" { $standalone_score = $standalone_score + 3 }
+
+    # File type is weak signal (weight: 2)
+    if $type_signal == "embedded" { $embedded_score = $embedded_score + 2 }
+    if $type_signal == "standalone" { $standalone_score = $standalone_score + 2 }
+
+    # Determine classification
+    let classification = if $embedded_score > $standalone_score {
+        "embedded"
+    } else if $standalone_score > $embedded_score {
+        "standalone"
+    } else {
+        "unclear"
+    }
+
+    # Confidence based on score difference
+    let score_diff = (($embedded_score - $standalone_score) | math abs)
+    let confidence = if $classification == "unclear" {
+        "low"
+    } else if $score_diff < 5 {
+        "medium"
+    } else {
+        "high"
+    }
+
+    {
+        file: $filepath,
+        classification: $classification,
+        confidence: $confidence,
+        embedded_score: $embedded_score,
+        standalone_score: $standalone_score,
+        signals: {
+            reference: $ref_signal,
+            path: $path_signal,
+            name: $name_signal,
+            type: $type_signal
+        }
+    }
+}
+
+# Check how file is referenced in notes (strongest signal)
+def classify-by-reference [filepath: string] {
+    let filename = ($filepath | path basename)
+
+    # Check for embedded image references ![[path]] (Obsidian syntax)
+    let embedded_refs = try {
+        rg -c $"!\\[\\[.*($filename).*\\]\\]" $env.FORGE --type md | lines | length
+    } catch {
+        0
+    }
+
+    # Check for wiki link references [[path]] (without !)
+    let link_refs = try {
+        rg -c $"(?<!!)\\[\\[.*($filename).*\\]\\]" $env.FORGE --type md | lines | length
+    } catch {
+        0
+    }
+
+    if $embedded_refs > 0 {
+        "embedded"  # Used with ![[path]] - embedded in notes
+    } else if $link_refs > 0 {
+        "standalone"  # Used with [[path]] - standalone reference
+    } else {
+        "unknown"  # Not referenced
+    }
+}
+
+# Check directory location
+def classify-by-path [filepath: string] {
+    let dir = ($filepath | path dirname | path basename | str downcase)
+
+    match $dir {
+        "diagrams" => "embedded"
+        "diagram" => "embedded"
+        "screenshots" => "embedded"
+        "screenshot" => "embedded"
+        "book-covers" => "embedded"
+        "covers" => "embedded"
+        "illustrations" => "embedded"
+        "charts" => "embedded"
+        "visual" => "embedded"
+
+        "photos" => "standalone"
+        "photo" => "standalone"
+        "scans" => "standalone"
+        "scan" => "standalone"
+        "documents" => "standalone"
+        "receipts" => "standalone"
+        "people" => "standalone"
+
+        _ => "unknown"
+    }
+}
+
+# Check filename patterns
+def classify-by-name [filepath: string] {
+    let filename = ($filepath | path basename | str downcase)
+
+    # Patterns suggesting embedded (created for notes)
+    if ($filename | str contains "diagram") { return "embedded" }
+    if ($filename | str contains "mindmap") { return "embedded" }
+    if ($filename | str contains "mind-map") { return "embedded" }
+    if ($filename | str contains "concept") { return "embedded" }
+    if ($filename | str contains "screenshot") { return "embedded" }
+    if ($filename | str contains "screen-") { return "embedded" }
+    if ($filename | str contains "chart") { return "embedded" }
+    if ($filename | str contains "flowchart") { return "embedded" }
+    if ($filename | str contains "illustration") { return "embedded" }
+    if ($filename | str contains "sketch") { return "embedded" }
+
+    # Patterns suggesting standalone (external media)
+    if ($filename | str contains "photo") { return "standalone" }
+    if ($filename | str starts-with "img_") { return "standalone" }  # Camera
+    if ($filename | str starts-with "dsc") { return "standalone" }  # Camera
+    if ($filename | str contains "scan") { return "standalone" }
+    if ($filename | str contains "receipt") { return "standalone" }
+    if ($filename | str contains "certificate") { return "standalone" }
+    if ($filename | str contains "invoice") { return "standalone" }
+
+    "unknown"
+}
+
+# Check file type/extension
+def classify-by-type [filepath: string] {
+    let extension = try {
+        $filepath | path parse | get extension | str downcase
+    } catch {
+        ""
+    }
+
+    match $extension {
+        # Usually embedded (created diagrams)
+        "svg" => "embedded"
+        "drawio" => "embedded"
+        "excalidraw" => "embedded"
+        "mmd" => "embedded"  # Mermaid
+        "dot" => "embedded"  # Graphviz
+        "gif" => "embedded"  # Usually demos/animations
+
+        # Usually standalone (photos/scans)
+        "jpg" => "standalone"
+        "jpeg" => "standalone"
+        "heic" => "standalone"  # iPhone photos
+
+        # Ambiguous
+        "pdf" => "unknown"  # Could be papers or scans
+        "png" => "unknown"  # Could be screenshots or photos
+        "webp" => "unknown"
+
+        _ => "unknown"
+    }
+}

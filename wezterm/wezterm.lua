@@ -203,6 +203,14 @@ config.leader = { key = 'b', mods = 'CTRL', timeout_milliseconds = 1000 }
 
 -- Cross-platform key bindings
 config.keys = {
+  -- Disable Cmd+W on macOS to prevent accidental tab/window closing
+  -- Especially important in Claude Code where accidental close loses session
+  {
+    key = 'w',
+    mods = 'SUPER',
+    action = act.DisableDefaultAssignment,
+  },
+
   -- Disable Ctrl+Z to prevent accidental process suspension
   -- Especially important in Claude Code where accidental suspension breaks flow
   {

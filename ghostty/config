@@ -48,6 +48,10 @@ scroll-to-bottom =
 mouse-hide-while-typing = false
 mouse-shift-capture = false
 
+# Disable Cmd+W on macOS to prevent accidental window closing
+# Especially important in Claude Code where accidental close loses session
+keybind = cmd+w=unbind
+
 # Disable Ctrl+Z to prevent accidental process suspension
 # Especially important in Claude Code where accidental suspension breaks flow
 keybind = ctrl+z=unbind

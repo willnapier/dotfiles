@@ -1,14 +1,14 @@
 #!/usr/bin/env nu
-# Daily cron job for project collection
+# Daily cron job for unified entry collection (projects + activities)
 # Runs verbose, logs output
 
-let log_file = $"($env.HOME)/.local/share/collect-projects-cron.log"
+let log_file = $"($env.HOME)/.local/share/collect-entries-cron.log"
 let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
 
 print $"=== ($timestamp) ===" | save --append $log_file
 
 try {
-    collect-projects --verbose | save --append $log_file
+    collect-entries --verbose | save --append $log_file
 } catch {
     $"ERROR: ($in)\n" | save --append $log_file
 }

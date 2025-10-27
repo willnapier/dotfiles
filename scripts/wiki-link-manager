@@ -1,4 +1,17 @@
 #!/usr/bin/env nu
+# ⚠️ DEPRECATED - SUPERSEDED BY SPLIT ARCHITECTURE (2025-10-27)
+#
+# This unified script has been replaced by two independent watchers:
+# - wiki-backlinks: Maintains ## Backlinks sections
+# - wiki-resolve-mark: Marks/unmarks ?[[ for missing targets
+#
+# Reason for split: Unix "do one thing well" philosophy + customizability
+# Users can now enable features independently for nushell-knowledge-tools repo
+#
+# Use: link-service start (manages both watchers)
+# This file kept for reference only.
+#
+# === ORIGINAL HEADER (for reference) ===
 # forge-link-manager - Unified Nushell link management system
 # Combines backlink maintenance with mark/unmark unresolved links
 # Replaces Python comprehensive_link_manager with native Nushell

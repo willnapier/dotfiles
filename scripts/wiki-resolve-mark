@@ -1,0 +1,386 @@
+#!/usr/bin/env nu
+# wiki-resolve-mark - Mark/unmark unresolved wiki links
+# Watches markdown files and maintains ?[[ markers for missing targets
+#
+# Features:
+# - Marks [[unresolved]] as ?[[unresolved]] when target doesn't exist
+# - Cleans ?[[link]] back to [[link]] when file is created
+# - Smart filtering to avoid false positives (UUIDs, system paths, etc.)
+# - Cross-directory support (Forge, Admin, Archives)
+# - Event-driven (zero CPU when idle)
+#
+# Usage: wiki-resolve-mark [--debounce-ms 2000]
+
+# Smart filter configuration (ported from Python config.yaml)
+def create_filter_config [] {
+    {
+        action_prefixes: ["tel:" "mailto:" "http:" "https:" "ftp:" "file:" "obsidian:"]
+        system_paths: ["C:" "/usr/" "/var/" "/etc/" "~/" "\\\\"]
+        auto_generated: ["unknown_filename_.*" "temp_.*" "IMG_.*" "Screenshot.*" "Pasted image .*" "image-.*"]
+        reserved_names: ["^(con|prn|aux|nul|com[1-9]|lpt[1-9])$"]
+        uuid_patterns: [
+            "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+            "^[0-9a-f]{32}$"
+            "^[0-9a-f]{40}$"
+            "^[0-9a-f]{64}$"
+        ]
+        symlink_dirs: ["linked_media/" "attachments/" "assets/"]
+        min_length: 2
+        max_length: 100
+        invalid_chars: ["\\" "/" ":" "*" "?" "\"" "<" ">" "|"]
+    }
+}
+
+# Check if a link should be excluded from marking as unresolved
+def should_exclude_link [link_name: string] {
+    let config = (create_filter_config)
+
+    # Too short or too long
+    let len = ($link_name | str length)
+    if $len < $config.min_length or $len > $config.max_length {
+        return true
+    }
+
+    # Check action prefixes
+    for prefix in $config.action_prefixes {
+        if ($link_name | str starts-with $prefix) {
+            return true
+        }
+    }
+
+    # Check system paths
+    for path in $config.system_paths {
+        if ($link_name | str starts-with $path) {
+            return true
+        }
+    }
+
+    # Check auto-generated patterns (use regex matching)
+    for pattern in $config.auto_generated {
+        let matches = try {
+            echo $link_name | rg $pattern | complete | get exit_code
+        } catch {
+            1
+        }
+        if $matches == 0 {
+            return true
+        }
+    }
+
+    # Check reserved names
+    for pattern in $config.reserved_names {
+        let matches = try {
+            echo $link_name | rg $pattern | complete | get exit_code
+        } catch {
+            1
+        }
+        if $matches == 0 {
+            return true
+        }
+    }
+
+    # Check UUID patterns
+    for pattern in $config.uuid_patterns {
+        let matches = try {
+            echo $link_name | rg $pattern | complete | get exit_code
+        } catch {
+            1
+        }
+        if $matches == 0 {
+            return true
+        }
+    }
+
+    # Check symlink directories
+    for dir in $config.symlink_dirs {
+        if ($link_name | str contains $dir) {
+            return true
+        }
+    }
+
+    # Check invalid filename characters
+    for char in $config.invalid_chars {
+        if ($link_name | str contains $char) {
+            return true
+        }
+    }
+
+    return false
+}
+
+def main [--debounce-ms: int = 2000] {
+    # Verify required directories exist
+    let forge = $"($env.HOME)/Forge"
+    let admin = $"($env.HOME)/Admin"
+    let archives = $"($env.HOME)/Archives"
+
+    if not ($forge | path exists) {
+        print "❌ Forge directory not found"
+        return
+    }
+
+    print "🔗 Starting wiki resolve marker..."
+    print $"   Forge: ($forge)"
+    print $"   Admin: ($admin) - optional"
+    print $"   Archives: ($archives) - optional"
+    print "   Feature: Mark/unmark ?[[ for missing targets"
+    print "   Mode: Event-driven with smart filtering"
+    print ""
+
+    # Create watched paths list (immutable for closure capture)
+    let watch_paths = if ($admin | path exists) and ($archives | path exists) {
+        [$forge, $admin, $archives]
+    } else if ($admin | path exists) {
+        [$forge, $admin]
+    } else if ($archives | path exists) {
+        [$forge, $archives]
+    } else {
+        [$forge]
+    }
+
+    print $"📂 Watching ($watch_paths | length) directories for markdown files"
+    print $"⏱️  Debounce: ($debounce_ms)ms"
+    print ""
+
+    # Watch Forge directory (primary)
+    print $"🔍 Monitoring Forge for file events..."
+    watch $forge --glob "**/*.md" --debounce-ms $debounce_ms {|operation, file_path, new_path|
+        handle_change $operation $file_path $new_path $watch_paths
+    }
+}
+
+# Handle file change events
+def handle_change [operation: string, file_path: string, new_path: string, watch_paths: list] {
+    match $operation {
+        "Write" => {
+            # File was edited - mark new unresolved links
+            handle_write $file_path $watch_paths
+        }
+        "Create" => {
+            # File was created - clean resolved links
+            handle_create $file_path $watch_paths
+        }
+        "Rename" => {
+            # File renamed - update markers in references
+            handle_rename $file_path $new_path $watch_paths
+        }
+        "Remove" => {
+            # File deleted - mark references as unresolved
+            handle_remove $file_path $watch_paths
+        }
+        _ => {
+            print $"❓ Unknown operation: ($operation) on ($file_path)"
+        }
+    }
+}
+
+# Handle file creation - clean ?[[link]] markers for this file
+def handle_create [file_path: string, watch_paths: list] {
+    let file_name = ($file_path | path basename | str replace '.md' '')
+    print $"✨ Created: ($file_name)"
+
+    # Clean all ?[[filename]] references in other files
+    clean_resolved_links $file_name $watch_paths
+}
+
+# Handle file write - mark new unresolved links
+def handle_write [file_path: string, watch_paths: list] {
+    print $"📝 Modified: ($file_path | path basename)"
+
+    # Extract current links from file
+    let current_links = try {
+        open $file_path | rg -o '[!?]?\\[\\[([^\\]]+)\\]\\]' --replace '$1' | lines | uniq
+    } catch {
+        []
+    }
+
+    if ($current_links | is-empty) {
+        print "   No wiki links in file, skipping"
+        return
+    }
+
+    print $"   Found ($current_links | length) links"
+
+    # Mark any new unresolved links in this file
+    mark_unresolved_in_file $file_path $current_links $watch_paths
+}
+
+# Handle file rename - update markers in all references
+def handle_rename [old_path: string, new_path: string, watch_paths: list] {
+    let old_name = ($old_path | path basename | str replace '.md' '')
+    let new_name = ($new_path | path basename | str replace '.md' '')
+
+    print $"📛 Renamed: ($old_name) → ($new_name)"
+
+    # Filter to only existing paths
+    let existing_paths = ($watch_paths | where {|p| $p | path exists})
+
+    # Find all files that reference the old name
+    mut affected_files = []
+    for dir in $existing_paths {
+        let files = try {
+            ^rg -l $'\\[\\[($old_name)\\]\\]' $dir --glob "*.md" | lines
+        } catch {
+            []
+        }
+        $affected_files = ($affected_files | append $files)
+    }
+
+    if ($affected_files | is-empty) {
+        print "   No files link to this note"
+        return
+    }
+
+    print $"   Updating ($affected_files | length) files with new link name"
+
+    # Update each affected file - preserve ?[[ markers
+    for file in $affected_files {
+        try {
+            let content = (open $file)
+            let updated = ($content
+                | str replace -a $"[[($old_name)]]" $"[[($new_name)]]"
+                | str replace -a $"?[[($old_name)]]" $"?[[($new_name)]]"
+            )
+            $updated | save -f $file
+            print $"   ✅ Updated: ($file | path basename)"
+        } catch {
+            print $"   ❌ Failed to update: ($file | path basename)"
+        }
+    }
+}
+
+# Handle file removal - mark all references as unresolved
+def handle_remove [file_path: string, watch_paths: list] {
+    let file_name = ($file_path | path basename | str replace '.md' '')
+    print $"🗑️  Deleted: ($file_name)"
+
+    # Find all files that reference this deleted file
+    let existing_paths = ($watch_paths | where {|p| $p | path exists})
+
+    mut affected_files = []
+    for dir in $existing_paths {
+        let files = try {
+            ^rg -l $'\\[\\[($file_name)\\]\\]' $dir --glob "*.md" | lines
+        } catch {
+            []
+        }
+        $affected_files = ($affected_files | append $files)
+    }
+
+    if ($affected_files | is-empty) {
+        print "   No files link to this note"
+        return
+    }
+
+    print $"   Marking ($affected_files | length) references as unresolved"
+
+    # Mark all references as unresolved
+    for file in $affected_files {
+        try {
+            let content = (open $file)
+            # Add ? marker to all unmarked references
+            let updated = ($content | str replace -a $"[[($file_name)]]" $"?[[($file_name)]]")
+            $updated | save -f $file
+            print $"   ⚠️ Marked unresolved: ($file | path basename)"
+        } catch {
+            print $"   ❌ Failed to update: ($file | path basename)"
+        }
+    }
+}
+
+# Mark unresolved links within a specific file
+def mark_unresolved_in_file [file_path: string, links: list, watch_paths: list] {
+    mut content = try {
+        open $file_path
+    } catch {
+        return
+    }
+
+    mut marked_count = 0
+
+    for link in $links {
+        let clean_link = ($link | str replace -r '[#|].*' '')
+
+        # Skip if already marked with ?
+        if ($link | str starts-with "?") {
+            continue
+        }
+
+        # Skip if excluded by smart filter
+        if (should_exclude_link $clean_link) {
+            continue
+        }
+
+        # Check if target file exists
+        let target_file = find_target_file $clean_link $watch_paths
+
+        if ($target_file | is-empty) {
+            # File doesn't exist - mark as unresolved
+            # Handle various link formats: [[link]], [[link|alias]], [[link#header]]
+            $content = ($content | str replace -a $"[[($link)]]" $"?[[($link)]]")
+            $marked_count = $marked_count + 1
+        }
+    }
+
+    if $marked_count > 0 {
+        $content | save -f $file_path
+        print $"   ⚠️ Marked ($marked_count) new unresolved links"
+    }
+}
+
+# Clean ?[[link]] markers when file is created
+def clean_resolved_links [file_name: string, watch_paths: list] {
+    let existing_paths = ($watch_paths | where {|p| $p | path exists})
+
+    # Find all files that have ?[[filename]] references
+    mut affected_files = []
+    for dir in $existing_paths {
+        let files = try {
+            ^rg -l $'\\?\\[\\[($file_name)\\]\\]' $dir --glob "*.md" | lines
+        } catch {
+            []
+        }
+        $affected_files = ($affected_files | append $files)
+    }
+
+    if ($affected_files | is-empty) {
+        return
+    }
+
+    print $"   🧹 Cleaning ?[[ markers in ($affected_files | length) files"
+
+    for file in $affected_files {
+        try {
+            let content = (open $file)
+            # Remove ? marker from all formats: ?[[link]], ?[[link|alias]], ?[[link#header]]
+            # Use sd for complex replacements to avoid Nushell regex escaping issues
+            let updated = ($content | sd $"\\?\\[\\[($file_name)\\]\\]" $"[[($file_name)]]")
+            $updated | save -f $file
+            print $"   ✅ Cleaned: ($file | path basename)"
+        } catch {
+            print $"   ❌ Failed to clean: ($file | path basename)"
+        }
+    }
+}
+
+# Find target file for a wiki link across all watched directories
+def find_target_file [link_name: string, watch_paths: list] {
+    # Filter to only existing paths
+    let existing_paths = ($watch_paths | where {|p| $p | path exists})
+
+    # Try exact match first
+    for dir in $existing_paths {
+        let exact_match = try {
+            ^fd -t f $"^($link_name).md$" $dir | lines | first
+        } catch {
+            ""
+        }
+
+        if not ($exact_match | is-empty) {
+            return $exact_match
+        }
+    }
+
+    # No match found
+    return ""
+}

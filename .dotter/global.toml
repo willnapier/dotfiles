@@ -91,7 +91,10 @@ depends = []
 "scripts/get-system-theme.sh" = "~/.local/bin/get-system-theme.sh"
 "scripts/hx-wiki" = "~/.local/bin/hx-wiki"
 "scripts/hx-wiki.nu" = "~/.local/bin/hx-wiki.nu"
-"scripts/wiki-link-manager" = "~/.local/bin/wiki-link-manager"
+# Wiki link management - Split architecture following Unix "do one thing well" philosophy
+"scripts/wiki-backlinks" = "~/.local/bin/wiki-backlinks"
+"scripts/wiki-resolve-mark" = "~/.local/bin/wiki-resolve-mark"
+"scripts/wiki-link-manager" = "~/.local/bin/wiki-link-manager"  # Deprecated - kept for reference
 "scripts/forge-linker.sh" = "~/.local/bin/forge-linker"
 "scripts/forge-linker.nu" = "~/.local/bin/forge-linker.nu"
 "scripts/semantic-indexer" = "~/.local/bin/semantic-indexer"

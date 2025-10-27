@@ -1,0 +1,432 @@
+#!/usr/bin/env nu
+# Unified collection system for projects (P.) and activities (p::, t::, r::, etc.)
+# Collects from daily journals to organized files with automatic linking
+# Three-tier automation: manual, cron, or auto-save trigger
+
+def main [
+    --verbose (-v)      # Show detailed output
+    --dry-run (-d)      # Show what would be collected without writing
+] {
+    let forge_root = ([$env.HOME "Forge"] | path join)
+    let journal_path = ([$forge_root "NapierianLogs" "DayPages"] | path join)
+    let projects_path = ([$forge_root "Projects"] | path join)
+    let activities_path = ([$forge_root "NapierianLogs"] | path join)
+
+    if not ($journal_path | path exists) {
+        print $"Error: Journal path not found: ($journal_path)"
+        return
+    }
+
+    # Ensure destination directories exist
+    mkdir $projects_path
+    mkdir $activities_path
+
+    if $verbose {
+        print "=== Entry Collection Started ==="
+        print $"Journal: ($journal_path)"
+        print $"Projects: ($projects_path)"
+        print $"Activities: ($activities_path)\n"
+    }
+
+    # Find all entries (both P. projects and lowercase activities) in journal files
+    let entries = (
+        collect_entries $journal_path $verbose
+    )
+
+    if ($entries | is-empty) {
+        if $verbose { print "No project entries found" }
+        return
+    }
+
+    if $verbose {
+        print $"Found ($entries | length) entries\n"
+    }
+
+    # Group by entry hierarchy (works for both projects and activities)
+    let grouped = (
+        $entries
+        | group-by {|entry|
+            parse_entry_hierarchy $entry.key | get filepath
+        }
+    )
+
+    # Process each entry group (project or activity)
+    $grouped | transpose filepath entries | each {|group|
+        let hierarchy = (parse_entry_hierarchy ($group.entries | first | get key))
+
+        # Determine destination based on entry type
+        let destination = if ($hierarchy.key | str starts-with 'P.') {
+            $projects_path
+        } else {
+            $activities_path
+        }
+
+        if $dry_run {
+            print $"Would update: ($hierarchy.filepath).md"
+            print $"  Entries: ($group.entries | length)"
+            print $"  Destination: ($destination)"
+        } else {
+            update_entry_file $destination $hierarchy $group.entries $verbose
+        }
+    }
+
+    if $verbose {
+        print "\n=== Collection Complete ==="
+    }
+}
+
+# Extract all entries (P. projects and lowercase activities) from journal files
+def collect_entries [journal_path: string, verbose: bool] {
+    let files = (glob ([$journal_path "**" "*.md"] | path join))
+
+    if $verbose {
+        print $"Scanning ($files | length) journal files..."
+    }
+
+    $files | each {|file|
+        let content = (open $file)
+        let date = extract_date_from_filename $file
+        let all_lines = ($content | lines)
+
+        # Find all entries in this file (both P. projects and lowercase activities)
+        # Matches: P.project::, p::, t::, r::, p.c::, t.u::, etc.
+        $all_lines
+        | enumerate
+        | where {|row| $row.item =~ '[a-zA-Z][a-z0-9.]*::'}
+        | each {|row|
+            let parsed = (parse_entry_line $row.item)
+            if ($parsed | is-not-empty) {
+                # parse_entry_line returns a list of matches (handles multiple per line)
+                $parsed | each {|entry|
+                    # Capture narrative continuation if present
+                    let narrative = (capture_narrative $all_lines $row.index $entry.content)
+
+                    $entry | merge {
+                        file: $file
+                        date: $date
+                        line_number: $row.index
+                        narrative: $narrative
+                    }
+                }
+            }
+        }
+    }
+    | flatten
+    | flatten  # Extra flatten for multi-entry lines
+    | compact
+    | uniq-by key content  # Deduplicate identical entries from same journal file
+}
+
+# Capture narrative continuation after an entry
+# Narrative starts after period on same line OR on next line
+# Continues until empty line
+def capture_narrative [all_lines: list<string>, entry_line_idx: int, entry_content: string] {
+    # Check if entry content ends with period (inline continuation possible)
+    let entry_line = ($all_lines | get $entry_line_idx)
+
+    # Find where the entry ends on its line
+    let entry_end_pattern = $"($entry_content)"
+
+    # Check for inline narrative (after period on same line)
+    let inline_narrative = if ($entry_line =~ '\.\s+[A-Z]') {
+        # Pattern: "entry content. Narrative starts here"
+        # Extract text after first period that follows entry content
+        let after_entry = ($entry_line | str replace --regex '.*?::\s*[^.]+\.\s*' '')
+        if ($after_entry | is-empty) or ($after_entry | str starts-with 'P.') or ($after_entry | str starts-with 'p') or ($after_entry | str starts-with 't') or ($after_entry | str starts-with 'r') {
+            ""  # Next entry starts, no inline narrative
+        } else {
+            $after_entry | str trim
+        }
+    } else {
+        ""
+    }
+
+    # Check for continuation on following lines
+    let start_idx = ($entry_line_idx + 1)
+    let max_lines = ($all_lines | length)
+
+    mut continuation_lines = []
+    mut current_idx = $start_idx
+
+    # Read lines until empty line or end of file
+    while $current_idx < $max_lines {
+        let line = ($all_lines | get $current_idx)
+
+        # Stop at empty line
+        if ($line | str trim | is-empty) {
+            break
+        }
+
+        # Stop at next entry (starts with key::)
+        if ($line =~ '[a-zA-Z][a-z0-9.]*::') {
+            break
+        }
+
+        # Stop at markdown headers
+        if ($line | str starts-with '#') {
+            break
+        }
+
+        # Add line to continuation
+        $continuation_lines = ($continuation_lines | append ($line | str trim))
+        $current_idx = ($current_idx + 1)
+    }
+
+    # Combine inline and continuation narratives
+    let full_narrative = if ($inline_narrative | is-not-empty) and (not ($continuation_lines | is-empty)) {
+        [$inline_narrative, ($continuation_lines | str join ' ')] | str join ' '
+    } else if ($inline_narrative | is-not-empty) {
+        $inline_narrative
+    } else if (not ($continuation_lines | is-empty)) {
+        $continuation_lines | str join ' '
+    } else {
+        ""
+    }
+
+    $full_narrative
+}
+
+# Parse a line with unified notation (projects P. and activities p::, t::, etc.)
+# Uses unified syntax: period and comma are delimiters, space separates attributes
+# Supports: P.project:: 2hr description-with-hyphens
+#          p.c:: 45min JSBach-WTC-I
+#          t.u:: uber 30min £15
+#          P.proj1:: 1hr work. p:: 30min practice. (period-separated)
+#          P.parent:: child1:: 1hr, child2:: 30min (comma-separated siblings)
+def parse_entry_line [line: string] {
+    # Split on periods and commas to get individual entries
+    # Pattern: captures key:: followed by content until delimiter (. or ,)
+    # Matches: P.name, p, p.c, t.u, etc.
+    let matches = ($line | parse --regex '([a-zA-Z][a-zA-Z0-9.-]*)::\s*([^.,]+)')
+
+    if ($matches | is-empty) {
+        return null
+    }
+
+    # Return all matches found (handles multiple projects per line)
+    $matches | each {|match|
+        {
+            key: $match.capture0
+            content: ($match.capture1 | str trim)
+        }
+    }
+}
+
+# Parse hierarchy from entry key (works for both P.project and p.c activities)
+def parse_entry_hierarchy [key: string] {
+    # Remove P. prefix if present, otherwise use key as-is
+    let clean_key = if ($key | str starts-with 'P.') {
+        $key | str replace 'P.' ''
+    } else {
+        $key
+    }
+
+    let parts = ($clean_key | split row '.')
+
+    {
+        key: $key                                      # Original key (P.project or p.c)
+        root: ($parts | first)                         # First part (project or p)
+        subproject: ($parts | skip 1 | str join '.')  # Remaining parts
+        filepath: ($parts | str join '.')             # Full path (project.child or piano-classical)
+        depth: ($parts | length)                       # Hierarchy depth
+    }
+}
+
+# Extract date from journal filename (assumes YYYY-MM-DD format)
+def extract_date_from_filename [filepath: string] {
+    let filename = ($filepath | path basename | str replace '.md' '')
+
+    # Try to parse YYYY-MM-DD format
+    let date_match = ($filename | parse --regex '(\d{4}-\d{2}-\d{2})')
+
+    if ($date_match | is-not-empty) {
+        $date_match | first | get capture0
+    } else {
+        # Fallback to file modification time
+        ls $filepath | first | get modified | format date "%Y-%m-%d"
+    }
+}
+
+# Update or create entry file (project or activity)
+def update_entry_file [
+    destination_path: string
+    hierarchy: record
+    entries: list
+    verbose: bool
+] {
+    let filepath = $"($destination_path)/($hierarchy.filepath).md"
+    let entry_name = $hierarchy.root
+
+    # Check if file exists
+    let exists = ($filepath | path exists)
+
+    if not $exists {
+        # Create new project file
+        if $verbose {
+            print $"Creating: ($hierarchy.filepath).md"
+        }
+
+        let content = generate_project_template $hierarchy $entries
+        $content | save $filepath
+    } else {
+        # Append new entries
+        if $verbose {
+            print $"Updating: ($hierarchy.filepath).md with ($entries | length) entries"
+        }
+
+        append_entries_to_project $filepath $entries
+    }
+
+    # Update parent with subentry link if needed (for hierarchical entries like p.c or P.parent.child)
+    if $hierarchy.depth > 1 {
+        let parent_path = $"($destination_path)/($hierarchy.root).md"
+        if ($parent_path | path exists) {
+            add_subentry_to_parent $parent_path $hierarchy.filepath
+        }
+    }
+}
+
+# Generate new entry file from template (works for both projects and activities)
+def generate_project_template [hierarchy: record, entries: list] {
+    let today = (date now | format date "%Y-%m-%d")
+    let entry_name = $hierarchy.filepath
+
+    # Determine if this is a project (P.) or activity
+    let is_project = ($hierarchy.key | str starts-with 'P.')
+
+    let header = if $hierarchy.depth == 1 {
+        # Root entry (project or top-level activity)
+        if $is_project {
+            # Project template
+            $"# ($entry_name)
+
+**Type**: {type}
+**Status**: Active
+**Created**: ($today)
+**Updated**: ($today)
+
+## Overview
+
+{Project description}
+
+## Subprojects
+
+{Auto-generated}
+
+## Journal Entries
+"
+        } else {
+            # Activity template (simpler)
+            $"# ($entry_name)
+
+**Created**: ($today)
+**Updated**: ($today)
+
+## Sub-activities
+
+{Auto-generated}
+
+## Journal Entries
+"
+        }
+    } else {
+        # Child entry (subproject or sub-activity)
+        let section_name = if $is_project { "Subprojects" } else { "Sub-activities" }
+        $"# ($entry_name)
+
+**Parent**: [[($hierarchy.root)]]
+**Created**: ($today)
+
+## Journal Entries
+"
+    }
+
+    let entries_text = format_entries $entries
+
+    $"($header)\n($entries_text)"
+}
+
+# Append entries to existing project file
+def append_entries_to_project [filepath: string, entries: list] {
+    let existing = (open $filepath)
+
+    # Check for ## Journal Entries section
+    if not ($existing =~ '## Journal Entries') {
+        # Add section if missing
+        let updated = $"($existing)\n\n## Journal Entries\n"
+        $updated | save -f $filepath
+    }
+
+    # Filter out duplicates by checking if entry content already exists
+    let new_entries = ($entries | where {|entry|
+        # Create the entry line format that would appear in the file
+        let entry_line = $"- ($entry.content)"
+        # Check if this exact line already exists in the file
+        not ($existing | str contains $entry_line)
+    })
+
+    # Only append if there are new entries
+    if ($new_entries | is-empty) {
+        return
+    }
+
+    # Format new entries
+    let formatted_entries = format_entries $new_entries
+
+    # Append to file
+    let content = (open $filepath)
+    $"($content)\n($formatted_entries)" | save -f $filepath
+}
+
+# Format entries for journal section (with optional narrative)
+def format_entries [entries: list] {
+    $entries
+    | group-by date
+    | transpose date entries
+    | sort-by date --reverse
+    | each {|day|
+        let entry_lines = (
+            $day.entries
+            | each {|entry|
+                # Format: "- content" or "- content - narrative" if narrative exists
+                if ($entry.narrative | is-not-empty) {
+                    $"- ($entry.content) - ($entry.narrative)"
+                } else {
+                    $"- ($entry.content)"
+                }
+            }
+            | str join "\n"
+        )
+
+        $"### ($day.date)\n($entry_lines)"
+    }
+    | str join "\n\n"
+}
+
+# Add subentry link to parent file (works for both projects and activities)
+def add_subentry_to_parent [parent_file: string, subentry_name: string] {
+    let content = (open $parent_file)
+
+    # Check if already listed
+    let link = $"[[($subentry_name)]]"
+    if ($content =~ $link) {
+        return  # Already there
+    }
+
+    # Find ## Subprojects or ## Sub-activities section
+    let section_name = if ($content =~ '## Subprojects') {
+        '## Subprojects'
+    } else if ($content =~ '## Sub-activities') {
+        '## Sub-activities'
+    } else {
+        return  # No appropriate section exists
+    }
+
+    # Add link under the section
+    let updated = (
+        $content
+        | str replace $section_name $"($section_name)\n- [[($subentry_name)]]"
+    )
+
+    $updated | save -f $parent_file
+}

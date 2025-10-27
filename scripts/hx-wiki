@@ -6,6 +6,15 @@
 #
 # Usage: Called by Space+w in Helix (see helix/config.toml)
 
+# Cross-platform file opener
+open_file() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        open "$@"
+    else
+        xdg-open "$@" 2>/dev/null &
+    fi
+}
+
 line=$(cat)
 
 # Debug: log what we received
@@ -36,10 +45,11 @@ fi
 clean_link=$(echo "$link" | sd '[#|].*' '')
 
 vault="$HOME/Forge"
+admin_dir="$HOME/Admin"
 daily_dir="$vault/NapierianLogs/DayPages"
 
-# First, search for existing file anywhere in the vault - exact match
-existing_file=$(fd -t f "^$clean_link\.md$" "$vault" 2>/dev/null | head -1)
+# First, search for existing file in both Forge and Admin - exact match
+existing_file=$(fd -t f "^$clean_link\.md$" "$vault" "$admin_dir" 2>/dev/null | head -1)
 if [ -n "$existing_file" ]; then
     # Found exact match - create symlink for Helix
     ln -sf "$existing_file" "$target_file"
@@ -51,7 +61,7 @@ if [[ "$clean_link" =~ Journal.*[0-9]{4}-[0-9]{2}-[0-9]{2} ]]; then
     # Extract date from journal links
     date_part=$(echo "$clean_link" | rg -o '[0-9]{4}-[0-9]{2}-[0-9]{2}')
     if [ -n "$date_part" ]; then
-        existing_file=$(fd -t f "$date_part.*\.md$" "$vault" 2>/dev/null | head -1)
+        existing_file=$(fd -t f "$date_part.*\.md$" "$vault" "$admin_dir" 2>/dev/null | head -1)
         if [ -n "$existing_file" ]; then
             # Found existing journal entry with matching date
             ln -sf "$existing_file" "$target_file"
@@ -68,11 +78,19 @@ fi
 
 # Determine where to create the new file
 if [[ "$current_file" == *"/DayPages/"* ]]; then
-    # We're in a DayPages file - create new files in the same directory
-    if [[ "$clean_link" != *.md ]]; then
+    # We're in a DayPages file
+    if [[ "$clean_link" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+        # Date format - create in DayPages
         file="$daily_dir/$clean_link.md"
     else
-        file="$daily_dir/$clean_link"
+        # Regular note - create in fleeting notes inbox
+        fleeting_dir="$vault/fleeting"
+        mkdir -p "$fleeting_dir"
+        if [[ "$clean_link" != *.md ]]; then
+            file="$fleeting_dir/$clean_link.md"
+        else
+            file="$fleeting_dir/$clean_link"
+        fi
     fi
 elif [[ "$clean_link" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
     # Daily note format (YYYY-MM-DD) - use DayPages path
@@ -100,18 +118,18 @@ if [ -f "$file" ]; then
             ln -sf "$file" "$target_file"
             ;;
         pdf|PDF)
-            # PDFs - open in Preview, no temp file needed
-            open "$file"
+            # PDFs - open in system viewer, no temp file needed
+            open_file "$file"
             exit 0
             ;;
         png|jpg|jpeg|gif|PNG|JPG|JPEG|GIF)
-            # Images - open in Preview, no temp file needed
-            open "$file"
+            # Images - open in system viewer, no temp file needed
+            open_file "$file"
             exit 0
             ;;
         *)
             # Other files - try to open with system default, no temp file needed
-            open "$file"
+            open_file "$file"
             exit 0
             ;;
     esac
@@ -169,16 +187,45 @@ EOF
     # Create symlink for Helix
     ln -sf "$file" "$target_file"
 else
-    # Regular note that doesn't exist - create it like Obsidian does
-    current_date=$(date "+%Y-%m-%d")
-    current_time=$(date "+%H:%M")
-    
-    # Ensure directory exists
-    note_dir=$(dirname "$file")
-    mkdir -p "$note_dir"
-    
-    # Create the note with basic frontmatter and H2 backlinks section
-    cat > "$file" << EOF
+    # File doesn't exist - check if it's a media file
+    extension="${file##*.}"
+    case "$extension" in
+        jpg|jpeg|png|gif|bmp|webp|svg|pdf|mp4|mov|avi|mp3|wav|m4a|JPG|JPEG|PNG|GIF|PDF)
+            # Media file that doesn't exist - show error in Helix
+            error_file="/tmp/helix-current-link.md"
+            cat > "$error_file" << EOF
+# File Not Found
+
+The linked media file does not exist:
+
+**Path**: $file
+**Link**: [[$clean_link]]
+
+This could mean:
+- The file was moved or deleted
+- The filename is misspelled in the wiki link
+- The media hasn't been imported yet
+
+## Search for similar files
+
+\`\`\`bash
+# Search for files with similar names
+fd -i "$(basename "$file" .$extension)" ~/Forge/linked_media/
+\`\`\`
+EOF
+            exit 0
+            ;;
+        *)
+            # Regular note that doesn't exist - create it like Obsidian does
+            current_date=$(date "+%Y-%m-%d")
+            current_time=$(date "+%H:%M")
+
+            # Ensure directory exists
+            note_dir=$(dirname "$file")
+            mkdir -p "$note_dir"
+
+            # Create the note with basic frontmatter and H2 backlinks section
+            cat > "$file" << EOF
 ---
 tags:
 -
@@ -226,4 +273,6 @@ for other_file in vault_path.rglob('*.md'):
         except:
             pass
 " 2>/dev/null &)
+            ;;
+    esac
 fi

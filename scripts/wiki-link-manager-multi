@@ -1,0 +1,47 @@
+#!/usr/bin/env nu
+# wiki-link-manager-multi - Wrapper to run multiple wiki-link-manager instances
+# Spawns one watcher per directory for true bidirectional updates
+#
+# Usage: wiki-link-manager-multi [--debounce-ms 2000]
+
+def main [--debounce-ms: int = 2000] {
+    # Configure directories to watch
+    let forge = $"($env.HOME)/Forge"
+    let admin = $"($env.HOME)/Admin"
+    let archives = $"($env.HOME)/Archives"
+
+    # Get only existing directories
+    let all_dirs = [$forge, $admin, $archives]
+    let existing_dirs = ($all_dirs | where {|p| $p | path exists})
+
+    if ($existing_dirs | is-empty) {
+        print "❌ No valid directories found to watch"
+        return
+    }
+
+    print "🔗 Starting multi-instance wiki link manager..."
+    print $"   Directories: ($existing_dirs | length)"
+    print $"   Debounce: ($debounce-ms)ms"
+    print ""
+
+    # Spawn a watcher for each directory except the last
+    let bg_dirs = ($existing_dirs | drop)
+    for dir in $bg_dirs {
+        let dir_name = ($dir | path basename)
+        print $"🚀 Spawning watcher for ($dir_name)..."
+
+        # Spawn background instance watching this specific directory
+        ^nu -c $"cd ($dir) && wiki-link-manager-single '($dir)' --debounce-ms ($debounce_ms)" | ignore &
+    }
+
+    # Watch the last directory in foreground (keeps main process alive)
+    let main_dir = ($existing_dirs | last)
+    let main_name = ($main_dir | path basename)
+    print $"⭐ Main watcher: ($main_name)"
+    print ""
+    print "✅ All watchers started - true bidirectional updates active"
+    print ""
+
+    # Run main watcher in foreground
+    ^nu -c $"cd ($main_dir) && wiki-link-manager-single '($main_dir)' --debounce-ms ($debounce_ms)"
+}

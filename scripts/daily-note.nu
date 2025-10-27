@@ -10,7 +10,7 @@ def main [--print-path] {
     let daily_file = $"($daily_dir)/($today).md"
 
     # Template processing
-    let template_file = $"($vault_dir)/Areas/PKMStrategies/Templates/DayPage.md"
+    let template_file = $"($env.HOME)/Admin/Archives/PKM-History/PKMStrategies/Templates/DayPage.md"
 
     # Find cursor line using native Nushell (no grep/cut needed)
     let cursor_line = if ($template_file | path exists) {

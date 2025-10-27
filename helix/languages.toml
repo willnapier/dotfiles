@@ -11,6 +11,8 @@ scope = "source.md"
 file-types = ["md", "markdown", "mkd", "mdwn", "mdown", "markdn", "mdtxt", "mdtext", "workbook"]
 roots = [".git"]
 language-servers = ["markdown-oxide"]  # ONLY markdown-oxide, NO marksman
+formatter = { command = "dprint", args = ["fmt", "--stdin", "markdown"] }
+auto-format = true
 soft-wrap.enable = true
 soft-wrap.wrap-at-text-width = false
 soft-wrap.max-wrap = 25

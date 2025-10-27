@@ -12,8 +12,8 @@ prepend_keymap = [
   { on = "o", run = "enter", desc = "Enter directory" },
   
   # File opening - three distinct modes
-  { on = "<Enter>", run = "open", desc = "Open file (system default)" },
-  { on = "l", run = "open --with=helix", desc = "Launch in Helix (current pane)" },
+  { on = "<Enter>", run = "open --with=helix", desc = "Open in Helix (current pane)" },
+  { on = "l", run = "open", desc = "System default application" },
   { on = "L", run = """shell 'zellij action new-pane -- hx "$@"' --block""", desc = "Open in Helix (new pane)" },
   { on = "h", run = "open --interactive", desc = "How to open? (interactive picker)" },
   

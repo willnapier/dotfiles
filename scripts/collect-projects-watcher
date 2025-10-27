@@ -1,5 +1,5 @@
 #!/usr/bin/env nu
-# File watcher for near-instant P. notation collection
+# File watcher for near-instant entry collection (projects + activities)
 # Watches NapierianLogs/DayPages for changes and triggers collection
 # Cross-platform: uses fswatch (macOS) or inotifywait (Linux)
 
@@ -8,7 +8,7 @@ def main [
 ] {
     let forge_root = ([$env.HOME "Forge"] | path join)
     let watch_path = ([$forge_root "NapierianLogs" "DayPages"] | path join)
-    let log_file = ([$env.HOME ".local" "share" "collect-projects-watcher.log"] | path join)
+    let log_file = ([$env.HOME ".local" "share" "collect-entries-watcher.log"] | path join)
 
     # Ensure watch directory exists
     if not ($watch_path | path exists) {
@@ -21,7 +21,7 @@ def main [
     let platform = (sys host | get name)
 
     if $verbose {
-        print $"Starting P. notation collection watcher"
+        print $"Starting unified entry collection watcher (projects + activities)"
         print $"Platform: ($platform)"
         print $"Watching: ($watch_path)"
         print $"Log file: ($log_file)"
@@ -58,7 +58,7 @@ def start_fswatch_macos [watch_path: string, log_file: string, verbose: bool] {
     # Start fswatch with debouncing (2 second latency to prevent rapid-fire events)
     # Only watch .md files for efficiency
     # Use temp file for debouncing state
-    let state_file = ([$env.HOME ".local" "share" "collect-projects-debounce.json"] | path join)
+    let state_file = ([$env.HOME ".local" "share" "collect-entries-debounce.json"] | path join)
 
     # Create initial state file if it doesn't exist
     if not ($state_file | path exists) {
@@ -137,7 +137,7 @@ def start_inotifywait_linux [watch_path: string, log_file: string, verbose: bool
     # Start inotifywait with recursive monitoring
     # Watch for modify, close_write, and move events on .md files
     # Use temp file for debouncing state
-    let state_file = ([$env.HOME ".local" "share" "collect-projects-debounce.json"] | path join)
+    let state_file = ([$env.HOME ".local" "share" "collect-entries-debounce.json"] | path join)
 
     # Create initial state file if it doesn't exist
     if not ($state_file | path exists) {

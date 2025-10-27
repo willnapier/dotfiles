@@ -1,0 +1,272 @@
+#!/usr/bin/env nu
+# wiki-backlinks - Automatic bidirectional backlink maintenance
+# Watches markdown files and maintains ## Backlinks sections
+#
+# Features:
+# - Automatic backlink generation when files are created/modified
+# - Handles file renames (updates all references)
+# - Cross-directory support (Forge, Admin, Archives)
+# - Event-driven (zero CPU when idle)
+#
+# Usage: wiki-backlinks [--debounce-ms 2000]
+
+def main [--debounce-ms: int = 2000] {
+    # Verify required directories exist
+    let forge = $"($env.HOME)/Forge"
+    let admin = $"($env.HOME)/Admin"
+    let archives = $"($env.HOME)/Archives"
+
+    if not ($forge | path exists) {
+        print "❌ Forge directory not found"
+        return
+    }
+
+    print "🔗 Starting wiki backlinks manager..."
+    print $"   Forge: ($forge)"
+    print $"   Admin: ($admin) - optional"
+    print $"   Archives: ($archives) - optional"
+    print "   Feature: Automatic ## Backlinks maintenance"
+    print "   Mode: Event-driven - zero CPU when idle"
+    print ""
+
+    # Create watched paths list (immutable for closure capture)
+    let watch_paths = if ($admin | path exists) and ($archives | path exists) {
+        [$forge, $admin, $archives]
+    } else if ($admin | path exists) {
+        [$forge, $admin]
+    } else if ($archives | path exists) {
+        [$forge, $archives]
+    } else {
+        [$forge]
+    }
+
+    print $"📂 Watching ($watch_paths | length) directories for markdown files"
+    print $"⏱️  Debounce: ($debounce_ms)ms"
+    print ""
+
+    # Watch Forge directory (primary)
+    print $"🔍 Monitoring Forge for file events..."
+    watch $forge --glob "**/*.md" --debounce-ms $debounce_ms {|operation, file_path, new_path|
+        handle_change $operation $file_path $new_path $watch_paths
+    }
+}
+
+# Handle file change events
+def handle_change [operation: string, file_path: string, new_path: string, watch_paths: list] {
+    match $operation {
+        "Write" => {
+            # File was edited - update backlinks for linked files
+            handle_write $file_path $watch_paths
+        }
+        "Create" => {
+            # File was created - update backlinks if it has links
+            handle_create $file_path $watch_paths
+        }
+        "Rename" => {
+            # File renamed - update all references
+            handle_rename $file_path $new_path $watch_paths
+        }
+        "Remove" => {
+            # File deleted - no action needed for backlinks
+            print $"🗑️  Deleted: ($file_path | path basename)"
+        }
+        _ => {
+            print $"❓ Unknown operation: ($operation) on ($file_path)"
+        }
+    }
+}
+
+# Handle file creation - update backlinks if new file has links
+def handle_create [file_path: string, watch_paths: list] {
+    let file_name = ($file_path | path basename | str replace '.md' '')
+    print $"✨ Created: ($file_name)"
+
+    # Check if new file contains any links
+    let links = try {
+        open $file_path | rg -o '[!?]?\\[\\[([^\\]]+)\\]\\]' --replace '$1' | lines | uniq
+    } catch {
+        []
+    }
+
+    if not ($links | is-empty) {
+        print $"   Found ($links | length) links in new file"
+        for link in $links {
+            let clean_link = ($link | str replace -r '[#|].*' '')
+            let target_file = find_target_file $clean_link $watch_paths
+            if not ($target_file | is-empty) {
+                update_backlinks $target_file $watch_paths
+            }
+        }
+    }
+}
+
+# Handle file write - update backlinks for all linked files
+def handle_write [file_path: string, watch_paths: list] {
+    print $"📝 Modified: ($file_path | path basename)"
+
+    # Extract current links from file
+    let current_links = try {
+        open $file_path | rg -o '[!?]?\\[\\[([^\\]]+)\\]\\]' --replace '$1' | lines | uniq
+    } catch {
+        []
+    }
+
+    if ($current_links | is-empty) {
+        print "   No wiki links in file, skipping"
+        return
+    }
+
+    print $"   Found ($current_links | length) links"
+
+    # For each link, update backlinks in target file
+    for link in $current_links {
+        let clean_link = ($link | str replace -r '[#|].*' '')
+
+        # Find target file across all watched directories
+        let target_file = find_target_file $clean_link $watch_paths
+
+        if not ($target_file | is-empty) {
+            update_backlinks $target_file $watch_paths
+        }
+    }
+}
+
+# Handle file rename - update all files that linked to old name
+def handle_rename [old_path: string, new_path: string, watch_paths: list] {
+    let old_name = ($old_path | path basename | str replace '.md' '')
+    let new_name = ($new_path | path basename | str replace '.md' '')
+
+    print $"📛 Renamed: ($old_name) → ($new_name)"
+
+    # Filter to only existing paths
+    let existing_paths = ($watch_paths | where {|p| $p | path exists})
+
+    # Find all files that link to the old name (grep across all directories)
+    mut affected_files = []
+    for dir in $existing_paths {
+        let files = try {
+            ^rg -l $'\\[\\[($old_name)\\]\\]' $dir --glob "*.md" | lines
+        } catch {
+            []
+        }
+        $affected_files = ($affected_files | append $files)
+    }
+
+    if ($affected_files | is-empty) {
+        print "   No files link to this note"
+        return
+    }
+
+    print $"   Updating ($affected_files | length) files with new link name"
+
+    # Update each affected file - handle both [[link]] and ?[[link]]
+    for file in $affected_files {
+        try {
+            let content = (open $file)
+            # Update both regular and unresolved links
+            let updated = ($content
+                | str replace -a $"[[($old_name)]]" $"[[($new_name)]]"
+                | str replace -a $"?[[($old_name)]]" $"?[[($new_name)]]"
+            )
+            $updated | save -f $file
+            print $"   ✅ Updated: ($file | path basename)"
+        } catch {
+            print $"   ❌ Failed to update: ($file | path basename)"
+        }
+    }
+
+    # Update backlinks in the renamed file itself
+    update_backlinks $new_path $watch_paths
+}
+
+# Find target file for a wiki link across all watched directories
+def find_target_file [link_name: string, watch_paths: list] {
+    # Filter to only existing paths
+    let existing_paths = ($watch_paths | where {|p| $p | path exists})
+
+    # Try exact match first
+    for dir in $existing_paths {
+        let exact_match = try {
+            ^fd -t f $"^($link_name).md$" $dir | lines | first
+        } catch {
+            ""
+        }
+
+        if not ($exact_match | is-empty) {
+            return $exact_match
+        }
+    }
+
+    # No match found
+    return ""
+}
+
+# Update backlinks section in a file
+def update_backlinks [file_path: string, watch_paths: list] {
+    let file_name = ($file_path | path basename | str replace '.md' '')
+
+    print $"   🔗 Updating backlinks for: ($file_name)"
+
+    # Filter to only existing paths
+    let existing_paths = ($watch_paths | where {|p| $p | path exists})
+
+    # Find all files that link to this file (grep across all directories)
+    # Include both [[link]] and ?[[link]] in backlinks
+    mut backlinks = []
+    for dir in $existing_paths {
+        let links = try {
+            ^rg -l $'\\[\\[($file_name)\\]\\]' $dir --glob "*.md" | lines | where $it != $file_path
+        } catch {
+            []
+        }
+        $backlinks = ($backlinks | append $links)
+    }
+
+    if ($backlinks | is-empty) {
+        print "      No backlinks found"
+        # Still update the file to ensure it has a Backlinks section
+        ensure_backlinks_section $file_path []
+        return
+    }
+
+    print $"      Found ($backlinks | length) backlinks"
+
+    # Convert file paths to wiki links
+    let backlink_list = ($backlinks | each {|path|
+        let name = ($path | path basename | str replace '.md' '')
+        $"- [[($name)]]"
+    })
+
+    # Update the backlinks section
+    ensure_backlinks_section $file_path $backlink_list
+}
+
+# Ensure file has a Backlinks section and update it
+def ensure_backlinks_section [file_path: string, backlinks: list] {
+    let content = try {
+        open $file_path
+    } catch {
+        return
+    }
+
+    # Check if file has ## Backlinks section
+    if ($content | str contains "## Backlinks") {
+        # Replace existing backlinks section
+        let before = ($content | str replace -r '## Backlinks\n.*' '' | str trim)
+        let backlinks_section = if ($backlinks | is-empty) {
+            "\n\n## Backlinks\n\n"
+        } else {
+            $"\n\n## Backlinks\n\n($backlinks | str join '\n')\n"
+        }
+        let updated = $"($before)($backlinks_section)"
+        $updated | save -f $file_path
+    } else {
+        # Add backlinks section at end
+        let backlinks_section = if ($backlinks | is-empty) {
+            "\n\n## Backlinks\n\n"
+        } else {
+            $"\n\n## Backlinks\n\n($backlinks | str join '\n')\n"
+        }
+        $"($content)($backlinks_section)" | save -f $file_path
+    }
+}
