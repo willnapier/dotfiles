@@ -1,11 +1,11 @@
 #!/usr/bin/env nu
-# Cross-platform Obsidian Link Management Service
-# Manages startup, status, and control of the link management service
+# Cross-platform Wiki Link Management Service
+# Manages startup, status, and control of the unified wiki-link-manager
+# Replaced Python comprehensive_link_manager with native Nushell (2025-10-27)
 
 def main [action?: string = "status"] {
-    let link_manager_dir = $"($env.HOME)/scripts/obsidian-link-manager"
-    let vault_path = $"($env.HOME)/Forge"
-    let log_dir = $"($link_manager_dir)/logs"
+    let link_manager_script = $"($env.HOME)/.local/bin/wiki-link-manager"
+    let log_dir = $"($env.HOME)/scripts/wiki-link-manager/logs"
 
     # Ensure log directory exists
     mkdir $log_dir
@@ -17,29 +17,26 @@ def main [action?: string = "status"] {
     match $action {
         "start" => {
             if (link_service_running $pid_file) {
-                print "✅ Link management service already running"
+                print "✅ Wiki link management service already running"
                 return
             }
 
-            print "🚀 Starting link management service..."
+            print "🚀 Starting unified wiki link management service..."
+            print "   Script: wiki-link-manager (Nushell native)"
+            print "   Features: Backlinks + Mark/Unmark unresolved"
+            print ""
 
-            # Change to link manager directory and start service
-            cd $link_manager_dir
-
-            let start_command = if ($nu.os-info.name == "macos") {
-                $"source venv/bin/activate && python3 comprehensive_link_manager_enhanced.py '($vault_path)' --watch-enhanced --verbose"
-            } else {
-                $"source venv/bin/activate && python3 comprehensive_link_manager_enhanced.py '($vault_path)' --watch-enhanced --verbose"
-            }
+            # Start wiki-link-manager in background
+            let start_command = $"($link_manager_script) > '($log_file)' 2> '($err_file)' & echo $!"
 
             # Start in background and capture PID
-            let process = (bash -c $"($start_command) > '($log_file)' 2> '($err_file)' & echo $!")
+            let process = (bash -c $start_command)
             let pid = ($process | str trim)
 
             # Save PID to file
             $pid | save --force $pid_file
 
-            print $"✅ Link management service started PID: ($pid)"
+            print $"✅ Wiki link management service started with PID ($pid)"
             print $"📝 Logs: ($log_file)"
             print $"❌ Errors: ($err_file)"
         }
@@ -51,7 +48,7 @@ def main [action?: string = "status"] {
             }
 
             let pid = (open $pid_file | str trim)
-            print $"🛑 Stopping link management service (PID: ($pid))..."
+            print $"🛑 Stopping link management service with PID ($pid)..."
 
             try {
                 kill $pid
@@ -72,7 +69,8 @@ def main [action?: string = "status"] {
         "status" => {
             if (link_service_running $pid_file) {
                 let pid = (open $pid_file | str trim)
-                print $"✅ Link management service running (PID: ($pid))"
+                print $"✅ Wiki link management service running with PID ($pid)"
+                print "   Script: wiki-link-manager - unified Nushell system"
 
                 # Show recent log activity
                 if ($log_file | path exists) {
@@ -84,7 +82,7 @@ def main [action?: string = "status"] {
                     }
                 }
             } else {
-                print "❌ Link management service not running"
+                print "❌ Wiki link management service not running"
                 print "💡 Run: link-service start"
             }
         }

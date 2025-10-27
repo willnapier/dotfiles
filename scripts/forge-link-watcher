@@ -1,4 +1,13 @@
 #!/usr/bin/env nu
+# ⚠️ DEPRECATED - SUPERSEDED BY wiki-link-manager (2025-10-27)
+#
+# This script provided backlinks-only functionality and has been replaced by
+# the unified wiki-link-manager which combines:
+# - Backlink maintenance (from this script)
+# - Mark/unmark unresolved links (from Python comprehensive_link_manager)
+#
+# Use wiki-link-manager instead. This file kept for reference only.
+#
 # forge-link-watcher - Smart event-driven link manager
 # Watches Forge, Admin, and Archives for link changes
 # Only updates backlinks when links actually change (no global scans)
