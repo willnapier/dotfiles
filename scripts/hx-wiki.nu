@@ -22,9 +22,9 @@ def main [] {
     rm -f /tmp/helix-current-link.md
     let target_file = "/tmp/helix-current-link.md"
 
-    # Extract first wiki link from line
+    # Extract first wiki link from line (supports [[link]], ![[image]], ?[[unresolved]])
     let first_link = try {
-        $line | rg -o '!?\[\[[^\]]+\]\]' | lines | first
+        $line | rg -o '[!?]?\[\[[^\]]+\]\]' | lines | first
     } catch {
         ""
     }
@@ -33,8 +33,8 @@ def main [] {
         return
     }
 
-    # Extract link content from [[link]]
-    let link = ($first_link | str replace -r '!*\[\[(.*)\]\]' '$1')
+    # Extract link content from [[link]] (strip !, ?, or both)
+    let link = ($first_link | str replace -r '[!?]*\[\[(.*)\]\]' '$1')
 
     if ($link | is-empty) {
         return

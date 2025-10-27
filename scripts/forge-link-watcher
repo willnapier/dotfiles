@@ -80,9 +80,9 @@ def handle_change [operation: string, file_path: string, new_path: string, watch
 def handle_write [file_path: string, watch_paths: list] {
     print $"📝 Modified: ($file_path | path basename)"
 
-    # Extract current links from file
+    # Extract current links from file (supports [[link]], ![[image]], ?[[unresolved]])
     let current_links = try {
-        open $file_path | rg -o '\[\[([^\]]+)\]\]' --replace '$1' | lines | uniq
+        open $file_path | rg -o '[!?]?\[\[([^\]]+)\]\]' --replace '$1' | lines | uniq
     } catch {
         []
     }
