@@ -14,6 +14,12 @@ def main [action?: string = "status"] {
     let log_file = $"($log_dir)/linkmanager.out.log"
     let err_file = $"($log_dir)/linkmanager.err.log"
 
+    # Multi-directory configuration
+    let forge = $"($env.HOME)/Forge"
+    let admin = $"($env.HOME)/Admin"
+    let archives = $"($env.HOME)/Archives"
+    let watch_dirs = ([$forge, $admin, $archives] | where {|p| $p | path exists})
+
     match $action {
         "start" => {
             if (link_service_running $pid_file) {
@@ -21,24 +27,57 @@ def main [action?: string = "status"] {
                 return
             }
 
-            print "🚀 Starting unified wiki link management service..."
+            print "🚀 Starting universal wiki link management service..."
             print "   Script: wiki-link-manager (Nushell native)"
             print "   Features: Backlinks + Mark/Unmark unresolved"
+            print "   Architecture: Multi-directory watchers (truly bidirectional)"
             print ""
 
-            # Start wiki-link-manager in background
-            let start_command = $"($link_manager_script) > '($log_file)' 2> '($err_file)' & echo $!"
+            print $"📂 Watching ($watch_dirs | length) directories:"
+            for dir in $watch_dirs {
+                print $"   - ($dir | path basename)"
+            }
+            print ""
 
-            # Start in background and capture PID
-            let process = (bash -c $start_command)
-            let pid = ($process | str trim)
+            # Spawn a watcher for each directory except the last
+            # (we'll track the last one as the "main" PID)
+            mut pids = []
 
-            # Save PID to file
-            $pid | save --force $pid_file
+            if ($watch_dirs | length) > 1 {
+                let bg_dirs = ($watch_dirs | drop)
+                for dir in $bg_dirs {
+                    let dir_name = ($dir | path basename)
+                    let dir_log = $"($log_dir)/($dir_name).out.log"
+                    let dir_err = $"($log_dir)/($dir_name).err.log"
 
-            print $"✅ Wiki link management service started with PID ($pid)"
-            print $"📝 Logs: ($log_file)"
+                    print $"🚀 Spawning watcher for ($dir_name)..."
+
+                    # Spawn background watcher
+                    let bg_cmd = $"($link_manager_script) > '($dir_log)' 2> '($dir_err)' & echo $!"
+                    let bg_pid = (bash -c $bg_cmd | str trim)
+                    $pids = ($pids | append $bg_pid)
+                }
+            }
+
+            # Start main watcher (last directory) in foreground-ish
+            let main_dir = ($watch_dirs | last)
+            let main_name = ($main_dir | path basename)
+            print $"⭐ Main watcher: ($main_name)"
+
+            let main_cmd = $"($link_manager_script) > '($log_file)' 2> '($err_file)' & echo $!"
+            let main_pid = (bash -c $main_cmd | str trim)
+            $pids = ($pids | append $main_pid)
+
+            # Save all PIDs (comma-separated) to track multi-instance
+            ($pids | str join ",") | save --force $pid_file
+
+            print ""
+            print $"✅ Wiki link management service started with ($pids | length) watchers"
+            print $"📝 Main log: ($log_file)"
             print $"❌ Errors: ($err_file)"
+            if ($watch_dirs | length) > 1 {
+                print $"💡 Additional logs in: ($log_dir)/<directory>.out.log"
+            }
         }
 
         "stop" => {
@@ -47,17 +86,22 @@ def main [action?: string = "status"] {
                 return
             }
 
-            let pid = (open $pid_file | str trim)
-            print $"🛑 Stopping link management service with PID ($pid)..."
+            let pids_str = (open $pid_file | str trim)
+            let pids = ($pids_str | split row ",")
 
-            try {
-                kill $pid
-                rm -f $pid_file
-                print "✅ Link management service stopped"
-            } catch {
-                print "❌ Failed to stop service - may already be dead"
-                rm -f $pid_file
+            print $"🛑 Stopping link management service with ($pids | length) watchers..."
+
+            for pid in $pids {
+                try {
+                    kill $pid
+                    print $"   ✅ Stopped watcher PID ($pid)"
+                } catch {
+                    print $"   ⚠️  PID ($pid) already stopped"
+                }
             }
+
+            rm -f $pid_file
+            print "✅ All link management watchers stopped"
         }
 
         "restart" => {
@@ -68,13 +112,33 @@ def main [action?: string = "status"] {
 
         "status" => {
             if (link_service_running $pid_file) {
-                let pid = (open $pid_file | str trim)
-                print $"✅ Wiki link management service running with PID ($pid)"
+                let pids_str = (open $pid_file | str trim)
+                let pids = ($pids_str | split row ",")
+
+                print $"✅ Wiki link management service running with ($pids | length) watchers"
                 print "   Script: wiki-link-manager - unified Nushell system"
+                print "   Architecture: Multi-directory (truly bidirectional)"
+
+                # Show which PIDs are actually running
+                print ""
+                print "📊 Watcher processes:"
+                for pid in $pids {
+                    let is_running = try {
+                        ps | where pid == ($pid | into int) | length
+                    } catch {
+                        0
+                    }
+
+                    if $is_running > 0 {
+                        print $"   ✅ PID ($pid) - running"
+                    } else {
+                        print $"   ❌ PID ($pid) - not found (crashed?)"
+                    }
+                }
 
                 # Show recent log activity
                 if ($log_file | path exists) {
-                    print "\n📝 Recent activity:"
+                    print "\n📝 Recent activity from main watcher:"
                     try {
                         open $log_file | lines | last 5 | each { |line| print $"   ($line)" }
                     } catch {
