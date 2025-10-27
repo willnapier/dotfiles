@@ -90,6 +90,7 @@ depends = []
 "scripts/hx" = "~/.local/bin/hx"  # Universal hx command wrapping hx-auto
 "scripts/get-system-theme.sh" = "~/.local/bin/get-system-theme.sh"
 "scripts/hx-wiki" = "~/.local/bin/hx-wiki"
+"scripts/hx-wiki.nu" = "~/.local/bin/hx-wiki.nu"
 "scripts/forge-linker.sh" = "~/.local/bin/forge-linker"
 "scripts/forge-linker.nu" = "~/.local/bin/forge-linker.nu"
 "scripts/semantic-indexer" = "~/.local/bin/semantic-indexer"
@@ -146,6 +147,7 @@ depends = []
 "scripts/citation-picker.nu" = "~/.local/bin/citation-picker.nu"
 "scripts/git-push-reliability-monitor" = "~/.local/bin/git-push-reliability-monitor"
 "scripts/hx-wiki-open-right" = "~/.local/bin/hx-wiki-open-right"
+"scripts/hx-wiki-open-smart" = "~/.local/bin/hx-wiki-open-smart"
 "scripts/simple-file-search.nu" = "~/.local/bin/simple-file-search.nu"
 "scripts/skim-with-preview" = "~/.local/bin/skim-with-preview"
 "scripts/yazi-project-content-search.nu" = "~/.local/bin/yazi-project-content-search.nu"
@@ -154,8 +156,9 @@ depends = []
 "scripts/zj" = "~/.local/bin/zj"
 "scripts/theme-status" = "~/.local/bin/theme-status"
 "scripts/fview" = "~/.local/bin/fview"
-# P. notation project collection system (added 2025-10-08)
-"scripts/collect-projects" = "~/.local/bin/collect-projects"
+# Unified entry collection system - projects (P.) and activities (p::, t::, etc.) (added 2025-10-08)
+"scripts/collect-entries" = "~/.local/bin/collect-entries"
+"scripts/collect-projects" = "~/.local/bin/collect-projects"  # Legacy, will be removed
 "scripts/collect-projects-auto" = "~/.local/bin/collect-projects-auto"
 "scripts/collect-projects-cron" = "~/.local/bin/collect-projects-cron"
 "scripts/collect-projects-watcher" = "~/.local/bin/collect-projects-watcher"
@@ -163,6 +166,8 @@ depends = []
 "scripts/para-areas" = "~/.local/bin/para-areas"
 "scripts/para-connect" = "~/.local/bin/para-connect"
 "scripts/para-archive" = "~/.local/bin/para-archive"
+# Linked media audit and migration tools (added 2025-10-24)
+"scripts/audit-linked-media" = "~/.local/bin/audit-linked-media"
 
 # MEDIUM PRIORITY: Additional essential scripts (added 2025-09-16)
 "scripts/get-openai-key" = "~/.local/bin/get-openai-key"
