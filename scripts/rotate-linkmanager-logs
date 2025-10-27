@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-LOG_DIR="/scripts/forge-link-manager/logs"
+LOG_DIR="/scripts/wiki-link-manager/logs"
 OUT_LOG="$LOG_DIR/linkmanager.out.log"
 ERR_LOG="$LOG_DIR/linkmanager.err.log"
 MAX_SIZE_MB=50

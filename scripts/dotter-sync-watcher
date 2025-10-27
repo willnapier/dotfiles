@@ -10,7 +10,7 @@ def auto_manage_services [timestamp: string, log_file: path] {
     if $os_name == "Linux" {
         # Check for new systemd service files
         let service_files = (try { ls ~/.config/systemd/user/*.service } | default [])
-        let managed_services = ["forge-link-manager", "syncthing-monitor", "git-auto-push-watcher"]
+        let managed_services = ["wiki-link-manager", "syncthing-monitor", "git-auto-push-watcher"]
 
         for service in $managed_services {
             let service_file = $"~/.config/systemd/user/($service).service"
@@ -46,7 +46,7 @@ def auto_manage_services [timestamp: string, log_file: path] {
     } else if $os_name == "Darwin" {
         # Check for new LaunchAgent plist files
         let plist_dir = $"($env.HOME)/Library/LaunchAgents"
-        let managed_agents = ["com.williamnapier.forge-link-manager", "com.williamnapier.syncthing-monitor", "com.williamnapier.git-auto-pull-watcher"]
+        let managed_agents = ["com.williamnapier.wiki-link-manager", "com.williamnapier.syncthing-monitor", "com.williamnapier.git-auto-pull-watcher"]
 
         for agent in $managed_agents {
             let plist_file = $"($plist_dir)/($agent).plist"
