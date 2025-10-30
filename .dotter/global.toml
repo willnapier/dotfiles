@@ -194,6 +194,7 @@ depends = ["shared"]
 "macos/LaunchAgents/com.williamnapier.git-auto-pull-watcher.plist" = "~/Library/LaunchAgents/com.williamnapier.git-auto-pull-watcher.plist"
 "launchagents/com.user.collect-projects.plist" = "~/Library/LaunchAgents/com.user.collect-projects.plist"
 "launchagents/com.user.collect-projects-watcher.plist" = "~/Library/LaunchAgents/com.user.collect-projects-watcher.plist"
+"launchagents/com.user.forge-metadata-backup.plist" = "~/Library/LaunchAgents/com.user.forge-metadata-backup.plist"
 # NOTE: Individual files managed in [shared.files] for better reliability
 # Removed directory symlinks that were causing orphan detection issues
 
@@ -225,6 +226,9 @@ depends = ["shared"]
 "scripts/git-auto-pull-watcher-macos" = "~/.local/bin/git-auto-pull-watcher-macos"
 "scripts/sync-service-monitor" = "~/.local/bin/sync-service-monitor"
 # "scripts/setup-forge-link-service" = "~/.local/bin/setup-forge-link-service"  # Missing file - temporarily disabled
+"scripts/backup-to-dropbox" = "~/.local/bin/backup-to-dropbox"
+"scripts/forge-metadata-backup" = "~/.local/bin/forge-metadata-backup"
+"scripts/forge-metadata-backup-monthly" = "~/.local/bin/forge-metadata-backup-monthly"
 "systemd/git-auto-push-watcher.service" = "~/.config/systemd/user/git-auto-push-watcher.service"
 "systemd/zotero-pdf-watcher.service" = "~/.config/systemd/user/zotero-pdf-watcher.service"
 "systemd/zotero-bridge.service" = "~/.config/systemd/user/zotero-bridge.service"

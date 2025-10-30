@@ -1,0 +1,71 @@
+#!/usr/bin/env nu
+
+# forge-metadata-backup-monthly - Automated monthly metadata backup for Forge
+# Created: 2025-10-30
+#
+# This script runs the Rust metadata backup tool and commits the results to git
+# Designed to be run by launchd on the first of each month
+
+def main [] {
+    let forge_dir = ($env.HOME | path join "Forge")
+    let backup_tool = ($env.HOME | path join "forge-metadata-backup" "target" "release" "forge-metadata-backup")
+
+    print $"=== Forge Metadata Backup - (date now | format date '%Y-%m-%d %H:%M:%S') ==="
+    print $"Forge directory: ($forge_dir)"
+    print $"Backup tool: ($backup_tool)\n"
+
+    # Check if tool exists
+    if not ($backup_tool | path exists) {
+        print $"ERROR: Backup tool not found at ($backup_tool)"
+        print "Please compile it with: cd ~/forge-metadata-backup && cargo build --release"
+        exit 1
+    }
+
+    # Check if Forge directory exists
+    if not ($forge_dir | path exists) {
+        print $"ERROR: Forge directory not found at ($forge_dir)"
+        exit 1
+    }
+
+    # Run the backup tool
+    print "Running metadata export..."
+    try {
+        ^$backup_tool export $forge_dir
+    } catch {
+        print $"ERROR: Failed to export metadata: ($in)"
+        exit 1
+    }
+
+    print "\nCommitting to git..."
+
+    # Check if we're in a git repo
+    cd $forge_dir
+    let is_git = (do { ^git rev-parse --git-dir } | complete | get exit_code) == 0
+
+    if not $is_git {
+        print "WARNING: Forge directory is not a git repository"
+        print "Metadata backup created but not committed"
+        exit 0
+    }
+
+    # Check if there are changes to commit
+    let status = (^git status --porcelain .metadata-backup.csv | str trim)
+
+    if ($status | is-empty) {
+        print "No changes to commit - metadata backup is up to date"
+        exit 0
+    }
+
+    # Add and commit
+    try {
+        ^git add .metadata-backup.csv
+        let commit_msg = $"Update metadata backup - (date now | format date '%Y-%m-%d')"
+        ^git commit -m $commit_msg
+        print $"✅ Successfully committed: ($commit_msg)"
+    } catch {
+        print $"ERROR: Failed to commit: ($in)"
+        exit 1
+    }
+
+    print "\n=== Backup complete ==="
+}

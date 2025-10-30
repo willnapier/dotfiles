@@ -1,0 +1,185 @@
+#!/usr/bin/env nu
+
+# forge-metadata-backup - Backup and restore file creation/modification timestamps
+# Created: 2025-10-30
+#
+# This tool creates a lightweight backup of file metadata (creation/modification times)
+# that survives any backup/restore operation, even those that lose filesystem metadata.
+#
+# Usage:
+#   forge-metadata-backup export ~/Forge          # Creates ~/Forge/.metadata-backup.csv
+#   forge-metadata-backup restore ~/Forge         # Restores dates from .metadata-backup.csv
+#   forge-metadata-backup export ~/Forge --output ~/backups/forge-dates.csv  # Custom location
+
+def main [
+    action: string              # Action: 'export' or 'restore'
+    directory: string           # Directory to backup/restore (e.g., ~/Forge)
+    --output: string           # Custom output file for export (default: DIR/.metadata-backup.csv)
+    --dry-run                  # Show what would be restored without applying changes
+] {
+    let dir = ($directory | path expand)
+
+    if not ($dir | path exists) {
+        print $"Error: Directory does not exist: ($dir)"
+        exit 1
+    }
+
+    match $action {
+        "export" => { export_metadata $dir $output }
+        "restore" => { restore_metadata $dir $output $dry_run }
+        _ => {
+            print "Error: Action must be 'export' or 'restore'"
+            print "Usage: forge-metadata-backup <export|restore> <directory> [--output FILE] [--dry-run]"
+            exit 1
+        }
+    }
+}
+
+def export_metadata [dir: string, output_file: any] {
+    let backup_file = if ($output_file == null) or ($output_file | is-empty) {
+        $"($dir)/.metadata-backup.csv"
+    } else {
+        $output_file | path expand
+    }
+
+    print $"Exporting metadata from: ($dir)"
+    print $"Output file: ($backup_file)\n"
+
+    # Find all files and export their metadata using efficient batch processing
+    print "Scanning files..."
+    let metadata = (
+        ^fd -t f . $dir -x stat -f "%B|%m|{}"
+        | lines
+        | each { |line|
+            let parts = ($line | split row "|")
+            {
+                path: (($parts | get 2) | str replace $"($dir)/" ""),  # Relative path
+                birth_time: ($parts | get 0),                          # Creation time (Unix timestamp)
+                mod_time: ($parts | get 1),                            # Modification time (Unix timestamp)
+            }
+        }
+    )
+
+    # Save as CSV for easy version control and human readability
+    let csv_content = (
+        $metadata
+        | to csv
+    )
+
+    $csv_content | save -f $backup_file
+
+    let file_count = ($metadata | length)
+    let file_size = (ls $backup_file | get size | first)
+
+    print $"✅ Exported ($file_count) files"
+    print $"📁 Backup file: ($backup_file) \(($file_size)\)"
+    print ""
+    print "💡 Tip: Commit this file to git for ultimate protection:"
+    print $"   cd ($dir) && git add .metadata-backup.csv && git commit -m 'Update metadata backup'"
+}
+
+def restore_metadata [dir: string, input_file: any, dry_run: bool] {
+    let backup_file = if ($input_file == null) or ($input_file | is-empty) {
+        $"($dir)/.metadata-backup.csv"
+    } else {
+        $input_file | path expand
+    }
+
+    if not ($backup_file | path exists) {
+        print $"Error: Backup file not found: ($backup_file)"
+        print ""
+        print "Run 'forge-metadata-backup export' first to create a backup."
+        exit 1
+    }
+
+    print $"Restoring metadata to: ($dir)"
+    print $"From backup file: ($backup_file)"
+    if $dry_run {
+        print "🔍 DRY RUN MODE - No changes will be made\n"
+    } else {
+        print ""
+    }
+
+    # Load metadata from CSV
+    let metadata = (open $backup_file | from csv)
+    let total = ($metadata | length)
+
+    print $"Found ($total) files in backup\n"
+
+    # Restore timestamps for each file
+    let results = (
+        $metadata
+        | enumerate
+        | each { |item|
+            let idx = $item.index + 1
+            let entry = $item.item
+            let full_path = $"($dir)/($entry.path)"
+
+            if not ($full_path | path exists) {
+                {
+                    status: "missing"
+                    path: $entry.path
+                }
+            } else {
+                if $dry_run {
+                    if ($idx mod 100) == 0 {
+                        print $"  Would restore: ($idx)/($total) files..."
+                    }
+                    {
+                        status: "would_restore"
+                        path: $entry.path
+                    }
+                } else {
+                    try {
+                        # Set modification time (touch command)
+                        ^touch -t (timestamp_to_touch_format $entry.mod_time) $full_path
+
+                        if ($idx mod 100) == 0 {
+                            print $"  Restored: ($idx)/($total) files..."
+                        }
+
+                        {
+                            status: "restored"
+                            path: $entry.path
+                        }
+                    } catch {
+                        {
+                            status: "error"
+                            path: $entry.path
+                        }
+                    }
+                }
+            }
+        }
+    )
+
+    # Print summary
+    print "\n=== SUMMARY ==="
+    print $"Total files in backup: ($total)"
+
+    let restored = ($results | where status == "restored" | length)
+    let would_restore = ($results | where status == "would_restore" | length)
+    let missing = ($results | where status == "missing" | length)
+    let errors = ($results | where status == "error" | length)
+
+    if $dry_run {
+        print $"Files that would be restored: ($would_restore)"
+    } else {
+        print $"Files restored: ($restored)"
+    }
+    print $"Files missing - not in directory: ($missing)"
+    if $errors > 0 {
+        print $"Errors: ($errors)"
+    }
+
+    if $dry_run {
+        print "\n💡 Run without --dry-run to apply changes"
+    }
+}
+
+# Convert Unix timestamp to touch format (YYYYMMDDhhmm)
+def timestamp_to_touch_format [timestamp: string] {
+    let ts = ($timestamp | into int)
+    let date_obj = ($ts | into datetime)
+    $date_obj | format date "%Y%m%d%H%M"
+}

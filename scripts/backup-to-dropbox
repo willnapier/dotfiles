@@ -1,0 +1,145 @@
+#!/usr/bin/env nu
+
+# backup-to-dropbox - One-way backup to Dropbox using rclone
+# Created: 2025-10-27
+#
+# This script performs ONE-WAY backups to Dropbox. It ONLY pushes changes
+# from your local machine to Dropbox, never pulls changes back.
+# This prevents the bidirectional sync conflicts that plagued the old setup.
+
+# Main backup function
+def main [
+    --dry-run            # Show what would be synced without actually doing it
+    --forge              # Backup Forge directory only
+    --dotfiles           # Backup dotfiles directory only
+    --verbose            # Show detailed rclone output
+] {
+    # Configuration
+    let dropbox_remote = "Dropbox"
+    let backup_base = "Backups"
+
+    # Source directories
+    let forge_src = $"($env.HOME)/Forge"
+    let dotfiles_src = $"($env.HOME)/dotfiles"
+
+    # Destination paths in Dropbox
+    let forge_dest = $"($dropbox_remote):($backup_base)/Forge"
+    let dotfiles_dest = $"($dropbox_remote):($backup_base)/dotfiles"
+
+    # Determine what to backup
+    let backup_forge = ($forge or (not $dotfiles))
+    let backup_dotfiles = ($dotfiles or (not $forge))
+
+    # Print banner
+    print $"(ansi green_bold)═══════════════════════════════════════════════════(ansi reset)"
+    print $"(ansi green_bold)   One-Way Backup to Dropbox(ansi reset)"
+    print $"(ansi green_bold)═══════════════════════════════════════════════════(ansi reset)"
+    print ""
+
+    if $dry_run {
+        print $"(ansi yellow)🔍 DRY RUN MODE - No changes will be made(ansi reset)"
+        print ""
+    }
+
+    # Backup Forge if requested
+    if $backup_forge {
+        print $"(ansi cyan_bold)📚 Backing up Forge directory...(ansi reset)"
+        print $"   Source: ($forge_src)"
+        print $"   Destination: ($forge_dest)"
+        print ""
+
+        sync_directory $forge_src $forge_dest $dry_run $verbose
+    }
+
+    # Backup dotfiles if requested
+    if $backup_dotfiles {
+        print ""
+        print $"(ansi cyan_bold)⚙️  Backing up dotfiles directory...(ansi reset)"
+        print $"   Source: ($dotfiles_src)"
+        print $"   Destination: ($dotfiles_dest)"
+        print ""
+
+        sync_directory $dotfiles_src $dotfiles_dest $dry_run $verbose
+    }
+
+    # Final summary
+    print ""
+    print $"(ansi green_bold)═══════════════════════════════════════════════════(ansi reset)"
+    if $dry_run {
+        print $"(ansi yellow)✓ Dry run complete - review changes above(ansi reset)"
+        print $"(ansi default_dimmed)  Run without --dry-run to actually perform backup(ansi reset)"
+    } else {
+        print $"(ansi green)✓ Backup complete!(ansi reset)"
+        print $"(ansi default_dimmed)  Your data is safely backed up to Dropbox(ansi reset)"
+    }
+    print $"(ansi green_bold)═══════════════════════════════════════════════════(ansi reset)"
+}
+
+# Sync a directory to Dropbox using rclone
+def sync_directory [
+    source: string       # Local source directory
+    destination: string  # Dropbox destination path
+    dry_run: bool       # Whether to do a dry run
+    verbose: bool       # Whether to show verbose output
+] {
+    # Build rclone command
+    mut rclone_args = [
+        "sync"
+        $source
+        $destination
+        "--progress"
+        "--stats-one-line"
+        "--checkers=8"
+        "--transfers=8"
+    ]
+
+    # Smart exclusions - skip redundant/regeneratable files
+    # Only apply to dotfiles (we want everything from Forge)
+    if ($source | str contains "dotfiles") {
+        $rclone_args = ($rclone_args | append [
+            "--exclude" ".git/"                    # Already in GitHub
+            "--exclude" "**/target/"               # Rust build artifacts (regeneratable)
+            "--exclude" "**/*.d"                   # Rust dependency files
+            "--exclude" "**/node_modules/"         # Node dependencies
+            "--exclude" "**/.DS_Store"             # macOS metadata
+            "--exclude" "**/debug/"                # Debug builds
+            "--exclude" "**/release/"              # Release builds (if any)
+            "--exclude" "**/.cache/"               # Cache directories
+            "--exclude" "**/venv/"                 # Python virtual environments
+            "--exclude" "**/__pycache__/"          # Python cache
+        ])
+
+        print $"(ansi yellow)  ⚡ Smart exclusions enabled: .git, build artifacts, caches(ansi reset)"
+    }
+
+    # Add dry-run flag if requested
+    if $dry_run {
+        $rclone_args = ($rclone_args | append "--dry-run")
+    }
+
+    # Add verbose flag if requested
+    if $verbose {
+        $rclone_args = ($rclone_args | append "--verbose")
+    } else {
+        $rclone_args = ($rclone_args | append "--stats=1s")
+    }
+
+    # Execute rclone sync
+    try {
+        let result = (^rclone ...$rclone_args | complete)
+
+        if $result.exit_code == 0 {
+            if $dry_run {
+                print $"(ansi yellow)  → Dry run successful(ansi reset)"
+            } else {
+                print $"(ansi green)  → Sync successful(ansi reset)"
+            }
+        } else {
+            print $"(ansi red)  ✗ Sync failed with exit code ($result.exit_code)(ansi reset)"
+            print $"(ansi red)($result.stderr)(ansi reset)"
+        }
+    } catch {
+        print $"(ansi red)  ✗ Error running rclone(ansi reset)"
+        print $"(ansi default_dimmed)  Make sure rclone is installed and configured(ansi reset)"
+    }
+}
