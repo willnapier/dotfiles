@@ -1,0 +1,77 @@
+#!/usr/bin/env nu
+# Switch between different Goose model configurations
+# Usage: goose-switch-model [haiku|openrouter|status]
+
+def main [
+    profile?: string  # Profile to switch to: haiku, openrouter, or status
+] {
+    let config_dir = $"($env.HOME)/.config/goose"
+    let active_config = $"($config_dir)/config.yaml"
+
+    # If no argument, show current status
+    if ($profile | is-empty) or ($profile == "status") {
+        print "🔍 Current Goose Configuration:"
+        print ""
+
+        if not ($active_config | path exists) {
+            print "❌ No active config found"
+            return
+        }
+
+        let provider = (open $active_config | get GOOSE_PROVIDER? | default "unknown")
+        let model = (open $active_config | get GOOSE_MODEL? | default "unknown")
+
+        print $"Provider: ($provider)"
+        print $"Model: ($model)"
+        print ""
+        print "Available profiles:"
+        print "  • haiku      - Claude Haiku 4.5 via Anthropic"
+        print "  • openrouter - Google Gemini 2.5 Pro via OpenRouter (free, US-hosted)"
+        print ""
+        print "Usage: goose-switch-model [haiku|openrouter]"
+        return
+    }
+
+    # Switch to requested profile
+    match $profile {
+        "haiku" => {
+            let source = $"($config_dir)/config-haiku.yaml"
+            if not ($source | path exists) {
+                print $"❌ Error: ($source) not found"
+                return
+            }
+            cp $source $active_config
+            print "✅ Switched to Haiku 4.5 (Anthropic)"
+            print "   Model: claude-haiku-4-5-20251001"
+            print "   Cost: $1/$5 per MTok"
+        }
+        "openrouter" => {
+            let source = $"($config_dir)/config-openrouter.yaml"
+            if not ($source | path exists) {
+                print $"❌ Error: ($source) not found"
+                return
+            }
+
+            # Check if OpenRouter API key is set
+            if ($env.OPENROUTER_API_KEY? | is-empty) {
+                print "⚠️  Warning: OPENROUTER_API_KEY not set in environment"
+                print "   Get your key at: https://openrouter.ai/keys"
+                print "   Add to ~/.config/nushell/env.nu:"
+                print '   $env.OPENROUTER_API_KEY = "sk-or-v1-..."'
+                print ""
+            }
+
+            cp $source $active_config
+            print "✅ Switched to Google Gemini 2.5 Pro (OpenRouter)"
+            print "   Model: google/gemini-2.5-pro-exp-03-25:free"
+            print "   Cost: FREE (US-hosted, 1M token context)"
+        }
+        _ => {
+            print $"❌ Unknown profile: ($profile)"
+            print ""
+            print "Available profiles:"
+            print "  • haiku      - Claude Haiku 4.5 via Anthropic"
+            print "  • openrouter - Google Gemini 2.5 Pro via OpenRouter (free, US-hosted)"
+        }
+    }
+}
