@@ -9,6 +9,9 @@ export VISUAL="hx"
 # Forge path for Zellij link picker
 export FORGE="/Forge"
 
+# Anthropic API key for Goose/Claude Code
+export ANTHROPIC_API_KEY="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"
+
 # Switch to Nushell for interactive use
 if [[ $- == *i* ]] && command -v nu &> /dev/null; then
     exec nu

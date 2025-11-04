@@ -107,3 +107,4 @@ if (which vivid | is-not-empty) {
     $env.LS_COLORS = (^vivid generate $theme)
 }
 $env.THEME_PREFERENCE = "dark"
+$env.ANTHROPIC_API_KEY = "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"
