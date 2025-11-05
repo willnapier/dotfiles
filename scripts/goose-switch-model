@@ -26,7 +26,7 @@ def main [
         print ""
         print "Available profiles:"
         print "  • haiku      - Claude Haiku 4.5 via Anthropic"
-        print "  • openrouter - Google Gemini 2.0 Flash via OpenRouter (free, US-hosted, fast)"
+        print "  • openrouter - DeepSeek R1 via OpenRouter (free, US-hosted via Chutes)"
         print ""
         print "Usage: goose-switch-model [haiku|openrouter]"
         return
@@ -62,16 +62,16 @@ def main [
             }
 
             cp $source $active_config
-            print "✅ Switched to Google Gemini 2.0 Flash (OpenRouter)"
-            print "   Model: google/gemini-2.0-flash-exp:free"
-            print "   Cost: FREE (US-hosted, fast responses)"
+            print "✅ Switched to DeepSeek R1 (OpenRouter)"
+            print "   Model: deepseek/deepseek-r1"
+            print "   Cost: FREE (US-hosted via Chutes)"
         }
         _ => {
             print $"❌ Unknown profile: ($profile)"
             print ""
             print "Available profiles:"
             print "  • haiku      - Claude Haiku 4.5 via Anthropic"
-            print "  • openrouter - Google Gemini 2.0 Flash via OpenRouter (free, US-hosted, fast)"
+            print "  • openrouter - DeepSeek R1 via OpenRouter (free, US-hosted via Chutes)"
         }
     }
 }
