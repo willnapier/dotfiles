@@ -198,6 +198,7 @@ depends = ["shared"]
 "macos/launchd/com.williamnapier.syncthing-monitor.plist" = "~/Library/LaunchAgents/com.williamnapier.syncthing-monitor.plist"
 "macos/LaunchAgents/com.williamnapier.git-auto-pull-watcher.plist" = "~/Library/LaunchAgents/com.williamnapier.git-auto-pull-watcher.plist"
 "macos/LaunchAgents/com.williamnapier.assistants-auto-pull.plist" = "~/Library/LaunchAgents/com.williamnapier.assistants-auto-pull.plist"
+"macos/LaunchAgents/com.williamnapier.assistants-auto-push.plist" = "~/Library/LaunchAgents/com.williamnapier.assistants-auto-push.plist"
 "launchagents/com.user.collect-projects.plist" = "~/Library/LaunchAgents/com.user.collect-projects.plist"
 "launchagents/com.user.collect-projects-watcher.plist" = "~/Library/LaunchAgents/com.user.collect-projects-watcher.plist"
 "launchagents/com.user.forge-metadata-backup.plist" = "~/Library/LaunchAgents/com.user.forge-metadata-backup.plist"
