@@ -13,7 +13,7 @@ layout {
         pane name="daily-note" {
             focus true
             command "bash"
-            args "-c" "daily-note && exec helix \"$(daily-note --print-path)\" || exec nu"
+            args "-c" "daily-note && exec hx \"$(daily-note --print-path)\" || exec nu"
         }
     }
     
