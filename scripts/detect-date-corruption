@@ -1,0 +1,53 @@
+#!/usr/bin/env nu
+
+# detect-date-corruption - Find files with suspiciously recent creation dates
+# Usage: detect-date-corruption ~/Forge [--days 30]
+
+def main [
+    directory: string          # Directory to scan
+    --days: int = 90          # Files created within this many days are "suspicious"
+] {
+    let dir = ($directory | path expand)
+    let cutoff_days = $days
+    let cutoff_seconds = ($cutoff_days * 24 * 60 * 60)
+    let now = (date now | into int)
+    let cutoff_time = ($now - $cutoff_seconds)
+
+    print $"Scanning ($dir) for files created in last ($cutoff_days) days..."
+    print $"Files older than (date now | format date '%Y-%m-%d') in content but showing recent creation dates MAY be corrupted.\n"
+
+    let recent_files = (
+        fd -t f . $dir
+        | lines
+        | each { |file|
+            let birth = (stat -f "%B" $file | into int)
+            if $birth > $cutoff_time {
+                let birth_date = (date now | into int | $birth | into datetime | format date "%Y-%m-%d %H:%M:%S")
+                {
+                    file: ($file | str replace $"($dir)/" "")
+                    created: $birth_date
+                    unix_time: $birth
+                }
+            }
+        }
+        | compact
+    )
+
+    let count = ($recent_files | length)
+    
+    if $count > 0 {
+        print $"⚠️  Found ($count) files with creation dates in last ($cutoff_days) days:\n"
+        $recent_files 
+        | sort-by unix_time --reverse
+        | each { |file|
+            print $"  ($file.created) - ($file.file)"
+        }
+        | ignore
+        
+        print $"\n💡 If these are old files, they may have corrupted dates."
+        print "   Compare against ~/Forge/.metadata-backup.csv or restore from Evernote."
+    } else {
+        print $"✅ No files found with suspiciously recent creation dates"
+        print "   All files appear to have preserved their historical dates"
+    }
+}

@@ -1,0 +1,62 @@
+#!/usr/bin/env nu
+
+# Recover files corrupted by duplicated Readwise highlights
+#
+# Usage: recover-corrupted-highlights [input_dir] [output_dir]
+
+def main [
+    input_dir: string = "~/CorruptedHighLinks-Quarantine-2025-10-27"
+    output_dir: string = "~/CorruptedHighLinks-Recovered"
+] {
+    let input_path = ($input_dir | path expand)
+    let output_path = ($output_dir | path expand)
+
+    # Ensure output directory exists
+    mkdir $output_path
+
+    # Get all markdown files in input directory
+    let files = (ls $input_path | where type == file and ($it.name | str ends-with '.md'))
+
+    print $"Found ($files | length) files to process"
+    print ""
+
+    # Process each file
+    for file in $files {
+        let filename = ($file.name | path basename)
+        print $"Processing: ($filename)"
+
+        # Read file content
+        let content = (open $file.name)
+
+        # Find where corruption starts - look for multiple newlines followed by "- [["
+        # which indicates the start of the corrupted backlinks list
+        let corruption_marker = "\n\n\n- [["
+
+        let recovered_content = if ($content | str contains $corruption_marker) {
+            # Find the index where corruption starts
+            let corruption_start = ($content | str index-of $corruption_marker)
+
+            # Keep everything before the corruption (before the blank lines + list)
+            # Add back two newlines to preserve paragraph spacing
+            ($content | str substring 0..$corruption_start) + "\n"
+        } else {
+            # No corruption found, return as-is
+            $content
+        }
+
+        # Write to output directory
+        let output_file = ($output_path | path join $filename)
+        $recovered_content | save -f $output_file
+
+        # Show size comparison
+        let original_size = ($file.size)
+        let new_size = (ls $output_file | get size | first)
+        let reduction = (($original_size - $new_size) / $original_size * 100 | math round -p 1)
+
+        print $"  Original: ($original_size | into string) → Recovered: ($new_size | into string) \(($reduction)% reduction\)"
+    }
+
+    print ""
+    print $"✅ Recovery complete! Files saved to: ($output_path)"
+    print $"📊 Recovered ($files | length) files"
+}

@@ -1,0 +1,202 @@
+#!/usr/bin/env nu
+
+# Restore file creation dates from Evernote export
+# Parses .enex XML to extract note titles and creation dates, then matches to filesystem files
+
+def main [
+    enex_file: string           # Path to Evernote .enex export file
+    target_dir: string          # Directory containing files to update (e.g., ~/Forge)
+    --dry-run                   # Show what would be changed without making changes
+    --verbose                   # Show detailed progress
+] {
+    print $"Reading Evernote export: ($enex_file)"
+    print $"Target directory: ($target_dir)\n"
+
+    # Read and parse the ENEX file
+    let enex_content = open $enex_file
+
+    # Extract all notes with titles and creation dates
+    print "Parsing Evernote notes..."
+
+    # Extract titles and creation dates separately, then pair them
+    let titles = (
+        ^rg '<title>(.*?)</title>' $enex_file --only-matching --replace '$1'
+        | lines
+    )
+
+    let created_dates = (
+        ^rg '<created>(.*?)</created>' $enex_file --only-matching --replace '$1'
+        | lines
+    )
+
+    # Pair titles with their creation dates
+    # Assumption: titles and created dates appear in same order (one per note)
+    let notes = (
+        $titles
+        | enumerate
+        | each {|item|
+            let idx = $item.index
+            let title = $item.item
+            let created = ($created_dates | get $idx)
+
+            {
+                title: $title
+                created: $created
+            }
+        }
+    )
+
+    let total_notes = ($notes | length)
+    print $"Found ($total_notes) notes in Evernote export\n"
+
+    # Get all markdown files in target directory
+    print "Scanning target directory for markdown files..."
+    let target_files = (glob $"($target_dir)/**/*.md")
+    let total_files = ($target_files | length)
+    print $"Found ($total_files) markdown files\n"
+
+    # Create hash map for O(1) lookups: filename -> full path
+    # Note: If multiple files have the same basename, keeps the last one
+    print "Building file index..."
+    let file_map = (
+        $target_files
+        | reduce -f {} {|file_path, acc|
+            let basename = ($file_path | path basename | str replace '.md' '')
+            $acc | upsert $basename $file_path
+        }
+    )
+
+    print "Matching Evernote notes to files..."
+
+    # Match notes to files and collect results
+    let results = (
+        $notes
+        | enumerate
+        | each {|item|
+            let idx = $item.index + 1
+            let note = $item.item
+
+            # Clean the title for filename matching (Evernote titles often match filenames)
+            let clean_title = ($note.title)
+
+            # Try to find matching file with O(1) hash lookup
+            let matched_file_path = ($file_map | get -o $clean_title)
+
+            if ($matched_file_path | is-empty) {
+                if $verbose {
+                    print $"⊘ [($idx)/($total_notes)] No match: ($note.title)"
+                }
+                {
+                    status: "no_match"
+                    title: $note.title
+                    index: $idx
+                }
+            } else {
+                let file_path = $matched_file_path
+
+                # Parse the Evernote timestamp (format: 20151001T080944Z)
+                let created_str = $note.created
+
+                # Convert to touch format (YYYYMMDDhhmm)
+                let touch_format = try {
+                    # Extract components: 20151001T080944Z -> YYYYMMDD hhmmss
+                    let date_part = ($created_str | str substring 0..8)        # 20151001
+                    let time_part = ($created_str | str substring 9..15)       # 080944
+                    let hour_min = ($time_part | str substring 0..4)           # 0809
+
+                    $"($date_part)($hour_min)"                                  # 201510010809
+                } catch {
+                    null
+                }
+
+                if ($touch_format | is-empty) {
+                    print $"⚠ [($idx)/($total_notes)] Failed to parse date: ($note.title) - ($created_str)"
+                    {
+                        status: "error"
+                        title: $note.title
+                        message: $"Failed to parse date: ($created_str)"
+                        index: $idx
+                    }
+                } else {
+                    if $dry_run {
+                        print $"🔍 [($idx)/($total_notes)] Would update: ($note.title)"
+                        print $"   File: ($file_path)"
+                        print $"   Date: ($created_str)"
+                        {
+                            status: "would_update"
+                            file: $file_path
+                            title: $note.title
+                            date: $created_str
+                            index: $idx
+                        }
+                    } else {
+                        # Update file timestamp
+                        try {
+                            ^touch -t $touch_format $file_path
+                            if $verbose {
+                                print $"✓ [($idx)/($total_notes)] Updated: ($note.title)"
+                                print $"   Date: ($created_str)"
+                            } else {
+                                # Show progress every 100 files
+                                if ($idx mod 100) == 0 {
+                                    print $"Progress: ($idx)/($total_notes) files processed..."
+                                }
+                            }
+                            {
+                                status: "updated"
+                                file: $file_path
+                                title: $note.title
+                                date: $created_str
+                                index: $idx
+                            }
+                        } catch {
+                            print $"⚠ [($idx)/($total_notes)] Failed to update: ($note.title)"
+                            {
+                                status: "error"
+                                file: $file_path
+                                title: $note.title
+                                message: "Failed to update timestamp"
+                                index: $idx
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        | compact
+    )
+
+    # Print summary
+    print "\n=== SUMMARY ==="
+    print $"Evernote notes: ($total_notes)"
+    print $"Target files: ($total_files)"
+
+    let matched = ($results | where status in ["updated", "would_update"] | length)
+    let no_match = ($results | where status == "no_match" | length)
+    let errors = ($results | where status == "error" | length)
+
+    if $dry_run {
+        print $"\nFiles that would be updated: ($matched)"
+    } else {
+        print $"\nFiles updated: ($matched)"
+    }
+    print $"Files with no match: ($no_match)"
+    print $"Errors: ($errors)"
+
+    # Calculate match rate
+    if $total_notes > 0 {
+        let match_rate = (($matched * 100) / $total_notes | math round)
+        print $"\nMatch rate: ($match_rate)%"
+    }
+
+    if $errors > 0 {
+        print "\nErrors encountered:"
+        $results | where status == "error" | each {|r|
+            print $"  - ($r.title): ($r.message)"
+        }
+    }
+
+    if $dry_run {
+        print "\n💡 Run without --dry-run to apply changes"
+    }
+}

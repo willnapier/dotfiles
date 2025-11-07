@@ -114,6 +114,43 @@ def fleeting [] {
     print $"\nUse 'cd ~/Forge/fleeting && fsh' to browse, or 'promote <name>' to promote"
 }
 
+# ---- AI Collaboration Helpers ----
+def ai-brief [assistant?: string] {
+    if ($assistant | default "" | str trim | is-empty) {
+        print "Usage: ai-brief <assistant-name>"
+        print "Known assistants: codex, claude-code"
+        return
+    }
+
+    let normalized = ($assistant | str downcase)
+    let briefings = [
+        { name: "codex" path: $"($env.HOME)/Assistants/briefings/codex.md" }
+        { name: "claude-code" path: $"($env.HOME)/Assistants/briefings/claude-code.md" }
+    ]
+
+    let entry = ($briefings | where name == $normalized | get 0? )
+
+    if $entry == null {
+        print $"⚠️ ai-brief: no briefing configured for '($assistant)'"
+        return
+    }
+
+    let briefing_path = $entry.path
+
+    if not ($briefing_path | path exists) {
+        print $"⚠️ ai-brief: briefing file missing at ($briefing_path)"
+        return
+    }
+
+    let content = (open --raw $briefing_path | decode utf-8)
+    print $content
+    print ""
+    print "Supplemental docs: Assistants/index.md · claude.md · Claude/CLAUDE-TOOLCHAIN-PREFERENCES.md · Claude/CLAUDE-DEBUGGING-PATTERNS.md · Claude/STONE-IN-SHOE-DEBUGGING-PHILOSOPHY.md · Claude/NUSHELL-KNOWLEDGE-TOOLS-README.md"
+}
+
+def codex-brief [] { ai-brief codex }
+def claude-code-brief [] { ai-brief claude-code }
+
 # ---- Quick Logging Functions ----
 # Log entry directly to today's DayPage and trigger collection
 # Usage: log "P.website:: 2hr implemented-nav"
@@ -576,6 +613,7 @@ $env.config = ($env.config | upsert explore $explore_colors)
 # The keybinding above only disables it in Nushell itself
 if (which stty | is-not-empty) {
     try { ^stty susp undef } catch { }
+    try { ^stty -ixon } catch { }
 }
 
 # Zettelkasten workflow commands for Forge
@@ -1472,7 +1510,7 @@ def fsl [] {
 # Citation + copy to clipboard (plain text)
 def cit [] {
     print "🔍 Loading citations..."
-    let citations_file = $"($env.FORGE?)/LIT/citations.md"
+    let citations_file = $"($env.FORGE?)/citations.md"
     if not ($citations_file | path exists) {
         print $"❌ Citations file not found: ($citations_file)"
         return
@@ -1509,7 +1547,7 @@ def cit [] {
 # Citation + copy wiki link to literature note
 def cil [] {
     print "🔍 Loading citations..."
-    let citations_file = $"($env.FORGE?)/LIT/citations.md"
+    let citations_file = $"($env.FORGE?)/citations.md"
     if not ($citations_file | path exists) {
         print $"❌ Citations file not found: ($citations_file)"
         return
@@ -1534,11 +1572,11 @@ def cil [] {
     }
 }
 
-# Citation + open PDF in Zotero
-def ciz [] {
+# Zotero Interactive → Open PDF
+def zio [] {
     print "🔍 Loading citations..."
-    let citations_file = $"($env.FORGE?)/LIT/citations.md"
-    let library_file = $"($env.FORGE?)/LIT/library.bib"
+    let citations_file = $"($env.FORGE?)/citations.md"
+    let library_file = $"($env.FORGE?)/bib/library.bib"
 
     if not ($citations_file | path exists) {
         print $"❌ Citations file not found: ($citations_file)"
@@ -1596,10 +1634,10 @@ def ciz [] {
     }
 }
 
-# Citation + copy Zotero link to clipboard (clickable markdown link)
-def cizl [] {
+# Zotero Interactive → Link (clickable markdown link to clipboard)
+def zil [] {
     print "🔍 Loading citations..."
-    let citations_file = $"($env.FORGE?)/LIT/citations.md"
+    let citations_file = $"($env.FORGE?)/citations.md"
 
     if not ($citations_file | path exists) {
         print $"❌ Citations file not found: ($citations_file)"
@@ -1736,6 +1774,276 @@ def fsme [] {
         } else {
             print $"❌ File not found: ($filename).md"
         }
+    }
+}
+
+# Zotero Semantic → Text (formatted reference with page info)
+def zsmt [] {
+    if ($env.OPENAI_API_KEY? | is-empty) {
+        print "❌ OPENAI_API_KEY not set for semantic search"
+        return
+    }
+
+    print "📚 Semantic search across Zotero PDFs..."
+    let query = (input "🔍 Search concept: ")
+    if ($query | is-empty) {
+        return
+    }
+
+    print $"🔍 Searching PDFs for: ($query)"
+
+    # Run zotero-query with environment variable
+    let results = try {
+        with-env { OPENAI_API_KEY: $env.OPENAI_API_KEY } {
+            ^~/Assistants/projects/zotero-semantic-search/target/release/zotero-query $query -n 10 | complete
+        }
+    } catch {
+        print "❌ Zotero query failed. Check if database exists."
+        return
+    }
+
+    if $results.exit_code != 0 {
+        print $"❌ Query failed: ($results.stderr)"
+        return
+    }
+
+    print $results.stdout
+}
+
+# Zotero Semantic → Link (copy wiki link to literature note)
+def zsml [] {
+    if ($env.OPENAI_API_KEY? | is-empty) {
+        print "❌ OPENAI_API_KEY not set for semantic search"
+        return
+    }
+
+    print "📚 Semantic search across Zotero PDFs..."
+    let query = (input "🔍 Search concept: ")
+    if ($query | is-empty) {
+        return
+    }
+
+    print $"🔍 Searching PDFs for: ($query)"
+
+    # Run zotero-query with JSON output for structured parsing
+    let results = try {
+        with-env { OPENAI_API_KEY: $env.OPENAI_API_KEY } {
+            ^~/Assistants/projects/zotero-semantic-search/target/release/zotero-query $query -n 10 --format json | complete
+        }
+    } catch {
+        print "❌ Zotero query failed. Check if database exists."
+        return
+    }
+
+    if $results.exit_code != 0 {
+        print $"❌ Query failed: ($results.stderr)"
+        return
+    }
+
+    # Parse JSON results
+    let search_results = try {
+        $results.stdout | from json
+    } catch {
+        print "❌ Failed to parse results"
+        return
+    }
+
+    if ($search_results | is-empty) {
+        print "❌ No results found"
+        return
+    }
+
+    # Format results for selection
+    let formatted = ($search_results | each { |result|
+        $"($result.similarity | into string | str substring 0..4)  ($result.citation_key) - ($result.title) (p.($result.page_range.0)-($result.page_range.1))"
+    })
+
+    # Use sk for selection
+    let selected = ($formatted | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'echo {}' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📚 Zotero Result: " | str trim)
+
+    if not ($selected | is-empty) {
+        # Extract citation key from selected result
+        let citation_key = ($selected | parse --regex '^\S+\s+(\S+)' | get -o 0.capture0? | default "")
+
+        if not ($citation_key | is-empty) {
+            # Create wiki link to literature note (assuming ReadingNotes/ directory)
+            let wiki_link = $"[[($citation_key)]]"
+
+            # Copy to clipboard
+            if (sys host | get name) == "Darwin" {
+                $wiki_link | pbcopy
+            } else {
+                try {
+                    $wiki_link | wl-copy
+                } catch {
+                    try {
+                        $wiki_link | xclip -selection clipboard
+                    } catch {
+                        print $"💡 Link: ($wiki_link)"
+                        print "⚠️  No clipboard tool found (install wl-clipboard or xclip)"
+                        return
+                    }
+                }
+            }
+
+            print $"📋 Copied link to clipboard: ($wiki_link)"
+            print "💡 Paste into your notes to link to literature note"
+        }
+    }
+}
+
+# Zotero Semantic → Open (open PDF at relevant page)
+def zsmo [] {
+    if ($env.OPENAI_API_KEY? | is-empty) {
+        print "❌ OPENAI_API_KEY not set for semantic search"
+        return
+    }
+
+    print "📚 Semantic search across Zotero PDFs..."
+    let query = (input "🔍 Search concept: ")
+    if ($query | is-empty) {
+        return
+    }
+
+    print $"🔍 Searching PDFs for: ($query)"
+
+    # Run zotero-query with JSON output
+    let results = try {
+        with-env { OPENAI_API_KEY: $env.OPENAI_API_KEY } {
+            ^~/Assistants/projects/zotero-semantic-search/target/release/zotero-query $query -n 10 --format json | complete
+        }
+    } catch {
+        print "❌ Zotero query failed. Check if database exists."
+        return
+    }
+
+    if $results.exit_code != 0 {
+        print $"❌ Query failed: ($results.stderr)"
+        return
+    }
+
+    # Parse JSON results
+    let search_results = try {
+        $results.stdout | from json
+    } catch {
+        print "❌ Failed to parse results"
+        return
+    }
+
+    if ($search_results | is-empty) {
+        print "❌ No results found"
+        return
+    }
+
+    # Format results for selection with preview showing snippet
+    let formatted = ($search_results | each { |result|
+        $"($result.similarity | into string | str substring 0..4)  ($result.citation_key) - ($result.title) (p.($result.page_range.0)-($result.page_range.1))"
+    })
+
+    # Use sk for selection
+    let selected = ($formatted | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'echo {}' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📚 Open PDF: " | str trim)
+
+    if not ($selected | is-empty) {
+        # Get the index of selected item
+        let selected_index = ($formatted | enumerate | where { |row| $row.item == $selected } | get -o 0.index? | default 0)
+        let result = ($search_results | get $selected_index)
+
+        # Open PDF
+        let pdf_path = $result.pdf_path
+        if ($pdf_path | path exists) {
+            print $"📂 Opening PDF: ($pdf_path)"
+            print $"📍 Relevant content on pages ($result.page_range.0)-($result.page_range.1)"
+
+            if (sys host | get name) == "Darwin" {
+                ^open $pdf_path
+            } else {
+                ^xdg-open $pdf_path
+            }
+        } else {
+            print $"❌ PDF not found at: ($pdf_path)"
+        }
+    }
+}
+
+# Zotero Semantic → Zotero Link (copy clickable markdown link)
+def zsmzl [] {
+    if ($env.OPENAI_API_KEY? | is-empty) {
+        print "❌ OPENAI_API_KEY not set for semantic search"
+        return
+    }
+
+    print "📚 Semantic search across Zotero PDFs..."
+    let query = (input "🔍 Search concept: ")
+    if ($query | is-empty) {
+        return
+    }
+
+    print $"🔍 Searching PDFs for: ($query)"
+
+    # Run zotero-query with JSON output
+    let results = try {
+        with-env { OPENAI_API_KEY: $env.OPENAI_API_KEY } {
+            ^~/Assistants/projects/zotero-semantic-search/target/release/zotero-query $query -n 10 --format json | complete
+        }
+    } catch {
+        print "❌ Zotero query failed. Check if database exists."
+        return
+    }
+
+    if $results.exit_code != 0 {
+        print $"❌ Query failed: ($results.stderr)"
+        return
+    }
+
+    # Parse JSON results
+    let search_results = try {
+        $results.stdout | from json
+    } catch {
+        print "❌ Failed to parse results"
+        return
+    }
+
+    if ($search_results | is-empty) {
+        print "❌ No results found"
+        return
+    }
+
+    # Format results for selection
+    let formatted = ($search_results | each { |result|
+        $"($result.similarity | into string | str substring 0..4)  ($result.citation_key) - ($result.title) (p.($result.page_range.0)-($result.page_range.1))"
+    })
+
+    # Use sk for selection
+    let selected = ($formatted | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'echo {}' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📚 Zotero Link: " | str trim)
+
+    if not ($selected | is-empty) {
+        # Get the index of selected item
+        let selected_index = ($formatted | enumerate | where { |row| $row.item == $selected } | get -o 0.index? | default 0)
+        let result = ($search_results | get $selected_index)
+
+        # Create markdown link: [AuthorYear Title p.X-Y](zotero://select/items/@key)
+        let zotero_link = $"[($result.citation_key) ($result.title) p.($result.page_range.0)-($result.page_range.1)](zotero://select/items/@($result.citation_key))"
+
+        # Copy to clipboard
+        if (sys host | get name) == "Darwin" {
+            $zotero_link | pbcopy
+        } else {
+            try {
+                $zotero_link | wl-copy
+            } catch {
+                try {
+                    $zotero_link | xclip -selection clipboard
+                } catch {
+                    print $"💡 Link: ($zotero_link)"
+                    print "⚠️  No clipboard tool found (install wl-clipboard or xclip)"
+                    return
+                }
+            }
+        }
+
+        print $"📋 Copied Zotero link to clipboard:"
+        print $"   ($zotero_link)"
+        print "💡 Paste into your notes - clicking opens Zotero and selects paper"
     }
 }
 
@@ -3328,3 +3636,12 @@ def dtstamp [] {
 alias wn = wiki-nav        # Navigate to wiki links from current file
 alias wb = wiki-back       # Go back in navigation history
 alias ft = ftodo           # Toggle todo checkbox
+
+# Claude Code wrapper - use claude.ai login (Max subscription)
+def claude [...args] {
+    with-env { ANTHROPIC_API_KEY: null } {
+        ^/Users/williamnapier/.local/bin/claude ...$args
+    }
+}
+
+# Goose will use the ANTHROPIC_API_KEY from env-secret.nu normally

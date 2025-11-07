@@ -101,7 +101,7 @@ def restore_metadata [dir: string, input_file: any, dry_run: bool] {
     }
 
     # Load metadata from CSV
-    let metadata = (open $backup_file | from csv)
+    let metadata = (cat $backup_file | from csv)
     let total = ($metadata | length)
 
     print $"Found ($total) files in backup\n"
@@ -121,18 +121,33 @@ def restore_metadata [dir: string, input_file: any, dry_run: bool] {
                     path: $entry.path
                 }
             } else {
-                if $dry_run {
+                # SAFETY CHECK: Get current file creation time
+                let current_created = (stat -f "%B" $full_path | into int)
+                let backup_created = ($entry.created | into int)
+
+                # CRITICAL SAFETY: Only restore if backup date is OLDER than current
+                # Never make files appear newer (which would destroy historical accuracy)
+                if $backup_created > $current_created {
+                    {
+                        status: "skipped_newer_backup"
+                        path: $entry.path
+                        current: $current_created
+                        backup: $backup_created
+                    }
+                } else if $dry_run {
                     if ($idx mod 100) == 0 {
                         print $"  Would restore: ($idx)/($total) files..."
                     }
                     {
                         status: "would_restore"
                         path: $entry.path
+                        current: $current_created
+                        backup: $backup_created
                     }
                 } else {
                     try {
                         # Set modification time (touch command)
-                        ^touch -t (timestamp_to_touch_format $entry.mod_time) $full_path
+                        ^touch -t (timestamp_to_touch_format $entry.modified) $full_path
 
                         if ($idx mod 100) == 0 {
                             print $"  Restored: ($idx)/($total) files..."
@@ -141,11 +156,14 @@ def restore_metadata [dir: string, input_file: any, dry_run: bool] {
                         {
                             status: "restored"
                             path: $entry.path
+                            current: $current_created
+                            backup: $backup_created
                         }
-                    } catch {
+                    } catch { |err|
                         {
                             status: "error"
                             path: $entry.path
+                            error: $err
                         }
                     }
                 }
@@ -161,6 +179,7 @@ def restore_metadata [dir: string, input_file: any, dry_run: bool] {
     let would_restore = ($results | where status == "would_restore" | length)
     let missing = ($results | where status == "missing" | length)
     let errors = ($results | where status == "error" | length)
+    let skipped_newer = ($results | where status == "skipped_newer_backup" | length)
 
     if $dry_run {
         print $"Files that would be restored: ($would_restore)"
@@ -171,6 +190,10 @@ def restore_metadata [dir: string, input_file: any, dry_run: bool] {
     if $errors > 0 {
         print $"Errors: ($errors)"
     }
+    if $skipped_newer > 0 {
+        print $"⚠️  SAFETY: Skipped files where backup date is NEWER than current: ($skipped_newer)"
+        print "   (These files will NOT be touched to preserve historical accuracy)"
+    }
 
     if $dry_run {
         print "\n💡 Run without --dry-run to apply changes"
@@ -178,8 +201,8 @@ def restore_metadata [dir: string, input_file: any, dry_run: bool] {
 }
 
 # Convert Unix timestamp to touch format (YYYYMMDDhhmm)
-def timestamp_to_touch_format [timestamp: string] {
-    let ts = ($timestamp | into int)
-    let date_obj = ($ts | into datetime)
-    $date_obj | format date "%Y%m%d%H%M"
+def timestamp_to_touch_format [timestamp: any] {
+    # Use date command for reliable conversion
+    let ts_str = ($timestamp | into string)
+    ^date -j -r $ts_str "+%Y%m%d%H%M" | str trim
 }

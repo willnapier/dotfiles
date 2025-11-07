@@ -5,6 +5,11 @@
 depends = []
 
 [shared.files]
+
+"scripts/ai-brief.nu" = { target = "~/.local/bin/ai-brief.nu", type = "symbolic" }
+"scripts/codex-brief" = { target = "~/.local/bin/codex-brief", type = "symbolic" }
+"scripts/claude-code-brief" = { target = "~/.local/bin/claude-code-brief", type = "symbolic" }
+"scripts/goose-switch-model" = { target = "~/.local/bin/goose-switch-model", type = "symbolic" }
 "git/gitconfig" = "~/.gitconfig"
 "helix/config.toml" = "~/.config/helix/config.toml"
 "helix/languages.toml" = "~/.config/helix/languages.toml"
@@ -56,7 +61,7 @@ depends = []
 "zed/settings.json" = "~/.config/zed/settings.json"
 
 # Essential scripts (most commonly used)
-"scripts/daily-note.nu" = "~/.local/bin/daily-note"
+"scripts/daily-note.nu" = { target = "~/.local/bin/daily-note", type = "symbolic" }
 "scripts/daypage-template" = "~/.local/bin/daypage-template"
 "scripts/prev-day" = "~/.local/bin/prev-day"
 "scripts/next-day" = "~/.local/bin/next-day"
@@ -155,8 +160,8 @@ depends = []
 "scripts/simple-file-search.nu" = "~/.local/bin/simple-file-search.nu"
 "scripts/skim-with-preview" = "~/.local/bin/skim-with-preview"
 "scripts/yazi-project-content-search.nu" = "~/.local/bin/yazi-project-content-search.nu"
-"scripts/zellij-skim-search.nu" = "~/.local/bin/zellij-skim-search.nu"
-"scripts/daily-note" = "~/.local/bin/daily-note"
+"scripts/zellij-skim-search.nu" = { target = "~/.local/bin/zellij-skim-search.nu", type = "symbolic" }
+"scripts/daily-note" = { target = "~/.local/bin/daily-note", type = "symbolic" }
 "scripts/zj" = "~/.local/bin/zj"
 "scripts/theme-status" = "~/.local/bin/theme-status"
 "scripts/fview" = "~/.local/bin/fview"

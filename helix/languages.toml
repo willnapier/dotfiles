@@ -10,7 +10,8 @@ name = "markdown"
 scope = "source.md"
 file-types = ["md", "markdown", "mkd", "mdwn", "mdown", "markdn", "mdtxt", "mdtext", "workbook"]
 roots = [".git"]
-language-servers = ["markdown-oxide"]  # ONLY markdown-oxide, NO marksman
+# Temporarily disable markdown-oxide to avoid runaway CPU until upstream fix
+language-servers = []  # Re-enable by restoring ["markdown-oxide"]
 formatter = { command = "dprint", args = ["fmt", "--stdin", "markdown"] }
 auto-format = true
 soft-wrap.enable = true

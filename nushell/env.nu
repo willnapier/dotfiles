@@ -113,3 +113,7 @@ $env.THEME_PREFERENCE = "dark"
 # Example: Add to ~/.zshenv or ~/.config/nushell/env-secret.nu (gitignored)
 # $env.ANTHROPIC_API_KEY = "sk-ant-..."
 # $env.OPENROUTER_API_KEY = "sk-or-..."
+# Load secure environment variables
+if ($"($nu.default-config-dir)/env-secret.nu" | path exists) {
+    source $"($nu.default-config-dir)/env-secret.nu"
+}
