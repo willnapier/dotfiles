@@ -2406,6 +2406,45 @@ def semantic-status [] {
     }
 }
 
+# Cross-platform clipboard function
+def cross-platform-clipboard [operation: string] {
+    let platform = (uname | get operating-system | str downcase)
+
+    if $operation == "copy" {
+        if $platform == "darwin" {
+            ^pbcopy
+        } else if ($platform | str contains "linux") {
+            # Try Wayland first, then fall back to X11
+            if (which wl-copy | is-not-empty) {
+                ^wl-copy
+            } else if (which xclip | is-not-empty) {
+                ^xclip -selection clipboard
+            } else {
+                print "❌ No clipboard utility found. Install wl-clipboard or xclip"
+            }
+        } else {
+            print "❌ Unsupported platform for clipboard operations"
+        }
+    } else if $operation == "paste" {
+        if $platform == "darwin" {
+            ^pbpaste
+        } else if ($platform | str contains "linux") {
+            # Try Wayland first, then fall back to X11
+            if (which wl-paste | is-not-empty) {
+                ^wl-paste
+            } else if (which xclip | is-not-empty) {
+                ^xclip -selection clipboard -o
+            } else {
+                print "❌ No clipboard utility found. Install wl-clipboard or xclip"
+            }
+        } else {
+            print "❌ Unsupported platform for clipboard operations"
+        }
+    } else {
+        print $"❌ Unknown clipboard operation: ($operation)"
+    }
+}
+
 # Clipboard aliases - force external command execution to prevent Nushell interception
 # Cross-platform clipboard aliases
 alias pbcopy = cross-platform-clipboard copy

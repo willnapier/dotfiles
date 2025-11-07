@@ -1,11 +1,11 @@
 # Semantic Search Configuration
 database:
-  index_path: ~/Forge/LIT/db/faiss_index.bin
-  metadata_path: ~/Forge/LIT/db/file_metadata.json
+  index_path: ~/Forge/bib/db/faiss_index.bin
+  metadata_path: ~/Forge/bib/db/file_metadata.json
   cache_path: ~/.local/share/semantic-search/cache/
 
 vault:
-  path: /Users/williamnapier/Forge/
+  path: ~/Forge/
   extensions: ['.md']
   exclude_dirs: ['.obsidian', '.git', 'node_modules', '__pycache__', 'linked_media', 'attachments', 'assets', 'Visual Thinking Workshop']
   exclude_files: ['Icon - under the hood, reverse engineering.md']
