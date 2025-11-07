@@ -16,7 +16,16 @@ $env.ENV_CONVERSIONS = {
 # Environment variables
 $env.EDITOR = "hx"
 $env.VISUAL = "hx"
-$env.BROWSER = "open"
+
+# Cross-platform browser detection
+let platform = (uname | get operating-system | str downcase)
+$env.BROWSER = if $platform == "darwin" {
+    "open"
+} else if ($platform | str contains "linux") {
+    "xdg-open"
+} else {
+    "xdg-open"  # Default fallback
+}
 
 # Forge knowledge base path (cross-platform)
 $env.FORGE = $"($env.HOME)/Forge"
