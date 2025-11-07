@@ -1,0 +1,155 @@
+#!/usr/bin/env nu
+
+# export-dates-to-frontmatter - Add/update filesystem dates in YAML frontmatter
+# Usage: export-dates-to-frontmatter ~/Forge [--dry-run]
+#
+# This tool reads filesystem creation/modification dates and embeds them
+# in YAML frontmatter, making dates survive any file operations.
+
+def main [
+    directory: string           # Directory to process
+    --dry-run                  # Show what would be done without modifying files
+] {
+    let dir = ($directory | path expand)
+    
+    print $"Scanning markdown files in ($dir)..."
+    print $"Mode: (if $dry_run { 'DRY RUN' } else { 'LIVE - will modify files' })\n"
+    
+    let files = (fd -e md -t f . $dir | lines)
+    let total = ($files | length)
+    
+    print $"Found ($total) markdown files\n"
+    
+    let results = (
+        $files
+        | enumerate
+        | each { |item|
+            let idx = $item.index + 1
+            let file = $item.item
+            
+            # Get filesystem dates
+            let birth = (stat -f "%B" $file | str trim)
+            let modified = (stat -f "%m" $file | str trim)
+
+            # Use date command for reliable timestamp conversion
+            let birth_str = (^date -r $birth "+%Y-%m-%d %H:%M" | str trim)
+            let modified_str = (^date -r $modified "+%Y-%m-%d %H:%M" | str trim)
+            
+            # Read file content
+            let content = (open --raw $file)
+            
+            # Check if file has YAML frontmatter
+            let has_frontmatter = ($content | str starts-with "---")
+            
+            if not $has_frontmatter {
+                # No frontmatter - add it
+                let new_content = $"---
+date created: ($birth_str)
+date modified: ($modified_str)
+---
+
+($content)"
+                
+                if not $dry_run {
+                    $new_content | save -f $file
+                }
+                
+                if ($idx mod 100) == 0 or $idx == $total {
+                    print $"  [($idx)/($total)] Added frontmatter: ($file | path basename)"
+                }
+                
+                {
+                    status: "added_frontmatter"
+                    file: $file
+                }
+            } else {
+                # Has frontmatter - parse and update
+                let lines = ($content | lines)
+                
+                # Find frontmatter end
+                let fm_end = (
+                    $lines 
+                    | enumerate 
+                    | skip 1 
+                    | where { |it| $it.item == "---" } 
+                    | first
+                    | get index
+                )
+                
+                # Extract frontmatter and content
+                let fm_lines = ($lines | skip 1 | first ($fm_end - 1))
+                let content_lines = ($lines | skip ($fm_end + 1))
+                
+                # Check for existing date fields
+                let has_created = ($fm_lines | any { |line| $line | str contains "date created:" })
+                let has_modified = ($fm_lines | any { |line| $line | str contains "date modified:" })
+                
+                # Build new frontmatter
+                let new_fm = (
+                    $fm_lines
+                    | each { |line|
+                        if ($line | str contains "date created:") {
+                            $"date created: ($birth_str)"
+                        } else if ($line | str contains "date modified:") {
+                            $"date modified: ($modified_str)"
+                        } else {
+                            $line
+                        }
+                    }
+                )
+                
+                # Add missing fields
+                let final_fm = (
+                    if not $has_created {
+                        $new_fm | prepend $"date created: ($birth_str)"
+                    } else {
+                        $new_fm
+                    }
+                    | if not $has_modified {
+                        append $"date modified: ($modified_str)"
+                    } else {
+                        $in
+                    }
+                )
+                
+                # Reconstruct file
+                let reconstructed = (
+                    ["---"]
+                    | append $final_fm
+                    | append "---"
+                    | append $content_lines
+                    | str join "\n"
+                )
+                
+                if not $dry_run {
+                    $reconstructed | save -f $file
+                }
+                
+                if ($idx mod 100) == 0 or $idx == $total {
+                    print $"  [($idx)/($total)] Updated dates: ($file | path basename)"
+                }
+                
+                {
+                    status: "updated_dates"
+                    file: $file
+                }
+            }
+        }
+    )
+    
+    # Summary
+    print "\n=== SUMMARY ==="
+    let added = ($results | where status == "added_frontmatter" | length)
+    let updated = ($results | where status == "updated_dates" | length)
+    
+    print $"Files processed: ($total)"
+    print $"Added frontmatter: ($added)"
+    print $"Updated dates: ($updated)"
+    
+    if $dry_run {
+        print "\n💡 Run without --dry-run to apply changes"
+    } else {
+        print "\n✅ All files now have dates in YAML frontmatter"
+        print "   These dates will survive any file operations!"
+    }
+}

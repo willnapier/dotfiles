@@ -15,7 +15,7 @@ layout {
                     focus true
                     size "50%"
                     command "bash"
-                    args "-c" "daily-note && exec helix \"$(daily-note --print-path)\" || exec nu"
+                    args "-lc" "if pgrep -f '/opt/homebrew/bin/hx .*/NapierianLogs/DayPages/' >/dev/null; then exec nu; else daily-note && exec helix \"$(daily-note --print-path)\" || exec nu; fi"
                 }
                 pane name="main-editor" {
                     size "60%"
