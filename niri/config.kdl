@@ -12,6 +12,21 @@ input {
         repeat-delay 600;
         repeat-rate 25;
     }
+
+    // Focus follows mouse with scroll limit to prevent unwanted focus jumps
+    focus-follows-mouse max-scroll-amount="10%"
+
+    // Mouse settings - flat profile for precise control, fairly fast speed
+    mouse {
+        accel-profile "flat"
+        accel-speed 0.4
+        scroll-factor 0.5
+    }
+
+    // Touchpad settings
+    touchpad {
+        scroll-factor 0.5
+    }
 }
 
 // ---- Output (example panel; safe to remove if you prefer auto) ----
@@ -28,7 +43,13 @@ layout {
     center-focused-column "never";
     preset-column-widths { proportion 0.5; }
     default-column-width { proportion 0.5; }
+
+    border {
+        off;
+    }
 }
+
+prefer-no-csd
 
 // ---- Window rules ----
 window-rule {
@@ -72,9 +93,10 @@ binds {
     Mod+Alt+Ctrl+Shift+Q { quit; }
 
     // Launcher / Terminal / Lock
-    Mod+Space      { spawn "anyrun"; }  // Primary: Rust-based with niri-focus plugin
-    // Mod+Space   { spawn "rofi" "-show" "window"; }  // Fallback: if anyrun has issues
-    Mod+Alt+D      { spawn "fuzzel"; }
+    Mod+Space      { spawn "fuzzel"; }  // Primary launcher (matches macOS Cmd+Space)
+    // Mod+Space   { spawn "anyrun"; }  // Alternative: Rust-based with niri-focus plugin
+    // Mod+Space   { spawn "rofi" "-show" "window"; }  // Alternative: if fuzzel has issues
+    Mod+Alt+D      { spawn "fuzzel"; }  // Backup binding
     Mod+Alt+Return { spawn "wezterm"; }
     Mod+Alt+L      { spawn "wlogout"; }
 

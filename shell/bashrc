@@ -4,7 +4,7 @@
 # Environment variables
 export EDITOR='hx'
 export VISUAL='hx'
-export BROWSER='firefox'
+export BROWSER='xdg-open'
 export TERMINAL='foot'
 
 # XDG Base Directory specification  
@@ -128,7 +128,7 @@ fi
 case "$(uname -s)" in
     Linux*)
         # Linux-specific settings
-        export BROWSER='firefox'
+        export BROWSER='xdg-open'
         export TERMINAL='foot'
         ;;
     Darwin*)

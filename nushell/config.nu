@@ -3678,8 +3678,32 @@ alias ft = ftodo           # Toggle todo checkbox
 
 # Claude Code wrapper - use claude.ai login (Max subscription)
 def claude [...args] {
+    let claude_entry = (
+        which --all claude
+        | where type == "external"
+        | get 0?
+    )
+    
+    let claude_path = if $claude_entry != null and ($claude_entry.path | is-not-empty) {
+        $claude_entry.path
+    } else {
+        let fallback_paths = [
+            ($env.HOME | path join ".local/bin/claude")
+            "/usr/bin/claude"
+            "/usr/local/bin/claude"
+            "/opt/homebrew/bin/claude"
+            "/Users/williamnapier/.local/bin/claude"
+        ]
+        ($fallback_paths | where {|path| $path | path exists} | first)
+    }
+    
+    if ($claude_path | is-empty) {
+        print "Claude CLI not found in PATH. Install @anthropic-ai/claude-code or update the claude wrapper."
+        return
+    }
+    
     with-env { ANTHROPIC_API_KEY: null } {
-        ^/Users/williamnapier/.local/bin/claude ...$args
+        ^$claude_path ...$args
     }
 }
 

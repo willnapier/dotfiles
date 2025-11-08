@@ -10,7 +10,7 @@ def main [--print-path] {
     let daily_file = $"($daily_dir)/($today).md"
 
     # Template processing
-    let template_file = $"($env.HOME)/Admin/Archives/PKM-History/PKMStrategies/Templates/DayPage.md"
+    let template_file = $"($env.HOME)/Forge/Templates/DayPage-Minimal.md"
 
     # Find cursor line using native Nushell (no grep/cut needed)
     let cursor_line = if ($template_file | path exists) {
@@ -39,17 +39,25 @@ def main [--print-path] {
         # Get human readable date
         let human_date = (date now | format date "%A, %B %d, %Y")
 
+        # Calculate yesterday and tomorrow dates
+        let yesterday = (date now | $in - 1day | format date "%Y-%m-%d")
+        let tomorrow = (date now | $in + 1day | format date "%Y-%m-%d")
+
         # Process template with native Nushell string replacement
         if ($template_file | path exists) {
             let date_pattern = "{" + "{date}" + "}"
             let time_pattern = "{" + "{time24}" + "}"
             let hdate_pattern = "{" + "{hdate}" + "}"
+            let date_minus_1_pattern = "{" + "{date-1}" + "}"
+            let date_plus_1_pattern = "{" + "{date+1}" + "}"
 
             let processed = (
                 open $template_file --raw
                 | str replace --all $date_pattern $today
                 | str replace --all $time_pattern $current_time
                 | str replace --all $hdate_pattern $human_date
+                | str replace --all $date_minus_1_pattern $yesterday
+                | str replace --all $date_plus_1_pattern $tomorrow
                 | str replace --all "<cursor>" ""
             )
             $processed | save --force $daily_file

@@ -135,10 +135,12 @@ config.window_background_opacity = 0.98
 config.macos_window_background_blur = 20
 
 -- Custom selection colors for better readability in Solarized themes
+-- Explicitly set background to ensure it matches zellij's solarized-dark theme
 config.colors = {
+  background = '#002b36',  -- Solarized Dark base03 (teal) - matches zellij bg 0 43 54
+  foreground = '#839496',  -- Solarized Dark base0
   selection_fg = 'none',  -- Keep original text color
   selection_bg = 'rgba(88, 110, 117, 0.25)',  -- Darker, more subtle highlight for better contrast
-  -- Let the theme handle cursor and ANSI colors
 }
 
 -- Font configuration
