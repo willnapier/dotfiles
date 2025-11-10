@@ -1,4 +1,4 @@
-D # ⚠️  CLAUDE CODE: THIS FILE IS DOTTER-MANAGED - EDIT HERE IN DOTFILES, NOT ~/.config/ghostty/
+# ⚠️  CLAUDE CODE: THIS FILE IS DOTTER-MANAGED - EDIT HERE IN DOTFILES, NOT ~/.config/ghostty/
 # ⚠️  NEVER EDIT ~/.config/ghostty/config - IT'S A SYMLINK TO THIS FILE
 # Ghostty Configuration with Solarized Themes
 # Auto-switches between light/dark based on system appearance
@@ -17,7 +17,7 @@ window-theme = auto
 copy-on-select = true
 confirm-close-surface = false
 cursor-style = block
-cursor-style-blink = false  # Disable blinking for better performance
+# cursor-style-blink = false  # TODO: Check if supported in Ghostty 1.2.3  # Disable blinking for better performance
 
 # Shell Integration - Further reduced to fix Claude Code scrollback 
 shell-integration = none
@@ -38,7 +38,7 @@ quick-terminal-position = bottom
 # Scrollback Configuration
 scrollback-limit = 10000
 mouse-scroll-multiplier = 3
-alternate-screen-scroll = true  # Keep scrollback active in chat UIs
+# alternate-screen-scroll = true  # TODO: Check if supported in Ghostty 1.2.3  # Keep scrollback active in chat UIs
 
 # CRITICAL FIX FOR CLAUDE CODE SCROLLING
 # Default is "keystroke,no-output" which breaks Claude Code scrolling
