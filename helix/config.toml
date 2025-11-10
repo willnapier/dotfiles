@@ -151,10 +151,6 @@ e = "extend_line_down"
 i = "extend_line_up"
 o = "extend_char_right"
 
-# Move selected lines up/down (Colemak-DH: i=up, e=down)
-"C-i" = "swap_selection_contents_backward"  # Ctrl+i to move line up
-"C-e" = "swap_selection_contents_forward"   # Ctrl+e to move line down
-
 # Displaced commands in select mode
 h = "open_below"
 j = "search_next"
