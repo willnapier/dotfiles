@@ -14,7 +14,7 @@ layout {
                 focus true
                 size "35%"
                 command "bash"
-                args "-c" "daily-note || exec nu"
+                args "-lc" "daily-note || exec nu"
             }
             pane split_direction="horizontal" {
                 pane name="main-work" {
