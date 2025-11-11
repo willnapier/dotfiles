@@ -2,6 +2,16 @@
 # Open today's daily note directly in Helix - Native Nushell implementation
 
 def main [--print-path] {
+    # DEBUG LOG SETUP
+    let log_file = $"($env.HOME)/.local/share/daily-note-debug.log"
+    let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
+
+    # Log script invocation
+    $"[($timestamp)] ===== DAILY-NOTE INVOKED =====\n" | save --append $log_file
+    $"[($timestamp)] Print-path flag: ($print_path)\n" | save --append $log_file
+    $"[($timestamp)] SHELL: ($env.SHELL? | default 'unknown')\n" | save --append $log_file
+    $"[($timestamp)] PWD: ($env.PWD)\n" | save --append $log_file
+
     let vault_dir = $"($env.HOME)/Forge"
     let daily_dir = $"($vault_dir)/NapierianLogs/DayPages"
 
@@ -11,6 +21,10 @@ def main [--print-path] {
 
     # Template processing
     let template_file = $"($env.HOME)/Forge/Templates/DayPage-Minimal.md"
+
+    # Log template status
+    $"[($timestamp)] Template path: ($template_file)\n" | save --append $log_file
+    $"[($timestamp)] Template exists: (($template_file | path exists))\n" | save --append $log_file
 
     # Find cursor line using native Nushell (no grep/cut needed)
     let cursor_line = if ($template_file | path exists) {
@@ -31,6 +45,8 @@ def main [--print-path] {
 
     # Create the file if it doesn't exist
     if not ($daily_file | path exists) {
+        $"[($timestamp)] Daily file does not exist, creating: ($daily_file)\n" | save --append $log_file
+
         # Create directory if needed
         mkdir ($daily_file | path dirname)
 
@@ -45,6 +61,7 @@ def main [--print-path] {
 
         # Process template with native Nushell string replacement
         if ($template_file | path exists) {
+            $"[($timestamp)] ✅ Template file found - using template\n" | save --append $log_file
             let date_pattern = "{" + "{date}" + "}"
             let time_pattern = "{" + "{time24}" + "}"
             let hdate_pattern = "{" + "{hdate}" + "}"
@@ -60,10 +77,18 @@ def main [--print-path] {
                 | str replace --all $date_plus_1_pattern $tomorrow
                 | str replace --all "<cursor>" ""
             )
+
+            # Log template content for verification
+            let template_preview = ($processed | lines | first 5 | str join "\n")
+            $"[($timestamp)] Template processed, first 5 lines:\n($template_preview)\n" | save --append $log_file
+
             $processed | save --force $daily_file
+            $"[($timestamp)] ✅ File saved using TEMPLATE\n" | save --append $log_file
             print $"📝 Created new daily note: ($today).md"
         } else {
             # Fallback template if original doesn't exist
+            $"[($timestamp)] ⚠️  Template file NOT found - using FALLBACK\n" | save --append $log_file
+
             let fallback_content = $"# ($today) - ($human_date)
 
 ## Tasks
@@ -75,8 +100,11 @@ def main [--print-path] {
 
 "
             $fallback_content | save --force $daily_file
+            $"[($timestamp)] ⚠️  File saved using FALLBACK template\n" | save --append $log_file
             print $"📝 Created new daily note with fallback template: ($today).md"
         }
+    } else {
+        $"[($timestamp)] Daily file already exists: ($daily_file)\n" | save --append $log_file
     }
 
     # Handle --print-path option

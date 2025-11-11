@@ -12,10 +12,14 @@ theme = "solarized_dark_modal"
 [editor]
 # Enable cursor shape changing
 cursorline = true
-# Auto-save files when switching buffers or after inactivity
-auto-save = true
-# Auto-save every 500ms for activity duration processing (prevents race conditions)
+# Idle timeout for various features (affects multiple systems)
 idle-timeout = 500
+
+# Enhanced auto-save configuration
+[editor.auto-save]
+focus-lost = true           # Save when Helix loses focus (prevents data loss)
+after-delay.enable = true   # Save after idle period
+after-delay.timeout = 500   # Save after 500ms inactivity (for activity duration processing)
 
 # Status line configuration
 [editor.statusline]
