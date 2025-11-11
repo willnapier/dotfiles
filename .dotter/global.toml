@@ -161,8 +161,6 @@ depends = []
 "scripts/skim-with-preview" = "~/.local/bin/skim-with-preview"
 "scripts/yazi-project-content-search.nu" = "~/.local/bin/yazi-project-content-search.nu"
 "scripts/zellij-skim-search.nu" = { target = "~/.local/bin/zellij-skim-search.nu", type = "symbolic" }
-"scripts/daily-note" = { target = "~/.local/bin/daily-note", type = "symbolic" }
-"scripts/zj" = "~/.local/bin/zj"
 "scripts/theme-status" = "~/.local/bin/theme-status"
 "scripts/fview" = "~/.local/bin/fview"
 # Unified entry collection system - projects (P.) and activities (p::, t::, etc.) (added 2025-10-08)

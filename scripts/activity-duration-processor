@@ -161,9 +161,15 @@ def main [file_path?: string] {
             $line  # No time patterns found
         }
     })
-    
-    let processed_content = ($processed_lines | str join "\n")
-    
+
+    # Add final newline if original had one
+    let needs_final_newline = ($content | str ends-with "\n")
+    let processed_content = if $needs_final_newline {
+        ($processed_lines | str join "\n") + "\n"
+    } else {
+        ($processed_lines | str join "\n")
+    }
+
     # Only write if content changed
     if $processed_content != $content {
         $processed_content | save --force $target_file

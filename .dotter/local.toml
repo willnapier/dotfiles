@@ -1,5 +1,5 @@
 includes = []
-packages = ["linux"]
+packages = ["macos"]
 
 [files]
 
