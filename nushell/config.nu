@@ -314,6 +314,7 @@ def pomo-cancel [] {
 # ---- Unified Project Root Detection & Tools ----
 use ~/.config/nushell/scripts/project-root-detection.nu *
 use ~/.config/nushell/scripts/serpl.nu *
+use ~/.config/nushell/scripts/codex-tail.nu *
 use ~/.config/nushell/completions/serpl-completions.nu *
 alias serpl-any = serpl-anywhere
 # Example to customize project markers globally:
@@ -2599,6 +2600,7 @@ def fe [pattern: string, index: int = 0] {
 
 # Note: Zoxide functions (z, zi) are initialized at the top of the file
 source ~/.config/nushell/zotero-commands.nu
+source ~/dotfiles/nushell/continuum.nu
 
 # Link Manager aliases
 alias links-status = link-service status
@@ -3676,34 +3678,44 @@ alias wn = wiki-nav        # Navigate to wiki links from current file
 alias wb = wiki-back       # Go back in navigation history
 alias ft = ftodo           # Toggle todo checkbox
 
-# Claude Code wrapper - use claude.ai login (Max subscription)
+# Claude Code wrapper - auto-captures to Continuum database
 def claude [...args] {
-    let claude_entry = (
-        which --all claude
-        | where type == "external"
-        | get 0?
-    )
-    
-    let claude_path = if $claude_entry != null and ($claude_entry.path | is-not-empty) {
-        $claude_entry.path
+    # Use continuum-claude wrapper for automatic session capture
+    let continuum_claude = ($env.HOME | path join ".local/bin/continuum-claude")
+
+    if ($continuum_claude | path exists) {
+        # Run with continuum-claude wrapper (auto-persists to database)
+        with-env { ANTHROPIC_API_KEY: null } {
+            ^$continuum_claude ...$args
+        }
     } else {
-        let fallback_paths = [
-            ($env.HOME | path join ".local/bin/claude")
-            "/usr/bin/claude"
-            "/usr/local/bin/claude"
-            "/opt/homebrew/bin/claude"
-            "/Users/williamnapier/.local/bin/claude"
-        ]
-        ($fallback_paths | where {|path| $path | path exists} | first)
-    }
-    
-    if ($claude_path | is-empty) {
-        print "Claude CLI not found in PATH. Install @anthropic-ai/claude-code or update the claude wrapper."
-        return
-    }
-    
-    with-env { ANTHROPIC_API_KEY: null } {
-        ^$claude_path ...$args
+        # Fallback to original claude if continuum-claude not available
+        let claude_entry = (
+            which --all claude
+            | where type == "external"
+            | get 0?
+        )
+
+        let claude_path = if $claude_entry != null and ($claude_entry.path | is-not-empty) {
+            $claude_entry.path
+        } else {
+            let fallback_paths = [
+                "/usr/bin/claude"
+                "/usr/local/bin/claude"
+                "/opt/homebrew/bin/claude"
+            ]
+            ($fallback_paths | where {|path| $path | path exists} | first)
+        }
+
+        if ($claude_path | is-empty) {
+            print "Claude CLI not found. Install @anthropic-ai/claude-code or set up continuum-claude."
+            return
+        }
+
+        print "(Warning: Using claude directly - not capturing to Continuum database)"
+        with-env { ANTHROPIC_API_KEY: null } {
+            ^$claude_path ...$args
+        }
     }
 }
 

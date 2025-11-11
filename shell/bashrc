@@ -149,3 +149,5 @@ if [ ! -f "$HOME/.config/.welcome_shown" ]; then
     echo "Run 'nu' to switch to Nushell interactive shell"
     touch "$HOME/.config/.welcome_shown"
 fi
+# Continuum auto-capture for Claude Code
+alias claude='continuum-claude'

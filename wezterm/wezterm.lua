@@ -557,6 +557,22 @@ config.keys = {
     mods = mods.primary_mod,
     action = act.PasteFrom 'Clipboard',
   },
+  -- Extra clipboard fallbacks (ensure both Cmd/Ctrl + Shift combos work)
+  {
+    key = 'v',
+    mods = 'CTRL|SHIFT',
+    action = act.PasteFrom 'Clipboard',
+  },
+  {
+    key = 'v',
+    mods = 'SUPER',
+    action = act.PasteFrom 'Clipboard',
+  },
+  {
+    key = 'v',
+    mods = 'SUPER|SHIFT',
+    action = act.PasteFrom 'Clipboard',
+  },
   
   -- Command palette
   {
