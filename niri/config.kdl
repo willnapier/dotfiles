@@ -5,9 +5,10 @@
 input {
     keyboard {
         xkb {
-            layout "us";
-            // Right Alt is now Alt; Compose moved to Menu key
-            options "caps:escape,compose:menu";
+            layout "gb";
+            variant "colemak_dh";
+            // Compose on Menu; Caps sends Escape; Right Alt acts as AltGr
+            options "caps:escape,compose:menu,lv3:ralt_switch";
         }
         repeat-delay 600;
         repeat-rate 25;

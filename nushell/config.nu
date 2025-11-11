@@ -2600,6 +2600,7 @@ def fe [pattern: string, index: int = 0] {
 
 # Note: Zoxide functions (z, zi) are initialized at the top of the file
 source ~/.config/nushell/zotero-commands.nu
+source ~/dotfiles/nushell/continuum.nu
 
 # Link Manager aliases
 alias links-status = link-service status
