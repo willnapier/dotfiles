@@ -151,3 +151,5 @@ if [ ! -f "$HOME/.config/.welcome_shown" ]; then
 fi
 # Continuum auto-capture for Claude Code
 alias claude='continuum-claude'
+
+. "/.cargo/env"
