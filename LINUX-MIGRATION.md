@@ -333,16 +333,136 @@ systemctl --user start theme-switcher.service
 # (Configured via Dotter-managed files)
 ```
 
-## 🔍 Troubleshooting
+## 🔍 Troubleshooting & Common Issues
 
-### Common Migration Issues
+### Issue 1: Nushell Configuration Not Loading (Silent Failure)
+
+**Symptoms**:
+- Dotter reports successful deployment
+- Symlinks created properly (`~/.config/nushell/config.nu` → `~/dotfiles/nushell/config.nu`)
+- Universal tools missing (60+ functions like `fcit`, `fwl`, `fsem`, `y` unavailable)
+
+**Root Causes**:
+1. Syntax errors preventing file parsing
+2. Missing dependencies causing load failures
+3. File permissions preventing execution
+4. Nushell version differences between platforms
+
+**Solution**:
+```bash
+# Deploy diagnostic and fix tools
+cd ~/dotfiles && git pull
+dotter deploy --force
+
+# Test current state
+test-nushell-function-completeness
+
+# Apply comprehensive fix
+fix-linux-nushell-deployment
+
+# Verify resolution
+nu -c "fcit --help"  # Should work now
+```
+
+### Issue 2: PATH Bootstrap Circular Dependency
+
+**Symptoms**:
+- `env: 'nu': No such file or directory` errors
+- Systemd services can't start Nushell scripts
+- Circular dependency: Nushell needs PATH, but PATH is set by Nushell's env.nu
+
+**Root Cause**: System PATH doesn't include `~/.cargo/bin` (where Nushell binary lives), but env.nu (which sets PATH) can't load until Nushell starts.
+
+**Solution A: System-Wide PATH Configuration** (Permanent)
+```bash
+# Set PATH before Nushell loads
+sudo tee /etc/environment.d/50-user-paths.conf << 'EOF'
+PATH=/home/will/.cargo/bin:/home/will/.local/bin:/usr/local/bin:/usr/bin:/bin
+EOF
+
+# PAM environment setup
+sudo tee -a /etc/pam.d/common-session << 'EOF'
+session required pam_env.so readenv=1 user_readenv=1
+EOF
+
+# Create system-wide profile script
+sudo tee /etc/profile.d/nushell-path.sh << 'EOF'
+#!/bin/bash
+if [ "$USER" = "will" ]; then
+    export PATH="/home/will/.cargo/bin:/home/will/.local/bin:$PATH"
+fi
+EOF
+sudo chmod +x /etc/profile.d/nushell-path.sh
+
+# Restart and test
+sudo systemctl restart sshd
+# Logout/login or reboot
+echo $PATH  # Should include ~/.cargo/bin
+```
+
+**Solution B: Script Wrapper Approach** (Alternative)
+```bash
+# Use absolute shebang in wrapper scripts
+# Instead of: #!/usr/bin/env nu
+# Use: #!/home/will/.cargo/bin/nu
+
+# Example wrapper script
+cat > ~/.local/bin/dotter-sync-watcher-wrapper << 'EOF'
+#!/home/will/.cargo/bin/nu
+# Hardcoded shebang bypasses PATH requirement
+source ~/.local/bin/dotter-sync-watcher
+EOF
+chmod +x ~/.local/bin/dotter-sync-watcher-wrapper
+```
+
+**Verification**:
+```bash
+# Test PATH
+echo $PATH | grep cargo/bin  # Should be present
+
+# Test commands
+which nu    # Should find ~/.cargo/bin/nu
+zj --help   # Should work without errors
+```
+
+### Issue 3: Configuration Drift After Deployment
+
+**Symptoms**:
+- Changes to dotfiles don't appear on Linux
+- Dotter reports success but configs unchanged
+- Scripts work on macOS but fail on Linux
+
+**Diagnosis**:
+```bash
+# Check what Dotter actually deployed
+ls -la ~/.config/nushell/config.nu  # Should be symlink to dotfiles
+readlink ~/.config/nushell/config.nu  # Should point to ~/dotfiles/
+
+# Verify file contents match
+diff ~/.config/nushell/config.nu ~/dotfiles/nushell/config.nu
+```
+
+**Solution**:
+```bash
+# Force complete redeployment
+cd ~/dotfiles
+dotter deploy --force
+
+# Verify coverage
+dotter-complete-audit
+
+# Check for orphaned files
+dotter-orphan-detector-v2
+```
+
+### Basic Troubleshooting Commands
 
 ```bash
 # Config not found
 dotter-complete-audit              # Check Dotter coverage
 dotter deploy linux --force       # Force re-deployment
 
-# Command not found  
+# Command not found
 claude-diagnostic-auto "command not found: cmd" "cmd"
 
 # Theme not switching
