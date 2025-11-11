@@ -15,6 +15,9 @@ def main [] {
     # Read input from Helix pipe
     let line = (cat | str trim)
 
+    # Output the original line back to Helix (pipe-to expects output)
+    print $line
+
     # Debug logging
     $line | save --append /tmp/hx-wiki-debug.log
 
