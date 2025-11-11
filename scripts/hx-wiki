@@ -20,6 +20,9 @@ line=$(cat)
 # Debug: log what we received
 echo "DEBUG: Received input: $line" >> /tmp/hx-wiki-debug.log
 
+# Output the original line back to Helix (pipe-to expects output)
+echo "$line"
+
 # Clear any old temp file first
 rm -f /tmp/helix-current-link.md
 target_file="/tmp/helix-current-link.md"
