@@ -88,8 +88,8 @@ def collect_entries [journal_path: string, verbose: bool] {
         let date = extract_date_from_filename $file
         let all_lines = ($content | lines)
 
-        # Find all entries in this file (both P. projects and lowercase activities)
-        # Matches: P.project::, p::, t::, r::, p.c::, t.u::, etc.
+        # Find all entries in this file (both P. projects and activities)
+        # Matches: P.project::, piano::, travel::, read::, piano.cl::, travel.uber::, etc.
         $all_lines
         | enumerate
         | where {|row| $row.item =~ '[a-zA-Z][a-z0-9.]*::'}
@@ -186,33 +186,76 @@ def capture_narrative [all_lines: list<string>, entry_line_idx: int, entry_conte
     $full_narrative
 }
 
-# Parse a line with unified notation (projects P. and activities p::, t::, etc.)
+# Parse a line with unified notation (projects P. and activities)
 # Uses unified syntax: period and comma are delimiters, space separates attributes
 # Supports: P.project:: 2hr description-with-hyphens
-#          p.c:: 45min JSBach-WTC-I
-#          t.u:: uber 30min £15
-#          P.proj1:: 1hr work. p:: 30min practice. (period-separated)
+#          piano.cl:: 45min JSBach-WTC-I
+#          travel.uber:: uber 30min £15
+#          P.proj1:: 1hr work. piano:: 30min practice. (period-separated)
 #          P.parent:: child1:: 1hr, child2:: 30min (comma-separated siblings)
 def parse_entry_line [line: string] {
-    # Split on periods and commas to get individual entries
-    # Pattern: captures key:: followed by content until delimiter (. or ,)
-    # Matches: P.name, p, p.c, t.u, etc.
-    let matches = ($line | parse --regex '([a-zA-Z][a-zA-Z0-9.-]*)::\s*([^.,]+)')
+    # Find all key:: patterns using ripgrep to get positions
+    # This handles nested activities (e.g., travel.train:: ... dev.sys:: ...)
+    # Delimiters: comma, period+space, or end of line
 
-    if ($matches | is-empty) {
+    # Use ripgrep to find all key:: matches with byte offsets
+    let rg_result = (
+        $line | rg --only-matching --byte-offset '[a-zA-Z][a-zA-Z0-9.-]*::'
+        | lines
+        | each {|match_line|
+            let parts = ($match_line | split row ':' | take 2)
+            let offset = ($parts.0 | into int)
+            let key = ($parts.1)
+            {offset: $offset, key: $key}
+        }
+    )
+
+    if ($rg_result | is-empty) {
         return null
     }
 
-    # Return all matches found (handles multiple projects per line)
-    $matches | each {|match|
-        {
-            key: $match.capture0
-            content: ($match.capture1 | str trim)
+    # Extract content for each match (from end of :: to next delimiter)
+    $rg_result | enumerate | each {|item|
+        let match_info = $item.item
+        let idx = $item.index
+        let key = $match_info.key
+
+        # Start position: after 'key::' and any whitespace
+        let start_pos = ($match_info.offset + ($key | str length) + 2)  # +2 for '::'
+
+        # End position: before next key::, or at delimiter
+        let end_pos = if ($idx + 1) < ($rg_result | length) {
+            # Next key exists - end just before it
+            ($rg_result | get ($idx + 1) | get offset)
+        } else {
+            # Last key - end at string end
+            ($line | str length)
         }
+
+        # Extract content substring
+        let content_str = ($line | str substring $start_pos..<$end_pos)
+
+        # Now look for delimiters within this content
+        let comma_pos = ($content_str | str index-of ',')
+        let period_space_pos = ($content_str | str index-of '. ')
+
+        # Find earliest delimiter
+        let valid_delimiters = ([$comma_pos, $period_space_pos] | where $it >= 0)
+
+        let final_content = if ($valid_delimiters | is-empty) {
+            # No delimiters - use full content (trim periods at end too)
+            $content_str | str trim | str trim --char '.'
+        } else {
+            # Stop at earliest delimiter
+            let delimiter_pos = ($valid_delimiters | math min)
+            $content_str | str substring 0..$delimiter_pos | str trim | str trim --char '.'
+        }
+
+        {key: $key, content: $final_content}
     }
 }
 
-# Parse hierarchy from entry key (works for both P.project and p.c activities)
+# Parse hierarchy from entry key (works for both P.project and piano.cl activities)
 def parse_entry_hierarchy [key: string] {
     # Remove P. prefix if present, otherwise use key as-is
     let clean_key = if ($key | str starts-with 'P.') {
@@ -224,10 +267,10 @@ def parse_entry_hierarchy [key: string] {
     let parts = ($clean_key | split row '.')
 
     {
-        key: $key                                      # Original key (P.project or p.c)
-        root: ($parts | first)                         # First part (project or p)
+        key: $key                                      # Original key (P.project or piano.cl)
+        root: ($parts | first)                         # First part (project or piano)
         subproject: ($parts | skip 1 | str join '.')  # Remaining parts
-        filepath: ($parts | str join '.')             # Full path (project.child or piano-classical)
+        filepath: ($parts | str join '.')             # Full path (project.child or piano.cl)
         depth: ($parts | length)                       # Hierarchy depth
     }
 }
@@ -277,7 +320,7 @@ def update_entry_file [
         append_entries_to_project $filepath $entries
     }
 
-    # Update parent with subentry link if needed (for hierarchical entries like p.c or P.parent.child)
+    # Update parent with subentry link if needed (for hierarchical entries like piano.cl or P.parent.child)
     if $hierarchy.depth > 1 {
         let parent_path = $"($destination_path)/($hierarchy.root).md"
         if ($parent_path | path exists) {
