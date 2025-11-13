@@ -21,7 +21,7 @@ def main [
     let platform = (sys host | get name)
 
     if $verbose {
-        print $"Starting unified entry collection watcher (projects + activities)"
+        print "Starting unified entry collection watcher (projects and activities)"
         print $"Platform: ($platform)"
         print $"Watching: ($watch_path)"
         print $"Log file: ($log_file)"
