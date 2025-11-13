@@ -314,7 +314,7 @@ def pomo-cancel [] {
 # ---- Unified Project Root Detection & Tools ----
 use ~/.config/nushell/scripts/project-root-detection.nu *
 use ~/.config/nushell/scripts/serpl.nu *
-use ~/.config/nushell/scripts/codex-tail.nu *
+# use ~/.config/nushell/scripts/codex-tail.nu *  # File doesn't exist
 use ~/.config/nushell/completions/serpl-completions.nu *
 alias serpl-any = serpl-anywhere
 # Example to customize project markers globally:
@@ -743,7 +743,7 @@ def daily-note [] {
     
     # Create note with template if it doesn't exist
     if not ($note_path | path exists) {
-        let template_path = $"($env.HOME)/Forge/Areas/PKMStrategies/Templates/DayPage.md"
+        let template_path = $"($env.HOME)/Forge/Templates/DayPage-Minimal.md"
         
         if ($template_path | path exists) {
             # Read template from file and process variables
@@ -769,29 +769,12 @@ def daily-note [] {
             let readable_date = (date now | format date "%A, %B %d, %Y")
             
             let template = $"---
-tags:
-- journal
 date created: ($current_date) ($current_time)
 date modified: ($current_date) ($current_time)
-
-# Daily Metrics
-sleep_hours: 
-healthy_eating: false
-exercise: false
-piano_practice: false
-meditation: false
-reading: false
-social_connection: false
-
-# exercise_details: \"[[Exercise Log ($current_date)]]\"
-# piano_details: \"[[Piano Practice Log ($current_date)]]\"
-# health_details: \"[[Health Metrics ($current_date)]]\"
 ---
-# ($readable_date)
 
-## Links
-- Previous: [[((date now) - 1day | format date '%Y-%m-%d')]]
-- Next: [[((date now) + 1day | format date '%Y-%m-%d')]]
+# ($current_date) ($readable_date)
+
 "
             $template | save $note_path
         }
@@ -840,7 +823,7 @@ def prev-day [--days: int = 1, --helix] {
 
     # Create note with template if it doesn't exist
     if not ($note_path | path exists) {
-        let template_path = $"($env.HOME)/Forge/Areas/PKMStrategies/Templates/DayPage.md"
+        let template_path = $"($env.HOME)/Forge/Templates/DayPage-Minimal.md"
         let readable_date = ((date now) - ($days * 1day) | format date "%A, %B %d, %Y")
         let current_time = (date now | format date "%H:%M")
 
@@ -895,7 +878,7 @@ def next-day [--days: int = 1, --helix] {
 
     # Create note with template if it doesn't exist
     if not ($note_path | path exists) {
-        let template_path = $"($env.HOME)/Forge/Areas/PKMStrategies/Templates/DayPage.md"
+        let template_path = $"($env.HOME)/Forge/Templates/DayPage-Minimal.md"
         let readable_date = ((date now) + ($days * 1day) | format date "%A, %B %d, %Y")
         let current_time = (date now | format date "%H:%M")
 
@@ -2195,6 +2178,9 @@ alias zj-work = zellij --session work
 
 # Smart Zellij launcher (screen-aware layouts)
 alias zj = ^zj
+
+# Nushell 3-pane learning environment launcher
+alias nushell3 = nu ~/nushell-learning/start-learning.nu
 
 # Find project root with intelligent priority-based detection
 # Detects: Obsidian vaults, Git repos, Dotter configs, Node.js/Python/Rust projects
@@ -3685,9 +3671,9 @@ def claude [...args] {
 
     if ($continuum_claude | path exists) {
         # Run with continuum-claude wrapper (auto-persists to database)
-        with-env { ANTHROPIC_API_KEY: null } {
-            ^$continuum_claude ...$args
-        }
+        # Interactive mode: execs to real Claude (transparent passthrough)
+        # Print mode: wraps and logs to ~/continuum-logs/
+        ^$continuum_claude ...$args
     } else {
         # Fallback to original claude if continuum-claude not available
         let claude_entry = (
