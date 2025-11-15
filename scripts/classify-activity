@@ -1,0 +1,103 @@
+#!/usr/bin/env nu
+# Semantic Activity Classifier
+# Uses OpenAI API to classify activity journal files into categories
+# Returns tags: social-professional, social-family, activity-exercise, etc.
+
+def main [
+    file_path: string   # Path to activity file to classify
+    --verbose (-v)      # Show detailed output
+] {
+    # Check for OpenAI API key
+    if ($env.OPENAI_API_KEY? | is-empty) {
+        print "Error: OPENAI_API_KEY environment variable is required"
+        return {error: "missing_api_key"}
+    }
+
+    # Read file content
+    if not ($file_path | path exists) {
+        print $"Error: File not found: ($file_path)"
+        return {error: "file_not_found"}
+    }
+
+    let content = open $file_path | str trim
+
+    if ($content | is-empty) {
+        print $"Warning: File is empty: ($file_path)"
+        return {category: "uncategorized", confidence: 0.0}
+    }
+
+    if $verbose {
+        print $"Classifying: ($file_path)"
+        print $"Content length: ($content | str length) characters"
+    }
+
+    # Prepare classification prompt
+    let prompt = [
+        "Analyze this activity journal entry and assign appropriate tags. Return 1-3 single-word tags."
+        ""
+        "Available tags:"
+        "- social: Any interaction with people"
+        "- professional: Work-related, academic, career networking"
+        "- family: Spouse, children, relatives, family gatherings"
+        "- friends: Personal friendships, social gatherings"
+        "- exercise: Physical activity, walking, sports, fitness"
+        "- development: Programming, system configuration, technical learning"
+        "- creative: Music, art, writing, creative pursuits"
+        "- entertainment: TV, movies, games, passive consumption"
+        "- health: Medical, mental health, therapy, health tracking"
+        "- learning: Reading, studying, courses"
+        "- admin: Life administration, errands, household tasks"
+        ""
+        "Journal content:"
+        "```"
+        $content
+        "```"
+        ""
+        "Return ONLY a JSON object with this exact format:"
+        "{\"tags\": [\"tag1\", \"tag2\"], \"confidence\": 0.95, \"reasoning\": \"brief explanation\"}"
+        ""
+        "Rules:"
+        "- Use 1-3 tags maximum"
+        "- Tags must be from the available list above"
+        "- Be specific: if it's social AND professional, include both tags"
+        "- Be concise in reasoning."
+    ] | str join (char nl)
+
+    # Prepare API request body
+    let body = {
+        model: "gpt-4o-mini",
+        messages: [
+            {role: "system", content: "You are a precise activity classifier. Return only valid JSON."},
+            {role: "user", content: $prompt}
+        ],
+        temperature: 0.3,
+        max_tokens: 150
+    } | to json
+
+    # Call OpenAI API
+    let response = http post https://api.openai.com/v1/chat/completions $body --headers {
+        "Authorization": $"Bearer ($env.OPENAI_API_KEY)",
+        "Content-Type": "application/json"
+    }
+
+    # Parse response
+    let classification = try {
+        $response
+        | get choices.0.message.content
+        | from json
+    } catch {
+        print "Error: Failed to parse API response"
+        if $verbose {
+            print $"Response: ($response)"
+        }
+        return {error: "parse_failed"}
+    }
+
+    if $verbose {
+        print $"Tags: ($classification.tags | str join ', ')"
+        print $"Confidence: ($classification.confidence)"
+        print $"Reasoning: ($classification.reasoning)"
+    }
+
+    $classification
+}

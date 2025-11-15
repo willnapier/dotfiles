@@ -73,6 +73,29 @@ def main [
     if $verbose {
         print "\n=== Collection Complete ==="
     }
+
+    # Automatic activity classification (runs only on Nimbini to prevent race conditions)
+    # Only run if not dry-run and OPENAI_API_KEY is available
+    if not $dry_run and ($env.OPENAI_API_KEY? | is-not-empty) {
+        if $verbose {
+            print "\n=== Running AI Classification ==="
+            print "Classifying activity files with semantic tags..."
+        }
+
+        try {
+            # Run classification on all activity files
+            auto-tag-activities --verbose=$verbose
+        } catch {
+            print "⚠️  Classification failed - continuing without tags"
+            if $verbose {
+                print $"Error: ($in)"
+            }
+        }
+    } else if not $dry_run and ($env.OPENAI_API_KEY? | is-empty) {
+        if $verbose {
+            print "\n⚠️  Skipping classification: OPENAI_API_KEY not set"
+        }
+    }
 }
 
 # Extract all entries (P. projects and lowercase activities) from journal files

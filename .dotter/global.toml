@@ -96,6 +96,10 @@ depends = []
 "scripts/get-system-theme.sh" = "~/.local/bin/get-system-theme.sh"
 "scripts/hx-wiki" = "~/.local/bin/hx-wiki"
 "scripts/hx-wiki.nu" = "~/.local/bin/hx-wiki.nu"
+"scripts/zotero-key-lookup" = "~/.local/bin/zotero-key-lookup"
+# Activity classification - AI-powered semantic tagging
+"scripts/classify-activity" = "~/.local/bin/classify-activity"
+"scripts/auto-tag-activities" = "~/.local/bin/auto-tag-activities"
 # Wiki link management - Split architecture following Unix "do one thing well" philosophy
 "scripts/wiki-backlinks" = "~/.local/bin/wiki-backlinks"
 "scripts/wiki-resolve-mark" = "~/.local/bin/wiki-resolve-mark"

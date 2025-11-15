@@ -1,0 +1,178 @@
+#!/usr/bin/env nu
+# Automatic Activity Tagging
+# Classifies activity files using AI and adds appropriate tags to frontmatter
+# Run after collect-entries to automatically categorize social vs activity tracking
+
+def main [
+    --verbose (-v)      # Show detailed output
+    --dry-run (-d)      # Show what would be tagged without writing
+] {
+    let activities_path = ([$env.HOME "Forge" "NapierianLogs"] | path join)
+
+    if not ($activities_path | path exists) {
+        print $"Error: Activities path not found: ($activities_path)"
+        return
+    }
+
+    # Find all .md files (exclude DayPages subdirectory)
+    let activity_files = (
+        ls ($activities_path + "/*.md")
+        | where type == file
+        | get name
+    )
+
+    if ($activity_files | is-empty) {
+        print "No activity files found to classify"
+        return
+    }
+
+    if $verbose {
+        print $"=== Auto-Tagging Activities ===\n($activities_path)"
+        print $"Found ($activity_files | length) files to classify\n"
+    }
+
+    let results = ($activity_files | each { |file|
+        if $verbose {
+            print $"Processing: (basename $file)"
+        }
+
+        # Check if file already has tags (skip to avoid redundant API calls)
+        let content = open $file
+        let already_tagged = ($content | str contains "tags:")
+
+        if $already_tagged {
+            if $verbose {
+                print $"  ✓ Already tagged - skipping"
+            }
+            return {file: $file, status: "skipped", reason: "already_tagged"}
+        }
+
+        # Classify the file
+        let classification = (classify-activity $file)
+
+        if ($classification | get error? | is-not-empty) {
+            print $"  ⚠️  Failed: ($classification.error)"
+            return {file: $file, status: "failed", error: $classification.error}
+        }
+
+        let tags = $classification.tags
+        let confidence = $classification.confidence
+
+        if $verbose {
+            print $"  → ($tags | str join ', ') \(($confidence))"
+        }
+
+        # Add tags to frontmatter (if not dry-run)
+        if not $dry_run {
+            add_tags_to_file $file $tags
+        }
+
+        {file: $file, tags: $tags, confidence: $confidence, status: "tagged"}
+    })
+
+    # Summary
+    print "\n=== Summary ==="
+
+    # Count files by status
+    let tagged_count = ($results | where status == "tagged" | length)
+    let skipped_count = ($results | where status == "skipped" | length)
+    let failed_count = ($results | where status == "failed" | length)
+
+    print $"Tagged: ($tagged_count) files"
+    print $"Skipped: ($skipped_count) files (already tagged)"
+
+    if $failed_count > 0 {
+        print $"Failed: ($failed_count) files"
+    }
+
+    # Show tag distribution (only for newly tagged files)
+    if $tagged_count > 0 {
+        let all_tags = ($results | where status == "tagged" | get tags | flatten | uniq | sort)
+        print $"\nNew tags added: ($all_tags | str join ', ')"
+    }
+
+    if $dry_run {
+        print "\n(Dry run - no files modified)"
+    }
+}
+
+# Add tags to file frontmatter (creates frontmatter if missing)
+# Uses canonical YAML list format (one tag per line with "- " prefix)
+def add_tags_to_file [file_path: string, new_tags: list] {
+    let content = open $file_path
+
+    # Check if file has frontmatter
+    if ($content | str starts-with "---") {
+        # Find end of frontmatter
+        let lines = ($content | lines)
+        let frontmatter_end = ($lines | skip 1 | enumerate | where item == "---" | get index.0) + 1
+
+        # Extract frontmatter and content
+        let frontmatter_lines = ($lines | first ($frontmatter_end + 1))
+        let content_lines = ($lines | skip ($frontmatter_end + 1))
+
+        # Check if tags already exist
+        let has_tags = ($frontmatter_lines | any { |line| $line | str starts-with "tags:" })
+
+        if $has_tags {
+            # Parse existing tags (handle both formats: "- tag" and "tags: tag1, tag2")
+            let existing_tags = ($frontmatter_lines
+                | where {|line| $line | str starts-with "- " or ($line | str starts-with "tags:")}
+                | each {|line|
+                    if ($line | str starts-with "- ") {
+                        $line | str replace "- " "" | str trim
+                    } else if ($line | str starts-with "tags:") {
+                        # Handle inline format
+                        let inline = ($line | str replace "tags:" "" | str trim)
+                        if ($inline | is-not-empty) and ($inline != "[" and $inline != "]") {
+                            $inline | split row "," | each {|t| $t | str trim}
+                        } else {
+                            []
+                        }
+                    }
+                }
+                | flatten
+                | where $it != null and $it != ""
+            )
+
+            # Merge with new tags and sort
+            let all_tags = ($existing_tags | append $new_tags | uniq | sort)
+
+            # Rebuild frontmatter with tags in list format
+            let in_tags_section = false
+            let updated_frontmatter = ($frontmatter_lines | each {|line|
+                if ($line | str starts-with "tags:") {
+                    # Start tags section
+                    ["tags:", ...($all_tags | each {|tag| $"- ($tag)"})]
+                } else if ($line | str starts-with "- ") {
+                    # Skip old tag lines (already included above)
+                    null
+                } else {
+                    $line
+                }
+            } | flatten | where $it != null)
+
+            let new_content = ([$updated_frontmatter, $content_lines] | flatten | str join (char nl))
+            $new_content | save --force $file_path
+        } else {
+            # Insert tags section before closing ---
+            let tags_section = (["tags:", ...($new_tags | sort | each {|tag| $"- ($tag)"})])
+
+            let updated_frontmatter = ($frontmatter_lines | each {|line|
+                if $line == "---" and ($line != ($frontmatter_lines | first)) {
+                    [...$tags_section, "---"]
+                } else {
+                    $line
+                }
+            } | flatten)
+
+            let new_content = ([$updated_frontmatter, $content_lines] | flatten | str join (char nl))
+            $new_content | save --force $file_path
+        }
+    } else {
+        # No frontmatter - add it
+        let tags_section = ($new_tags | sort | each {|tag| $"- ($tag)"} | str join (char nl))
+        let new_content = $"---\ntags:\n($tags_section)\n---\n\n($content)"
+        $new_content | save --force $file_path
+    }
+}

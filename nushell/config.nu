@@ -1598,22 +1598,12 @@ def zio [] {
         let entry_text = (rg -A 20 $"@\\w+\\{($zotero_key)," $library_file | str join ' ')
         let file_path = ($entry_text | parse --regex 'file\s*=\s*\{([^}]+)\}' | get -o 0.capture0? | default "")
 
-        if not ($file_path | is-empty) and ($file_path | path exists) {
-            print $"📂 Opening PDF: ($file_path)"
-            # Use system open command to open in default PDF viewer
-            if (sys host | get name) == "Darwin" {
-                ^open $file_path
-            } else {
-                ^xdg-open $file_path
-            }
+        # Open PDF directly in Zotero using URL scheme (cross-platform)
+        print $"📂 Opening PDF in Zotero: ($clean_key)"
+        if (sys host | get name) == "Darwin" {
+            ^open $"zotero://open-pdf/library/items/($zotero_key)"
         } else {
-            print $"⚠️  PDF file not found at: ($file_path)"
-            print $"🔗 Opening Zotero instead..."
-            if (sys host | get name) == "Darwin" {
-                ^open $"zotero://select/items/@($zotero_key)"
-            } else {
-                ^xdg-open $"zotero://select/items/@($zotero_key)"
-            }
+            ^xdg-open $"zotero://open-pdf/library/items/($zotero_key)"
         }
     }
 }
@@ -1932,19 +1922,25 @@ def zsmo [] {
         let selected_index = ($formatted | enumerate | where { |row| $row.item == $selected } | get -o 0.index? | default 0)
         let result = ($search_results | get $selected_index)
 
-        # Open PDF
-        let pdf_path = $result.pdf_path
-        if ($pdf_path | path exists) {
-            print $"📂 Opening PDF: ($pdf_path)"
-            print $"📍 Relevant content on pages ($result.page_range.0)-($result.page_range.1)"
+        # Look up Zotero key from library.bib using citation_key
+        let library_file = $"($env.FORGE?)/bib/library.bib"
+        let citation_key = $result.citation_key
 
+        print $"📍 Relevant content on pages ($result.page_range.0)-($result.page_range.1)"
+
+        # Find Zotero key in library.bib
+        let zotero_key = (rg $"@\\w+\\{($citation_key)," $library_file | parse --regex '@\w+\{([^,]+),' | get -o 0.capture0? | default "")
+
+        if not ($zotero_key | is-empty) {
+            # Open PDF directly in Zotero using URL scheme (cross-platform)
+            print $"📂 Opening PDF in Zotero: ($citation_key)"
             if (sys host | get name) == "Darwin" {
-                ^open $pdf_path
+                ^open $"zotero://open-pdf/library/items/($zotero_key)"
             } else {
-                ^xdg-open $pdf_path
+                ^xdg-open $"zotero://open-pdf/library/items/($zotero_key)"
             }
         } else {
-            print $"❌ PDF not found at: ($pdf_path)"
+            print $"❌ Could not find Zotero key for: ($citation_key)"
         }
     }
 }
@@ -3706,3 +3702,53 @@ def claude [...args] {
 }
 
 # Goose will use the ANTHROPIC_API_KEY from env-secret.nu normally
+
+# Activity Discovery - Find interactions and activities by semantic tags
+# List all files tagged as social interactions
+def social-list [] {
+    let activities_path = ([$env.HOME "Forge" "NapierianLogs"] | path join)
+
+    if not ($activities_path | path exists) {
+        print $"Error: Activities path not found: ($activities_path)"
+        return []
+    }
+
+    ls ($activities_path + "/*.md")
+    | where type == file
+    | each { |file|
+        let content = open $file.name
+        let has_social_tag = ($content | str contains "tags:" and $content | str contains "social")
+        if $has_social_tag {
+            $file.name
+        }
+    }
+    | where $it != null
+}
+
+# Find social interactions from recent days
+def social-recent [days: int = 7] {
+    social-list
+    | each { |file| ls $file }
+    | flatten
+    | where modified > ((date now) - ($days * 1day))
+    | get name
+}
+
+# Search social interactions by content
+def social-search [query: string] {
+    let social_files = (social-list)
+
+    if ($social_files | is-empty) {
+        print "No social interaction files found (try running auto-tag-activities first)"
+        return
+    }
+
+    $social_files
+    | each { |file|
+        let matches = (^rg -i $query $file | lines)
+        if not ($matches | is-empty) {
+            {file: $file, matches: $matches}
+        }
+    }
+    | where $it != null
+}
