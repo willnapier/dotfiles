@@ -98,9 +98,23 @@ def main [
     }
 }
 
+# Check if an activity file has "social" tag (for mention collection)
+def is_social_activity [activities_path: string, activity_name: string] -> bool {
+    let file_path = ([$activities_path $"($activity_name).md"] | path join)
+
+    if not ($file_path | path exists) {
+        return false
+    }
+
+    let content = (open $file_path)
+    ($content | str contains "tags:") and ($content | str contains "- social")
+}
+
 # Extract all entries (P. projects and lowercase activities) from journal files
+# Also collects mentions of social activities (people) when found in prose
 def collect_entries [journal_path: string, verbose: bool] {
     let files = (glob ([$journal_path "**" "*.md"] | path join))
+    let activities_path = ([$env.HOME "Forge" "NapierianLogs"] | path join)
 
     if $verbose {
         print $"Scanning ($files | length) journal files..."
@@ -111,33 +125,67 @@ def collect_entries [journal_path: string, verbose: bool] {
         let date = extract_date_from_filename $file
         let all_lines = ($content | lines)
 
-        # Find all entries in this file (both P. projects and activities)
-        # Matches: P.project::, piano::, travel::, read::, piano.cl::, travel.uber::, etc.
-        $all_lines
-        | enumerate
-        | where {|row| $row.item =~ '[a-zA-Z][a-z0-9.]*::'}
-        | each {|row|
-            let parsed = (parse_entry_line $row.item)
-            if ($parsed | is-not-empty) {
-                # parse_entry_line returns a list of matches (handles multiple per line)
-                $parsed | each {|entry|
-                    # Capture narrative continuation if present
-                    let narrative = (capture_narrative $all_lines $row.index $entry.content)
+        # Collect explicit activity entries (with ::)
+        let explicit_entries = (
+            $all_lines
+            | enumerate
+            | where {|row| $row.item =~ '[a-zA-Z][a-z0-9.]*::'}
+            | each {|row|
+                let parsed = (parse_entry_line $row.item)
+                if ($parsed | is-not-empty) {
+                    # parse_entry_line returns a list of matches (handles multiple per line)
+                    $parsed | each {|entry|
+                        # Capture narrative continuation if present
+                        let narrative = (capture_narrative $all_lines $row.index $entry.content)
 
-                    $entry | merge {
-                        file: $file
-                        date: $date
-                        line_number: $row.index
-                        narrative: $narrative
+                        $entry | merge {
+                            file: $file
+                            date: $date
+                            line_number: $row.index
+                            narrative: $narrative
+                            is_mention: false
+                        }
                     }
                 }
             }
-        }
+            | flatten
+        )
+
+        # Collect mentions (lowercase patterns without ::, social activities only)
+        let mentions = (
+            $all_lines
+            | enumerate
+            | each {|row|
+                # Find all lowercase dot-separated patterns (no ::)
+                let matches = ($row.item | parse --regex '(?<![:\w])([a-z][a-z0-9.]+)(?!::)')
+
+                $matches | each {|match|
+                    let activity_name = $match.capture0
+
+                    # Check if this is a social activity
+                    if (is_social_activity $activities_path $activity_name) {
+                        {
+                            key: $activity_name
+                            content: $"Mention: ($row.item | str trim)"
+                            file: $file
+                            date: $date
+                            line_number: $row.index
+                            narrative: ""
+                            is_mention: true
+                        }
+                    }
+                }
+            }
+            | flatten
+            | where $it != null
+        )
+
+        # Combine explicit entries and mentions
+        [$explicit_entries, $mentions] | flatten
     }
     | flatten
-    | flatten  # Extra flatten for multi-entry lines
     | compact
-    | uniq-by key content  # Deduplicate identical entries from same journal file
+    | uniq-by key content date  # Deduplicate by key, content, and date
 }
 
 # Capture narrative continuation after an entry
