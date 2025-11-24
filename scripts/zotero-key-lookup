@@ -1,0 +1,26 @@
+#!/bin/bash
+# Look up Zotero key from citation key
+# Usage: zotero-key-lookup CitationKey
+# Returns: ZoteroKey (or empty if not found)
+
+citation_key="$1"
+citations_file="$HOME/Forge/citations.md"
+
+if [ -z "$citation_key" ]; then
+    exit 1
+fi
+
+if [ ! -f "$citations_file" ]; then
+    exit 1
+fi
+
+# Search for line starting with citation key, extract [ZoteroKey] part
+# Format: CitationKey [ZoteroKey] Title...
+zotero_key=$(rg "^$citation_key \[([^\]]+)\]" "$citations_file" -o -r '$1' 2>/dev/null)
+
+if [ -n "$zotero_key" ]; then
+    echo "$zotero_key"
+    exit 0
+else
+    exit 1
+fi

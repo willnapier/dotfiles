@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Get PDF attachment key from citation key via Zotero database
+# Usage: zotero-get-pdf-key <citation_key>
+
+citation_key="$1"
+
+if [ -z "$citation_key" ]; then
+    echo "Usage: zotero-get-pdf-key <citation_key>" >&2
+    exit 1
+fi
+
+zotero_db="$HOME/Zotero/zotero.sqlite"
+bbt_db="$HOME/Zotero/better-bibtex.sqlite"
+
+if [ ! -f "$zotero_db" ] || [ ! -f "$bbt_db" ]; then
+    echo "Error: Zotero databases not found" >&2
+    exit 1
+fi
+
+# Get parent item key from Better BibTeX
+parent_key=$(sqlite3 "$bbt_db" "SELECT itemKey FROM citationkey WHERE citationKey = '$citation_key'" 2>/dev/null)
+
+if [ -z "$parent_key" ]; then
+    echo "Error: Citation key not found: $citation_key" >&2
+    exit 1
+fi
+
+# Get PDF attachment key from Zotero main database
+pdf_key=$(sqlite3 "$zotero_db" "SELECT i.key FROM items i JOIN itemAttachments ia ON i.itemID = ia.itemID WHERE ia.parentItemID = (SELECT itemID FROM items WHERE key = '$parent_key') AND ia.contentType = 'application/pdf' LIMIT 1" 2>/dev/null)
+
+if [ -z "$pdf_key" ]; then
+    # Fallback to parent key if no PDF found
+    echo "$parent_key"
+else
+    echo "$pdf_key"
+fi
