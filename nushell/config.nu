@@ -1705,8 +1705,9 @@ def fsml [] {
     }
 }
 
-# Continuum semantic search + convert to markdown + copy wikilink
-def ctml [] {
+# Continuum semantic search → link (convert to markdown + copy wikilink)
+# Part of Universal Knowledge Tools v2.0 (ct* series)
+def ctsml [] {
     if ($env.OPENAI_API_KEY? | is-empty) {
         print "❌ OPENAI_API_KEY not set for semantic search"
         return
@@ -1736,7 +1737,7 @@ def ctml [] {
         return
     }
 
-    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'echo "Preview not yet implemented for continuum"' --preview-window 'right:60%' --prompt "🧠 Continuum: " | str trim)
+    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'continuum-preview {}' --preview-window 'right:60%:wrap' --prompt "🧠 Continuum: " | str trim)
     if ($selected | is-empty) {
         return
     }
@@ -1771,8 +1772,9 @@ def ctml [] {
     }
 }
 
-# Continuum semantic search + open session in editor
-def ctme [] {
+# Continuum semantic search → editor (open session in editor)
+# Part of Universal Knowledge Tools v2.0 (ct* series)
+def ctsme [] {
     if ($env.OPENAI_API_KEY? | is-empty) {
         print "❌ OPENAI_API_KEY not set for semantic search"
         return
@@ -1802,7 +1804,7 @@ def ctme [] {
         return
     }
 
-    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'echo "Preview not yet implemented for continuum"' --preview-window 'right:60%' --prompt "🧠 Continuum: " | str trim)
+    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'continuum-preview {}' --preview-window 'right:60%:wrap' --prompt "🧠 Continuum: " | str trim)
     if not ($selected | is-empty) {
         let filename = ($selected | lines | get 0 | sd '^\d+\.\s+' '' | sd '^[0-9.]+\s+' '' | str trim)
         print $"📂 Opening: ($filename)"
@@ -2204,6 +2206,107 @@ def fce [] {
     }
 }
 
+# Continuum content → editor/context - text-based search across conversation logs
+# Part of Universal Knowledge Tools v2.0 (ct* series)
+def ctce [] {
+    let continuum_dir = "~/Assistants/continuum-logs"
+    if not ($continuum_dir | path expand | path exists) {
+        print "❌ Continuum logs directory not found"
+        return
+    }
+
+    let query = (input "🔍 Search conversations: ")
+    if ($query | is-empty) {
+        return
+    }
+
+    print $"🔍 Searching for: ($query)"
+    let results = try {
+        ^rg -i -l $query ($continuum_dir | path expand) --glob "messages.jsonl" | lines | where $it != ""
+    } catch {
+        print "❌ Content search failed"
+        return
+    }
+
+    if ($results | is-empty) {
+        print "❌ No matches found"
+        return
+    }
+
+    print $"✓ Found ($results | length) conversations"
+    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview $"rg --color=always -i -C 3 '($query)' {}" --preview-window 'right:60%:wrap' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "💬 Conversation: " | str trim)
+
+    if not ($selected | is-empty) {
+        print $"📂 Found in: ($selected)"
+        print $"\n🔍 Showing matches:\n"
+        ^rg --color=always -i -C 5 $query $selected
+    }
+}
+
+# Continuum content → link (text search + convert to markdown + copy wikilink)
+# Part of Universal Knowledge Tools v2.0 (ct* series)
+def ctcl [] {
+    let continuum_dir = "~/Assistants/continuum-logs"
+    if not ($continuum_dir | path expand | path exists) {
+        print "❌ Continuum logs directory not found"
+        return
+    }
+
+    let query = (input "🔍 Search conversations: ")
+    if ($query | is-empty) {
+        return
+    }
+
+    print $"🔍 Searching for: ($query)"
+    let results = try {
+        ^rg -i -l $query ($continuum_dir | path expand) --glob "messages.jsonl" | lines | where $it != ""
+    } catch {
+        print "❌ Content search failed"
+        return
+    }
+
+    if ($results | is-empty) {
+        print "❌ No matches found"
+        return
+    }
+
+    print $"✓ Found ($results | length) conversations"
+    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview $"rg --color=always -i -C 3 '($query)' {}" --preview-window 'right:60%:wrap' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "💬 Conversation: " | str trim)
+
+    if ($selected | is-empty) {
+        return
+    }
+
+    # Extract the jsonl file path
+    let jsonl_file = $selected
+
+    # Create a title from the conversation path
+    let conversation_id = ($jsonl_file | path dirname | path basename)
+    let date_part = ($jsonl_file | path dirname | path dirname | path basename)
+    let title = $"conversation-($date_part)-($conversation_id)"
+
+    # Ensure Conversations directory exists
+    let conversations_dir = $"($env.FORGE)/Conversations"
+    mkdir $conversations_dir
+
+    # Convert to markdown
+    print $"📝 Converting conversation to markdown..."
+    let markdown_file = $"($conversations_dir)/($title).md"
+
+    try {
+        jsonl-to-markdown.nu $jsonl_file | save -f $markdown_file
+        print $"✅ Saved to: ($markdown_file)"
+
+        # Create and copy wikilink
+        let wikilink = $"[[($title)]]"
+        $wikilink | pbcopy
+        print $"📋 Copied wikilink to clipboard: ($wikilink)"
+        print "💡 Paste in your notes with Cmd+V"
+    } catch {
+        print $"❌ Failed to convert conversation: ($in)"
+    }
+}
+
 # File duration processing (universal) - processes activity time spans
 def fdur [file_path?: string] {
     let files_to_process = if ($file_path | is-empty) {
@@ -2250,6 +2353,7 @@ alias ... = cd ../..
 alias .... = cd ../../..
 alias cdn = cd-notes  # Direct alias to the function (not a subshell evaluation)
 alias hx = hx-auto  # Auto-detect theme based on system appearance
+alias codex = continuum-codex  # Auto-capture conversations to continuum logs
 
 # Zoxide shortcuts - conditional
 if (which zoxide | is-not-empty) {
