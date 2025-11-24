@@ -1705,47 +1705,7 @@ def fsml [] {
     }
 }
 
-# Continuum semantic search + copy session link
-def ctml [] {
-    if ($env.OPENAI_API_KEY? | is-empty) {
-        print "❌ OPENAI_API_KEY not set for semantic search"
-        return
-    }
-
-    print "🧠 Semantic search in continuum conversation logs..."
-    let query = (input "🔍 Search concept: ")
-    if ($query | is-empty) {
-        return
-    }
-
-    print $"🔍 Finding conversations related to: ($query)"
-    let results = try {
-        let output = (^semantic-query-continuum --text $query --limit 20 | complete)
-        if $output.exit_code == 0 {
-            $output.stdout | lines | where ($it =~ "^[0-9]\\.")
-        } else {
-            []
-        }
-    } catch {
-        print "❌ Semantic search failed. Run 'semantic-indexer-continuum --rebuild' first."
-        return
-    }
-
-    if ($results | is-empty) {
-        print "❌ No semantic matches found in continuum logs"
-        return
-    }
-
-    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'echo "Preview not yet implemented for continuum"' --preview-window 'right:60%' --prompt "🧠 Continuum: " | str trim)
-    if not ($selected | is-empty) {
-        let filename = ($selected | lines | get 0 | sd '^\d+\.\s+' '' | sd '^[0-9.]+\s+' '' | str trim)
-        $filename | pbcopy
-        print $"📋 Copied to clipboard: ($filename)"
-        print "💡 Paste anywhere with Cmd+V"
-    }
-}
-
-# Continuum semantic search + open session
+# Continuum semantic search + open session in editor
 def ctme [] {
     if ($env.OPENAI_API_KEY? | is-empty) {
         print "❌ OPENAI_API_KEY not set for semantic search"
