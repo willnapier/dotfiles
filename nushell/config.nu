@@ -1705,6 +1705,72 @@ def fsml [] {
     }
 }
 
+# Continuum semantic search + convert to markdown + copy wikilink
+def ctml [] {
+    if ($env.OPENAI_API_KEY? | is-empty) {
+        print "❌ OPENAI_API_KEY not set for semantic search"
+        return
+    }
+
+    print "🧠 Semantic search in continuum conversation logs..."
+    let query = (input "🔍 Search concept: ")
+    if ($query | is-empty) {
+        return
+    }
+
+    print $"🔍 Finding conversations related to: ($query)"
+    let results = try {
+        let output = (^semantic-query-continuum --text $query --limit 20 | complete)
+        if $output.exit_code == 0 {
+            $output.stdout | lines | where ($it =~ "^[0-9]\\.")
+        } else {
+            []
+        }
+    } catch {
+        print "❌ Semantic search failed. Run 'semantic-indexer-continuum --rebuild' first."
+        return
+    }
+
+    if ($results | is-empty) {
+        print "❌ No semantic matches found in continuum logs"
+        return
+    }
+
+    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'echo "Preview not yet implemented for continuum"' --preview-window 'right:60%' --prompt "🧠 Continuum: " | str trim)
+    if ($selected | is-empty) {
+        return
+    }
+
+    # Extract the file path from the selected line
+    let jsonl_file = ($selected | lines | get 0 | sd '^\d+\.\s+' '' | sd '^[0-9.]+\s+' '' | str trim)
+
+    # Create a title from the conversation path
+    let conversation_id = ($jsonl_file | path dirname | path basename)
+    let date_part = ($jsonl_file | path dirname | path dirname | path basename)
+    let title = $"conversation-($date_part)-($conversation_id)"
+
+    # Ensure Conversations directory exists
+    let conversations_dir = $"($env.FORGE)/Conversations"
+    mkdir $conversations_dir
+
+    # Convert to markdown
+    print $"📝 Converting conversation to markdown..."
+    let markdown_file = $"($conversations_dir)/($title).md"
+
+    try {
+        jsonl-to-markdown.nu $jsonl_file | save -f $markdown_file
+        print $"✅ Saved to: ($markdown_file)"
+
+        # Create and copy wikilink
+        let wikilink = $"[[($title)]]"
+        $wikilink | pbcopy
+        print $"📋 Copied wikilink to clipboard: ($wikilink)"
+        print "💡 Paste in your notes with Cmd+V"
+    } catch {
+        print $"❌ Failed to convert conversation: ($in)"
+    }
+}
+
 # Continuum semantic search + open session in editor
 def ctme [] {
     if ($env.OPENAI_API_KEY? | is-empty) {
