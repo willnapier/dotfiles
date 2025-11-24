@@ -314,7 +314,7 @@ def pomo-cancel [] {
 # ---- Unified Project Root Detection & Tools ----
 use ~/.config/nushell/scripts/project-root-detection.nu *
 use ~/.config/nushell/scripts/serpl.nu *
-# use ~/.config/nushell/scripts/codex-tail.nu *  # File doesn't exist
+use ~/.config/nushell/scripts/codex-tail.nu *
 use ~/.config/nushell/completions/serpl-completions.nu *
 alias serpl-any = serpl-anywhere
 # Example to customize project markers globally:
@@ -1598,12 +1598,15 @@ def zio [] {
         let entry_text = (rg -A 20 $"@\\w+\\{($zotero_key)," $library_file | str join ' ')
         let file_path = ($entry_text | parse --regex 'file\s*=\s*\{([^}]+)\}' | get -o 0.capture0? | default "")
 
+        # Get PDF attachment key from citation key
+        let pdf_key = (^zotero-get-pdf-key $zotero_key | str trim)
+
         # Open PDF directly in Zotero using URL scheme (cross-platform)
         print $"📂 Opening PDF in Zotero: ($clean_key)"
         if (sys host | get name) == "Darwin" {
-            ^open $"zotero://open-pdf/library/items/($zotero_key)"
+            ^open $"zotero://open-pdf/library/items/($pdf_key)"
         } else {
-            ^xdg-open $"zotero://open-pdf/library/items/($zotero_key)"
+            ^xdg-open $"zotero://open-pdf/library/items/($pdf_key)"
         }
     }
 }
@@ -1637,8 +1640,11 @@ def zil [] {
             let zotero_key = ($citation_info.capture1 | str trim)
             let title = ($citation_info.capture2 | str trim)
 
-            # Create markdown link: [CleanKey Title](zotero://select/items/@key)
-            let zotero_link = $"[($clean_key) ($title)](zotero://select/items/@($zotero_key))"
+            # Get PDF attachment key from citation key
+            let pdf_key = (^zotero-get-pdf-key $zotero_key | str trim)
+
+            # Create markdown link: [CleanKey Title](zotero://open-pdf/library/items/pdf_key)
+            let zotero_link = $"[($clean_key) ($title)](zotero://open-pdf/library/items/($pdf_key))"
 
             $zotero_link | pbcopy
             print $"📋 Copied Zotero link to clipboard:"
@@ -1696,6 +1702,85 @@ def fsml [] {
         $wikilink | pbcopy
         print $"📋 Copied to clipboard: ($wikilink)"
         print "💡 Paste anywhere with Cmd+V"
+    }
+}
+
+# Continuum semantic search + copy session link
+def ctml [] {
+    if ($env.OPENAI_API_KEY? | is-empty) {
+        print "❌ OPENAI_API_KEY not set for semantic search"
+        return
+    }
+
+    print "🧠 Semantic search in continuum conversation logs..."
+    let query = (input "🔍 Search concept: ")
+    if ($query | is-empty) {
+        return
+    }
+
+    print $"🔍 Finding conversations related to: ($query)"
+    let results = try {
+        let output = (^semantic-query-continuum --text $query --limit 20 | complete)
+        if $output.exit_code == 0 {
+            $output.stdout | lines | where ($it =~ "^[0-9]\\.")
+        } else {
+            []
+        }
+    } catch {
+        print "❌ Semantic search failed. Run 'semantic-indexer-continuum --rebuild' first."
+        return
+    }
+
+    if ($results | is-empty) {
+        print "❌ No semantic matches found in continuum logs"
+        return
+    }
+
+    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'echo "Preview not yet implemented for continuum"' --preview-window 'right:60%' --prompt "🧠 Continuum: " | str trim)
+    if not ($selected | is-empty) {
+        let filename = ($selected | lines | get 0 | sd '^\d+\.\s+' '' | sd '^[0-9.]+\s+' '' | str trim)
+        $filename | pbcopy
+        print $"📋 Copied to clipboard: ($filename)"
+        print "💡 Paste anywhere with Cmd+V"
+    }
+}
+
+# Continuum semantic search + open session
+def ctme [] {
+    if ($env.OPENAI_API_KEY? | is-empty) {
+        print "❌ OPENAI_API_KEY not set for semantic search"
+        return
+    }
+
+    print "🧠 Semantic search in continuum conversation logs..."
+    let query = (input "🔍 Search concept: ")
+    if ($query | is-empty) {
+        return
+    }
+
+    print $"🔍 Finding conversations related to: ($query)"
+    let results = try {
+        let output = (^semantic-query-continuum --text $query --limit 20 | complete)
+        if $output.exit_code == 0 {
+            $output.stdout | lines | where ($it =~ "^[0-9]\\.")
+        } else {
+            []
+        }
+    } catch {
+        print "❌ Semantic search failed. Run 'semantic-indexer-continuum --rebuild' first."
+        return
+    }
+
+    if ($results | is-empty) {
+        print "❌ No semantic matches found in continuum logs"
+        return
+    }
+
+    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'echo "Preview not yet implemented for continuum"' --preview-window 'right:60%' --prompt "🧠 Continuum: " | str trim)
+    if not ($selected | is-empty) {
+        let filename = ($selected | lines | get 0 | sd '^\d+\.\s+' '' | sd '^[0-9.]+\s+' '' | str trim)
+        print $"📂 Opening: ($filename)"
+        hx $filename
     }
 }
 

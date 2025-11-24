@@ -1,0 +1,13 @@
+#!/bin/bash
+"""Semantic indexer wrapper for continuum conversation logs"""
+
+# Activate the semantic search virtualenv and run the indexer
+SEMANTIC_SEARCH_DIR="$HOME/.local/share/semantic-search"
+CONFIG_PATH="$HOME/.local/share/semantic-search-continuum/config.yaml"
+
+# Check if config argument already provided
+if [[ "$*" == *"--config"* ]]; then
+    exec "$SEMANTIC_SEARCH_DIR/venv/bin/python3" "$SEMANTIC_SEARCH_DIR/semantic_indexer.py" "$@"
+else
+    exec "$SEMANTIC_SEARCH_DIR/venv/bin/python3" "$SEMANTIC_SEARCH_DIR/semantic_indexer.py" --config "$CONFIG_PATH" "$@"
+fi

@@ -74,6 +74,7 @@ depends = []
 "scripts/forge-content-search-interactive.sh" = "~/.local/bin/forge-content-search-interactive"
 "scripts/forge-semantic-search.sh" = "~/.local/bin/forge-semantic-search"
 "scripts/link-service" = "~/.local/bin/link-service"
+"scripts/nosave" = "~/.local/bin/nosave"
 "nushell/scripts/quantified-tracking.nu" = "~/.config/nushell/scripts/quantified-tracking.nu"
 "nushell/scripts/quantified-tracking-v2.nu" = "~/.config/nushell/scripts/quantified-tracking-v2.nu"
 "nushell/scripts/project-root-detection.nu" = "~/.config/nushell/scripts/project-root-detection.nu"
@@ -94,12 +95,14 @@ depends = []
 "scripts/hx-auto" = "~/.local/bin/hx-auto"
 "scripts/hx" = "~/.local/bin/hx"  # Universal hx command wrapping hx-auto
 "scripts/get-system-theme.sh" = "~/.local/bin/get-system-theme.sh"
-"scripts/hx-wiki" = "~/.local/bin/hx-wiki"
 "scripts/hx-wiki.nu" = "~/.local/bin/hx-wiki.nu"
 "scripts/zotero-key-lookup" = "~/.local/bin/zotero-key-lookup"
 # Activity classification - AI-powered semantic tagging
 "scripts/classify-activity" = "~/.local/bin/classify-activity"
 "scripts/auto-tag-activities" = "~/.local/bin/auto-tag-activities"
+# Semantic search for continuum conversation logs
+"scripts/semantic-query-continuum" = "~/.local/bin/semantic-query-continuum"
+"scripts/semantic-indexer-continuum" = "~/.local/bin/semantic-indexer-continuum"
 # Wiki link management - Split architecture following Unix "do one thing well" philosophy
 "scripts/wiki-backlinks" = "~/.local/bin/wiki-backlinks"
 "scripts/wiki-resolve-mark" = "~/.local/bin/wiki-resolve-mark"
@@ -169,6 +172,7 @@ depends = []
 "scripts/fview" = "~/.local/bin/fview"
 # Unified entry collection system - projects (P.) and activities (p::, t::, etc.) (added 2025-10-08)
 "scripts/collect-entries" = "~/.local/bin/collect-entries"
+"scripts/generate-subactivity-lists" = "~/.local/bin/generate-subactivity-lists"
 "scripts/collect-projects" = "~/.local/bin/collect-projects"  # Legacy, will be removed
 "scripts/collect-projects-auto" = "~/.local/bin/collect-projects-auto"
 "scripts/collect-projects-cron" = "~/.local/bin/collect-projects-cron"
