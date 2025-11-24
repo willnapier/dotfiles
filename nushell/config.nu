@@ -1426,6 +1426,29 @@ def fse [] {
     }
 }
 
+# Forge search → view (read-only with smart rendering)
+# Part of Universal Knowledge Tools v2.0 (f* series)
+def fsv [] {
+    if (which fd | is-empty) or (which sk | is-empty) {
+        print "fd and sk are required. Install with: brew install fd sk"
+        return
+    }
+    if not ($env.FORGE? | is-empty) and ($env.FORGE | path exists) {
+        let file = (fd . $env.FORGE --type f --hidden --exclude .git | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'mdcat --columns 80 {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📁 Forge File (View): " | str trim)
+        if not ($file | is-empty) {
+            print $"👁️  Viewing ($file)..."
+            # Smart rendering: mdcat for markdown, bat for everything else
+            if ($file | str ends-with ".md") {
+                ^mdcat --columns 100 $file | ^less -R
+            } else {
+                ^bat --paging=always $file
+            }
+        }
+    } else {
+        print "❌ FORGE not set or doesn't exist"
+    }
+}
+
 # Global file search + open with appropriate application
 def gso [] {
     if (which fd | is-empty) or (which sk | is-empty) {
@@ -1857,6 +1880,56 @@ def fsme [] {
     }
 }
 
+# Forge semantic search → view (read-only with markdown rendering)
+# Part of Universal Knowledge Tools v2.0 (f* series)
+def fsmv [] {
+    if ($env.OPENAI_API_KEY? | is-empty) {
+        print "❌ OPENAI_API_KEY not set for semantic search"
+        return
+    }
+
+    print "🧠 Semantic search in your vault..."
+    let query = (input "🔍 Search concept: ")
+    if ($query | is-empty) {
+        return
+    }
+
+    print $"🔍 Finding notes related to: ($query)"
+    let results = try {
+        let output = (^semantic-query --text $query --limit 20 | complete)
+        if $output.exit_code == 0 {
+            # Filter to only keep lines starting with scores (not the # heading lines)
+            $output.stdout | lines | where ($it =~ "^[0-9]\\.")
+        } else {
+            []
+        }
+    } catch {
+        print "❌ Semantic search failed. Check if semantic-indexer is set up."
+        return
+    }
+
+    if ($results | is-empty) {
+        print "❌ No semantic matches found"
+        return
+    }
+
+    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'title=$(echo {} | sd "^[0-9.]+[[:space:]]+" ""); file=$(fd -t f --full-path "$title.md" "$FORGE" | head -1); if [ -f "$file" ]; then mdcat --columns 80 "$file"; else echo "Title extracted: [$title]"; echo "Searching for: $title.md"; echo "In vault: $FORGE"; fd -t f "$title.md" "$FORGE"; fi' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "🧠 Semantic (View): " | str trim)
+    if not ($selected | is-empty) {
+        # Extract filename from semantic search result
+        let lines = ($selected | lines)
+        let filename = ($lines | get 0 | sd '^\d+\.\s+' '' | sd '^[0-9.]+\s+' '' | str trim)
+
+        # Find the full path and view
+        let filepath = (fd -t f --full-path $"($filename).md" $env.FORGE | head -1)
+        if not ($filepath | is-empty) {
+            print $"👁️  Viewing ($filename)..."
+            ^mdcat --columns 100 $filepath | ^less -R
+        } else {
+            print $"❌ File not found: ($filename).md"
+        }
+    }
+}
+
 # Zotero Semantic → Text (formatted reference with page info)
 def zsmt [] {
     if ($env.OPENAI_API_KEY? | is-empty) {
@@ -2193,6 +2266,43 @@ def fce [] {
             let editor = (if ($env.EDITOR? | is-empty) { "vi" } else { $env.EDITOR })
             print $"🚀 Opening ($selected) in editor..."
             ^$editor $selected
+        }
+    } else {
+        print "❌ FORGE not set or doesn't exist"
+    }
+}
+
+# Forge content search → view (read-only with smart rendering)
+# Part of Universal Knowledge Tools v2.0 (f* series)
+def fcv [] {
+    if not ($env.FORGE? | is-empty) and ($env.FORGE | path exists) {
+        let query = (input "🔍 Search content: ")
+        if ($query | is-empty) {
+            return
+        }
+
+        print $"🔍 Searching for: ($query)"
+        let results = try {
+            ^rg -i --type md -l $query $env.FORGE | lines | where $it != ""
+        } catch {
+            print "❌ Content search failed"
+            return
+        }
+
+        if ($results | is-empty) {
+            print "❌ No matches found"
+            return
+        }
+
+        let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview $"rg --color=always -i -C 3 '($query)' {}" --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📄 Content (View): " | str trim)
+        if not ($selected | is-empty) {
+            print $"👁️  Viewing ($selected)..."
+            # Smart rendering: mdcat for markdown, bat for everything else
+            if ($selected | str ends-with ".md") {
+                ^mdcat --columns 100 $selected | ^less -R
+            } else {
+                ^bat --paging=always $selected
+            }
         }
     } else {
         print "❌ FORGE not set or doesn't exist"
