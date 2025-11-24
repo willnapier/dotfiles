@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Mark next conversation as "do not save"
+# Usage: nosave (in another terminal/pane before starting Claude Code chat)
+
+MARKER_FILE="$HOME/.continuum-nosave"
+
+touch "$MARKER_FILE"
+echo "✓ Next conversation will NOT be saved to continuum logs"
+echo "  (Marker set at: $MARKER_FILE)"

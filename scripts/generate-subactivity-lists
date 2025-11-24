@@ -1,0 +1,126 @@
+#!/usr/bin/env nu
+
+# Generate sub-activity lists for activity log parent files
+# Scans for **Parent**: [[name]] declarations and populates {Auto-generated} placeholders
+#
+# Usage:
+#   generate-subactivity-lists            # Update all parent files
+#   generate-subactivity-lists --dry-run  # Preview changes without modifying
+#   generate-subactivity-lists --verbose  # Show detailed processing
+
+def main [
+    --dry-run (-d)    # Show what would be changed without modifying files
+    --verbose (-v)    # Show detailed processing information
+] {
+    let forge_dir = $"($env.HOME)/Forge/NapierianLogs"
+
+    if $verbose {
+        print $"Scanning ($forge_dir) for parent/child relationships..."
+    }
+
+    # Build parent → children mapping
+    let parent_map = (
+        glob $"($forge_dir)/*.md"
+        | each { |file|
+            let content = open $file
+            let parent_match = ($content | parse --regex '\*\*Parent\*\*:\s*\[\[([^\]]+)\]\]')
+
+            if ($parent_match | is-not-empty) {
+                let parent_name = ($parent_match | first | get capture0)
+                {
+                    child: ($file | path basename | str replace '.md' '')
+                    parent: $parent_name
+                }
+            }
+        }
+        | compact
+        | group-by parent
+        | transpose key children
+        | each { |row|
+            {
+                parent: $row.key
+                children: ($row.children | get child | sort)
+            }
+        }
+    )
+
+    if $verbose {
+        print $"Found ($parent_map | length) parents with children:"
+        $parent_map | each { |p|
+            print $"  ($p.parent): ($p.children | length) children"
+        }
+    }
+
+    # Process each parent file
+    let updates = (
+        $parent_map | each { |entry|
+            let parent_file = $"($forge_dir)/($entry.parent).md"
+
+            if not ($parent_file | path exists) {
+                if $verbose {
+                    print $"⚠️  Parent file not found: ($parent_file)"
+                }
+                return null
+            }
+
+            let content = open $parent_file
+
+            # Check if {Auto-generated} exists
+            if not ($content | str contains '{Auto-generated}') {
+                if $verbose {
+                    print $"⏭️  Skipping ($entry.parent).md - no {Auto-generated} placeholder"
+                }
+                return null
+            }
+
+            # Generate the child list
+            let child_list = (
+                $entry.children
+                | each { |child| $"- [[($child)]]" }
+                | str join "\n"
+            )
+
+            # Replace {Auto-generated} with child list
+            let new_content = ($content | str replace '{Auto-generated}' $child_list)
+
+            {
+                file: $parent_file
+                parent: $entry.parent
+                children: $entry.children
+                new_content: $new_content
+            }
+        }
+        | compact
+    )
+
+    if ($updates | is-empty) {
+        print "✅ No files to update"
+        return
+    }
+
+    # Show changes
+    print $"\n📋 Updates to apply:"
+    $updates | each { |u|
+        print $"  ($u.parent): ($u.children | length) sub-activities"
+        if $verbose {
+            $u.children | each { |c| print $"    - ($c)" }
+        }
+    }
+
+    if $dry_run {
+        print $"\n🔍 DRY RUN - No files modified"
+        print $"   Run without --dry-run to apply changes to ($updates | length) files"
+        return
+    }
+
+    # Apply updates
+    print $"\n✏️  Updating ($updates | length) files..."
+    $updates | each { |u|
+        $u.new_content | save -f $u.file
+        if $verbose {
+            print $"  ✅ Updated ($u.file | path basename)"
+        }
+    }
+
+    print $"\n✅ Done! Updated ($updates | length) parent files"
+}
