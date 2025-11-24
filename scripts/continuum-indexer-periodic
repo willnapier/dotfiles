@@ -1,0 +1,15 @@
+#!/bin/bash
+# Periodic indexer for continuum conversation logs
+# Runs incremental updates to the semantic search index
+
+LOG_FILE="$HOME/.local/share/semantic-search-continuum/logs/periodic-indexer.log"
+mkdir -p "$(dirname "$LOG_FILE")"
+
+echo "$(date '+%Y-%m-%d %H:%M:%S') - Starting periodic continuum index update" >> "$LOG_FILE"
+
+# Run incremental index update (not full rebuild)
+if semantic-indexer-continuum >> "$LOG_FILE" 2>&1; then
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - Index update completed successfully" >> "$LOG_FILE"
+else
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - Index update failed with exit code $?" >> "$LOG_FILE"
+fi
