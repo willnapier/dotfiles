@@ -1705,74 +1705,7 @@ def fsml [] {
     }
 }
 
-# Continuum semantic search → link (convert to markdown + copy wikilink)
-# Part of Universal Knowledge Tools v2.0 (ct* series)
-def ctsml [] {
-    if ($env.OPENAI_API_KEY? | is-empty) {
-        print "❌ OPENAI_API_KEY not set for semantic search"
-        return
-    }
-
-    print "🧠 Semantic search in continuum conversation logs..."
-    let query = (input "🔍 Search concept: ")
-    if ($query | is-empty) {
-        return
-    }
-
-    print $"🔍 Finding conversations related to: ($query)"
-    let results = try {
-        let output = (^semantic-query-continuum --text $query --limit 20 | complete)
-        if $output.exit_code == 0 {
-            $output.stdout | lines | where ($it =~ "^[0-9]\\.")
-        } else {
-            []
-        }
-    } catch {
-        print "❌ Semantic search failed. Run 'semantic-indexer-continuum --rebuild' first."
-        return
-    }
-
-    if ($results | is-empty) {
-        print "❌ No semantic matches found in continuum logs"
-        return
-    }
-
-    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'continuum-preview {}' --preview-window 'right:60%:wrap' --prompt "🧠 Continuum: " | str trim)
-    if ($selected | is-empty) {
-        return
-    }
-
-    # Extract the file path from the selected line
-    let jsonl_file = ($selected | lines | get 0 | sd '^\d+\.\s+' '' | sd '^[0-9.]+\s+' '' | str trim)
-
-    # Create a title from the conversation path
-    let conversation_id = ($jsonl_file | path dirname | path basename)
-    let date_part = ($jsonl_file | path dirname | path dirname | path basename)
-    let title = $"conversation-($date_part)-($conversation_id)"
-
-    # Ensure Conversations directory exists
-    let conversations_dir = $"($env.FORGE)/Conversations"
-    mkdir $conversations_dir
-
-    # Convert to markdown
-    print $"📝 Converting conversation to markdown..."
-    let markdown_file = $"($conversations_dir)/($title).md"
-
-    try {
-        jsonl-to-markdown.nu $jsonl_file | save -f $markdown_file
-        print $"✅ Saved to: ($markdown_file)"
-
-        # Create and copy wikilink
-        let wikilink = $"[[($title)]]"
-        $wikilink | pbcopy
-        print $"📋 Copied wikilink to clipboard: ($wikilink)"
-        print "💡 Paste in your notes with Cmd+V"
-    } catch {
-        print $"❌ Failed to convert conversation: ($in)"
-    }
-}
-
-# Continuum semantic search → editor (open session in editor)
+# Continuum semantic search → editor (view session with markdown rendering)
 # Part of Universal Knowledge Tools v2.0 (ct* series)
 def ctsme [] {
     if ($env.OPENAI_API_KEY? | is-empty) {
@@ -1807,8 +1740,68 @@ def ctsme [] {
     let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'continuum-preview {}' --preview-window 'right:60%:wrap' --prompt "🧠 Continuum: " | str trim)
     if not ($selected | is-empty) {
         let filename = ($selected | lines | get 0 | sd '^\d+\.\s+' '' | sd '^[0-9.]+\s+' '' | str trim)
-        print $"📂 Opening: ($filename)"
-        hx $filename
+
+        # Save the selected conversation path for potential promotion
+        $filename | save -f /tmp/ctce-last-viewed.txt
+
+        # Extract conversation metadata from path
+        let conversation_id = ($filename | path dirname | path basename)
+        let date = ($filename | path dirname | path dirname | path basename)
+        let assistant = ($filename | path dirname | path dirname | path dirname | path basename)
+
+        # Parse JSONL and display as formatted markdown
+        let messages = (
+            open $filename
+            | lines
+            | where $it != ""
+            | each { |line|
+                try {
+                    $line | from json
+                } catch {
+                    null
+                }
+            }
+            | where $it != null
+        )
+
+        # Build markdown output with role headers
+        mut output = []
+
+        # Add conversation header
+        $output = ($output | append $"# 📂 Conversation: ($assistant) | ($date)")
+        $output = ($output | append $"**Conversation ID**: `($conversation_id)`\n")
+        $output = ($output | append "---\n")
+
+        for msg in $messages {
+            let role = ($msg.role? | default "unknown")
+            let content = (
+                if ($msg.content? | describe) == "string" {
+                    $msg.content
+                } else {
+                    ""
+                }
+            )
+
+            # Add role as markdown header
+            if $role == "user" {
+                $output = ($output | append "## 👤 USER\n")
+            } else if $role == "assistant" {
+                $output = ($output | append "## 🤖 ASSISTANT\n")
+            } else {
+                $output = ($output | append $"## ($role | str upcase)\n")
+            }
+
+            $output = ($output | append $content)
+            $output = ($output | append "\n---\n")
+        }
+
+        $output = ($output | append $"\n*Total: ($messages | length) messages*")
+
+        # Save to temp file and display with mdcat
+        let temp_file = $"/tmp/ctsme-conversation-(date now | format date '%s').md"
+        $output | str join "\n" | save -f $temp_file
+        ^mdcat --columns 100 $temp_file | ^less -R
+        rm -f $temp_file
     }
 }
 
@@ -2237,48 +2230,109 @@ def ctce [] {
     let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview $"rg --color=always -i -C 3 '($query)' {}" --preview-window 'right:60%:wrap' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "💬 Conversation: " | str trim)
 
     if not ($selected | is-empty) {
-        print $"📂 Found in: ($selected)"
-        print $"\n🔍 Showing matches:\n"
-        ^rg --color=always -i -C 5 $query $selected
+        # Save the selected conversation path for potential promotion
+        $selected | save -f /tmp/ctce-last-viewed.txt
+
+        # Extract conversation metadata from path
+        let conversation_id = ($selected | path dirname | path basename)
+        let date = ($selected | path dirname | path dirname | path basename)
+        let assistant = ($selected | path dirname | path dirname | path dirname | path basename)
+
+        print $"\n📂 Conversation: ($assistant) | ($date) | ($conversation_id)"
+        print "────────────────────────────────────────────────────────────────────────────────"
+
+        # Parse JSONL and display as formatted conversation
+        let messages = (
+            open $selected
+            | lines
+            | where $it != ""
+            | each { |line|
+                try {
+                    $line | from json
+                } catch {
+                    null
+                }
+            }
+            | where $it != null
+        )
+
+        # Filter to show only messages matching the query (case-insensitive)
+        let matching_messages = (
+            $messages
+            | where { |msg|
+                let content = (
+                    if ($msg.content? | describe) == "string" {
+                        $msg.content
+                    } else {
+                        ""
+                    }
+                )
+                ($content | str downcase | str contains ($query | str downcase))
+            }
+        )
+
+        if ($matching_messages | is-empty) {
+            print "\n❌ No matching messages found in conversation"
+            return
+        }
+
+        # Build markdown output with role headers
+        mut output = []
+
+        # Add conversation header
+        $output = ($output | append $"# 📂 Conversation: ($assistant) | ($date)")
+        $output = ($output | append $"**Conversation ID**: `($conversation_id)`\n")
+        $output = ($output | append "---\n")
+
+        for msg in $matching_messages {
+            let role = ($msg.role? | default "unknown")
+            let content = (
+                if ($msg.content? | describe) == "string" {
+                    $msg.content
+                } else {
+                    ""
+                }
+            )
+
+            # Add role as markdown header
+            if $role == "user" {
+                $output = ($output | append "## 👤 USER\n")
+            } else if $role == "assistant" {
+                $output = ($output | append "## 🤖 ASSISTANT\n")
+            } else {
+                $output = ($output | append $"## ($role | str upcase)\n")
+            }
+
+            $output = ($output | append $content)
+            $output = ($output | append "\n---\n")
+        }
+
+        $output = ($output | append $"\n*Found ($matching_messages | length) matching messages out of ($messages | length) total*")
+
+        # Save to temp file and display with mdcat (respects column width)
+        let temp_file = $"/tmp/ctce-conversation-(date now | format date '%s').md"
+        $output | str join "\n" | save -f $temp_file
+        ^mdcat --columns 100 $temp_file | ^less -R
+        rm -f $temp_file
     }
 }
 
-# Continuum content → link (text search + convert to markdown + copy wikilink)
+# Continuum content → promote (promote last-viewed conversation to ~/Forge/Conversations)
 # Part of Universal Knowledge Tools v2.0 (ct* series)
-def ctcl [] {
-    let continuum_dir = "~/Assistants/continuum-logs"
-    if not ($continuum_dir | path expand | path exists) {
-        print "❌ Continuum logs directory not found"
+def ctcp [] {
+    let state_file = "/tmp/ctce-last-viewed.txt"
+
+    if not ($state_file | path exists) {
+        print "❌ No conversation viewed yet. Use ctce or ctsme first."
         return
     }
 
-    let query = (input "🔍 Search conversations: ")
-    if ($query | is-empty) {
+    let jsonl_file = (open $state_file | str trim)
+
+    if not ($jsonl_file | path exists) {
+        print $"❌ Conversation file not found: ($jsonl_file)"
         return
     }
-
-    print $"🔍 Searching for: ($query)"
-    let results = try {
-        ^rg -i -l $query ($continuum_dir | path expand) --glob "messages.jsonl" | lines | where $it != ""
-    } catch {
-        print "❌ Content search failed"
-        return
-    }
-
-    if ($results | is-empty) {
-        print "❌ No matches found"
-        return
-    }
-
-    print $"✓ Found ($results | length) conversations"
-    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview $"rg --color=always -i -C 3 '($query)' {}" --preview-window 'right:60%:wrap' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "💬 Conversation: " | str trim)
-
-    if ($selected | is-empty) {
-        return
-    }
-
-    # Extract the jsonl file path
-    let jsonl_file = $selected
 
     # Create a title from the conversation path
     let conversation_id = ($jsonl_file | path dirname | path basename)
@@ -2290,7 +2344,7 @@ def ctcl [] {
     mkdir $conversations_dir
 
     # Convert to markdown
-    print $"📝 Converting conversation to markdown..."
+    print $"📝 Promoting conversation to ($conversations_dir)..."
     let markdown_file = $"($conversations_dir)/($title).md"
 
     try {
