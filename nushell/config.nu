@@ -9,6 +9,11 @@ if ($"($env.HOME)/.cache/nushell/starship-init.nu" | path exists) {
     source ~/.cache/nushell/starship-init.nu
 }
 
+# Load fd-budget commands if available (cross-platform path)
+if ($"($env.HOME)/dotfiles/nushell/budget-commands.nu" | path exists) {
+    source ~/dotfiles/nushell/budget-commands.nu
+}
+
 # Initialize zoxide with reliable function-based approach
 # Custom zoxide functions (more reliable than aliases)
 def --env z [query?: string] {
