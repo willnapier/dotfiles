@@ -1,6 +1,19 @@
 # fd-budget Nushell commands
 # Load transactions from fd-budget store
 
+# Sync budget data between machines (direct, not via GitHub)
+def budget-sync-to-nimbini [] {
+    print "Syncing budget data to nimbini..."
+    ^rsync -av ~/.config/fd-budget/ will@nimbini:~/.config/fd-budget/
+    print "Done."
+}
+
+def budget-sync-from-nimbini [] {
+    print "Syncing budget data from nimbini..."
+    ^rsync -av will@nimbini:~/.config/fd-budget/ ~/.config/fd-budget/
+    print "Done."
+}
+
 def tx [] {
     open ($env.HOME | path join ".config/fd-budget/transactions.csv")
 }
