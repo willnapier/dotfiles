@@ -1,0 +1,28 @@
+#!/bin/bash
+# Cross-platform wrapper script for frecency-daemon
+# Handles API key extraction on both macOS and Linux
+
+set -e
+
+# Detect platform and extract OPENAI_API_KEY
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS: source shell profiles
+    source ~/.profile 2>/dev/null || true
+    source ~/.zshrc 2>/dev/null || true
+else
+    # Linux: extract from Nushell env-secret.nu
+    ENV_FILE="$HOME/.config/nushell/env-secret.nu"
+    if [[ -f "$ENV_FILE" ]]; then
+        # Parse Nushell format: $env.OPENAI_API_KEY = "value"
+        export OPENAI_API_KEY=$(grep 'OPENAI_API_KEY' "$ENV_FILE" | sed 's/.*= *"//' | sed 's/"$//')
+    fi
+fi
+
+# Verify API key is set
+if [[ -z "$OPENAI_API_KEY" ]]; then
+    echo "ERROR: OPENAI_API_KEY not found" >&2
+    exit 1
+fi
+
+# Run the daemon
+exec ~/.local/bin/frecency-daemon "$@"

@@ -75,6 +75,7 @@ depends = []
 "scripts/forge-semantic-search.sh" = "~/.local/bin/forge-semantic-search"
 "scripts/link-service" = "~/.local/bin/link-service"
 "scripts/nosave" = "~/.local/bin/nosave"
+"scripts/continuum-sync-claude" = { target = "~/.local/bin/continuum-sync-claude", type = "symbolic" }
 "nushell/scripts/quantified-tracking.nu" = "~/.config/nushell/scripts/quantified-tracking.nu"
 "nushell/scripts/quantified-tracking-v2.nu" = "~/.config/nushell/scripts/quantified-tracking-v2.nu"
 "nushell/scripts/project-root-detection.nu" = "~/.config/nushell/scripts/project-root-detection.nu"
@@ -103,6 +104,8 @@ depends = []
 # Semantic search for continuum conversation logs
 "scripts/semantic-query-continuum" = "~/.local/bin/semantic-query-continuum"
 "scripts/semantic-indexer-continuum" = "~/.local/bin/semantic-indexer-continuum"
+"scripts/extract-jsonl-content" = "~/.local/bin/extract-jsonl-content"
+"scripts/continuum-preview" = "~/.local/bin/continuum-preview"
 # Wiki link management - Split architecture following Unix "do one thing well" philosophy
 "scripts/wiki-backlinks" = "~/.local/bin/wiki-backlinks"
 "scripts/wiki-resolve-mark" = "~/.local/bin/wiki-resolve-mark"
@@ -187,6 +190,8 @@ depends = []
 # MEDIUM PRIORITY: Additional essential scripts (added 2025-09-16)
 "scripts/get-openai-key" = "~/.local/bin/get-openai-key"
 "scripts/semantic-auto-update" = "~/.local/bin/semantic-auto-update"
+# Frecency daemon wrapper - cross-platform API key handling
+"scripts/frecency-daemon-wrapper" = "~/.local/bin/frecency-daemon-wrapper"
 
 # Semantic search system - managed separately (has virtual environment)
 
@@ -198,6 +203,7 @@ depends = ["shared"]
 
 [macos.files]
 "shell/zshrc" = "~/.zshrc"
+"hammerspoon/init.lua" = "~/.hammerspoon/init.lua"
 "wezterm/wezterm.lua" = "~/.config/wezterm/wezterm.lua"
 "ghostty/config" = "~/.config/ghostty/config"
 "macos/launchd/com.williamnapier.wiki-link-manager.plist" = "~/Library/LaunchAgents/com.williamnapier.wiki-link-manager.plist"
@@ -208,6 +214,7 @@ depends = ["shared"]
 "launchagents/com.user.collect-projects.plist" = "~/Library/LaunchAgents/com.user.collect-projects.plist"
 "launchagents/com.user.collect-projects-watcher.plist" = "~/Library/LaunchAgents/com.user.collect-projects-watcher.plist"
 "launchagents/com.user.forge-metadata-backup.plist" = "~/Library/LaunchAgents/com.user.forge-metadata-backup.plist"
+"macos/launchd/com.williamnapier.continuum-sync-claude.plist" = "~/Library/LaunchAgents/com.williamnapier.continuum-sync-claude.plist"
 # NOTE: Individual files managed in [shared.files] for better reliability
 # Removed directory symlinks that were causing orphan detection issues
 
@@ -232,6 +239,8 @@ depends = ["shared"]
 "systemd/dotter-sync-watcher.service" = "~/.config/systemd/user/dotter-sync-watcher.service"
 "systemd/git-auto-pull-watcher.service" = "~/.config/systemd/user/git-auto-pull-watcher.service"
 "systemd/syncthing-monitor.service" = "~/.config/systemd/user/syncthing-monitor.service"
+"systemd/continuum-sync-claude.service" = "~/.config/systemd/user/continuum-sync-claude.service"
+"systemd/continuum-sync-claude.timer" = "~/.config/systemd/user/continuum-sync-claude.timer"
 "scripts/dotter-sync-watcher" = "~/.local/bin/dotter-sync-watcher"
 "scripts/dotter-sync-watcher-wrapper" = "~/.local/bin/dotter-sync-watcher-wrapper"
 "scripts/git-auto-push-watcher" = "~/.local/bin/git-auto-push-watcher"
@@ -249,6 +258,9 @@ depends = ["shared"]
 "systemd/collect-projects.service" = "~/.config/systemd/user/collect-projects.service"
 "systemd/collect-projects.timer" = "~/.config/systemd/user/collect-projects.timer"
 "systemd/collect-projects-watcher.service" = "~/.config/systemd/user/collect-projects-watcher.service"
+# Frecency daemon for DYNAMIC-MEMORY.md updates (systemd only, wrapper in shared)
+"systemd/frecency-daemon.service" = "~/.config/systemd/user/frecency-daemon.service"
+"systemd/frecency-daemon.timer" = "~/.config/systemd/user/frecency-daemon.timer"
 # Wayland compositor configuration - Niri + Waybar + WezTerm
 "niri/config.kdl" = "~/.config/niri/config.kdl"
 "waybar/config" = "~/.config/waybar/config"

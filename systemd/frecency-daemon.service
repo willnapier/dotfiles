@@ -1,0 +1,12 @@
+[Unit]
+Description=Frecency daemon for DYNAMIC-MEMORY.md
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/frecency-daemon-wrapper
+StandardOutput=append:%h/.local/share/frecency-daemon.log
+StandardError=append:%h/.local/share/frecency-daemon.log
+
+[Install]
+WantedBy=default.target
