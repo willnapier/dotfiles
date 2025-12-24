@@ -48,6 +48,10 @@ layout {
     border {
         off;
     }
+
+    focus-ring {
+        off;
+    }
 }
 
 prefer-no-csd
