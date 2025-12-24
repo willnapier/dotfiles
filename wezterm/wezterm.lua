@@ -152,7 +152,13 @@ config.line_height = 1.2
 config.enable_tab_bar = false
 
 -- Window configuration
-config.window_decorations = "RESIZE"
+-- NONE on Linux/Wayland (niri handles window management), RESIZE on macOS
+local is_linux = wezterm.target_triple:find("linux") ~= nil
+if is_linux then
+  config.window_decorations = "NONE"
+else
+  config.window_decorations = "RESIZE"
+end
 config.window_padding = {
   left = 0,
   right = 0,
