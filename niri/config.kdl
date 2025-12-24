@@ -50,7 +50,9 @@ layout {
     }
 
     focus-ring {
-        off;
+        width 2;
+        active-color "#268bd2";    // Solarized blue
+        inactive-color "#073642";  // Solarized base02 (dark teal)
     }
 }
 
