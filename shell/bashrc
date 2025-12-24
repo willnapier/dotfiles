@@ -152,4 +152,4 @@ fi
 # Continuum auto-capture for Claude Code
 alias claude='continuum-claude'
 
-. "/.cargo/env"
+. "$HOME/.cargo/env"
