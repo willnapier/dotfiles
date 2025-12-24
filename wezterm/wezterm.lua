@@ -160,6 +160,14 @@ config.window_padding = {
   bottom = 0,
 }
 
+-- Window frame colors (title bar) - Solarized Dark
+config.window_frame = {
+  inactive_titlebar_bg = '#002b36',  -- Solarized base03
+  active_titlebar_bg = '#002b36',    -- Same teal for both
+  inactive_titlebar_fg = '#586e75',  -- Solarized base01
+  active_titlebar_fg = '#93a1a1',    -- Solarized base1
+}
+
 -- Let WezTerm handle sizing with maximize() instead of manual calculations
 -- config.initial_cols and config.initial_rows removed to let maximize() work
 
