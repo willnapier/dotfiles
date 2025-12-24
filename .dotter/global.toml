@@ -22,6 +22,7 @@ depends = []
 "yazi/keymap.toml" = "~/.config/yazi/keymap.toml"
 "yazi/theme.toml" = "~/.config/yazi/theme.toml"
 "zellij/config.kdl" = "~/.config/zellij/config.kdl"
+"wezterm/wezterm.lua" = "~/.config/wezterm/wezterm.lua"
 "starship.toml" = "~/.config/starship.toml"
 # FIXED: Directory-level symlinks converted to individual files for reliability
 # Yazi flavors - individual directory symlinks (flavors are complex nested structures)
@@ -205,7 +206,7 @@ depends = ["shared"]
 [macos.files]
 "shell/zshrc" = "~/.zshrc"
 "hammerspoon/init.lua" = "~/.hammerspoon/init.lua"
-"wezterm/wezterm.lua" = "~/.config/wezterm/wezterm.lua"
+# wezterm moved to [shared.files] for cross-platform
 "ghostty/config" = "~/.config/ghostty/config"
 "macos/launchd/com.williamnapier.wiki-link-manager.plist" = "~/Library/LaunchAgents/com.williamnapier.wiki-link-manager.plist"
 "macos/launchd/com.williamnapier.syncthing-monitor.plist" = "~/Library/LaunchAgents/com.williamnapier.syncthing-monitor.plist"
