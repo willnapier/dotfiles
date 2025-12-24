@@ -17,12 +17,10 @@ prepend_keymap = [
   { on = "L", run = """shell 'zellij action new-pane -- hx "$@"' --block""", desc = "Open in Helix (new pane)" },
   { on = "h", run = "open --interactive", desc = "How to open? (interactive picker)" },
   
-  # Project-aware search functions (requires Full Disk Access + Developer Tools for WezTerm)
-  { on = "s", run = """shell 'zellij action new-pane --floating --close-on-exit --width 90% --height 85% -- nu $HOME/.local/bin/zellij-skim-search.nu' --block""", desc = "Search: skim with full TTY environment" },
-  { on = [ "s", "p" ], run = """shell 'zellij run --direction right --close-on-exit -- nu $HOME/.local/bin/yazi-project-file-search-floating.nu' --block""", desc = "Search: regular Pane (zellij run)" },
-  { on = [ "s", "t" ], run = """shell 'zellij action new-tab --name "File Search"; zellij run -- nu $HOME/.local/bin/yazi-project-file-search-floating.nu' --block""", desc = "Search: new Tab (zellij run)" },
-  { on = "S", run = """shell 'zellij action new-pane --close-on-exit --floating --width 90% --height 85% -- bash -c "echo -n \"Search (use AND/OR for multiple terms): \"; read term; selected=$(nu $HOME/.local/bin/yazi-project-content-search.nu \"$term\"); [ -n \"$selected\" ] && hx \"$selected\""' --block""", desc = "Project-aware content search with floating pane" },
-  { on = "R", run = """shell 'zellij action new-pane --close-on-exit --floating --width 90% --height 85% -- nu $HOME/.local/bin/yazi-recent-files.nu' --block""", desc = "Recent files (last 7 days) with floating pane" },
+  # File search - use yazi's built-in find functionality
+  { on = "s", run = "find", desc = "Search files by name (use arrows, Enter to select)" },
+  { on = "/", run = "find", desc = "Search files by name (alternative)" },
+  { on = "S", run = "search", desc = "Search file contents with ripgrep" },
   # Quick navigation shortcuts (g prefix)
   { on = [ "g", "g" ], run = "arrow -999999999", desc = "Go to top" },
   { on = [ "g", "e" ], run = "arrow 999999999", desc = "Go to bottom" },
