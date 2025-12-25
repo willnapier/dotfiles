@@ -1,6 +1,35 @@
 #!/usr/bin/env nu
 # Open today's daily note directly in Helix - Native Nushell implementation
 
+# Gather reminders for a specific date
+def gather_reminders [reminders_dir: string, date: string, month_day: string]: nothing -> string {
+    mut items = []
+
+    # Check for one-off reminder file
+    let reminder_file = $"($reminders_dir)/($date).md"
+    if ($reminder_file | path exists) {
+        let content = (open $reminder_file --raw | lines | where { |l| $l =~ "^- " })
+        $items = ($items | append $content)
+    }
+
+    # Check for recurring reminders matching this month-day
+    let recurring_file = $"($reminders_dir)/recurring.md"
+    if ($recurring_file | path exists) {
+        let matches = (
+            open $recurring_file --raw
+            | lines
+            | where { |l| $l starts-with $month_day }
+            | each { |l|
+                let parts = ($l | split row ": " | skip 1)
+                $"- [ ] ($parts | str join ': ') 🔄"
+            }
+        )
+        $items = ($items | append $matches)
+    }
+
+    $items | str join "\n"
+}
+
 def main [--print-path] {
     # DEBUG LOG SETUP
     let log_file = $"($env.HOME)/.local/share/daily-note-debug.log"
@@ -14,9 +43,11 @@ def main [--print-path] {
 
     let vault_dir = $"($env.HOME)/Forge"
     let daily_dir = $"($vault_dir)/NapierianLogs/DayPages"
+    let reminders_dir = $"($vault_dir)/NapierianLogs/Reminders"
 
     # Generate today's filename
     let today = (date now | format date "%Y-%m-%d")
+    let today_month_day = (date now | format date "%m-%d")
     let daily_file = $"($daily_dir)/($today).md"
 
     # Template processing
@@ -78,11 +109,19 @@ def main [--print-path] {
                 | str replace --all "<cursor>" ""
             )
 
+            # Gather reminders for this date
+            let reminders = (gather_reminders $reminders_dir $today $today_month_day)
+            let final_content = if ($reminders | is-empty) {
+                $processed
+            } else {
+                $"($processed)\n## Reminders\n\n($reminders)"
+            }
+
             # Log template content for verification
-            let template_preview = ($processed | lines | first 5 | str join "\n")
+            let template_preview = ($final_content | lines | first 5 | str join "\n")
             $"[($timestamp)] Template processed, first 5 lines:\n($template_preview)\n" | save --append $log_file
 
-            $processed | save --force $daily_file
+            $final_content | save --force $daily_file
             $"[($timestamp)] ✅ File saved using TEMPLATE\n" | save --append $log_file
             print $"📝 Created new daily note: ($today).md"
         } else {

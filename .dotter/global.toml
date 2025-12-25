@@ -65,6 +65,7 @@ depends = []
 
 # Essential scripts (most commonly used)
 "scripts/daily-note.nu" = { target = "~/.local/bin/daily-note", type = "symbolic" }
+"scripts/remind.nu" = { target = "~/.local/bin/remind", type = "symbolic" }
 "scripts/daypage-template" = "~/.local/bin/daypage-template"
 "scripts/prev-day" = "~/.local/bin/prev-day"
 "scripts/next-day" = "~/.local/bin/next-day"
