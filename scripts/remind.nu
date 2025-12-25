@@ -93,9 +93,8 @@ def list_reminders [reminders_dir: string] {
 
     # Get all reminder files
     let files = try {
-        ls $"($reminders_dir)/*.md"
-        | where name !~ "recurring.md"
-        | get name
+        glob $"($reminders_dir)/*.md"
+        | where { |f| not ($f | str contains "recurring") }
         | each { |f| $f | path basename | str replace ".md" "" }
         | where { |d| $d >= $today }
         | sort

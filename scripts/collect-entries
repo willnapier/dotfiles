@@ -11,6 +11,7 @@ def main [
     let journal_path = ([$forge_root "NapierianLogs" "DayPages"] | path join)
     let projects_path = ([$forge_root "Projects"] | path join)
     let activities_path = ([$forge_root "NapierianLogs"] | path join)
+    let reminders_path = ([$forge_root "NapierianLogs" "Reminders"] | path join)
 
     if not ($journal_path | path exists) {
         print $"Error: Journal path not found: ($journal_path)"
@@ -20,12 +21,14 @@ def main [
     # Ensure destination directories exist
     mkdir $projects_path
     mkdir $activities_path
+    mkdir $reminders_path
 
     if $verbose {
         print "=== Entry Collection Started ==="
         print $"Journal: ($journal_path)"
         print $"Projects: ($projects_path)"
-        print $"Activities: ($activities_path)\n"
+        print $"Activities: ($activities_path)"
+        print $"Reminders: ($reminders_path)\n"
     }
 
     # Find all entries (both P. projects and lowercase activities) in journal files
@@ -42,9 +45,21 @@ def main [
         print $"Found ($entries | length) entries\n"
     }
 
-    # Group by entry hierarchy (works for both projects and activities)
+    # Separate reminder entries (r::) from other entries
+    let reminder_entries = ($entries | where { |e| $e.key == "r" })
+    let other_entries = ($entries | where { |e| $e.key != "r" })
+
+    # Process reminder entries
+    if ($reminder_entries | length) > 0 {
+        if $verbose {
+            print $"Processing ($reminder_entries | length) reminder entries..."
+        }
+        process_reminder_entries $reminders_path $reminder_entries $dry_run $verbose
+    }
+
+    # Group remaining entries by hierarchy (works for both projects and activities)
     let grouped = (
-        $entries
+        $other_entries
         | group-by {|entry|
             parse_entry_hierarchy $entry.key | get filepath
         }
@@ -99,7 +114,7 @@ def main [
 }
 
 # Check if an activity file has "social" tag (for mention collection)
-def is_social_activity [activities_path: string, activity_name: string] -> bool {
+def is_social_activity [activities_path: string, activity_name: string]: nothing -> bool {
     let file_path = ([$activities_path $"($activity_name).md"] | path join)
 
     if not ($file_path | path exists) {
@@ -543,4 +558,80 @@ def add_subentry_to_parent [parent_file: string, subentry_name: string] {
     )
 
     $updated | save -f $parent_file
+}
+
+# Process r:: reminder entries
+# Format: r:: <when>: <message>
+# Example: r:: in 1 year: Check back on this thought
+# Example: r:: next Tuesday: Call dentist
+def process_reminder_entries [
+    reminders_path: string
+    entries: list
+    dry_run: bool
+    verbose: bool
+] {
+    for entry in $entries {
+        let content = $entry.content
+        let source_date = $entry.date
+        let source_file = $entry.file
+
+        # Parse content: "<when>: <message>"
+        let colon_idx = ($content | str index-of ": ")
+
+        if $colon_idx < 0 {
+            if $verbose {
+                print $"  ⚠️  Skipping malformed reminder (no ': '): ($content)"
+            }
+            continue
+        }
+
+        let when_part = ($content | str substring 0..$colon_idx | str trim)
+        let message = ($content | str substring ($colon_idx + 2).. | str trim)
+
+        if ($message | is-empty) {
+            if $verbose {
+                print $"  ⚠️  Skipping reminder with empty message: ($content)"
+            }
+            continue
+        }
+
+        # Parse the natural language date using nushell's date from-human
+        let target_date = try {
+            $when_part | date from-human | format date "%Y-%m-%d"
+        } catch {
+            if $verbose {
+                print $"  ⚠️  Could not parse date '($when_part)' - skipping"
+            }
+            continue
+        }
+
+        let reminder_file = ([$reminders_path $"($target_date).md"] | path join)
+        let wikilink = $"[[($source_date)]]"
+        let reminder_line = $"- [ ] ($message) \(from ($wikilink)\)"
+
+        if $dry_run {
+            print $"  Would create reminder for ($target_date): ($message)"
+            continue
+        }
+
+        # Check if this exact reminder already exists
+        if ($reminder_file | path exists) {
+            let existing = (open $reminder_file --raw)
+            if ($existing | str contains $message) {
+                if $verbose {
+                    print $"  ⏭️  Reminder already exists for ($target_date): ($message)"
+                }
+                continue
+            }
+            # Append to existing file
+            $"\n($reminder_line)" | save --append $reminder_file
+        } else {
+            # Create new file
+            $"# Reminders for ($target_date)\n\n($reminder_line)" | save $reminder_file
+        }
+
+        if $verbose {
+            print $"  ✓ Created reminder for ($target_date): ($message)"
+        }
+    }
 }
