@@ -1,0 +1,6 @@
+[Unit]
+Description=Clean up old Helix undo history files
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/find /home/will/.local/share/helix/undo -type f -mtime +30 -delete
