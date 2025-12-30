@@ -18,7 +18,7 @@ mouse_events   = ["click", "scroll"]
 title_format   = "Yazi: {cwd}"
 
 [preview]
-wrap         = "no"
+wrap         = "yes"
 tab_size     = 2
 max_width    = 600
 max_height   = 900
@@ -30,6 +30,10 @@ sixel_fraction = 15
 ueberzug_scale = 1
 ueberzug_offset = [0, 0, 0, 0]
 
+# Zellij compatibility - use iterm2 protocol instead of sixel
+# If still corrupted, set image_protocol = "none" to disable images entirely
+# image_protocol = "iterm2"
+
 [opener]
 # Text editors
 edit = [
@@ -37,8 +41,10 @@ edit = [
 ]
 
 # Helix editor specifically
+# NOTE: Uses realpath to ensure absolute paths for reliable file reloading
+# See: ~/Assistants/logs/yazi-helix-path-fix-2025-11-21.md
 helix = [
-  { run = 'hx "$@"', desc = "Helix", block = true, for = "unix" },
+  { run = 'hx "$(realpath "$@")"', desc = "Helix", block = true, for = "unix" },
 ]
 
 # macOS specific openers

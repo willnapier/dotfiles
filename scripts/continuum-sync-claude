@@ -1,0 +1,20 @@
+#!/bin/bash
+# Continuum Claude Code Sync - imports recently modified sessions
+# Runs periodically via launchd to ensure conversations are always captured
+
+CONTINUUM_BIN="$HOME/Assistants/projects/continuum/target/release/continuum"
+CLAUDE_PROJECTS="$HOME/.claude/projects"
+LOG_FILE="$HOME/.local/share/continuum/sync.log"
+
+mkdir -p "$(dirname "$LOG_FILE")"
+
+# Find session files modified in the last 30 minutes
+find "$CLAUDE_PROJECTS" -name "*.jsonl" -mmin -30 ! -name "agent-*" 2>/dev/null | while read -r session_file; do
+    session_id=$(basename "$session_file" .jsonl)
+    
+    # Skip if already imported recently (check if continuum log exists and is newer)
+    # For now, just import - the import is idempotent
+    
+    echo "$(date '+%Y-%m-%d %H:%M:%S') Syncing: $session_id" >> "$LOG_FILE"
+    "$CONTINUUM_BIN" import -a claude-code -s "$session_file" >> "$LOG_FILE" 2>&1
+done

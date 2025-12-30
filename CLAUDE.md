@@ -30,6 +30,45 @@ Based on documentation, previous fixes included:
 
 ---
 
+## ✅ DOTTER AUTO-SYNC SERVICES RECOVERED (2025-12-08)
+
+**Status**: ✅ **ALL SERVICES RUNNING** on both macOS and Linux
+
+### Issues Fixed
+
+**macOS**:
+- Created symlinks: `dotter-realtime-watcher` → `-renu`, `dotter-drift-watcher` → `-renu`
+- Added PATH to `com.user.dotter-drift-watcher.plist` (nu not found)
+- Fixed `dotter-drift-monitor` Nushell API issues
+
+**Linux (nimbini)**:
+- Fixed systemd service to run script directly (was trying to `use config.nu`)
+- Created symlink: `dotter-realtime-watcher` → `-renu`
+- Rsync'd fixed scripts with portable shebangs
+
+### Root Causes
+1. **Shebang issue**: Scripts had `#!/opt/homebrew/bin/nu` (macOS-only) instead of `#!/usr/bin/env nu`
+2. **Symlink missing**: Scripts renamed to `-renu` but services expected original names
+3. **LaunchAgent PATH**: `nu` not in PATH for launchd services
+4. **Nushell API changes**: `stat` → `ls -l`, `open | from json` → `open` (auto-parses)
+
+### Current Service Status
+```
+# macOS
+dotter-realtime-watcher  ✅ running
+dotter-drift-watcher     ✅ running
+dotter-drift-monitor     ✅ running
+
+# Linux (nimbini)
+dotter-realtime-watcher  ✅ running
+dotter-sync-watcher      ✅ running
+dotter-drift-monitor     ✅ timer active
+```
+
+**Documentation updated**: `REAL-TIME-CONFIG-ONBOARDING-SYSTEM.md`, `DOTTER-CROSS-PLATFORM-MASTER-GUIDE.md`
+
+---
+
 ## ✅ TODO TOGGLE FUNCTIONALITY VERIFICATION - COMPLETE SUCCESS (2025-09-25)
 
 **Status**: ✅ **FULLY OPERATIONAL** - 5-state todo toggle system working perfectly across all edge cases

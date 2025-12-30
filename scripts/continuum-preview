@@ -1,0 +1,13 @@
+#!/bin/bash
+# Preview script for continuum semantic search results in skim
+# Extracts the file path from the search result and displays conversation content
+
+# Input is a line like: "0.36  /path/to/messages.jsonl"
+# Extract the file path by removing the similarity score
+file_path=$(echo "$1" | sd '^\d+\.\s+' '' | sd '^[0-9.]+\s+' '')
+
+if [ -f "$file_path" ]; then
+    extract-jsonl-content "$file_path"
+else
+    echo "File not found: $file_path"
+fi

@@ -1,0 +1,12 @@
+[Unit]
+Description=Continuum Claude Code Sync
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/continuum-sync-claude
+StandardOutput=append:%h/.local/share/continuum/systemd.log
+StandardError=append:%h/.local/share/continuum/systemd.log
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.syncthing-sync-watchdog</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/williamnapier/.local/bin/syncthing-sync-watchdog</string>
+        <string>run</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/williamnapier/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>/Users/williamnapier</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StartInterval</key>
+    <integer>300</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/williamnapier/Library/Logs/syncthing-watchdog.stdout</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/williamnapier/Library/Logs/syncthing-watchdog.stderr</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>LowPriorityIO</key>
+    <true/>
+
+    <key>Nice</key>
+    <integer>10</integer>
+</dict>
+</plist>

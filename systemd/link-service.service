@@ -1,0 +1,14 @@
+[Unit]
+Description=Wiki Link Management Service (backlinks + resolve-mark)
+After=default.target
+
+[Service]
+Type=forking
+ExecStart=/home/will/.local/bin/link-service start
+ExecStop=/home/will/.local/bin/link-service stop
+Restart=on-failure
+RestartSec=10
+Environment=PATH=/home/will/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,77 @@
+#!/usr/bin/env nu
+# Extract and aggregate content from JSONL conversation files for semantic indexing
+# Returns plain text suitable for embedding, or empty string if no content found
+
+def main [file_path: path] {
+    if not ($file_path | path exists) {
+        return ""
+    }
+
+    let messages = (
+        open $file_path
+        | lines
+        | where $it != ""
+        | each { |line|
+            try {
+                $line | from json
+            } catch {
+                null
+            }
+        }
+        | where $it != null
+        | each { |msg|
+            extract-message-content $msg
+        }
+        | where $it != null and $it != ""
+    )
+
+    if ($messages | is-empty) {
+        return ""
+    }
+
+    # Combine all messages with double newline separator
+    $messages | str join "\n\n"
+}
+
+# Extract content from a message object, handling various formats
+def extract-message-content [msg: record] {
+    # Format 1: Direct content field (string)
+    if ($msg.content? | describe) == "string" {
+        return $msg.content
+    }
+
+    # Format 2: Role + content structure
+    if "role" in $msg and "content" in $msg {
+        let role = $msg.role
+        let content = $msg.content
+
+        # String content
+        if ($content | describe) == "string" {
+            return $"($role): ($content)"
+        }
+
+        # Array content (Claude/OpenAI format)
+        if ($content | describe) =~ "list" {
+            let text_parts = (
+                $content
+                | where { |item|
+                    ($item | describe) == "record" and "text" in $item
+                }
+                | get text
+                | where $it != null
+            )
+
+            if not ($text_parts | is-empty) {
+                return $"($role): ($text_parts | str join ' ')"
+            }
+        }
+    }
+
+    # Format 3: Direct text field
+    if "text" in $msg and ($msg.text | describe) == "string" {
+        return $msg.text
+    }
+
+    # No extractable content
+    null
+}

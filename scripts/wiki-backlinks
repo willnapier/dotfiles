@@ -5,7 +5,7 @@
 # Features:
 # - Automatic backlink generation when files are created/modified
 # - Handles file renames (updates all references)
-# - Cross-directory support (Forge, Admin, Archives)
+# - Cross-directory support (Forge, Admin, Archives, Assistants)
 # - Event-driven (zero CPU when idle)
 #
 # Usage: wiki-backlinks [--debounce-ms 2000]
@@ -15,6 +15,7 @@ def main [--debounce-ms: int = 2000] {
     let forge = $"($env.HOME)/Forge"
     let admin = $"($env.HOME)/Admin"
     let archives = $"($env.HOME)/Archives"
+    let assistants = $"($env.HOME)/Assistants"
 
     if not ($forge | path exists) {
         print "❌ Forge directory not found"
@@ -25,20 +26,14 @@ def main [--debounce-ms: int = 2000] {
     print $"   Forge: ($forge)"
     print $"   Admin: ($admin) - optional"
     print $"   Archives: ($archives) - optional"
+    print $"   Assistants: ($assistants) - optional"
     print "   Feature: Automatic ## Backlinks maintenance"
     print "   Mode: Event-driven - zero CPU when idle"
     print ""
 
     # Create watched paths list (immutable for closure capture)
-    let watch_paths = if ($admin | path exists) and ($archives | path exists) {
-        [$forge, $admin, $archives]
-    } else if ($admin | path exists) {
-        [$forge, $admin]
-    } else if ($archives | path exists) {
-        [$forge, $archives]
-    } else {
-        [$forge]
-    }
+    # Include all directories that exist
+    let watch_paths = ([$forge, $admin, $archives, $assistants] | where {|p| $p | path exists})
 
     print $"📂 Watching ($watch_paths | length) directories for markdown files"
     print $"⏱️  Debounce: ($debounce_ms)ms"

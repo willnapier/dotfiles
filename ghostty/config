@@ -1,5 +1,4 @@
-# ⚠️  CLAUDE CODE: THIS FILE IS DOTTER-MANAGED - EDIT HERE IN DOTFILES, NOT ~/.config/ghostty/
-# ⚠️  NEVER EDIT ~/.config/ghostty/config - IT'S A SYMLINK TO THIS FILE
+# DOTTER-MANAGED - Edit ~/dotfiles/ghostty/config, not ~/.config/ghostty/config
 # Ghostty Configuration with Solarized Themes
 # Auto-switches between light/dark based on system appearance
 

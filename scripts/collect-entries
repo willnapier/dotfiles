@@ -111,6 +111,29 @@ def main [
             print "\n⚠️  Skipping classification: OPENAI_API_KEY not set"
         }
     }
+
+    # Generate sub-activity lists (populates {Auto-generated} placeholders)
+    # Runs after collection and classification to ensure parent/child relationships are current
+    if not $dry_run {
+        if $verbose {
+            print "\n=== Generating Sub-Activity Lists ==="
+            print "Populating {Auto-generated} placeholders in parent files..."
+        }
+
+        try {
+            # Run sub-activity list generation
+            if $verbose {
+                generate-subactivity-lists --verbose
+            } else {
+                generate-subactivity-lists
+            }
+        } catch {
+            print "⚠️  Sub-activity list generation failed - continuing"
+            if $verbose {
+                print $"Error: ($in)"
+            }
+        }
+    }
 }
 
 # Check if an activity file has "social" tag (for mention collection)

@@ -735,84 +735,8 @@ def note-links [file: path] {
     | uniq
 }
 
-def daily-note [] {
-    let today = (date now | format date "%Y-%m-%d")
-    let daily_dir = $"($env.HOME)/Forge/NapierianLogs/DayPages"
-    
-    # Create daily directory if it doesn't exist
-    if not ($daily_dir | path exists) {
-        mkdir $daily_dir
-    }
-    
-    let note_path = $"($daily_dir)/($today).md"
-    
-    # Create note with template if it doesn't exist
-    if not ($note_path | path exists) {
-        let template_path = $"($env.HOME)/Forge/Templates/DayPage-Minimal.md"
-        
-        if ($template_path | path exists) {
-            # Read template from file and process variables
-            let current_date = (date now | format date "%Y-%m-%d")
-            let current_time = (date now | format date "%H:%M")
-            let readable_date = (date now | format date "%A, %B %d, %Y")
-            
-            # Read and process the template
-            let template_content = (open $template_path)
-            let processed = (
-                $template_content
-                | str replace --all "\{\{date\}\}" $current_date
-                | str replace --all "\{\{time24\}\}" $current_time
-                | str replace --all "\{\{hdate\}\}" $readable_date
-                | str replace --all "<cursor>" ""
-            )
-            
-            $processed | save $note_path
-        } else {
-            # Fallback to hardcoded template if file doesn't exist
-            let current_date = (date now | format date "%Y-%m-%d")
-            let current_time = (date now | format date "%H:%M")
-            let readable_date = (date now | format date "%A, %B %d, %Y")
-            
-            let template = $"---
-date created: ($current_date) ($current_time)
-date modified: ($current_date) ($current_time)
----
-
-# ($current_date) ($readable_date)
-
-"
-            $template | save $note_path
-        }
-    }
-    
-    # Use hx alias which auto-detects theme based on system appearance
-    hx $"($note_path):3"
-}
-
-
-# Quick daily note opener by date
-def daily-open [date?: string] {
-    let target_date = if ($date == null) {
-        (date now | format date "%Y-%m-%d")
-    } else {
-        $date
-    }
-    
-    let daily_dir = $"($env.FORGE)/NapierianLogs/DayPages"
-    let note_path = $"($daily_dir)/($target_date).md"
-    
-    if ($note_path | path exists) {
-        if (which $env.EDITOR | is-not-empty) {
-            ^$env.EDITOR $note_path
-        } else {
-            print $"Daily note exists: ($note_path)"
-            print "Set $env.EDITOR to open automatically"
-        }
-    } else {
-        print $"Daily note doesn't exist: ($target_date)"
-        print $"Create it by clicking [[($target_date)]] in Helix or run 'daily-note' for today"
-    }
-}
+# daily-note command is provided by ~/.local/bin/daily-note.nu script
+# Supports: --date YYYY-MM-DD (for past dates), --print-path (print path only)
 
 # Navigate to previous day's note (creates if needed)
 # Usage: prev-day [--days 1]

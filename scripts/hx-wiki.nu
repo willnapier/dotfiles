@@ -5,7 +5,7 @@
 #
 # Usage: Called by Space+w in Helix (see helix/config.toml)
 # Features:
-# - Auto-search across ~/Forge and ~/Admin directories
+# - Auto-search across ~/Forge, ~/Admin, and ~/Assistants directories
 # - Explicit path support: [[~/Admin/Budget]] or [[~/Archives/File]]
 # - Smart file type handling: text in Helix, media in system viewer
 # - Fleeting notes inbox for daily note workflows
@@ -49,7 +49,7 @@ def main [] {
     # Define paths
     let vault = $"($env.HOME)/Forge"
     let admin_dir = $"($env.HOME)/Admin"
-    let archives_dir = $"($env.HOME)/Archives"
+    let assistants_dir = $"($env.HOME)/Assistants"
     let daily_dir = $"($vault)/NapierianLogs/DayPages"
 
     # NEW: Check if link starts with ~/ or / (explicit path)
@@ -91,9 +91,15 @@ def main [] {
         return
     }
 
-    # Search for existing file across Forge, Admin, and Archives
+    # Search for existing file across Forge and Admin
+    # Strip .md if present to avoid double-extension search (^file.md.md$)
+    let search_name = if ($clean_link | str ends-with ".md") {
+        $clean_link
+    } else {
+        $"($clean_link).md"
+    }
     let existing_file = try {
-        fd -t f $"^($clean_link).md$" $vault $admin_dir $archives_dir | lines | first
+        fd -t f $"^($search_name)$" $vault $admin_dir $assistants_dir | lines | first
     } catch {
         ""
     }
@@ -104,11 +110,30 @@ def main [] {
         return
     }
 
+    # Check if this is a media file and search linked_media directory
+    let media_extensions = ["pdf", "PDF", "jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "mp4", "mov", "avi", "mp3", "wav", "m4a", "JPG", "JPEG", "PNG", "GIF"]
+    let extension = ($clean_link | path parse | get extension)
+
+    if ($extension in $media_extensions) {
+        # Handle links that already include linked_media/ prefix
+        let media_file = if ($clean_link | str starts-with "linked_media/") {
+            $"($vault)/($clean_link)"
+        } else {
+            $"($vault)/linked_media/($clean_link)"
+        }
+
+        if ($media_file | path exists) {
+            # Media file found - open with system viewer
+            open_file $media_file
+            return
+        }
+    }
+
     # Check for journal date pattern
     if ($clean_link | str contains "Journal") and ($clean_link =~ '\d{4}-\d{2}-\d{2}') {
         let date_part = ($clean_link | parse -r '\d{4}-\d{2}-\d{2}' | get capture0.0)
         let journal_file = try {
-            fd -t f $"($date_part).*\\.md$" $vault $admin_dir | lines | first
+            fd -t f $"($date_part).*\\.md$" $vault $admin_dir $assistants_dir | lines | first
         } catch {
             ""
         }
@@ -150,14 +175,16 @@ def main [] {
         # Daily note format
         $"($daily_dir)/($clean_link).md"
     } else {
-        # Regular note
+        # Regular note - create in fleeting inbox (not vault root)
+        let fleeting_dir = $"($vault)/fleeting"
+        mkdir $fleeting_dir
         if ($clean_link | str contains ".") and not ($clean_link | str ends-with ".md") {
             # Has non-md extension - use as-is
-            $"($vault)/($clean_link)"
+            $"($fleeting_dir)/($clean_link)"
         } else if not ($clean_link | str ends-with ".md") {
-            $"($vault)/($clean_link).md"
+            $"($fleeting_dir)/($clean_link).md"
         } else {
-            $"($vault)/($clean_link)"
+            $"($fleeting_dir)/($clean_link)"
         }
     }
 
@@ -199,7 +226,8 @@ def handle_existing_file [file: string, target_file: string] {
 
 # Cross-platform file opener
 def open_file [file: string] {
-    if (sys | get host.name) == "Darwin" {
+    let os = (sys host | get name)
+    if $os == "Darwin" {
         ^open $file
     } else {
         ^xdg-open $file

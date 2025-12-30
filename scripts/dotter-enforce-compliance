@@ -1,4 +1,4 @@
-#!/opt/homebrew/bin/nu
+#\!/usr/bin/env nu
 
 # dotter-enforce-compliance - Automatically bring unmanaged files under Dotter control
 # This script helps migrate files to Dotter management with minimal manual work

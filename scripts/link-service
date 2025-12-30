@@ -22,7 +22,8 @@ def main [action?: string = "status"] {
     let forge = $"($env.HOME)/Forge"
     let admin = $"($env.HOME)/Admin"
     let archives = $"($env.HOME)/Archives"
-    let watch_dirs = ([$forge, $admin, $archives] | where {|p| $p | path exists})
+    let assistants = $"($env.HOME)/Assistants"
+    let watch_dirs = ([$forge, $admin, $archives, $assistants] | where {|p| $p | path exists})
 
     match $action {
         "start" => {
@@ -56,7 +57,7 @@ def main [action?: string = "status"] {
                 # Backlinks watcher for this directory
                 let backlinks_dir_log = $"($log_dir)/backlinks-($dir_name).out.log"
                 let backlinks_dir_err = $"($log_dir)/backlinks-($dir_name).err.log"
-                let backlinks_cmd = $"($backlinks_script) > '($backlinks_dir_log)' 2> '($backlinks_dir_err)' & echo $!"
+                let backlinks_cmd = $"nohup ($backlinks_script) > '($backlinks_dir_log)' 2> '($backlinks_dir_err)' & echo $!"
                 let backlinks_pid = (bash -c $backlinks_cmd | str trim)
                 $pids = ($pids | append $backlinks_pid)
                 print $"   ✅ Backlinks watcher: PID ($backlinks_pid)"
@@ -64,7 +65,7 @@ def main [action?: string = "status"] {
                 # Resolve-mark watcher for this directory
                 let resolve_dir_log = $"($log_dir)/resolve-($dir_name).out.log"
                 let resolve_dir_err = $"($log_dir)/resolve-($dir_name).err.log"
-                let resolve_cmd = $"($resolve_script) > '($resolve_dir_log)' 2> '($resolve_dir_err)' & echo $!"
+                let resolve_cmd = $"nohup ($resolve_script) > '($resolve_dir_log)' 2> '($resolve_dir_err)' & echo $!"
                 let resolve_pid = (bash -c $resolve_cmd | str trim)
                 $pids = ($pids | append $resolve_pid)
                 print $"   ✅ Resolve-mark watcher: PID ($resolve_pid)"

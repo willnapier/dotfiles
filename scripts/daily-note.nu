@@ -30,7 +30,10 @@ def gather_reminders [reminders_dir: string, date: string, month_day: string]: n
     $items | str join "\n"
 }
 
-def main [--print-path] {
+def main [
+    --print-path      # Just print the file path, don't open
+    --date: string    # Optional date (YYYY-MM-DD), defaults to today
+] {
     # DEBUG LOG SETUP
     let log_file = $"($env.HOME)/.local/share/daily-note-debug.log"
     let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
@@ -38,6 +41,7 @@ def main [--print-path] {
     # Log script invocation
     $"[($timestamp)] ===== DAILY-NOTE INVOKED =====\n" | save --append $log_file
     $"[($timestamp)] Print-path flag: ($print_path)\n" | save --append $log_file
+    $"[($timestamp)] Date flag: ($date | default 'today')\n" | save --append $log_file
     $"[($timestamp)] SHELL: ($env.SHELL? | default 'unknown')\n" | save --append $log_file
     $"[($timestamp)] PWD: ($env.PWD)\n" | save --append $log_file
 
@@ -45,9 +49,16 @@ def main [--print-path] {
     let daily_dir = $"($vault_dir)/NapierianLogs/DayPages"
     let reminders_dir = $"($vault_dir)/NapierianLogs/Reminders"
 
-    # Generate today's filename
-    let today = (date now | format date "%Y-%m-%d")
-    let today_month_day = (date now | format date "%m-%d")
+    # Parse target date - use provided date or default to today
+    let target_date = if ($date | is-empty) {
+        date now
+    } else {
+        $date | into datetime
+    }
+
+    # Generate filename from target date
+    let today = ($target_date | format date "%Y-%m-%d")
+    let today_month_day = ($target_date | format date "%m-%d")
     let daily_file = $"($daily_dir)/($today).md"
 
     # Template processing
@@ -84,11 +95,11 @@ def main [--print-path] {
         let current_time = (date now | format date "%H:%M")
 
         # Get human readable date
-        let human_date = (date now | format date "%A, %B %d, %Y")
+        let human_date = ($target_date | format date "%A, %B %d, %Y")
 
-        # Calculate yesterday and tomorrow dates
-        let yesterday = (date now | $in - 1day | format date "%Y-%m-%d")
-        let tomorrow = (date now | $in + 1day | format date "%Y-%m-%d")
+        # Calculate yesterday and tomorrow dates relative to target
+        let yesterday = ($target_date - 1day | format date "%Y-%m-%d")
+        let tomorrow = ($target_date + 1day | format date "%Y-%m-%d")
 
         # Process template with native Nushell string replacement
         if ($template_file | path exists) {

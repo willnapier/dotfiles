@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Cross-platform clipboard copy for Helix
+# Usage: :pipe-to hx-clipboard-copy
+
+case "$(uname -s)" in
+    Darwin)
+        pbcopy
+        ;;
+    Linux)
+        if [ -n "$WAYLAND_DISPLAY" ]; then
+            wl-copy
+        else
+            xclip -selection clipboard
+        fi
+        ;;
+    *)
+        # Fallback - try common commands
+        command -v pbcopy >/dev/null && pbcopy && exit 0
+        command -v wl-copy >/dev/null && wl-copy && exit 0
+        command -v xclip >/dev/null && xclip -selection clipboard && exit 0
+        exit 1
+        ;;
+esac

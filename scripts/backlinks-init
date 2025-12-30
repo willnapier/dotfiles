@@ -1,0 +1,162 @@
+#!/usr/bin/env nu
+# backlinks-init - One-time bulk backlink population
+# Scans all markdown files and populates ## Backlinks sections
+#
+# Usage: backlinks-init [--dry-run]
+#
+# This is a one-time initialization script. After running,
+# the wiki-backlinks watcher maintains backlinks automatically.
+
+def main [--dry-run] {
+    let forge = $"($env.HOME)/Forge"
+    let admin = $"($env.HOME)/Admin"
+    let archives = $"($env.HOME)/Archives"
+    let assistants = $"($env.HOME)/Assistants"
+
+    let watch_dirs = ([$forge, $admin, $archives, $assistants] | where {|p| $p | path exists})
+
+    print "🔗 Backlinks Initialization"
+    print $"   Scanning: ($watch_dirs | str join ', ')"
+    if $dry_run {
+        print "   Mode: DRY RUN (no changes)"
+    } else {
+        print "   Mode: LIVE (will modify files)"
+    }
+    print ""
+
+    # Build a map of all files and their incoming links
+    # Key: target file path, Value: list of source file paths
+    mut backlinks_map: record = {}
+
+    # Find all markdown files
+    let all_files = ($watch_dirs | each {|dir|
+        fd -t f -e md . $dir | lines
+    } | flatten)
+
+    print $"📂 Found ($all_files | length) markdown files"
+    print "🔍 Scanning for wikilinks..."
+    print ""
+
+    # For each file, extract links and build the map
+    for source_file in $all_files {
+        let links = try {
+            open $source_file | rg -o '\[\[([^\]]+)\]\]' --replace '$1' | lines | uniq
+        } catch {
+            []
+        }
+
+        for link in $links {
+            # Clean link (remove anchors and aliases)
+            let clean_link = ($link | str replace -r '[#|].*' '')
+
+            # Find target file
+            let target_file = (find_file $clean_link $watch_dirs)
+
+            if not ($target_file | is-empty) and $target_file != $source_file {
+                # Add to backlinks map
+                let key = $target_file
+                let current = ($backlinks_map | get -o $key | default [])
+                $backlinks_map = ($backlinks_map | upsert $key ($current | append $source_file | uniq))
+            }
+        }
+    }
+
+    # Count files that will be updated
+    let files_to_update = ($backlinks_map | columns | length)
+    print $"📝 Found ($files_to_update) files with incoming backlinks"
+    print ""
+
+    if $files_to_update == 0 {
+        print "✅ No backlinks to populate"
+        return
+    }
+
+    # Update each file's backlinks section
+    mut updated_count = 0
+    mut skipped_count = 0
+
+    for target_file in ($backlinks_map | columns) {
+        let sources = ($backlinks_map | get $target_file)
+        let backlink_lines = ($sources | each {|path|
+            let name = ($path | path basename | str replace '.md' '')
+            $"- [[($name)]]"
+        } | sort)
+
+        if $dry_run {
+            print $"Would update: ($target_file | path basename) with ($sources | length) backlinks"
+        } else {
+            let result = (update_backlinks_section $target_file $backlink_lines)
+            if $result {
+                $updated_count = $updated_count + 1
+                if ($updated_count mod 50) == 0 {
+                    print $"   Updated ($updated_count) files..."
+                }
+            } else {
+                $skipped_count = $skipped_count + 1
+            }
+        }
+    }
+
+    print ""
+    if $dry_run {
+        print $"🔍 Dry run complete. Would update ($files_to_update) files."
+    } else {
+        print $"✅ Backlinks initialization complete"
+        print $"   Updated: ($updated_count) files"
+        print $"   Skipped: ($skipped_count) files (errors or no change needed)"
+    }
+}
+
+# Find a file by name across directories
+def find_file [name: string, dirs: list] {
+    let search_name = if ($name | str ends-with ".md") { $name } else { $"($name).md" }
+
+    for dir in $dirs {
+        let found = try {
+            fd -t f $"^($search_name)$" $dir | lines | first
+        } catch {
+            ""
+        }
+
+        if not ($found | is-empty) {
+            return $found
+        }
+    }
+
+    return ""
+}
+
+# Update the ## Backlinks section in a file
+def update_backlinks_section [file_path: string, backlinks: list] {
+    let content = try {
+        open $file_path
+    } catch {
+        return false
+    }
+
+    let backlinks_text = if ($backlinks | is-empty) {
+        ""
+    } else {
+        ($backlinks | str join "\n")
+    }
+
+    let updated = if ($content | str contains "## Backlinks") {
+        # Replace existing section - everything from ## Backlinks to end or next ##
+        $content | str replace -r '## Backlinks\n[\s\S]*?(?=\n## |\z)' $"## Backlinks\n\n($backlinks_text)\n"
+    } else {
+        # Add section at end
+        $"($content | str trim)\n\n## Backlinks\n\n($backlinks_text)\n"
+    }
+
+    # Only write if changed
+    if $updated != $content {
+        try {
+            $updated | save -f $file_path
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    return false
+}
