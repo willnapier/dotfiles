@@ -26,7 +26,7 @@ input {
 
     // Touchpad settings
     touchpad {
-        scroll-factor 0.5
+        scroll-factor 0.1
     }
 }
 

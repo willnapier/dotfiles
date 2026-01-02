@@ -11,7 +11,8 @@ depends = []
 "scripts/claude-code-brief" = { target = "~/.local/bin/claude-code-brief", type = "symbolic" }
 "scripts/goose-switch-model" = { target = "~/.local/bin/goose-switch-model", type = "symbolic" }
 "git/gitconfig" = "~/.gitconfig"
-"helix/config.toml" = "~/.config/helix/config.toml"
+# Helix config is platform-specific (Linux has scroll-lines=1 for Niri touchpad)
+# macOS uses config.toml (in [macos.files]), Linux uses config-linux.toml (in [linux.files])
 "helix/languages.toml" = "~/.config/helix/languages.toml"
 "inlyne/inlyne.toml" = "~/.config/inlyne/inlyne.toml"
 "gtk-3.0/gtk.css" = "~/.config/gtk-3.0/gtk.css"
@@ -115,7 +116,7 @@ depends = []
 "scripts/wiki-backlinks" = "~/.local/bin/wiki-backlinks"
 "scripts/wiki-resolve-mark" = "~/.local/bin/wiki-resolve-mark"
 "scripts/wiki-link-manager" = "~/.local/bin/wiki-link-manager"  # Deprecated - kept for reference
-"rust-projects/backlinks-init/target/release/backlinks-init" = { target = "~/.local/bin/backlinks-init", type = "symbolic" }  # Rust binary for bulk backlinks init
+# "rust-projects/backlinks-init/target/release/backlinks-init" = { target = "~/.local/bin/backlinks-init", type = "symbolic" }  # Rust binary - not built on nimbini
 "scripts/forge-linker.sh" = "~/.local/bin/forge-linker"
 "scripts/forge-linker.nu" = "~/.local/bin/forge-linker.nu"
 "scripts/semantic-indexer" = "~/.local/bin/semantic-indexer"
@@ -210,6 +211,8 @@ depends = ["shared"]
 [macos.files]
 "shell/zshrc" = "~/.zshrc"
 "hammerspoon/init.lua" = "~/.hammerspoon/init.lua"
+# Helix config - macOS uses shared version (no scroll-lines override)
+"helix/config.toml" = "~/.config/helix/config.toml"
 # wezterm moved to [shared.files] for cross-platform
 "ghostty/config" = "~/.config/ghostty/config"
 "macos/launchd/com.williamnapier.wiki-link-manager.plist" = "~/Library/LaunchAgents/com.williamnapier.wiki-link-manager.plist"
@@ -243,6 +246,8 @@ depends = ["shared"]
 
 [linux.files]
 "shell/bashrc" = "~/.bashrc"
+# Helix - Linux override (slower scroll for Niri touchpad)
+"helix/config-linux.toml" = "~/.config/helix/config.toml"
 # Wayland/Linux terminal configs
 "wayland/foot/foot.ini" = "~/.config/foot/foot.ini"
 # Systemd user services - Re-nu Nushell-based watchers
