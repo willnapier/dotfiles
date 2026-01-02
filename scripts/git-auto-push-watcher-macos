@@ -1,11 +1,12 @@
-#!/opt/homebrew/bin/nu
-# Assistants Auto-Push for macOS - Automatically commits and pushes ~/Assistants changes
+#!/usr/bin/env nu
+# Git Auto-Push Watcher for macOS - Automatically pushes local dotfiles changes to GitHub
+# Symmetric with Linux git-auto-push-watcher for cross-platform parity
 
 def main [] {
-    let assistants_dir = $"($env.HOME)/Assistants"
-    let log_file = $"($env.HOME)/.local/share/assistants-auto-push.log"
-    let lock_file = "/tmp/assistants-auto-push.lock"
-    let last_push = "/tmp/assistants-last-push"
+    let dotfiles_dir = $"($env.HOME)/dotfiles"
+    let log_file = $"($env.HOME)/.local/share/git-auto-push-watcher-macos.log"
+    let lock_file = "/tmp/git-auto-push-watcher-macos.lock"
+    let last_push = "/tmp/git-auto-push-macos-last"
 
     # Ensure log directory exists
     mkdir ($log_file | path dirname)
@@ -22,7 +23,7 @@ def main [] {
             print $cleanup_msg
             rm -f $lock_file
         } else {
-            print "❌ Assistants auto-push already running (recent lock file)"
+            print "❌ Auto-push watcher already running (recent lock file)"
             exit 1
         }
     }
@@ -30,8 +31,8 @@ def main [] {
     # Create lock file
     "running" | save --force $lock_file
 
-    print "🚀 Starting Assistants auto-push watcher (macOS)"
-    print $"👀 Watching: ($assistants_dir)"
+    print "🚀 Starting Git auto-push watcher (macOS)"
+    print $"👀 Watching: ($dotfiles_dir)"
     print $"📝 Logging to: ($log_file)"
 
     # Initial push timestamp
@@ -41,7 +42,7 @@ def main [] {
     loop {
         sleep 2min
 
-        cd $assistants_dir
+        cd $dotfiles_dir
 
         # Check for uncommitted changes
         let status_result = (do { git status --porcelain } | complete)
@@ -51,10 +52,11 @@ def main [] {
             let last = (try { open $last_push | into int } catch { 0 })
             let elapsed = $now - $last
 
-            # Debounce - only push once every 2 minutes
-            if $elapsed > 120 {
+            # Debounce - only push once every 5 minutes
+            if $elapsed > 300 {
                 let timestamp = (date now | format date "%H:%M:%S")
-                let message = $"[($timestamp)] Assistants changes detected - auto-pushing"
+                let hostname = (hostname)
+                let message = $"[($timestamp)] Local changes detected - auto-pushing"
                 $message | save --append $log_file
                 print $message
 
@@ -64,10 +66,10 @@ def main [] {
                 let add_result = (do { git add . } | complete)
                 if $add_result.exit_code == 0 {
                     # Note: Using string concat to avoid Nushell interpreting parens as commands
-                    let platform_tag = "(Mac)"
-                    let commit_msg = $"Auto-sync: Documentation updates ($platform_tag)
+                    let platform_tag = "(macOS)"
+                    let commit_msg = $"Auto-commit: Local changes from ($env.USER)@($hostname) ($platform_tag)
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+🤖 Generated with [Claude Code](https://claude.ai/code)
 
 Co-Authored-By: Claude <noreply@anthropic.com>"
 
@@ -75,7 +77,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
                     if $commit_result.exit_code == 0 {
                         let push_result = (do { git push origin main } | complete)
                         if $push_result.exit_code == 0 {
-                            let success_msg = $"[($timestamp)] ✅ Successfully pushed Assistants changes to GitHub"
+                            let success_msg = $"[($timestamp)] ✅ Successfully pushed changes to GitHub"
                             $success_msg | save --append $log_file
                             print "✅ Changes pushed to GitHub!"
                         } else {
@@ -84,7 +86,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
                             print $"❌ Push failed: ($push_result.stderr)"
                         }
                     } else {
-                        # No changes to commit (might be only untracked files)
+                        # No changes to commit (might be only whitespace changes)
                         let no_changes_msg = $"[($timestamp)] ℹ️ No changes to commit"
                         $no_changes_msg | save --append $log_file
                     }
@@ -102,5 +104,5 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 
     # Cleanup on exit
     rm -f $lock_file
-    print "🛑 Assistants auto-push watcher stopped"
+    print "🛑 Auto-push watcher stopped"
 }
