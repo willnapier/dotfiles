@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# pre-commit hook for dotfiles repo
+# Validates Helix config sync before allowing commits
+
+# Check if any helix config files are staged
+if git diff --cached --name-only | grep -q "^helix/config"; then
+    echo "🔍 Helix config files staged - checking sync..."
+
+    # Run the sync check
+    if command -v nu &> /dev/null; then
+        if ! nu ~/.local/bin/helix-config-sync-check; then
+            echo ""
+            echo "❌ Helix config sync check failed!"
+            echo "   Please ensure both configs are in sync before committing."
+            echo "   Edit the other config to match, or update the exclusion patterns."
+            exit 1
+        fi
+    else
+        echo "⚠️  Nushell not found - skipping helix config sync check"
+    fi
+fi
+
+exit 0
