@@ -69,11 +69,19 @@ def setup_monitoring [] {
 
 def run_drift_check [] {
     print "🔍 CHECKING FOR DOTTER DRIFT..."
-    
+
+    # Check Helix config sync first (platform-specific configs)
+    print "🔍 Checking Helix config sync..."
+    let helix_sync_result = (do { nu ~/.local/bin/helix-config-sync-check } | complete)
+    if $helix_sync_result.exit_code != 0 {
+        print "⚠️  Helix configs are out of sync!"
+        print $helix_sync_result.stdout
+    }
+
     let monitor_dir = $"($env.HOME)/.config/dotter-monitor"
     let baseline_file = $"($monitor_dir)/baseline.json"
     let drift_log = $"($monitor_dir)/drift.log"
-    
+
     if not ($baseline_file | path exists) {
         print "❌ No baseline found. Run with --setup first."
         return

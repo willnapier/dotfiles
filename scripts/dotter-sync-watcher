@@ -148,6 +148,15 @@ def main [] {
                     $deploy_msg | save --append $log_file
                     print "✅ Config updated!"
 
+                    # Check Helix config sync (platform-specific configs must stay aligned)
+                    let helix_sync = (do { nu ~/.local/bin/helix-config-sync-check } | complete)
+                    if $helix_sync.exit_code != 0 {
+                        let sync_warn = $"[($timestamp)] ⚠️  Helix configs out of sync!"
+                        $sync_warn | save --append $log_file
+                        print $sync_warn
+                        print $helix_sync.stdout
+                    }
+
                     # Auto-manage services after successful deployment
                     auto_manage_services $timestamp $log_file
                 } else {
