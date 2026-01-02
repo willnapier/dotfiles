@@ -1,0 +1,72 @@
+#!/usr/bin/env nu
+# helix-config-sync-check - Verify Helix configs stay in sync across platforms
+#
+# The two configs should be identical except for known platform-specific lines.
+# Run this after editing either config to ensure they remain synchronized.
+
+def main [] {
+    let dotfiles = $env.HOME | path join "dotfiles"
+    let shared = $dotfiles | path join "helix/config.toml"
+    let linux = $dotfiles | path join "helix/config-linux.toml"
+
+    if not ($shared | path exists) {
+        print $"(ansi red)ERROR:(ansi reset) Shared config not found: ($shared)"
+        exit 1
+    }
+
+    if not ($linux | path exists) {
+        print $"(ansi red)ERROR:(ansi reset) Linux config not found: ($linux)"
+        exit 1
+    }
+
+    # Known platform-specific patterns to exclude from comparison
+    # Lines containing these patterns will be excluded from the diff
+    let platform_patterns = [
+        "scroll-lines"              # Linux has scroll-lines = 1 for Niri
+        "Colemak-DH"                # Header differs: shared vs "- LINUX OVERRIDE"
+        "overrides config.toml"     # Linux-only header comment
+        "Linux/Niri"                # Comment for scroll-lines setting
+    ]
+
+    # Filter out platform-specific lines (read as raw text, not parsed TOML)
+    let shared_filtered = (open $shared --raw
+        | lines
+        | where {|line| not ($platform_patterns | any {|pat| $line | str contains $pat})}
+        | str join "\n")
+
+    let linux_filtered = (open $linux --raw
+        | lines
+        | where {|line| not ($platform_patterns | any {|pat| $line | str contains $pat})}
+        | str join "\n")
+
+    if $shared_filtered == $linux_filtered {
+        print $"(ansi green)✓(ansi reset) Helix configs are in sync [excluding platform-specific lines]"
+        print "  Platform differences [expected]:"
+
+        # Show the expected differences
+        let shared_lines = (open $shared --raw | lines)
+        let linux_lines = (open $linux --raw | lines)
+
+        for pat in $platform_patterns {
+            let in_shared = ($shared_lines | where {|l| $l | str contains $pat} | length) > 0
+            let in_linux = ($linux_lines | where {|l| $l | str contains $pat} | length) > 0
+
+            if $in_linux and not $in_shared {
+                let line = ($linux_lines | where {|l| $l | str contains $pat} | first)
+                print $"    Linux only: ($line | str trim)"
+            }
+        }
+    } else {
+        print $"(ansi red)✗(ansi reset) Helix configs have UNEXPECTED differences!"
+        print ""
+        print "Run this to see the diff:"
+        print $"  diff ($shared) ($linux)"
+        print ""
+        print "If you made intentional changes to one config, update the other to match."
+        print "Platform-specific lines (excluded from check):"
+        for pat in $platform_patterns {
+            print $"  - ($pat)"
+        }
+        exit 1
+    }
+}

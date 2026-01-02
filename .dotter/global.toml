@@ -124,6 +124,7 @@ depends = []
 "scripts/serpl-anywhere" = "~/.local/bin/serpl-anywhere"
 "scripts/zj.nu" = "~/.local/bin/zj"
 "scripts/dotter-audit" = "~/.local/bin/dotter-audit"
+"scripts/helix-config-sync-check" = { target = "~/.local/bin/helix-config-sync-check", type = "symbolic" }
 "scripts/dotter-add" = "~/.local/bin/dotter-add"
 "scripts/dotter-auto-onboard" = "~/.local/bin/dotter-auto-onboard"
 "scripts/dotter-protect-all" = "~/.local/bin/dotter-protect-all"
