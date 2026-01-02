@@ -116,22 +116,22 @@ def main [
 # Cross-platform library file detection for academic workflows
 def detect_library_file [] {
     let candidates = [
-        $"($env.HOME)/Forge/ZET/library.bib",     # Current setup
-        $"($env.HOME)/Documents/library.bib",                     # Common location
-        $"($env.HOME)/Papers/library.bib",                        # Academic folder
-        $"($env.HOME)/Research/library.bib",                      # Research folder
-        $"($env.HOME)/Zotero/library.bib",                        # Zotero export
-        "./library.bib"                                           # Current directory
+        $"($env.HOME)/Literature/library.bib",    # Current setup (infrastructure outside Forge)
+        $"($env.HOME)/Documents/library.bib",     # Common location
+        $"($env.HOME)/Papers/library.bib",        # Academic folder
+        $"($env.HOME)/Research/library.bib",      # Research folder
+        $"($env.HOME)/Zotero/library.bib",        # Zotero export
+        "./library.bib"                           # Current directory
     ]
-    
+
     for candidate in $candidates {
         if ($candidate | path exists) {
             return $candidate
         }
     }
-    
+
     # Fallback to the configured path
-    $"($env.HOME)/Forge/ZET/library.bib"
+    $"($env.HOME)/Literature/library.bib"
 }
 
 # Logging function with academic context

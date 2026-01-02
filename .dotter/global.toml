@@ -94,6 +94,7 @@ depends = []
 "scripts/cross-platform-clipboard" = "~/.local/bin/cross-platform-clipboard"
 "scripts/cross-platform-open" = "~/.local/bin/cross-platform-open"
 "scripts/hx-clipboard-copy" = "~/.local/bin/hx-clipboard-copy"
+"scripts/hx-clipboard-paste" = "~/.local/bin/hx-clipboard-paste"
 "scripts/forge-linker-cross-platform.sh" = "~/.local/bin/forge-linker-cross-platform"
 "scripts/citation-picker-cross-platform.sh" = "~/.local/bin/citation-picker-cross-platform.sh"
 # Zellij zombie prevention system (cross-platform)

@@ -109,7 +109,7 @@ o = ["extend_to_line_bounds", ":pipe-to hx-open-system-rust"]  # Open in system 
 # Fuzzy link insertion - Space+l (Zellij floating pane)
 # Note: Use Alt+l in Zellij for floating pane link picker
 # Then paste result with standard paste command
-l = ":insert-output pbpaste"
+l = ":insert-output hx-clipboard-paste"
 # Show real file name - Space+i (Info about current file)
 i = ":sh hx-show-real-file %{buffer_name}"
 # Quick save commands - Space+m ("memorize" or "save to memory")

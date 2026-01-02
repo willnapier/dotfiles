@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Cross-platform clipboard paste for Helix
+# Usage: :insert-output hx-clipboard-paste
+
+case "$(uname -s)" in
+    Darwin)
+        pbpaste
+        ;;
+    Linux)
+        if [ -n "$WAYLAND_DISPLAY" ]; then
+            wl-paste --no-newline
+        else
+            xclip -selection clipboard -o
+        fi
+        ;;
+    *)
+        # Fallback - try common commands
+        command -v pbpaste >/dev/null && pbpaste && exit 0
+        command -v wl-paste >/dev/null && wl-paste --no-newline && exit 0
+        command -v xclip >/dev/null && xclip -selection clipboard -o && exit 0
+        exit 1
+        ;;
+esac

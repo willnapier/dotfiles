@@ -1512,7 +1512,7 @@ def cil [] {
 def zio [] {
     print "🔍 Loading citations..."
     let citations_file = $"($env.FORGE?)/citations.md"
-    let library_file = $"($env.FORGE?)/bib/library.bib"
+    let library_file = $"($env.HOME)/Literature/library.bib"
 
     if not ($citations_file | path exists) {
         print $"❌ Citations file not found: ($citations_file)"
@@ -2031,7 +2031,7 @@ def zsmo [] {
         let result = ($search_results | get $selected_index)
 
         # Look up Zotero key from library.bib using citation_key
-        let library_file = $"($env.FORGE?)/bib/library.bib"
+        let library_file = $"($env.HOME)/Literature/library.bib"
         let citation_key = $result.citation_key
 
         print $"📍 Relevant content on pages ($result.page_range.0)-($result.page_range.1)"
