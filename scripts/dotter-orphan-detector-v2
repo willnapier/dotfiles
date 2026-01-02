@@ -1,4 +1,4 @@
-#\!/usr/bin/env nu
+#!/usr/bin/env nu
 
 # Dotter Orphan Detector v2 - Enhanced with Symbolic Directory Detection
 # Finds config files in dotfiles repo that aren't managed by Dotter
