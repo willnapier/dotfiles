@@ -72,15 +72,15 @@ def zed-daily [] {
 }
 
 # ---- Zettelkasten Workflow Functions ----
-# Promote fleeting note to permanent Zettelkasten
+# Promote Reception inbox note to permanent Zettelkasten
 # Usage: promote note-name (without .md extension)
 def promote [note_name: string] {
-    let fleeting_path = $"($env.HOME)/Forge/fleeting/($note_name).md"
+    let reception_path = $"($env.HOME)/Forge/Reception/($note_name).md"
     let permanent_path = $"($env.HOME)/Forge/($note_name).md"
 
-    if not ($fleeting_path | path exists) {
+    if not ($reception_path | path exists) {
         print $"❌ Note not found: ($note_name)"
-        print $"   (Looking in ~/Forge/fleeting/)"
+        print "   Looking in ~/Forge/Reception/"
         return
     }
 
@@ -90,33 +90,33 @@ def promote [note_name: string] {
         return
     }
 
-    mv $fleeting_path $permanent_path
+    mv $reception_path $permanent_path
     print $"✓ Promoted: ($note_name)"
-    print $"  From: fleeting/($note_name).md"
+    print $"  From: Reception/($note_name).md"
     print $"  To:   ($note_name).md"
 }
 
-# Review fleeting notes inbox
-def fleeting [] {
-    let fleeting_dir = $"($env.HOME)/Forge/fleeting"
+# Review Reception inbox
+def reception [] {
+    let reception_dir = $"($env.HOME)/Forge/Reception"
 
-    if not ($fleeting_dir | path exists) {
-        print "No fleeting notes directory found"
-        print $"Create it with: mkdir ($fleeting_dir)"
+    if not ($reception_dir | path exists) {
+        print "No Reception directory found"
+        print $"Create it with: mkdir ($reception_dir)"
         return
     }
 
-    let count = (ls $fleeting_dir | where type == file | length)
+    let count = (ls $reception_dir | where type == file | length)
 
     if $count == 0 {
-        print "📭 Inbox empty - no fleeting notes to process"
+        print "📭 Reception empty - no notes to process"
         return
     }
 
-    print $"📬 ($count) fleeting notes in inbox:\n"
-    let notes = (ls $fleeting_dir | where type == file | get name | each {|n| $"  - ($n | path basename)"})
+    print $"📬 ($count) notes in Reception:\n"
+    let notes = (ls $reception_dir | where type == file | get name | each {|n| $"  - ($n | path basename)"})
     print ($notes | str join "\n")
-    print $"\nUse 'cd ~/Forge/fleeting && fsh' to browse, or 'promote <name>' to promote"
+    print $"\nUse 'cd ~/Forge/Reception && fsh' to browse, or 'promote <name>' to promote"
 }
 
 # ---- AI Collaboration Helpers ----

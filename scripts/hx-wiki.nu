@@ -8,7 +8,7 @@
 # - Auto-search across ~/Forge, ~/Admin, and ~/Assistants directories
 # - Explicit path support: [[~/Admin/Budget]] or [[~/Archives/File]]
 # - Smart file type handling: text in Helix, media in system viewer
-# - Fleeting notes inbox for daily note workflows
+# - Reception inbox for daily note workflows
 # - Daily note template with metrics and navigation
 
 def main [] {
@@ -162,29 +162,29 @@ def main [] {
             # Date format - create in DayPages
             $"($daily_dir)/($clean_link).md"
         } else {
-            # Regular note - create in fleeting inbox
-            let fleeting_dir = $"($vault)/fleeting"
-            mkdir $fleeting_dir
+            # Regular note - create in Reception inbox
+            let reception_dir = $"($vault)/Reception"
+            mkdir $reception_dir
             if not ($clean_link | str ends-with ".md") {
-                $"($fleeting_dir)/($clean_link).md"
+                $"($reception_dir)/($clean_link).md"
             } else {
-                $"($fleeting_dir)/($clean_link)"
+                $"($reception_dir)/($clean_link)"
             }
         }
     } else if ($clean_link =~ '^\d{4}-\d{2}-\d{2}$') {
         # Daily note format
         $"($daily_dir)/($clean_link).md"
     } else {
-        # Regular note - create in fleeting inbox (not vault root)
-        let fleeting_dir = $"($vault)/fleeting"
-        mkdir $fleeting_dir
+        # Regular note - create in Reception inbox (not vault root)
+        let reception_dir = $"($vault)/Reception"
+        mkdir $reception_dir
         if ($clean_link | str contains ".") and not ($clean_link | str ends-with ".md") {
             # Has non-md extension - use as-is
-            $"($fleeting_dir)/($clean_link)"
+            $"($reception_dir)/($clean_link)"
         } else if not ($clean_link | str ends-with ".md") {
-            $"($fleeting_dir)/($clean_link).md"
+            $"($reception_dir)/($clean_link).md"
         } else {
-            $"($fleeting_dir)/($clean_link)"
+            $"($reception_dir)/($clean_link)"
         }
     }
 

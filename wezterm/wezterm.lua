@@ -806,20 +806,8 @@ wezterm.on('gui-startup', function()
   -- Get the GUI window
   local gui_window = window:gui_window()
   
-  -- Maximize the window to fill the screen (not fullscreen mode)
-  -- Small delay to ensure window is fully created
-  wezterm.time.call_after(0.1, function()
-    if gui_window then
-      -- Set position closer to top-left edge
-      gui_window:set_position(0, 0)
-      -- Try to maximize the window to use all available space
-      gui_window:maximize()
-      
-      -- Window sizing is already handled by initial_cols and initial_rows
-      -- which are set from get_window_size() during startup
-      -- This just ensures consistent positioning
-    end
-  end)
+  -- NOTE: Window positioning/sizing removed - let Niri handle via window-rules
+  -- (was causing WezTerm to override Niri's tiling with maximize())
   
   -- Auto-split for laptop layout (two panes side by side)
   wezterm.time.call_after(0.5, function()
