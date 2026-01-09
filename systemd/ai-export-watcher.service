@@ -1,0 +1,12 @@
+[Unit]
+Description=AI Conversation Export Watcher (ChatGPT, Grok, Gemini)
+After=default.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/chatgpt-watcher
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

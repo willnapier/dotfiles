@@ -274,6 +274,7 @@ depends = ["shared"]
 "systemd/git-auto-push-watcher.service" = "~/.config/systemd/user/git-auto-push-watcher.service"
 "systemd/zotero-pdf-watcher.service" = "~/.config/systemd/user/zotero-pdf-watcher.service"
 "systemd/zotero-bridge.service" = "~/.config/systemd/user/zotero-bridge.service"
+"systemd/ai-export-watcher.service" = "~/.config/systemd/user/ai-export-watcher.service"
 # "systemd/wiki-link-manager.service" = "~/.config/systemd/user/wiki-link-manager.service"  # Missing file - temporarily disabled
 "systemd/collect-projects.service" = "~/.config/systemd/user/collect-projects.service"
 "systemd/collect-projects.timer" = "~/.config/systemd/user/collect-projects.timer"
