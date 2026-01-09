@@ -93,6 +93,7 @@ binds {
 
     // Float / Tile controls
     Mod+Alt+F           { move-window-to-floating; }
+    Mod+Shift+F         { toggle-window-floating; }  // Reliable binding (Mod+Alt unreliable with HRM)
     Mod+Alt+Shift+F     { move-window-to-tiling; }
     Mod+Alt+Backspace   { switch-focus-between-floating-and-tiling; }
 
