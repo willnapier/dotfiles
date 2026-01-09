@@ -44,6 +44,11 @@ layout {
     center-focused-column "never";
     preset-column-widths { proportion 0.5; }
     default-column-width { proportion 0.5; }
+    default-column-display "tabbed"  // Full-height windows in stacked columns
+
+    tab-indicator {
+        hide-when-single-tab
+    }
 
     border {
         off;
@@ -75,7 +80,7 @@ window-rule {
 // ---- Keybinds ----
 binds {
     // Help / Overview / Centering
-    Mod+Alt+Shift+Slash { show-hotkey-overlay; }
+    Mod+Slash           { show-hotkey-overlay; }
     Mod+Alt+Slash       { toggle-overview; }
     Mod+Alt+C           { center-column; }
     Mod+Alt+Shift+C     { center-visible-columns; }
@@ -84,6 +89,7 @@ binds {
     Mod+Alt+W           { expand-column-to-available-width; }
     Mod+Alt+Shift+W     { set-column-width "50%"; }
     Mod+Alt+T           { toggle-column-tabbed-display; }
+    Mod+T               { toggle-column-tabbed-display; }  // Simple binding (Mod+Alt unreliable with HRM)
 
     // Float / Tile controls
     Mod+Alt+F           { move-window-to-floating; }
@@ -95,17 +101,15 @@ binds {
     Mod+Alt+Shift+M     { fullscreen-window; }
     Mod+Alt+Ctrl+F      { toggle-windowed-fullscreen; }
 
-    // Quit / Close (guarded)
-    Mod+Alt+Q            { close-window; }
-    Mod+Alt+Ctrl+Shift+Q { quit; }
+    // Quit / Close
+    Mod+Q                { close-window; }
+    // To quit Niri: niri msg action quit
 
-    // Launcher / Terminal / Lock
+    // Launcher / Terminal
     Mod+Space      { spawn "fuzzel"; }  // Primary launcher (matches macOS Cmd+Space)
-    // Mod+Space   { spawn "anyrun"; }  // Alternative: Rust-based with niri-focus plugin
-    // Mod+Space   { spawn "rofi" "-show" "window"; }  // Alternative: if fuzzel has issues
     Mod+Alt+D      { spawn "fuzzel"; }  // Backup binding
     Mod+Alt+Return { spawn "wezterm"; }
-    Mod+Alt+L      { spawn "wlogout"; }
+    // Power: systemctl poweroff/reboot/suspend, niri msg action quit
 
     // Focus (NEIO + arrows) - Mod+Shift for consistency
     Mod+Shift+Left  { focus-column-left; }
@@ -177,15 +181,7 @@ binds {
     // Safety
     Mod+Alt+Escape { toggle-keyboard-shortcuts-inhibit; }
 
-    // --- Screenshots: CLIPBOARD ---
-    Print             { spawn "sh" "-c" "grim -g \"$(slurp)\" - | wl-copy -t image/png"; } // region
-    Mod+Alt+Print     { spawn "sh" "-c" "grim - | wl-copy -t image/png"; }                 // full screen
-    Mod+Alt+Shift+Print { spawn "~/.local/bin/niri-screenshot-window.sh"; }                // window
-
-    // --- Screenshots: SAVE TO DISK (Ctrl = save) ---
-    Ctrl+Print { spawn "sh" "-c" "mkdir -p \"$HOME/Pictures/Screenshots\" && grim -g \"$(slurp)\" \"$HOME/Pictures/Screenshots/$(date +'%Y-%m-%d_%H-%M-%S_region.png')\""; }
-    Mod+Alt+Ctrl+Print { spawn "sh" "-c" "mkdir -p \"$HOME/Pictures/Screenshots\" && grim \"$HOME/Pictures/Screenshots/$(date +'%Y-%m-%d_%H-%M-%S_full.png')\""; }
-    Mod+Alt+Ctrl+Shift+Print { spawn "~/.local/bin/niri-screenshot-window-save.sh"; }
+    // Screenshots handled at ZMK keyboard level
 } // END binds
 
 // ---- Animations (instant) ----

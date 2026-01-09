@@ -7,6 +7,7 @@ depends = []
 [shared.files]
 
 "scripts/ai-brief.nu" = { target = "~/.local/bin/ai-brief.nu", type = "symbolic" }
+"scripts/tag-search" = { target = "~/.local/bin/tag-search", type = "symbolic" }
 "scripts/codex-brief" = { target = "~/.local/bin/codex-brief", type = "symbolic" }
 "scripts/claude-code-brief" = { target = "~/.local/bin/claude-code-brief", type = "symbolic" }
 "scripts/goose-switch-model" = { target = "~/.local/bin/goose-switch-model", type = "symbolic" }

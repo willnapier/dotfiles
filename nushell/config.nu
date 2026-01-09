@@ -4060,3 +4060,38 @@ def social-search [query: string] {
     }
     | where $it != null
 }
+
+# Search Forge notes by YAML frontmatter tag
+def tag [query: string] {
+    ^tag-search $query | lines
+}
+
+# Fuzzy tag search → edit (interactive sk selection)
+# Usage: ftag yoga        - search for files with yoga tag, select, open
+#        ftag yoga -m     - only files with embedded media (![[...]])
+def ftag [
+    query: string,
+    --media (-m)  # Only show files with embedded media (![[...]])
+] {
+    if (which sk | is-empty) {
+        print "sk is required. Install with: pacman -S skim"
+        return
+    }
+
+    let files = if $media {
+        ^tag-search $query | lines | where {|f| (open $f | str contains "![[") } | to text
+    } else {
+        ^tag-search $query
+    }
+    if ($files | is-empty) {
+        let msg = if $media { $"No files tagged '($query)' with media" } else { $"No files tagged with '($query)'" }
+        print $msg
+        return
+    }
+    let prompt = if $media { $"📎 '($query)' +media: " } else { $"🏷️ Tag '($query)': " }
+    let file = ($files | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'mdcat --columns 80 {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt $prompt | str trim)
+    if not ($file | is-empty) {
+        let editor = (if ($env.EDITOR? | is-empty) { "hx" } else { $env.EDITOR })
+        ^$editor $file
+    }
+}
