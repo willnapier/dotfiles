@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Search Forge notes by YAML frontmatter tag
+# Handles both inline (tags: foo) and multi-line YAML list formats
+
+query="$1"
+if [ -z "$query" ]; then
+    echo "Usage: tag-search <tag>" >&2
+    exit 1
+fi
+
+{
+    # Multi-line YAML format: Tags:\n  - tag
+    rg -l -i -U "Tags:\n(\s+-\s+\w+\n)*\s+-\s+${query}" ~/Forge --glob "*.md" 2>/dev/null
+    # Inline format: tags: foo, bar
+    rg -l -i "^tags:.*${query}" ~/Forge --glob "*.md" 2>/dev/null
+} | sort -u

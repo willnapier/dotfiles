@@ -187,7 +187,7 @@ config.cursor_blink_ease_out = 'Constant'
 config.scrollback_lines = 10000
 
 -- Clipboard integration - basic settings
-config.enable_csi_u_key_encoding = true   -- Re-enabled for testing
+config.enable_csi_u_key_encoding = false  -- Disabled: was intercepting Mod+Alt combos before Niri could see them
 config.use_ime = true
 
 -- Alt key handling - Enable right alt for composed characters like # symbol

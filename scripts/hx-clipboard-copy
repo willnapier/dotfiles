@@ -8,7 +8,11 @@ case "$(uname -s)" in
         ;;
     Linux)
         if [ -n "$WAYLAND_DISPLAY" ]; then
-            wl-copy --fork
+            # Read stdin, write to temp file, detach wl-copy completely
+            tmp=$(mktemp)
+            cat > "$tmp"
+            (wl-copy < "$tmp"; rm -f "$tmp") </dev/null >/dev/null 2>&1 &
+            disown
         else
             xclip -selection clipboard
         fi

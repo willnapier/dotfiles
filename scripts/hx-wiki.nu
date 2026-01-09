@@ -5,6 +5,7 @@
 #
 # Usage: Called by Space+w in Helix (see helix/config.toml)
 # Features:
+# - Prioritizes image embeds (![[...]]) over text links ([[...]])
 # - Auto-search across ~/Forge, ~/Admin, and ~/Assistants directories
 # - Explicit path support: [[~/Admin/Budget]] or [[~/Archives/File]]
 # - Smart file type handling: text in Helix, media in system viewer
@@ -19,17 +20,30 @@ def main [] {
     print $line
 
     # Debug logging
-    $line | save --append /tmp/hx-wiki-debug.log
+    $"CALLED: ($line)\n" | save --append /tmp/hx-wiki-debug.log
 
     # Clear old temp file
     rm -f /tmp/helix-current-link.md
     let target_file = "/tmp/helix-current-link.md"
 
-    # Extract first wiki link from line (supports [[link]], ![[image]], ?[[unresolved]])
-    let first_link = try {
-        $line | rg -o '[!?]?\[\[[^\]]+\]\]' | lines | first
+    # Extract wiki links from line (supports [[link]], ![[image]], ?[[unresolved]])
+    # Prioritize image embeds (![[...]]) over regular links ([[...]])
+    let all_links = try {
+        $line | rg -o '[!?]?\[\[[^\]]+\]\]' | lines
     } catch {
-        ""
+        []
+    }
+
+    if ($all_links | is-empty) {
+        return
+    }
+
+    # Check for image embeds first (start with !)
+    let image_links = ($all_links | where {|link| $link | str starts-with "!"})
+    let first_link = if ($image_links | is-empty) {
+        $all_links | first
+    } else {
+        $image_links | first
     }
 
     if ($first_link | is-empty) {
@@ -224,13 +238,14 @@ def handle_existing_file [file: string, target_file: string] {
     }
 }
 
-# Cross-platform file opener
+# Cross-platform file opener (backgrounded to avoid blocking Helix)
 def open_file [file: string] {
     let os = (sys host | get name)
     if $os == "Darwin" {
         ^open $file
     } else {
-        ^xdg-open $file
+        # Background xdg-open to prevent blocking when called from Helix pipe
+        ^bash -c $"xdg-open '($file)' </dev/null >/dev/null 2>&1 &"
     }
 }
 
