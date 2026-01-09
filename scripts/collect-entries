@@ -11,6 +11,7 @@ def main [
     let journal_path = ([$forge_root "NapierianLogs" "DayPages"] | path join)
     let projects_path = ([$forge_root "Projects"] | path join)
     let activities_path = ([$forge_root "NapierianLogs"] | path join)
+    let social_path = ([$forge_root "NapierianLogs" "Social"] | path join)
     let reminders_path = ([$forge_root "NapierianLogs" "Reminders"] | path join)
 
     if not ($journal_path | path exists) {
@@ -21,6 +22,7 @@ def main [
     # Ensure destination directories exist
     mkdir $projects_path
     mkdir $activities_path
+    mkdir $social_path
     mkdir $reminders_path
 
     if $verbose {
@@ -28,6 +30,7 @@ def main [
         print $"Journal: ($journal_path)"
         print $"Projects: ($projects_path)"
         print $"Activities: ($activities_path)"
+        print $"Social: ($social_path)"
         print $"Reminders: ($reminders_path)\n"
     }
 
@@ -70,10 +73,17 @@ def main [
         let hierarchy = (parse_entry_hierarchy ($group.entries | first | get key))
 
         # Determine destination based on entry type
+        # Priority: Projects (P.) → Social (if file exists) → Activities
         let destination = if ($hierarchy.key | str starts-with 'P.') {
             $projects_path
         } else {
-            $activities_path
+            # Check if a Social file exists for this key
+            let social_file = ([$social_path $"($hierarchy.filepath).md"] | path join)
+            if ($social_file | path exists) {
+                $social_path
+            } else {
+                $activities_path
+            }
         }
 
         if $dry_run {

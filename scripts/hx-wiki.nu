@@ -34,6 +34,62 @@ def main [] {
         []
     }
 
+    # NEW: Also check for key:: patterns (social navigation)
+    # Format: lowercase-with-dots-or-hyphens followed by ::
+    let key_patterns = try {
+        $line | rg -o '[a-z][a-z0-9.-]*::' | lines
+    } catch {
+        []
+    }
+
+    # If we have a key:: pattern but no wiki links, try to navigate to Social/ or Activity file
+    if ($all_links | is-empty) and (not ($key_patterns | is-empty)) {
+        let key = ($key_patterns | first | str replace '::' '')
+        let social_dir = $"($env.HOME)/Forge/NapierianLogs/Social"
+        let activities_dir = $"($env.HOME)/Forge/NapierianLogs"
+        let social_file = $"($social_dir)/($key).md"
+        let activity_file = $"($activities_dir)/($key).md"
+
+        # Priority: Social file > Activity file > do nothing (let collect-entries create it)
+        if ($social_file | path exists) {
+            ln -sf $social_file $target_file
+            $"KEY PATTERN SOCIAL: ($key) -> ($social_file)\n" | save --append /tmp/hx-wiki-debug.log
+            return
+        } else if ($activity_file | path exists) {
+            ln -sf $activity_file $target_file
+            $"KEY PATTERN ACTIVITY: ($key) -> ($activity_file)\n" | save --append /tmp/hx-wiki-debug.log
+            return
+        } else {
+            # File doesn't exist yet - don't auto-create, let collect-entries handle routing
+            # But if it's a multi-word key (likely a person), create it in Social/
+            if ($key | str length) > 2 and not ($key in ["dev", "sys", "env"]) {
+                mkdir $social_dir
+                let current_date = (date now | format date "%Y-%m-%d")
+                let content = $"# ($key)
+
+**Created**: ($current_date)
+**Updated**: ($current_date)
+
+## Sub-activities
+
+{Auto-generated}
+
+## Journal Entries
+
+## Backlinks
+
+"
+                $content | save -f $social_file
+                ln -sf $social_file $target_file
+                $"KEY PATTERN NEW SOCIAL: ($key) -> ($social_file)\n" | save --append /tmp/hx-wiki-debug.log
+                return
+            }
+            # Short keys or reserved words - don't navigate (no file exists yet)
+            $"KEY PATTERN NO FILE: ($key)\n" | save --append /tmp/hx-wiki-debug.log
+            return
+        }
+    }
+
     if ($all_links | is-empty) {
         return
     }
