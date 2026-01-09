@@ -83,6 +83,7 @@ binds {
     Mod+Slash           { show-hotkey-overlay; }
     Mod+Alt+Slash       { toggle-overview; }
     Mod+Alt+C           { center-column; }
+    Mod+C               { center-column; }  // Reliable binding (Mod+Alt unreliable with HRM)
     Mod+Alt+Shift+C     { center-visible-columns; }
 
     // Column geometry & display
