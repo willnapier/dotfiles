@@ -1,0 +1,10 @@
+[package]
+name = "ai-export-watcher"
+version = "0.1.0"
+edition = "2021"
+description = "Watches ~/Downloads for AI conversation exports (ChatGPT, Grok, Gemini)"
+
+[dependencies]
+notify = "6"
+anyhow = "1"
+regex = "1"

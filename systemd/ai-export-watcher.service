@@ -4,7 +4,7 @@ After=default.target
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/chatgpt-watcher
+ExecStart=%h/.local/bin/ai-export-watcher
 Restart=on-failure
 RestartSec=10
 
