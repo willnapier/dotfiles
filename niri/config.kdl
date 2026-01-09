@@ -86,6 +86,17 @@ binds {
     Mod+C               { center-column; }  // Reliable binding (Mod+Alt unreliable with HRM)
     Mod+Alt+Shift+C     { center-visible-columns; }
 
+    // Jump to column by number (1-indexed)
+    Mod+1               { focus-column 1; }
+    Mod+2               { focus-column 2; }
+    Mod+3               { focus-column 3; }
+    Mod+4               { focus-column 4; }
+    Mod+5               { focus-column 5; }
+    Mod+6               { focus-column 6; }
+    Mod+7               { focus-column 7; }
+    Mod+8               { focus-column 8; }
+    Mod+9               { focus-column 9; }
+
     // Column geometry & display
     Mod+Alt+W           { expand-column-to-available-width; }
     Mod+Alt+Shift+W     { set-column-width "50%"; }
