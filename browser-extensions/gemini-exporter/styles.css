@@ -1,0 +1,35 @@
+#gemini-export-btn {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 10000;
+  background: #1a73e8;
+  color: white;
+  border: none;
+  padding: 12px 20px;
+  border-radius: 24px;
+  cursor: pointer;
+  font-family: 'Google Sans', Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#gemini-export-btn:hover {
+  background: #1557b0;
+}
+
+#gemini-export-btn:active {
+  transform: scale(0.98);
+}
+
+#gemini-export-btn.success {
+  background: #34a853;
+}
+
+#gemini-export-btn.error {
+  background: #ea4335;
+}

@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Gemini Conversation Exporter",
+  "version": "1.0",
+  "description": "Export Gemini conversations to JSON for continuum logs",
+  "permissions": ["activeTab", "downloads"],
+  "host_permissions": ["https://gemini.google.com/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://gemini.google.com/*"],
+      "js": ["content.js"],
+      "css": ["styles.css"]
+    }
+  ],
+  "icons": {
+    "48": "icon.png"
+  }
+}

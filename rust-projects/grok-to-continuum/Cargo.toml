@@ -1,0 +1,19 @@
+[package]
+name = "grok-to-continuum"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "grok-to-continuum"
+path = "src/main.rs"
+
+[[bin]]
+name = "grok-continuum-manage"
+path = "src/bin/grok-continuum-manage.rs"
+
+[dependencies]
+anyhow = "1.0"
+chrono = "0.4"
+clap = { version = "4.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
