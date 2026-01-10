@@ -44,7 +44,7 @@ def main [] {
 
     # If we have a key:: pattern but no wiki links, try to navigate to Social/ or Activity file
     if ($all_links | is-empty) and (not ($key_patterns | is-empty)) {
-        # If multiple keys on line, let user select
+        # If multiple keys on line, let user select via platform-native GUI selector
         let key = if ($key_patterns | length) > 1 {
             let os = (sys host | get name)
             let selection = if $os == "Darwin" {
