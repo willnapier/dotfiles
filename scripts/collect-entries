@@ -144,6 +144,15 @@ def main [
             }
         }
     }
+
+    # Ensure Social files exist for leading :: patterns (inline entity references)
+    # This allows typing ::colindye to auto-create Social/colindye.md
+    if not $dry_run {
+        if $verbose {
+            print "\n=== Ensuring Social Files for :: Patterns ==="
+        }
+        ensure_social_files_for_leading_patterns $journal_path $social_path $verbose
+    }
 }
 
 # Check if an activity file has "social" tag (for mention collection)
@@ -591,6 +600,83 @@ def add_subentry_to_parent [parent_file: string, subentry_name: string] {
     )
 
     $updated | save -f $parent_file
+}
+
+# Ensure Social files exist for leading :: patterns (inline entity references)
+# Scans DayPages for ::name patterns and creates Social/{name}.md if not exists
+def ensure_social_files_for_leading_patterns [
+    journal_path: string
+    social_path: string
+    verbose: bool
+] {
+    let files = (glob ([$journal_path "**" "*.md"] | path join))
+
+    # Collect all unique ::name patterns across all files
+    let patterns = (
+        $files | each {|file|
+            let content = (open $file --raw)
+            # Find all ::name patterns (leading ::)
+            # Pattern: :: followed by lowercase letters/numbers/dots/hyphens
+            # But NOT followed by another : (to avoid matching key:: patterns as ::key)
+            try {
+                $content | rg -o '::[a-z][a-z0-9.-]*' | lines
+            } catch {
+                []
+            }
+        }
+        | flatten
+        | uniq
+    )
+
+    if ($patterns | is-empty) {
+        if $verbose {
+            print "  No leading :: patterns found"
+        }
+        return
+    }
+
+    if $verbose {
+        print $"  Found ($patterns | length) unique :: patterns"
+    }
+
+    # For each pattern, ensure Social file exists
+    let current_date = (date now | format date "%Y-%m-%d")
+
+    for pattern in $patterns {
+        let name = ($pattern | str replace '::' '')
+
+        # Skip very short names or reserved words
+        if ($name | str length) <= 2 or ($name in ["dev", "sys", "env", "var", "tmp"]) {
+            continue
+        }
+
+        let social_file = ([$social_path $"($name).md"] | path join)
+
+        if ($social_file | path exists) {
+            continue  # Already exists
+        }
+
+        # Create the Social file
+        let content = $"# ($name)
+
+**Created**: ($current_date)
+**Updated**: ($current_date)
+
+## Sub-activities
+
+{Auto-generated}
+
+## Journal Entries
+
+## Backlinks
+
+"
+        $content | save -f $social_file
+
+        if $verbose {
+            print $"  ✓ Created Social/($name).md"
+        }
+    }
 }
 
 # Process r:: reminder entries
