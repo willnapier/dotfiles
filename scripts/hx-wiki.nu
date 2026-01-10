@@ -44,16 +44,9 @@ def main [] {
 
     # If we have a key:: pattern but no wiki links, try to navigate to Social/ or Activity file
     if ($all_links | is-empty) and (not ($key_patterns | is-empty)) {
-        # If multiple keys on line, let user select (cross-platform)
+        # If multiple keys on line, let user select via sk (skim)
         let key = if ($key_patterns | length) > 1 {
-            let os = (sys host | get name)
-            let selection = if $os == "Darwin" {
-                # macOS: use sk (skim) - Rust fzf alternative
-                $key_patterns | str join "\n" | sk --prompt "Select key: " --height 40%
-            } else {
-                # Linux/Wayland: use fuzzel dmenu
-                $key_patterns | str join "\n" | fuzzel --dmenu --prompt "Select key: "
-            }
+            let selection = ($key_patterns | str join "\n" | sk --prompt "Select key: " --height 40%)
             if ($selection | is-empty) {
                 return
             }
