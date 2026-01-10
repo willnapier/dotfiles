@@ -11,20 +11,82 @@
 # - Smart file type handling: text in Helix, media in system viewer
 # - Reception inbox for daily note workflows
 # - Daily note template with metrics and navigation
+# - Leading ::entity syntax for inline entity references in prose
+#   - ::colindye → transforms to [[colindye]], routes to Social/colindye.md
+#   - Creates Social file if not exists
+#   - Distinct from trailing key:: (for logging) - leading :: is for mentions
 
 def main [] {
     # Read input from Helix pipe
     let line = (cat | str trim)
 
-    # Output the original line back to Helix (pipe-to expects output)
-    print $line
+    # Check for leading :: patterns (entity references in prose)
+    # Format: :: followed by lowercase-with-dots-or-hyphens
+    # These get transformed to [[name]] and route to Social/
+    let leading_patterns = try {
+        $line | rg -o '::[a-z][a-z0-9.-]*' | lines
+    } catch {
+        []
+    }
+
+    # Transform leading ::patterns to [[patterns]] and determine output line
+    let output_line = if ($leading_patterns | is-empty) {
+        $line
+    } else {
+        # Replace each ::name with [[name]]
+        mut transformed = $line
+        for pattern in $leading_patterns {
+            let name = ($pattern | str replace '::' '')
+            $transformed = ($transformed | str replace $pattern $"[[($name)]]")
+        }
+        $transformed
+    }
+
+    # Output the (possibly transformed) line back to Helix
+    print $output_line
 
     # Debug logging
-    $"CALLED: ($line)\n" | save --append /tmp/hx-wiki-debug.log
+    $"CALLED: ($line) -> ($output_line)\n" | save --append /tmp/hx-wiki-debug.log
 
     # Clear old temp file
     rm -f /tmp/helix-current-link.md
     let target_file = "/tmp/helix-current-link.md"
+
+    # If we had leading :: patterns, handle Social/ routing for the first one
+    if (not ($leading_patterns | is-empty)) {
+        let first_pattern = ($leading_patterns | first)
+        let key = ($first_pattern | str replace '::' '')
+        let social_dir = $"($env.HOME)/Forge/NapierianLogs/Social"
+        let social_file = $"($social_dir)/($key).md"
+
+        if ($social_file | path exists) {
+            ln -sf $social_file $target_file | ignore
+            $"LEADING :: SOCIAL EXISTS: ($key) -> ($social_file)\n" | save --append /tmp/hx-wiki-debug.log
+            return
+        } else {
+            # Create Social file for this entity
+            mkdir $social_dir
+            let current_date = (date now | format date "%Y-%m-%d")
+            let content = $"# ($key)
+
+**Created**: ($current_date)
+**Updated**: ($current_date)
+
+## Sub-activities
+
+{Auto-generated}
+
+## Journal Entries
+
+## Backlinks
+
+"
+            $content | save -f $social_file
+            ln -sf $social_file $target_file | ignore
+            $"LEADING :: NEW SOCIAL: ($key) -> ($social_file)\n" | save --append /tmp/hx-wiki-debug.log
+            return
+        }
+    }
 
     # Extract wiki links from line (supports [[link]], ![[image]], ?[[unresolved]])
     # Prioritize image embeds (![[...]]) over regular links ([[...]])
@@ -34,7 +96,7 @@ def main [] {
         []
     }
 
-    # NEW: Also check for key:: patterns (social navigation)
+    # Check for trailing key:: patterns (social navigation for logging)
     # Format: lowercase-with-dots-or-hyphens followed by ::
     let key_patterns = try {
         $line | rg -o '[a-z][a-z0-9.-]*::' | lines
