@@ -250,6 +250,11 @@ def main [] {
         if ($clean_link =~ '^\d{4}-\d{2}-\d{2}$') {
             # Date format - create in DayPages
             $"($daily_dir)/($clean_link).md"
+        } else if ($clean_link =~ '-\d{4}-\d{2}-\d{2}') {
+            # Dated conversation/event format (e.g., raviholy-2026-01-10)
+            let conversations_dir = $"($vault)/NapierianLogs/Conversations"
+            mkdir $conversations_dir
+            $"($conversations_dir)/($clean_link).md"
         } else {
             # Regular note - create in Reception inbox
             let reception_dir = $"($vault)/Reception"
@@ -263,6 +268,11 @@ def main [] {
     } else if ($clean_link =~ '^\d{4}-\d{2}-\d{2}$') {
         # Daily note format
         $"($daily_dir)/($clean_link).md"
+    } else if ($clean_link =~ '-\d{4}-\d{2}-\d{2}') {
+        # Dated conversation/event format (e.g., raviholy-2026-01-10)
+        let conversations_dir = $"($vault)/NapierianLogs/Conversations"
+        mkdir $conversations_dir
+        $"($conversations_dir)/($clean_link).md"
     } else {
         # Regular note - create in Reception inbox (not vault root)
         let reception_dir = $"($vault)/Reception"
