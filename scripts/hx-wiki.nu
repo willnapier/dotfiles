@@ -71,11 +71,11 @@ def main [] {
 
         # Priority: Social file > Activity file > do nothing (let collect-entries create it)
         if ($social_file | path exists) {
-            ln -sf $social_file $target_file
+            ln -sf $social_file $target_file | ignore
             $"KEY PATTERN SOCIAL: ($key) -> ($social_file)\n" | save --append /tmp/hx-wiki-debug.log
             return
         } else if ($activity_file | path exists) {
-            ln -sf $activity_file $target_file
+            ln -sf $activity_file $target_file | ignore
             $"KEY PATTERN ACTIVITY: ($key) -> ($activity_file)\n" | save --append /tmp/hx-wiki-debug.log
             return
         } else {
@@ -99,7 +99,7 @@ def main [] {
 
 "
                 $content | save -f $social_file
-                ln -sf $social_file $target_file
+                ln -sf $social_file $target_file | ignore
                 $"KEY PATTERN NEW SOCIAL: ($key) -> ($social_file)\n" | save --append /tmp/hx-wiki-debug.log
                 return
             }
@@ -195,7 +195,7 @@ def main [] {
 
     if not ($existing_file | is-empty) {
         # Found exact match
-        ln -sf $existing_file $target_file
+        ln -sf $existing_file $target_file | ignore
         return
     }
 
@@ -228,7 +228,7 @@ def main [] {
         }
 
         if not ($journal_file | is-empty) {
-            ln -sf $journal_file $target_file
+            ln -sf $journal_file $target_file | ignore
             return
         }
     }
@@ -296,7 +296,7 @@ def handle_existing_file [file: string, target_file: string] {
     match $extension {
         "md" | "txt" | "text" => {
             # Text files - create symlink for Helix
-            ln -sf $file $target_file
+            ln -sf $file $target_file | ignore
         }
         "pdf" | "PDF" => {
             # Open in system viewer
@@ -375,7 +375,7 @@ date modified: ($current_date) ($current_time)
 
 "
         $content | save -f $file
-        ln -sf $file $target_file
+        ln -sf $file $target_file | ignore
     }
 }
 
@@ -435,5 +435,5 @@ social_connection: false
 "
 
     $content | save -f $file
-    ln -sf $file $target_file
+    ln -sf $file $target_file | ignore
 }
