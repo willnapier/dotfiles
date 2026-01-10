@@ -44,9 +44,19 @@ def main [] {
 
     # If we have a key:: pattern but no wiki links, try to navigate to Social/ or Activity file
     if ($all_links | is-empty) and (not ($key_patterns | is-empty)) {
-        # If multiple keys on line, let user select via sk (skim)
+        # If multiple keys on line, let user select
         let key = if ($key_patterns | length) > 1 {
-            let selection = ($key_patterns | str join "\n" | sk --prompt "Select key: " --height 40%)
+            let os = (sys host | get name)
+            let selection = if $os == "Darwin" {
+                # macOS: use osascript dialog (works without TTY)
+                let items = ($key_patterns | each {|k| $"\"($k)\""} | str join ", ")
+                let script = $"choose from list {($items)} with prompt \"Select key:\""
+                let result = (osascript -e $script | str trim)
+                if $result == "false" { "" } else { $result }
+            } else {
+                # Linux: use fuzzel (Wayland popup, works without TTY)
+                $key_patterns | str join "\n" | fuzzel --dmenu --prompt "Select key: "
+            }
             if ($selection | is-empty) {
                 return
             }
