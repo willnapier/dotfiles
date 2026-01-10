@@ -44,7 +44,23 @@ def main [] {
 
     # If we have a key:: pattern but no wiki links, try to navigate to Social/ or Activity file
     if ($all_links | is-empty) and (not ($key_patterns | is-empty)) {
-        let key = ($key_patterns | first | str replace '::' '')
+        # If multiple keys on line, let user select
+        let key = if ($key_patterns | length) > 1 {
+            let os = (sys host | get name)
+            let selection = if $os == "Darwin" {
+                # macOS: use sk (skim) - Rust fzf alternative
+                $key_patterns | str join "\n" | sk --prompt "Select key: " --height 40%
+            } else {
+                # Linux/Wayland: use fuzzel dmenu
+                $key_patterns | str join "\n" | fuzzel --dmenu --prompt "Select key: "
+            }
+            if ($selection | is-empty) {
+                return
+            }
+            $selection | str trim | str replace '::' ''
+        } else {
+            $key_patterns | first | str replace '::' ''
+        }
         let social_dir = $"($env.HOME)/Forge/NapierianLogs/Social"
         let activities_dir = $"($env.HOME)/Forge/NapierianLogs"
         let social_file = $"($social_dir)/($key).md"
