@@ -246,10 +246,13 @@ def ensure_backlinks_section [file_path: string, backlinks: list] {
 
     # Check if file has ## Backlinks section
     if ($content | str contains "## Backlinks") {
-        # Replace existing backlinks section
-        let before = ($content | str replace -r '## Backlinks\n.*' '' | str trim)
+        # Replace existing backlinks section - split on ## Backlinks and take content before it
+        # BUG FIX: Previous regex '## Backlinks\n.*' only matched one line because . doesn't match newlines
+        let lines = ($content | lines)
+        let backlinks_idx = ($lines | enumerate | where {|x| $x.item =~ "^## Backlinks"} | first | get index)
+        let before = ($lines | first $backlinks_idx | str join "\n" | str trim)
         let backlinks_section = if ($backlinks | is-empty) {
-            "\n\n## Backlinks\n\n"
+            "\n\n## Backlinks\n"
         } else {
             $"\n\n## Backlinks\n\n($backlinks | str join '\n')\n"
         }
@@ -258,7 +261,7 @@ def ensure_backlinks_section [file_path: string, backlinks: list] {
     } else {
         # Add backlinks section at end
         let backlinks_section = if ($backlinks | is-empty) {
-            "\n\n## Backlinks\n\n"
+            "\n\n## Backlinks\n"
         } else {
             $"\n\n## Backlinks\n\n($backlinks | str join '\n')\n"
         }
