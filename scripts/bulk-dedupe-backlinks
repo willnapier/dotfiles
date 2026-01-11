@@ -1,0 +1,172 @@
+#!/usr/bin/env nu
+# bulk-dedupe-backlinks - Fix files with duplicated backlinks
+#
+# The wiki-backlinks bug caused backlinks to be inserted repeatedly into
+# file bodies, resulting in files with 100k-600k lines where the same
+# links appear thousands of times.
+#
+# This script:
+# 1. Finds all .md files over a size threshold
+# 2. Separates real content from garbage wiki-link-only lines
+# 3. Deduplicates the backlinks and rebuilds the file
+#
+# Usage: bulk-dedupe-backlinks [--dry-run] [--min-lines 10000]
+
+def main [
+    --dry-run (-n)  # Show what would be done without changing files
+    --min-lines (-m): int = 10000  # Only process files over this many lines
+    --path (-p): string = "~/Forge"  # Path to scan
+] {
+    let target_path = ($path | path expand)
+    print $"Scanning ($target_path) for files over ($min_lines) lines..."
+
+    # Find large files (excluding sync-conflict files which we'll handle separately)
+    let large_files = (fd -e md . $target_path
+        | lines
+        | where {|f| not ($f | str contains "sync-conflict")}
+        | par-each {|f|
+            let line_count = (open $f | lines | length)
+            if $line_count > $min_lines {
+                {path: $f, lines: $line_count}
+            }
+        }
+        | compact
+        | sort-by lines -r
+    )
+
+    print $"Found ($large_files | length) files over ($min_lines) lines"
+
+    if ($large_files | is-empty) {
+        print "No files need processing."
+        return
+    }
+
+    mut processed = 0
+    mut skipped = 0
+    mut total_saved = 0
+
+    # Process each file
+    for file in $large_files {
+        print $"\n--- Processing: ($file.path) \(($file.lines) lines\)"
+
+        let content = (open $file.path)
+        let all_lines = ($content | lines)
+
+        # Classify each line:
+        # - "content": Real content (not a standalone wiki link)
+        # - "wikilink": Standalone wiki link line (potential garbage)
+        # - "backlinks_header": The ## Backlinks header
+        # - "empty": Empty/whitespace line
+
+        let classified = ($all_lines | each {|line|
+            let trimmed = ($line | str trim)
+            if ($trimmed | is-empty) {
+                {type: "empty", line: $line}
+            } else if $trimmed == "## Backlinks" {
+                {type: "backlinks_header", line: $line}
+            } else if ($trimmed =~ '^\?*\[\[.*\]\]$') {
+                # Line is ONLY a wiki link (possibly with leading ?)
+                {type: "wikilink", line: $trimmed}
+            } else {
+                {type: "content", line: $line}
+            }
+        })
+
+        # Find where real content ends
+        # Real content = everything up to where we hit a long sequence of wikilink-only lines
+        # We consider content to have ended when we see 5+ consecutive wikilink lines
+
+        let content_lines = []
+        let wikilink_buffer = []
+        mut in_garbage_zone = false
+        mut content_end_idx = 0
+        mut consecutive_wikilinks = 0
+
+        for entry in ($classified | enumerate) {
+            if $in_garbage_zone {
+                break
+            }
+
+            if $entry.item.type == "wikilink" {
+                $consecutive_wikilinks = $consecutive_wikilinks + 1
+                if $consecutive_wikilinks >= 5 {
+                    # We've hit the garbage zone
+                    $in_garbage_zone = true
+                    $content_end_idx = $entry.index - $consecutive_wikilinks + 1
+                }
+            } else if $entry.item.type == "content" {
+                # Reset counter - real content found
+                $consecutive_wikilinks = 0
+                $content_end_idx = $entry.index + 1
+            } else {
+                # Empty lines don't reset the counter
+            }
+        }
+
+        if not $in_garbage_zone {
+            print "  Skipping - no garbage zone detected"
+            $skipped = $skipped + 1
+            continue
+        }
+
+        # Extract real content (everything before garbage zone)
+        let real_content = ($classified | first $content_end_idx | get line)
+
+        # Extract all standalone wiki links and deduplicate
+        let all_wikilinks = ($classified
+            | where type == "wikilink"
+            | get line
+            | uniq
+            | sort
+        )
+
+        let original_wikilink_count = ($classified | where type == "wikilink" | length)
+        let dedup_ratio = if ($all_wikilinks | length) > 0 {
+            $original_wikilink_count / ($all_wikilinks | length)
+        } else {
+            1
+        }
+
+        print $"  Real content: ($real_content | length) lines"
+        print $"  Original wiki links: ($original_wikilink_count)"
+        print $"  Unique wiki links: ($all_wikilinks | length)"
+        print $"  Duplication ratio: ($dedup_ratio | math round -p 1)x"
+
+        if $dedup_ratio < 2 {
+            print "  Skipping - duplication ratio too low"
+            $skipped = $skipped + 1
+            continue
+        }
+
+        # Rebuild the file: real content + blank line + ## Backlinks + deduplicated links
+        let rebuilt = (
+            $real_content
+            | append ""
+            | append "## Backlinks"
+            | append ""
+            | append $all_wikilinks
+            | str join "\n"
+        )
+
+        let new_lines = ($rebuilt | lines | length)
+        let savings = $file.lines - $new_lines
+        let savings_pct = (($savings / $file.lines) * 100 | math round -p 1)
+
+        print $"  New size: ($new_lines) lines - saving ($savings) lines, ($savings_pct)%"
+
+        if $dry_run {
+            print "  [DRY RUN] Would save changes"
+        } else {
+            $rebuilt | save -f $file.path
+            print "  ✅ Saved"
+        }
+
+        $processed = $processed + 1
+        $total_saved = $total_saved + $savings
+    }
+
+    print "\n=== Summary ==="
+    print $"Processed: ($processed) files"
+    print $"Skipped: ($skipped) files"
+    print $"Total lines saved: ($total_saved)"
+}
