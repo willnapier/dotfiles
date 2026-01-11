@@ -1028,6 +1028,146 @@ def note-rename [old_name: string, new_name: string] {
     print $"Renamed: ($old_name) -> ($new_name)"
 }
 
+# ---- Reading Queue Functions ----
+# Query literature notes marked for reading
+# Uses tags: to-read-N (priority 1-9), plus subject tags (attachment, fep, etc.)
+
+# List reading queue items
+# Usage: rq           - all items sorted by priority
+#        rq -m 7      - priority 7+ only
+#        rq -t fep    - filter by subject tag
+#        rq -m 7 -t attachment  - combined filters
+def rq [
+    --min (-m): int = 1,      # minimum priority (1-9)
+    --tag (-t): string = "",  # filter by subject tag
+    --verbose (-v)            # show full paths
+] {
+    let lit_dir = $"($env.HOME)/Forge/LIT"
+
+    # Find files with to-read tags at minimum priority
+    let files = (
+        rg -l $"to-read-[($min)-9]" $lit_dir --glob "*.md"
+        | lines
+        | where {|f| not ($f | str contains "/Sources/")}  # exclude legacy subdirs
+    )
+
+    if ($files | is-empty) {
+        print $"No reading queue items at priority ($min)+"
+        return
+    }
+
+    # Parse each file for metadata
+    let items = (
+        $files | each {|f|
+            let content = (open $f)
+
+            # Extract priority from to-read-N tag
+            let priority = (
+                $content
+                | rg -o 'to-read-([0-9])' -r '$1'
+                | lines
+                | first
+                | default "0"
+                | into int
+            )
+
+            # Extract all tags from frontmatter
+            let tags = (
+                $content
+                | rg "^- ([a-zA-Z0-9-]+)$" -r '$1'
+                | lines
+                | where {|t| not ($t | str starts-with "to-read") and $t != "literature"}
+            )
+
+            # Extract title (first # heading or filename)
+            let title = (
+                $content
+                | rg "^# (.+)$" -r '$1'
+                | lines
+                | first
+                | default ($f | path basename | str replace ".md" "")
+            )
+
+            {
+                path: $f
+                name: ($f | path basename | str replace ".md" "")
+                title: $title
+                priority: $priority
+                tags: $tags
+            }
+        }
+    )
+
+    # Filter by tag if specified
+    let filtered = if ($tag | is-empty) {
+        $items
+    } else {
+        $items | where {|r| $tag in $r.tags}
+    }
+
+    # Sort by priority descending
+    let sorted = ($filtered | sort-by priority -r)
+
+    if $verbose {
+        $sorted | select name priority tags path
+    } else {
+        $sorted | select name priority tags
+    }
+}
+
+# Quick add to reading queue - creates a LIT note stub
+# Usage: rqa "AuthorName" 8 attachment fep
+def rqa [
+    name: string,           # author or work name
+    priority: int = 5,      # priority 1-9
+    ...tags: string         # subject tags
+] {
+    let lit_dir = $"($env.HOME)/Forge/LIT"
+    let file_path = $"($lit_dir)/($name).md"
+
+    if ($file_path | path exists) {
+        print $"Note already exists: ($file_path)"
+        print "Opening for editing..."
+        hx $file_path
+        return
+    }
+
+    # Build tag list
+    let all_tags = (
+        ["literature", $"to-read-($priority)"]
+        | append $tags
+        | each {|t| $"- ($t)"}
+        | str join (char newline)
+    )
+
+    let today = (date now | format date "%Y-%m-%d")
+
+    let content = $"---
+tags:
+($all_tags)
+date created: ($today)
+date modified: ($today)
+---
+# ($name)
+
+## Why read
+
+
+
+## To find
+
+
+
+## Notes
+
+\(empty until read\)
+"
+
+    $content | save $file_path
+    print $"Created: ($file_path)"
+    print $"Priority: ($priority), Tags: ($tags | str join ', ')"
+}
+
 # Toggle todo checkbox in current line (for Helix integration)
 def note-toggle-todo [] {
     print "Run in Helix: :pipe-to sd '\\[ \\]' '[TEMP]' | sd '\\[x\\]' '[ ]' | sd '\\[TEMP\\]' '[x]'"
