@@ -4,8 +4,8 @@
 
 # Check if temp file exists (created by hx-wiki for text files)
 if [ -f /tmp/helix-current-link.md ]; then
-    # Text file - open in floating Helix
-    zellij run --floating -- hx /tmp/helix-current-link.md
+    # Text file - open in floating Helix (close pane when Helix exits)
+    zellij run --floating --close-on-exit -- hx /tmp/helix-current-link.md
 else
     # Media file - already opened by hx-wiki script, do nothing
     :
