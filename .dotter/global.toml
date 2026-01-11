@@ -113,6 +113,9 @@ depends = []
 "scripts/semantic-query-continuum" = "~/.local/bin/semantic-query-continuum"
 "scripts/semantic-indexer-continuum" = "~/.local/bin/semantic-indexer-continuum"
 # "scripts/extract-jsonl-content" = "~/.local/bin/extract-jsonl-content"  # Missing - disabled
+# MESSAGEBOARD editing - atomic edits bypassing Claude Code Edit tool race condition
+"scripts/messageboard-lock" = "~/.local/bin/messageboard-lock"
+"scripts/messageboard-edit" = "~/.local/bin/messageboard-edit"
 # Wiki link management - Split architecture following Unix "do one thing well" philosophy
 "scripts/wiki-backlinks" = "~/.local/bin/wiki-backlinks"
 "scripts/wiki-resolve-mark" = "~/.local/bin/wiki-resolve-mark"

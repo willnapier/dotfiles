@@ -1,0 +1,96 @@
+#!/usr/bin/env nu
+# messageboard-lock - Acquire/release lock for MESSAGEBOARD.md edits
+# Usage: messageboard-lock acquire|release|status
+#
+# Protocol:
+# - Lock file: ~/Assistants/shared/.MESSAGEBOARD.lock
+# - Contents: {device}-{unix_timestamp}
+# - TTL: 30 seconds (stale locks auto-expire)
+# - Must acquire before editing, release after
+
+def main [action: string] {
+    let lock_file = $"($env.HOME)/Assistants/shared/.MESSAGEBOARD.lock"
+    let device = (sys host | get hostname)
+    let now = (date now | into int) / 1_000_000_000 | math floor
+    let ttl = 30  # seconds
+
+    match $action {
+        "acquire" => {
+            # Check existing lock
+            if ($lock_file | path exists) {
+                let lock_content = (open $lock_file | str trim)
+                let parts = ($lock_content | split row "-")
+                let lock_device = ($parts | first)
+                let lock_time = ($parts | last | into int)
+                let age = $now - $lock_time
+
+                if $age < $ttl {
+                    if $lock_device == $device {
+                        # We already hold it
+                        print $"✅ Lock already held by us \(($device)\)"
+                        return
+                    } else {
+                        # Someone else has it
+                        print $"⏳ Lock held by ($lock_device) \(($age)s old\). Waiting..."
+                        sleep 5sec
+                        # Retry once
+                        main "acquire"
+                        return
+                    }
+                } else {
+                    print $"🔓 Breaking stale lock from ($lock_device) \(($age)s old\)"
+                }
+            }
+
+            # Create lock
+            $"($device)-($now)" | save -f $lock_file
+
+            # Verify we got it (race check)
+            sleep 100ms
+            let verify = (open $lock_file | str trim)
+            if ($verify | str starts-with $device) {
+                print $"🔒 Lock acquired by ($device)"
+            } else {
+                print "❌ Lock race lost, retrying..."
+                sleep 2sec
+                main "acquire"
+            }
+        }
+
+        "release" => {
+            if ($lock_file | path exists) {
+                let lock_content = (open $lock_file | str trim)
+                if ($lock_content | str starts-with $device) {
+                    rm -f $lock_file
+                    print $"🔓 Lock released by ($device)"
+                } else {
+                    print "⚠️ Lock held by another device, not releasing"
+                }
+            } else {
+                print "🔓 No lock to release"
+            }
+        }
+
+        "status" => {
+            if ($lock_file | path exists) {
+                let lock_content = (open $lock_file | str trim)
+                let parts = ($lock_content | split row "-")
+                let lock_device = ($parts | first)
+                let lock_time = ($parts | last | into int)
+                let age = $now - $lock_time
+
+                if $age < $ttl {
+                    print $"🔒 Locked by ($lock_device) \(($age)s ago\)"
+                } else {
+                    print $"🔓 Stale lock from ($lock_device) \(($age)s ago\) - can be broken"
+                }
+            } else {
+                print "🔓 Unlocked"
+            }
+        }
+
+        _ => {
+            print "Usage: messageboard-lock acquire|release|status"
+        }
+    }
+}
