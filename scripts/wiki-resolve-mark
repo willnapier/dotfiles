@@ -189,9 +189,9 @@ def handle_create [file_path: string, watch_paths: list] {
 def handle_write [file_path: string, watch_paths: list] {
     print $"📝 Modified: ($file_path | path basename)"
 
-    # Extract current links from file
+    # Extract current links from file (supports [[link]], ![[image]], ?[[unresolved]], >[[inbox]])
     let current_links = try {
-        open $file_path | rg -o '[!?]?\[\[([^\]]+)\]\]' --replace '$1' | lines | uniq
+        open $file_path | rg -o '[!?>]?\[\[([^\]]+)\]\]' --replace '$1' | lines | uniq
     } catch {
         []
     }
@@ -306,6 +306,11 @@ def mark_unresolved_in_file [file_path: string, links: list, watch_paths: list] 
 
         # Skip if already marked with ?
         if ($link | str starts-with "?") {
+            continue
+        }
+
+        # Skip inbox links (>[[...]]) - these are explicitly creating new files
+        if ($link | str starts-with ">") {
             continue
         }
 

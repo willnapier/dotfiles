@@ -9,12 +9,17 @@
 # - Auto-search across ~/Forge, ~/Admin, and ~/Assistants directories
 # - Explicit path support: [[~/Admin/Budget]] or [[~/Archives/File]]
 # - Smart file type handling: text in Helix, media in system viewer
-# - Reception inbox for daily note workflows
 # - Daily note template with metrics and navigation
 # - Leading ::entity syntax for inline entity references in prose
 #   - ::colindye → transforms to [[colindye]], routes to Social/colindye.md
 #   - Creates Social file if not exists
 #   - Distinct from trailing key:: (for logging) - leading :: is for mentions
+#
+# Routing for new files:
+# - [[note]]   → ~/Forge/note.md (Zettelkasten default)
+# - >[[note]]  → ~/Forge/Reception/note.md (inbox/journalling)
+# - [[date]]   → ~/Forge/NapierianLogs/DayPages/date.md
+# - [[x-date]] → ~/Forge/NapierianLogs/Conversations/x-date.md
 
 def main [] {
     # Read input from Helix pipe
@@ -108,10 +113,10 @@ def main [] {
         }
     }
 
-    # Extract wiki links from line (supports [[link]], ![[image]], ?[[unresolved]])
+    # Extract wiki links from line (supports [[link]], ![[image]], ?[[unresolved]], >[[inbox]])
     # Prioritize image embeds (![[...]]) over regular links ([[...]])
     let all_links = try {
-        $line | rg -o '[!?]?\[\[[^\]]+\]\]' | lines
+        $line | rg -o '[!?>]?\[\[[^\]]+\]\]' | lines
     } catch {
         []
     }
@@ -207,8 +212,11 @@ def main [] {
         return
     }
 
-    # Extract link content from [[link]] (strip !, ?, or both)
-    let link = ($first_link | str replace -r '[!?]*\[\[(.*)\]\]' '$1')
+    # Check if this is an inbox link (starts with >)
+    let is_inbox_link = ($first_link | str starts-with ">")
+
+    # Extract link content from [[link]] (strip !, ?, >, or combinations)
+    let link = ($first_link | str replace -r '[!?>]*\[\[(.*)\]\]' '$1')
 
     if ($link | is-empty) {
         return
@@ -327,45 +335,39 @@ def main [] {
     }
 
     # Build target path
-    let file = if ($current_file | str contains "/DayPages/") {
-        # We're in a DayPages file
-        if ($clean_link =~ '^\d{4}-\d{2}-\d{2}$') {
-            # Date format - create in DayPages
-            $"($daily_dir)/($clean_link).md"
-        } else if ($clean_link =~ '-\d{4}-\d{2}-\d{2}') {
-            # Dated conversation/event format (e.g., raviholy-2026-01-10)
-            let conversations_dir = $"($vault)/NapierianLogs/Conversations"
-            mkdir $conversations_dir
-            $"($conversations_dir)/($clean_link).md"
-        } else {
-            # Regular note - create in Reception inbox
-            let reception_dir = $"($vault)/Reception"
-            mkdir $reception_dir
-            if not ($clean_link | str ends-with ".md") {
-                $"($reception_dir)/($clean_link).md"
-            } else {
-                $"($reception_dir)/($clean_link)"
-            }
-        }
-    } else if ($clean_link =~ '^\d{4}-\d{2}-\d{2}$') {
-        # Daily note format
+    # Routing rules:
+    # - [[date]] (YYYY-MM-DD) → DayPages
+    # - [[x-YYYY-MM-DD]] (dated conversation) → NapierianLogs/Conversations
+    # - >[[note]] (inbox prefix) → Reception
+    # - [[note]] (default) → Forge root (Zettelkasten)
+    let file = if ($clean_link =~ '^\d{4}-\d{2}-\d{2}$') {
+        # Date format - create in DayPages
         $"($daily_dir)/($clean_link).md"
     } else if ($clean_link =~ '-\d{4}-\d{2}-\d{2}') {
         # Dated conversation/event format (e.g., raviholy-2026-01-10)
         let conversations_dir = $"($vault)/NapierianLogs/Conversations"
         mkdir $conversations_dir
         $"($conversations_dir)/($clean_link).md"
-    } else {
-        # Regular note - create in Reception inbox (not vault root)
+    } else if $is_inbox_link {
+        # Explicit inbox routing with >[[note]] syntax
         let reception_dir = $"($vault)/Reception"
         mkdir $reception_dir
         if ($clean_link | str contains ".") and not ($clean_link | str ends-with ".md") {
-            # Has non-md extension - use as-is
             $"($reception_dir)/($clean_link)"
         } else if not ($clean_link | str ends-with ".md") {
             $"($reception_dir)/($clean_link).md"
         } else {
             $"($reception_dir)/($clean_link)"
+        }
+    } else {
+        # Default: Zettelkasten-style - create in Forge root
+        if ($clean_link | str contains ".") and not ($clean_link | str ends-with ".md") {
+            # Has non-md extension - use as-is
+            $"($vault)/($clean_link)"
+        } else if not ($clean_link | str ends-with ".md") {
+            $"($vault)/($clean_link).md"
+        } else {
+            $"($vault)/($clean_link)"
         }
     }
 
