@@ -34,9 +34,12 @@ def main [] {
         []
     }
 
-    # Transform leading ::patterns to [[patterns]] and determine output line
+    # Transform patterns and determine output line:
+    # - ::name → [[name]] (leading entity references)
+    # - >[[name]] → [[name]] (inbox routing prefix, consumed after routing)
     let output_line = if ($leading_patterns | is-empty) {
-        $line
+        # No leading :: patterns, but check for >[[...]] inbox links
+        $line | str replace -a '>[[' '[['
     } else {
         # Replace each ::name with [[name]]
         mut transformed = $line
@@ -44,7 +47,8 @@ def main [] {
             let name = ($pattern | str replace '::' '')
             $transformed = ($transformed | str replace $pattern $"[[($name)]]")
         }
-        $transformed
+        # Also clean any >[[...]] prefixes
+        $transformed | str replace -a '>[[' '[['
     }
 
     # Output the (possibly transformed) line back to Helix
