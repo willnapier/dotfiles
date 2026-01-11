@@ -81,6 +81,57 @@ def main [action: string, content?: string] {
             print $"✅ Removed section: ($content)"
         }
 
+        "remove-containing" => {
+            # Remove section that contains a specific string (for duplicate headers)
+            if ($content | is-empty) {
+                print "Error: search string required"
+                return
+            }
+
+            let current = (open $file)
+            let lines = ($current | lines)
+
+            # Find line containing the unique string
+            let match_idx = try {
+                $lines | enumerate | where {|x| $x.item | str contains $content} | first | get index
+            } catch {
+                print $"No section containing: ($content)"
+                return
+            }
+
+            # Find the section header (### line) before this match
+            let start_idx = try {
+                $lines | first $match_idx | enumerate | where {|x| $x.item | str starts-with "###"} | last | get index
+            } catch {
+                print "Could not find section header"
+                return
+            }
+
+            # Find next section (next ### after match or end)
+            let end_idx = try {
+                let remaining = ($lines | skip ($match_idx + 1) | enumerate)
+                let next = ($remaining | where {|x| $x.item | str starts-with "###"} | first | get index)
+                $match_idx + 1 + $next
+            } catch {
+                $lines | length
+            }
+
+            # Also remove the --- before the section if present
+            let actual_start = if $start_idx > 0 and ($lines | get ($start_idx - 1)) == "---" {
+                $start_idx - 1
+            } else {
+                $start_idx
+            }
+
+            # Reconstruct without the section
+            let before = ($lines | first $actual_start | str join "\n")
+            let after = ($lines | skip $end_idx | str join "\n")
+            let updated = $"($before)\n($after)"
+
+            $updated | save -f $file
+            print $"✅ Removed section containing: ($content)"
+        }
+
         "show" => {
             open $file | print
         }
