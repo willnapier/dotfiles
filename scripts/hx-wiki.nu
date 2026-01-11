@@ -52,10 +52,30 @@ def main [] {
     rm -f /tmp/helix-current-link.md
     let target_file = "/tmp/helix-current-link.md"
 
-    # If we had leading :: patterns, handle Social/ routing for the first one
+    # If we had leading :: patterns, handle Social/ routing
     if (not ($leading_patterns | is-empty)) {
-        let first_pattern = ($leading_patterns | first)
-        let key = ($first_pattern | str replace '::' '')
+        # If multiple patterns, let user select via platform-native GUI selector
+        let selected_pattern = if ($leading_patterns | length) > 1 {
+            let os = (sys host | get name)
+            let selection = if $os == "Darwin" {
+                # macOS: use osascript dialog (works without TTY)
+                let items = ($leading_patterns | each {|p| $"\"\($p)\""} | str join ", ")
+                let script = $"choose from list {($items)} with prompt \"Select entity:\""
+                let result = (osascript -e $script | str trim)
+                if $result == "false" { "" } else { $result }
+            } else {
+                # Linux: use fuzzel (Wayland popup, works without TTY)
+                $leading_patterns | str join "\n" | fuzzel --dmenu --prompt "Select entity: "
+            }
+            if ($selection | is-empty) {
+                return
+            }
+            $selection | str trim
+        } else {
+            $leading_patterns | first
+        }
+
+        let key = ($selected_pattern | str replace '::' '')
         let social_dir = $"($env.HOME)/Forge/NapierianLogs/Social"
         let social_file = $"($social_dir)/($key).md"
 
