@@ -9,7 +9,7 @@
 # - Cross-directory support (Forge, Admin, Archives)
 # - Event-driven (zero CPU when idle)
 #
-# Usage: wiki-resolve-mark [--debounce-ms 2000]
+# Usage: wiki-resolve-mark [--debounce 2000]
 
 # Smart filter configuration (ported from Python config.yaml)
 def create_filter_config [] {
@@ -108,7 +108,7 @@ def should_exclude_link [link_name: string] {
     return false
 }
 
-def main [--debounce-ms: int = 2000] {
+def main [--debounce: duration = 2sec] {
     # Verify required directories exist
     let forge = $"($env.HOME)/Forge"
     let admin = $"($env.HOME)/Admin"
@@ -140,18 +140,19 @@ def main [--debounce-ms: int = 2000] {
     }
 
     print $"📂 Watching ($watch_paths | length) directories for markdown files"
-    print $"⏱️  Debounce: ($debounce_ms)ms"
+    print $"⏱️  Debounce: ($debounce)"
     print ""
 
     # Watch Forge directory (primary)
     print $"🔍 Monitoring Forge for file events..."
-    watch $forge --glob "**/*.md" --debounce-ms $debounce_ms {|operation, file_path, new_path|
+    watch $forge --glob "**/*.md" --debounce $debounce {|operation, file_path, new_path|
         handle_change $operation $file_path $new_path $watch_paths
     }
 }
 
 # Handle file change events
-def handle_change [operation: string, file_path: string, new_path: string, watch_paths: list] {
+# Note: new_path is only populated for Rename operations, otherwise null
+def handle_change [operation: string, file_path: string, new_path, watch_paths: list] {
     match $operation {
         "Write" => {
             # File was edited - mark new unresolved links
@@ -164,7 +165,10 @@ def handle_change [operation: string, file_path: string, new_path: string, watch
         }
         "Rename" => {
             # File renamed - update markers in references
-            handle_rename $file_path $new_path $watch_paths
+            # new_path should always be populated for Rename, but guard against null
+            if ($new_path | is-not-empty) {
+                handle_rename $file_path ($new_path | into string) $watch_paths
+            }
         }
         "Remove" => {
             # File deleted - mark references as unresolved

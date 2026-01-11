@@ -1,0 +1,14 @@
+[package]
+name = "wiki-resolve-batch"
+version = "0.1.0"
+edition = "2021"
+description = "Batch cleanup of ?[[ markers for wiki links that now resolve"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+walkdir = "2"
+regex = "1"
+rayon = "1"
+anyhow = "1"
+colored = "2"
+dirs = "5"
