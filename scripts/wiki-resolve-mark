@@ -193,6 +193,13 @@ def handle_create [file_path: string, watch_paths: list] {
 def handle_write [file_path: string, watch_paths: list] {
     print $"📝 Modified: ($file_path | path basename)"
 
+    # Skip large files (>500KB) - these are likely garbage web clips, not real notes
+    let file_size = try { (ls $file_path | first | get size) } catch { 0b }
+    if $file_size > 500kb {
+        print $"   ⚠️  Skipping large file (($file_size)) - likely garbage web clip"
+        return
+    }
+
     # Extract current links from file (supports [[link]], ![[image]], ?[[unresolved]], >[[inbox]])
     let current_links = try {
         open $file_path | rg -o '[!?>]?\[\[([^\]]+)\]\]' --replace '$1' | lines | uniq
@@ -202,6 +209,12 @@ def handle_write [file_path: string, watch_paths: list] {
 
     if ($current_links | is-empty) {
         print "   No wiki links in file, skipping"
+        return
+    }
+
+    # Skip files with excessive links (>100) - likely garbage web clips
+    if ($current_links | length) > 100 {
+        print $"   ⚠️  Skipping file with ($current_links | length) links - likely garbage"
         return
     }
 
@@ -286,7 +299,10 @@ def handle_remove [file_path: string, watch_paths: list] {
         try {
             let content = (open $file)
             # Add ? marker to all unmarked references
-            let updated = ($content | str replace -a $"[[($file_name)]]" $"?[[($file_name)]]")
+            # Use placeholder to avoid double-marking existing ?[[ links
+            let protected = ($content | str replace -a "?[[" "QMARK_DBRACKET_PLACEHOLDER")
+            let marked = ($protected | str replace -a $"[[($file_name)]]" $"?[[($file_name)]]")
+            let updated = ($marked | str replace -a "QMARK_DBRACKET_PLACEHOLDER" "?[[")
             $updated | save -f $file
             print $"   ⚠️ Marked unresolved: ($file | path basename)"
         } catch {
@@ -329,7 +345,10 @@ def mark_unresolved_in_file [file_path: string, links: list, watch_paths: list] 
         if ($target_file | is-empty) {
             # File doesn't exist - mark as unresolved
             # Handle various link formats: [[link]], [[link|alias]], [[link#header]]
-            $content = ($content | str replace -a $"[[($link)]]" $"?[[($link)]]")
+            # Use placeholder to avoid double-marking existing ?[[ links
+            let protected = ($content | str replace -a "?[[" "QMARK_DBRACKET_PLACEHOLDER")
+            let marked = ($protected | str replace -a $"[[($link)]]" $"?[[($link)]]")
+            $content = ($marked | str replace -a "QMARK_DBRACKET_PLACEHOLDER" "?[[")
             $marked_count = $marked_count + 1
         }
     }
