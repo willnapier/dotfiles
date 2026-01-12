@@ -159,6 +159,19 @@ def main [] {
 
                     # Auto-manage services after successful deployment
                     auto_manage_services $timestamp $log_file
+
+                    # Run post-deploy verification to catch silent failures
+                    let verify_result = (do { nu ~/.local/bin/dotter-verify --quiet } | complete)
+                    if $verify_result.exit_code != 0 {
+                        let verify_warn = $"[($timestamp)] ⚠️  Post-deploy verification found issues"
+                        $verify_warn | save --append $log_file
+                        print $verify_warn
+                        # Log the issues but don't fail the deploy
+                        $verify_result.stdout | save --append $log_file
+                    } else {
+                        let verify_ok = $"[($timestamp)] ✓ Post-deploy verification passed"
+                        $verify_ok | save --append $log_file
+                    }
                 } else {
                     let error_msg = $"[($timestamp)] ❌ Deploy failed: ($result.stderr)"
                     $error_msg | save --append $log_file
