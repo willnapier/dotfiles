@@ -141,6 +141,7 @@ depends = []
 "scripts/dotter-orphan-detector-v2" = "~/.local/bin/dotter-orphan-detector-v2"
 "scripts/dotter-enforce-compliance" = "~/.local/bin/dotter-enforce-compliance"
 "scripts/dotter-drift-monitor" = "~/.local/bin/dotter-drift-monitor"
+"scripts/dotter-verify" = "~/.local/bin/dotter-verify"
 "scripts/claude-docs-backup" = "~/.local/bin/claude-docs-backup"
 "scripts/rotate-linkmanager-logs" = "~/.local/bin/rotate-linkmanager-logs"
 "scripts/dotter-drift-cron" = "~/.local/bin/dotter-drift-cron"

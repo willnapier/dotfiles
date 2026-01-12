@@ -1,0 +1,330 @@
+#!/usr/bin/env nu
+# dotter-verify - Post-deploy verification to catch silent failures
+#
+# Checks three layers:
+# 1. Symlinks: All expected symlinks exist and point to valid targets
+# 2. Scripts: All Nushell scripts parse without syntax errors
+# 3. Services: All services are actually running (not just loaded)
+#
+# Run after every dotter deploy to catch issues immediately.
+
+def main [
+    --fix (-f)  # Attempt to fix issues (restart services, recreate symlinks)
+    --quiet (-q)  # Only output failures
+    --json (-j)  # Output results as JSON
+] {
+    let start_time = (date now)
+    let platform = (detect-platform)
+
+    mut results = {
+        symlinks: { passed: 0, failed: 0, issues: [] }
+        scripts: { passed: 0, failed: 0, issues: [] }
+        services: { passed: 0, failed: 0, issues: [] }
+    }
+
+    if not $quiet {
+        print "🔍 dotter-verify - Post-deploy verification"
+        print $"   Platform: ($platform)"
+        print ""
+    }
+
+    # === LAYER 1: Symlink Verification ===
+    if not $quiet { print "📁 Checking symlinks..." }
+    $results = (verify_symlinks $platform $fix $quiet $results)
+
+    # === LAYER 2: Script Syntax Verification ===
+    if not $quiet { print "\n📜 Checking Nushell script syntax..." }
+    $results = (verify_scripts $quiet $results)
+
+    # === LAYER 3: Service Health Verification ===
+    if not $quiet { print "\n⚙️  Checking service health..." }
+    $results = (verify_services $platform $fix $quiet $results)
+
+    # === Summary ===
+    let duration = ((date now) - $start_time)
+    let total_passed = $results.symlinks.passed + $results.scripts.passed + $results.services.passed
+    let total_failed = $results.symlinks.failed + $results.scripts.failed + $results.services.failed
+
+    if $json {
+        $results | merge { duration: ($duration | into string), total_passed: $total_passed, total_failed: $total_failed } | to json
+    } else {
+        print "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        if $total_failed == 0 {
+            print $"✅ All checks passed \(($total_passed) total\) in ($duration | into string)"
+        } else {
+            print $"❌ ($total_failed) issues found \(($total_passed) passed\) in ($duration | into string)"
+            print ""
+            print "Issues to fix:"
+            for issue in $results.symlinks.issues { print $"  • Symlink: ($issue)" }
+            for issue in $results.scripts.issues { print $"  • Script: ($issue)" }
+            for issue in $results.services.issues { print $"  • Service: ($issue)" }
+        }
+        print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    }
+
+    # Exit with error code if issues found
+    if $total_failed > 0 {
+        exit 1
+    }
+}
+
+# Detect platform (returns "macos" or "linux")
+def detect-platform [] {
+    if (sys host | get name) == "Darwin" {
+        "macos"
+    } else {
+        "linux"
+    }
+}
+
+# Verify all expected symlinks exist and point to valid targets
+def verify_symlinks [platform: string, fix: bool, quiet: bool, results: record] {
+    mut r = $results
+    let home = $env.HOME
+    let dotfiles = $"($home)/dotfiles"
+
+    # Critical symlinks that must exist - platform-specific
+    let critical_symlinks = if $platform == "macos" {
+        [
+            { source: "scripts/git-auto-pull-watcher-macos", target: "~/.local/bin/git-auto-pull-watcher-macos" }
+            { source: "scripts/git-auto-push-watcher-macos", target: "~/.local/bin/git-auto-push-watcher-macos" }
+            { source: "scripts/assistants-auto-pull-macos", target: "~/.local/bin/assistants-auto-pull-macos" }
+            { source: "scripts/wiki-backlinks", target: "~/.local/bin/wiki-backlinks" }
+            { source: "scripts/wiki-resolve-mark", target: "~/.local/bin/wiki-resolve-mark" }
+            { source: "scripts/link-service", target: "~/.local/bin/link-service" }
+            { source: "scripts/daily-note.nu", target: "~/.local/bin/daily-note" }
+            { source: "scripts/zj.nu", target: "~/.local/bin/zj" }
+            { source: "nushell/config.nu", target: "~/.config/nushell/config.nu" }
+            { source: "helix/config.toml", target: "~/.config/helix/config.toml" }
+        ]
+    } else {
+        [
+            { source: "scripts/git-auto-pull-watcher", target: "~/.local/bin/git-auto-pull-watcher" }
+            { source: "scripts/git-auto-push-watcher", target: "~/.local/bin/git-auto-push-watcher" }
+            { source: "scripts/wiki-backlinks", target: "~/.local/bin/wiki-backlinks" }
+            { source: "scripts/wiki-resolve-mark", target: "~/.local/bin/wiki-resolve-mark" }
+            { source: "scripts/link-service", target: "~/.local/bin/link-service" }
+            { source: "scripts/daily-note.nu", target: "~/.local/bin/daily-note" }
+            { source: "scripts/zj.nu", target: "~/.local/bin/zj" }
+            { source: "nushell/config.nu", target: "~/.config/nushell/config.nu" }
+            { source: "helix/config-linux.toml", target: "~/.config/helix/config.toml" }
+            { source: "scripts/dotter-sync-watcher", target: "~/.local/bin/dotter-sync-watcher" }
+        ]
+    }
+
+    for link in $critical_symlinks {
+        let target_path = ($link.target | str replace "~" $home)
+        let source_path = $"($dotfiles)/($link.source)"
+
+        # Check target exists
+        if not ($target_path | path exists) {
+            $r.symlinks.failed = $r.symlinks.failed + 1
+            $r.symlinks.issues = ($r.symlinks.issues | append $"Missing: ($link.target)")
+
+            if $fix {
+                # Attempt to create symlink
+                let parent = ($target_path | path dirname)
+                if not ($parent | path exists) {
+                    mkdir $parent
+                }
+                try {
+                    ^ln -sf $source_path $target_path
+                    if not $quiet { print $"   🔧 Fixed: ($link.target)" }
+                } catch {
+                    if not $quiet { print $"   ❌ Failed to fix: ($link.target)" }
+                }
+            } else {
+                if not $quiet { print $"   ❌ Missing: ($link.target)" }
+            }
+        } else {
+            # Check it's a symlink pointing to the right place
+            let link_target = try { ls -l $target_path | get 0.target? | default "" } catch { "" }
+            if ($link_target | is-empty) or (not ($link_target | str ends-with $link.source)) {
+                # It exists but isn't a symlink or points wrong
+                if ($target_path | path type) != "symlink" {
+                    $r.symlinks.failed = $r.symlinks.failed + 1
+                    $r.symlinks.issues = ($r.symlinks.issues | append $"Not a symlink: ($link.target)")
+                    if not $quiet { print $"   ⚠️  Not a symlink: ($link.target)" }
+                } else {
+                    $r.symlinks.passed = $r.symlinks.passed + 1
+                    if not $quiet { print $"   ✓ ($link.target)" }
+                }
+            } else {
+                $r.symlinks.passed = $r.symlinks.passed + 1
+                if not $quiet { print $"   ✓ ($link.target)" }
+            }
+        }
+    }
+
+    $r
+}
+
+# Verify all Nushell scripts parse without errors
+def verify_scripts [quiet: bool, results: record] {
+    mut r = $results
+    let home = $env.HOME
+    let scripts_dir = $"($home)/.local/bin"
+
+    # Find all Nushell scripts (those with .nu extension or nushell shebang)
+    let nu_scripts = try {
+        ls $scripts_dir
+        | where type == "symlink" or type == "file"
+        | get name
+        | each {|script|
+            # Check by extension first
+            if ($script | str ends-with ".nu") {
+                return $script
+            }
+            # Check shebang for scripts without .nu extension
+            # Only check if the file actually exists (skip broken symlinks)
+            if not ($script | path exists) {
+                return null
+            }
+            let shebang_raw = try {
+                (do { ^head -c 100 $script } | complete | get stdout)
+            } catch { "" }
+            # Handle both string and binary returns
+            let shebang = if ($shebang_raw | describe) == "binary" {
+                try { $shebang_raw | decode utf-8 } catch { "" }
+            } else {
+                $shebang_raw
+            }
+            if ($shebang | str contains "/nu") or ($shebang | str contains "env nu") {
+                $script
+            } else {
+                null
+            }
+        }
+        | where $it != null
+    } catch {
+        []
+    }
+
+    for script in $nu_scripts {
+        let script_name = ($script | path basename)
+        # Use --ide-check which outputs JSON diagnostics
+        let check_result = (do { ^nu --ide-check 5 $script } | complete)
+
+        # Parse JSON output and look for diagnostic errors
+        let diagnostics = try {
+            $check_result.stdout
+            | lines
+            | each {|line| try { $line | from json } catch { null } }
+            | where $it != null
+            | where type == "diagnostic" and severity == "Error"
+        } catch {
+            []
+        }
+
+        if ($diagnostics | is-empty) {
+            $r.scripts.passed = $r.scripts.passed + 1
+            if not $quiet { print $"   ✓ ($script_name)" }
+        } else {
+            $r.scripts.failed = $r.scripts.failed + 1
+            let error_msg = ($diagnostics | first | get message | default "parse error")
+            $r.scripts.issues = ($r.scripts.issues | append $"($script_name): ($error_msg)")
+            if not $quiet {
+                print $"   ❌ ($script_name)"
+                print $"      ($error_msg)"
+            }
+        }
+    }
+
+    $r
+}
+
+# Verify services are actually running
+def verify_services [platform: string, fix: bool, quiet: bool, results: record] {
+    mut r = $results
+
+    # Critical services that must be running
+    let services = if $platform == "macos" {
+        [
+            { name: "git-auto-pull-watcher", launchd: "com.williamnapier.git-auto-pull-watcher" }
+            { name: "git-auto-push-watcher", launchd: "com.williamnapier.git-auto-push-watcher" }
+            { name: "link-service", launchd: "com.williamnapier.link-service" }
+            { name: "assistants-auto-pull", launchd: "com.williamnapier.assistants-auto-pull" }
+        ]
+    } else {
+        [
+            { name: "git-auto-pull-watcher", systemd: "git-auto-pull-watcher.service" }
+            { name: "git-auto-push-watcher", systemd: "git-auto-push-watcher.service" }
+            { name: "link-service", systemd: "link-service.service" }
+            { name: "dotter-sync-watcher", systemd: "dotter-sync-watcher.service" }
+        ]
+    }
+
+    for service in $services {
+        let is_running = if $platform == "macos" {
+            check_launchd_service $service.launchd
+        } else {
+            check_systemd_service $service.systemd
+        }
+
+        if $is_running {
+            $r.services.passed = $r.services.passed + 1
+            if not $quiet { print $"   ✓ ($service.name)" }
+        } else {
+            $r.services.failed = $r.services.failed + 1
+            $r.services.issues = ($r.services.issues | append $"($service.name) not running")
+
+            if $fix {
+                if not $quiet { print $"   🔧 Restarting ($service.name)..." }
+                if $platform == "macos" {
+                    restart_launchd_service $service.launchd
+                } else {
+                    restart_systemd_service $service.systemd
+                }
+            } else {
+                if not $quiet { print $"   ❌ ($service.name) not running" }
+            }
+        }
+    }
+
+    $r
+}
+
+# Check if a launchd service is actually running (has a PID)
+def check_launchd_service [label: string] {
+    let result = (do { launchctl list | rg $label } | complete)
+    if $result.exit_code != 0 {
+        return false
+    }
+
+    # Parse output: "PID   Status   Label"
+    # If PID is "-", service is loaded but not running
+    let line = ($result.stdout | str trim)
+    let pid = ($line | split row "\t" | first | str trim)
+    $pid != "-" and $pid != ""
+}
+
+# Check if a systemd service is active
+def check_systemd_service [unit: string] {
+    let result = (do { systemctl --user is-active $unit } | complete)
+    $result.stdout | str trim | $in == "active"
+}
+
+# Restart a launchd service
+def restart_launchd_service [label: string] {
+    let plist = $"($env.HOME)/Library/LaunchAgents/($label).plist"
+    let uid = (id -u | str trim)
+
+    # Remove stale lock files that might block startup
+    let lock_patterns = [
+        "/tmp/git-auto-pull-watcher.lock"
+        "/tmp/git-auto-push-watcher.lock"
+        "/tmp/link-service.lock"
+    ]
+    for lock in $lock_patterns {
+        if ($lock | path exists) {
+            rm -f $lock
+        }
+    }
+
+    do { launchctl kickstart -k $"gui/($uid)/($label)" } | complete
+}
+
+# Restart a systemd service
+def restart_systemd_service [unit: string] {
+    do { systemctl --user restart $unit } | complete
+}
