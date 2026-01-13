@@ -128,7 +128,6 @@ depends = []
 "scripts/recover-corrupted-highlights" = "~/.local/bin/recover-corrupted-highlights"
 # Forge analysis tools
 "scripts/forge-root-analyzer" = "~/.local/bin/forge-root-analyzer"
-"scripts/forge-batch-classifier" = "~/.local/bin/forge-batch-classifier"
 # Zotero integration
 "scripts/zotero-get-pdf-key" = "~/.local/bin/zotero-get-pdf-key"
 # Wiki link management - Split architecture following Unix "do one thing well" philosophy
