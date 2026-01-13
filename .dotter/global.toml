@@ -82,6 +82,7 @@ depends = []
 "scripts/link-service" = "~/.local/bin/link-service"
 "scripts/nosave" = "~/.local/bin/nosave"
 "scripts/continuum-sync-claude" = "~/.local/bin/continuum-sync-claude"
+"scripts/quantified-sum" = "~/.local/bin/quantified-sum"
 "nushell/scripts/quantified-tracking.nu" = "~/.config/nushell/scripts/quantified-tracking.nu"
 "nushell/scripts/quantified-tracking-v2.nu" = "~/.config/nushell/scripts/quantified-tracking-v2.nu"
 "nushell/scripts/project-root-detection.nu" = "~/.config/nushell/scripts/project-root-detection.nu"
@@ -89,6 +90,9 @@ depends = []
 "nushell/scripts/hx-smart-gf.nu" = "~/.config/nushell/scripts/hx-smart-gf.nu"
 "nushell/completions/serpl-completions.nu" = "~/.config/nushell/completions/serpl-completions.nu"
 "nushell/zotero-commands.nu" = "~/.config/nushell/zotero-commands.nu"
+"nushell/budget-commands.nu" = "~/.config/nushell/budget-commands.nu"
+"nushell/continuum.nu" = "~/.config/nushell/continuum.nu"
+"nushell/scripts/codex-tail.nu" = "~/.config/nushell/scripts/codex-tail.nu"
 
 # Cross-platform utilities
 "scripts/detect-platform" = "~/.local/bin/detect-platform"
@@ -112,10 +116,21 @@ depends = []
 # Semantic search for continuum conversation logs
 "scripts/semantic-query-continuum" = "~/.local/bin/semantic-query-continuum"
 "scripts/semantic-indexer-continuum" = "~/.local/bin/semantic-indexer-continuum"
-# "scripts/extract-jsonl-content" = "~/.local/bin/extract-jsonl-content"  # Missing - disabled
-# MESSAGEBOARD editing - atomic edits bypassing Claude Code Edit tool race condition
-"scripts/messageboard-lock" = "~/.local/bin/messageboard-lock"
-"scripts/messageboard-edit" = "~/.local/bin/messageboard-edit"
+"scripts/extract-jsonl-content" = "~/.local/bin/extract-jsonl-content"
+"scripts/continuum-indexer-periodic" = "~/.local/bin/continuum-indexer-periodic"
+"scripts/continuum-preview" = "~/.local/bin/continuum-preview"
+"scripts/jsonl-to-markdown.nu" = "~/.local/bin/jsonl-to-markdown.nu"
+# Date recovery and corruption detection tools
+"scripts/detect-date-corruption" = "~/.local/bin/detect-date-corruption"
+"scripts/export-dates-to-frontmatter" = "~/.local/bin/export-dates-to-frontmatter"
+"scripts/restore-dates-from-evernote" = "~/.local/bin/restore-dates-from-evernote"
+"scripts/sync-file-dates-from-frontmatter" = "~/.local/bin/sync-file-dates-from-frontmatter"
+"scripts/recover-corrupted-highlights" = "~/.local/bin/recover-corrupted-highlights"
+# Forge analysis tools
+"scripts/forge-root-analyzer" = "~/.local/bin/forge-root-analyzer"
+"scripts/forge-batch-classifier" = "~/.local/bin/forge-batch-classifier"
+# Zotero integration
+"scripts/zotero-get-pdf-key" = "~/.local/bin/zotero-get-pdf-key"
 # Wiki link management - Split architecture following Unix "do one thing well" philosophy
 "scripts/wiki-backlinks" = "~/.local/bin/wiki-backlinks"
 "scripts/wiki-resolve-mark" = "~/.local/bin/wiki-resolve-mark"
@@ -231,6 +246,8 @@ depends = ["shared"]
 "macos/LaunchAgents/com.williamnapier.assistants-auto-push.plist" = "~/Library/LaunchAgents/com.williamnapier.assistants-auto-push.plist"
 "macos/LaunchAgents/com.williamnapier.git-auto-push-watcher.plist" = "~/Library/LaunchAgents/com.williamnapier.git-auto-push-watcher.plist"
 "scripts/git-auto-push-watcher-macos" = "~/.local/bin/git-auto-push-watcher-macos"
+"scripts/assistants-auto-pull-macos" = "~/.local/bin/assistants-auto-pull-macos"
+"scripts/assistants-auto-push-macos" = "~/.local/bin/assistants-auto-push-macos"
 "launchagents/com.user.collect-projects.plist" = "~/Library/LaunchAgents/com.user.collect-projects.plist"
 "launchagents/com.user.collect-projects-watcher.plist" = "~/Library/LaunchAgents/com.user.collect-projects-watcher.plist"
 "launchagents/com.user.forge-metadata-backup.plist" = "~/Library/LaunchAgents/com.user.forge-metadata-backup.plist"
@@ -280,6 +297,7 @@ depends = ["shared"]
 "systemd/zotero-bridge.service" = "~/.config/systemd/user/zotero-bridge.service"
 "systemd/ai-export-watcher.service" = "~/.config/systemd/user/ai-export-watcher.service"
 # "systemd/wiki-link-manager.service" = "~/.config/systemd/user/wiki-link-manager.service"  # Missing file - temporarily disabled
+"systemd/forge-link-manager.service" = "~/.config/systemd/user/forge-link-manager.service"
 "systemd/collect-projects.service" = "~/.config/systemd/user/collect-projects.service"
 "systemd/collect-projects.timer" = "~/.config/systemd/user/collect-projects.timer"
 "systemd/collect-projects-watcher.service" = "~/.config/systemd/user/collect-projects-watcher.service"

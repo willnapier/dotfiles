@@ -1,0 +1,223 @@
+#!/usr/bin/env nu
+# Quantified Sum - Sum metrics (distances, durations, costs) from daypages
+# Usage: quantified-sum [metric] [--period <period>] [--key <activity>]
+
+def main [
+    metric: string = "all"      # distance, duration, cost, or all
+    --period (-p): string = "today"  # today, yesterday, week, month, or YYYY-MM-DD
+    --key (-k): string = ""     # Filter to specific activity key (e.g., travel.walk)
+    --verbose (-v)              # Show individual entries
+] {
+    let daypage_path = [$env.HOME "Forge" "NapierianLogs" "DayPages"] | path join
+
+    # Determine date range
+    let dates = (resolve-dates $period)
+
+    if ($dates | is-empty) {
+        print $"No valid dates for period: ($period)"
+        return
+    }
+
+    # Collect content from all matching daypages
+    mut all_content = ""
+    mut files_found = 0
+
+    for date in $dates {
+        let file = [$daypage_path $"($date).md"] | path join
+        if ($file | path exists) {
+            $all_content = $all_content + "\n" + (open $file --raw)
+            $files_found = $files_found + 1
+        }
+    }
+
+    if $files_found == 0 {
+        print $"No daypages found for period: ($period)"
+        return
+    }
+
+    # Extract and sum metrics
+    let results = (extract-metrics $all_content $key $verbose)
+
+    # Display results
+    print $"Period: ($period) \(($files_found) daypage\(s\)\)"
+    if ($key | is-not-empty) {
+        print $"Filter: ($key)*"
+    }
+    print "─────────────────────────────"
+
+    if $metric == "all" or $metric == "distance" {
+        if $results.distance > 0 {
+            print $"Distance: ($results.distance | math round --precision 2)km"
+        }
+    }
+
+    if $metric == "all" or $metric == "duration" {
+        if $results.duration_min > 0 {
+            let hours = ($results.duration_min / 60 | math floor)
+            let mins = ($results.duration_min mod 60 | math round)
+            if $hours > 0 {
+                print $"Duration: ($hours)hr ($mins)min \(($results.duration_min)min total\)"
+            } else {
+                print $"Duration: ($mins)min"
+            }
+        }
+    }
+
+    if $metric == "all" or $metric == "cost" {
+        if $results.cost_gbp > 0 {
+            print $"Cost: £($results.cost_gbp | math round --precision 2)"
+        }
+        if $results.cost_usd > 0 {
+            print $"Cost: $($results.cost_usd | math round --precision 2)"
+        }
+        if $results.cost_eur > 0 {
+            print $"Cost: €($results.cost_eur | math round --precision 2)"
+        }
+    }
+
+    if $verbose and ($results.entries | length) > 0 {
+        print "\nEntries:"
+        $results.entries | each {|e| print $"  ($e)" }
+    }
+}
+
+# Resolve period string to list of dates
+def resolve-dates [period: string]: nothing -> list<string> {
+    let today = (date now | format date "%Y-%m-%d")
+
+    if $period == "today" {
+        [$today]
+    } else if $period == "yesterday" {
+        [(date now | $in - 1day | format date "%Y-%m-%d")]
+    } else if $period == "week" {
+        # Last 7 days
+        0..6 | each {|i| date now | $in - ($i * 1day) | format date "%Y-%m-%d" }
+    } else if $period == "month" {
+        # Last 30 days
+        0..29 | each {|i| date now | $in - ($i * 1day) | format date "%Y-%m-%d" }
+    } else if ($period =~ '^\d{4}-\d{2}-\d{2}$') {
+        # Specific date
+        [$period]
+    } else if ($period =~ '^\d{4}-\d{2}$') {
+        # Specific month (YYYY-MM) - all days in that month
+        let year = ($period | split row '-' | get 0 | into int)
+        let month = ($period | split row '-' | get 1 | into int)
+
+        # Generate all days in the month
+        1..31 | each {|day|
+            let date_str = $"($period)-($day | fill -a right -w 2 -c '0')"
+            # Validate date exists (handles months with <31 days)
+            try {
+                $date_str | into datetime | format date "%Y-%m-%d"
+            } catch {
+                null
+            }
+        } | compact
+    } else {
+        # Try to parse as date range: YYYY-MM-DD..YYYY-MM-DD
+        if ($period | str contains '..') {
+            let parts = ($period | split row '..')
+            if ($parts | length) == 2 {
+                let start = ($parts.0 | into datetime)
+                let end = ($parts.1 | into datetime)
+
+                mut dates = []
+                mut current = $start
+                while $current <= $end {
+                    $dates = ($dates | append ($current | format date "%Y-%m-%d"))
+                    $current = $current + 1day
+                }
+                $dates
+            } else {
+                []
+            }
+        } else {
+            []
+        }
+    }
+}
+
+# Extract metrics from content
+def extract-metrics [content: string, key_filter: string, verbose: bool]: nothing -> record {
+    mut distance = 0.0
+    mut duration_min = 0
+    mut cost_gbp = 0.0
+    mut cost_usd = 0.0
+    mut cost_eur = 0.0
+    mut entries = []
+
+    # If key filter specified, only look at lines with that key
+    let lines = if ($key_filter | is-not-empty) {
+        $content | lines | where {|line| $line =~ $"($key_filter)[.:]" }
+    } else {
+        $content | lines
+    }
+
+    for line in $lines {
+        # Extract distances (e.g., 1.07km, 5km) but NOT speeds (4km/hr)
+        let dist_matches = ($line | parse --regex '(\d+\.?\d*)km(?!/)')
+        for m in $dist_matches {
+            let val = ($m.capture0 | into float)
+            $distance = $distance + $val
+            if $verbose {
+                $entries = ($entries | append $"distance: ($val)km")
+            }
+        }
+
+        # Extract durations - Nushell native format (30min, 2hr)
+        let dur_hr_matches = ($line | parse --regex '(\d+)hr')
+        for m in $dur_hr_matches {
+            let val = ($m.capture0 | into int) * 60
+            $duration_min = $duration_min + $val
+            if $verbose {
+                $entries = ($entries | append $"duration: ($m.capture0)hr")
+            }
+        }
+
+        let dur_min_matches = ($line | parse --regex '(\d+)min')
+        for m in $dur_min_matches {
+            let val = ($m.capture0 | into int)
+            $duration_min = $duration_min + $val
+            if $verbose {
+                $entries = ($entries | append $"duration: ($val)min")
+            }
+        }
+
+        # Extract costs (£15, $20, €25)
+        let gbp_matches = ($line | parse --regex '£(\d+\.?\d*)')
+        for m in $gbp_matches {
+            let val = ($m.capture0 | into float)
+            $cost_gbp = $cost_gbp + $val
+            if $verbose {
+                $entries = ($entries | append $"cost: £($val)")
+            }
+        }
+
+        let usd_matches = ($line | parse --regex '\$(\d+\.?\d*)')
+        for m in $usd_matches {
+            let val = ($m.capture0 | into float)
+            $cost_usd = $cost_usd + $val
+            if $verbose {
+                $entries = ($entries | append $"cost: $($val)")
+            }
+        }
+
+        let eur_matches = ($line | parse --regex '€(\d+\.?\d*)')
+        for m in $eur_matches {
+            let val = ($m.capture0 | into float)
+            $cost_eur = $cost_eur + $val
+            if $verbose {
+                $entries = ($entries | append $"cost: €($val)")
+            }
+        }
+    }
+
+    {
+        distance: $distance
+        duration_min: $duration_min
+        cost_gbp: $cost_gbp
+        cost_usd: $cost_usd
+        cost_eur: $cost_eur
+        entries: $entries
+    }
+}
