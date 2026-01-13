@@ -422,6 +422,84 @@ def open_file [file: string] {
     }
 }
 
+# Get inherited tags from source file (for tag propagation from parent to child notes)
+def get_inherited_tags []: nothing -> list<string> {
+    let source_file = try {
+        open /tmp/helix-current-file.txt | str trim
+    } catch {
+        return []
+    }
+
+    if ($source_file | is-empty) or not ($source_file | path exists) {
+        return []
+    }
+
+    # Read the file and extract YAML frontmatter
+    let content = try {
+        open $source_file --raw
+    } catch {
+        return []
+    }
+
+    # Check if file has frontmatter (starts with ---)
+    if not ($content | str starts-with "---") {
+        return []
+    }
+
+    # Extract frontmatter section (between first and second ---)
+    let frontmatter = try {
+        let parts = ($content | split row "---" | skip 1 | first)
+        $parts
+    } catch {
+        return []
+    }
+
+    # Parse tags from frontmatter
+    # Handles both formats:
+    # tags: [tag1, tag2]  OR  tags:\n- tag1\n- tag2
+    let tags = try {
+        # Look for lines starting with "- " after "tags:" or "Tags:"
+        let tag_section = ($frontmatter | lines | skip while {|l| not ($l =~ '(?i)^tags:')})
+        if ($tag_section | is-empty) {
+            return []
+        }
+
+        # Check if tags are inline: tags: [a, b, c] or tags: a, b
+        let first_line = ($tag_section | first)
+        if ($first_line =~ '\[.*\]') {
+            # Inline array format: tags: [a, b, c]
+            let inline = ($first_line | parse -r '(?i)tags:\s*\[(.*)\]' | get capture0.0? | default "")
+            $inline | split row "," | each {|t| $t | str trim} | where {|t| not ($t | is-empty)}
+        } else if ($first_line =~ '(?i)^tags:\s*\S') {
+            # Inline comma format: tags: a, b, c
+            let inline = ($first_line | str replace -r '(?i)^tags:\s*' '')
+            $inline | split row "," | each {|t| $t | str trim} | where {|t| not ($t | is-empty)}
+        } else {
+            # Multi-line format: tags:\n- a\n- b
+            $tag_section | skip 1 | take while {|l| $l =~ '^\s*-'} | each {|l|
+                $l | str replace -r '^\s*-\s*' '' | str trim
+            } | where {|t| not ($t | is-empty)}
+        }
+    } catch {
+        return []
+    }
+
+    # Filter out status tags and other non-inheritable tags
+    let excluded_prefixes = ["to-read", "to-process", "to-review", "in-progress", "questions"]
+    let excluded_exact = ["questions", "journal"]
+
+    $tags | where {|tag|
+        let tag_lower = ($tag | str downcase)
+        # Exclude exact matches
+        if $tag_lower in $excluded_exact {
+            false
+        } else {
+            # Exclude tags starting with excluded prefixes
+            not ($excluded_prefixes | any {|prefix| $tag_lower | str starts-with $prefix})
+        }
+    }
+}
+
 # Create new file with appropriate handling
 def create_new_file [file: string, clean_link: string, target_file: string] {
     let extension = ($file | path parse | get extension)
@@ -459,9 +537,19 @@ fd -i \"($file | path basename)\" ~/Forge/linked_media/
         let current_date = (date now | format date "%Y-%m-%d")
         let current_time = (date now | format date "%H:%M")
 
+        # Get inherited tags from source file (parent → child propagation)
+        let inherited_tags = (get_inherited_tags)
+
+        # Format tags section: either inherited tags or empty placeholder
+        let tags_yaml = if ($inherited_tags | is-empty) {
+            "tags:\n-"
+        } else {
+            let tag_lines = ($inherited_tags | each {|t| $"- ($t)"} | str join "\n")
+            $"tags:\n($tag_lines)"
+        }
+
         let content = $"---
-tags:
--
+($tags_yaml)
 date created: ($current_date) ($current_time)
 date modified: ($current_date) ($current_time)
 ---
@@ -474,6 +562,11 @@ date modified: ($current_date) ($current_time)
 "
         $content | save -f $file
         ln -sf $file $target_file | ignore
+
+        # Log tag inheritance for debugging
+        if not ($inherited_tags | is-empty) {
+            $"TAG INHERITANCE: ($inherited_tags | str join ', ') -> ($file)\n" | save --append /tmp/hx-wiki-debug.log
+        }
     }
 }
 
