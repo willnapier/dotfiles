@@ -103,7 +103,7 @@ E = ":pipe-to hx-register-export"
 w = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", "extend_to_line_bounds", ":pipe-to ~/.local/bin/hx-wiki.nu", ":sh sleep 0.1 && hx-wiki-open-smart"]
 # Wiki link navigation to NEW PANE RIGHT - Space+W (Zellij-only, for recursive exploration)
 # Creates new pane and runs hx-wiki-open-right script there
-W = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", "extend_to_line_bounds", ":pipe-to ~/.local/bin/hx-wiki.nu", ":sh sleep 0.1", ":sh zellij action new-pane --direction right -- hx-wiki-open-right"]
+W = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", "extend_to_line_bounds", ":pipe-to ~/.local/bin/hx-wiki.nu", ":sh sleep 0.1", ":sh zellij run --direction right --close-on-exit -- hx-wiki-open-right"]
 # Wiki link navigation to NEW TAB - Space+n (Zellij-only)
 # Creates new tab with the linked file ("n" for new tab)
 n = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", "extend_to_line_bounds", ":pipe-to ~/.local/bin/hx-wiki.nu", ":sh sleep 0.1", ":sh zellij action new-tab && sleep 0.2 && zellij action write-chars 'hx /tmp/helix-current-link.md' && zellij action write 10"]
@@ -180,5 +180,5 @@ T = "insert_at_line_start"  # was on 'I' (Insert at line start)
 # Visual mode Space+w: use selection as-is (no line expansion)
 [keys.select.space]
 w = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", ":pipe-to ~/.local/bin/hx-wiki.nu", ":sh sleep 0.1 && hx-wiki-open-smart"]
-W = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", ":pipe-to ~/.local/bin/hx-wiki.nu", ":sh sleep 0.1", ":sh zellij action new-pane --direction right -- hx-wiki-open-right"]
+W = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", ":pipe-to ~/.local/bin/hx-wiki.nu", ":sh sleep 0.1", ":sh zellij run --direction right --close-on-exit -- hx-wiki-open-right"]
 n = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", ":pipe-to ~/.local/bin/hx-wiki.nu", ":sh sleep 0.1", ":sh zellij action new-tab && sleep 0.2 && zellij action write-chars 'hx /tmp/helix-current-link.md' && zellij action write 10"]
