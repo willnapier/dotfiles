@@ -85,12 +85,28 @@ def main [
         3  # Template doesn't exist fallback
     }
 
-    # Create the file if it doesn't exist
-    if not ($daily_file | path exists) {
-        $"[($timestamp)] Daily file does not exist, creating: ($daily_file)\n" | save --append $log_file
+    # Check for existing sync conflicts and warn
+    let conflict_files = (glob $"($daily_dir)/($today).sync-conflict-*.md")
+    if ($conflict_files | length) > 0 {
+        print $"⚠️  Warning: ($conflict_files | length) sync conflict\(s) for ($today) - check for lost edits"
+        $"[($timestamp)] ⚠️  Found ($conflict_files | length) sync conflict files\n" | save --append $log_file
+    }
 
-        # Create directory if needed
-        mkdir ($daily_file | path dirname)
+    # Create the file if it doesn't exist (with sync-aware check)
+    if not ($daily_file | path exists) {
+        # Brief pause to let any in-progress Syncthing sync complete
+        $"[($timestamp)] File not found, waiting 1.5s for potential sync...\n" | save --append $log_file
+        sleep 1500ms
+
+        # Re-check after pause
+        if ($daily_file | path exists) {
+            $"[($timestamp)] ✅ File appeared after sync wait - using synced version\n" | save --append $log_file
+            print $"📥 Daily note synced from another machine"
+        } else {
+            $"[($timestamp)] File still missing after wait, creating: ($daily_file)\n" | save --append $log_file
+
+            # Create directory if needed
+            mkdir ($daily_file | path dirname)
 
         let current_time = (date now | format date "%H:%M")
 
@@ -152,6 +168,7 @@ def main [
             $fallback_content | save --force $daily_file
             $"[($timestamp)] ⚠️  File saved using FALLBACK template\n" | save --append $log_file
             print $"📝 Created new daily note with fallback template: ($today).md"
+        }
         }
     } else {
         $"[($timestamp)] Daily file already exists: ($daily_file)\n" | save --append $log_file
