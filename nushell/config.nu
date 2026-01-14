@@ -1484,7 +1484,7 @@ def fse [] {
         return
     }
     if not ($env.FORGE? | is-empty) and ($env.FORGE | path exists) {
-        let file = (fd . $env.FORGE --type f --hidden --exclude .git | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'mdcat --columns 80 {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📁 Forge File: " | str trim)
+        let file = (fd . $env.FORGE --type f --hidden --exclude .git --exclude .stversions | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'mdcat --columns 80 {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📁 Forge File: " | str trim)
         if not ($file | is-empty) {
             let editor = (if ($env.EDITOR? | is-empty) { "vi" } else { $env.EDITOR })
             print $"🚀 Opening ($file) in editor..."
@@ -1503,7 +1503,7 @@ def fsv [] {
         return
     }
     if not ($env.FORGE? | is-empty) and ($env.FORGE | path exists) {
-        let file = (fd . $env.FORGE --type f --hidden --exclude .git | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'mdcat --columns 80 {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📁 Forge File (View): " | str trim)
+        let file = (fd . $env.FORGE --type f --hidden --exclude .git --exclude .stversions | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'mdcat --columns 80 {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📁 Forge File (View): " | str trim)
         if not ($file | is-empty) {
             print $"👁️  Viewing ($file)..."
             # Smart rendering: mdcat for markdown, bat for everything else
@@ -1570,7 +1570,7 @@ def gco [] {
 # Forge search + copy link to clipboard (universal)
 def fsl [] {
     if not ($env.FORGE? | is-empty) and ($env.FORGE | path exists) {
-        let file = (fd . $env.FORGE --type f --extension md | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'mdcat --columns 80 {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📝 Wiki Link: " | str trim)
+        let file = (fd . $env.FORGE --type f --extension md --exclude .stversions | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'mdcat --columns 80 {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📝 Wiki Link: " | str trim)
         if not ($file | is-empty) {
             let filename = ($file | path basename | str replace ".md" "")
             let wikilink = $"[[($filename)]]"
@@ -2285,17 +2285,17 @@ def fcl [] {
         
         print $"🔍 Searching for: ($query)"
         let results = try {
-            ^rg -i --type md -l $query $env.FORGE | lines | where $it != ""
+            ^rg -i --type md -l -g '!.stversions/*' $query $env.FORGE | lines | where $it != ""
         } catch {
             print "❌ Content search failed"
             return
         }
-        
+
         if ($results | is-empty) {
             print "❌ No matches found"
             return
         }
-        
+
         let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview $"rg --color=always -i -C 3 '($query)' {}" --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📄 Content: " | str trim)
         if not ($selected | is-empty) {
             let filename = ($selected | path basename | str replace ".md" "")
@@ -2319,7 +2319,7 @@ def fce [] {
 
         print $"🔍 Searching for: ($query)"
         let results = try {
-            ^rg -i --type md -l $query $env.FORGE | lines | where $it != ""
+            ^rg -i --type md -l -g '!.stversions/*' $query $env.FORGE | lines | where $it != ""
         } catch {
             print "❌ Content search failed"
             return
@@ -2352,7 +2352,7 @@ def fcv [] {
 
         print $"🔍 Searching for: ($query)"
         let results = try {
-            ^rg -i --type md -l $query $env.FORGE | lines | where $it != ""
+            ^rg -i --type md -l -g '!.stversions/*' $query $env.FORGE | lines | where $it != ""
         } catch {
             print "❌ Content search failed"
             return
