@@ -1,20 +1,19 @@
 #!/bin/bash
 # Scan all notes for unchecked todos and create a dynamic todo view
-# Keeps todos in context but provides a clean aggregated view
+# Uses modern Rust tools: fd, rg, sd
 
 FORGE="${FORGE:-$HOME/Forge}"
 TODO_CACHE="$HOME/.cache/active-todos.md"
 TODO_JSON="$HOME/.cache/active-todos.json"
 
 # Color codes for terminal output
-RED='\033[0;31m'
 YELLOW='\033[1;33m'
 GREEN='\033[0;32m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 # Parse arguments
 SHOW_CONTEXT=false
-DAYS_BACK=30  # Default: show todos from last 30 days
+DAYS_BACK=30
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -35,119 +34,122 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
-# Function to calculate age of file
-get_age_string() {
-    local file=$1
-    local modified=$(stat -f "%m" "$file" 2>/dev/null || stat -c "%Y" "$file" 2>/dev/null)
-    local now=$(date +%s)
-    local age_days=$(( (now - modified) / 86400 ))
-    
-    if [ $age_days -eq 0 ]; then
-        echo "today"
-    elif [ $age_days -eq 1 ]; then
-        echo "yesterday"
-    elif [ $age_days -lt 7 ]; then
-        echo "${age_days}d ago"
-    elif [ $age_days -lt 30 ]; then
-        echo "$((age_days / 7))w ago"
-    else
-        echo "$((age_days / 30))mo ago"
-    fi
-}
+echo -e "${YELLOW}Scanning for unchecked todos...${NC}"
+
+# Build time filter for fd
+if [ "$DAYS_BACK" -lt 9999 ]; then
+    TIME_FILTER="--changed-within ${DAYS_BACK}d"
+else
+    TIME_FILTER=""
+fi
 
 # Header for the cache file
-cat > "$TODO_CACHE" << 'EOF'
+cat > "$TODO_CACHE" << EOF
 # Active TODOs
-*Generated: DATE_PLACEHOLDER*
-*Scope: SCOPE_PLACEHOLDER*
+*Generated: $(date '+%Y-%m-%d %H:%M')*
+*Scope: Last $DAYS_BACK days*
 
 ---
 
 EOF
 
-# Update placeholders
-sed -i '' "s/DATE_PLACEHOLDER/$(date '+%Y-%m-%d %H:%M')/g" "$TODO_CACHE"
-sed -i '' "s/SCOPE_PLACEHOLDER/Last $DAYS_BACK days/g" "$TODO_CACHE"
+# Start JSON
+echo "[" > "$TODO_JSON"
 
 # Track stats
 TOTAL=0
+first_json=true
 
-echo -e "${YELLOW}Scanning for unchecked todos...${NC}"
+# Use rg to search all matching files at once (MUCH faster than per-file grep)
+# Output format: filepath:linenum:matched_line
+while IFS=: read -r filepath line_num todo_line; do
+    # Skip empty lines
+    [[ -z "$filepath" ]] && continue
 
-# Find all markdown files modified within DAYS_BACK days
-# Using process substitution to avoid subshell variable loss
-while read -r file; do
-    # Skip the cache file itself
-    [[ "$file" == "$TODO_CACHE" ]] && continue
+    # Get relative path
+    rel_path="${filepath#$FORGE/}"
 
-    # Get relative path for display
-    rel_path="${file#$FORGE/}"
+    # Clean up the todo text (remove leading whitespace and checkbox)
+    todo_text="${todo_line#*- \[ \] }"
+    todo_text="${todo_text#"${todo_text%%[![:space:]]*}"}"  # trim leading whitespace
 
-    # Extract unchecked todos with line numbers
-    while IFS=: read -r line_num todo; do
-        # Clean up the todo text
-        todo_text=$(echo "$todo" | sed 's/^[[:space:]]*- \[ \] //')
+    # Get file age
+    modified=$(stat -f "%m" "$filepath" 2>/dev/null || stat -c "%Y" "$filepath" 2>/dev/null)
+    now=$(date +%s)
+    age_days=$(( (now - modified) / 86400 ))
 
-        # Get file age
-        age=$(get_age_string "$file")
+    if [ $age_days -eq 0 ]; then
+        age="today"
+    elif [ $age_days -eq 1 ]; then
+        age="yesterday"
+    elif [ $age_days -lt 7 ]; then
+        age="${age_days}d ago"
+    elif [ $age_days -lt 30 ]; then
+        age="$((age_days / 7))w ago"
+    else
+        age="$((age_days / 30))mo ago"
+    fi
 
-        # Determine category based on path
-        category=$(echo "$rel_path" | cut -d'/' -f1)
+    # Category from first path component
+    category="${rel_path%%/*}"
 
-        # Write to cache file
-        echo "## $category / $(basename "$file" .md) *($age)*" >> "$TODO_CACHE"
-        echo "- [ ] $todo_text" >> "$TODO_CACHE"
-        echo "  *[[${rel_path%.md}#L$line_num]]*" >> "$TODO_CACHE"
+    # Write to markdown cache
+    echo "## $category / $(basename "$filepath" .md) *($age)*" >> "$TODO_CACHE"
+    echo "- [ ] $todo_text" >> "$TODO_CACHE"
+    echo "  *[[${rel_path%.md}#L$line_num]]*" >> "$TODO_CACHE"
 
-        # Add context if requested
-        if $SHOW_CONTEXT; then
-            context=$(sed -n "$((line_num + 1))p" "$file" | sed 's/^/  > /')
-            [ -n "$context" ] && echo "$context" >> "$TODO_CACHE"
-        fi
+    # Add context if requested
+    if $SHOW_CONTEXT; then
+        context=$(sed -n "$((line_num + 1))p" "$filepath" 2>/dev/null)
+        [ -n "$context" ] && echo "  > $context" >> "$TODO_CACHE"
+    fi
 
-        echo "" >> "$TODO_CACHE"
+    echo "" >> "$TODO_CACHE"
 
-        TOTAL=$((TOTAL + 1))
-    done < <(grep -n "^[[:space:]]*- \[ \]" "$file" 2>/dev/null)
-done < <(find "$FORGE" -name "*.md" -type f -mtime -${DAYS_BACK}d)
+    # Write to JSON
+    # Escape quotes in todo_text for JSON
+    json_text="${todo_text//\"/\\\"}"
 
-# Add summary statistics
+    if [ "$first_json" = false ]; then echo "," >> "$TODO_JSON"; fi
+    first_json=false
+
+    cat >> "$TODO_JSON" << EOJSON
+  {
+    "file": "$rel_path",
+    "line": $line_num,
+    "task": "$json_text",
+    "modified": $modified,
+    "category": "$category"
+  }
+EOJSON
+
+    TOTAL=$((TOTAL + 1))
+done < <(
+    if [ -n "$TIME_FILTER" ]; then
+        # Pipe through xargs to preserve filepath:linenum:content format
+        fd -e md $TIME_FILTER . "$FORGE" -0 2>/dev/null | xargs -0 rg -n "^\s*- \[ \]" 2>/dev/null
+    else
+        rg -n "^\s*- \[ \]" --type md "$FORGE" 2>/dev/null
+    fi
+)
+
+# Close JSON array
+echo -e "\n]" >> "$TODO_JSON"
+
+# Add statistics to markdown
+file_count=$(fd -e md $TIME_FILTER . "$FORGE" 2>/dev/null | wc -l | tr -d ' ')
+
 cat >> "$TODO_CACHE" << EOF
 
 ---
 
 ## Statistics
 - **Total active todos**: $TOTAL
-- **Scanned**: $(find "$FORGE" -name "*.md" -type f -mtime -${DAYS_BACK}d | wc -l | tr -d ' ') files
+- **Scanned**: $file_count files
 - **Time range**: Last $DAYS_BACK days
 - **Last scan**: $(date '+%Y-%m-%d %H:%M')
 
 EOF
-
-# Create JSON version for Nushell processing
-echo "[" > "$TODO_JSON"
-first=true
-while read -r file; do
-    rel_path="${file#$FORGE/}"
-    while IFS=: read -r line_num todo; do
-        todo_text=$(echo "$todo" | sed 's/^[[:space:]]*- \[ \] //' | sed 's/"/\\"/g')
-        modified=$(stat -f "%Y" "$file" 2>/dev/null || date -r "$file" '+%s' 2>/dev/null)
-
-        if [ "$first" = false ]; then echo "," >> "$TODO_JSON"; fi
-        first=false
-
-        cat >> "$TODO_JSON" << EOJSON
-  {
-    "file": "$rel_path",
-    "line": $line_num,
-    "task": "$todo_text",
-    "modified": $modified,
-    "category": "$(echo "$rel_path" | cut -d'/' -f1)"
-  }
-EOJSON
-    done < <(grep -n "^[[:space:]]*- \[ \]" "$file" 2>/dev/null)
-done < <(find "$FORGE" -name "*.md" -type f -mtime -${DAYS_BACK}d)
-echo -e "\n]" >> "$TODO_JSON"
 
 # Summary output
 echo -e "${GREEN}✓ Found $TOTAL active todos${NC}"
@@ -158,7 +160,6 @@ echo "  hx ~/.cache/active-todos.md    # View in Helix"
 echo "  cat ~/.cache/active-todos.md   # Quick look"
 echo ""
 
-# If in Nushell, show a preview
 if [ -n "$NU_VERSION" ]; then
     echo "For Nushell analysis:"
     echo "  open ~/.cache/active-todos.json | first 5"
