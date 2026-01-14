@@ -71,45 +71,45 @@ sed -i '' "s/SCOPE_PLACEHOLDER/Last $DAYS_BACK days/g" "$TODO_CACHE"
 
 # Track stats
 TOTAL=0
-BY_LOCATION=()
 
 echo -e "${YELLOW}Scanning for unchecked todos...${NC}"
 
 # Find all markdown files modified within DAYS_BACK days
-find "$FORGE" -name "*.md" -type f -mtime -${DAYS_BACK}d | while read -r file; do
+# Using process substitution to avoid subshell variable loss
+while read -r file; do
     # Skip the cache file itself
     [[ "$file" == "$TODO_CACHE" ]] && continue
-    
+
     # Get relative path for display
     rel_path="${file#$FORGE/}"
-    
+
     # Extract unchecked todos with line numbers
-    grep -n "^[[:space:]]*- \[ \]" "$file" 2>/dev/null | while IFS=: read -r line_num todo; do
+    while IFS=: read -r line_num todo; do
         # Clean up the todo text
         todo_text=$(echo "$todo" | sed 's/^[[:space:]]*- \[ \] //')
-        
+
         # Get file age
         age=$(get_age_string "$file")
-        
+
         # Determine category based on path
         category=$(echo "$rel_path" | cut -d'/' -f1)
-        
+
         # Write to cache file
         echo "## $category / $(basename "$file" .md) *($age)*" >> "$TODO_CACHE"
         echo "- [ ] $todo_text" >> "$TODO_CACHE"
         echo "  *[[${rel_path%.md}#L$line_num]]*" >> "$TODO_CACHE"
-        
+
         # Add context if requested
         if $SHOW_CONTEXT; then
             context=$(sed -n "$((line_num + 1))p" "$file" | sed 's/^/  > /')
             [ -n "$context" ] && echo "$context" >> "$TODO_CACHE"
         fi
-        
+
         echo "" >> "$TODO_CACHE"
-        
+
         TOTAL=$((TOTAL + 1))
-    done
-done
+    done < <(grep -n "^[[:space:]]*- \[ \]" "$file" 2>/dev/null)
+done < <(find "$FORGE" -name "*.md" -type f -mtime -${DAYS_BACK}d)
 
 # Add summary statistics
 cat >> "$TODO_CACHE" << EOF
@@ -127,15 +127,15 @@ EOF
 # Create JSON version for Nushell processing
 echo "[" > "$TODO_JSON"
 first=true
-find "$FORGE" -name "*.md" -type f -mtime -${DAYS_BACK}d | while read -r file; do
+while read -r file; do
     rel_path="${file#$FORGE/}"
-    grep -n "^[[:space:]]*- \[ \]" "$file" 2>/dev/null | while IFS=: read -r line_num todo; do
+    while IFS=: read -r line_num todo; do
         todo_text=$(echo "$todo" | sed 's/^[[:space:]]*- \[ \] //' | sed 's/"/\\"/g')
         modified=$(stat -f "%Y" "$file" 2>/dev/null || date -r "$file" '+%s' 2>/dev/null)
-        
+
         if [ "$first" = false ]; then echo "," >> "$TODO_JSON"; fi
         first=false
-        
+
         cat >> "$TODO_JSON" << EOJSON
   {
     "file": "$rel_path",
@@ -145,8 +145,8 @@ find "$FORGE" -name "*.md" -type f -mtime -${DAYS_BACK}d | while read -r file; d
     "category": "$(echo "$rel_path" | cut -d'/' -f1)"
   }
 EOJSON
-    done
-done
+    done < <(grep -n "^[[:space:]]*- \[ \]" "$file" 2>/dev/null)
+done < <(find "$FORGE" -name "*.md" -type f -mtime -${DAYS_BACK}d)
 echo -e "\n]" >> "$TODO_JSON"
 
 # Summary output
