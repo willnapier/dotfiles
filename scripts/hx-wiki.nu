@@ -328,21 +328,23 @@ def main [] {
     }
 
     # Determine where to create new file based on context
+    # Read current file from temp file (set by Helix keybinding)
     let current_file = try {
-        if ("/tmp/helix-current-link.md" | path type) == "symlink" {
-            ls -l /tmp/helix-current-link.md | get target.0
-        } else {
-            ""
-        }
+        open /tmp/helix-current-file.txt | str trim
     } catch {
         ""
     }
+
+    # Check if current file is in LIT/ hierarchy - if so, new files stay in LIT/
+    let is_in_lit = ($current_file | str contains "/LIT/")
+    let lit_dir = $"($vault)/LIT"
 
     # Build target path
     # Routing rules:
     # - [[date]] (YYYY-MM-DD) → DayPages
     # - [[x-YYYY-MM-DD]] (dated conversation) → NapierianLogs/Conversations
     # - >[[note]] (inbox prefix) → Reception
+    # - If navigating from LIT/ → stay in LIT/
     # - [[note]] (default) → Forge root (Zettelkasten)
     let file = if ($clean_link =~ '^\d{4}-\d{2}-\d{2}$') {
         # Date format - create in DayPages
@@ -362,6 +364,16 @@ def main [] {
             $"($reception_dir)/($clean_link).md"
         } else {
             $"($reception_dir)/($clean_link)"
+        }
+    } else if $is_in_lit {
+        # Navigating from LIT/ - new files stay in LIT/ (literature processing hierarchy)
+        mkdir $lit_dir
+        if ($clean_link | str contains ".") and not ($clean_link | str ends-with ".md") {
+            $"($lit_dir)/($clean_link)"
+        } else if not ($clean_link | str ends-with ".md") {
+            $"($lit_dir)/($clean_link).md"
+        } else {
+            $"($lit_dir)/($clean_link)"
         }
     } else {
         # Default: Zettelkasten-style - create in Forge root

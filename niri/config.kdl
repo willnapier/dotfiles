@@ -141,6 +141,9 @@ binds {
     Mod+Space      { spawn "fuzzel"; }  // Primary launcher (matches macOS Cmd+Space)
     Mod+Alt+D      { spawn "fuzzel"; }  // Backup binding
     Mod+Alt+Return { spawn "wezterm"; }
+
+    // Keyboard-driven mouse (wl-kbptr)
+    Mod+Shift+M    { spawn "wl-kbptr"; }
     // Power: systemctl poweroff/reboot/suspend, niri msg action quit
 
     // Focus (NEIO + arrows) - Mod+Shift for consistency
