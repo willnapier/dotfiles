@@ -108,6 +108,7 @@ depends = []
 "scripts/zellij-zombie-killer" = "~/.local/bin/zellij-zombie-killer" 
 "scripts/hx-auto" = "~/.local/bin/hx-auto"
 "scripts/hx" = "~/.local/bin/hx"  # Universal hx command wrapping hx-auto
+"scripts/hx-sync-check" = "~/.local/bin/hx-sync-check"  # Warn if file recently modified on another device
 "scripts/get-system-theme.sh" = "~/.local/bin/get-system-theme.sh"
 "scripts/hx-wiki.nu" = "~/.local/bin/hx-wiki.nu"
 "scripts/zotero-key-lookup" = "~/.local/bin/zotero-key-lookup"

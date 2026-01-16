@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+# hx-sync-check: Check if a file was recently modified on another device via Syncthing
+# Returns warning if file was modified remotely within threshold
+#
+# Usage: hx-sync-check <filepath>
+# Exit codes: 0 = safe to edit, 1 = recently modified remotely, 2 = error
+
+set -e
+
+# Bypass shell aliases (nushell aliases can interfere)
+curl() { command curl "$@"; }
+jq() { command jq "$@"; }
+sed() { command sed "$@"; }
+head() { command head "$@"; }
+date() { command date "$@"; }
+
+THRESHOLD_MINUTES="${HX_SYNC_CHECK_THRESHOLD:-30}"  # Warn if modified in last 30 min
+SYNCTHING_API="http://localhost:8384"
+CONFIG_FILE="$HOME/.local/state/syncthing/config.xml"
+
+# macOS fallback location
+if [ ! -f "$CONFIG_FILE" ]; then
+    CONFIG_FILE="$HOME/Library/Application Support/Syncthing/config.xml"
+fi
+
+# Get file path
+FILE="$1"
+if [ -z "$FILE" ]; then
+    exit 0  # No file, nothing to check
+fi
+
+# Resolve to absolute path
+FILE=$(realpath "$FILE" 2>/dev/null || echo "$FILE")
+
+# Get API key (using sed, no Perl regex needed)
+get_api_key() {
+    if [ -f "$CONFIG_FILE" ]; then
+        sed -n 's/.*<apikey>\([^<]*\)<\/apikey>.*/\1/p' "$CONFIG_FILE" 2>/dev/null | head -1
+    fi
+}
+
+API_KEY=$(get_api_key)
+if [ -z "$API_KEY" ]; then
+    exit 0  # No Syncthing config, skip check
+fi
+
+# Find which Syncthing folder contains this file
+find_folder_and_path() {
+    local file="$1"
+
+    # Common Syncthing folder paths - check which one contains the file
+    local folders=(
+        "Forge:$HOME/Forge"
+        "Assistants:$HOME/Assistants"
+        "projects:$HOME/projects"
+        "Literature:$HOME/Literature"
+    )
+
+    for entry in "${folders[@]}"; do
+        local folder_id="${entry%%:*}"
+        local folder_path="${entry#*:}"
+
+        if [[ "$file" == "$folder_path"/* ]]; then
+            local relative="${file#$folder_path/}"
+            echo "$folder_id:$relative"
+            return 0
+        fi
+    done
+
+    return 1  # File not in a synced folder
+}
+
+FOLDER_INFO=$(find_folder_and_path "$FILE") || exit 0
+FOLDER_ID="${FOLDER_INFO%%:*}"
+RELATIVE_PATH="${FOLDER_INFO#*:}"
+
+# Query Syncthing API for file info
+FILE_INFO=$(curl -sf -H "X-API-Key: $API_KEY" \
+    "$SYNCTHING_API/rest/db/file?folder=$FOLDER_ID&file=$RELATIVE_PATH" 2>/dev/null) || exit 0
+
+if [ -z "$FILE_INFO" ]; then
+    exit 0  # File not tracked by Syncthing
+fi
+
+# Check if jq is available for JSON parsing
+if command -v jq &>/dev/null; then
+    # Use jq for reliable JSON parsing
+    LOCAL_ID=$(curl -sf -H "X-API-Key: $API_KEY" \
+        "$SYNCTHING_API/rest/system/status" 2>/dev/null | jq -r '.myID // empty') || exit 0
+
+    MODIFIED_BY=$(echo "$FILE_INFO" | jq -r '.global.modifiedBy // empty')
+    MODIFIED_TIME=$(echo "$FILE_INFO" | jq -r '.global.modified // empty')
+else
+    # Fallback: use sed for JSON extraction (less reliable but works)
+    LOCAL_ID=$(curl -sf -H "X-API-Key: $API_KEY" \
+        "$SYNCTHING_API/rest/system/status" 2>/dev/null | \
+        sed -n 's/.*"myID"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1) || exit 0
+
+    MODIFIED_BY=$(echo "$FILE_INFO" | sed -n 's/.*"modifiedBy"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+    MODIFIED_TIME=$(echo "$FILE_INFO" | sed -n 's/.*"modified"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+fi
+
+if [ -z "$MODIFIED_BY" ] || [ -z "$MODIFIED_TIME" ]; then
+    exit 0  # Can't determine modification info
+fi
+
+# Check if modified by another device (compare first 7 chars - Syncthing's short ID)
+if [ "${MODIFIED_BY}" = "${LOCAL_ID:0:7}" ]; then
+    exit 0  # Modified locally, safe
+fi
+
+# Parse modification time and check if recent
+# Syncthing uses ISO 8601 format: 2026-01-15T10:06:49.322816454Z
+MOD_EPOCH=$(date -d "$MODIFIED_TIME" +%s 2>/dev/null) || exit 0
+NOW_EPOCH=$(date +%s)
+AGE_MINUTES=$(( (NOW_EPOCH - MOD_EPOCH) / 60 ))
+
+if [ "$AGE_MINUTES" -lt "$THRESHOLD_MINUTES" ]; then
+    # Try to get friendly device name
+    DEVICE_NAME="another device"
+    if command -v jq &>/dev/null; then
+        # Find device name by matching the short ID
+        DEVICES_JSON=$(curl -sf -H "X-API-Key: $API_KEY" \
+            "$SYNCTHING_API/rest/config/devices" 2>/dev/null) || true
+        if [ -n "$DEVICES_JSON" ]; then
+            # Find device whose ID starts with MODIFIED_BY
+            DEVICE_NAME=$(echo "$DEVICES_JSON" | jq -r \
+                --arg prefix "$MODIFIED_BY" \
+                '.[] | select(.deviceID | startswith($prefix)) | .name // "another device"' | head -1)
+            [ -z "$DEVICE_NAME" ] && DEVICE_NAME="another device"
+        fi
+    fi
+
+    echo "⚠️  Warning: This file was modified on $DEVICE_NAME $AGE_MINUTES minutes ago"
+    echo "   File: $RELATIVE_PATH"
+    echo "   Consider closing it there before editing here."
+    echo ""
+    exit 1
+fi
+
+exit 0

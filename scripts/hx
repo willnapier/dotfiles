@@ -5,5 +5,16 @@
 # Get the directory where this script lives
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Check for Syncthing sync conflicts before opening files
+# This warns if a file was recently modified on another device
+if [ -x "$SCRIPT_DIR/hx-sync-check" ]; then
+    for arg in "$@"; do
+        # Skip flags (arguments starting with -)
+        if [[ "$arg" != -* ]] && [ -f "$arg" ]; then
+            "$SCRIPT_DIR/hx-sync-check" "$arg" || true
+        fi
+    done
+fi
+
 # Call hx-auto directly with its full path to avoid PATH recursion
 exec "$SCRIPT_DIR/hx-auto" "$@"
