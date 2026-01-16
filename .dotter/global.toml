@@ -120,6 +120,7 @@ depends = []
 "scripts/extract-jsonl-content" = "~/.local/bin/extract-jsonl-content"
 "scripts/continuum-indexer-periodic" = "~/.local/bin/continuum-indexer-periodic"
 "scripts/continuum-preview" = "~/.local/bin/continuum-preview"
+"scripts/continuum-ensure" = "~/.local/bin/continuum-ensure"
 "scripts/jsonl-to-markdown.nu" = "~/.local/bin/jsonl-to-markdown.nu"
 # Date recovery and corruption detection tools
 "scripts/detect-date-corruption" = "~/.local/bin/detect-date-corruption"

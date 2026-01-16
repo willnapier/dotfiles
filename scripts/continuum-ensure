@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# continuum-ensure: Ensure continuum binaries are built and symlinked
+# Runs quickly at shell startup - only rebuilds when necessary
+#
+# Usage:
+#   continuum-ensure          # Quick check, warn if missing
+#   continuum-ensure --build  # Build if missing or outdated
+#   continuum-ensure --force  # Force rebuild even if up-to-date
+
+set -e
+
+# Find continuum project - check common locations
+find_continuum_project() {
+    local locations=(
+        "$HOME/projects/continuum"
+        "$HOME/Assistants/projects/continuum"
+        "$HOME/Projects/continuum"
+    )
+
+    for loc in "${locations[@]}"; do
+        # Follow symlinks to find real path
+        if [ -e "$loc/Cargo.toml" ]; then
+            # Use realpath if available, otherwise readlink
+            if command -v realpath &>/dev/null; then
+                realpath "$loc"
+            elif command -v readlink &>/dev/null; then
+                readlink -f "$loc"
+            else
+                echo "$loc"
+            fi
+            return 0
+        fi
+    done
+    return 1
+}
+
+CONTINUUM_PROJECT=$(find_continuum_project) || {
+    # Silent exit if project not found - user may not have continuum
+    exit 0
+}
+
+TARGET_BIN="$HOME/.local/bin"
+BINARY="$TARGET_BIN/continuum-claude"
+SOURCE_BINARY="$CONTINUUM_PROJECT/target/release/continuum-claude"
+CARGO_TOML="$CONTINUUM_PROJECT/Cargo.toml"
+
+# Ensure .local/bin exists
+mkdir -p "$TARGET_BIN"
+
+# Check if binary exists and is a valid symlink
+check_binary() {
+    if [ ! -e "$BINARY" ]; then
+        return 1  # Missing
+    fi
+
+    if [ -L "$BINARY" ]; then
+        # It's a symlink - check if target exists
+        if [ ! -e "$BINARY" ]; then
+            return 1  # Broken symlink
+        fi
+    fi
+
+    return 0  # Exists and valid
+}
+
+# Check if source is newer than binary
+is_outdated() {
+    if [ ! -e "$SOURCE_BINARY" ]; then
+        return 0  # No binary built yet
+    fi
+
+    # Check if any Rust source is newer than the binary
+    local newest_source
+    newest_source=$(find "$CONTINUUM_PROJECT" -name "*.rs" -newer "$SOURCE_BINARY" 2>/dev/null | head -1)
+
+    if [ -n "$newest_source" ]; then
+        return 0  # Source is newer
+    fi
+
+    # Check if Cargo.toml is newer
+    if [ "$CARGO_TOML" -nt "$SOURCE_BINARY" ]; then
+        return 0
+    fi
+
+    return 1  # Up to date
+}
+
+# Build the binary
+build_binary() {
+    echo "Building continuum-claude..."
+    cargo build --release --manifest-path "$CONTINUUM_PROJECT/Cargo.toml" -p continuum-claude
+
+    # Update symlink
+    rm -f "$BINARY"
+    ln -sf "$SOURCE_BINARY" "$BINARY"
+    echo "✓ continuum-claude built and linked"
+}
+
+# Main logic
+case "${1:-}" in
+    --force)
+        build_binary
+        ;;
+    --build)
+        if ! check_binary || is_outdated; then
+            build_binary
+        else
+            echo "✓ continuum-claude is up to date"
+        fi
+        ;;
+    --check)
+        # Silent check - exit code only
+        check_binary
+        ;;
+    "")
+        # Default: quick check with warning
+        if ! check_binary; then
+            echo "⚠️  continuum-claude not found or broken"
+            echo "   Run: continuum-ensure --build"
+            echo "   Or:  cd $CONTINUUM_PROJECT && cargo build --release"
+        fi
+        ;;
+    *)
+        echo "Usage: continuum-ensure [--build|--force|--check]"
+        echo ""
+        echo "Options:"
+        echo "  (none)   Quick check, warn if missing"
+        echo "  --build  Build if missing or outdated"
+        echo "  --force  Force rebuild"
+        echo "  --check  Silent check (exit code only)"
+        exit 1
+        ;;
+esac

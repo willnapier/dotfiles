@@ -4119,6 +4119,13 @@ def claude [...args] {
         # Print mode: wraps and logs to ~/continuum-logs/
         ^$continuum_claude ...$args
     } else {
+        # Check if we can auto-build continuum-claude
+        let continuum_ensure = ($env.HOME | path join ".local/bin/continuum-ensure")
+        if ($continuum_ensure | path exists) {
+            print "⚠️  continuum-claude not found. Run: continuum-ensure --build"
+            print ""
+        }
+
         # Fallback to original claude if continuum-claude not available
         let claude_entry = (
             which --all claude
