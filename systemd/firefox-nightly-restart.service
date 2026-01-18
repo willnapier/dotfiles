@@ -1,0 +1,11 @@
+[Unit]
+Description=Gracefully restart Firefox to prevent memory leaks
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/pkill -TERM firefox
+# Firefox saves session on SIGTERM, so tabs will restore on next launch
+
+[Install]
+WantedBy=default.target

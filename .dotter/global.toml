@@ -309,6 +309,9 @@ depends = ["shared"]
 # Helix persistent undo cleanup - purges files older than 30 days
 "systemd/helix-undo-cleanup.service" = "~/.config/systemd/user/helix-undo-cleanup.service"
 "systemd/helix-undo-cleanup.timer" = "~/.config/systemd/user/helix-undo-cleanup.timer"
+# Firefox nightly restart - prevents memory leak accumulation
+"systemd/firefox-nightly-restart.service" = "~/.config/systemd/user/firefox-nightly-restart.service"
+"systemd/firefox-nightly-restart.timer" = "~/.config/systemd/user/firefox-nightly-restart.timer"
 # Wayland compositor configuration - Niri + Waybar + WezTerm
 "niri/config.kdl" = "~/.config/niri/config.kdl"
 "waybar/config" = "~/.config/waybar/config"

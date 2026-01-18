@@ -1,0 +1,272 @@
+#!/usr/bin/env bash
+# claude-voice - Voice interface for Claude Code
+# Records speech, transcribes with Whisper, sends to Claude, speaks response with OpenAI TTS
+# Speaks sentences concurrently for faster response
+
+set -euo pipefail
+
+# Configuration
+TEMP_DIR="/tmp/claude-voice"
+RECORDING="$TEMP_DIR/recording.wav"
+
+# Voice presets: voice_name:pitch:tempo
+# pitch < 1.0 = deeper, tempo > 1.0 = faster
+declare -A VOICE_PRESETS=(
+    [seneca]="fable:0.85:1.15"      # Deep British, authoritative
+    [fable]="fable:1.0:1.0"         # British, expressive (default)
+    [onyx]="onyx:1.0:1.0"           # Deep American, authoritative
+    [nova]="nova:1.0:1.0"           # Warm female
+    [echo]="echo:1.0:1.0"           # Warm male
+    [alloy]="alloy:1.0:1.0"         # Neutral, balanced
+    [shimmer]="shimmer:1.0:1.0"     # Soft female
+)
+
+# Default voice
+VOICE_PRESET="${CLAUDE_VOICE:-seneca}"
+
+# Colors for terminal output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Ensure temp directory exists
+mkdir -p "$TEMP_DIR"
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --voice|-v)
+            VOICE_PRESET="$2"
+            shift 2
+            ;;
+        --list-voices)
+            echo "Available voice presets:"
+            for preset in "${!VOICE_PRESETS[@]}"; do
+                IFS=':' read -r voice pitch tempo <<< "${VOICE_PRESETS[$preset]}"
+                echo "  $preset (voice: $voice, pitch: $pitch, tempo: $tempo)"
+            done
+            exit 0
+            ;;
+        --help|-h)
+            echo "Usage: claude-voice [options]"
+            echo ""
+            echo "Options:"
+            echo "  --voice, -v NAME    Use voice preset (default: seneca)"
+            echo "  --list-voices       List available voice presets"
+            echo "  --help, -h          Show this help"
+            echo ""
+            echo "Environment variables:"
+            echo "  CLAUDE_VOICE        Default voice preset"
+            echo "  OPENAI_API_KEY      Required for TTS"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
+
+# Parse voice preset
+IFS=':' read -r VOICE PITCH TEMPO <<< "${VOICE_PRESETS[$VOICE_PRESET]}"
+
+# Check dependencies
+check_deps() {
+    local missing=()
+    command -v sox >/dev/null || missing+=("sox")
+    command -v claude >/dev/null || missing+=("claude")
+    command -v curl >/dev/null || missing+=("curl")
+    command -v ffmpeg >/dev/null || missing+=("ffmpeg")
+    command -v jq >/dev/null || missing+=("jq")
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        echo -e "${RED}Missing dependencies: ${missing[*]}${NC}"
+        exit 1
+    fi
+
+    if [[ -z "${OPENAI_API_KEY:-}" ]]; then
+        echo -e "${RED}OPENAI_API_KEY environment variable not set${NC}"
+        exit 1
+    fi
+
+    if [[ -z "${VOICE_PRESETS[$VOICE_PRESET]:-}" ]]; then
+        echo -e "${RED}Unknown voice preset: $VOICE_PRESET${NC}"
+        echo "Use --list-voices to see available presets"
+        exit 1
+    fi
+}
+
+# Record audio until silence is detected
+record_audio() {
+    echo -e "${BLUE}Recording... (speak now, will stop after 3s silence)${NC}"
+
+    # Silence detection settings:
+    # - Start after 0.1s of sound above 0.5% threshold (less sensitive start)
+    # - Stop after 3 seconds of silence below 0.5% threshold (longer pause allowed)
+    # - Max recording: 120 seconds
+    sox -d "$RECORDING" rate 16000 channels 1 \
+        silence 1 0.1 0.5% \
+        1 3.0 0.5% \
+        trim 0 120 2>/dev/null
+
+    echo -e "${GREEN}Recording complete.${NC}"
+}
+
+# Transcribe audio with OpenAI Whisper API
+transcribe_audio() {
+    echo -e "${BLUE}Transcribing...${NC}" >&2
+
+    curl -s https://api.openai.com/v1/audio/transcriptions \
+        -H "Authorization: Bearer $OPENAI_API_KEY" \
+        -F "file=@$RECORDING" \
+        -F "model=whisper-1" \
+        -F "language=en" \
+        | jq -r '.text // empty'
+}
+
+# Generate TTS for a sentence (outputs to file)
+generate_tts() {
+    local text="$1"
+    local output_file="$2"
+
+    curl -s https://api.openai.com/v1/audio/speech \
+        -H "Authorization: Bearer $OPENAI_API_KEY" \
+        -H "Content-Type: application/json" \
+        -d "$(jq -n --arg text "$text" --arg voice "$VOICE" '{
+            model: "tts-1",
+            input: $text,
+            voice: $voice
+        }')" \
+        --output "$output_file"
+}
+
+# Apply pitch/tempo and play
+play_audio() {
+    local input_file="$1"
+
+    if [[ "$PITCH" != "1.0" || "$TEMPO" != "1.0" ]]; then
+        local processed_file="${input_file%.mp3}_processed.mp3"
+        ffmpeg -y -i "$input_file" \
+            -af "rubberband=pitch=$PITCH,atempo=$TEMPO" \
+            "$processed_file" 2>/dev/null
+        paplay "$processed_file"
+        rm -f "$processed_file"
+    else
+        paplay "$input_file"
+    fi
+}
+
+# Get Claude response and speak with pipelined TTS
+query_and_speak() {
+    local prompt="$1"
+
+    echo -e "${BLUE}Claude is thinking...${NC}"
+
+    # Get response from Claude
+    local response
+    response=$(claude -p "$prompt" 2>/dev/null)
+
+    echo -e "${YELLOW}Claude:${NC}"
+    echo "$response"
+    echo ""
+
+    echo -e "${BLUE}Speaking...${NC}"
+
+    # Split response into sentences
+    local sentences=()
+    while IFS= read -r sentence; do
+        [[ -n "${sentence// /}" ]] && sentences+=("$sentence")
+    done < <(echo "$response" | perl -ne '
+        while (/([^.!?]*[.!?]+\s*)/g) { print "$1\n"; }
+        if (/([^.!?]+)$/) { print "$1\n"; }
+    ')
+
+    # Process sentences with pipelining:
+    # Start generating TTS for sentence N+1 while playing sentence N
+    local num_sentences=${#sentences[@]}
+
+    if [[ $num_sentences -eq 0 ]]; then
+        return
+    fi
+
+    # Generate first sentence TTS
+    local current_audio="$TEMP_DIR/sentence_0.mp3"
+    generate_tts "${sentences[0]}" "$current_audio"
+
+    for ((i=0; i<num_sentences; i++)); do
+        local next_audio="$TEMP_DIR/sentence_$((i+1)).mp3"
+
+        # Start generating next sentence TTS in background (if there is one)
+        if [[ $((i+1)) -lt $num_sentences ]]; then
+            generate_tts "${sentences[$((i+1))]}" "$next_audio" &
+            local tts_pid=$!
+        fi
+
+        # Play current sentence
+        play_audio "$current_audio"
+        rm -f "$current_audio"
+
+        # Wait for next TTS to complete
+        if [[ $((i+1)) -lt $num_sentences ]]; then
+            wait $tts_pid 2>/dev/null || true
+            current_audio="$next_audio"
+        fi
+    done
+}
+
+# Main conversation loop
+main() {
+    check_deps
+
+    echo -e "${GREEN}============================================${NC}"
+    echo -e "${GREEN}  Claude Voice Interface${NC}"
+    echo -e "${GREEN}============================================${NC}"
+    echo -e "${YELLOW}Voice: $VOICE_PRESET (${VOICE}, pitch: ${PITCH}, tempo: ${TEMPO})${NC}"
+    echo -e "${YELLOW}Press Enter to start recording, Ctrl+C to exit${NC}"
+    echo ""
+
+    while true; do
+        read -r -p "$(echo -e "${GREEN}Press Enter to speak...${NC}")"
+        echo ""
+
+        # Record
+        record_audio
+
+        # Check if recording has content
+        if [[ ! -s "$RECORDING" ]]; then
+            echo -e "${RED}No audio recorded. Try again.${NC}"
+            continue
+        fi
+
+        # Transcribe
+        transcript=$(transcribe_audio)
+
+        if [[ -z "$transcript" || "$transcript" =~ ^[[:space:]]*$ ]]; then
+            echo -e "${RED}Could not transcribe audio. Try speaking more clearly.${NC}"
+            continue
+        fi
+
+        echo -e "${YELLOW}You said:${NC} $transcript"
+        echo ""
+
+        # Query Claude and speak response
+        query_and_speak "$transcript"
+
+        echo ""
+        echo -e "${GREEN}---${NC}"
+        echo ""
+    done
+}
+
+# Handle Ctrl+C gracefully
+cleanup() {
+    echo -e "\n${GREEN}Goodbye!${NC}"
+    pkill -P $$ 2>/dev/null || true
+    rm -f "$TEMP_DIR"/sentence_*.mp3 2>/dev/null || true
+    exit 0
+}
+trap cleanup INT TERM
+
+main "$@"

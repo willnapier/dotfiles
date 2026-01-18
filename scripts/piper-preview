@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# piper-preview - Preview VCTK speakers
+# Usage: piper-preview [speaker_id]
+#        piper-preview list
+#        piper-preview random
+#        piper-preview all [start_index]
+
+VOICE_MODEL="$HOME/.local/share/piper-voices/en_GB-vctk-medium.onnx"
+SAMPLE_TEXT="Hello! I'm one of the voices available for Claude. Each of us has a different accent and personality. What do you think of my voice?"
+
+# Speaker name to numeric ID mapping (from the model's JSON)
+declare -A SPEAKER_MAP=(
+    [p239]=0 [p236]=1 [p264]=2 [p250]=3 [p259]=4 [p247]=5 [p261]=6 [p263]=7
+    [p283]=8 [p286]=9 [p274]=10 [p276]=11 [p270]=12 [p281]=13 [p277]=14 [p231]=15
+    [p271]=16 [p238]=17 [p257]=18 [p273]=19 [p284]=20 [p329]=21 [p361]=22 [p287]=23
+    [p360]=24 [p374]=25 [p376]=26 [p310]=27 [p304]=28 [p334]=29 [p340]=30 [p323]=31
+    [p347]=32 [p330]=33 [p308]=34 [p314]=35 [p317]=36 [p339]=37 [p311]=38 [p294]=39
+    [p305]=40 [p266]=41 [p335]=42 [p318]=43 [p351]=44 [p333]=45 [p313]=46 [p316]=47
+    [p244]=48 [p307]=49 [p363]=50 [p336]=51 [p297]=52 [p312]=53 [p267]=54 [p275]=55
+    [p295]=56 [p258]=57 [p288]=58 [p301]=59 [p232]=60 [p292]=61 [p272]=62 [p280]=63
+    [p278]=64 [p341]=65 [p268]=66 [p298]=67 [p299]=68 [p279]=69 [p285]=70 [p326]=71
+    [p300]=72 [s5]=73 [p230]=74 [p345]=75 [p254]=76 [p269]=77 [p293]=78 [p252]=79
+    [p262]=80 [p243]=81 [p227]=82 [p343]=83 [p255]=84 [p229]=85 [p240]=86 [p248]=87
+    [p253]=88 [p233]=89 [p228]=90 [p282]=91 [p251]=92 [p246]=93 [p234]=94 [p226]=95
+    [p260]=96 [p245]=97 [p241]=98 [p303]=99 [p265]=100 [p306]=101 [p237]=102 [p249]=103
+    [p256]=104 [p302]=105 [p364]=106 [p225]=107 [p362]=108
+)
+
+SPEAKERS=(p239 p236 p264 p250 p259 p247 p261 p263 p283 p286 p274 p276 p270 p281 p277 p231 p271 p238 p257 p273 p284 p329 p361 p287 p360 p374 p376 p310 p304 p334 p340 p323 p347 p330 p308 p314 p317 p339 p311 p294 p305 p266 p335 p318 p351 p333 p313 p316 p244 p307 p363 p336 p297 p312 p267 p275 p295 p258 p288 p301 p232 p292 p272 p280 p278 p341 p268 p298 p299 p279 p285 p326 p300 s5 p230 p345 p254 p269 p293 p252 p262 p243 p227 p343 p255 p229 p240 p248 p253 p233 p228 p282 p251 p246 p234 p226 p260 p245 p241 p303 p265 p306 p237 p249 p256 p302 p364 p225 p362)
+
+# Track child processes for cleanup
+CHILD_PID=""
+
+cleanup() {
+    echo ""
+    echo "Stopping..."
+    [[ -n "$CHILD_PID" ]] && kill $CHILD_PID 2>/dev/null
+    pkill -P $$ 2>/dev/null
+    exit 0
+}
+
+trap cleanup INT TERM
+
+play_speaker() {
+    local speaker="$1"
+    local speaker_num="${SPEAKER_MAP[$speaker]}"
+
+    if [[ -z "$speaker_num" ]]; then
+        echo "Unknown speaker: $speaker"
+        return 1
+    fi
+
+    echo "Playing speaker: $speaker (ID: $speaker_num)"
+    echo "$SAMPLE_TEXT" | piper-tts --model "$VOICE_MODEL" --speaker "$speaker_num" --output-raw 2>/dev/null | \
+        paplay --raw --rate=22050 --channels=1 --format=s16le
+}
+
+play_speaker_bg() {
+    local speaker="$1"
+    local speaker_num="${SPEAKER_MAP[$speaker]}"
+
+    if [[ -z "$speaker_num" ]]; then
+        echo "Unknown speaker: $speaker"
+        return 1
+    fi
+
+    echo "Playing speaker: $speaker (ID: $speaker_num)"
+    echo "$SAMPLE_TEXT" | piper-tts --model "$VOICE_MODEL" --speaker "$speaker_num" --output-raw 2>/dev/null | \
+        paplay --raw --rate=22050 --channels=1 --format=s16le &
+    CHILD_PID=$!
+}
+
+case "${1:-}" in
+    list)
+        echo "Available speakers (109 total):"
+        echo ""
+        printf '%s\n' "${SPEAKERS[@]}" | column
+        echo ""
+        echo "Usage: piper-preview <speaker_id>"
+        echo "Example: piper-preview p225"
+        ;;
+    random)
+        speaker="${SPEAKERS[$RANDOM % ${#SPEAKERS[@]}]}"
+        play_speaker "$speaker"
+        echo ""
+        echo "Like this voice? Use: piper-preview $speaker"
+        ;;
+    all)
+        start_idx=0
+        if [[ -n "${2:-}" ]]; then
+            start_idx="$2"
+        fi
+        echo "Playing speakers from index $start_idx"
+        echo "Press Enter to skip, Ctrl+C to stop completely"
+        echo ""
+        for i in "${!SPEAKERS[@]}"; do
+            if [[ $i -lt $start_idx ]]; then
+                continue
+            fi
+            speaker="${SPEAKERS[$i]}"
+            echo "=== [$i] Speaker: $speaker ==="
+            play_speaker_bg "$speaker"
+            # Wait for audio to finish or user to press Enter
+            wait $CHILD_PID 2>/dev/null || true
+            CHILD_PID=""
+            echo ""
+        done
+        ;;
+    "")
+        echo "VCTK Voice Preview"
+        echo ""
+        echo "Commands:"
+        echo "  piper-preview list        - Show all speaker IDs"
+        echo "  piper-preview random      - Play a random speaker"
+        echo "  piper-preview all [N]     - Cycle through all (start at index N)"
+        echo "  piper-preview <id>        - Play specific speaker (e.g., p225)"
+        echo ""
+        echo "Try: piper-preview random"
+        ;;
+    *)
+        if [[ -n "${SPEAKER_MAP[$1]:-}" ]]; then
+            play_speaker "$1"
+        else
+            echo "Unknown speaker: $1"
+            echo "Use 'piper-preview list' to see available speakers"
+            exit 1
+        fi
+        ;;
+esac
