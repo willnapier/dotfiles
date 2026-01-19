@@ -72,6 +72,50 @@ struct ExporterMessage {
 }
 
 // ============================================================================
+// Browser Extension v2.4+ format (Grok Exporter, etc.)
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BrowserExtensionExport {
+    export_date: String,
+    #[serde(default)]
+    export_version: Option<String>,
+    platform: String,
+    #[serde(default)]
+    message_count: Option<u32>,
+    #[serde(default)]
+    url: Option<String>,
+    conversation: Vec<BrowserExtensionMessage>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BrowserExtensionMessage {
+    #[serde(default)]
+    id: Option<String>,
+    speaker: String,
+    content: String,
+    #[serde(default)]
+    timestamp: Option<String>,
+    #[serde(default)]
+    debug_info: Option<BrowserExtensionDebugInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BrowserExtensionDebugInfo {
+    scores: Option<BrowserExtensionScores>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BrowserExtensionScores {
+    grok_score: Option<i32>,
+    human_score: Option<i32>,
+}
+
+// ============================================================================
 // Official OpenAI export format
 // ============================================================================
 
@@ -173,6 +217,28 @@ fn main() -> Result<()> {
         println!("  Assistant:     {}", assistant);
         println!("  Conversations: 1");
         println!("  Messages:      {}", exporter_conv.messages.len());
+        println!("  Output:        {:?}", output_dir);
+    } else if let Ok(browser_ext) = serde_json::from_str::<BrowserExtensionExport>(&json_content) {
+        // Browser extension v2.4+ format (Grok Exporter, etc.)
+        let assistant = cli.assistant.clone().unwrap_or_else(|| browser_ext.platform.to_lowercase());
+
+        let output_dir = cli.output.unwrap_or_else(|| {
+            let home = std::env::var("HOME").expect("HOME not set");
+            PathBuf::from(home)
+                .join("Assistants")
+                .join("continuum-logs")
+                .join(&assistant)
+        });
+
+        let version = browser_ext.export_version.as_deref().unwrap_or("unknown");
+        println!("Detected: Browser Extension v{} format ({})", version, browser_ext.platform);
+        println!("Output:  {:?}", output_dir);
+
+        process_browser_extension_export(&browser_ext, &output_dir, &assistant)?;
+        println!("\nImport complete!");
+        println!("  Assistant:     {}", assistant);
+        println!("  Conversations: 1");
+        println!("  Messages:      {}", browser_ext.conversation.len());
         println!("  Output:        {:?}", output_dir);
     } else if let Ok(official_convs) = serde_json::from_str::<Vec<OfficialConversation>>(&json_content) {
         let output_dir = cli.output.unwrap_or_else(|| {
@@ -376,6 +442,104 @@ fn clean_message_content(content: &str) -> String {
     result = multi_newline_re.replace_all(&result, "\n\n").to_string();
 
     result.trim().to_string()
+}
+
+// ============================================================================
+// Process Browser Extension v2.4+ format
+// ============================================================================
+
+fn process_browser_extension_export(export: &BrowserExtensionExport, output_dir: &PathBuf, assistant: &str) -> Result<()> {
+    // Parse export date
+    let created = DateTime::parse_from_rfc3339(&export.export_date)
+        .map(|dt| dt.with_timezone(&Utc))
+        .unwrap_or_else(|_| Utc::now());
+
+    let date_str = created.format("%Y-%m-%d").to_string();
+
+    // Generate ID from URL or timestamp
+    let id = if let Some(url) = &export.url {
+        // Extract conversation ID from URL like "https://grok.com/c/b36eb0c0-..."
+        url.split('/').last()
+            .and_then(|s| s.split('?').next())
+            .unwrap_or("unknown")
+            .to_string()
+    } else {
+        format!("{}-{}", assistant, created.timestamp())
+    };
+
+    let session_dir = output_dir.join(&date_str).join(&id);
+    fs::create_dir_all(&session_dir)
+        .with_context(|| format!("Failed to create {:?}", session_dir))?;
+
+    // Convert messages using alternating pattern (user starts, then alternates)
+    // The browser extension's debug scores are unreliable, so we use conversation flow
+    let mut continuum_messages = Vec::new();
+    for (idx, msg) in export.conversation.iter().enumerate() {
+        // Conversations typically start with user, then alternate
+        // This is more reliable than the extension's scoring heuristics
+        let role = if idx % 2 == 0 {
+            "user".to_string()
+        } else {
+            "assistant".to_string()
+        };
+
+        let timestamp = msg.timestamp.clone()
+            .unwrap_or_else(|| created.to_rfc3339());
+
+        if !msg.content.trim().is_empty() {
+            continuum_messages.push(ContinuumMessage {
+                id: (idx + 1) as u32,
+                role,
+                content: msg.content.clone(),
+                timestamp,
+            });
+        }
+    }
+
+    if continuum_messages.is_empty() {
+        return Ok(());
+    }
+
+    // Write messages.jsonl
+    let messages_path = session_dir.join("messages.jsonl");
+    let mut jsonl_content = String::new();
+    for msg in &continuum_messages {
+        jsonl_content.push_str(&serde_json::to_string(msg)?);
+        jsonl_content.push('\n');
+    }
+    fs::write(&messages_path, jsonl_content)?;
+
+    // Get end time from last message
+    let end_time = continuum_messages.last()
+        .map(|msg| msg.timestamp.clone());
+
+    // Write session.json
+    let session = ContinuumSession {
+        id: id.clone(),
+        assistant: assistant.to_string(),
+        start_time: Some(created.to_rfc3339()),
+        end_time,
+        status: Some("imported".to_string()),
+        message_count: Some(continuum_messages.len() as u32),
+        created_at: Some(created.to_rfc3339()),
+        title: None, // Browser extension format doesn't include title
+        source_url: export.url.clone(),
+    };
+
+    let session_path = session_dir.join("session.json");
+    let session_json = serde_json::to_string_pretty(&session)?;
+    fs::write(&session_path, session_json)?;
+
+    println!("  Created: {}/{}", date_str, id);
+    Ok(())
+}
+
+fn map_speaker_to_role(speaker: &str) -> String {
+    match speaker.to_lowercase().as_str() {
+        "grok" | "assistant" | "gemini" | "chatgpt" => "assistant".to_string(),
+        "human" | "user" | "you" => "user".to_string(),
+        _ => "user".to_string(), // Default to user for unknown speakers
+    }
 }
 
 // ============================================================================

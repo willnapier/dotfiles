@@ -12,7 +12,7 @@ fn main() -> Result<()> {
 
     println!("AI Conversation Watcher starting...");
     println!("Watching: {:?}", downloads_dir);
-    println!("Patterns: ChatGPT-*.json, Grok-*.json, Gemini-*.json");
+    println!("Patterns: ChatGPT-*.json, Grok-*.json, grok-*.json, Gemini-*.json (case-insensitive)");
 
     let (tx, rx) = channel();
 
@@ -27,8 +27,8 @@ fn main() -> Result<()> {
 
     watcher.watch(&downloads_dir, RecursiveMode::NonRecursive)?;
 
-    // Regex to match AI assistant export files
-    let export_pattern = Regex::new(r"^(ChatGPT|Grok|Gemini)-.*\.json$")?;
+    // Regex to match AI assistant export files (case-insensitive)
+    let export_pattern = Regex::new(r"(?i)^(ChatGPT|Grok|Gemini)-.*\.json$")?;
 
     println!("Watching for new exports...\n");
 

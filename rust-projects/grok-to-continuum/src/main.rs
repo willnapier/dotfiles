@@ -13,7 +13,7 @@ struct Cli {
     /// Path to Grok prod-grok-backend.json file
     conversations_json: PathBuf,
 
-    /// Output directory (default: ~/continuum-logs/grok)
+    /// Output directory (default: ~/Assistants/continuum-logs/grok)
     #[arg(short, long)]
     output: Option<PathBuf>,
 
@@ -93,7 +93,7 @@ fn main() -> Result<()> {
     // Determine output directory
     let output_dir = cli.output.unwrap_or_else(|| {
         let home = std::env::var("HOME").expect("HOME not set");
-        PathBuf::from(home).join("continuum-logs").join("grok")
+        PathBuf::from(home).join("Assistants").join("continuum-logs").join("grok")
     });
 
     println!("Reading Grok export: {:?}", cli.conversations_json);

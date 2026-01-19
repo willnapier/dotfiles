@@ -21,7 +21,7 @@ struct Cli {
     #[command(subcommand)]
     command: Commands,
 
-    /// Continuum logs directory (default: ~/continuum-logs/grok)
+    /// Continuum logs directory (default: ~/Assistants/continuum-logs/grok)
     #[arg(short, long)]
     logs_dir: Option<PathBuf>,
 }
@@ -107,7 +107,7 @@ fn main() -> Result<()> {
 
     let logs_dir = cli.logs_dir.unwrap_or_else(|| {
         let home = std::env::var("HOME").expect("HOME not set");
-        PathBuf::from(home).join("continuum-logs").join("grok")
+        PathBuf::from(home).join("Assistants").join("continuum-logs").join("grok")
     });
 
     match cli.command {
