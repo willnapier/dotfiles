@@ -171,11 +171,19 @@ def main [] {
                     } else {
                         let verify_ok = $"[($timestamp)] ✓ Post-deploy verification passed"
                         $verify_ok | save --append $log_file
+
+                        # Post to messageboard on successful sync (belt-and-braces notification)
+                        let hostname = (sys host | get hostname)
+                        do { messageboard-edit insert $"dotfiles synced on ($hostname)" } | complete
                     }
                 } else {
                     let error_msg = $"[($timestamp)] ❌ Deploy failed: ($result.stderr)"
                     $error_msg | save --append $log_file
                     print $"❌ Deploy failed: ($result.stderr)"
+
+                    # Notify of failure via messageboard
+                    let hostname = (sys host | get hostname)
+                    do { messageboard-edit insert $"DEPLOY FAILED on ($hostname) - check logs" } | complete
                 }
 
                 # Update last deploy time
