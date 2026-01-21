@@ -77,8 +77,21 @@ fn process_export(path: &Path) -> Result<()> {
         } else {
             println!("   Renamed to {:?}", processed_name.file_name().unwrap_or_default());
         }
+
+        // Notify via messageboard
+        let filename = path.file_name().unwrap_or_default().to_string_lossy();
+        let _ = Command::new("messageboard-edit")
+            .args(["insert", &format!("AI conversation imported: {}", filename)])
+            .output();
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
+
+        // Notify failure via messageboard
+        let filename = path.file_name().unwrap_or_default().to_string_lossy();
+        let _ = Command::new("messageboard-edit")
+            .args(["insert", &format!("AI import FAILED: {}", filename)])
+            .output();
+
         anyhow::bail!("chatgpt-to-continuum failed: {}", stderr);
     }
 

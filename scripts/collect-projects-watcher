@@ -105,6 +105,10 @@ def start_fswatch_macos [watch_path: string, log_file: string, verbose: bool] {
             let error_msg = $"($timestamp) - Collection failed: ($result.stderr)"
             print $error_msg
             $error_msg | save --append $log_file
+
+            # Notify via messageboard
+            let hostname = (sys host | get hostname)
+            do { messageboard-edit insert $"collect-entries FAILED on ($hostname)" } | complete
         } else if $verbose {
             print $"($timestamp) - Collection completed"
             $"($timestamp) - Collection completed" | save --append $log_file
@@ -194,6 +198,10 @@ def start_inotifywait_linux [watch_path: string, log_file: string, verbose: bool
             let error_msg = $"($timestamp) - Collection failed: ($result.stderr)"
             print $error_msg
             $error_msg | save --append $log_file
+
+            # Notify via messageboard
+            let hostname = (sys host | get hostname)
+            do { messageboard-edit insert $"collect-entries FAILED on ($hostname)" } | complete
         } else if $verbose {
             print $"($timestamp) - Collection completed"
             $"($timestamp) - Collection completed" | save --append $log_file

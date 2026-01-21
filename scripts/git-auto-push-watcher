@@ -81,6 +81,10 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
                             let error_msg = $"[($timestamp)] ❌ Push failed: ($push_result.stderr)"
                             $error_msg | save --append $log_file
                             print $"❌ Push failed: ($push_result.stderr)"
+
+                            # Notify via messageboard
+                            let hostname = (sys host | get hostname)
+                            do { messageboard-edit insert $"PUSH FAILED on ($hostname) - commits stuck locally" } | complete
                         }
                     } else {
                         # No changes to commit (might be only whitespace changes)
