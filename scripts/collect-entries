@@ -626,7 +626,7 @@ def add_subentry_to_parent [parent_file: string, subentry_name: string] {
 
     # Check if already listed
     let link = $"[[($subentry_name)]]"
-    if ($content =~ $link) {
+    if ($content | str contains $link) {
         return  # Already there
     }
 
