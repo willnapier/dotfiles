@@ -77,7 +77,7 @@ def main [
     let failed_count = ($results | where status == "failed" | length)
 
     print $"Tagged: ($tagged_count) files"
-    print $"Skipped: ($skipped_count) files (already tagged)"
+    print $"Skipped: ($skipped_count) files - already tagged"
 
     if $failed_count > 0 {
         print $"Failed: ($failed_count) files"
