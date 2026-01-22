@@ -16,9 +16,7 @@ def main [
 
     # Find all .md files (exclude DayPages subdirectory)
     let activity_files = (
-        ls ($activities_path + "/*.md")
-        | where type == file
-        | get name
+        glob ($activities_path | path join "*.md")
     )
 
     if ($activity_files | is-empty) {
