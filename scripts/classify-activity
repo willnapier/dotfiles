@@ -9,21 +9,21 @@ def main [
 ] {
     # Check for OpenAI API key
     if ($env.OPENAI_API_KEY? | is-empty) {
-        print "Error: OPENAI_API_KEY environment variable is required"
-        return {error: "missing_api_key"}
+        {error: "missing_api_key"} | to json
+        return
     }
 
     # Read file content
     if not ($file_path | path exists) {
-        print $"Error: File not found: ($file_path)"
-        return {error: "file_not_found"}
+        {error: "file_not_found"} | to json
+        return
     }
 
     let content = open $file_path | str trim
 
     if ($content | is-empty) {
-        print $"Warning: File is empty: ($file_path)"
-        return {category: "uncategorized", confidence: 0.0}
+        {tags: [], confidence: 0.0, error: "empty_file"} | to json
+        return
     }
 
     if $verbose {
@@ -86,11 +86,8 @@ def main [
         | get choices.0.message.content
         | from json
     } catch {
-        print "Error: Failed to parse API response"
-        if $verbose {
-            print $"Response: ($response)"
-        }
-        return {error: "parse_failed"}
+        {error: "parse_failed"} | to json
+        return
     }
 
     if $verbose {
@@ -99,5 +96,6 @@ def main [
         print $"Reasoning: ($classification.reasoning)"
     }
 
-    $classification
+    # Output as JSON for external callers
+    $classification | to json
 }

@@ -45,8 +45,8 @@ def main [
             return {file: $file, status: "skipped", reason: "already_tagged"}
         }
 
-        # Classify the file
-        let classification = (classify-activity $file)
+        # Classify the file (parse JSON response from external command)
+        let classification = (classify-activity $file | from json)
 
         if ($classification | get error? | is-not-empty) {
             print $"  ⚠️  Failed: ($classification.error)"
