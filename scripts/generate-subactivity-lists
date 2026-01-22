@@ -54,11 +54,17 @@ def main [
     # Process each parent file
     let updates = (
         $parent_map | each { |entry|
-            let parent_file = $"($forge_dir)/($entry.parent).md"
+            # Check for parent file in NapierianLogs root first, then Social/
+            let parent_file_root = $"($forge_dir)/($entry.parent).md"
+            let parent_file_social = $"($forge_dir)/Social/($entry.parent).md"
 
-            if not ($parent_file | path exists) {
+            let parent_file = if ($parent_file_root | path exists) {
+                $parent_file_root
+            } else if ($parent_file_social | path exists) {
+                $parent_file_social
+            } else {
                 if $verbose {
-                    print $"⚠️  Parent file not found: ($parent_file)"
+                    print $"⚠️  Parent file not found: ($entry.parent).md (checked root and Social/)"
                 }
                 return null
             }
