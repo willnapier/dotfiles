@@ -34,6 +34,14 @@ def main [
             print $"Processing: (basename $file)"
         }
 
+        # Skip if file no longer exists (sync conflicts may be cleaned up)
+        if not ($file | path exists) {
+            if $verbose {
+                print $"  ⚠️  File no longer exists - skipping"
+            }
+            return {file: $file, status: "skipped", reason: "file_deleted"}
+        }
+
         # Check if file already has tags (skip to avoid redundant API calls)
         let content = open $file
         let already_tagged = ($content | str contains "tags:")
