@@ -64,7 +64,7 @@ def main [
                 $parent_file_social
             } else {
                 if $verbose {
-                    print $"⚠️  Parent file not found: ($entry.parent).md (checked root and Social/)"
+                    print $"⚠️  Parent file not found: ($entry.parent).md - checked root and Social/"
                 }
                 return null
             }
