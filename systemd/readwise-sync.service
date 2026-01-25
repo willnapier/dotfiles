@@ -1,0 +1,12 @@
+[Unit]
+Description=Readwise Sync - backup highlights and articles to local markdown
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/will/.local/bin/readwise-sync
+Environment=HOME=/home/will
+
+[Install]
+WantedBy=default.target
