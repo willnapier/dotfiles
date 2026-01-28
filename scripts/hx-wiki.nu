@@ -274,6 +274,26 @@ def main [] {
         return
     }
 
+    # Check for relative paths (contain /) - resolve relative to Forge
+    # This handles symlinked directories like captures/ and linked_media/
+    if ($clean_link | str contains "/") {
+        let relative_path = $"($vault)/($clean_link)"
+
+        if ($relative_path | path exists) {
+            handle_existing_file $relative_path $target_file
+            return
+        }
+
+        # Try with .md extension if not already present
+        if not ($clean_link | str ends-with ".md") {
+            let md_path = $"($relative_path).md"
+            if ($md_path | path exists) {
+                handle_existing_file $md_path $target_file
+                return
+            }
+        }
+    }
+
     # Search for existing file across Forge and Admin
     # Strip .md if present to avoid double-extension search (^file.md.md$)
     let search_name = if ($clean_link | str ends-with ".md") {
@@ -294,7 +314,7 @@ def main [] {
     }
 
     # Check if this is a media file and search linked_media directory
-    let media_extensions = ["pdf", "PDF", "jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "mp4", "mov", "avi", "mp3", "wav", "m4a", "JPG", "JPEG", "PNG", "GIF"]
+    let media_extensions = ["pdf", "PDF", "html", "HTML", "jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "mp4", "mov", "avi", "mp3", "wav", "m4a", "JPG", "JPEG", "PNG", "GIF"]
     let extension = ($clean_link | path parse | get extension)
 
     if ($extension in $media_extensions) {
@@ -517,7 +537,7 @@ def create_new_file [file: string, clean_link: string, target_file: string] {
     let extension = ($file | path parse | get extension)
 
     # Check if it's a media file that doesn't exist
-    let media_extensions = ["jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "pdf", "mp4", "mov", "avi", "mp3", "wav", "m4a"]
+    let media_extensions = ["jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "pdf", "html", "mp4", "mov", "avi", "mp3", "wav", "m4a"]
 
     if ($extension | str downcase) in $media_extensions {
         # Media file doesn't exist - create error message

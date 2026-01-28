@@ -1,0 +1,5 @@
+#!/bin/bash
+# Helix integration for concert-capture
+# Archives HTML and outputs entry for :insert-output to insert at cursor
+
+~/.local/bin/concert-capture --latest --entry-only

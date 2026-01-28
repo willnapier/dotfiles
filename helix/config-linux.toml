@@ -101,6 +101,12 @@ E = ":pipe-to hx-register-export"
 # Text files (.md) open in floating Helix popup (close with Ctrl+q)
 # Media files (images, PDFs) open in system viewer (Preview/xdg-open)
 w = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", "extend_to_line_bounds", ":pipe-to ~/.local/bin/hx-wiki.nu", ":sh sleep 0.1 && hx-wiki-open-smart"]
+# Web clip - Space+C: move latest SingleFile save and insert wikilink
+C = ":insert-output hx-web-clip"
+# Web archive link - Space+A: browse existing archives and insert wikilink
+A = ":insert-output hx-web-link"
+# Concert capture - Space+D: process latest Wigmore HTML, append to DayPage, reload
+D = ":insert-output hx-concert-capture"
 # Wiki link navigation to NEW PANE RIGHT - Space+W (Zellij-only, for recursive exploration)
 # Creates new pane and runs hx-wiki-open-right script there
 W = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", "extend_to_line_bounds", ":pipe-to ~/.local/bin/hx-wiki.nu", ":sh sleep 0.1", ":sh zellij run --direction right --close-on-exit -- hx-wiki-open-right"]

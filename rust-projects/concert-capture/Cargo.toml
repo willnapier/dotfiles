@@ -1,0 +1,18 @@
+[package]
+name = "concert-capture"
+version = "0.1.0"
+edition = "2021"
+description = "Extract concert data from Wigmore Hall HTML snapshots"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
+reqwest = { version = "0.12", features = ["json", "blocking"] }
+regex = "1"
+scraper = "0.18"
+slug = "0.1"
+dirs = "5"
+urlencoding = "2"
