@@ -374,37 +374,73 @@ fn extract_works_wigmore(document: &Html) -> Vec<Work> {
     let title_selector = Selector::parse(".rich-text.inline.bold").unwrap();
     let title_fallback = Selector::parse(".type-style-6").unwrap();
     let composer_fallback = Selector::parse(".type-style-4").unwrap();
+    let cycle_item_selector = Selector::parse(".cycle-item").unwrap();
 
-    document
-        .select(&item_selector)
-        .filter_map(|item| {
-            let composer = item
-                .select(&composer_selector)
-                .next()
-                .map(|el| el.text().collect::<String>().trim().to_string())
-                .or_else(|| {
-                    item.select(&composer_fallback)
-                        .next()
-                        .map(|el| el.text().collect::<String>().trim().to_string())
-                })?;
+    // Regex to detect catalog numbers (HWV, BWV, Op., K., RV, D., etc.)
+    let catalog_re = regex::Regex::new(r"(?i)(HWV|BWV|Op\.?\s*\d|K\.?\s*\d|RV\s*\d|D\.?\s*\d|S\d)").unwrap();
 
-            let title = item
-                .select(&title_selector)
-                .next()
-                .map(|el| el.text().collect::<String>().trim().to_string())
-                .or_else(|| {
-                    item.select(&title_fallback)
-                        .next()
-                        .map(|el| el.text().collect::<String>().trim().to_string())
-                })?;
+    let mut works: Vec<Work> = Vec::new();
+    let mut seen_titles: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-            if composer.is_empty() || title.is_empty() {
-                return None;
+    for item in document.select(&item_selector) {
+        let composer = item
+            .select(&composer_selector)
+            .next()
+            .map(|el| el.text().collect::<String>().trim().to_string())
+            .or_else(|| {
+                item.select(&composer_fallback)
+                    .next()
+                    .map(|el| el.text().collect::<String>().trim().to_string())
+            });
+
+        // Get the FIRST title directly under the item (not nested in cycle-item)
+        // This is the main work title
+        let main_title = item
+            .select(&title_selector)
+            .next()
+            .map(|el| el.text().collect::<String>().trim().to_string())
+            .or_else(|| {
+                item.select(&title_fallback)
+                    .next()
+                    .map(|el| el.text().collect::<String>().trim().to_string())
+            });
+
+        if let (Some(ref comp), Some(ref title)) = (&composer, &main_title) {
+            if !comp.is_empty() && !title.is_empty() && !seen_titles.contains(title) {
+                seen_titles.insert(title.clone());
+                works.push(Work {
+                    composer: comp.clone(),
+                    title: title.clone(),
+                });
             }
+        }
 
-            Some(Work { composer, title })
-        })
-        .collect()
+        // Also check for nested cycle-items (arias, movements with their own catalog numbers)
+        for cycle in item.select(&cycle_item_selector) {
+            if let Some(nested_title_el) = cycle.select(&title_selector).next() {
+                let nested_title = nested_title_el.text().collect::<String>().trim().to_string();
+
+                // Only include if it has its own catalog number AND is different from main title
+                if catalog_re.is_match(&nested_title)
+                    && !nested_title.is_empty()
+                    && !seen_titles.contains(&nested_title)
+                {
+                    seen_titles.insert(nested_title.clone());
+                    // Use parent composer if available
+                    if let Some(ref comp) = composer {
+                        if !comp.is_empty() {
+                            works.push(Work {
+                                composer: comp.clone(),
+                                title: nested_title,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    works
 }
 
 fn extract_works_southbank(document: &Html) -> Vec<Work> {

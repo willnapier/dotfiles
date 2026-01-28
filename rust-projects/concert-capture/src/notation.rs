@@ -233,10 +233,15 @@ fn extract_nickname(title: &str) -> Option<String> {
     None
 }
 
-/// Convert multi-word string to PascalCase
+/// Convert multi-word string to PascalCase, stripping punctuation
 fn to_pascal_case_multi(s: &str) -> String {
     s.split_whitespace()
-        .map(|word| to_pascal_case(word))
+        .map(|word| {
+            // Strip punctuation from word before converting
+            let cleaned: String = word.chars().filter(|c| c.is_alphanumeric()).collect();
+            to_pascal_case(&cleaned)
+        })
+        .filter(|w| !w.is_empty())
         .collect::<Vec<_>>()
         .join("")
 }
