@@ -805,9 +805,14 @@ wezterm.on('gui-startup', function()
   
   -- Get the GUI window
   local gui_window = window:gui_window()
-  
-  -- NOTE: Window positioning/sizing removed - let Niri handle via window-rules
-  -- (was causing WezTerm to override Niri's tiling with maximize())
+
+  -- Platform-conditional window sizing:
+  -- macOS: maximize() since no tiling WM
+  -- Linux: let Niri handle via window-rules
+  local is_linux = wezterm.target_triple:find("linux") ~= nil
+  if not is_linux and gui_window then
+    gui_window:maximize()
+  end
   
   -- Auto-split for laptop layout (two panes side by side)
   wezterm.time.call_after(0.5, function()

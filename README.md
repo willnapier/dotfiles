@@ -1,40 +1,102 @@
 # Dotfiles
 
-My personal dotfiles managed with [Dotter](https://github.com/SuperCuber/dotter).
+Personal dotfiles and automation tools managed with [Dotter](https://github.com/SuperCuber/dotter). Cross-platform (macOS + Linux) configuration for a terminal-native workflow built around Nushell, Helix, and a markdown knowledge base.
 
-## Included Configurations
+## Repository Map
 
-- **Nushell** - Enhanced shell with powerful data manipulation
-- **Helix** - Modal text editor with LSP support
-- **WezTerm** - GPU-accelerated terminal emulator
-- **Yazi** - File manager with image previews
-- **Zellij** - Terminal multiplexer with custom layouts
-- **Git** - Version control configuration
-- **Zsh** - Shell configuration
+| Directory | Contents |
+|-----------|----------|
+| `nushell/` | Shell configuration, universal knowledge functions, file watchers |
+| `helix/` | Modal editor config (Colemak-DH), language servers, keybindings |
+| `scripts/` | Standalone shell scripts deployed to `~/.local/bin/` |
+| `rust-projects/` | 17 Rust CLI tools (see table below) |
+| `docs/` | Architecture documentation for key systems |
+| `wezterm/` | GPU-accelerated terminal emulator config |
+| `yazi/` | Terminal file manager config and keybindings |
+| `zellij/` | Terminal multiplexer layouts and config |
+| `git/` | Git configuration |
+| `shell/` | Zsh configuration (fallback shell) |
+| `launchd/` | macOS LaunchAgent service definitions |
+| `hammerspoon/` | macOS automation (window management) |
+| `.dotter/` | Dotter deployment configuration |
 
-## 🏆 Cross-Platform Academic Workflow (2025)
+## Rust Projects
 
-This repository achieves **true cross-platform functionality** with identical behavior across macOS and Linux:
+All projects live in `rust-projects/` and build with `cargo build --release`. Binaries are symlinked to `~/.local/bin/` via Dotter.
 
-### Universal Academic Tools
-- **`fcit`** - Citation picker (works on any platform, any terminal)
-- **`fcitz`** - PDF finder & opener with Zotero integration
-- **`fwl`** - Wiki link picker for knowledge navigation
-- **`fsem`** - AI semantic search (requires OPENAI_API_KEY)
-- **`fsh`** - File search and open in editor
-- **`fsearch`** - Content search across vault
+| Project | Purpose |
+|---------|---------|
+| [ai-export-watcher](rust-projects/ai-export-watcher/) | Watches ~/Downloads for AI conversation exports, triggers converters |
+| [backlinks-init](rust-projects/backlinks-init/) | One-time bulk backlink population for markdown knowledge base |
+| [chatgpt-to-continuum](rust-projects/chatgpt-to-continuum/) | Converts ChatGPT/Grok/Gemini JSON exports to continuum JSONL |
+| [claude-to-continuum](rust-projects/claude-to-continuum/) | Converts Claude.ai conversation exports to continuum JSONL |
+| [concert-capture](rust-projects/concert-capture/) | Extracts concert data from Wigmore Hall HTML snapshots into DayPages |
+| [forge-graph](rust-projects/forge-graph/) | Graph analysis for markdown knowledge base (orphans, hubs, viz) |
+| [forge-graph-viewer](rust-projects/forge-graph-viewer/) | Interactive graph visualization using egui |
+| [forge-metadata-backup](rust-projects/forge-metadata-backup/) | Export and restore file timestamps to CSV |
+| [grok-to-continuum](rust-projects/grok-to-continuum/) | Converts Grok data exports to continuum JSONL |
+| [module](rust-projects/module/) | Knowledge base module import/export for AI advisor sessions |
+| [readwise-sync](rust-projects/readwise-sync/) | Syncs Readwise highlights and Reader articles to local markdown |
+| [restore-content-dates](rust-projects/restore-content-dates/) | Restores file dates from Evernote exports (fuzzy matching) |
+| [restore-evernote-dates](rust-projects/restore-evernote-dates/) | Restores file dates from Evernote exports (exact matching) |
+| [restore-special-char-dates](rust-projects/restore-special-char-dates/) | Restores dates for files with escaped special characters |
+| [tm3-diary-capture](rust-projects/tm3-diary-capture/) | Parses clinical diary HTML snapshots into DayPage checklists |
+| [wiki-resolve-batch](rust-projects/wiki-resolve-batch/) | Batch-resolves broken wiki links by removing `?[[` markers |
 
-### Smart Session Management
-- **`zj`** - Smart Zellij launcher with screen-aware layout detection
-- **Daily note integration** - `zj laptop` opens daily note session automatically
-- **Theme synchronization** - Automatically matches system appearance
-- **SSH compatibility** - Full workflow available over SSH (tested London ↔ Linux via Tailscale)
+## Key Design Patterns
 
-### Technical Achievements
-- **Universal `hx` command** - Abstraction layer handling `hx` (macOS) vs `helix` (Linux)
-- **Bidirectional sync** - Changes sync automatically between machines
-- **Zero configuration** - Identical setup process across platforms
-- **Remote development** - Full academic workflow available via SSH
+### Universal Tools
+
+CLI functions that work identically across platforms, editors, and SSH sessions. Built with Nushell + Rust tooling (`rg`, `sd`, `fd`, `sk`):
+
+- `fcit` -- Citation picker
+- `fcitz` -- PDF finder with Zotero integration
+- `fwl` -- Wiki link picker
+- `fsem` -- AI semantic search
+- `fsh` -- File search and open
+- `fsearch` -- Content search across knowledge base
+
+### File Watchers
+
+Native Nushell file watchers (zero external dependencies) for real-time automation:
+
+- Configuration drift detection and auto-sync
+- Activity duration processing on file save
+- AI conversation export auto-import
+- Bidirectional cross-platform sync via git
+
+### Activity Tracking
+
+A `key:: value` notation system embedded in daily markdown notes, processed by Nushell and Rust tools for quantified tracking of time, activities, and events.
+
+### Cross-Platform Sync
+
+Three-layer synchronization between macOS and Linux:
+
+1. **Dotfiles** -- Git-based (Dotter + auto-push/pull watchers)
+2. **Knowledge base** -- Syncthing with 30-day versioning
+3. **State coordination** -- Messageboard system for cross-machine signals
+
+## Architecture Documentation
+
+See the `docs/` directory for detailed system design:
+
+- [Entry Notation System](docs/ENTRY-NOTATION-SYSTEM.md) -- The `key:: value` notation and collection architecture
+- [File Watcher Architecture](docs/FILE-WATCHER-ARCHITECTURE.md) -- Native Nushell watcher design
+- [Literature System Architecture](docs/LITERATURE-SYSTEM-ARCHITECTURE.md) -- Three-layer Zettelkasten design
+- [Universal Tool Architecture](docs/UNIVERSAL-TOOL-ARCHITECTURE.md) -- Editor-neutral function design
+- [Dotter Orphan Prevention](docs/DOTTER-ORPHAN-PREVENTION.md) -- Configuration management safety
+- [Cross-Platform Sync](docs/CROSS-PLATFORM-SYNC.md) -- Bidirectional sync architecture
+- [Activity Classification System](docs/ACTIVITY-CLASSIFICATION-SYSTEM.md) -- AI-powered semantic tagging
+- [Quantified Tracking Notation](docs/QUANTIFIED-TRACKING-NOTATION.md) -- Duration and activity notation spec
+
+## Related Repositories
+
+| Repository | Description |
+|------------|-------------|
+| [nushell-knowledge-tools](https://github.com/willnapier/nushell-knowledge-tools) | Universal CLI functions for knowledge base navigation and citation management |
+| [helix-knowledge-integration](https://github.com/willnapier/helix-knowledge-integration) | Helix editor integration for the knowledge tools |
+| [continuum](https://github.com/willnapier/continuum) | Cross-platform, vendor-neutral AI conversation logging system |
 
 ## Usage
 
@@ -42,118 +104,27 @@ This repository achieves **true cross-platform functionality** with identical be
 
 ```bash
 # Install Dotter
-brew install dotter
+cargo install dotter
 ```
 
 ### Deploy
 
 ```bash
-git clone https://github.com/yourusername/dotfiles.git ~/dotfiles
+git clone https://github.com/willnapier/dotfiles.git ~/dotfiles
 cd ~/dotfiles
 dotter deploy
 ```
 
 ### Update
 
-Edit files in the `~/dotfiles` directory, then:
-
-```bash
-cd ~/dotfiles
-git add .
-git commit -m "Update configs"
-git push
-```
-
-Changes are automatically reflected in your system via symlinks.
-
-## Structure
-
-- `.dotter/` - Dotter configuration
-- `nushell/` - Nushell shell configuration
-- `helix/` - Helix editor configuration  
-- `wezterm/` - WezTerm terminal configuration
-- `yazi/` - Yazi file manager configuration
-- `git/` - Git configuration
-- `shell/` - Zsh shell configuration
+Edit files in `~/dotfiles/`, then commit and push. Changes are reflected immediately via symlinks.
 
 ## Automation Philosophy
 
-This dotfiles repository demonstrates two complementary approaches to workflow automation:
+This repository demonstrates two complementary approaches to workflow automation:
 
-### 🌍 Universal Tools - Work Anywhere
+**Universal Tools** prioritize portability -- they work on any platform, in any terminal, over SSH, with zero setup. These are the foundation for anywhere-access to the knowledge base.
 
-Tool-independent solutions that prioritize **portability** over deep integration. These functions work on any platform, in any terminal, with any editor:
+**Stack Integrations** prioritize depth -- they leverage specific tool combinations (Helix + Nushell + WezTerm) for context-aware automation within a chosen workflow. File watchers detect what's running and trigger processing automatically.
 
-- **`fcit`** - Universal citation picker (works anywhere, any platform)
-- **`fcitz`** - Universal PDF finder & opener (cross-platform file access)
-- **`fwl`** - Universal wiki link picker (knowledge navigation anywhere)
-- **`fsem`** - Universal semantic search (AI-powered research discovery)
-- **`fsh`** - Universal file search & open (editor integration anywhere) 
-- **`fsearch`** - Universal content search (vault-wide text discovery)
-- **`fdur`** - Universal file duration processing (converts "t:: 1430-45" → "t:: 15min 1430-1445")
-
-**Key Benefits**: SSH-friendly, zero setup required, works on colleagues' machines, platform agnostic
-
-### ⚙️ Stack Integration Examples - Deep Automation Within Chosen Tools
-
-Solutions that leverage specific tool combinations for **maximum depth** within a chosen workflow:
-
-- **Helix Activity Watcher** (`helix-activity-watcher-renu`) - Monitors Helix process state to trigger activity duration processing only when actively editing
-- **WezTerm + Nushell Integration** - Deep terminal integration with structured data processing
-- **Yazi + Helix Workflow** - File manager integration with modal editor keybindings
-
-**Key Benefits**: Tighter integration, context-aware automation, richer functionality within chosen stack
-
-### Trade-offs & Design Philosophy
-
-**Universal Functions** excel when you need:
-- Remote work capabilities (SSH, different machines)
-- Team collaboration (works on anyone's setup)
-- Platform flexibility (Linux, macOS, Windows)
-- Minimal dependencies
-
-**Stack Integrations** excel when you need:
-- Maximum productivity within your chosen tools
-- Context-aware automation (knowing what apps are running)
-- Rich data exchange between integrated tools
-- Sophisticated workflow orchestration
-
-Both approaches are **complementary, not competing**. Universal functions provide the foundation for anywhere-access, while stack integrations provide the depth for daily productivity.
-
-### 🔄 Dual Approach Example: Activity Duration Processing
-
-The `fdur` function perfectly demonstrates how both approaches work together:
-
-#### Universal Function Approach
-```bash
-# Process specific file (works anywhere with Nushell)
-fdur ~/notes/today.md
-
-# Bulk process all activity files in directory
-cd ~/notes && fdur
-
-# Works in SSH sessions
-ssh remote-server "cd ~/notes && fdur"
-
-# Works on any platform
-fdur ./activity-notes.md  # Linux, macOS, Windows
-```
-
-#### Stack Integration Approach
-- **Space+p in Helix** - Seamless single-keypress processing while editing
-- **Helix Activity Watcher** - Context-aware automation that triggers only during active editing sessions
-- **Real-time Processing** - Automatic duration processing integrated into your editing workflow
-
-#### Why Both Matter
-- **Universal `fdur`**: Essential for bulk processing, remote work, and platform independence
-- **Helix Integration**: Optimal for single-file editing with immediate visual feedback
-- **Activity Watcher**: Provides context-awareness and automated triggers
-
-This dual approach means you're never limited by context - use the universal function for flexibility, leverage the stack integration for optimal daily workflow.
-
-## Core Features
-
-- **CLI-first workflow** - Powerful file management via Nushell
-- **Helix + Colemak-DH** - Ergonomic text editing
-- **Consistent theming** - Solarized across all tools
-- **Smart file handling** - Yazi integration with proper keybindings
+Both approaches are complementary. Universal functions provide the foundation; stack integrations provide the depth for daily productivity.

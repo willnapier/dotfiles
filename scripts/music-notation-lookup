@@ -1,0 +1,111 @@
+#!/bin/bash
+# music-notation-lookup - Query local Open Opus database
+# Usage:
+#   music-notation-lookup composer "Bach"
+#   music-notation-lookup catalog "BWV846"
+#   music-notation-lookup validate "Bach" "BWV846"
+#   music-notation-lookup update  (re-download database)
+
+set -euo pipefail
+
+DB="$HOME/.local/share/music-notation/openopus-dump.json"
+
+# Ensure database exists
+if [ ! -f "$DB" ]; then
+    echo "Database not found. Downloading..." >&2
+    mkdir -p "$(dirname "$DB")"
+    curl -s "https://api.openopus.org/work/dump.json" > "$DB"
+fi
+
+cmd="${1:-help}"
+
+case "$cmd" in
+    composer)
+        # Search for composer by name
+        query="${2:-}"
+        if [ -z "$query" ]; then
+            echo "Usage: music-notation-lookup composer <name>" >&2
+            exit 1
+        fi
+        # Extract matching composers
+        jq -r --arg q "$query" '.composers[] | select(.name | test($q; "i")) | "\(.name) (\(.complete_name))"' "$DB"
+        ;;
+
+    catalog)
+        # Search for work by catalog number (BWV, Op, K, D, etc.)
+        query="${2:-}"
+        if [ -z "$query" ]; then
+            echo "Usage: music-notation-lookup catalog <number>" >&2
+            exit 1
+        fi
+        # Build flexible regex: Op27No2 -> op[. ]*27.*no[. ]*2
+        # Insert [. ]* between letters and numbers, handle No/no
+        pattern=$(echo "$query" | sd '([A-Za-z])(\d)' '$1[. ]*$2' | sd '(\d)([A-Za-z])' '$1.*$2' | sd -f i 'No' 'no')
+        # Search in work titles for catalog number
+        jq -r --arg q "$pattern" '.composers[] as $c | $c.works[]? | select(.title | test($q; "i")) | "\($c.name): \(.title)"' "$DB" | head -20
+        ;;
+
+    validate)
+        # Check if composer + catalog combination exists
+        composer="${2:-}"
+        catalog="${3:-}"
+        if [ -z "$composer" ] || [ -z "$catalog" ]; then
+            echo "Usage: music-notation-lookup validate <composer> <catalog>" >&2
+            exit 1
+        fi
+
+        # Build flexible catalog pattern (same as catalog search)
+        catalog_pattern=$(echo "$catalog" | sd '([A-Za-z])(\d)' '$1[. ]*$2' | sd '(\d)([A-Za-z])' '$1.*$2' | sd -f i 'No' 'no')
+
+        # Search for exact match
+        result=$(jq -r --arg c "$composer" --arg cat "$catalog_pattern" \
+            '.composers[] | select(.name | test($c; "i")) | .works[]? | select(.title | test($cat; "i")) | .title' "$DB" 2>/dev/null | head -1)
+
+        if [ -n "$result" ]; then
+            echo "VALID: $result"
+            exit 0
+        fi
+
+        # Try collection-level match (strip NoX suffix): Op10No3 -> Op10
+        base_catalog=$(echo "$catalog" | sd -f i 'No\d+$' '')
+        if [ "$base_catalog" != "$catalog" ]; then
+            base_pattern=$(echo "$base_catalog" | sd '([A-Za-z])(\d)' '$1[. ]*$2')
+            result=$(jq -r --arg c "$composer" --arg cat "$base_pattern" \
+                '.composers[] | select(.name | test($c; "i")) | .works[]? | select(.title | test($cat; "i")) | .title' "$DB" 2>/dev/null | head -1)
+            if [ -n "$result" ]; then
+                echo "VALID_COLLECTION: $result"
+                exit 0
+            fi
+        fi
+
+        echo "NOT_FOUND"
+        exit 1
+        ;;
+
+    update)
+        echo "Updating Open Opus database..." >&2
+        curl -s "https://api.openopus.org/work/dump.json" > "$DB"
+        count=$(jq '.status.rows' "$DB")
+        echo "Downloaded $count works"
+        ;;
+
+    stats)
+        composers=$(jq '.composers | length' "$DB")
+        works=$(jq '.status.rows' "$DB")
+        echo "Composers: $composers"
+        echo "Works: $works"
+        echo "Database: $DB"
+        echo "Size: $(du -h "$DB" | cut -f1)"
+        ;;
+
+    *)
+        echo "music-notation-lookup - Query Open Opus database"
+        echo ""
+        echo "Commands:"
+        echo "  composer <name>           Search composers"
+        echo "  catalog <number>          Search by catalog (BWV846, Op27, K545)"
+        echo "  validate <composer> <cat> Check if work exists"
+        echo "  update                    Re-download database"
+        echo "  stats                     Show database info"
+        ;;
+esac

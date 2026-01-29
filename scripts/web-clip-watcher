@@ -1,0 +1,26 @@
+#!/bin/bash
+# Auto-move SingleFile saves from Downloads to Captures
+# Run as: web-clip-watcher (foreground) or via launchd
+
+SOURCE=~/Downloads
+DEST=~/Captures/web-archives
+
+mkdir -p "$DEST"
+
+echo "Watching $SOURCE for SingleFile saves..."
+
+fswatch -0 "$SOURCE" | while IFS= read -r -d '' event; do
+    # Check for new SingleFile HTML files (date-prefixed)
+    for f in "$SOURCE"/20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]-*.html; do
+        if [ -f "$f" ]; then
+            filename=$(basename "$f")
+            mv "$f" "$DEST/"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') Moved: $filename"
+            
+            # Optional: notify
+            if command -v terminal-notifier &>/dev/null; then
+                terminal-notifier -title "Web Clip Saved" -message "$filename" -sound default
+            fi
+        fi
+    done
+done

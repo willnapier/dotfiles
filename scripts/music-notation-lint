@@ -1,0 +1,133 @@
+#!/bin/bash
+# music-notation-lint - Validate music work notation in activity logs
+# MVP: Basic structural validation, designed to become obsolete
+# Usage: music-notation-lint [path]  (defaults to ~/Forge/DayPages)
+
+set -euo pipefail
+
+TARGET="${1:-$HOME/Forge/DayPages}"
+
+# Known composer shorts (extend as needed)
+# Bach = J.S. Bach (default); use CPEBach, JCBach, WFBach for others
+COMPOSERS="Bach|JSBach|CPEBach|JCBach|WFBach|Beethoven|Mozart|Chopin|Schubert|Schumann|Debussy|Ravel|Brahms|Liszt|Haydn|Handel|Mendelssohn|Rachmaninoff|Prokofiev|Shostakovich"
+
+# Catalog prefixes
+CATALOGS="BWV|Op|K|D|Hob|WoO|Anh|S|L"
+
+# Key pattern: letter, optional sharp/flat, optional "min"
+KEY_PATTERN='[A-G](#|b)?(min)?$'
+
+# Musical terms that start with A-G but aren't keys (avoid false positives)
+NOT_KEYS="Allegro|Adagio|Andante|Allegretto|Etude|Fugue|Gavotte|Gigue|Ballade|Barcarolle|Caprice|Concerto|Dance|Fantasy"
+
+# Activity prefixes for music
+MUSIC_PREFIXES='(piano|listening|concert|music)(\.[a-z]+)?::'
+
+# Colors
+RED='\033[0;31m'
+YELLOW='\033[0;33m'
+GREEN='\033[0;32m'
+NC='\033[0m' # No Color
+
+issues=0
+checked=0
+
+echo "Scanning: $TARGET"
+echo "---"
+
+# Find all music activity lines (use -H to always show filename)
+while IFS= read -r match; do
+    # Parse rg output: file:line:content (with -H flag)
+    file=$(echo "$match" | sd '^(.+):(\d+):.*$' '$1')
+    line=$(echo "$match" | sd '^.+:(\d+):.*$' '$1')
+    content=$(echo "$match" | sd '^.+:\d+:(.*)$' '$1')
+
+    checked=$((checked + 1))
+
+    # Extract work notation (skip prefix and duration)
+    # Format: "piano:: 45min JSBach-BWV846-..."
+    work=$(echo "$content" | sd '^[a-z.]+::\s*\d+min\s*' '' | sd '\s*@.*$' '' | xargs)
+
+    if [ -z "$work" ]; then
+        continue
+    fi
+
+    # Split into parts
+    IFS='-' read -ra parts <<< "$work"
+
+    errors=""
+    warnings=""
+
+    # Check composer (first part)
+    composer="${parts[0]:-}"
+    if [ -n "$composer" ]; then
+        if ! echo "$composer" | rg -q "^($COMPOSERS)$"; then
+            warnings+="unknown composer '$composer' "
+        fi
+    else
+        errors+="missing composer "
+    fi
+
+    # Check for catalog number (second part usually)
+    has_catalog=false
+    for part in "${parts[@]}"; do
+        if echo "$part" | rg -q "^($CATALOGS)[0-9]"; then
+            has_catalog=true
+            break
+        fi
+    done
+
+    if ! $has_catalog; then
+        warnings+="no catalog number found "
+    fi
+
+    # Check key format if present (last part often)
+    last_part="${parts[${#parts[@]}-1]:-}"
+    if echo "$last_part" | rg -q '^[A-G]'; then
+        # Skip if it's a known musical term (not a key)
+        if ! echo "$last_part" | rg -qi "^($NOT_KEYS)"; then
+            if ! echo "$last_part" | rg -q "^$KEY_PATTERN"; then
+                errors+="malformed key '$last_part' "
+            fi
+        fi
+    fi
+
+    # Open Opus validation (if catalog found)
+    if $has_catalog && [ -n "$composer" ]; then
+        # Extract catalog number
+        catalog=""
+        for part in "${parts[@]}"; do
+            if echo "$part" | rg -q "^($CATALOGS)[0-9]"; then
+                catalog="$part"
+                break
+            fi
+        done
+        if [ -n "$catalog" ]; then
+            # Check against Open Opus (silent if found, warn if not)
+            if ! music-notation-lookup validate "$composer" "$catalog" >/dev/null 2>&1; then
+                warnings+="not found in Open Opus "
+            fi
+        fi
+    fi
+
+    # Report
+    if [ -n "$errors" ]; then
+        echo -e "${RED}✗${NC} $file:$line"
+        echo "  $work"
+        echo -e "  ${RED}ERROR: $errors${NC}"
+        issues=$((issues + 1))
+    elif [ -n "$warnings" ]; then
+        echo -e "${YELLOW}⚠${NC} $file:$line"
+        echo "  $work"
+        echo -e "  ${YELLOW}WARN: $warnings${NC}"
+        issues=$((issues + 1))
+    fi
+
+done < <(rg -Hn "$MUSIC_PREFIXES" "$TARGET" --type md 2>/dev/null || true)
+
+echo "---"
+if [ $issues -eq 0 ]; then
+    echo -e "${GREEN}✓ All $checked entries valid${NC}"
+else
+    echo -e "${YELLOW}Found $issues issue(s) in $checked entries${NC}"
+fi

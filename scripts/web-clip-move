@@ -1,0 +1,19 @@
+#!/bin/bash
+# Move SingleFile HTML saves from Downloads to web-archives
+SOURCE=~/Downloads
+DEST=~/Captures/web-archives
+
+# Ensure destination exists
+mkdir -p "$DEST"
+
+# Move any HTML files with ISO date prefix (SingleFile naming pattern)
+moved=0
+shopt -s nullglob  # Don't error on no matches
+for f in "$SOURCE"/20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]-*.html; do
+    mv "$f" "$DEST/"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') Moved: $(basename "$f")" >> ~/.local/share/web-clip-move.log
+    moved=$((moved + 1))
+done
+
+[ $moved -gt 0 ] && echo "Moved $moved file(s) to web-archives"
+exit 0

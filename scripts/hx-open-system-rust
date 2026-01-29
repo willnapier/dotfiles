@@ -1,0 +1,91 @@
+#!/bin/bash
+# System opener for Helix - handles URLs and files
+
+# Read input from stdin
+input=$(cat)
+
+# Trim and clean the input
+cleaned=$(echo "$input" | tr -d '"' | tr -d "'" | xargs)
+
+# Check what type of input we have
+
+if [[ "$cleaned" =~ ^https?:// ]] || [[ "$cleaned" =~ ^www\. ]] || [[ "$cleaned" =~ ^zotero:// ]]; then
+    # It's a URL (including Zotero links)
+    if [[ "$cleaned" =~ ^www\. ]]; then
+        url="https://$cleaned"
+    else
+        url="$cleaned"
+    fi
+    echo "Opening URL: $url"
+    open "$url"
+elif [[ "$cleaned" =~ ^\[\[.*\]\]$ ]]; then
+    # It's a wiki link - delegate to hx-wiki
+    echo "$input" | hx-wiki
+elif [[ "$cleaned" =~ \[.*\]\(https?://[^\)]+\) ]]; then
+    # It's a markdown link with HTTP(S) URL - extract and open
+    url=$(echo "$cleaned" | grep -oE 'https?://[^)]+')
+    echo "Opening URL from markdown link: $url"
+    open "$url"
+elif [[ "$cleaned" =~ \[.*\]\(zotero://[^\)]+\) ]]; then
+    # It's a markdown link with Zotero URL - extract the URL
+    zotero_url=$(echo "$cleaned" | grep -o 'zotero://[^)]*')
+    echo "Opening Zotero PDF link: $zotero_url"
+
+    # Ensure Zotero is running first
+    if ! pgrep -x "zotero" > /dev/null && ! pgrep -x "Zotero" > /dev/null; then
+        echo "Starting Zotero..."
+        if [[ "$(uname)" == "Darwin" ]]; then
+            open -a Zotero
+        elif [[ "$(uname)" == "Linux" ]]; then
+            if command -v zotero >/dev/null 2>&1; then
+                zotero &
+            else
+                echo "Zotero not found. Please install or start Zotero manually."
+                return
+            fi
+        fi
+        sleep 3  # Give Zotero time to start
+    fi
+
+    # Now open the URL (cross-platform)
+    if [[ "$(uname)" == "Darwin" ]]; then
+        open "$zotero_url"
+    elif [[ "$(uname)" == "Linux" ]]; then
+        xdg-open "$zotero_url" 2>/dev/null || {
+            echo "Unable to open Zotero URL. Please ensure Zotero is configured to handle zotero:// URLs"
+            return
+        }
+    else
+        echo "Unsupported platform for automatic URL opening"
+        return
+    fi
+
+    # Wait a moment for Zotero to process the selection, then send Enter
+    sleep 1
+
+    # Cross-platform automation to send Enter key
+    if [[ "$(uname)" == "Darwin" ]]; then
+        # macOS: Use AppleScript
+        osascript -e 'tell application "Zotero" to activate' -e 'tell application "System Events" to keystroke return'
+    elif [[ "$(uname)" == "Linux" ]]; then
+        # Linux: Use xdotool (common automation tool)
+        if command -v xdotool >/dev/null 2>&1; then
+            # Focus Zotero window and send Enter
+            xdotool search --name "Zotero" windowactivate --sync
+            xdotool key Return
+        else
+            echo "Note: Install xdotool for automated PDF opening: sudo apt install xdotool"
+            echo "Manual step: Press Enter in Zotero to open the PDF"
+        fi
+    else
+        echo "Manual step: Press Enter in Zotero to open the PDF"
+    fi
+else
+    # Try to open as a file
+    if [[ -f "$cleaned" ]]; then
+        echo "Opening file: $cleaned"
+        open "$cleaned"
+    else
+        echo "Not a valid URL or file: $cleaned"
+    fi
+fi

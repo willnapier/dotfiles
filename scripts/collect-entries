@@ -109,7 +109,11 @@ def main [
 
         try {
             # Run classification on all activity files
-            auto-tag-activities --verbose=$verbose
+            if $verbose {
+                auto-tag-activities --verbose
+            } else {
+                auto-tag-activities
+            }
         } catch {
             print "⚠️  Classification failed - continuing without tags"
             if $verbose {
@@ -322,10 +326,11 @@ def capture_narrative [all_lines: list<string>, entry_line_idx: int, entry_conte
 #          P.proj1:: 1hr work. piano:: 30min practice. (period-separated)
 #          travel:: walk:: toEB 1.07km, walk:: toPractice 1.06km (inline nesting)
 #
-# NESTING RULES:
-# - key1:: key2:: (no comma/period between) = key2 nested under key1 → "key1.key2"
-# - key1:: ..., key2:: (comma between) = key2 is sibling at same nesting level
-# - key1:: .... key2:: (period+space between) = key2 starts fresh (root level)
+# PARSING RULES:
+# - Each key:: is collected to its own file based on the key name
+# - Keys with dots (ex.walk::) go to ex.walk.md
+# - Nesting context (travel:: ... walk::) does NOT create composite keys
+# - Each activity is tracked independently regardless of context
 def parse_entry_line [line: string] {
     # Find all key:: patterns using ripgrep to get positions
     let rg_result = (
@@ -343,8 +348,6 @@ def parse_entry_line [line: string] {
         return null
     }
 
-    # Track nesting context as we parse left-to-right
-    mut parent_stack = []  # Stack of parent keys for nesting
     mut results = []
 
     for item in ($rg_result | enumerate) {
@@ -352,48 +355,8 @@ def parse_entry_line [line: string] {
         let idx = $item.index
         let raw_key = $match_info.key
 
-        # Determine what precedes this key:: to understand nesting relationship
-        let preceding_text = if $match_info.offset > 0 {
-            $line | str substring 0..<($match_info.offset)
-        } else {
-            ""
-        }
-
-        # Check delimiter type before this key
-        let trimmed_preceding = ($preceding_text | str trim --right)
-        let has_comma_before = ($trimmed_preceding | str ends-with ',')
-        let has_period_space_before = ($preceding_text | str ends-with '. ') or ($trimmed_preceding | str ends-with '.')
-
-        # Determine nesting relationship
-        if $idx == 0 {
-            # First key - always root level
-            $parent_stack = []
-        } else if $has_period_space_before {
-            # Period = new root context, clear parent stack
-            $parent_stack = []
-        } else if $has_comma_before {
-            # Comma = sibling at current level, keep parent stack as-is
-            # (no change to parent_stack)
-        } else {
-            # No delimiter = nested under previous key
-            # Push the previous key onto parent stack
-            let prev_match = ($rg_result | get ($idx - 1))
-            let prev_key = $prev_match.key
-            # Build full previous key (might already have parents)
-            let prev_full_key = if ($parent_stack | is-empty) {
-                $prev_key
-            } else {
-                [($parent_stack | str join '.'), $prev_key] | str join '.'
-            }
-            $parent_stack = ($parent_stack | append $prev_key)
-        }
-
-        # Build composite key with parent context
-        let full_key = if ($parent_stack | is-empty) {
-            $raw_key
-        } else {
-            [($parent_stack | str join '.'), $raw_key] | str join '.'
-        }
+        # Each key goes to its own file - no composite keys from nesting
+        let full_key = $raw_key
 
         # Extract content: from after this key:: to next key:: or delimiter
         let start_pos = ($match_info.offset + ($raw_key | str length) + 2)  # +2 for '::'

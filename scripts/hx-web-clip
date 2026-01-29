@@ -1,0 +1,20 @@
+#!/bin/bash
+# Move most recent SingleFile save and output wikilink for Helix insertion
+SOURCE=~/Downloads
+DEST=~/Captures/web-archives
+
+mkdir -p "$DEST"
+
+# Find most recent SingleFile HTML (date-prefixed)
+latest=$(ls -t "$SOURCE"/20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]-*.html 2>/dev/null | head -1)
+
+if [ -z "$latest" ]; then
+    echo "No web clip found in Downloads" >&2
+    exit 1
+fi
+
+filename=$(basename "$latest")
+mv "$latest" "$DEST/"
+
+# Output wikilink (Helix will insert this)
+echo "[[captures/web-archives/$filename]]"

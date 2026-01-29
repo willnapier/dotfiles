@@ -1,0 +1,13 @@
+[package]
+name = "restore-evernote-dates"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+quick-xml = "0.31"
+chrono = "0.4"
+walkdir = "2.4"
+anyhow = "1.0"
+clap = { version = "4.4", features = ["derive"] }
+indicatif = "0.17"
+filetime = "0.2"

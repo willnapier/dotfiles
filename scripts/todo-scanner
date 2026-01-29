@@ -1,6 +1,6 @@
 #!/bin/bash
 # Scan all notes for unchecked todos and create a dynamic todo view
-# Uses modern Rust tools: fd, rg, sd
+# Uses modern Rust tools: fd, rg, sk
 
 FORGE="${FORGE:-$HOME/Forge}"
 TODO_CACHE="$HOME/.cache/active-todos.md"
@@ -14,18 +14,21 @@ NC='\033[0m'
 # Parse arguments
 SHOW_CONTEXT=false
 DAYS_BACK=30
+INTERACTIVE=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         --all) DAYS_BACK=9999 ;;
         --week) DAYS_BACK=7 ;;
         --context) SHOW_CONTEXT=true ;;
+        --edit) INTERACTIVE=true ;;
         --help)
             echo "Usage: todo-scanner [OPTIONS]"
             echo "Options:"
             echo "  --all      Show all todos (no time limit)"
             echo "  --week     Show todos from last 7 days only"
-            echo "  --context  Show line after todo for context"
+            echo "  --context  Show line after todo for context (cache mode)"
+            echo "  --edit     Interactive picker, opens in Helix"
             echo "  --help     Show this help message"
             exit 0
             ;;
@@ -34,14 +37,52 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
-echo -e "${YELLOW}Scanning for unchecked todos...${NC}"
-
 # Build time filter for fd
 if [ "$DAYS_BACK" -lt 9999 ]; then
     TIME_FILTER="--changed-within ${DAYS_BACK}d"
 else
     TIME_FILTER=""
 fi
+
+# Interactive mode - fast path, skip cache generation
+if $INTERACTIVE; then
+    if [ -n "$TIME_FILTER" ]; then
+        results=$(fd -e md $TIME_FILTER . "$FORGE" -0 2>/dev/null | xargs -0 rg -n "^\s*- \[ \]" 2>/dev/null)
+    else
+        results=$(rg -n "^\s*- \[ \]" --type md "$FORGE" 2>/dev/null)
+    fi
+
+    if [ -z "$results" ]; then
+        echo "No todos found."
+        exit 0
+    fi
+
+    # Use sk with preview showing context around the todo
+    # Force xterm-256color as sk doesn't recognize some terminals (ghostty, wezterm, etc.)
+    selected=$(echo "$results" | TERM=xterm-256color sk \
+        --prompt "📋 Todo: " \
+        --preview 'file=$(echo {} | cut -d: -f1); line=$(echo {} | cut -d: -f2); bat --color=always --wrap=never --highlight-line "$line" --line-range "$((line > 5 ? line - 5 : 1)):$((line + 10))" "$file" 2>/dev/null || head -20 "$file"' \
+        --preview-window "right:60%" \
+        --height "80%" \
+        --bind "ctrl-y:execute-silent(echo {} | cut -d: -f3- | tr -d '\n' | pbcopy 2>/dev/null || echo {} | cut -d: -f3- | wl-copy 2>/dev/null)")
+
+    if [ -n "$selected" ]; then
+        filepath=$(echo "$selected" | cut -d: -f1)
+        linenum=$(echo "$selected" | cut -d: -f2)
+
+        # Open in editor at the specific line
+        if command -v hx &>/dev/null; then
+            hx "$filepath:$linenum"
+        elif command -v nvim &>/dev/null; then
+            nvim "+$linenum" "$filepath"
+        else
+            ${EDITOR:-vi} "+$linenum" "$filepath"
+        fi
+    fi
+    exit 0
+fi
+
+echo -e "${YELLOW}Scanning for unchecked todos...${NC}"
 
 # Header for the cache file
 cat > "$TODO_CACHE" << EOF
@@ -156,8 +197,8 @@ echo -e "${GREEN}✓ Found $TOTAL active todos${NC}"
 echo -e "${GREEN}✓ Saved to: $TODO_CACHE${NC}"
 echo ""
 echo "Quick commands:"
-echo "  hx ~/.cache/active-todos.md    # View in Helix"
-echo "  cat ~/.cache/active-todos.md   # Quick look"
+echo "  todo-scanner --edit            # Interactive picker → Helix"
+echo "  hx ~/.cache/active-todos.md    # View full list"
 echo ""
 
 if [ -n "$NU_VERSION" ]; then
