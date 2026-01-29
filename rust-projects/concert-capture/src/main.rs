@@ -134,7 +134,8 @@ fn process_concert(path: &PathBuf, dry_run: bool, no_api: bool, link_only: bool,
 
     let works_str = works_notation.join(" ");
 
-    let entry = format!("concert:: {} {} {}", performers_str, works_str, wikilink);
+    let venue_tag = venue_to_tag(concert.venue);
+    let entry = format!("concert.{}:: {} {} {}", venue_tag, performers_str, works_str, wikilink);
 
     if link_only {
         print!("{}", wikilink);
@@ -194,4 +195,14 @@ fn list_archives() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn venue_to_tag(venue: html::Venue) -> &'static str {
+    match venue {
+        html::Venue::WigmoreHall => "wigmore",
+        html::Venue::SouthbankCentre => "southbank",
+        html::Venue::KingsPlace => "kingsplace",
+        html::Venue::Barbican => "barbican",
+        html::Venue::Unknown => "unknown",
+    }
 }
