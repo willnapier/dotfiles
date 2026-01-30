@@ -147,8 +147,8 @@ q = [":write", ":buffer-previous"]       # Save then go to previous buffer
 Q = ":quit!"                                # Force quit without saving
 
 # Day navigation - Space+[ and Space+]
-"[" = [":sh prev-day %{buffer_name}", ":open %sh{cat /tmp/helix-day-target.txt}"]    # Previous day's note
-"]" = [":sh next-day %{buffer_name}", ":open %sh{cat /tmp/helix-day-target.txt}"]    # Next day's note
+"[" = ":open %sh{prev-day %{buffer_name}}"    # Previous day's note
+"]" = ":open %sh{next-day %{buffer_name}}"    # Next day's note
 
 # Custom g-prefix commands
 [keys.normal.g]
