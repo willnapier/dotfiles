@@ -3,8 +3,7 @@
 # Usage: next-day [buffer_name]
 # If buffer_name contains a YYYY-MM-DD date, navigates relative to that.
 # Otherwise falls back to (today + 1day).
-# Prints resolved path to stdout (for Helix :insert-output or %sh{})
-# Also writes to /tmp/helix-day-target.txt for other consumers
+# Writes resolved path to /tmp/helix-day-target.txt
 # MUST be self-contained — config.nu is NOT loaded in script mode
 
 def main [buffer_name?: string] {
@@ -21,5 +20,4 @@ def main [buffer_name?: string] {
     let target_date = ($current_date + 1day | format date "%Y-%m-%d")
     let note_path = $"($env.HOME)/Forge/NapierianLogs/DayPages/($target_date).md"
     $note_path | save -f /tmp/helix-day-target.txt
-    print -n $note_path
 }

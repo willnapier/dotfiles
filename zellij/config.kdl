@@ -347,10 +347,11 @@ stacked_resize false
 //     TERM "xterm-256color"
 // }
 
-// Copy/paste configuration - disabled to prevent conflict with WezTerm clipboard handling
-// copy_command "pbcopy"
-// copy_clipboard "system" 
-// copy_on_select true
+// Copy/paste configuration
+// Zellij intercepts mouse events, so WezTerm's copy-on-select won't fire.
+// Zellij must handle clipboard itself.
+copy_clipboard "system"
+copy_on_select true
 
 // Mouse support for better selection and scrolling
 mouse_mode true

@@ -1,0 +1,40 @@
+#!/usr/bin/env nu
+# Day navigation for Helix via Zellij keystroke injection
+# Usage: hx-day-nav <prev|next> [buffer_name]
+# Calculates target day, then sends :open command to Helix via Zellij
+
+def main [direction: string, buffer_name?: string] {
+    # Extract date from buffer name if it looks like a DayPage
+    let current_date = if ($buffer_name != null) {
+        let basename = ($buffer_name | path basename | str replace '.md' '')
+        if ($basename =~ '^\d{4}-\d{2}-\d{2}$') {
+            $basename | into datetime
+        } else {
+            date now
+        }
+    } else {
+        date now
+    }
+
+    # Calculate target date
+    let target_date = if $direction == "prev" {
+        $current_date - 1day | format date "%Y-%m-%d"
+    } else {
+        $current_date + 1day | format date "%Y-%m-%d"
+    }
+
+    let note_path = $"($env.HOME)/Forge/NapierianLogs/DayPages/($target_date).md"
+
+    # Also write to file for other consumers
+    $note_path | save -f /tmp/helix-day-target.txt
+
+    # Send :open command to Helix via Zellij keystroke injection
+    # write 27 = Escape (ensure normal mode)
+    # write 13 = Enter (execute command)
+    sleep 200ms
+    ^zellij action write 27
+    sleep 100ms
+    ^zellij action write-chars $":open ($note_path)"
+    sleep 100ms
+    ^zellij action write 13
+}

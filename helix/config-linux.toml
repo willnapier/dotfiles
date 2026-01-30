@@ -146,13 +146,13 @@ b = [":write-all", "goto_previous_buffer", ":sh sleep 0.5", ":reload-all"]  # Sa
 q = [":write", ":buffer-previous"]       # Save then go to previous buffer
 Q = ":quit!"                                # Force quit without saving
 
-# Day navigation - Space+[ and Space+]
-"[" = ":open %sh{prev-day %{buffer_name}}"    # Previous day's note
-"]" = ":open %sh{next-day %{buffer_name}}"    # Next day's note
+# Day navigation moved to g[ and g] (Space+[ crashes Helix — [ is a prefix key)
 
 # Custom g-prefix commands
 [keys.normal.g]
 R = ":reload-all"  # Reload all buffers (refresh external changes)
+"[" = ":sh hx-day-nav prev %{buffer_name}"    # Previous day's note
+"]" = ":sh hx-day-nav next %{buffer_name}"    # Next day's note
 f = ["extend_to_line_bounds", ":pipe-to hx-smart-gf-rust", ":open /tmp/helix-gf-target.md"]  # Smart file opener (Rust/Nushell version with fd, rg)
 x = ["extend_to_line_bounds", ":pipe-to hx-open-url"]  # Open URLs
 w = ["extend_to_line_bounds", ":pipe-to hx-wiki.nu", ":sh sleep 0.1 && hx-wiki-open-smart"]  # Wiki link navigation (smart: text in popup, media in viewer)

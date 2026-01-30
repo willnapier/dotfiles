@@ -73,6 +73,7 @@ depends = []
 "scripts/daypage-template" = "~/.local/bin/daypage-template"
 "scripts/prev-day" = "~/.local/bin/prev-day"
 "scripts/next-day" = "~/.local/bin/next-day"
+"scripts/hx-day-nav" = "~/.local/bin/hx-day-nav"
 "scripts/hx-insert-date" = "~/.local/bin/hx-insert-date"
 "scripts/hx-insert-datetime" = "~/.local/bin/hx-insert-datetime"
 "scripts/hx-insert-time" = "~/.local/bin/hx-insert-time"
