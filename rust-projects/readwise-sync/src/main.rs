@@ -96,7 +96,7 @@ struct Document {
     category: String,
     #[serde(default)]
     location: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_nullable_map")]
     tags: HashMap<String, serde_json::Value>,
     word_count: Option<u32>,
     created_at: String,
@@ -611,4 +611,15 @@ where
     }
 
     deserializer.deserialize_any(OptionalIdVisitor)
+}
+
+/// Deserialize a map that could be null
+fn deserialize_nullable_map<'de, D>(
+    deserializer: D,
+) -> Result<HashMap<String, serde_json::Value>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<HashMap<String, serde_json::Value>>::deserialize(deserializer)
+        .map(|opt| opt.unwrap_or_default())
 }
