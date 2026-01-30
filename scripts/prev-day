@@ -1,9 +1,8 @@
 #!/usr/bin/env nu
 # Self-contained prev-day for Helix keybinding (Space+[)
-# Sets symlink target to yesterday's DayPage
+# Writes resolved path to /tmp/helix-day-target.txt
 # MUST be self-contained — config.nu is NOT loaded in script mode
 
 let target_date = ((date now) - 1day | format date "%Y-%m-%d")
 let note_path = $"($env.HOME)/Forge/NapierianLogs/DayPages/($target_date).md"
-rm -f /tmp/helix-day-target.md
-^ln -sf $note_path /tmp/helix-day-target.md
+$note_path | save -f /tmp/helix-day-target.txt
