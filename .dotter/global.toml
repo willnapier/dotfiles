@@ -64,6 +64,8 @@ depends = []
 "zed/settings.json" = "~/.config/zed/settings.json"
 # dprint formatter config (used by Helix :format)
 "dprint/dprint.json" = "~/.config/dprint/dprint.json"
+# Claude Code settings (hooks, plugins - NOT permissions which are machine-local)
+"Claude/settings.json" = "~/.claude/settings.json"
 
 # Essential scripts (most commonly used)
 "scripts/daily-note.nu" = { target = "~/.local/bin/daily-note", type = "symbolic" }

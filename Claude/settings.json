@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "alwaysThinkingEnabled": true,
+  "feedbackSurveyState": {
+    "lastShownTime": 1754246159316
+  },
+  "enabledPlugins": {
+    "rust-analyzer-lsp@claude-plugins-official": true
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cat ~/Assistants/shared/WILLIAM-BIOGRAPHICAL-PHILOSOPHICAL.md ~/Assistants/shared/WILLIAM-BIOGRAPHICAL-SOCIAL.md 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_input.filePath // empty' | { read file_path; if [[ \"$file_path\" == *\"MESSAGEBOARD.md\" ]]; then API_KEY=$(syncthing cli config gui apikey get 2>/dev/null) && curl -s -X POST \"http://127.0.0.1:8384/rest/db/scan?folder=Assistants\" -H \"X-API-Key: $API_KEY\" >/dev/null 2>&1; fi; }"
+          }
+        ]
+      }
+    ]
+  }
+}
