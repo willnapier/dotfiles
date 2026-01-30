@@ -1,5 +1,9 @@
 #!/usr/bin/env nu
-# Wrapper script for Helix to call Nushell prev-day function
-# Calls the function with --helix flag to create symlink instead of opening editor
+# Self-contained prev-day for Helix keybinding (Space+[)
+# Sets symlink target to yesterday's DayPage
+# MUST be self-contained — config.nu is NOT loaded in script mode
 
-prev-day --helix
+let target_date = ((date now) - 1day | format date "%Y-%m-%d")
+let note_path = $"($env.HOME)/Forge/NapierianLogs/DayPages/($target_date).md"
+rm -f /tmp/helix-day-target.md
+^ln -sf $note_path /tmp/helix-day-target.md
