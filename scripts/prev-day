@@ -1,8 +1,23 @@
 #!/usr/bin/env nu
 # Self-contained prev-day for Helix keybinding (Space+[)
+# Usage: prev-day [buffer_name]
+# If buffer_name contains a YYYY-MM-DD date, navigates relative to that.
+# Otherwise falls back to (today - 1day).
 # Writes resolved path to /tmp/helix-day-target.txt
 # MUST be self-contained — config.nu is NOT loaded in script mode
 
-let target_date = ((date now) - 1day | format date "%Y-%m-%d")
-let note_path = $"($env.HOME)/Forge/NapierianLogs/DayPages/($target_date).md"
-$note_path | save -f /tmp/helix-day-target.txt
+def main [buffer_name?: string] {
+    let current_date = if ($buffer_name != null) {
+        let basename = ($buffer_name | path basename | str replace '.md' '')
+        if ($basename =~ '^\d{4}-\d{2}-\d{2}$') {
+            $basename | into datetime
+        } else {
+            date now
+        }
+    } else {
+        date now
+    }
+    let target_date = ($current_date - 1day | format date "%Y-%m-%d")
+    let note_path = $"($env.HOME)/Forge/NapierianLogs/DayPages/($target_date).md"
+    $note_path | save -f /tmp/helix-day-target.txt
+}
