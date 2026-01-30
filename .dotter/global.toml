@@ -327,6 +327,8 @@ depends = ["shared"]
 "systemd/helix-undo-cleanup.timer" = "~/.config/systemd/user/helix-undo-cleanup.timer"
 "systemd/readwise-sync.service" = "~/.config/systemd/user/readwise-sync.service"
 "systemd/readwise-sync.timer" = "~/.config/systemd/user/readwise-sync.timer"
+# Web clip watcher - auto-move SingleFile saves
+"systemd/web-clip-watcher.service" = "~/.config/systemd/user/web-clip-watcher.service"
 # Firefox nightly restart - prevents memory leak accumulation
 "systemd/firefox-nightly-restart.service" = "~/.config/systemd/user/firefox-nightly-restart.service"
 "systemd/firefox-nightly-restart.timer" = "~/.config/systemd/user/firefox-nightly-restart.timer"

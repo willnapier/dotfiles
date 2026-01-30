@@ -1,0 +1,12 @@
+[Unit]
+Description=Web Clip Watcher - auto-move SingleFile saves
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/web-clip-watcher
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
