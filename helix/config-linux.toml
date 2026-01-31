@@ -21,8 +21,10 @@ scroll-lines = 1
 # Enhanced auto-save configuration
 [editor.auto-save]
 focus-lost = true           # Save when Helix loses focus (prevents data loss)
-after-delay.enable = true   # Save after idle period
-after-delay.timeout = 500   # Save after 500ms inactivity (for activity duration processing)
+
+[editor.auto-save.after-delay]
+enable = true               # Save after idle period
+timeout = 500               # Save after 500ms inactivity (for activity duration processing)
 
 # Persistent undo - not available in Helix 25.07.1
 # [editor.undo]
