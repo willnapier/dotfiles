@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # claude-code-nightly-cleanup - Kill all Claude Code processes at 3am
-# Run via systemd timer to prevent stale processes accumulating CPU
+# Run via launchd (macOS) or systemd timer (Linux) to prevent stale processes accumulating CPU
 #
 # Why: Claude Code processes linger if a terminal tab is closed without
 # /exit or Ctrl+C. Over time these accumulate and burn CPU.
@@ -11,19 +11,32 @@ timestamp() {
     date '+%Y-%m-%d %H:%M:%S'
 }
 
+# Detect platform and set process pattern
+case "$(uname -s)" in
+    Darwin)
+        PATTERN="${HOME}/.local/share/claude/versions/"
+        ;;
+    Linux)
+        PATTERN="/home/$(whoami)/.local/share/claude/versions/"
+        ;;
+    *)
+        echo "$(timestamp) Unknown platform: $(uname -s)" >> "$LOGFILE"
+        exit 1
+        ;;
+esac
+
 # Find all Claude Code processes
-pids=$(pgrep -f '/home/will/.local/share/claude/versions/')
+pids=$(pgrep -f "$PATTERN")
 
 if [ -z "$pids" ]; then
     echo "$(timestamp) No Claude Code processes found" >> "$LOGFILE"
     exit 0
 fi
 
-count=$(echo "$pids" | wc -l)
-echo "$(timestamp) Killing $count Claude Code process(es): $pids" >> "$LOGFILE"
+count=$(echo "$pids" | wc -l | tr -d ' ')
+echo "$(timestamp) Killing $count Claude Code process(es): $(echo $pids | tr '\n' ' ')" >> "$LOGFILE"
 
 echo "$pids" | while read pid; do
-    # Log what we're killing
     cmd=$(ps -p "$pid" -o args= 2>/dev/null || echo "unknown")
     echo "$(timestamp)   PID $pid: $cmd" >> "$LOGFILE"
     kill "$pid" 2>/dev/null
@@ -31,9 +44,9 @@ done
 
 # Give them a moment, then force-kill any survivors
 sleep 5
-remaining=$(pgrep -f '/home/will/.local/share/claude/versions/')
+remaining=$(pgrep -f "$PATTERN")
 if [ -n "$remaining" ]; then
-    echo "$(timestamp) Force-killing survivors: $remaining" >> "$LOGFILE"
+    echo "$(timestamp) Force-killing survivors: $(echo $remaining | tr '\n' ' ')" >> "$LOGFILE"
     echo "$remaining" | xargs kill -9 2>/dev/null
 fi
 
