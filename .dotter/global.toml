@@ -333,6 +333,10 @@ depends = ["shared"]
 # Firefox nightly restart - prevents memory leak accumulation
 "systemd/firefox-nightly-restart.service" = "~/.config/systemd/user/firefox-nightly-restart.service"
 "systemd/firefox-nightly-restart.timer" = "~/.config/systemd/user/firefox-nightly-restart.timer"
+# Claude Code nightly cleanup - kills stale processes at 3am
+"systemd/claude-code-nightly-cleanup.service" = "~/.config/systemd/user/claude-code-nightly-cleanup.service"
+"systemd/claude-code-nightly-cleanup.timer" = "~/.config/systemd/user/claude-code-nightly-cleanup.timer"
+"scripts/claude-code-nightly-cleanup" = "~/.local/bin/claude-code-nightly-cleanup"
 # Wayland compositor configuration - Niri + Waybar + WezTerm
 "niri/config.kdl" = "~/.config/niri/config.kdl"
 "waybar/config" = "~/.config/waybar/config"

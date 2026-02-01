@@ -16,6 +16,7 @@ pub const CONTENT_SCROLLS: &[&str] = &[
     "WILLIAM-BIOGRAPHICAL.md",
     "WILLIAM-LIFESTYLE.md",
     "WILLIAM-SOCIAL.md",
+    "WILLIAM-DIETARY.md",
     "WILLIAM-FINANCIAL-PLANNING-CONTEXT.md",
     "WILLIAM-CHANGELOG.md",
 ];
@@ -25,6 +26,7 @@ pub const PROTOCOL_FILES: &[&str] = &[
     "WILLIAM-INDEX.md",
     "SENECA-PROTOCOL.md",
     "GEOFF-PROTOCOL.md",
+    "DIANA-PROTOCOL.md",
 ];
 
 /// Advisor configurations - which scrolls each advisor needs
@@ -44,6 +46,14 @@ pub fn advisor_scrolls(advisor: &str) -> Vec<&'static str> {
             "WILLIAM-PHILOSOPHICAL.md",
             "WILLIAM-CHANGELOG.md",
             // On-demand: BIOGRAPHICAL, LIFESTYLE
+        ],
+        "diana" => vec![
+            "WILLIAM-INDEX.md",
+            "DIANA-PROTOCOL.md",
+            "WILLIAM-DIETARY.md",
+            "WILLIAM-LIFESTYLE.md",
+            "WILLIAM-CHANGELOG.md",
+            // On-demand: BIOGRAPHICAL
         ],
         _ => {
             // Default: all content scrolls plus index

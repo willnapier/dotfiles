@@ -45,40 +45,28 @@ def main [action?: string = "status"] {
             }
             print ""
 
-            # Spawn both watchers for each directory
+            # Spawn ONE instance of each watcher (they internally watch ~/Forge)
+            # Previous bug: spawned per-directory, but scripts hardcode ~/Forge — caused duplicates
             mut pids = []
 
-            # For each directory, spawn BOTH watcher types
-            for dir in $watch_dirs {
-                let dir_name = ($dir | path basename)
+            print "🔗 Starting backlinks watcher..."
+            let backlinks_cmd = $"nohup ($backlinks_script) > '($backlinks_log)' 2> '($backlinks_err)' & echo $!"
+            let backlinks_pid = (bash -c $backlinks_cmd | str trim)
+            $pids = ($pids | append $backlinks_pid)
+            print $"   ✅ Backlinks watcher: PID ($backlinks_pid)"
 
-                print $"🔗 Starting watchers for ($dir_name)..."
+            print "🔗 Starting resolve-mark watcher..."
+            let resolve_cmd = $"nohup ($resolve_script) > '($resolve_log)' 2> '($resolve_log)' & echo $!"
+            let resolve_pid = (bash -c $resolve_cmd | str trim)
+            $pids = ($pids | append $resolve_pid)
+            print $"   ✅ Resolve-mark watcher: PID ($resolve_pid)"
 
-                # Backlinks watcher for this directory
-                let backlinks_dir_log = $"($log_dir)/backlinks-($dir_name).out.log"
-                let backlinks_dir_err = $"($log_dir)/backlinks-($dir_name).err.log"
-                let backlinks_cmd = $"nohup ($backlinks_script) > '($backlinks_dir_log)' 2> '($backlinks_dir_err)' & echo $!"
-                let backlinks_pid = (bash -c $backlinks_cmd | str trim)
-                $pids = ($pids | append $backlinks_pid)
-                print $"   ✅ Backlinks watcher: PID ($backlinks_pid)"
-
-                # Resolve-mark watcher for this directory
-                let resolve_dir_log = $"($log_dir)/resolve-($dir_name).out.log"
-                let resolve_dir_err = $"($log_dir)/resolve-($dir_name).err.log"
-                let resolve_cmd = $"nohup ($resolve_script) > '($resolve_dir_log)' 2> '($resolve_dir_err)' & echo $!"
-                let resolve_pid = (bash -c $resolve_cmd | str trim)
-                $pids = ($pids | append $resolve_pid)
-                print $"   ✅ Resolve-mark watcher: PID ($resolve_pid)"
-            }
-
-            # Save all PIDs (comma-separated) to track all watchers
+            # Save PIDs
             ($pids | str join ",") | save --force $pid_file
 
             print ""
-            print $"✅ Wiki link management service started"
-            print $"   Total watchers: ($pids | length) = ($watch_dirs | length) dirs x 2 features"
-            print $"📝 Logs: ($log_dir)/<feature>-<directory>.out.log"
-            print $"❌ Errors: ($log_dir)/<feature>-<directory>.err.log"
+            print "✅ Wiki link management service started (2 watchers)"
+            print $"📝 Logs: ($log_dir)/"
         }
 
         "stop" => {

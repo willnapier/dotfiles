@@ -12,6 +12,25 @@
 #
 # Usage: wiki-backlinks [--debounce 2000]
 
+const MARKER_FILE = "/tmp/wiki-watcher-writing"
+const MARKER_MAX_AGE_SECS = 5
+
+# Check if another wiki watcher just wrote a file — skip to break feedback loop
+def should_skip_event [] {
+    if ($env.MARKER_FILE? | default $MARKER_FILE | path exists) {
+        let age = ((date now) - (ls $MARKER_FILE | first | get modified) | into int) / 1_000_000_000
+        if $age < $MARKER_MAX_AGE_SECS {
+            return true
+        }
+    }
+    false
+}
+
+# Signal that we're about to write
+def mark_writing [] {
+    "backlinks" | save -f $MARKER_FILE
+}
+
 def main [--debounce: duration = 2sec] {
     # Verify required directories exist
     let forge = $"($env.HOME)/Forge"
@@ -49,6 +68,10 @@ def main [--debounce: duration = 2sec] {
 # Handle file change events
 # Note: new_path is only populated for Rename operations, otherwise null
 def handle_change [operation: string, file_path: string, new_path, watch_paths: list] {
+    if (should_skip_event) {
+        return
+    }
+
     match $operation {
         "Write" => {
             # File was edited - update backlinks for linked files
@@ -304,6 +327,7 @@ def ensure_backlinks_section [file_path: string, backlinks: list] {
             print $"      ⚠️  Refusing to write potentially corrupted content to: ($file_path | path basename)"
             return
         }
+        mark_writing
         $updated | save -f $file_path
     } else {
         # Add backlinks section at end
@@ -314,6 +338,7 @@ def ensure_backlinks_section [file_path: string, backlinks: list] {
             let joined = ($backlinks | str join (char newline))
             $"\n\n## Backlinks\n\n($joined)\n"
         }
+        mark_writing
         $"($content)($backlinks_section)" | save -f $file_path
     }
 }

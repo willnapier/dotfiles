@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# claude-code-nightly-cleanup - Kill all Claude Code processes at 3am
+# Run via systemd timer to prevent stale processes accumulating CPU
+#
+# Why: Claude Code processes linger if a terminal tab is closed without
+# /exit or Ctrl+C. Over time these accumulate and burn CPU.
+
+LOGFILE="${HOME}/.local/share/claude-code-nightly-cleanup.log"
+
+timestamp() {
+    date '+%Y-%m-%d %H:%M:%S'
+}
+
+# Find all Claude Code processes
+pids=$(pgrep -f '/home/will/.local/share/claude/versions/')
+
+if [ -z "$pids" ]; then
+    echo "$(timestamp) No Claude Code processes found" >> "$LOGFILE"
+    exit 0
+fi
+
+count=$(echo "$pids" | wc -l)
+echo "$(timestamp) Killing $count Claude Code process(es): $pids" >> "$LOGFILE"
+
+echo "$pids" | while read pid; do
+    # Log what we're killing
+    cmd=$(ps -p "$pid" -o args= 2>/dev/null || echo "unknown")
+    echo "$(timestamp)   PID $pid: $cmd" >> "$LOGFILE"
+    kill "$pid" 2>/dev/null
+done
+
+# Give them a moment, then force-kill any survivors
+sleep 5
+remaining=$(pgrep -f '/home/will/.local/share/claude/versions/')
+if [ -n "$remaining" ]; then
+    echo "$(timestamp) Force-killing survivors: $remaining" >> "$LOGFILE"
+    echo "$remaining" | xargs kill -9 2>/dev/null
+fi
+
+echo "$(timestamp) Cleanup complete" >> "$LOGFILE"

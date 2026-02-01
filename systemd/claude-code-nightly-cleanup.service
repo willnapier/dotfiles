@@ -1,0 +1,6 @@
+[Unit]
+Description=Kill stale Claude Code processes
+
+[Service]
+Type=oneshot
+ExecStart=/home/will/.local/bin/claude-code-nightly-cleanup
