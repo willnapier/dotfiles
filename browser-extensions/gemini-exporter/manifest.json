@@ -14,5 +14,10 @@
   ],
   "icons": {
     "48": "icon.png"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "gemini-exporter@willnapier"
+    }
   }
 }
