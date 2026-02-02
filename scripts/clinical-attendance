@@ -1,0 +1,141 @@
+#!/usr/bin/env nu
+
+# Clinical attendance tracker
+# Parses clinical.todo:: sections from DayPages
+# States: - [ ] = scheduled, - [x] = attended, - (no checkbox) = DNA
+
+const DAYPAGE_DIR = "~/Forge/NapierianLogs/DayPages"
+
+def parse-daypage [file: path]: nothing -> table {
+    let content = (open $file | lines)
+    let date = ($file | path basename | str replace '.md' '')
+
+    let start_idx = ($content | enumerate | where {|r| $r.item == "clinical.todo::"} | get index)
+    if ($start_idx | is-empty) { return [] }
+    let start = ($start_idx | first)
+
+    let entries = ($content | skip ($start + 1) | take while {|line|
+        ($line | str starts-with "- ")
+    })
+
+    $entries | each {|line|
+        let status = if ($line =~ '^\- \[x\]') {
+            "attended"
+        } else if ($line =~ '^\- \[ \]') {
+            "scheduled"
+        } else if ($line =~ '^\- [A-Z]') {
+            "dna"
+        } else {
+            null
+        }
+
+        if $status != null {
+            let cleaned = ($line
+                | str replace -r '^\- \[.\] ' ''
+                | str replace -r '^\- ' '')
+            let parts = ($cleaned | split row ' ' | where {|p| $p != ""})
+            let client = ($parts | first)
+            let time = (if ($parts | length) > 1 { $parts | get 1 } else { "" })
+            let insurer = ($parts | any {|p| $p == "insurer"})
+
+            {
+                date: $date,
+                client: $client,
+                time: $time,
+                status: $status,
+                insurer: $insurer
+            }
+        }
+    } | compact
+}
+
+def all-sessions []: nothing -> table {
+    let files = (glob $"($DAYPAGE_DIR)/*.md" | sort)
+    $files | each {|f| parse-daypage $f } | flatten
+}
+
+# Subcommands
+
+# Show all parsed sessions as a table
+def "main list" [
+    --client (-c): string  # Filter to one client
+    --from (-f): string    # Start date (YYYY-MM-DD)
+    --to (-t): string      # End date (YYYY-MM-DD)
+    --status (-s): string  # Filter: attended, dna, scheduled
+] {
+    let data = (all-sessions)
+    let data = if $client != null { $data | where client == $client } else { $data }
+    let data = if $from != null { $data | where date >= $from } else { $data }
+    let data = if $to != null { $data | where date <= $to } else { $data }
+    let data = if $status != null { $data | where status == $status } else { $data }
+    $data
+}
+
+# Per-client attendance summary
+def "main summary" [
+    --from (-f): string  # Start date (YYYY-MM-DD)
+    --to (-t): string    # End date (YYYY-MM-DD)
+] {
+    let today = (date now | format date "%Y-%m-%d")
+    let data = (all-sessions | where date <= $today)
+    let data = if $from != null { $data | where date >= $from } else { $data }
+    let data = if $to != null { $data | where date <= $to } else { $data }
+    # Exclude still-scheduled (future) from rate calculations
+    let resolved = ($data | where status != "scheduled")
+
+    $resolved
+        | group-by client
+        | items {|client, rows|
+            let attended = ($rows | where status == "attended" | length)
+            let dna = ($rows | where status == "dna" | length)
+            let total = ($rows | length)
+            let rate = if $total > 0 { (($attended / $total) * 100 | math round --precision 0) } else { 0 }
+            {
+                client: $client,
+                attended: $attended,
+                dna: $dna,
+                total: $total,
+                rate: $"($rate)%"
+            }
+        }
+        | sort-by -r total
+}
+
+# Show all DNAs
+def "main dna" [
+    --client (-c): string  # Filter to one client
+    --from (-f): string
+    --to (-t): string
+] {
+    let data = (all-sessions | where status == "dna")
+    let data = if $client != null { $data | where client == $client } else { $data }
+    let data = if $from != null { $data | where date >= $from } else { $data }
+    let data = if $to != null { $data | where date <= $to } else { $data }
+    $data | select date client time
+}
+
+# Weekly summary (current or specified week)
+def "main week" [
+    date?: string  # Any date in the target week (defaults to today)
+] {
+    let target = if $date != null { $date | into datetime } else { date now }
+    let dow = ($target | format date "%u" | into int)  # 1=Monday
+    let start = ($target - (($dow - 1) * 1day) | format date "%Y-%m-%d")
+    let end = ($target + ((7 - $dow) * 1day) | format date "%Y-%m-%d")
+
+    let data = (all-sessions | where date >= $start and date <= $end)
+
+    let attended = ($data | where status == "attended" | length)
+    let dna = ($data | where status == "dna" | length)
+    let scheduled = ($data | where status == "scheduled" | length)
+
+    print $"Week: ($start) to ($end)"
+    print $"Attended: ($attended) | DNA: ($dna) | Scheduled: ($scheduled)"
+    print ""
+    $data | sort-by date time
+}
+
+# Default: show summary
+def main [] {
+    main summary
+}

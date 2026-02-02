@@ -314,6 +314,7 @@ depends = ["shared"]
 "scripts/backup-to-dropbox" = "~/.local/bin/backup-to-dropbox"
 "scripts/forge-metadata-backup" = "~/.local/bin/forge-metadata-backup"
 "scripts/forge-metadata-backup-monthly" = "~/.local/bin/forge-metadata-backup-monthly"
+"scripts/clinical-attendance" = "~/.local/bin/clinical-attendance"
 "systemd/git-auto-push-watcher.service" = "~/.config/systemd/user/git-auto-push-watcher.service"
 "systemd/zotero-pdf-watcher.service" = "~/.config/systemd/user/zotero-pdf-watcher.service"
 "systemd/zotero-bridge.service" = "~/.config/systemd/user/zotero-bridge.service"
