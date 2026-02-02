@@ -36,14 +36,12 @@ def parse-daypage [file: path]: nothing -> table {
             let parts = ($cleaned | split row ' ' | where {|p| $p != ""})
             let client = ($parts | first)
             let time = (if ($parts | length) > 1 { $parts | get 1 } else { "" })
-            let insurer = ($parts | any {|p| $p == "insurer"})
 
             {
                 date: $date,
                 client: $client,
                 time: $time,
                 status: $status,
-                insurer: $insurer
             }
         }
     } | compact
