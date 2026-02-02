@@ -1,7 +1,7 @@
 #!/usr/bin/env nu
 
 # Clinical attendance tracker
-# Parses clinical.todo:: sections from DayPages
+# Parses clinic:: sections from DayPages
 # States: - [ ] = scheduled, - [x] = attended, - (no checkbox) = DNA
 
 const DAYPAGE_DIR = "~/Forge/NapierianLogs/DayPages"
@@ -10,7 +10,7 @@ def parse-daypage [file: path]: nothing -> table {
     let content = (open $file | lines)
     let date = ($file | path basename | str replace '.md' '')
 
-    let start_idx = ($content | enumerate | where {|r| $r.item == "clinical.todo::"} | get index)
+    let start_idx = ($content | enumerate | where {|r| $r.item == "clinic::"} | get index)
     if ($start_idx | is-empty) { return [] }
     let start = ($start_idx | first)
 
