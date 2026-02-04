@@ -126,6 +126,9 @@ i = ":sh hx-show-real-file %{buffer_name}"
 # Quick save commands - Space+m ("memorize" or "save to memory")
 m = ":write"         # Quick save current file
 M = ":write-all"     # Save all modified files
+# Flush pending DayPage entries - Space+U (Update from queue)
+# Claude skills queue entries via daypage-append; this merges them in
+U = [":write!", ":sh daypage-flush-wezterm"]
 
 # Clipboard yank - Space+y (cross-platform, works in Zellij/WezTerm)
 y = ":pipe-to hx-clipboard-copy"
@@ -134,8 +137,8 @@ y = ":pipe-to hx-clipboard-copy"
 # Moved from Space+d to avoid conflict with diagnostic picker (important for Rust LSP)
 c = ":insert-output hx-insert-date"        # Insert current date (YYYY-MM-DD)
 # Time insertion moved to avoid conflicts with Space+t (todo toggle) and Space+T (config reload)
-";" = ":insert-output hx-insert-time"      # Insert current time (HH:MM) 
-":" = ":insert-output hx-insert-datetime"  # Insert date and time (YYYY-MM-DD HH:MM)
+";" = ":insert-output hx-insert-datetime"  # Insert date and time (YYYY-MM-DD HH:MM)
+":" = ":insert-output hx-insert-time"      # Insert current time (HH:MM)
 # Mark file as revisited - using 'v' for 'visited'
 v = ":sh hx-mark-revisit %{buffer_name}"   # Add today to revisited dates
 

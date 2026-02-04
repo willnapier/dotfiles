@@ -1,0 +1,67 @@
+#!/usr/bin/env nu
+
+# cn — open client notes or list today's clinic
+# cn EB88  → opens ~/Clinical/clients/EB88/EB88.md in Helix
+# cn       → prints today's clinic list from DayPage
+
+const CLIENT_DIR = "~/Clinical/clients"
+const DAYPAGE_DIR = "~/Forge/NapierianLogs/DayPages"
+
+def main [client?: string] {
+    if $client == null {
+        show-today-clinic
+    } else {
+        open-client-notes $client
+    }
+}
+
+def open-client-notes [client: string] {
+    let dir = ($CLIENT_DIR | path expand | path join $client)
+    let file = ($dir | path join $"($client).md")
+
+    if not ($dir | path exists) {
+        print $"Error: client directory not found: ($dir)"
+        exit 1
+    }
+    if not ($file | path exists) {
+        print $"Error: notes file not found: ($file)"
+        exit 1
+    }
+
+    let lines = (open $file | lines | length)
+    ^hx $"+($lines)" $file
+}
+
+def show-today-clinic [] {
+    let today = (date now | format date "%Y-%m-%d")
+    let daypage = ($DAYPAGE_DIR | path expand | path join $"($today).md")
+
+    if not ($daypage | path exists) {
+        print $"No DayPage found for today \(($today)\)"
+        exit 1
+    }
+
+    let content = (open $daypage | lines)
+    let start_idx = ($content | enumerate | where {|r| $r.item == "clinic::"} | get index)
+
+    if ($start_idx | is-empty) {
+        print $"No clinic:: section in today's DayPage"
+        exit 1
+    }
+
+    let start = ($start_idx | first)
+    let entries = ($content | skip ($start + 1) | take while {|line|
+        ($line | str starts-with "- ")
+    })
+
+    if ($entries | is-empty) {
+        print "No clients listed in today's clinic:: section"
+        exit 1
+    }
+
+    print $"Today's clinic \(($today)\):"
+    $entries | each {|line|
+        print $line
+    }
+    null
+}

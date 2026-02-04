@@ -63,9 +63,19 @@ fn main() -> Result<()> {
         }
     };
 
+    // When using --latest, only process today's date (schedule changes too
+    // quickly for future days to be useful).
+    let filter_date = cli.date.or_else(|| {
+        if cli.latest {
+            Some(chrono::Local::now().date_naive())
+        } else {
+            None
+        }
+    });
+
     let mut any_output = false;
     for schedule in &schedules {
-        if let Some(filter_date) = cli.date {
+        if let Some(filter_date) = filter_date {
             if schedule.date != filter_date {
                 continue;
             }
@@ -85,7 +95,7 @@ fn main() -> Result<()> {
         let mut sorted = booked;
         sorted.sort_by(|a, b| a.start_time.cmp(&b.start_time));
 
-        let mut lines = vec!["clinical.todo::".to_string()];
+        let mut lines = vec!["clinic::".to_string()];
         for appt in &sorted {
             let client_id = match &client_map {
                 Some(map) => match map.lookup(&appt.client_name) {

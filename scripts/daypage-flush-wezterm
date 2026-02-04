@@ -1,0 +1,17 @@
+#!/bin/bash
+# daypage-flush-wezterm
+# Runs daypage-flush then sends :reload to Helix via WezTerm CLI.
+# Solves the async :sh problem where :reload fires before flush completes.
+
+set -euo pipefail
+
+# Run the flush
+daypage-flush
+
+# Brief pause for filesystem consistency
+sleep 0.5
+
+# Send :reload to Helix via WezTerm
+if [ -n "${WEZTERM_PANE:-}" ]; then
+    printf ":reload\r" | wezterm cli send-text --pane-id "$WEZTERM_PANE" --no-paste
+fi

@@ -73,6 +73,7 @@ depends = []
 "scripts/daypage-template" = "~/.local/bin/daypage-template"
 "scripts/daypage-append" = "~/.local/bin/daypage-append"
 "scripts/daypage-flush" = "~/.local/bin/daypage-flush"
+"scripts/daypage-flush-wezterm" = "~/.local/bin/daypage-flush-wezterm"
 "scripts/daypage-mark-done" = "~/.local/bin/daypage-mark-done"
 "scripts/prev-day" = "~/.local/bin/prev-day"
 "scripts/next-day" = "~/.local/bin/next-day"

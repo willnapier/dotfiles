@@ -4,8 +4,6 @@ use clap::Parser;
 use regex::Regex;
 use std::path::PathBuf;
 
-const LEIGH_NUMBER: &str = "19737235057";
-
 #[derive(Parser)]
 #[command(about = "Parse DayPage clinic block and open WhatsApp attendance report")]
 struct Cli {
@@ -51,7 +49,7 @@ fn main() -> Result<()> {
     println!("{}", message);
 
     if !cli.dry_run {
-        open_whatsapp(&message)?;
+        copy_and_notify(&message)?;
     }
 
     Ok(())
@@ -172,24 +170,44 @@ fn format_message(date: &NaiveDate, entries: &[Entry]) -> String {
     lines.join("\n")
 }
 
-fn open_whatsapp(message: &str) -> Result<()> {
-    let encoded = urlencoding::encode(message);
-    let url = format!("https://wa.me/{}?text={}", LEIGH_NUMBER, encoded);
-
+fn copy_and_notify(message: &str) -> Result<()> {
+    // Copy readable message to clipboard
     #[cfg(target_os = "macos")]
     {
-        std::process::Command::new("open")
-            .arg(&url)
+        let mut child = std::process::Command::new("pbcopy")
+            .stdin(std::process::Stdio::piped())
             .spawn()
-            .context("Failed to open URL")?;
+            .context("Failed to run pbcopy")?;
+        if let Some(stdin) = child.stdin.as_mut() {
+            use std::io::Write;
+            stdin.write_all(message.as_bytes()).context("Failed to write to pbcopy")?;
+        }
+        child.wait().context("pbcopy failed")?;
+
+        std::process::Command::new("osascript")
+            .arg("-e")
+            .arg("display notification \"Attendance report copied to clipboard — paste in WhatsApp\" with title \"Clinic Attendance Report\"")
+            .spawn()
+            .context("Failed to send notification")?;
     }
 
     #[cfg(target_os = "linux")]
     {
-        std::process::Command::new("xdg-open")
-            .arg(&url)
+        let mut child = std::process::Command::new("wl-copy")
+            .stdin(std::process::Stdio::piped())
             .spawn()
-            .context("Failed to open URL")?;
+            .context("Failed to run wl-copy")?;
+        if let Some(stdin) = child.stdin.as_mut() {
+            use std::io::Write;
+            stdin.write_all(message.as_bytes()).context("Failed to write to wl-copy")?;
+        }
+        child.wait().context("wl-copy failed")?;
+
+        std::process::Command::new("notify-send")
+            .arg("Clinic Attendance Report")
+            .arg("Attendance report copied to clipboard — paste in WhatsApp")
+            .spawn()
+            .context("Failed to send notification")?;
     }
 
     Ok(())

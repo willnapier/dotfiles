@@ -166,9 +166,17 @@ fn process_concert(path: &PathBuf, dry_run: bool, no_api: bool, link_only: bool,
 
     eprintln!("Archived to: {}", archive_path.display());
 
-    // Append to DayPage
-    daypage::append_entry(&concert.date, &entry)?;
-    eprintln!("Added entry to DayPage: {}", concert.date);
+    // Queue entry for DayPage via daypage-append (avoids Helix external modification conflict)
+    let status = std::process::Command::new("daypage-append")
+        .arg(&entry)
+        .status()
+        .context("Failed to run daypage-append")?;
+
+    if status.success() {
+        eprintln!("Queued entry for DayPage — flush with Space+U in Helix");
+    } else {
+        anyhow::bail!("daypage-append failed with exit code: {}", status);
+    }
 
     println!("{}", entry);
 
