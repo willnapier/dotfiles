@@ -180,6 +180,10 @@ def main [
         return
     }
 
+    # Flush any pending queue entries (from tm3-diary-capture, CC skills, etc.)
+    # before opening in Helix. Safe because file isn't open in Helix yet.
+    run-external "daypage-flush"
+
     # Debug information using structured Nushell data
     let debug_info = {
         cursor_line: $cursor_line,
