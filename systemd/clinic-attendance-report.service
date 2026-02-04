@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily clinic attendance WhatsApp report
+
+[Service]
+Type=oneshot
+ExecStart=%h/.cargo/bin/clinic-attendance-report
+Environment=HOME=%h
+Environment=DISPLAY=:0
+Environment=WAYLAND_DISPLAY=wayland-1
+Environment=XDG_RUNTIME_DIR=/run/user/1000

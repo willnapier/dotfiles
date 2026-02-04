@@ -1,0 +1,13 @@
+[package]
+name = "clinic-attendance-report"
+version = "0.1.0"
+edition = "2021"
+description = "Parse DayPage clinic block and open WhatsApp attendance report for Leigh"
+
+[dependencies]
+anyhow = "1"
+chrono = "0.4"
+clap = { version = "4", features = ["derive"] }
+dirs = "6"
+regex = "1"
+urlencoding = "2"
