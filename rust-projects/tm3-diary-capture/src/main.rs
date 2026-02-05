@@ -124,7 +124,7 @@ fn main() -> Result<()> {
 
         if !cli.dry_run {
             daypage::append_entry(&schedule.date, &block)?;
-            eprintln!("  → Appended to {}", daypage::get_daypage_path(&schedule.date).display());
+            // Note: daypage::append_entry prints the "Queued" message
         }
 
         any_output = true;
