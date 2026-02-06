@@ -1495,6 +1495,46 @@ def fse [] {
     }
 }
 
+# Clinical file search → edit
+def cse [] {
+    let clinical = ($env.HOME | path join "Clinical")
+    if not ($clinical | path exists) {
+        print "~/Clinical not found"
+        return
+    }
+    let file = (fd . $clinical --type f --hidden -L --exclude .git --exclude .stversions | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'mdcat --columns 80 {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "Clinical File: " | str trim)
+    if not ($file | is-empty) {
+        let editor = (if ($env.EDITOR? | is-empty) { "vi" } else { $env.EDITOR })
+        ^$editor $file
+    }
+}
+
+# Clinical content search → edit
+def cce [] {
+    let clinical = ($env.HOME | path join "Clinical")
+    if not ($clinical | path exists) {
+        print "~/Clinical not found"
+        return
+    }
+    let query = (input "Search clinical: ")
+    if ($query | is-empty) { return }
+    let results = try {
+        ^rg -i -l $query $clinical | lines | where $it != ""
+    } catch {
+        print "Content search failed"
+        return
+    }
+    if ($results | is-empty) {
+        print "No matches found"
+        return
+    }
+    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview $"rg --color=always -i -C 3 '($query)' {}" --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "Clinical: " | str trim)
+    if not ($selected | is-empty) {
+        let editor = (if ($env.EDITOR? | is-empty) { "vi" } else { $env.EDITOR })
+        ^$editor $selected
+    }
+}
+
 # Forge search → view (read-only with smart rendering)
 # Part of Universal Knowledge Tools v2.0 (f* series)
 def fsv [] {

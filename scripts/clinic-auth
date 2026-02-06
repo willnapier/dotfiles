@@ -1,0 +1,155 @@
+#!/usr/bin/env nu
+
+# Clinical authorisation and letter tracking
+# Scans client files for authorisation limits, counts attended sessions
+# from DayPages, alerts when thresholds are reached.
+
+const DAYPAGE_DIR = "~/Forge/NapierianLogs/DayPages"
+const CLIENT_DIR = "~/Clinical/clients"
+const AUTH_THRESHOLD = 2        # alert when this many sessions remain
+const LETTER_FIRST = 2          # first update letter after session N
+const LETTER_INTERVAL = 6       # subsequent letters every N sessions
+
+def parse-daypage [file: path]: nothing -> table {
+    let content = (open $file | lines)
+    let date = ($file | path basename | str replace '.md' '')
+
+    let start_idx = ($content | enumerate | where {|r| $r.item == "clinic::"} | get index)
+    if ($start_idx | is-empty) { return [] }
+    let start = ($start_idx | first)
+
+    let entries = ($content | skip ($start + 1) | take while {|line|
+        ($line | str starts-with "- ")
+    })
+
+    $entries | each {|line|
+        if ($line =~ '^\- \[x\]') {
+            let cleaned = ($line | str replace -r '^\- \[.\] ' '')
+            let parts = ($cleaned | split row ' ' | where {|p| $p != ""})
+            let client = ($parts | first)
+            { date: $date, client: $client }
+        }
+    } | compact
+}
+
+def all-attended []: nothing -> table {
+    let files = (glob $"($DAYPAGE_DIR)/*.md" | sort)
+    $files | each {|f| parse-daypage $f } | flatten
+}
+
+def get-client-auth []: nothing -> table {
+    let client_dirs = (glob $"($CLIENT_DIR)/*" | where {|d| ($d | path type) == "dir"})
+    $client_dirs | each {|dir|
+        let id = ($dir | path basename)
+        let file = ($dir | path join $"($id).md")
+        if not ($file | path exists) { null } else {
+            let content = (open $file | lines)
+
+            # Parse authorisation
+            let auth_line = ($content | where {|l| $l | str contains "**Current authorisation**:"} | get 0?)
+            if $auth_line == null { null } else {
+                let value = ($auth_line | str replace "**Current authorisation**:" "" | str trim)
+                if ($value | is-empty) { null } else {
+                    let parsed = ($value | parse "{n} sessions from {date}")
+                    if ($parsed | is-empty) { null } else {
+                        let authorised = ($parsed | first | get n | into int)
+                        let start_date = ($parsed | first | get date)
+
+                        # Parse last update letter
+                        let letter_line = ($content | where {|l| $l | str contains "**Last update letter**:"} | get 0?)
+                        let last_letter = if $letter_line == null { null } else {
+                            let lval = ($letter_line | str replace "**Last update letter**:" "" | str trim)
+                            if ($lval | is-empty) { null } else {
+                                let lparsed = ($lval | parse "{date} (after session {n})")
+                                if ($lparsed | is-empty) { null } else {
+                                    ($lparsed | first | get n | into int)
+                                }
+                            }
+                        }
+
+                        {
+                            client: $id,
+                            authorised: $authorised,
+                            start_date: $start_date,
+                            last_letter_session: $last_letter,
+                        }
+                    }
+                }
+            }
+        }
+    } | compact
+}
+
+def check-all []: nothing -> table {
+    let clients = (get-client-auth)
+    if ($clients | is-empty) { return [] }
+
+    let sessions = (all-attended)
+
+    $clients | each {|c|
+        let used = ($sessions
+            | where client == $c.client and date >= $c.start_date
+            | length)
+        let remaining = ($c.authorised - $used)
+
+        # Auth alert
+        let auth_alert = ($remaining <= $AUTH_THRESHOLD)
+
+        # Letter alert
+        let letter_alert = if $used >= $LETTER_FIRST {
+            if $c.last_letter_session == null {
+                true
+            } else {
+                ($used >= ($c.last_letter_session + $LETTER_INTERVAL))
+            }
+        } else { false }
+
+        {
+            client: $c.client,
+            authorised: $c.authorised,
+            start_date: $c.start_date,
+            used: $used,
+            remaining: $remaining,
+            auth_alert: $auth_alert,
+            letter_due: $letter_alert,
+            last_letter_at: ($c.last_letter_session | default "-"),
+        }
+    }
+}
+
+# Show full status table
+def main [] {
+    let data = (check-all)
+    if ($data | is-empty) {
+        print "No active authorisations found."
+        return
+    }
+    $data | select client authorised used remaining auth_alert letter_due last_letter_at
+}
+
+# Show only alerts, formatted for DayPage injection
+def "main alerts" [] {
+    let data = (check-all)
+    let alerts = ($data | where auth_alert == true or letter_due == true)
+    if ($alerts | is-empty) { return "" }
+
+    let lines = ($alerts | each {|r|
+        let parts = []
+        let parts = if $r.auth_alert {
+            let msg = $"($r.client): ($r.used)/($r.authorised) sessions used, auth from ($r.start_date) — request new authorisation"
+            ($parts | append $msg)
+        } else { $parts }
+        let parts = if $r.letter_due {
+            let since = if $r.last_letter_at == "-" {
+                $"($r.used) sessions, no letter sent"
+            } else {
+                $"($r.used) sessions, last letter at session ($r.last_letter_at)"
+            }
+            let msg = $"($r.client): update letter due — ($since)"
+            ($parts | append $msg)
+        } else { $parts }
+        $parts | each {|p| $"- ($p)" }
+    } | flatten | str join "\n")
+
+    $"clinic.admin::\n($lines)"
+}

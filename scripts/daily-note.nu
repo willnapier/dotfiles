@@ -144,6 +144,14 @@ def main [
                 $"($processed)\n## Reminders\n\n($reminders)"
             }
 
+            # Check clinical authorisation alerts
+            let auth_alerts = (try { ^clinic-auth alerts } catch { "" })
+            let final_content = if ($auth_alerts | is-empty) {
+                $final_content
+            } else {
+                $"($final_content)\n($auth_alerts)"
+            }
+
             # Log template content for verification
             let template_preview = ($final_content | lines | first 5 | str join "\n")
             $"[($timestamp)] Template processed, first 5 lines:\n($template_preview)\n" | save --append $log_file
