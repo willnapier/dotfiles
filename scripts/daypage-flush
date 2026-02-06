@@ -1,5 +1,5 @@
 #!/usr/bin/env nu
-# Merge pending entries into today's DayPage.
+# Merge ALL pending entries into their respective DayPages.
 #
 # Handles two kinds of queued instructions:
 #   - Text lines (from daypage-append): inserted before ## Backlinks
@@ -9,46 +9,58 @@
 # Exits silently if there's nothing to merge.
 
 def main [] {
-    let today = (date now | format date "%Y-%m-%d")
-    let pending_file = ($env.HOME | path join ".local" "share" "daypage-pending" $"($today).md")
-    let daypage = ($env.HOME | path join "Forge" "NapierianLogs" "DayPages" $"($today).md")
+    let pending_dir = ($env.HOME | path join ".local" "share" "daypage-pending")
+    let daypage_dir = ($env.HOME | path join "Forge" "NapierianLogs" "DayPages")
 
-    # Exit silently if nothing to merge
-    if not ($pending_file | path exists) { return }
-    if (open $pending_file --raw | str trim | is-empty) {
-        rm $pending_file
-        return
-    }
+    # Exit silently if no pending directory
+    if not ($pending_dir | path exists) { return }
 
-    if not ($daypage | path exists) {
-        print -e $"DayPage not found: ($daypage)"
-        exit 1
-    }
+    # Process all pending files (one per date)
+    let pending_files = (ls $pending_dir | where name =~ '\.md$' | get name)
+    if ($pending_files | is-empty) { return }
 
-    let lines = (open $pending_file --raw | str trim | lines)
-    let done_lines = ($lines | where {|l| $l | str starts-with "DONE:"})
-    let append_lines = ($lines | where {|l| not ($l | str starts-with "DONE:")})
+    for pending_file in $pending_files {
+        let date = ($pending_file | path basename | str replace '.md' '')
+        let daypage = ($daypage_dir | path join $"($date).md")
 
-    mut content = (open $daypage --raw)
-
-    # Process DONE markers: toggle checkboxes
-    for line in $done_lines {
-        let client_id = ($line | str replace "DONE:" "")
-        $content = ($content | str replace $"- [ ] ($client_id)" $"- [x] ($client_id)")
-    }
-
-    # Process append lines: insert above clinic:: block (or above ## Backlinks if no clinic)
-    if not ($append_lines | is-empty) {
-        let append_text = ($append_lines | str join "\n")
-        $content = if ($content | str contains "clinic::") {
-            $content | str replace "clinic::" $"($append_text)\n\nclinic::"
-        } else if ($content | str contains "## Backlinks") {
-            $content | str replace "## Backlinks" $"($append_text)\n\n## Backlinks"
-        } else {
-            $"($content | str trim --right)\n\n($append_text)\n"
+        # Skip if pending file is empty
+        let content_raw = (open $pending_file --raw | str trim)
+        if ($content_raw | is-empty) {
+            rm $pending_file
+            continue
         }
-    }
 
-    $content | save -f $daypage
-    rm $pending_file
+        # Skip if DayPage doesn't exist (can't flush to non-existent file)
+        if not ($daypage | path exists) {
+            print -e $"DayPage not found: ($daypage) — skipping"
+            continue
+        }
+
+        let lines = ($content_raw | lines)
+        let done_lines = ($lines | where {|l| $l | str starts-with "DONE:"})
+        let append_lines = ($lines | where {|l| not ($l | str starts-with "DONE:")})
+
+        mut content = (open $daypage --raw)
+
+        # Process DONE markers: toggle checkboxes
+        for line in $done_lines {
+            let client_id = ($line | str replace "DONE:" "")
+            $content = ($content | str replace $"- [ ] ($client_id)" $"- [x] ($client_id)")
+        }
+
+        # Process append lines: insert above clinic:: block (or above ## Backlinks if no clinic)
+        if not ($append_lines | is-empty) {
+            let append_text = ($append_lines | str join "\n")
+            $content = if ($content | str contains "clinic::") {
+                $content | str replace "clinic::" $"($append_text)\n\nclinic::"
+            } else if ($content | str contains "## Backlinks") {
+                $content | str replace "## Backlinks" $"($append_text)\n\n## Backlinks"
+            } else {
+                $"($content | str trim --right)\n\n($append_text)\n"
+            }
+        }
+
+        $content | save -f $daypage
+        rm $pending_file
+    }
 }
