@@ -20,6 +20,7 @@ struct Cli {
 enum Status {
     Attended,
     DnaLc,
+    Deferred,
     Pending,
 }
 
@@ -82,6 +83,15 @@ fn extract_and_parse(content: &str) -> Result<Vec<Entry>> {
             continue;
         }
 
+        // Deferred: line without list marker but containing ->
+        if !line.starts_with("- ") && line.contains("->") {
+            entries.push(Entry {
+                status: Status::Deferred,
+                content: line.trim().to_string(),
+            });
+            continue;
+        }
+
         // End of block: non-dash line after we've collected entries
         if !line.starts_with("- ") {
             if !entries.is_empty() || line.trim().is_empty() {
@@ -99,6 +109,12 @@ fn extract_and_parse(content: &str) -> Result<Vec<Entry>> {
             entries.push(Entry {
                 status: Status::Pending,
                 content: caps[1].to_string(),
+            });
+        } else if line.contains("->") {
+            // Bare dash with -> = also deferred
+            entries.push(Entry {
+                status: Status::Deferred,
+                content: line[2..].to_string(),
             });
         } else if line.starts_with("- ") {
             // Bare dash, no checkbox = DNA/late-cancel
@@ -124,6 +140,7 @@ fn format_message(date: &NaiveDate, entries: &[Entry]) -> String {
 
     let mut attended = 0u32;
     let mut dna_lc = 0u32;
+    let mut deferred = 0u32;
     let mut pending = 0u32;
     let mut insurer_count = 0u32;
 
@@ -136,6 +153,10 @@ fn format_message(date: &NaiveDate, entries: &[Entry]) -> String {
             Status::DnaLc => {
                 dna_lc += 1;
                 "\u{2717}"
+            }
+            Status::Deferred => {
+                deferred += 1;
+                "\u{2192}"
             }
             Status::Pending => {
                 pending += 1;
@@ -152,11 +173,15 @@ fn format_message(date: &NaiveDate, entries: &[Entry]) -> String {
 
     lines.push(String::new());
 
+    // Deferred excluded from total — slot didn't exist that day
     let total = attended + dna_lc + pending;
     let mut summary = vec![format!("{}/{} attended", attended, total)];
 
     if dna_lc > 0 {
         summary.push(format!("{} DNA/LC", dna_lc));
+    }
+    if deferred > 0 {
+        summary.push(format!("{} deferred", deferred));
     }
     if pending > 0 {
         summary.push(format!("{} unresolved", pending));
@@ -295,6 +320,82 @@ dev:: some other block
         assert!(msg.contains("2/3 attended"));
         assert!(msg.contains("1 DNA/LC"));
         assert!(msg.contains("2 insurer"));
+    }
+
+    #[test]
+    fn test_parse_deferred_no_prefix() {
+        // Actual syntax: plain text (no - prefix) with ->
+        let content = "clinic::\n- [x] EB88 07:50\nCC71 11:05 insurer ->\n- [x] BA90 13:20\n";
+        let entries = extract_and_parse(content).unwrap();
+        assert_eq!(entries.len(), 3);
+        assert!(matches!(entries[1].status, Status::Deferred));
+        assert_eq!(entries[1].content, "CC71 11:05 insurer ->");
+        // Entries after deferred line are still parsed
+        assert!(matches!(entries[2].status, Status::Attended));
+    }
+
+    #[test]
+    fn test_parse_deferred_with_prefix() {
+        // Also support - prefix with -> (alternative toggle state)
+        let content = "clinic::\n- [x] EB88 07:50\n- CC71 11:05 insurer ->\n- [x] BA90 13:20\n";
+        let entries = extract_and_parse(content).unwrap();
+        assert_eq!(entries.len(), 3);
+        assert!(matches!(entries[1].status, Status::Deferred));
+    }
+
+    #[test]
+    fn test_deferred_excluded_from_total() {
+        let date = NaiveDate::from_ymd_opt(2026, 2, 5).unwrap();
+        let entries = vec![
+            Entry {
+                status: Status::Attended,
+                content: "EB88 07:50".to_string(),
+            },
+            Entry {
+                status: Status::Deferred,
+                content: "CC71 11:05 insurer ->".to_string(),
+            },
+            Entry {
+                status: Status::Attended,
+                content: "BA90 13:20".to_string(),
+            },
+        ];
+        let msg = format_message(&date, &entries);
+        // 2 attended out of 2 (deferred excluded from denominator)
+        assert!(msg.contains("2/2 attended"));
+        assert!(msg.contains("1 deferred"));
+    }
+
+    #[test]
+    fn test_real_daypage_with_deferred() {
+        // Mirrors 2026-02-05 actual data
+        let content = "\
+clinic::
+- [x] AB79 07:45 insurer
+- [x] ER92 08:35
+- [x] SZ84 09:35
+- EA 11:10
+CC71 12:00 insurer ->
+- [x] JH91 12:45
+- [x] HH92 13:35 insurer
+- [x] VM78 14:25
+- FH 15:15 insurer
+- [ ] BT07 16:05
+
+## Backlinks
+";
+        let entries = extract_and_parse(content).unwrap();
+        assert_eq!(entries.len(), 10);
+
+        let attended: Vec<_> = entries.iter().filter(|e| matches!(e.status, Status::Attended)).collect();
+        let dna: Vec<_> = entries.iter().filter(|e| matches!(e.status, Status::DnaLc)).collect();
+        let deferred: Vec<_> = entries.iter().filter(|e| matches!(e.status, Status::Deferred)).collect();
+        let pending: Vec<_> = entries.iter().filter(|e| matches!(e.status, Status::Pending)).collect();
+
+        assert_eq!(attended.len(), 6);
+        assert_eq!(dna.len(), 2);
+        assert_eq!(deferred.len(), 1);
+        assert_eq!(pending.len(), 1);
     }
 
     #[test]

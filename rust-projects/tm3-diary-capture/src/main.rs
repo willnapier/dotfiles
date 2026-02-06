@@ -116,6 +116,7 @@ fn main() -> Result<()> {
             lines.push(line);
         }
 
+        lines.push("- [ ] `clinic-attendance-report` → Leigh WhatsApp".to_string());
         let block = lines.join("\n");
 
         println!("{} ({}):", schedule.date, schedule.date.format("%A"));

@@ -1,9 +1,0 @@
-[Unit]
-Description=Daily clinic attendance report at 22:00 UK time
-
-[Timer]
-OnCalendar=*-*-* 22:00:00
-Persistent=true
-
-[Install]
-WantedBy=timers.target

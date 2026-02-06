@@ -2,7 +2,7 @@
 
 # Clinical attendance tracker
 # Parses clinic:: sections from DayPages
-# States: - [ ] = scheduled, - [x] = attended, - (no checkbox) = DNA
+# States: - [ ] = scheduled, - [x] = attended, - (no checkbox) = DNA, (no prefix) -> = deferred
 
 const DAYPAGE_DIR = "~/Forge/NapierianLogs/DayPages"
 
@@ -15,7 +15,7 @@ def parse-daypage [file: path]: nothing -> table {
     let start = ($start_idx | first)
 
     let entries = ($content | skip ($start + 1) | take while {|line|
-        ($line | str starts-with "- ")
+        ($line | str starts-with "- ") or ($line =~ '->')
     })
 
     $entries | each {|line|
@@ -23,6 +23,8 @@ def parse-daypage [file: path]: nothing -> table {
             "attended"
         } else if ($line =~ '^\- \[ \]') {
             "scheduled"
+        } else if ($line =~ '->') {
+            "deferred"
         } else if ($line =~ '^\- [A-Z]') {
             "dna"
         } else {
@@ -78,8 +80,8 @@ def "main summary" [
     let data = (all-sessions | where date <= $today)
     let data = if $from != null { $data | where date >= $from } else { $data }
     let data = if $to != null { $data | where date <= $to } else { $data }
-    # Exclude still-scheduled (future) from rate calculations
-    let resolved = ($data | where status != "scheduled")
+    # Exclude scheduled and deferred from rate calculations
+    let resolved = ($data | where status != "scheduled" and status != "deferred")
 
     $resolved
         | group-by client
@@ -125,10 +127,11 @@ def "main week" [
 
     let attended = ($data | where status == "attended" | length)
     let dna = ($data | where status == "dna" | length)
+    let deferred = ($data | where status == "deferred" | length)
     let scheduled = ($data | where status == "scheduled" | length)
 
     print $"Week: ($start) to ($end)"
-    print $"Attended: ($attended) | DNA: ($dna) | Scheduled: ($scheduled)"
+    print $"Attended: ($attended) | DNA: ($dna) | Deferred: ($deferred) | Scheduled: ($scheduled)"
     print ""
     $data | sort-by date time
 }

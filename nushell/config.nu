@@ -1510,6 +1510,19 @@ def cse [] {
 }
 
 # Clinical content search → edit
+def cfe [] {
+    let clinical = ($env.HOME | path join "Clinical")
+    if not ($clinical | path exists) {
+        print "~/Clinical not found"
+        return
+    }
+    let file = (^fd . $clinical --type f --hidden -L --exclude .git --exclude .stversions | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'mdcat --columns 80 {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "Clinical File: " | str trim)
+    if not ($file | is-empty) {
+        let editor = (if ($env.EDITOR? | is-empty) { "vi" } else { $env.EDITOR })
+        ^$editor $file
+    }
+}
+
 def cce [] {
     let clinical = ($env.HOME | path join "Clinical")
     if not ($clinical | path exists) {

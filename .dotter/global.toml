@@ -280,7 +280,6 @@ depends = ["shared"]
 "launchd/com.user.claude-code-nightly-cleanup.plist" = "~/Library/LaunchAgents/com.user.claude-code-nightly-cleanup.plist"
 "macos/launchd/com.williamnapier.continuum-sync-claude.plist" = "~/Library/LaunchAgents/com.williamnapier.continuum-sync-claude.plist"
 "macos/launchd/com.williamnapier.link-service.plist" = "~/Library/LaunchAgents/com.williamnapier.link-service.plist"
-"macos/LaunchAgents/com.williamnapier.clinic-attendance-report.plist" = "~/Library/LaunchAgents/com.williamnapier.clinic-attendance-report.plist"
 # NOTE: Individual files managed in [shared.files] for better reliability
 # Removed directory symlinks that were causing orphan detection issues
 
@@ -347,8 +346,6 @@ depends = ["shared"]
 # Claude Code nightly cleanup - kills stale processes at 3am
 "systemd/claude-code-nightly-cleanup.service" = "~/.config/systemd/user/claude-code-nightly-cleanup.service"
 "systemd/claude-code-nightly-cleanup.timer" = "~/.config/systemd/user/claude-code-nightly-cleanup.timer"
-"systemd/clinic-attendance-report.service" = "~/.config/systemd/user/clinic-attendance-report.service"
-"systemd/clinic-attendance-report.timer" = "~/.config/systemd/user/clinic-attendance-report.timer"
 # Wayland compositor configuration - Niri + Waybar + WezTerm
 "niri/config.kdl" = "~/.config/niri/config.kdl"
 "waybar/config" = "~/.config/waybar/config"
