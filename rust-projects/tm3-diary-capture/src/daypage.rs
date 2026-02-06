@@ -36,6 +36,7 @@ pub fn append_entry(date: &NaiveDate, entry: &str) -> Result<()> {
         let content = format!("# {}\n\n{}\n\n## Backlinks\n", date.format("%Y-%m-%d"), entry);
         std::fs::write(&daypage_path, content)
             .with_context(|| format!("Failed to create DayPage: {}", daypage_path.display()))?;
+        eprintln!("  → Created {}", daypage_path.display());
         return Ok(());
     }
 
