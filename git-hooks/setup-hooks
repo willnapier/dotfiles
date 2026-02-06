@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Setup git hooks for dotfiles repo
+# Run this once per machine after cloning/pulling
+
+cd "$(dirname "$0")/.." || exit 1
+
+# Set hooks path to use our tracked hooks
+git config --local core.hooksPath git-hooks
+
+echo "✅ Git hooks configured for dotfiles repo"
+echo "   Hooks path: git-hooks/"
+echo "   Active hooks: $(ls git-hooks/ | grep -v setup | tr '\n' ' ')"

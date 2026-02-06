@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# pre-merge-commit hook for dotfiles repo
+# Prevents merge (including git pull) when uncommitted changes exist
+# This catches the exact moment when local work could be lost
+
+# Check for uncommitted changes (staged or unstaged)
+if ! git diff --quiet || ! git diff --cached --quiet; then
+    echo ""
+    echo "❌ UNCOMMITTED CHANGES DETECTED IN DOTFILES"
+    echo ""
+    echo "You have local changes that would be at risk during this merge."
+    echo "Commit or stash your changes first:"
+    echo ""
+    git status --short
+    echo ""
+    echo "To commit:  git add -A && git commit -m 'description'"
+    echo "To stash:   git stash"
+    echo "To discard: git checkout . (DESTROYS CHANGES)"
+    echo ""
+    exit 1
+fi
+
+exit 0

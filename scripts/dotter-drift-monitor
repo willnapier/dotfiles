@@ -70,7 +70,22 @@ def setup_monitoring [] {
 def run_drift_check [] {
     print "🔍 CHECKING FOR DOTTER DRIFT..."
 
-    # Check Helix config sync first (platform-specific configs)
+    # Check for uncommitted dotfiles changes first
+    print "🔍 Checking for uncommitted dotfiles changes..."
+    let uncommitted = (do { git -C $"($env.HOME)/dotfiles" status --porcelain } | complete)
+    if ($uncommitted.stdout | str trim | is-not-empty) {
+        let msg = "Uncommitted changes in ~/dotfiles — commit or lose them on next pull"
+        print $"⚠️  ($msg)"
+        print $uncommitted.stdout
+        # Desktop notification (Linux: notify-send, macOS: osascript)
+        if (which notify-send | is-not-empty) {
+            do { notify-send -u critical "Dotfiles Uncommitted" $msg } | ignore
+        } else if (which osascript | is-not-empty) {
+            do { osascript -e $'display notification "($msg)" with title "Dotfiles Uncommitted"' } | ignore
+        }
+    }
+
+    # Check Helix config sync (platform-specific configs)
     print "🔍 Checking Helix config sync..."
     let helix_sync_result = (do { nu ~/.local/bin/helix-config-sync-check } | complete)
     if $helix_sync_result.exit_code != 0 {
