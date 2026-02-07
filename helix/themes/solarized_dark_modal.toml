@@ -8,6 +8,10 @@ inherits = "solarized_dark"
 "ui.cursor.insert" = { fg = "base03", bg = "green" }   # Insert mode - green cursor
 "ui.cursor.select" = { fg = "base03", bg = "orange" }  # Select mode - orange cursor
 
+# Clearly visible selections (base theme uses nearly invisible bg colors)
+"ui.selection" = { bg = "#1a3a4a" }         # Subtle blue-teal tint
+"ui.selection.primary" = { bg = "#204050" } # Slightly brighter for primary
+
 # Status line mode indicators
 "ui.statusline.normal" = { fg = "base03", bg = "blue", modifiers = ["bold"] }
 "ui.statusline.insert" = { fg = "base03", bg = "green", modifiers = ["bold"] } 

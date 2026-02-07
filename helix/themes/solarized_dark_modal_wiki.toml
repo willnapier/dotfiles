@@ -72,8 +72,8 @@
 "ui.virtual.indent-guide" = { fg = "base02" }
 "ui.virtual.inlay-hint" = { fg = "base01", bg = "base02" }
 
-"ui.selection" = { bg = "base02" }
-"ui.selection.primary" = { bg = "base02" }
+"ui.selection" = { bg = "#1a3a4a" }
+"ui.selection.primary" = { bg = "#204050" }
 "ui.cursorline.primary" = { bg = "base02" }
 "ui.cursorline.secondary" = { bg = "base02" }
 "ui.cursorcolumn.primary" = { bg = "base02" }
