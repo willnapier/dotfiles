@@ -37,7 +37,7 @@
 "markup.list" = "orange"
 "markup.bold" = { fg = "base1", modifiers = ["bold"] }
 "markup.italic" = { fg = "base1", modifiers = ["italic"] }
-"markup.strikethrough" = { modifiers = ["crossed_out"] }
+"markup.strikethrough" = { fg = "base01" }
 "markup.link.url" = { fg = "cyan", modifiers = ["underlined"] }
 "markup.link.text" = "magenta"
 "markup.quote" = "green"
