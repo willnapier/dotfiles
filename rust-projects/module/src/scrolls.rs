@@ -37,8 +37,9 @@ pub fn advisor_scrolls(advisor: &str) -> Vec<&'static str> {
             "SENECA-PROTOCOL.md",
             "WILLIAM-LIFESTYLE.md",
             "WILLIAM-SOCIAL.md",
+            "WILLIAM-FINANCIAL-PLANNING-CONTEXT.md",
             "WILLIAM-CHANGELOG.md",
-            // On-demand: PHILOSOPHICAL, BIOGRAPHICAL, FINANCIAL
+            // On-demand: PHILOSOPHICAL, BIOGRAPHICAL
         ],
         "geoff" => vec![
             "WILLIAM-INDEX.md",

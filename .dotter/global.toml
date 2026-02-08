@@ -239,6 +239,8 @@ depends = []
 "rust-projects/concert-capture/target/release/concert-capture" = { target = "~/.local/bin/concert-capture", type = "symbolic" }
 # Readwise sync tool (Rust binary - needs cargo build on each platform)
 # "rust-projects/readwise-sync/target/release/readwise-sync" = "~/.local/bin/readwise-sync"
+# Daily AI activity extraction tool (Rust binary)
+"rust-projects/continuum-activity/target/release/continuum-activity" = { target = "~/.local/bin/continuum-activity", type = "symbolic" }
 
 # MEDIUM PRIORITY: Additional essential scripts (added 2025-09-16)
 "scripts/get-openai-key" = "~/.local/bin/get-openai-key"

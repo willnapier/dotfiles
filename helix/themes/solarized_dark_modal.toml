@@ -17,4 +17,7 @@ inherits = "solarized_dark"
 "ui.statusline.insert" = { fg = "base03", bg = "green", modifiers = ["bold"] } 
 "ui.statusline.select" = { fg = "base03", bg = "orange", modifiers = ["bold"] }
 
+# Disable strikethrough rendering - prefer using ~ for "approximately" without interference
+"markup.strikethrough" = {}
+
 # Don't redefine the palette - inherit it from solarized_dark
