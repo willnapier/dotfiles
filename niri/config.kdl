@@ -85,6 +85,9 @@ window-rule {
     default-floating-position x=1114 y=3 relative-to="top-left";
 }
 
+// ---- Screenshots ----
+screenshot-path "~/Pictures/Screenshots/%Y-%m-%d_%H-%M-%S.png"
+
 // ---- Keybinds ----
 binds {
     // Media keys (ZMK layer)
