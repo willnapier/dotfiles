@@ -216,7 +216,15 @@ binds {
     // Safety
     Mod+Alt+Escape { toggle-keyboard-shortcuts-inhibit; }
 
-    // Screenshots handled at ZMK keyboard level
+    // Screenshots (ZMK MEDIA layer → XKB keysyms)
+    // To file + clipboard: J=region, L=full, U=window
+    XF86Tools   { screenshot; }
+    XF86Launch5 { screenshot-screen; }
+    XF86Launch6 { screenshot-window; }
+    // To clipboard only: Y=region, '=full, ?=window
+    XF86Launch7 { spawn "sh" "-c" "grim -g \"$(slurp)\" - | wl-copy -t image/png"; }
+    XF86Launch8 { spawn "sh" "-c" "grim - | wl-copy -t image/png"; }
+    XF86Launch9 { spawn "sh" "-c" "niri msg action screenshot-window --write-to-disk false"; }
 } // END binds
 
 // ---- Animations (instant) ----
