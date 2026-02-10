@@ -2,7 +2,7 @@
 # Continuum Claude Code Sync - imports recently modified sessions
 # Runs periodically via launchd to ensure conversations are always captured
 
-CONTINUUM_BIN="$HOME/Assistants/projects/continuum/target/release/continuum"
+CONTINUUM_BIN="$HOME/.local/bin/continuum"
 CLAUDE_PROJECTS="$HOME/.claude/projects"
 LOG_FILE="$HOME/.local/share/continuum/sync.log"
 

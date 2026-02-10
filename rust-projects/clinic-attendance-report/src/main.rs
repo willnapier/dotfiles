@@ -83,6 +83,11 @@ fn extract_and_parse(content: &str) -> Result<Vec<Entry>> {
             continue;
         }
 
+        // Skip meta-lines (reminders about the tool itself)
+        if line.contains("clinic-attendance-report") {
+            continue;
+        }
+
         // Deferred: line without list marker but containing ->
         if !line.starts_with("- ") && line.contains("->") {
             entries.push(Entry {
