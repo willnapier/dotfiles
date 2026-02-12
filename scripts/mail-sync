@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# mail-sync — periodic Gmail sync via lieer + notmuch indexing
+# Runs as launchd (macOS) or systemd timer (Linux)
+# Safe to run frequently; idempotent, network-aware, locking built into gmi
+
+set -euo pipefail
+
+LOG="$HOME/.local/share/mail-sync.log"
+MAIL_DIR="$HOME/Mail/personal"
+NOTMUCH_CONFIG="$HOME/Mail/.notmuch-config"
+export NOTMUCH_CONFIG
+
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG"
+}
+
+# Network check — skip silently if offline
+if ! ping -c 1 -W 3 imap.gmail.com &>/dev/null; then
+    log "SKIP: network unreachable"
+    exit 0
+fi
+
+# Ensure mail directory exists
+if [ ! -f "$MAIL_DIR/.gmailieer.json" ]; then
+    log "ERROR: lieer not initialized in $MAIL_DIR"
+    exit 1
+fi
+
+# Resolve gmi — check venv symlink and PATH
+GMI="$HOME/.local/bin/gmi"
+if [ ! -x "$GMI" ]; then
+    GMI="$(command -v gmi 2>/dev/null || true)"
+    if [ -z "$GMI" ]; then
+        log "ERROR: gmi not found"
+        exit 1
+    fi
+fi
+
+# Pull new messages
+log "START: gmi pull"
+cd "$MAIL_DIR"
+if "$GMI" pull >> "$LOG" 2>&1; then
+    log "OK: gmi pull complete"
+else
+    log "ERROR: gmi pull failed (exit $?)"
+    exit 1
+fi
+
+# Index with notmuch
+log "START: notmuch new"
+if notmuch new >> "$LOG" 2>&1; then
+    log "OK: notmuch new complete"
+else
+    log "ERROR: notmuch new failed (exit $?)"
+    exit 1
+fi
+
+log "DONE"

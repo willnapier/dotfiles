@@ -1,0 +1,14 @@
+[Unit]
+Description=Gmail sync via lieer + notmuch indexing
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/will/.local/bin/mail-sync
+Environment=HOME=/home/will
+Environment=NOTMUCH_CONFIG=/home/will/Mail/.notmuch-config
+Environment=PATH=/home/will/.local/bin:/home/will/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target

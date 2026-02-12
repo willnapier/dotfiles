@@ -187,6 +187,8 @@ depends = []
 "scripts/hx-process-durations-wezterm" = "~/.local/bin/hx-process-durations-wezterm"
 # Claude Code nightly cleanup - cross-platform (launchd on mac, systemd on linux)
 "scripts/claude-code-nightly-cleanup" = "~/.local/bin/claude-code-nightly-cleanup"
+# Mail sync - cross-platform (launchd on mac, systemd on linux)
+"scripts/mail-sync" = "~/.local/bin/mail-sync"
 # Re-nu conversion scripts - Native Nushell watchers with no external dependencies
 "scripts/claude-docs-watcher-renu" = "~/.local/bin/claude-docs-watcher-renu"
 "scripts/dotter-realtime-watcher-renu" = "~/.local/bin/dotter-realtime-watcher-renu"
@@ -281,6 +283,7 @@ depends = ["shared"]
 "launchagents/com.user.forge-metadata-backup.plist" = "~/Library/LaunchAgents/com.user.forge-metadata-backup.plist"
 "launchd/com.user.web-clip-watcher.plist" = "~/Library/LaunchAgents/com.user.web-clip-watcher.plist"
 "launchd/com.user.readwise-sync.plist" = "~/Library/LaunchAgents/com.user.readwise-sync.plist"
+"launchd/com.user.mail-sync.plist" = "~/Library/LaunchAgents/com.user.mail-sync.plist"
 "launchd/com.user.claude-code-nightly-cleanup.plist" = "~/Library/LaunchAgents/com.user.claude-code-nightly-cleanup.plist"
 "macos/launchd/com.williamnapier.continuum-sync-claude.plist" = "~/Library/LaunchAgents/com.williamnapier.continuum-sync-claude.plist"
 "macos/launchd/com.williamnapier.link-service.plist" = "~/Library/LaunchAgents/com.williamnapier.link-service.plist"
@@ -350,6 +353,9 @@ depends = ["shared"]
 # Claude Code nightly cleanup - kills stale processes at 3am
 "systemd/claude-code-nightly-cleanup.service" = "~/.config/systemd/user/claude-code-nightly-cleanup.service"
 "systemd/claude-code-nightly-cleanup.timer" = "~/.config/systemd/user/claude-code-nightly-cleanup.timer"
+# Mail sync - lieer pull + notmuch indexing every 15 minutes
+"systemd/mail-sync.service" = "~/.config/systemd/user/mail-sync.service"
+"systemd/mail-sync.timer" = "~/.config/systemd/user/mail-sync.timer"
 # Wayland compositor configuration - Niri + Waybar + WezTerm
 "niri/config.kdl" = "~/.config/niri/config.kdl"
 "waybar/config" = "~/.config/waybar/config"

@@ -30,6 +30,9 @@ $env.BROWSER = if $platform == "darwin" {
 # Forge knowledge base path (cross-platform)
 $env.FORGE = $"($env.HOME)/Forge"
 
+# Notmuch mail config
+$env.NOTMUCH_CONFIG = $"($env.HOME)/Mail/.notmuch-config"
+
 # OpenAI API key for semantic search system (retrieved from keychain)
 $env.OPENAI_API_KEY = (try {
     let result = (^security find-generic-password -s "openai-api-key" -a "semantic-search" -w | complete)
