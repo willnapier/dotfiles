@@ -15,7 +15,8 @@ log() {
 }
 
 # Network check — skip silently if offline
-if ! ping -c 1 -W 3 imap.gmail.com &>/dev/null; then
+# Use curl rather than ping (ping may not be in launchd PATH, and some hosts block ICMP)
+if ! /usr/bin/curl -s --max-time 5 -o /dev/null https://www.google.com; then
     log "SKIP: network unreachable"
     exit 0
 fi

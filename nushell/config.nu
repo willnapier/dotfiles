@@ -4402,3 +4402,19 @@ def nm-search [
     let limit_arg = if ($limit | default 0) > 0 { [--limit $limit] } else { [] }
     ^notmuch search --format=json ...$limit_arg $query | from json
 }
+
+# Read an email — search, pick with sk, display
+def nm-read [
+    query: string          # Notmuch search query
+    --attachments (-a)     # Extract and open attachments
+] {
+    let choice = (^notmuch search $query | ^sk)
+    if ($choice | is-empty) { return }
+    let thread = ($choice | split row " " | first)
+    let file = (^notmuch search --output=files --limit=1 $thread | str trim)
+    if $attachments {
+        ^email-attachments $file
+    } else {
+        ^email-extract $file | ^bat --style=plain --paging=always
+    }
+}
