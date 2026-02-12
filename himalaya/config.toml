@@ -1,0 +1,62 @@
+# Himalaya configuration for Google Workspace
+# Location: ~/.config/himalaya/config.toml (deployed via dotter)
+#
+# SETUP NOTES:
+# - Google Cloud project: "himalaya" with Gmail API enabled
+# - OAuth credentials: Desktop app type, Internal consent screen
+# - Client secret stored in macOS keychain (service: himalaya-cli)
+# - Access/refresh tokens also in keychain
+# - Himalaya built from git with +oauth2 feature
+# - On new machine: store client secret, then do OAuth flow manually
+
+[accounts.personal]
+email = "will@willnapier.com"
+display-name = "William Napier"
+default = true
+
+# Signature (optional - uncomment and customise)
+# signature = "Best regards,\nWilliam"
+
+# --- IMAP Backend (reading email) ---
+backend.type = "imap"
+backend.host = "imap.gmail.com"
+backend.port = 993
+backend.encryption.type = "tls"
+backend.login = "will@willnapier.com"
+
+# OAuth2 authentication for IMAP
+backend.auth.type = "oauth2"
+backend.auth.method = "xoauth2"
+backend.auth.client-id = "692443843049-ibibtduhua6nn7tsrqkar3fluffkkqqf.apps.googleusercontent.com"
+backend.auth.client-secret.keyring = "gmail-oauth2-client-secret"
+backend.auth.access-token.keyring = "gmail-oauth2-access"
+backend.auth.refresh-token.keyring = "gmail-oauth2-refresh"
+backend.auth.auth-url = "https://accounts.google.com/o/oauth2/v2/auth"
+backend.auth.token-url = "https://www.googleapis.com/oauth2/v3/token"
+backend.auth.pkce = true
+backend.auth.scopes = ["https://mail.google.com/"]
+
+# --- SMTP Backend (sending email) ---
+message.send.backend.type = "smtp"
+message.send.backend.host = "smtp.gmail.com"
+message.send.backend.port = 465
+message.send.backend.encryption.type = "tls"
+message.send.backend.login = "will@willnapier.com"
+
+# OAuth2 authentication for SMTP (reuses same credentials)
+message.send.backend.auth.type = "oauth2"
+message.send.backend.auth.method = "xoauth2"
+message.send.backend.auth.client-id = "692443843049-ibibtduhua6nn7tsrqkar3fluffkkqqf.apps.googleusercontent.com"
+message.send.backend.auth.client-secret.keyring = "gmail-oauth2-client-secret"
+message.send.backend.auth.access-token.keyring = "gmail-oauth2-access"
+message.send.backend.auth.refresh-token.keyring = "gmail-oauth2-refresh"
+message.send.backend.auth.auth-url = "https://accounts.google.com/o/oauth2/v2/auth"
+message.send.backend.auth.token-url = "https://www.googleapis.com/oauth2/v3/token"
+message.send.backend.auth.pkce = true
+message.send.backend.auth.scopes = ["https://mail.google.com/"]
+
+# --- Folder mapping (Google Workspace UK uses [Google Mail] not [Gmail]) ---
+folder.aliases.inbox = "INBOX"
+folder.aliases.sent = "[Google Mail]/Sent Mail"
+folder.aliases.drafts = "[Google Mail]/Drafts"
+folder.aliases.trash = "[Google Mail]/Bin"

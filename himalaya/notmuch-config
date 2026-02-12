@@ -1,0 +1,41 @@
+# Notmuch configuration template
+# Location: ~/Mail/.notmuch-config (or ~/.notmuch-config)
+#
+# SETUP:
+# 1. Install notmuch: brew install notmuch
+# 2. Copy this to ~/Mail/.notmuch-config
+# 3. Run: cd ~/Mail && notmuch new
+#
+# LIEER INTEGRATION:
+# 1. pip3 install lieer
+# 2. mkdir -p ~/Mail/personal && cd ~/Mail/personal
+# 3. gmi init YOUR_EMAIL@yourdomain.com
+#    (opens browser for OAuth consent)
+# 4. gmi pull  (initial sync - may take a while)
+# 5. To push tag changes: gmi push
+# 6. Automate with cron or launchd for periodic sync
+
+[database]
+# Path to the Maildir root - notmuch indexes everything under here
+path=/Users/williamnapier/Mail
+
+[user]
+name=William Napier
+primary_email=REPLACE_WITH_YOUR_EMAIL@yourdomain.com
+# other_email=another@example.com
+
+[new]
+# Tags for newly imported messages
+tags=new;unread;inbox
+# Ignore lieer state files
+ignore=.json;.lock;.credentials.gmailieer.json;.state.gmailieer.json
+
+[search]
+# Default search for notmuch search with no arguments
+exclude_tags=deleted;spam
+
+[maildir]
+synchronize_flags=true
+
+[crypto]
+gpg_path=gpg

@@ -3920,6 +3920,47 @@ def wiki-back [] {
 # Usage: ftodo  (toggles the line where cursor currently is in most recent file)
 # Requires: hx-toggle-todo script (processes entire file, toggles line under cursor)
 # Toggle todo checkbox - Interactive picker with context detection
+# Search DayPages for todos by state
+# Usage:
+#   dptodo              - Show unchecked todos across all DayPages
+#   dptodo --done       - Show completed todos
+#   dptodo --all        - Show both checked and unchecked
+#   dptodo --days 7     - Limit to last 7 days
+def dptodo [
+    --done (-x)         # Show completed (checked) todos instead of open
+    --all (-a)          # Show all todos regardless of state
+    --days (-d): int    # Limit to last N days
+] {
+    let dp_dir = $"($env.HOME)/Forge/NapierianLogs/DayPages"
+
+    let pattern = if $all {
+        '- \[(x| )\]'
+    } else if $done {
+        '- \[x\]'
+    } else {
+        '- \[ \]'
+    }
+
+    let files = if ($days | is-empty) {
+        fd -t f -e md . $dp_dir | lines
+    } else {
+        fd -t f -e md --changed-within $"($days)d" . $dp_dir | lines
+    }
+
+    if ($files | is-empty) {
+        print "No DayPage files found"
+        return
+    }
+
+    $files | each {|f|
+        let matches = (do { rg -n $pattern $f } | complete)
+        if $matches.exit_code == 0 {
+            let basename = ($f | path basename | sd '\.md$' '')
+            $matches.stdout | lines | each {|line| $"($basename) ($line)"}
+        }
+    } | flatten | if ($in | is-empty) { print "No matching todos found" } else { $in | each {|l| print $l} }
+}
+
 # Usage:
 #   ftodo           - Auto-detect file, show picker to select line to toggle
 #   ftodo file.md   - Show picker for specific file
@@ -4294,4 +4335,70 @@ def ftag [
         let editor = (if ($env.EDITOR? | is-empty) { "hx" } else { $env.EDITOR })
         ^$editor $file
     }
+}
+
+# ---- Email (himalaya) Wrappers ----
+# Thin workflow glue around himalaya CLI email client.
+# Requires: brew install himalaya, then himalaya account configure personal
+
+# List recent emails as structured data
+def hmail-list [
+    --folder (-f): string  # Folder/label to list (default: INBOX)
+    --limit (-n): int      # Number of envelopes to show
+] {
+    let folder_arg = if ($folder | default "" | is-empty) { [] } else { [--folder $folder] }
+    let limit_arg = if ($limit | default 0) > 0 { [--page-size $limit] } else { [] }
+    ^himalaya envelope list ...$folder_arg ...$limit_arg --output json | from json
+}
+
+# Read a single email by ID
+def hmail-read [
+    id: int                # Message ID to read
+    --html                 # Show HTML version instead of plain text
+] {
+    if $html {
+        ^himalaya message read $id --html
+    } else {
+        ^himalaya message read $id
+    }
+}
+
+# Search emails (uses himalaya's search/filter syntax)
+def hmail-search [
+    query: string          # Search query (IMAP search syntax)
+    --folder (-f): string  # Folder to search in
+] {
+    let folder_arg = if ($folder | default "" | is-empty) { [] } else { [--folder $folder] }
+    ^himalaya envelope list ...$folder_arg --output json $"--filter" $query | from json
+}
+
+# Send a quick email
+def hmail-send [
+    to: string             # Recipient address
+    subject: string        # Subject line
+    body: string           # Message body
+] {
+    $body | ^himalaya message write --to $to --subject $subject
+}
+
+# Extract email to markdown (pipes himalaya output through email-extract)
+# Useful for archiving email content into Forge
+def hmail-extract [
+    id: int                # Message ID to extract
+    --format (-f): string  # Output format: text, markdown, json (default: markdown)
+] {
+    let fmt = ($format | default "markdown")
+    let raw = (^himalaya message read $id --raw)
+    let tmp = $"/tmp/hmail-extract-($id).eml"
+    $raw | save -f $tmp
+    ^email-extract -f $fmt $tmp
+}
+
+# Notmuch search wrapper (structured JSON output)
+def nm-search [
+    query: string          # Notmuch search query
+    --limit (-n): int      # Limit results
+] {
+    let limit_arg = if ($limit | default 0) > 0 { [--limit $limit] } else { [] }
+    ^notmuch search --format=json ...$limit_arg $query | from json
 }

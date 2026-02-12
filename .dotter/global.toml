@@ -66,6 +66,8 @@ depends = []
 "dprint/dprint.json" = "~/.config/dprint/dprint.json"
 # Claude Code settings (hooks, plugins - NOT permissions which are machine-local)
 "Claude/settings.json" = "~/.claude/settings.json"
+# Himalaya CLI email client configuration (added 2026-02-12)
+"himalaya/config.toml" = "~/.config/himalaya/config.toml"
 
 # Essential scripts (most commonly used)
 "scripts/daily-note.nu" = { target = "~/.local/bin/daily-note", type = "symbolic" }
