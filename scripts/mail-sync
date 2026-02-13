@@ -38,9 +38,16 @@ if [ ! -x "$GMI" ]; then
 fi
 
 # Pull new messages
-log "START: gmi pull"
+# Use --resume so interrupted initial syncs continue rather than restart
 cd "$MAIL_DIR"
-if "$GMI" pull >> "$LOG" 2>&1; then
+if [ -f ".resume-pull.gmailieer.json" ]; then
+    log "START: gmi pull --resume (resuming interrupted pull)"
+    PULL_ARGS="--resume"
+else
+    log "START: gmi pull"
+    PULL_ARGS=""
+fi
+if "$GMI" pull $PULL_ARGS >> "$LOG" 2>&1; then
     log "OK: gmi pull complete"
 else
     log "ERROR: gmi pull failed (exit $?)"

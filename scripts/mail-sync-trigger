@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# mail-sync-trigger — run mail-sync in background if last sync is stale
+# Called by email commands to ensure fresh local data without blocking
+# Safe to call frequently; idempotent via mail-sync's own locking
+
+STATE_FILE="$HOME/Mail/personal/.state.gmailieer.json"
+STALE_SECONDS=120  # 2 minutes
+
+# No state file = initial sync never completed, don't trigger
+[ -f "$STATE_FILE" ] || exit 0
+
+# Check age of state file (cross-platform stat)
+NOW=$(date +%s)
+if MTIME=$(stat -f %m "$STATE_FILE" 2>/dev/null); then
+    : # macOS
+elif MTIME=$(stat -c %Y "$STATE_FILE" 2>/dev/null); then
+    : # Linux
+else
+    exit 0
+fi
+
+AGE=$((NOW - MTIME))
+if [ "$AGE" -gt "$STALE_SECONDS" ]; then
+    nohup "$HOME/.local/bin/mail-sync" >/dev/null 2>&1 &
+fi

@@ -189,6 +189,7 @@ depends = []
 "scripts/claude-code-nightly-cleanup" = "~/.local/bin/claude-code-nightly-cleanup"
 # Mail sync - cross-platform (launchd on mac, systemd on linux)
 "scripts/mail-sync" = "~/.local/bin/mail-sync"
+"scripts/mail-sync-trigger" = "~/.local/bin/mail-sync-trigger"
 # Re-nu conversion scripts - Native Nushell watchers with no external dependencies
 "scripts/claude-docs-watcher-renu" = "~/.local/bin/claude-docs-watcher-renu"
 "scripts/dotter-realtime-watcher-renu" = "~/.local/bin/dotter-realtime-watcher-renu"

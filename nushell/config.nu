@@ -4346,6 +4346,7 @@ def hmail-list [
     --folder (-f): string  # Folder/label to list (default: INBOX)
     --limit (-n): int      # Number of envelopes to show
 ] {
+    ^~/.local/bin/mail-sync-trigger
     let folder_arg = if ($folder | default "" | is-empty) { [] } else { [--folder $folder] }
     let limit_arg = if ($limit | default 0) > 0 { [--page-size $limit] } else { [] }
     ^himalaya envelope list ...$folder_arg ...$limit_arg --output json | from json
@@ -4356,6 +4357,7 @@ def hmail-read [
     id: int                # Message ID to read
     --html                 # Show HTML version instead of plain text
 ] {
+    ^~/.local/bin/mail-sync-trigger
     if $html {
         ^himalaya message read $id --html
     } else {
@@ -4368,6 +4370,7 @@ def hmail-search [
     query: string          # Search query (IMAP search syntax)
     --folder (-f): string  # Folder to search in
 ] {
+    ^~/.local/bin/mail-sync-trigger
     let folder_arg = if ($folder | default "" | is-empty) { [] } else { [--folder $folder] }
     ^himalaya envelope list ...$folder_arg --output json $"--filter" $query | from json
 }
@@ -4394,11 +4397,38 @@ def hmail-extract [
     ^email-extract -f $fmt $tmp
 }
 
+# Reply to a message by envelope ID (opens $EDITOR)
+def hmail-reply [
+    id: int                # Envelope ID to reply to
+    --all (-A)             # Reply to all recipients
+] {
+    ^~/.local/bin/mail-sync-trigger
+    let all_arg = if $all { [--all] } else { [] }
+    ^himalaya message reply ...$all_arg $id
+}
+
+# Forward a message by envelope ID (opens $EDITOR)
+def hmail-forward [
+    id: int                # Envelope ID to forward
+] {
+    ^~/.local/bin/mail-sync-trigger
+    ^himalaya message forward $id
+}
+
+# Read full conversation thread for a message
+def hmail-thread [
+    id: int                # Envelope ID (any message in the thread)
+] {
+    ^~/.local/bin/mail-sync-trigger
+    ^himalaya message thread $id
+}
+
 # Notmuch search wrapper (structured JSON output)
 def nm-search [
     query: string          # Notmuch search query
     --limit (-n): int      # Limit results
 ] {
+    ^~/.local/bin/mail-sync-trigger
     let limit_arg = if ($limit | default 0) > 0 { [--limit $limit] } else { [] }
     ^notmuch search --format=json ...$limit_arg $query | from json
 }
@@ -4408,7 +4438,8 @@ def nm-read [
     query: string          # Notmuch search query
     --attachments (-a)     # Extract and open attachments
 ] {
-    let choice = (^notmuch search $query | ^sk)
+    ^~/.local/bin/mail-sync-trigger
+    let choice = (^notmuch search $query | ^sk --preview "echo {} | cut -d' ' -f1 | xargs notmuch search --output=files --limit=1 | xargs email-extract | head -40")
     if ($choice | is-empty) { return }
     let thread = ($choice | split row " " | first)
     let file = (^notmuch search --output=files --limit=1 $thread | str trim)
