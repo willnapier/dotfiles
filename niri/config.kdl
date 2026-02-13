@@ -247,6 +247,7 @@ animations {
 
 // ---- Autostart ----
 spawn-at-startup "dbus-update-activation-environment" "--systemd" "WAYLAND_DISPLAY" "XDG_CURRENT_DESKTOP=niri";
+spawn-at-startup "gnome-keyring-daemon" "--start" "--components=secrets";
 // Solarized Dark teal background (#002b36)
 spawn-at-startup "swaybg" "-c" "#002b36";
 spawn-at-startup "waybar";
