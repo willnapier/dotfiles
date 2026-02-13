@@ -360,6 +360,7 @@ depends = ["shared"]
 "niri/config.kdl" = "~/.config/niri/config.kdl"
 "waybar/config" = "~/.config/waybar/config"
 "waybar/style.css" = "~/.config/waybar/style.css"
+"mako/config" = "~/.config/mako/config"
 
 [linux.variables]
 opener_cmd = "xdg-open"

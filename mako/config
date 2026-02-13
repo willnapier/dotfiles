@@ -1,0 +1,12 @@
+default-timeout=5000
+max-visible=3
+layer=overlay
+anchor=top-right
+font=monospace 11
+background-color=#002b36
+text-color=#839496
+border-color=#268bd2
+border-size=2
+border-radius=4
+margin=10
+padding=10
