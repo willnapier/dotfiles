@@ -1,17 +1,25 @@
 #!/usr/bin/env nu
-# Queue an entry for today's DayPage without writing to it directly.
+# Queue an entry for a DayPage without writing to it directly.
 # Part of the pending queue system that prevents "file modified by
 # external process" errors when the DayPage is open in Helix.
 #
 # Usage: daypage-append "clinical-notes:: 8x 12min - EB88"
+#        daypage-append --date 2026-02-13 "concert.ilminster:: ..."
 # Flush: Space+F in Helix, or run daypage-flush from command line
 
-def main [entry: string] {
+def main [
+    entry: string
+    --date (-d): string  # Target date (YYYY-MM-DD), defaults to today
+] {
     let pending_dir = ($env.HOME | path join ".local" "share" "daypage-pending")
     mkdir $pending_dir
 
-    let today = (date now | format date "%Y-%m-%d")
-    let pending_file = ($pending_dir | path join $"($today).md")
+    let target = if ($date | is-empty) {
+        date now | format date "%Y-%m-%d"
+    } else {
+        $date
+    }
+    let pending_file = ($pending_dir | path join $"($target).md")
 
     $"($entry)\n" | save --append $pending_file
 }

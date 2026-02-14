@@ -177,7 +177,10 @@ fn process_concert(path: &PathBuf, dry_run: bool, no_api: bool, link_only: bool,
     eprintln!("Archived to: {}", archive_path.display());
 
     // Queue entry for DayPage via daypage-append (avoids Helix external modification conflict)
+    let date_str = concert.date.format("%Y-%m-%d").to_string();
     let status = std::process::Command::new("daypage-append")
+        .arg("--date")
+        .arg(&date_str)
         .arg(&entry)
         .status()
         .context("Failed to run daypage-append")?;
