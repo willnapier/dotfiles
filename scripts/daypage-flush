@@ -48,12 +48,10 @@ def main [] {
             $content = ($content | str replace $"- [ ] ($client_id)" $"- [x] ($client_id)")
         }
 
-        # Process append lines: insert above clinic:: block (or above ## Backlinks if no clinic)
+        # Process append lines: insert just above ## Backlinks (lowest available position)
         if not ($append_lines | is-empty) {
             let append_text = ($append_lines | str join "\n")
-            $content = if ($content | str contains "clinic::") {
-                $content | str replace "clinic::" $"($append_text)\n\nclinic::"
-            } else if ($content | str contains "## Backlinks") {
+            $content = if ($content | str contains "## Backlinks") {
                 $content | str replace "## Backlinks" $"($append_text)\n\n## Backlinks"
             } else {
                 $"($content | str trim --right)\n\n($append_text)\n"
