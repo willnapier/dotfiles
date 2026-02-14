@@ -55,7 +55,7 @@ fn main() -> Result<()> {
         }
         None => {
             let file_path = if cli.latest {
-                find_latest_wigmore_html()?
+                find_latest_concert_html()?
             } else if let Some(f) = cli.file {
                 f
             } else {
@@ -69,30 +69,40 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn find_latest_wigmore_html() -> Result<PathBuf> {
-    let downloads = dirs::download_dir().context("Could not find Downloads directory")?;
+fn find_latest_concert_html() -> Result<PathBuf> {
+    let downloads = dirs::download_dir()
+        .or_else(|| dirs::home_dir().map(|h| h.join("Downloads")))
+        .context("Could not find Downloads directory")?;
 
-    let mut wigmore_files: Vec<_> = std::fs::read_dir(&downloads)?
+    let mut concert_files: Vec<_> = std::fs::read_dir(&downloads)?
         .filter_map(|e| e.ok())
         .filter(|e| {
             let name = e.file_name().to_string_lossy().to_lowercase();
-            name.ends_with(".html") && is_wigmore_file(&e.path())
+            name.ends_with(".html") && is_concert_file(&e.path())
         })
         .collect();
 
-    wigmore_files.sort_by_key(|e| {
+    concert_files.sort_by_key(|e| {
         std::cmp::Reverse(e.metadata().and_then(|m| m.modified()).ok())
     });
 
-    wigmore_files
+    concert_files
         .first()
         .map(|e| e.path())
-        .context("No Wigmore Hall HTML files found in Downloads")
+        .context("No concert HTML files found in Downloads")
 }
 
-fn is_wigmore_file(path: &PathBuf) -> bool {
+const VENUE_MARKERS: &[&str] = &[
+    "wigmore-hall.org.uk",
+    "southbankcentre.co.uk",
+    "kingsplace.co.uk",
+    "barbican.org.uk",
+    "ilminsterartscentre.com",
+];
+
+fn is_concert_file(path: &PathBuf) -> bool {
     if let Ok(content) = std::fs::read_to_string(path) {
-        content.contains("wigmore-hall.org.uk")
+        VENUE_MARKERS.iter().any(|marker| content.contains(marker))
     } else {
         false
     }
@@ -211,6 +221,7 @@ fn venue_to_tag(venue: html::Venue) -> &'static str {
         html::Venue::SouthbankCentre => "southbank",
         html::Venue::KingsPlace => "kingsplace",
         html::Venue::Barbican => "barbican",
+        html::Venue::IlminsterArts => "ilminster",
         html::Venue::Unknown => "unknown",
     }
 }

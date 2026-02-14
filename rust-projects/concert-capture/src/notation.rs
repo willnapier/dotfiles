@@ -33,6 +33,7 @@ pub fn generate_notation(
 
     // Build notation parts
     let mut parts = vec![composer_tag];
+    let has_work_identifier = work_type.is_some() || work_title.is_some();
 
     // Add work type if found, otherwise work title (for operas, etc.)
     if let Some(wt) = work_type {
@@ -61,8 +62,8 @@ pub fn generate_notation(
     } else if let Some(catalog) = extract_catalog_from_title(title) {
         // Fallback: try to extract catalog info from title
         parts.push(catalog);
-    } else {
-        // Last resort: use slugified title
+    } else if !has_work_identifier {
+        // Last resort: use slugified title only if we have no other identifier
         parts.push(slug::slugify(title));
     }
 
@@ -418,8 +419,8 @@ fn extract_catalog_from_title(title: &str) -> Option<String> {
         return Some(format!("WoO{}", &caps[1]));
     }
 
-    // Liszt S numbers
-    let s_re = Regex::new(r"(?i)\bS(\d+)").ok()?;
+    // Liszt S numbers (handles "S163", "S 163", "S. 163")
+    let s_re = Regex::new(r"(?i)\bS\.?\s*(\d+)").ok()?;
     if let Some(caps) = s_re.captures(title) {
         return Some(format!("S{}", &caps[1]));
     }

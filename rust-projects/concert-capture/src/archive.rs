@@ -64,6 +64,7 @@ mod tests {
             date: NaiveDate::from_ymd_opt(2026, 1, 28).unwrap(),
             performers: vec!["The English Concert".to_string()],
             works: vec![],
+            venue: crate::html::Venue::WigmoreHall,
         };
 
         let filename = generate_filename(&concert);
@@ -76,6 +77,7 @@ mod tests {
             date: NaiveDate::from_ymd_opt(2026, 1, 28).unwrap(),
             performers: vec![],
             works: vec![],
+            venue: crate::html::Venue::WigmoreHall,
         };
 
         let filename = generate_filename(&concert);

@@ -9,6 +9,7 @@ pub enum Venue {
     SouthbankCentre,
     KingsPlace,
     Barbican,
+    IlminsterArts,
     Unknown,
 }
 
@@ -51,6 +52,8 @@ fn detect_venue(html: &str) -> Venue {
         Venue::KingsPlace
     } else if html.contains("barbican.org.uk") {
         Venue::Barbican
+    } else if html.contains("ilminsterartscentre.com") {
+        Venue::IlminsterArts
     } else {
         Venue::Unknown
     }
@@ -62,8 +65,30 @@ fn extract_date(html: &str, venue: Venue) -> Result<NaiveDate> {
         Venue::SouthbankCentre => extract_date_southbank(html),
         Venue::KingsPlace => extract_date_kingsplace(html),
         Venue::Barbican => extract_date_barbican(html),
+        Venue::IlminsterArts => extract_date_ilminster(html),
         Venue::Unknown => extract_date_fallback(html),
     }
+}
+
+fn extract_date_ilminster(html: &str) -> Result<NaiveDate> {
+    // <time class=event-date datetime=2026-02-13>
+    let time_re = Regex::new(r#"class=event-date\s+datetime=(\d{4}-\d{2}-\d{2})"#)?;
+    if let Some(caps) = time_re.captures(html) {
+        return NaiveDate::parse_from_str(&caps[1], "%Y-%m-%d")
+            .context("Invalid date from Ilminster event-date attribute");
+    }
+
+    // Fallback to JSON-LD startDate (shared with Southbank/Kings Place)
+    let schema_re = Regex::new(r#""startDate"\s*:\s*"(\d{4})-(\d{2})-(\d{2})T"#)?;
+    if let Some(caps) = schema_re.captures(html) {
+        let year: i32 = caps[1].parse()?;
+        let month: u32 = caps[2].parse()?;
+        let day: u32 = caps[3].parse()?;
+        return NaiveDate::from_ymd_opt(year, month, day)
+            .context("Invalid date from Ilminster JSON-LD schema");
+    }
+
+    extract_date_fallback(html)
 }
 
 fn extract_date_barbican(html: &str) -> Result<NaiveDate> {
@@ -154,6 +179,7 @@ fn extract_performers(document: &Html, venue: Venue) -> Vec<String> {
         Venue::SouthbankCentre => extract_performers_southbank(document),
         Venue::KingsPlace => extract_performers_kingsplace(document),
         Venue::Barbican => extract_performers_barbican(document),
+        Venue::IlminsterArts => extract_performers_ilminster(document),
         Venue::Unknown => extract_performers_wigmore(document), // try Wigmore as default
     }
 }
@@ -230,6 +256,22 @@ fn extract_performers_kingsplace(document: &Html) -> Vec<String> {
     performers
 }
 
+fn extract_performers_ilminster(document: &Html) -> Vec<String> {
+    // Ilminster uses <h1> for the performer/ensemble name
+    let h1_selector = Selector::parse("h1").unwrap();
+    let mut performers = Vec::new();
+
+    if let Some(el) = document.select(&h1_selector).next() {
+        let text = el.text().collect::<String>();
+        let text = text.trim();
+        if !text.is_empty() {
+            performers.push(text.to_string());
+        }
+    }
+
+    performers
+}
+
 fn extract_performers_wigmore(document: &Html) -> Vec<String> {
     let selector = Selector::parse(".performance-title").unwrap();
     let mut performers = Vec::new();
@@ -292,8 +334,87 @@ fn extract_works(document: &Html, venue: Venue) -> Vec<Work> {
         Venue::SouthbankCentre => extract_works_southbank(document),
         Venue::KingsPlace => extract_works_kingsplace(document),
         Venue::Barbican => extract_works_barbican(document),
+        Venue::IlminsterArts => extract_works_ilminster(document),
         Venue::Unknown => extract_works_wigmore(document),
     }
+}
+
+fn extract_works_ilminster(document: &Html) -> Vec<Work> {
+    // Ilminster (Squarespace) uses a <p> block with:
+    //   <strong>Programme<br>Liszt&nbsp;</strong> Unstern! S 208<br>
+    //   <strong>Liszt</strong>&nbsp; Mephisto polka S 217<br>
+    //
+    // The first entry is tricky: "Programme" and the first composer share a <strong> tag
+    // split by <br>. We preprocess to normalize this before line-by-line parsing.
+
+    let p_selector = Selector::parse("p").unwrap();
+
+    let mut works = Vec::new();
+
+    for p_el in document.select(&p_selector) {
+        let p_text = p_el.text().collect::<String>();
+        if !p_text.contains("Programme") {
+            continue;
+        }
+
+        let inner = p_el.inner_html();
+
+        // Normalize the quirky first entry: <strong>Programme<br>Composer&nbsp;</strong>
+        // becomes <strong>Programme</strong><br><strong>Composer</strong>
+        let normalized = Regex::new(r"(?i)<strong>Programme\s*<br\s*/?>([^<]+?)\s*</strong>")
+            .unwrap()
+            .replace(&inner, "<strong>Programme</strong><br><strong>$1</strong>")
+            .to_string();
+
+        // Split on <br> to get individual lines
+        let lines: Vec<&str> = Regex::new(r"(?i)<br\s*/?>")
+            .unwrap()
+            .split(&normalized)
+            .collect();
+
+        let strong_re = Regex::new(r"(?i)<strong>(.*?)</strong>").unwrap();
+
+        for line in &lines {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+
+            let composer = match strong_re.captures(line) {
+                Some(caps) => {
+                    let raw = caps[1].to_string();
+                    let cleaned = raw
+                        .replace("&nbsp;", " ")
+                        .replace('\u{00a0}', " ");
+                    cleaned.trim().to_string()
+                }
+                None => continue,
+            };
+
+            if composer.is_empty() || composer == "Programme" {
+                continue;
+            }
+
+            // Title is everything after </strong>, cleaned of HTML entities and tags
+            let title = strong_re.replace(line, "").to_string();
+            let title = title
+                .replace("&nbsp;", " ")
+                .replace('\u{00a0}', " ");
+            let title = Regex::new(r"<[^>]+>")
+                .unwrap()
+                .replace_all(&title, "")
+                .trim()
+                .to_string();
+
+            if !title.is_empty() {
+                works.push(Work { composer, title });
+            }
+        }
+
+        break;
+    }
+
+    works
 }
 
 fn extract_works_barbican(document: &Html) -> Vec<Work> {
