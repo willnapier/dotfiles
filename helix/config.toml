@@ -93,7 +93,7 @@ T = ":config-reload"
 # Process activity durations - WezTerm auto-refresh (fully automated)
 p = [":write!", ":sh sleep 1 && sync", ":sh hx-process-durations-wezterm %{buffer_name}"]
 # Delete current file - Space+x (eXpunge, no confirmation)
-x = [":sh trash %{buffer_name}", ":quit!"]
+x = [":sh trash '%{buffer_name}'", ":quit!"]
 # Export selection to external register - Space+E (then type register letter)
 E = ":pipe-to hx-register-export"
 # Wiki link navigation - Space+w (smart opening: text in popup, media in Preview)
@@ -135,7 +135,7 @@ y = ":pipe-to hx-clipboard-copy"
 c = ":insert-output hx-insert-date"        # Insert current date (YYYY-MM-DD)
 # Time insertion moved to avoid conflicts with Space+t (todo toggle) and Space+T (config reload)
 ";" = ":insert-output hx-insert-datetime"  # Insert date and time (YYYY-MM-DD HH:MM)
-":" = ":insert-output hx-insert-time"      # Insert current time (HH:MM)
+":" = [":insert-output hx-insert-time", "end_of_line"]  # Insert current time (HH:MM), cursor to end
 # Mark file as revisited - using 'v' for 'visited'
 v = ":sh hx-mark-revisit %{buffer_name}"   # Add today to revisited dates
 

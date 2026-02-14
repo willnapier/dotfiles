@@ -24,6 +24,13 @@
       }
     ]
   },
+  "permissions": {
+    "deny": [
+      "Read(*-private.md)",
+      "Edit(*-private.md)",
+      "Write(*-private.md)"
+    ]
+  },
   "enabledPlugins": {
     "rust-analyzer-lsp@claude-plugins-official": true
   },
