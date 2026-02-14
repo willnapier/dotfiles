@@ -135,7 +135,7 @@ y = ":pipe-to hx-clipboard-copy"
 c = ":insert-output hx-insert-date"        # Insert current date (YYYY-MM-DD)
 # Time insertion moved to avoid conflicts with Space+t (todo toggle) and Space+T (config reload)
 ";" = ":insert-output hx-insert-datetime"  # Insert date and time (YYYY-MM-DD HH:MM)
-":" = [":insert-output hx-insert-time", "end_of_line"]  # Insert current time (HH:MM), cursor to end
+":" = [":insert-output hx-insert-time", "goto_line_end"]  # Insert current time (HH:MM), cursor to end
 # Mark file as revisited - using 'v' for 'visited'
 v = ":sh hx-mark-revisit %{buffer_name}"   # Add today to revisited dates
 

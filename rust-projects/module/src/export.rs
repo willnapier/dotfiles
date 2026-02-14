@@ -1,11 +1,19 @@
 use anyhow::{Context, Result};
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
 use crate::scrolls::{advisor_scrolls, read_scroll};
+
+/// Extract just the filename from a scroll name (handles ~/... paths)
+fn scroll_display_name(name: &str) -> &str {
+    Path::new(name)
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or(name)
+}
 
 /// Run the export command
 pub fn run(advisor: &str, output: Option<&str>, zip: bool) -> Result<()> {
@@ -42,26 +50,39 @@ fn export_directory(advisor: &str, scrolls: &[&str], output_dir: &PathBuf) -> Re
 
     for scroll in scrolls {
         let content = read_scroll(scroll)?;
-        let dest = bundle_dir.join(scroll);
+        let filename = scroll_display_name(scroll);
+        let dest = bundle_dir.join(filename);
         fs::write(&dest, &content)
             .with_context(|| format!("Failed to write: {}", dest.display()))?;
     }
 
     // Create a README for the bundle
+    let protocol_file = format!("{}-PROTOCOL.md", advisor.to_uppercase());
+    let has_protocol = scrolls.iter().any(|s| s.ends_with("PROTOCOL.md"));
+    let usage_steps = if has_protocol {
+        format!(
+            "1. Upload all files to your AI conversation\n\
+            2. The AI will read WILLIAM-INDEX.md first to understand the system\n\
+            3. Then load the protocol file ({})\n\
+            4. Content scrolls provide context as needed",
+            protocol_file
+        )
+    } else {
+        "1. Upload all files to your AI conversation\n\
+        2. The AI will read WILLIAM-INDEX.md first to understand the system\n\
+        3. Remaining files provide context for the session".to_string()
+    };
     let readme = format!(
         "# {} Scrolls Bundle\n\n\
         Exported: {}\n\n\
         ## Contents\n\n\
         {}\n\n\
         ## Usage\n\n\
-        1. Upload all files to your AI conversation\n\
-        2. The AI will read WILLIAM-INDEX.md first to understand the system\n\
-        3. Then load the protocol file ({}-PROTOCOL.md)\n\
-        4. Content scrolls provide context as needed\n",
+        {}\n",
         advisor.to_uppercase(),
         chrono::Local::now().format("%Y-%m-%d %H:%M"),
-        scrolls.iter().map(|s| format!("- {}", s)).collect::<Vec<_>>().join("\n"),
-        advisor.to_uppercase()
+        scrolls.iter().map(|s| format!("- {}", scroll_display_name(s))).collect::<Vec<_>>().join("\n"),
+        usage_steps
     );
     fs::write(bundle_dir.join("README.md"), readme)?;
 
@@ -87,7 +108,8 @@ fn export_zip(advisor: &str, scrolls: &[&str], output_dir: &PathBuf) -> Result<(
 
     for scroll in scrolls {
         let content = read_scroll(scroll)?;
-        zip.start_file(*scroll, options)?;
+        let filename = scroll_display_name(scroll);
+        zip.start_file(filename, options)?;
         zip.write_all(content.as_bytes())?;
     }
 

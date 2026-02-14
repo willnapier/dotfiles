@@ -56,6 +56,13 @@ pub fn advisor_scrolls(advisor: &str) -> Vec<&'static str> {
             "WILLIAM-CHANGELOG.md",
             // On-demand: BIOGRAPHICAL
         ],
+        "senior-dev" => vec![
+            "WILLIAM-INDEX.md",
+            "WILLIAM-CHANGELOG.md",
+            "DEV-ENVIRONMENT.md",
+            "SKILL-INFRASTRUCTURE.md",
+            "~/.claude/skills/senior-dev/TECHNICAL-ENVIRONMENT.md",
+        ],
         _ => {
             // Default: all content scrolls plus index
             let mut scrolls: Vec<&str> = vec!["WILLIAM-INDEX.md"];
@@ -65,9 +72,21 @@ pub fn advisor_scrolls(advisor: &str) -> Vec<&'static str> {
     }
 }
 
+/// Resolve a scroll name to its full path.
+/// Names starting with `~/` are resolved relative to the home directory;
+/// all others are resolved relative to `scrolls_dir()`.
+fn resolve_scroll_path(name: &str) -> PathBuf {
+    if name.starts_with("~/") {
+        let home = dirs::home_dir().expect("Could not find home directory");
+        home.join(&name[2..])
+    } else {
+        scrolls_dir().join(name)
+    }
+}
+
 /// Read a scroll's content
 pub fn read_scroll(name: &str) -> Result<String> {
-    let path = scrolls_dir().join(name);
+    let path = resolve_scroll_path(name);
     fs::read_to_string(&path)
         .with_context(|| format!("Failed to read scroll: {}", path.display()))
 }
