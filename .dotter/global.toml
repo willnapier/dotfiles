@@ -252,6 +252,7 @@ depends = []
 "scripts/semantic-auto-update" = "~/.local/bin/semantic-auto-update"
 # Frecency daemon wrapper - cross-platform API key handling
 "scripts/frecency-daemon-wrapper" = "~/.local/bin/frecency-daemon-wrapper"
+"scripts/service-health-check" = "~/.local/bin/service-health-check"
 
 # Semantic search system - managed separately (has virtual environment)
 
