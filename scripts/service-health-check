@@ -69,10 +69,16 @@ def discover_macos_services [] {
     | each {|plist_path|
         let name = ($plist_path | path basename | str replace ".plist" "")
 
-        # Extract script path from ProgramArguments
+        # Extract script path from ProgramArguments or Program key
         let script = try {
             let raw = (do { ^/usr/libexec/PlistBuddy -c "Print :ProgramArguments:0" $plist_path } | complete)
-            if $raw.exit_code == 0 { $raw.stdout | str trim } else { "" }
+            if $raw.exit_code == 0 {
+                $raw.stdout | str trim
+            } else {
+                # Fallback: some plists use Program instead of ProgramArguments
+                let prog = (do { ^/usr/libexec/PlistBuddy -c "Print :Program" $plist_path } | complete)
+                if $prog.exit_code == 0 { $prog.stdout | str trim } else { "" }
+            }
         } catch { "" }
 
         # Look up in loaded list
