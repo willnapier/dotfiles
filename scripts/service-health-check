@@ -1,0 +1,432 @@
+#!/usr/bin/env nu
+
+# service-health-check — Comprehensive service integrity validator
+# Discovers all user services, validates scripts exist, checks running state,
+# and inspects lock files. Works cross-platform (macOS LaunchAgents / Linux systemd).
+
+def main [action?: string] {
+    match $action {
+        "full" | null => { full_check }
+        "quick" => { quick_check }
+        "missing" => { check_missing_scripts }
+        "locks" => { check_all_locks }
+        "fix" => { suggest_fixes }
+        _ => { show_help }
+    }
+}
+
+def show_help [] {
+    print "service-health-check — Comprehensive service integrity validator"
+    print ""
+    print "Commands:"
+    print "  full     - Full health check of all services (default)"
+    print "  quick    - Quick summary: counts only"
+    print "  missing  - List services whose scripts are missing"
+    print "  locks    - Check all watcher lock files"
+    print "  fix      - Suggest fixes for broken services"
+    print ""
+    print "Usage: service-health-check [command]"
+}
+
+# ── Platform detection ─────────────────────────────────────────
+
+def is_macos [] {
+    $nu.os-info.name == "macos"
+}
+
+# ── Service discovery ──────────────────────────────────────────
+
+# Returns table: [{name, script, plist_path}] on macOS
+# Returns table: [{name, script, unit_path}] on Linux
+def discover_services [] {
+    if (is_macos) {
+        discover_macos_services
+    } else {
+        discover_linux_services
+    }
+}
+
+def discover_macos_services [] {
+    let agents_dir = $"($env.HOME)/Library/LaunchAgents"
+
+    # Get all loaded services once (format: PID\tStatus\tLabel)
+    let loaded_list = try {
+        do { ^launchctl list } | complete | get stdout | lines
+        | where ($it | str contains "com.williamnapier.") or ($it | str contains "com.user.")
+        | each {|line|
+            let parts = ($line | split row "\t")
+            let pid = if ($parts | get 0) == "-" { null } else { try { $parts | get 0 | into int } catch { null } }
+            let exit_code = try { $parts | get 1 | into int } catch { null }
+            let label = ($parts | get 2 | str trim)
+            { label: $label, pid: $pid, last_exit: $exit_code }
+        }
+    } catch { [] }
+
+    let wn_plists = (glob $"($agents_dir)/com.williamnapier.*.plist")
+    let user_plists = (glob $"($agents_dir)/com.user.*.plist")
+    $wn_plists | append $user_plists
+    | where not ($it | str ends-with ".disabled")
+    | each {|plist_path|
+        let name = ($plist_path | path basename | str replace ".plist" "")
+
+        # Extract script path from ProgramArguments
+        let script = try {
+            let raw = (do { ^/usr/libexec/PlistBuddy -c "Print :ProgramArguments:0" $plist_path } | complete)
+            if $raw.exit_code == 0 { $raw.stdout | str trim } else { "" }
+        } catch { "" }
+
+        # Look up in loaded list
+        let svc_info = ($loaded_list | where label == $name | first | default { label: $name, pid: null, last_exit: null })
+        let is_loaded = ($loaded_list | where label == $name | length) > 0
+
+        {
+            name: $name,
+            script: $script,
+            plist_path: $plist_path,
+            loaded: $is_loaded,
+            pid: $svc_info.pid,
+            last_exit: $svc_info.last_exit,
+            script_exists: (if ($script | is-empty) { false } else { $script | path exists })
+        }
+    }
+}
+
+def discover_linux_services [] {
+    # List user systemd services
+    let units_dir = $"($env.HOME)/.config/systemd/user"
+
+    if not ($units_dir | path exists) {
+        print "No systemd user directory found"
+        return []
+    }
+
+    let services = (glob $"($units_dir)/*.service")
+    let timers = (glob $"($units_dir)/*.timer")
+    $services | append $timers
+    | each {|unit_path|
+        let name = ($unit_path | path basename | str replace ".service" "" | str replace ".timer" "")
+        let is_timer = ($unit_path | str ends-with ".timer")
+
+        # Extract ExecStart
+        let script = try {
+            let content = (open $unit_path)
+            let exec_line = ($content | lines | where ($it | str starts-with "ExecStart=") | first | default "")
+            $exec_line | str replace "ExecStart=" "" | split row " " | first | default ""
+        } catch { "" }
+
+        # Check if enabled and active
+        let unit_name = ($unit_path | path basename)
+        let status = try {
+            let raw = (do { systemctl --user is-active $unit_name } | complete)
+            $raw.stdout | str trim
+        } catch { "unknown" }
+
+        let enabled = try {
+            let raw = (do { systemctl --user is-enabled $unit_name } | complete)
+            ($raw.stdout | str trim) == "enabled"
+        } catch { false }
+
+        {
+            name: $name,
+            script: $script,
+            unit_path: $unit_path,
+            is_timer: $is_timer,
+            loaded: $enabled,
+            pid: (if $status == "active" { 1 } else { null }),
+            last_exit: (if $status == "active" { 0 } else if $status == "inactive" { null } else { 1 }),
+            script_exists: (if ($script | is-empty) { true } else { $script | path exists }),
+            status: $status
+        }
+    }
+}
+
+# ── Known lock files ───────────────────────────────────────────
+
+def known_lock_files [] {
+    [
+        { name: "git-auto-pull-watcher", path: "/tmp/git-auto-pull-watcher.lock" }
+        { name: "git-auto-push-watcher", path: "/tmp/git-auto-push-watcher.lock" }
+        { name: "git-auto-push-watcher-macos", path: "/tmp/git-auto-push-watcher-macos.lock" }
+        { name: "assistants-auto-push", path: "/tmp/assistants-auto-push.lock" }
+        { name: "dotter-sync-watcher", path: "/tmp/dotter-sync-watcher.lock" }
+        { name: "dotter-realtime-watcher", path: "/tmp/dotter-realtime-watcher.lock" }
+        { name: "dotter-drift-watcher", path: "/tmp/dotter-drift-watcher.lock" }
+        { name: "citation-watcher", path: "/tmp/citation-watcher.lock" }
+        { name: "activity-watcher", path: "/tmp/activity-watcher.lock" }
+        { name: "zellij-zombie-watcher", path: "/tmp/zellij-zombie-watcher.lock" }
+    ]
+}
+
+# ── Full health check ─────────────────────────────────────────
+
+def full_check [] {
+    let platform = if (is_macos) { "macOS" } else { "Linux" }
+    print $"service-health-check — ($platform)\n"
+
+    let services = discover_services
+
+    if ($services | is-empty) {
+        print "No services discovered."
+        return
+    }
+
+    mut healthy = 0
+    mut degraded = 0
+    mut broken = 0
+    mut missing_script = 0
+
+    # Categorise and display
+    print $"Found ($services | length) services\n"
+
+    # Group 1: Running services
+    let running = ($services | where pid != null)
+    if ($running | length) > 0 {
+        print $"── Running (($running | length)) ──"
+        for svc in $running {
+            let script_status = if $svc.script_exists { "" } else { " [SCRIPT MISSING]" }
+            print $"  ✅ ($svc.name)($script_status)"
+            if $svc.script_exists { $healthy += 1 } else { $degraded += 1; $missing_script += 1 }
+        }
+        print ""
+    }
+
+    # Group 2: Loaded but not running (interval services that ran and exited)
+    let loaded_ok = ($services | where loaded == true and pid == null and last_exit == 0)
+    if ($loaded_ok | length) > 0 {
+        print $"── Loaded, last exit OK (($loaded_ok | length)) ──"
+        for svc in $loaded_ok {
+            let script_status = if $svc.script_exists { "" } else { " [SCRIPT MISSING]" }
+            print $"  ✅ ($svc.name)($script_status)"
+            if $svc.script_exists { $healthy += 1 } else { $degraded += 1; $missing_script += 1 }
+        }
+        print ""
+    }
+
+    # Group 3: Loaded but last exit non-zero
+    let errored = ($services | where loaded == true and pid == null and last_exit != null and last_exit != 0)
+    if ($errored | length) > 0 {
+        print $"── Errored (($errored | length)) ──"
+        for svc in $errored {
+            let exit_desc = match $svc.last_exit {
+                1 => "error",
+                78 => "script not found",
+                127 => "command not found",
+                _ => $"exit ($svc.last_exit)"
+            }
+            let script_status = if $svc.script_exists { "" } else { " [SCRIPT MISSING]" }
+            print $"  ❌ ($svc.name) — ($exit_desc)($script_status)"
+            $broken += 1
+            if not $svc.script_exists { $missing_script += 1 }
+        }
+        print ""
+    }
+
+    # Group 4: Not loaded at all
+    let not_loaded = ($services | where loaded == false)
+    if ($not_loaded | length) > 0 {
+        print $"── Not loaded (($not_loaded | length)) ──"
+        for svc in $not_loaded {
+            let script_status = if $svc.script_exists { "" } else { " [SCRIPT MISSING]" }
+            print $"  ⚪ ($svc.name)($script_status)"
+            $degraded += 1
+            if not $svc.script_exists { $missing_script += 1 }
+        }
+        print ""
+    }
+
+    # Lock file check
+    print "── Lock files ──"
+    let locks = known_lock_files
+    mut stale_count = 0
+    for lock in $locks {
+        if ($lock.path | path exists) {
+            let age = ((date now) - (ls $lock.path | get 0.modified))
+            let age_min = ($age / 1min | math round)
+            if $age_min > 10 {
+                print $"  🔴 ($lock.name) — STALE [($age_min)m]"
+                $stale_count += 1
+            } else {
+                print $"  🟢 ($lock.name) — active [($age_min)m]"
+            }
+        }
+    }
+    if $stale_count == 0 {
+        let active_locks = ($locks | where ($it.path | path exists))
+        if ($active_locks | length) == 0 {
+            print "  No lock files present"
+        }
+    }
+
+    # Summary
+    print $"\n── Summary ──"
+    print $"  Healthy:        ($healthy)"
+    print $"  Degraded:       ($degraded)"
+    print $"  Broken:         ($broken)"
+    print $"  Missing scripts: ($missing_script)"
+    print $"  Stale locks:    ($stale_count)"
+
+    let total = $healthy + $degraded + $broken
+    if $broken == 0 and $missing_script == 0 and $stale_count == 0 {
+        print "\n🟢 All services healthy"
+    } else if $broken > 0 or $missing_script > 0 {
+        print "\n🔴 Issues require attention — run `service-health-check fix` for guidance"
+    } else {
+        print "\n🟡 Minor issues detected"
+    }
+}
+
+# ── Quick check ────────────────────────────────────────────────
+
+def quick_check [] {
+    let services = discover_services
+    let running = ($services | where pid != null | length)
+    let loaded_ok = ($services | where loaded == true and last_exit == 0 | length)
+    let errored = ($services | where loaded == true and last_exit != null and last_exit != 0 | length)
+    let not_loaded = ($services | where loaded == false | length)
+    let missing = ($services | where script_exists == false | length)
+
+    let locks = known_lock_files
+    let stale = ($locks | where ($it.path | path exists) | where {|lock|
+        let age = ((date now) - (ls $lock.path | get 0.modified))
+        ($age / 1min) > 10
+    } | length)
+
+    print $"Services: ($services | length) total | ($running) running | ($loaded_ok) ok | ($errored) errored | ($not_loaded) unloaded"
+    print $"Scripts:  ($missing) missing"
+    print $"Locks:    ($stale) stale"
+
+    if $errored == 0 and $missing == 0 and $stale == 0 {
+        print "🟢 Healthy"
+    } else {
+        print "🔴 Issues detected"
+    }
+}
+
+# ── Missing scripts ────────────────────────────────────────────
+
+def check_missing_scripts [] {
+    let services = discover_services | where script_exists == false
+
+    if ($services | is-empty) {
+        print "✅ All service scripts exist"
+        return
+    }
+
+    print $"Found ($services | length) services with missing scripts:\n"
+    for svc in $services {
+        print $"  ❌ ($svc.name)"
+        print $"     Expected: ($svc.script)"
+        if not ($svc.script | is-empty) {
+            # Try to find a close match
+            let basename = ($svc.script | path basename)
+            let candidates = try {
+                let c1 = (glob $"($env.HOME)/dotfiles/scripts/($basename)*")
+                let c2 = (glob $"($env.HOME)/.local/bin/($basename)*")
+                $c1 | append $c2
+            } catch { [] }
+            if ($candidates | length) > 0 {
+                print $"     Candidates: ($candidates | str join ', ')"
+            }
+            # Check for -renu variant
+            let renu_path = $"($svc.script)-renu"
+            if ($renu_path | path exists) {
+                print $"     Fix: symlink ($svc.script) → ($renu_path)"
+            }
+        }
+        print ""
+    }
+}
+
+# ── Lock file check ────────────────────────────────────────────
+
+def check_all_locks [] {
+    print "Lock file status:\n"
+    let locks = known_lock_files
+
+    for lock in $locks {
+        if ($lock.path | path exists) {
+            let age = ((date now) - (ls $lock.path | get 0.modified))
+            let age_min = ($age / 1min | math round)
+            let status = if $age_min > 10 { "STALE" } else { "active" }
+            let icon = if $age_min > 10 { "🔴" } else { "🟢" }
+            print $"  ($icon) ($lock.name) — ($status) [($age_min)m]"
+        } else {
+            print $"  ⚪ ($lock.name) — no lock"
+        }
+    }
+}
+
+# ── Fix suggestions ────────────────────────────────────────────
+
+def suggest_fixes [] {
+    let services = discover_services
+    let missing = ($services | where script_exists == false)
+    let errored = ($services | where loaded == true and last_exit != null and last_exit != 0)
+
+    if ($missing | is-empty) and ($errored | is-empty) {
+        print "✅ No fixes needed"
+        return
+    }
+
+    mut fix_num = 1
+
+    if ($missing | length) > 0 {
+        print "Missing scripts:\n"
+        for svc in $missing {
+            let basename = ($svc.script | path basename)
+            let renu_path = $"($svc.script)-renu"
+            if ($renu_path | path exists) {
+                print $"  ($fix_num). ($svc.name): create symlink"
+                print $"     ln -s ($renu_path) ($svc.script)"
+            } else {
+                print $"  ($fix_num). ($svc.name): script not found at ($svc.script)"
+                print $"     Either create the script or disable the service:"
+                if (is_macos) {
+                    print $"     launchctl unload ($svc.plist_path)"
+                } else {
+                    print $"     systemctl --user disable ($svc.name).service"
+                }
+            }
+            $fix_num += 1
+            print ""
+        }
+    }
+
+    if ($errored | length) > 0 {
+        print "Errored services:\n"
+        for svc in $errored {
+            let exit_desc = match $svc.last_exit {
+                1 => "script returned error",
+                78 => "script not found by launchd",
+                127 => "command not found in PATH",
+                _ => $"exit code ($svc.last_exit)"
+            }
+            print $"  ($fix_num). ($svc.name): ($exit_desc)"
+            if $svc.last_exit == 78 or $svc.last_exit == 127 {
+                print "     Likely cause: script missing or PATH not set in plist"
+                print "     Check ProgramArguments in the plist uses absolute paths"
+            }
+            if (is_macos) {
+                print $"     Restart: launchctl unload ($svc.plist_path) && launchctl load ($svc.plist_path)"
+            }
+            $fix_num += 1
+            print ""
+        }
+    }
+
+    # Stale locks
+    let locks = known_lock_files
+    let stale_locks = ($locks | where ($it.path | path exists) | where {|lock|
+        let age = ((date now) - (ls $lock.path | get 0.modified))
+        ($age / 1min) > 10
+    })
+
+    if ($stale_locks | length) > 0 {
+        print "Stale lock files:\n"
+        for lock in $stale_locks {
+            print $"  ($fix_num). rm -f ($lock.path)"
+            $fix_num += 1
+        }
+        print ""
+    }
+}

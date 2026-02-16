@@ -19,21 +19,18 @@ def main [] {
     # Ensure log directory exists
     mkdir ($log_file | path dirname)
     
-    # Check for existing instance
+    # Smart lock file handling with stale lock detection
     if ($lock_file | path exists) {
-        let existing_pid = (try { open $lock_file | str trim } catch { "" })
-        if $existing_pid != "" {
-            try {
-                # Check if process is still running (cross-platform)
-                let running = ((ps | where pid == ($existing_pid | into int) | length) > 0)
-                if $running {
-                    print "❌ Real-time watcher already running (PID: $existing_pid)"
-                    exit 1
-                }
-            }
+        let lock_age = ((date now) - (ls $lock_file | get 0.modified))
+        let age_minutes = ($lock_age / 1min)
+
+        if $age_minutes > 10 {
+            log_message $log_file $"⚠️  Cleaning up stale lock file (age: ($age_minutes | math round)min)"
+            rm -f $lock_file
+        } else {
+            log_message $log_file "🔒 Real-time watcher already running (recent lock file)"
+            exit 1
         }
-        log_message $log_file "⚠️  Removing stale lock file"
-        rm $lock_file
     }
     
     # Create lock file with timestamp (simpler than getting PID)

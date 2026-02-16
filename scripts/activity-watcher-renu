@@ -35,15 +35,18 @@ def main [
     # Ensure log directory exists
     mkdir $log_dir
     
-    # Check for existing instance
+    # Smart lock file handling with stale lock detection
     if ($lock_file | path exists) {
-        let existing_content = (try { open $lock_file | str trim } catch { "" })
-        if $existing_content != "" {
-            log_message $log_file $"🔒 Unified activity watcher already running: ($existing_content)"
+        let lock_age = ((date now) - (ls $lock_file | get 0.modified))
+        let age_minutes = ($lock_age / 1min)
+
+        if $age_minutes > 10 {
+            log_message $log_file $"⚠️  Cleaning up stale lock file (age: ($age_minutes | math round)min)"
+            rm -f $lock_file
+        } else {
+            log_message $log_file "🔒 Unified activity watcher already running (recent lock file)"
             return
         }
-        log_message $log_file "⚠️  Removing stale lock file"
-        rm $lock_file
     }
     
     # Create lock file with timestamp
