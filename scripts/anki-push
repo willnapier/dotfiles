@@ -1,0 +1,66 @@
+#!/usr/bin/env nu
+# anki-push — wrapper that ensures AnkiConnect is reachable before running anki-cards
+# On Mac: AnkiConnect is local, just pass through
+# On Linux (nimbini): SSH-tunnels port 8765 to Mac where Anki runs
+
+def main [...args: string] {
+    let is_mac = ((uname | get kernel-name) == "Darwin")
+    let tunnel_pid_file = "/tmp/anki-tunnel.pid"
+
+    if not $is_mac {
+        # Check if port 8765 is already reachable
+        let reachable = (do { http get "http://localhost:8765" } | complete).exit_code == 0
+
+        if not $reachable {
+            print "Setting up SSH tunnel to Mac for AnkiConnect..."
+
+            # Check for existing tunnel
+            if ($tunnel_pid_file | path exists) {
+                let old_pid = (open $tunnel_pid_file | str trim)
+                let still_running = (do { ps | where pid == ($old_pid | into int) } | complete).exit_code == 0
+                if not $still_running {
+                    rm -f $tunnel_pid_file
+                }
+            }
+
+            if not ($tunnel_pid_file | path exists) {
+                # Establish tunnel in background
+                let result = (do {
+                    ^ssh -f -N -L 8765:localhost:8765 williamnapier@williams-macbook-air
+                } | complete)
+
+                if $result.exit_code != 0 {
+                    print $"Failed to establish SSH tunnel: ($result.stderr)"
+                    print "Is the Mac reachable via Tailscale?"
+                    exit 1
+                }
+
+                # Find and save the tunnel PID
+                let tunnel_pids = (ps | where name =~ "ssh" | where name =~ "8765" | get pid)
+                if not ($tunnel_pids | is-empty) {
+                    $tunnel_pids | first | into string | save --force $tunnel_pid_file
+                }
+
+                # Brief wait for tunnel to establish
+                sleep 500ms
+
+                # Verify tunnel works
+                let check = (do { http get "http://localhost:8765" } | complete)
+                if $check.exit_code != 0 {
+                    print "Tunnel established but AnkiConnect not responding."
+                    print "Is Anki running on the Mac with AnkiConnect plugin?"
+                    exit 1
+                }
+
+                print "Tunnel up. AnkiConnect reachable."
+            }
+        }
+    }
+
+    # Pass through to anki-cards
+    if ($args | is-empty) {
+        ^anki-cards
+    } else {
+        ^anki-cards ...$args
+    }
+}

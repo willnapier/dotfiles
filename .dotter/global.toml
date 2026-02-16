@@ -5,6 +5,7 @@
 depends = []
 
 [shared.files]
+"scripts/anki-push" = "~/.local/bin/anki-push"
 "scripts/assistants-docs-auto-push" = "~/.local/bin/assistants-docs-auto-push"
 "scripts/bulk-dedupe-backlinks" = "~/.local/bin/bulk-dedupe-backlinks"
 "scripts/claude-voice" = "~/.local/bin/claude-voice"
