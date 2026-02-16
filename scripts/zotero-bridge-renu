@@ -14,7 +14,7 @@ export def main [
     let src_path = ($source | path expand)
     let dest_path = ($destination | path expand) 
     
-    print $"🌉 Zotero Import Bridge (Native Nushell Re-nu Version)"
+    print "🌉 Zotero Import Bridge — Native Nushell Re-nu Version"
     print $"📂 Source: ($src_path)"
     print $"📁 Destination: ($dest_path)"
     print $"⏱️  Check interval: ($interval)s"
@@ -25,7 +25,7 @@ export def main [
     ensure_directory_exists $src_path "source"
     ensure_directory_exists $dest_path "destination"
     
-    print $"🔄 Starting import bridge... (Press Ctrl+C to stop)"
+    print "🔄 Starting import bridge... Press Ctrl+C to stop"
     print ""
     
     # Main processing loop

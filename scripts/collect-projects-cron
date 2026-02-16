@@ -5,12 +5,12 @@
 let log_file = $"($env.HOME)/.local/share/collect-entries-cron.log"
 let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
 
-print $"=== ($timestamp) ===" | save --append $log_file
+$"=== ($timestamp) ===\n" | save --append $log_file
 
 try {
     collect-entries --verbose | save --append $log_file
-} catch {
-    $"ERROR: ($in)\n" | save --append $log_file
+} catch {|err|
+    $"ERROR: ($err.msg)\n" | save --append $log_file
 }
 
-print "" | save --append $log_file
+"\n" | save --append $log_file

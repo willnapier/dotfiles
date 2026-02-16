@@ -4,18 +4,10 @@
 
 set -e
 
-# Detect platform and extract OPENAI_API_KEY
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    # macOS: source shell profiles
-    source ~/.profile 2>/dev/null || true
-    source ~/.zshrc 2>/dev/null || true
-else
-    # Linux: extract from Nushell env-secret.nu
-    ENV_FILE="$HOME/.config/nushell/env-secret.nu"
-    if [[ -f "$ENV_FILE" ]]; then
-        # Parse Nushell format: $env.OPENAI_API_KEY = "value"
-        export OPENAI_API_KEY=$(grep 'OPENAI_API_KEY' "$ENV_FILE" | sed 's/.*= *"//' | sed 's/"$//')
-    fi
+# Extract OPENAI_API_KEY from Nushell env-secret (works on both platforms)
+ENV_FILE="$HOME/.config/nushell/env-secret.nu"
+if [[ -f "$ENV_FILE" ]]; then
+    export OPENAI_API_KEY=$(grep 'OPENAI_API_KEY' "$ENV_FILE" | sed 's/.*= *"//' | sed 's/"$//')
 fi
 
 # Verify API key is set

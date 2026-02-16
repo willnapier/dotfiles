@@ -113,11 +113,13 @@ def discover_linux_services [] {
         let name = ($unit_path | path basename | str replace ".service" "" | str replace ".timer" "")
         let is_timer = ($unit_path | str ends-with ".timer")
 
-        # Extract ExecStart
+        # Extract ExecStart and expand systemd specifiers
         let script = try {
             let content = (open $unit_path)
             let exec_line = ($content | lines | where ($it | str starts-with "ExecStart=") | first | default "")
-            $exec_line | str replace "ExecStart=" "" | split row " " | first | default ""
+            let raw_path = ($exec_line | str replace "ExecStart=" "" | split row " " | first | default "")
+            # Expand %h (home directory) and %H (hostname) systemd specifiers
+            $raw_path | str replace --all "%h" $env.HOME | str replace --all "%H" (hostname | str trim)
         } catch { "" }
 
         # Check if enabled and active

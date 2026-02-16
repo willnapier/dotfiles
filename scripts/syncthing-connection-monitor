@@ -38,11 +38,9 @@ def main [] {
 # Get Syncthing API key from config
 def get_syncthing_api_key [] {
     try {
-        let config_path = $"($env.HOME)/Library/Application Support/Syncthing/config.xml"
-        if not ($config_path | path exists) {
-            # Linux path
-            $config_path = $"($env.HOME)/.config/syncthing/config.xml"
-        }
+        let mac_path = $"($env.HOME)/Library/Application Support/Syncthing/config.xml"
+        let linux_path = $"($env.HOME)/.config/syncthing/config.xml"
+        let config_path = if ($mac_path | path exists) { $mac_path } else { $linux_path }
 
         open $config_path |
         lines |
