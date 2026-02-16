@@ -46,7 +46,7 @@ def main [] {
 
     # Native Nushell watch with structured data
     try {
-        watch $assistants_dir --glob "**/*.md" --debounce 1sec --recursive=true {|operation, path, new_path|
+        watch $assistants_dir --glob "**/*.md" --debounce-ms 1000 {|operation, path, new_path|
             handle_docs_change $operation $path $new_path $assistants_dir $log_file
         }
     } catch {|error|

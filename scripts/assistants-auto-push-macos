@@ -65,11 +65,7 @@ def main [] {
                 if $add_result.exit_code == 0 {
                     # Note: Using string concat to avoid Nushell interpreting parens as commands
                     let platform_tag = "(Mac)"
-                    let commit_msg = $"Auto-sync: Documentation updates ($platform_tag)
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
-Co-Authored-By: Claude <noreply@anthropic.com>"
+                    let commit_msg = [$"Auto-sync: Documentation updates ($platform_tag)" "" "Co-Authored-By: Claude <noreply@anthropic.com>"] | str join (char newline)
 
                     let commit_result = (do { git commit -m $commit_msg } | complete)
                     if $commit_result.exit_code == 0 {

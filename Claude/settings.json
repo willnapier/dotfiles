@@ -26,9 +26,9 @@
   },
   "permissions": {
     "deny": [
-      "Read(*-private.md)",
-      "Edit(*-private.md)",
-      "Write(*-private.md)"
+      "Read(**/private/**)",
+      "Edit(**/private/**)",
+      "Write(**/private/**)"
     ]
   },
   "enabledPlugins": {

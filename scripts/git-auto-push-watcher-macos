@@ -67,11 +67,7 @@ def main [] {
                 if $add_result.exit_code == 0 {
                     # Note: Using string concat to avoid Nushell interpreting parens as commands
                     let platform_tag = "(macOS)"
-                    let commit_msg = $"Auto-commit: Local changes from ($env.USER)@($hostname) ($platform_tag)
-
-🤖 Generated with [Claude Code](https://claude.ai/code)
-
-Co-Authored-By: Claude <noreply@anthropic.com>"
+                    let commit_msg = [$"Auto-commit: Local changes from ($env.USER)@($hostname) ($platform_tag)" "" "Co-Authored-By: Claude <noreply@anthropic.com>"] | str join (char newline)
 
                     let commit_result = (do { git commit -m $commit_msg } | complete)
                     if $commit_result.exit_code == 0 {

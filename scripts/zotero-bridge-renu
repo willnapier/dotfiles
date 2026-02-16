@@ -38,7 +38,7 @@ export def main [
         )
         
         if ($pdf_files | length) > 0 {
-            print $"📄 Found ($pdf_files | length) PDF(s) to process"
+            print $"📄 Found ($pdf_files | length) PDFs to process"
             
             for file in $pdf_files {
                 process_pdf_transfer $file $dest_path
@@ -47,7 +47,7 @@ export def main [
             print ""
         }
         
-        sleep ($interval | into string | $in + "sec")
+        sleep ($interval * 1sec)
     }
 }
 
@@ -74,8 +74,8 @@ def process_pdf_transfer [source_file: string, dest_dir: string] {
         print $"⚠️  File already exists in destination: ($filename)"
         
         # Compare file sizes to decide action
-        let src_size = (stat $source_file).st_size
-        let dest_size = (stat $dest_file).st_size
+        let src_size = (ls $source_file | first | get size)
+        let dest_size = (ls $dest_file | first | get size)
         
         if $src_size == $dest_size {
             print $"🗑️  Removing duplicate from source: ($filename)"
@@ -179,7 +179,7 @@ export def "main sync-now" [] {
     )
     
     if ($pdf_files | length) > 0 {
-        print $"📄 Found ($pdf_files | length) PDF(s) to transfer"
+        print $"📄 Found ($pdf_files | length) PDFs to transfer"
         
         for file in $pdf_files {
             process_pdf_transfer $file $dest_path

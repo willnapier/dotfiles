@@ -42,10 +42,11 @@ def get_syncthing_api_key [] {
         let linux_path = $"($env.HOME)/.config/syncthing/config.xml"
         let config_path = if ($mac_path | path exists) { $mac_path } else { $linux_path }
 
-        open $config_path |
+        open --raw $config_path |
         lines |
-        find "apikey" |
+        where {|l| $l | str contains "apikey"} |
         first |
+        str trim |
         parse "<apikey>{key}</apikey>" |
         get key.0
     } catch {
@@ -87,7 +88,7 @@ def restart_syncthing [api_key: string] {
     log_info "🔄 Restarting Syncthing to force device rediscovery..."
 
     try {
-        http post $"http://localhost:8384/rest/system/restart" --headers [X-API-Key $api_key]
+        http post $"http://localhost:8384/rest/system/restart" "" --headers [X-API-Key $api_key]
         log_info "✅ Restart signal sent successfully"
     } catch {
         log_error "❌ Failed to restart Syncthing via API"
