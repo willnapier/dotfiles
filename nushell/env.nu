@@ -129,3 +129,6 @@ $env.THEME_PREFERENCE = "dark"
 if ($"($nu.default-config-dir)/env-secret.nu" | path exists) {
     source $"($nu.default-config-dir)/env-secret.nu"
 }
+
+# Claude Code OAuth token for headless/SSH sessions
+$env.CLAUDE_CODE_OAUTH_TOKEN = (open ~/.claude/auth-token.txt | str trim)
