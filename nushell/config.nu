@@ -4250,6 +4250,51 @@ def claude [...args] {
     }
 }
 
+
+
+# Codex wrapper - auto-captures to Continuum database
+def codex [...args] {
+    let continuum_codex = ($env.HOME | path join ".local/bin/continuum-codex")
+
+    if ($continuum_codex | path exists) {
+        # Run with continuum-codex wrapper (auto-persists to continuum logs)
+        ^$continuum_codex ...$args
+    } else {
+        # Surface build helper if available
+        let continuum_ensure = ($env.HOME | path join ".local/bin/continuum-ensure")
+        if ($continuum_ensure | path exists) {
+            print "Warning: continuum-codex not found. Run: continuum-ensure --build"
+            print ""
+        }
+
+        # Fallback to original codex if wrapper not available
+        let codex_entry = (
+            which --all codex
+            | where type == "external"
+            | get 0?
+        )
+
+        let codex_path = if $codex_entry != null and ($codex_entry.path | is-not-empty) {
+            $codex_entry.path
+        } else {
+            let fallback_paths = [
+                "/usr/bin/codex"
+                "/usr/local/bin/codex"
+                "/opt/homebrew/bin/codex"
+            ]
+            ($fallback_paths | where {|path| $path | path exists} | first)
+        }
+
+        if ($codex_path | is-empty) {
+            print "Codex CLI not found. Install @openai/codex or set up continuum-codex."
+            return
+        }
+
+        print "(Warning: Using codex directly - not capturing to Continuum database)"
+        ^$codex_path ...$args
+    }
+}
+
 # Goose will use the ANTHROPIC_API_KEY from env-secret.nu normally
 
 # Activity Discovery - Find interactions and activities by semantic tags
