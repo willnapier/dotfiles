@@ -192,6 +192,7 @@ depends = []
 "scripts/mail-sync-trigger" = "~/.local/bin/mail-sync-trigger"
 # Re-nu conversion scripts - Native Nushell watchers with no external dependencies
 "scripts/claude-docs-watcher-renu" = "~/.local/bin/claude-docs-watcher-renu"
+"scripts/claude-docs-watcher" = "~/.local/bin/claude-docs-watcher"
 "scripts/dotter-realtime-watcher-renu" = "~/.local/bin/dotter-realtime-watcher-renu"
 "scripts/helix-activity-watcher-renu" = "~/.local/bin/helix-activity-watcher-renu"
 "scripts/zellij-zombie-watcher-renu" = "~/.local/bin/zellij-zombie-watcher-renu"
@@ -253,6 +254,8 @@ depends = []
 # Frecency daemon wrapper - cross-platform API key handling
 "scripts/frecency-daemon-wrapper" = "~/.local/bin/frecency-daemon-wrapper"
 "scripts/service-health-check" = "~/.local/bin/service-health-check"
+"scripts/forge-metadata-backup" = "~/.local/bin/forge-metadata-backup"
+"scripts/forge-metadata-backup-monthly" = "~/.local/bin/forge-metadata-backup-monthly"
 
 # Semantic search system - managed separately (has virtual environment)
 
@@ -326,8 +329,7 @@ depends = ["shared"]
 "scripts/sync-service-monitor" = "~/.local/bin/sync-service-monitor"
 # "scripts/setup-forge-link-service" = "~/.local/bin/setup-forge-link-service"  # Missing file - temporarily disabled
 "scripts/backup-to-dropbox" = "~/.local/bin/backup-to-dropbox"
-"scripts/forge-metadata-backup" = "~/.local/bin/forge-metadata-backup"
-"scripts/forge-metadata-backup-monthly" = "~/.local/bin/forge-metadata-backup-monthly"
+# forge-metadata-backup scripts moved to [shared.files]
 "scripts/clinical-attendance" = "~/.local/bin/clinical-attendance"
 "scripts/clinic-auth" = "~/.local/bin/clinic-auth"
 "systemd/git-auto-push-watcher.service" = "~/.config/systemd/user/git-auto-push-watcher.service"
