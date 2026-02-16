@@ -2,86 +2,104 @@
 
 # Git Auto-Pull Watcher - Automatically pulls git changes for seamless syncing
 # Checks for remote changes every 2 minutes and pulls automatically
+# Handles both ~/dotfiles (with dotter deploy) and ~/Assistants
+
+def pull-repo [repo_dir: string, label: string, log_file: string, deploy: bool] {
+    try {
+        cd $repo_dir
+
+        # Fetch remote changes
+        let fetch_result = (do { git fetch origin } | complete)
+
+        if $fetch_result.exit_code == 0 {
+            let behind_result = (do { git rev-list HEAD..origin/main --count } | complete)
+
+            if $behind_result.exit_code == 0 and ($behind_result.stdout | str trim | into int) > 0 {
+                let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
+                let commits_behind = ($behind_result.stdout | str trim)
+
+                print $"📥 [($label)] Remote changes detected: ($commits_behind) commits behind"
+                $"[($timestamp)] 📥 [($label)] Remote changes detected: ($commits_behind) commits behind" | save --append $log_file
+
+                # Pull the changes
+                let pull_result = (do { git pull origin main } | complete)
+
+                if $pull_result.exit_code == 0 {
+                    print $"✅ [($label)] Successfully pulled changes"
+                    $"[($timestamp)] ✅ [($label)] Successfully pulled changes" | save --append $log_file
+
+                    # Run dotter deploy if this is dotfiles
+                    if $deploy {
+                        let deploy_result = (do { dotter deploy } | complete)
+
+                        if $deploy_result.exit_code == 0 {
+                            print $"✅ [($label)] Dotter deploy successful - configs updated"
+                            $"[($timestamp)] ✅ [($label)] Dotter deploy successful - configs updated" | save --append $log_file
+                        } else {
+                            print $"❌ [($label)] Dotter deploy failed: ($deploy_result.stderr)"
+                            $"[($timestamp)] ❌ [($label)] Dotter deploy failed: ($deploy_result.stderr)" | save --append $log_file
+                        }
+                    }
+                } else {
+                    print $"❌ [($label)] Git pull failed: ($pull_result.stderr)"
+                    $"[($timestamp)] ❌ [($label)] Git pull failed: ($pull_result.stderr)" | save --append $log_file
+                }
+            }
+        } else {
+            let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
+            print $"❌ [($label)] Git fetch failed: ($fetch_result.stderr)"
+            $"[($timestamp)] ❌ [($label)] Git fetch failed: ($fetch_result.stderr)" | save --append $log_file
+        }
+    } catch {|error|
+        let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
+        print $"❌ [($label)] Error: ($error.msg)"
+        $"[($timestamp)] ❌ [($label)] Error: ($error.msg)" | save --append $log_file
+    }
+}
 
 def main [] {
     let dotfiles_dir = $"($env.HOME)/dotfiles"
+    let assistants_dir = $"($env.HOME)/Assistants"
     let log_file = $"($env.HOME)/.local/share/git-auto-pull-watcher.log"
     let lock_file = "/tmp/git-auto-pull-watcher.lock"
 
     # Ensure log directory exists
     mkdir ($log_file | path dirname)
 
-    # Check for existing instance
+    # Smart lock file handling with stale lock detection
     if ($lock_file | path exists) {
-        print "❌ Git auto-pull watcher already running"
-        exit 1
+        let lock_age = ((date now) - (ls $lock_file | get 0.modified))
+        let age_minutes = ($lock_age / 1min)
+
+        if $age_minutes > 10 {
+            let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
+            let cleanup_msg = $"[($timestamp)] Cleaning up stale lock file"
+            $cleanup_msg | save --append $log_file
+            print $cleanup_msg
+            rm -f $lock_file
+        } else {
+            print "❌ Git auto-pull watcher already running (recent lock file)"
+            exit 1
+        }
     }
 
     # Create lock file
-    "running" | save $lock_file
+    "running" | save --force $lock_file
 
     print "🚀 Starting Git auto-pull watcher"
-    print $"📁 Monitoring: ($dotfiles_dir)"
+    print $"📁 Monitoring: ($dotfiles_dir), ($assistants_dir)"
     print $"📝 Logging to: ($log_file)"
 
     # Initial log entry
     let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
-    $"[($timestamp)] 🚀 Git auto-pull watcher started" | save --append $log_file
+    $"[($timestamp)] 🚀 Git auto-pull watcher started (dotfiles + Assistants)" | save --append $log_file
 
     # Main loop - check every 2 minutes
     loop {
         sleep 2min
 
-        try {
-            cd $dotfiles_dir
-
-            # Fetch remote changes
-            let fetch_result = (do { git fetch origin } | complete)
-
-            if $fetch_result.exit_code == 0 {
-                # Check if there are new commits
-                let status_result = (do { git status -uno --porcelain } | complete)
-                let behind_result = (do { git rev-list HEAD..origin/main --count } | complete)
-
-                if $behind_result.exit_code == 0 and ($behind_result.stdout | str trim | into int) > 0 {
-                    let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
-                    let commits_behind = ($behind_result.stdout | str trim)
-
-                    print $"📥 Remote changes detected: ($commits_behind) commits behind"
-                    $"[($timestamp)] 📥 Remote changes detected: ($commits_behind) commits behind" | save --append $log_file
-
-                    # Pull the changes
-                    let pull_result = (do { git pull origin main } | complete)
-
-                    if $pull_result.exit_code == 0 {
-                        print "✅ Successfully pulled changes"
-                        $"[($timestamp)] ✅ Successfully pulled changes" | save --append $log_file
-
-                        # Run dotter deploy to apply changes
-                        let deploy_result = (do { dotter deploy } | complete)
-
-                        if $deploy_result.exit_code == 0 {
-                            print "✅ Dotter deploy successful - configs updated"
-                            $"[($timestamp)] ✅ Dotter deploy successful - configs updated" | save --append $log_file
-                        } else {
-                            print $"❌ Dotter deploy failed: ($deploy_result.stderr)"
-                            $"[($timestamp)] ❌ Dotter deploy failed: ($deploy_result.stderr)" | save --append $log_file
-                        }
-                    } else {
-                        print $"❌ Git pull failed: ($pull_result.stderr)"
-                        $"[($timestamp)] ❌ Git pull failed: ($pull_result.stderr)" | save --append $log_file
-                    }
-                }
-            } else {
-                let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
-                print $"❌ Git fetch failed: ($fetch_result.stderr)"
-                $"[($timestamp)] ❌ Git fetch failed: ($fetch_result.stderr)" | save --append $log_file
-            }
-        } catch {|error|
-            let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
-            print $"❌ Error in git auto-pull: ($error.msg)"
-            $"[($timestamp)] ❌ Error in git auto-pull: ($error.msg)" | save --append $log_file
-        }
+        pull-repo $dotfiles_dir "dotfiles" $log_file true
+        pull-repo $assistants_dir "Assistants" $log_file false
     }
 
     # Cleanup on exit
