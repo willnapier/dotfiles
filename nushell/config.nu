@@ -4253,12 +4253,79 @@ def claude [...args] {
 
 
 # Codex wrapper - auto-captures to Continuum database
+# Codex wrapper - auto-captures to Continuum database
 def codex [...args] {
+    # Persona cues -> brief names (mirrors Claude skills)
+    let persona_aliases = {
+        "senior-dev": "claude-code",
+        "geoff": "geoff",
+        "diana": "diana",
+        "seneca": "seneca",
+    }
+
+    mut persona = null
+    mut stripped_args = $args
+
+    # Normalize helper
+    def _clean-key [s: string] {
+        $s | str downcase | str trim | str trim -c "/"
+    }
+
+    let lower_tokens = ($args | each {|x| $x | str downcase })
+
+    # /alias or alias as first token
+    if ($args | length) > 0 and $persona == null {
+        let first = ($args | get 0 | _clean-key)
+        if ($persona_aliases | columns | any {|c| $c == $first }) {
+            persona = ($persona_aliases | get $first)
+            stripped_args = ($args | skip 1)
+        }
+    }
+
+    # hi/hello alias
+    if $persona == null and ($lower_tokens | length) >= 2 {
+        let maybe_hi = ($lower_tokens | get 0)
+        if $maybe_hi in ["hi", "hello", "hey"] {
+            let key = ($args | get 1 | _clean-key)
+            if ($persona_aliases | columns | any {|c| $c == $key }) {
+                persona = ($persona_aliases | get $key)
+                stripped_args = ($args | skip 2)
+            }
+        }
+    }
+
+    # act as / please act as alias
+    if $persona == null and ($lower_tokens | length) >= 3 {
+        let first = ($lower_tokens | get 0)
+        let second = ($lower_tokens | get 1)
+        if ($first == "act" and $second == "as") {
+            let key = ($args | get 2 | _clean-key)
+            if ($persona_aliases | columns | any {|c| $c == $key }) {
+                persona = ($persona_aliases | get $key)
+                stripped_args = ($args | skip 3)
+            }
+        } else if ($first == "please" and $second == "act") and ($lower_tokens | length) >= 4 {
+            let third = ($lower_tokens | get 2)
+            if $third == "as" {
+                let key = ($args | get 3 | _clean-key)
+                if ($persona_aliases | columns | any {|c| $c == $key }) {
+                    persona = ($persona_aliases | get $key)
+                    stripped_args = ($args | skip 4)
+                }
+            }
+        }
+    }
+
+    if $persona != null {
+        # Emit the matching brief before launching Codex
+        ai-brief $persona
+    }
+
     let continuum_codex = ($env.HOME | path join ".local/bin/continuum-codex")
 
     if ($continuum_codex | path exists) {
         # Run with continuum-codex wrapper (auto-persists to continuum logs)
-        ^$continuum_codex ...$args
+        ^$continuum_codex ...$stripped_args
     } else {
         # Surface build helper if available
         let continuum_ensure = ($env.HOME | path join ".local/bin/continuum-ensure")
@@ -4291,7 +4358,7 @@ def codex [...args] {
         }
 
         print "(Warning: Using codex directly - not capturing to Continuum database)"
-        ^$codex_path ...$args
+        ^$codex_path ...$stripped_args
     }
 }
 
