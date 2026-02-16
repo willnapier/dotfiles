@@ -92,7 +92,7 @@ def main [] {
 
     # Initial log entry
     let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
-    $"[($timestamp)] 🚀 Git auto-pull watcher started (dotfiles + Assistants)" | save --append $log_file
+    $"[($timestamp)] 🚀 Git auto-pull watcher started - dotfiles + Assistants" | save --append $log_file
 
     # Main loop - check every 2 minutes
     loop {
