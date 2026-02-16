@@ -4,15 +4,14 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/nu /home/%u/.local/bin/zotero-pdf-watcher-renu
+ExecStart=%h/.local/bin/zotero-pdf-watcher-renu
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
 
-# Environment for Nushell
-Environment="PATH=/usr/local/bin:/usr/bin:/bin"
-Environment="HOME=/home/%u"
+Environment="PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="HOME=%h"
 
 [Install]
 WantedBy=default.target

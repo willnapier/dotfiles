@@ -5,7 +5,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=%h
-ExecStart=/usr/bin/nu -c "link-service start"
+ExecStart=%h/.cargo/bin/nu -c "link-service start"
 Restart=on-failure
 RestartSec=30
 Nice=10
