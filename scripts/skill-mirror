@@ -1,0 +1,61 @@
+#!/usr/bin/env nu
+# skill-mirror — sync ~/.claude/skills/ → ~/Assistants/claude-skills/
+# Run after any skill file edit to keep the Codex-readable mirror in sync.
+# The ~/.claude/skills/ copy is authoritative (CC reads from there).
+# The ~/Assistants/claude-skills/ copy is derived (Codex reads from there, syncs via Syncthing).
+
+def main [] {
+    let source = ($env.HOME | path join ".claude" "skills")
+    let target = ($env.HOME | path join "Assistants" "claude-skills")
+
+    if not ($source | path exists) {
+        print "No skills directory at ~/.claude/skills/"
+        exit 1
+    }
+
+    # Ensure target exists
+    mkdir $target
+
+    # Get all skill directories
+    let skill_dirs = (ls $source | where type == dir | get name)
+
+    if ($skill_dirs | is-empty) {
+        print "No skill directories found in ~/.claude/skills/"
+        return
+    }
+
+    mut synced = 0
+
+    for dir in $skill_dirs {
+        let skill_name = ($dir | path basename)
+        let target_dir = ($target | path join $skill_name)
+        mkdir $target_dir
+
+        let files = (ls $dir | where type == file | get name)
+        for file in $files {
+            let filename = ($file | path basename)
+            let target_file = ($target_dir | path join $filename)
+
+            # Only copy if source is newer or target doesn't exist
+            if not ($target_file | path exists) {
+                cp $file $target_file
+                print $"  + ($skill_name)/($filename)"
+                $synced += 1
+            } else {
+                let src_mod = (ls $file | first | get modified)
+                let tgt_mod = (ls $target_file | first | get modified)
+                if $src_mod > $tgt_mod {
+                    cp $file $target_file
+                    print $"  ~ ($skill_name)/($filename)"
+                    $synced += 1
+                }
+            }
+        }
+    }
+
+    if $synced == 0 {
+        print "Skills mirror is up to date."
+    } else {
+        print $"Synced ($synced) files to ~/Assistants/claude-skills/"
+    }
+}
