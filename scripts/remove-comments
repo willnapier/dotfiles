@@ -1,0 +1,6 @@
+#!/usr/bin/env nu
+# Strip comments from a file and copy to clipboard
+def main [file: path] {
+  open --raw $file | lines | each { str replace -r '\s*#.*$' '' } | where { str trim | is-not-empty } | str join "\n" | pbcopy
+  print "Copied without comments"
+}
