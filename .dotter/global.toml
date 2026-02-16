@@ -5,6 +5,16 @@
 depends = []
 
 [shared.files]
+"scripts/assistants-docs-auto-push" = "~/.local/bin/assistants-docs-auto-push"
+"scripts/bulk-dedupe-backlinks" = "~/.local/bin/bulk-dedupe-backlinks"
+"scripts/claude-voice" = "~/.local/bin/claude-voice"
+"scripts/email-attachments" = "~/.local/bin/email-attachments"
+"scripts/forge-batch-classifier" = "~/.local/bin/forge-batch-classifier"
+"scripts/messageboard-edit" = "~/.local/bin/messageboard-edit"
+"scripts/messageboard-lock" = "~/.local/bin/messageboard-lock"
+"scripts/music-notation-lint" = "~/.local/bin/music-notation-lint"
+"scripts/music-notation-lookup" = "~/.local/bin/music-notation-lookup"
+"scripts/piper-preview" = "~/.local/bin/piper-preview"
 
 "scripts/ai-brief.nu" = { target = "~/.local/bin/ai-brief.nu", type = "symbolic" }
 "scripts/tag-search" = { target = "~/.local/bin/tag-search", type = "symbolic" }
