@@ -1,0 +1,296 @@
+#!/usr/bin/env nu
+# Forge Batch Classifier - Identify and classify root notes for reorganization
+# Usage: forge-batch-classifier [--category <name>] [--show-all]
+
+def main [
+    --category: string = "all"  # Category to analyze: financial, web-imports, events, scenarios, all
+    --show-all                   # Show all categories at once
+] {
+    let forge_root = $"($env.HOME)/Forge"
+
+    print $"(ansi cyan)═══ Forge Batch Classifier ═══(ansi reset)\n"
+
+    # Get all root markdown files
+    let all_files = (glob $"($forge_root)/*.md")
+    let total = ($all_files | length)
+
+    print $"Scanning (ansi green)($total)(ansi reset) files at Forge root...\n"
+
+    # Classify all files
+    mut results = {
+        financial: []
+        web_imports: []
+        events: []
+        scenarios: []
+        pkm_meta: []
+        people_social: []
+    }
+
+    for file in $all_files {
+        let basename = ($file | path basename)
+        let classification = (classify_file $file $basename)
+
+        if $classification != null {
+            let current = ($results | get $classification)
+            $results = ($results | upsert $classification ($current | append {file: $file, name: $basename}))
+        }
+    }
+
+    # Display results based on category selection
+    if $show_all {
+        display_all_categories $results $forge_root
+    } else if $category == "all" {
+        display_summary $results
+    } else {
+        display_category $category $results $forge_root
+    }
+}
+
+# Classify a single file
+def classify_file [filepath: string, basename: string] {
+    # Financial/Administrative patterns
+    if (is_financial $basename) {
+        return "financial"
+    }
+
+    # Web imports (articles with pipe separators)
+    if (is_web_import $basename $filepath) {
+        return "web_imports"
+    }
+
+    # Event notes (dates in filename)
+    if (is_event $basename) {
+        return "events"
+    }
+
+    # Scenario/planning notes
+    if (is_scenario $basename $filepath) {
+        return "scenarios"
+    }
+
+    # PKM meta notes
+    if (is_pkm_meta $basename $filepath) {
+        return "pkm_meta"
+    }
+
+    # People/social notes
+    if (is_people_social $basename) {
+        return "people_social"
+    }
+
+    null
+}
+
+# Financial detection
+def is_financial [basename: string] {
+    let financial_patterns = [
+        'HSBC'
+        'Virgin Account'
+        'Pension'
+        'Barclays'
+        'NatWest'
+        'Nationwide'
+        'Santander'
+        'Transfers to'
+        'Account No'
+        'Statement'
+        'Tax'
+        'ISA'
+        'Savings'
+    ]
+
+    ($financial_patterns | any { |pattern| $basename | str contains $pattern })
+}
+
+# Web import detection
+def is_web_import [basename: string, filepath: string] {
+    # Pipe character indicates "Title | Source" format from web clippers
+    if ($basename | str contains ' | ') {
+        return true
+    }
+
+    # Check for very long files with high link density (web articles)
+    let content = (open $filepath)
+    let word_count = ($content | split row ' ' | length)
+    let link_count = ($content | str replace --all --regex '\[\[([^\]]+)\]\]' "\n" | split row "\n" | length) - 1
+
+    # Web articles tend to have 1000+ words and 50+ extracted links
+    if ($word_count > 1000 and $link_count > 50) {
+        return true
+    }
+
+    false
+}
+
+# Event detection
+def is_event [basename: string] {
+    # Date in filename (YYYY-MM-DD or similar)
+    if ($basename =~ '\d{4}-\d{2}-\d{2}') {
+        return true
+    }
+
+    # Common event keywords
+    let event_patterns = [
+        'Birthday Party'
+        'Wedding'
+        'Funeral'
+        'Concert'
+        'Meeting'
+        'Dinner'
+        'Lunch'
+        'Visit'
+    ]
+
+    ($event_patterns | any { |pattern| $basename | str contains $pattern })
+}
+
+# Scenario/planning detection
+def is_scenario [basename: string, filepath: string] {
+    if ($basename | str contains 'Scenario') {
+        return true
+    }
+
+    # Check tags
+    let content = (open $filepath)
+    if ($content | str contains 'tags:') {
+        if (($content | str contains '- scenarios') or ($content | str contains '- scenario') or ($content | str contains '- planning') or ($content | str contains '- resourcing')) {
+            return true
+        }
+    }
+
+    false
+}
+
+# PKM meta detection
+def is_pkm_meta [basename: string, filepath: string] {
+    let meta_patterns = [
+        'Obsidian'
+        'Zettelkasten'
+        'PKM'
+        'Vault'
+        'Naming Convention'
+        'Workflow'
+        'File Organization'
+    ]
+
+    if ($meta_patterns | any { |pattern| $basename | str contains $pattern }) {
+        let content = (open $filepath)
+        # Exclude if it's actually about the concept rather than the tool
+        if not (($content | str contains 'Luhmann') or ($content | str contains 'knowledge work theory')) {
+            return true
+        }
+    }
+
+    false
+}
+
+# People/social detection
+def is_people_social [basename: string] {
+    # Pattern: First name + Last name or possessive (e.g., "John Smith", "Sarah's")
+    if ($basename =~ '[A-Z][a-z]+ [A-Z][a-z]+') {
+        return true
+    }
+
+    if ($basename =~ "[A-Z][a-z]+'s ") {
+        return true
+    }
+
+    false
+}
+
+# Display summary of all categories
+def display_summary [results: record] {
+    print $"(ansi cyan_bold)Classification Summary(ansi reset)\n"
+
+    let categories = [
+        {key: "financial", name: "💰 Financial/Administrative", dest: "Admin/Life-Management/Financial/"}
+        {key: "web_imports", name: "🌐 Web Imports/Articles", dest: "LIT/Sources/WebClips/ (to review)"}
+        {key: "events", name: "📅 Events/Dated Notes", dest: "NapierianLogs/ or Admin/Archives/"}
+        {key: "scenarios", name: "💭 Scenarios/Planning", dest: "Resourcing/"}
+        {key: "pkm_meta", name: "🛠️ PKM Meta/System Notes", dest: "Admin/Archives/PKM-History/"}
+        {key: "people_social", name: "👤 People/Social", dest: "Areas/Social/ or permanent notes"}
+    ]
+
+    for cat in $categories {
+        let count = ($results | get $cat.key | length)
+        print $"($cat.name): (ansi green)($count) files(ansi reset)"
+        print $"  → Suggested destination: (ansi yellow)($cat.dest)(ansi reset)\n"
+    }
+
+    print "\n(ansi cyan)Next steps:(ansi reset)"
+    print "  forge-batch-classifier --category financial   # Review financial notes"
+    print "  forge-batch-classifier --category web-imports # Review web imports"
+    print "  forge-batch-classifier --category events      # Review event notes"
+    print "  forge-batch-classifier --category scenarios   # Review scenarios"
+    print "  forge-batch-classifier --category pkm-meta    # Review PKM meta notes"
+    print "  forge-batch-classifier --category people-social # Review people/social"
+    print "  forge-batch-classifier --show-all             # See all categories with examples"
+}
+
+# Display specific category for review
+def display_category [category: string, results: record, forge_root: string] {
+    let category_map = {
+        financial: {name: "💰 Financial/Administrative", dest: "~/Admin/Life-Management/Financial/"}
+        "web-imports": {name: "🌐 Web Imports/Articles", dest: "~/Readwise/"}
+        events: {name: "📅 Events/Dated Notes", dest: "~/NapierianLogs/ or ~/Admin/Archives/"}
+        scenarios: {name: "💭 Scenarios/Planning", dest: "~/Forge/Resourcing/"}
+        "pkm-meta": {name: "🛠️ PKM Meta/System Notes", dest: "~/Admin/Archives/PKM-History/"}
+        "people-social": {name: "👤 People/Social", dest: "Review individually"}
+    }
+
+    let key = ($category | str replace '-' '_')
+    let info = ($category_map | get $category)
+    let files = ($results | get $key)
+
+    print $"(ansi cyan_bold)($info.name)(ansi reset)"
+    print $"Found: (ansi green)($files | length) files(ansi reset)"
+    print $"Suggested destination: (ansi yellow)($info.dest)(ansi reset)\n"
+
+    if ($files | is-empty) {
+        print "(ansi yellow)No files found in this category.(ansi reset)"
+        return
+    }
+
+    print $"(ansi cyan_bold)Files to review:(ansi reset)\n"
+
+    for file in $files {
+        print $"  • ($file.name)"
+    }
+
+    print $"\n(ansi cyan)Review these files and confirm:(ansi reset)"
+    print $"  1. Open a few samples: hx ~/Forge/($files | first | get name)"
+    print $"  2. If classification looks correct, I can move them"
+    print $"  3. If some need adjustment, specify which ones"
+}
+
+# Display all categories with examples
+def display_all_categories [results: record, forge_root: string] {
+    let categories = [
+        {key: "financial", name: "💰 Financial/Administrative"}
+        {key: "web_imports", name: "🌐 Web Imports/Articles"}
+        {key: "events", name: "📅 Events/Dated Notes"}
+        {key: "scenarios", name: "💭 Scenarios/Planning"}
+        {key: "pkm_meta", name: "🛠️ PKM Meta/System Notes"}
+        {key: "people_social", name: "👤 People/Social"}
+    ]
+
+    for cat in $categories {
+        let files = ($results | get $cat.key)
+        let count = ($files | length)
+
+        print $"\n(ansi cyan_bold)($cat.name)(ansi reset) - ($count) files"
+
+        if ($count > 0) {
+            let samples = ($files | first (if $count > 5 { 5 } else { $count }))
+            for file in $samples {
+                print $"  • ($file.name)"
+            }
+            if ($count > 5) {
+                print $"  (ansi yellow)... and ($count - 5) more(ansi reset)"
+            }
+        }
+    }
+
+    print $"\n(ansi cyan)To review a specific category:(ansi reset)"
+    print "  forge-batch-classifier --category <name>"
+}
