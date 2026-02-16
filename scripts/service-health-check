@@ -108,7 +108,14 @@ def discover_linux_services [] {
 
     let services = (glob $"($units_dir)/*.service")
     let timers = (glob $"($units_dir)/*.timer")
-    $services | append $timers
+    # Get timer names so we can skip services that are timer-activated
+    let timer_names = ($timers | each {|t| $t | path basename | str replace ".timer" "" })
+    # Include all timers + services that DON'T have a matching timer
+    let service_only = ($services | where {|s|
+        let sname = ($s | path basename | str replace ".service" "")
+        not ($sname in $timer_names)
+    })
+    $service_only | append $timers
     | each {|unit_path|
         let name = ($unit_path | path basename | str replace ".service" "" | str replace ".timer" "")
         let is_timer = ($unit_path | str ends-with ".timer")

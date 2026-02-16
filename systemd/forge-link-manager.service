@@ -4,7 +4,6 @@ After=network.target
 
 [Service]
 Type=simple
-User=%i
 WorkingDirectory=%h
 ExecStart=/usr/bin/nu -c "link-service start"
 Restart=on-failure
