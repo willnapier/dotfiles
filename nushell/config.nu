@@ -4263,58 +4263,58 @@ def codex [...args] {
         "seneca": "seneca",
     }
 
-    mut persona = null
+    mut persona = ""
     mut stripped_args = $args
 
     # Normalize helper (works with pipeline)
-    let clean-key = {|s| $s | str downcase | str trim | str trim -c "/" }
+    let clean_key = {|s| $s | str downcase | str trim | str trim -c "/" }
 
     let lower_tokens = ($args | each {|x| $x | str downcase })
 
     # /alias or alias as first token
-    if ($args | length) > 0 and $persona == null {
-        let first = ($args | get 0? | default "" | do $clean-key)
+    if ($args | length) > 0 and $persona == "" {
+        let first = ($args | get 0? | default "" | do $clean_key)
         if ($persona_aliases | columns | any {|c| $c == $first }) {
-            persona = ($persona_aliases | get $first)
-            stripped_args = ($args | skip 1)
+            $persona = ($persona_aliases | get $first)
+            $stripped_args = ($args | skip 1)
         }
     }
 
     # hi/hello alias
-    if $persona == null and ($lower_tokens | length) >= 2 {
+    if $persona == "" and ($lower_tokens | length) >= 2 {
         let maybe_hi = ($lower_tokens | get 0? | default "")
         if $maybe_hi in ["hi", "hello", "hey"] {
-            let key = ($args | get 1? | default "" | do $clean-key)
+            let key = ($args | get 1? | default "" | do $clean_key)
             if ($persona_aliases | columns | any {|c| $c == $key }) {
-                persona = ($persona_aliases | get $key)
-                stripped_args = ($args | skip 2)
+                $persona = ($persona_aliases | get $key)
+                $stripped_args = ($args | skip 2)
             }
         }
     }
 
     # act as / please act as alias
-    if $persona == null and ($lower_tokens | length) >= 3 {
+    if $persona == "" and ($lower_tokens | length) >= 3 {
         let first_tok = ($lower_tokens | get 0? | default "")
         let second_tok = ($lower_tokens | get 1? | default "")
         if ($first_tok == "act" and $second_tok == "as") {
-            let key = ($args | get 2? | default "" | do $clean-key)
+            let key = ($args | get 2? | default "" | do $clean_key)
             if ($persona_aliases | columns | any {|c| $c == $key }) {
-                persona = ($persona_aliases | get $key)
-                stripped_args = ($args | skip 3)
+                $persona = ($persona_aliases | get $key)
+                $stripped_args = ($args | skip 3)
             }
         } else if ($first_tok == "please" and $second_tok == "act") and ($lower_tokens | length) >= 4 {
             let third_tok = ($lower_tokens | get 2? | default "")
             if $third_tok == "as" {
-                let key = ($args | get 3? | default "" | do $clean-key)
+                let key = ($args | get 3? | default "" | do $clean_key)
                 if ($persona_aliases | columns | any {|c| $c == $key }) {
-                    persona = ($persona_aliases | get $key)
-                    stripped_args = ($args | skip 4)
+                    $persona = ($persona_aliases | get $key)
+                    $stripped_args = ($args | skip 4)
                 }
             }
         }
     }
 
-    if $persona != null {
+    if ($persona | is-not-empty) {
         # Emit the matching brief before launching Codex
         ai-brief $persona
     }
