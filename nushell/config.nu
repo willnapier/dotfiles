@@ -4266,16 +4266,14 @@ def codex [...args] {
     mut persona = null
     mut stripped_args = $args
 
-    # Normalize helper
-    def _clean-key [s: string] {
-        $s | str downcase | str trim | str trim -c "/"
-    }
+    # Normalize helper (works with pipeline)
+    let clean-key = {|s| $s | str downcase | str trim | str trim -c "/" }
 
     let lower_tokens = ($args | each {|x| $x | str downcase })
 
     # /alias or alias as first token
     if ($args | length) > 0 and $persona == null {
-        let first = ($args | get 0 | _clean-key)
+        let first = ($args | get 0? | default "" | do $clean-key)
         if ($persona_aliases | columns | any {|c| $c == $first }) {
             persona = ($persona_aliases | get $first)
             stripped_args = ($args | skip 1)
@@ -4284,9 +4282,9 @@ def codex [...args] {
 
     # hi/hello alias
     if $persona == null and ($lower_tokens | length) >= 2 {
-        let maybe_hi = ($lower_tokens | get 0)
+        let maybe_hi = ($lower_tokens | get 0? | default "")
         if $maybe_hi in ["hi", "hello", "hey"] {
-            let key = ($args | get 1 | _clean-key)
+            let key = ($args | get 1? | default "" | do $clean-key)
             if ($persona_aliases | columns | any {|c| $c == $key }) {
                 persona = ($persona_aliases | get $key)
                 stripped_args = ($args | skip 2)
@@ -4296,18 +4294,18 @@ def codex [...args] {
 
     # act as / please act as alias
     if $persona == null and ($lower_tokens | length) >= 3 {
-        let first = ($lower_tokens | get 0)
-        let second = ($lower_tokens | get 1)
-        if ($first == "act" and $second == "as") {
-            let key = ($args | get 2 | _clean-key)
+        let first_tok = ($lower_tokens | get 0? | default "")
+        let second_tok = ($lower_tokens | get 1? | default "")
+        if ($first_tok == "act" and $second_tok == "as") {
+            let key = ($args | get 2? | default "" | do $clean-key)
             if ($persona_aliases | columns | any {|c| $c == $key }) {
                 persona = ($persona_aliases | get $key)
                 stripped_args = ($args | skip 3)
             }
-        } else if ($first == "please" and $second == "act") and ($lower_tokens | length) >= 4 {
-            let third = ($lower_tokens | get 2)
-            if $third == "as" {
-                let key = ($args | get 3 | _clean-key)
+        } else if ($first_tok == "please" and $second_tok == "act") and ($lower_tokens | length) >= 4 {
+            let third_tok = ($lower_tokens | get 2? | default "")
+            if $third_tok == "as" {
+                let key = ($args | get 3? | default "" | do $clean-key)
                 if ($persona_aliases | columns | any {|c| $c == $key }) {
                     persona = ($persona_aliases | get $key)
                     stripped_args = ($args | skip 4)
