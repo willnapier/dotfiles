@@ -131,4 +131,6 @@ if ($"($nu.default-config-dir)/env-secret.nu" | path exists) {
 }
 
 # Claude Code OAuth token for headless/SSH sessions
-$env.CLAUDE_CODE_OAUTH_TOKEN = (open ~/.claude/auth-token.txt | str trim)
+if ($"($env.HOME)/.claude/auth-token.txt" | path exists) {
+    $env.CLAUDE_CODE_OAUTH_TOKEN = (open ~/.claude/auth-token.txt | str trim)
+}
