@@ -300,50 +300,62 @@ fn is_real_user_message(text: &str) -> bool {
 
 /// Top-level function: find all CC sessions active on `target_date`.
 pub fn extract_cc_sessions(target_date: NaiveDate, verbose: bool) -> Result<Vec<CcSession>> {
-    let cc_dir = dirs::home_dir()
+    let projects_dir = dirs::home_dir()
         .context("No home directory")?
-        .join(".claude/projects/-home-will");
+        .join(".claude/projects");
 
-    if !cc_dir.exists() {
+    if !projects_dir.exists() {
         return Ok(Vec::new());
     }
 
-    // Gather paths from the index
-    let index_path = cc_dir.join("sessions-index.json");
-    let entries = if index_path.exists() {
-        relevant_sessions(&index_path, target_date)?
-    } else {
-        Vec::new()
-    };
+    // Scan all project directories
+    let project_dirs: Vec<std::path::PathBuf> = std::fs::read_dir(&projects_dir)?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.is_dir())
+        .collect();
 
     let mut sessions = Vec::new();
-    let indexed_paths: Vec<String> = entries.iter().map(|e| e.full_path.clone()).collect();
+    let mut all_indexed_paths: Vec<String> = Vec::new();
 
-    for entry in &entries {
-        let path = Path::new(&entry.full_path);
-        if !path.exists() {
-            continue;
-        }
-        match parse_session_jsonl(path, target_date, verbose) {
-            Ok(Some(session)) => sessions.push(session),
-            Ok(None) => {}
-            Err(e) => {
-                eprintln!("Warning: failed to parse {}: {}", entry.session_id, e);
+    for cc_dir in &project_dirs {
+        // Gather paths from the index if it exists
+        let index_path = cc_dir.join("sessions-index.json");
+        let entries = if index_path.exists() {
+            relevant_sessions(&index_path, target_date)?
+        } else {
+            Vec::new()
+        };
+
+        let indexed_paths: Vec<String> = entries.iter().map(|e| e.full_path.clone()).collect();
+        all_indexed_paths.extend(indexed_paths.clone());
+
+        for entry in &entries {
+            let path = Path::new(&entry.full_path);
+            if !path.exists() {
+                continue;
+            }
+            match parse_session_jsonl(path, target_date, verbose) {
+                Ok(Some(session)) => sessions.push(session),
+                Ok(None) => {}
+                Err(e) => {
+                    eprintln!("Warning: failed to parse {}: {}", entry.session_id, e);
+                }
             }
         }
-    }
 
-    // Also scan unindexed JSONL files (index can be stale)
-    for path in unindexed_jsonl_files(&cc_dir, &indexed_paths, target_date) {
-        match parse_session_jsonl(&path, target_date, verbose) {
-            Ok(Some(session)) => sessions.push(session),
-            Ok(None) => {}
-            Err(e) => {
-                eprintln!(
-                    "Warning: failed to parse {}: {}",
-                    path.file_name().unwrap_or_default().to_string_lossy(),
-                    e
-                );
+        // Also scan unindexed JSONL files (index can be stale)
+        for path in unindexed_jsonl_files(cc_dir, &indexed_paths, target_date) {
+            match parse_session_jsonl(&path, target_date, verbose) {
+                Ok(Some(session)) => sessions.push(session),
+                Ok(None) => {}
+                Err(e) => {
+                    eprintln!(
+                        "Warning: failed to parse {}: {}",
+                        path.file_name().unwrap_or_default().to_string_lossy(),
+                        e
+                    );
+                }
             }
         }
     }
