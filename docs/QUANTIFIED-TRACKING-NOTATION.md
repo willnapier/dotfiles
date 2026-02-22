@@ -25,7 +25,7 @@ Durations use Nushell-native format for direct parsing:
 
 | Format | Meaning | Example |
 |--------|---------|---------|
-| `30min` | 30 minutes | `p:: 30min scales` |
+| `30min` | 30 minutes | `piano:: 30min scales` |
 | `1hr` | 1 hour | `dev:: 1hr rust-project` |
 | `2hr30min` | 2.5 hours | `work:: 2hr30min deep-focus` |
 | `1430-1500` | Time span (30min) | `t:: 1430-1500 commute` |
@@ -45,16 +45,17 @@ This processing is triggered on save by a file watcher or the `fdur` command.
 
 ## Activity Keys
 
-### Simple Keys
+### Activity Keys
 
-Single-letter or short keys for common categories:
+Long-form descriptive keys for common categories:
 
 ```
-p:: 45min piano-practice
-t:: 30min commute
-rd:: 1hr reading
+piano:: 45min piano-practice
+sleep:: 7hr 2330-0630
+read:: 1hr reading
 dev:: 2hr coding
-w:: 3hr writing
+diet:: shake-protein-powder-50g-chia-seeds-100g
+ex.walk:: 4k-steps reservoir-short
 r:: next Tuesday: Call dentist           # reminder (see below)
 ```
 
@@ -63,15 +64,15 @@ r:: next Tuesday: Call dentist           # reminder (see below)
 Sub-categories use dot notation to create a parent-child hierarchy:
 
 ```
-p.c:: 45min JSBach-WTC-I-Prelude-C       # piano → classical
-p.j:: 30min Monk-Blue-Monk               # piano → jazz
-t.u:: 30min morning-commute              # travel → uber
-t.w:: 15min walk-to-station              # travel → walk
+piano.c:: 45min JSBach-WTC-I-Prelude-C       # piano → classical
+piano.j:: 30min Monk-Blue-Monk               # piano → jazz
+t.u:: 30min morning-commute                  # travel → uber
+t.w:: 15min walk-to-station                  # travel → walk
 dev.rust:: 2hr forge-graph               # dev → rust
 dev.nu:: 1hr watcher-refactor            # dev → nushell
 ```
 
-Each sub-activity automatically links to its parent. The file `p.c.md` contains a reference to `p.md`.
+Each sub-activity automatically links to its parent. The file `piano.c.md` contains a reference to `piano.md`.
 
 ### Social Activity Keys
 
@@ -111,9 +112,9 @@ The notation distinguishes between **activities** (things you do) and **states**
 ### Activities (Verb-like)
 
 ```
-p:: 45min piano-practice
+piano:: 45min piano-practice
 dev:: 2hr coding
-rd:: 1hr reading-Kahneman
+read:: 1hr reading-Kahneman
 ```
 
 Activities have a duration and involve intentional action.
@@ -147,13 +148,13 @@ Activities can be nested when two things happen simultaneously:
 ```
 partner:: 3hr dinner restaurant-name
   # Nested within the partner time:
-  rd:: 30min menu-discussion
+  read:: 30min menu-discussion
 ```
 
 Or expressed on a single line with multiple keys:
 
 ```
-t:: 45min train-commute rd:: 45min reading-on-train
+t:: 45min train-commute read:: 45min reading-on-train
 ```
 
 ## Parsing Patterns
@@ -166,7 +167,7 @@ Extract all entries from a DayPage:
 ^([a-zA-Z][a-zA-Z0-9._-]*):: (.+)$
 ```
 
-- Group 1: Activity key (e.g., `p.c`, `dev.rust`, `partner.tv`)
+- Group 1: Activity key (e.g., `piano.c`, `dev.rust`, `partner.tv`)
 - Group 2: Attributes (duration, description, etc.)
 
 ### Duration Extraction
@@ -198,7 +199,7 @@ Parse as `HHMM` to compute duration: `end_minutes - start_minutes`.
 Entries written in daily journal files are automatically collected into per-key files:
 
 ```
-~/notes/logs/p.c.md       # All piano-classical entries, grouped by date
+~/notes/logs/piano.c.md    # All piano-classical entries, grouped by date
 ~/notes/logs/dev.rust.md   # All Rust development entries
 ~/notes/logs/partner.md    # All partner activity entries
 ```
@@ -212,7 +213,7 @@ Each file contains entries grouped by date, enabling:
 
 ```nushell
 # Total piano practice this week
-open ~/notes/logs/p.md | lines | where {|l| $l starts-with "- "} | length
+open ~/notes/logs/piano.md | lines | where {|l| $l starts-with "- "} | length
 
 # Average daily dev time this month
 # (handled by dedicated Nushell functions)
@@ -237,7 +238,7 @@ open ~/notes/logs/p.md | lines | where {|l| $l starts-with "- "} | length
 - Consistent with Nushell's data-first philosophy
 
 **Why hierarchical dot notation?**
-- Natural parent-child relationships (`p.c` is a child of `p`)
-- Aggregation at any level (sum all `p.*` for total piano time)
-- File system mapping (`p.c.md` is a real file)
-- Extensible without schema changes (add `p.c.bach` when needed)
+- Natural parent-child relationships (`piano.c` is a child of `piano`)
+- Aggregation at any level (sum all `piano.*` for total piano time)
+- File system mapping (`piano.c.md` is a real file)
+- Extensible without schema changes (add `piano.c.bach` when needed)

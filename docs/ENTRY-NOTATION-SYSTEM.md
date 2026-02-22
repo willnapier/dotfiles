@@ -23,9 +23,9 @@ P.research-paper:: 1hr reviewing-literature
 
 **Activity entries** use lowercase keys:
 ```
-p:: 45min piano-practice
+piano:: 45min piano-practice
 t:: 30min commute
-rd:: 1hr reading
+read:: 1hr reading
 dev:: 2hr rust-project
 ```
 
@@ -43,8 +43,8 @@ r:: next Tuesday: Follow up with Leigh
 Both project and activity keys support hierarchical sub-categories using dot notation:
 
 ```
-p.c:: 45min JSBach-WTC-I-Prelude-C       # piano → classical
-p.j:: 30min Monk-Blue-Monk               # piano → jazz
+piano.c:: 45min JSBach-WTC-I-Prelude-C       # piano → classical
+piano.j:: 30min Monk-Blue-Monk               # piano → jazz
 t.u:: 30min uber-ride                     # travel → uber
 dev.rust:: 2hr forge-graph                # dev → rust
 ```
@@ -102,7 +102,7 @@ The collection system routes entries based on key type:
 | Pattern | Destination | Example |
 |---------|-------------|---------|
 | `P.name` | `~/notes/Projects/name.md` | `P.website-redesign` |
-| `key` | `~/notes/logs/key.md` | `p.c`, `t.u`, `dev` |
+| `key` | `~/notes/logs/key.md` | `piano.c`, `t.u`, `dev` |
 
 ### Duplicate Prevention
 
@@ -131,7 +131,7 @@ Four-layer deduplication:
 
 **Activity files** get date-grouped entries:
 ```markdown
-# p.c
+# piano.c
 
 ## 2025-10-09
 - 45min JSBach-WTC-I-Prelude-C
