@@ -172,7 +172,7 @@ def view_calendar [reminders_dir: string, months: int] {
                 if $rec.month_day == $current_md {
                     $rows = ($rows | append {
                         date: ($current | format date "%Y-%m-%d"),
-                        reminder: $"($rec.text) (recurring)"
+                        reminder: ($rec.text + " [recurring]")
                     })
                 }
             }
