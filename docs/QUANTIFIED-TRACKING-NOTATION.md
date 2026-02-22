@@ -124,8 +124,8 @@ Activities have a duration and involve intentional action.
 
 ```
 r:: in 3 days: Call dentist
-r:: on March 15: Jenny birthday party
 r:: next Tuesday: Follow up with Leigh
+r:: 2026-03-15: Jenny birthday party
 ```
 
 Reminder entries use the `r::` key with format `r:: <when>: <message>`. The `<when>` part is a natural language date expression parsed by Nushell's `date from-human`. `collect-entries` routes these to `~/Forge/NapierianLogs/Reminders/<target-date>.md`.

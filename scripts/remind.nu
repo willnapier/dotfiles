@@ -57,8 +57,12 @@ def main [
         print ""
         print "Examples:"
         print "  remind \"Call dentist\" in 3 days"
-        print "  remind \"Check insurance\" next month"
-        print "  remind \"Meeting prep\" on January 15"
+        print "  remind \"Check insurance\" next Tuesday"
+        print "  remind \"Meeting prep\" 2026-03-15"
+        print ""
+        print "Supported date forms:"
+        print "  in N days / in N hours      next Tuesday / this Friday"
+        print "  This Friday 17:00           2026-03-15 (explicit date)"
         print ""
         print "Subcommands:"
         print "  remind list                              # Show upcoming reminders"
@@ -75,7 +79,7 @@ def main [
         $date_str | date from-human | format date "%Y-%m-%d"
     } catch {
         print $"Could not parse date: '($date_str)'"
-        print "Try formats like: 'in 3 days', 'next Tuesday', 'on March 15'"
+        print "Try formats like: 'in 3 days', 'next Tuesday', '2026-03-15'"
         return
     }
 

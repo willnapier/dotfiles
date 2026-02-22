@@ -34,8 +34,8 @@ ex.walk:: 4k-steps reservoir-short
 **Reminder entries** use the `r::` key with `<when>: <message>` format:
 ```
 r:: in 3 days: Call dentist
-r:: on March 15: Jenny birthday party
 r:: next Tuesday: Follow up with Leigh
+r:: 2026-03-15: Jenny birthday party
 ```
 
 `collect-entries` parses the `<when>` part via Nushell's `date from-human` and routes reminders to `~/Forge/NapierianLogs/Reminders/<target-date>.md`. The `remind` CLI is a convenience wrapper that queues `r::` entries via `daypage-append`.
