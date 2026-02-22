@@ -2641,6 +2641,12 @@ alias cdn = cd-notes  # Direct alias to the function (not a subshell evaluation)
 alias hx = hx-auto  # Auto-detect theme based on system appearance
 alias codex = continuum-codex  # Auto-capture conversations to continuum logs
 
+# Todo shortcuts
+alias td = todo-scanner          # Summary with stats
+alias td-ed = todo-scanner --edit   # Interactive picker → Helix
+alias td-wk = todo-scanner --week   # Last 7 days
+alias td-all = todo-scanner --all   # Everything
+
 # Zoxide shortcuts - conditional
 if (which zoxide | is-not-empty) {
     alias j = z  # Jump to directory
