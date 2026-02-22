@@ -25,9 +25,18 @@ P.research-paper:: 1hr reviewing-literature
 ```
 p:: 45min piano-practice
 t:: 30min commute
-r:: 1hr reading
+rd:: 1hr reading
 dev:: 2hr rust-project
 ```
+
+**Reminder entries** use the `r::` key with `<when>: <message>` format:
+```
+r:: in 3 days: Call dentist
+r:: on March 15: Jenny birthday party
+r:: next Tuesday: Follow up with Leigh
+```
+
+`collect-entries` parses the `<when>` part via Nushell's `date from-human` and routes reminders to `~/Forge/NapierianLogs/Reminders/<target-date>.md`. The `remind` CLI is a convenience wrapper that queues `r::` entries via `daypage-append`.
 
 ### Hierarchical Dot Notation
 

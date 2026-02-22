@@ -1,16 +1,20 @@
 #!/usr/bin/env nu
-# remind - Create reminders that surface through daily notes
+# remind - Create reminders via DayPage r:: entries
+#
+# One-off reminders are written to the DayPage via daypage-append.
+# collect-entries parses r:: entries and routes them to ~/Forge/NapierianLogs/Reminders/.
 #
 # Usage:
 #   remind "Call dentist" in 3 days
 #   remind "Jenny birthday" on March 17
 #   remind "Check insurance" next month
 #   remind list                          # Show upcoming reminders
+#   remind view [months]                 # Calendar view (default: 3 months)
 #   remind recurring                     # Show recurring annual events
 #   remind recurring add "Jenny birthday" on March 17
 
 def main [
-    message?: string,      # The reminder message (or subcommand: list, recurring)
+    message?: string,      # The reminder message (or subcommand: list, view, recurring)
     ...when: string        # Natural language date: "in 3 days", "on March 17", "next month"
 ] {
     let reminders_dir = $"($env.HOME)/Forge/NapierianLogs/Reminders"
@@ -47,7 +51,7 @@ def main [
         return
     }
 
-    # Regular reminder
+    # Regular reminder — validate then queue via daypage-append
     if $message == null or ($when | length) == 0 {
         print "Usage: remind \"message\" <when>"
         print ""
@@ -66,32 +70,26 @@ def main [
 
     let date_str = ($when | str join " ")
 
-    # Parse the natural language date
+    # Validate the date parses before queuing — fail fast
     let target_date = try {
         $date_str | date from-human | format date "%Y-%m-%d"
     } catch {
-        print $"❌ Could not parse date: '($date_str)'"
+        print $"Could not parse date: '($date_str)'"
         print "Try formats like: 'in 3 days', 'next Tuesday', 'on March 15'"
         return
     }
 
-    let file = $"($reminders_dir)/($target_date).md"
+    # Queue as r:: entry in today's DayPage
+    let entry = $"r:: ($date_str): ($message)"
+    daypage-append $entry
 
-    if ($file | path exists) {
-        # Append to existing reminders for that date
-        $"\n- [ ] ($message)" | save --append $file
-    } else {
-        # Create new file
-        $"# Reminders for ($target_date)\n\n- [ ] ($message)" | save $file
-    }
-
-    print $"✓ Reminder set for ($target_date): ($message)"
+    print $"Reminder set for ($target_date): ($message)"
+    print $"Queued in DayPage: ($entry)"
 }
 
 def list_reminders [reminders_dir: string] {
     let today = (date now | format date "%Y-%m-%d")
 
-    # Get all reminder files
     let files = try {
         glob $"($reminders_dir)/*.md"
         | where { |f| not ($f | str contains "recurring") }
@@ -107,7 +105,7 @@ def list_reminders [reminders_dir: string] {
         return
     }
 
-    print "📅 Upcoming reminders:\n"
+    print "Upcoming reminders:\n"
 
     for date in $files {
         let file = $"($reminders_dir)/($date).md"
@@ -126,7 +124,7 @@ def show_recurring [recurring_file: string] {
         return
     }
 
-    print "🔄 Recurring annual reminders:\n"
+    print "Recurring annual reminders:\n"
     open $recurring_file --raw | print
 }
 
@@ -134,10 +132,8 @@ def view_calendar [reminders_dir: string, months: int] {
     let today = (date now)
     let end_date = ($today + ($months * 30day))
 
-    # Collect all reminders in the date range
     mut rows = []
 
-    # Get one-off reminders
     let reminder_files = try {
         glob $"($reminders_dir)/*.md"
         | where { |f| not ($f | str contains "recurring") }
@@ -157,7 +153,6 @@ def view_calendar [reminders_dir: string, months: int] {
         }
     }
 
-    # Get recurring reminders for each month in range
     let recurring_file = $"($reminders_dir)/recurring.md"
     if ($recurring_file | path exists) {
         let recurring = (
@@ -170,7 +165,6 @@ def view_calendar [reminders_dir: string, months: int] {
             }
         )
 
-        # Check each recurring reminder against date range
         mut current = $today
         while $current <= $end_date {
             let current_md = ($current | format date "%m-%d")
@@ -178,7 +172,7 @@ def view_calendar [reminders_dir: string, months: int] {
                 if $rec.month_day == $current_md {
                     $rows = ($rows | append {
                         date: ($current | format date "%Y-%m-%d"),
-                        reminder: $"($rec.text) 🔄"
+                        reminder: $"($rec.text) (recurring)"
                     })
                 }
             }
@@ -186,7 +180,6 @@ def view_calendar [reminders_dir: string, months: int] {
         }
     }
 
-    # Sort and display
     if ($rows | length) == 0 {
         print $"No reminders in the next ($months) months."
         return
@@ -194,7 +187,7 @@ def view_calendar [reminders_dir: string, months: int] {
 
     let sorted = ($rows | sort-by date)
 
-    print $"📅 Reminders for next ($months) months:\n"
+    print $"Reminders for next ($months) months:\n"
     print "| Date | Reminder |"
     print "|------|----------|"
     for row in $sorted {
@@ -203,8 +196,6 @@ def view_calendar [reminders_dir: string, months: int] {
 }
 
 def add_recurring [recurring_file: string, args: list<string>] {
-    # Parse: "message" on Month Day
-    # Find the "on" keyword
     let on_idx = try {
         $args | enumerate | where { |x| $x.item == "on" } | first | get index
     } catch {
@@ -216,24 +207,21 @@ def add_recurring [recurring_file: string, args: list<string>] {
     let message = ($args | take $on_idx | str join " ")
     let date_part = ($args | skip ($on_idx + 1) | str join " ")
 
-    # Parse the date to get month-day format
-    # date from-human needs format "17 March 2025" (day first)
     let parsed = try {
         $"($date_part) 2025" | date from-human
     } catch {
-        # Try reversing if "March 17" format was given
         let parts = ($date_part | split row " ")
         if ($parts | length) == 2 {
             let reversed = $"($parts | get 1) ($parts | get 0) 2025"
             try {
                 $reversed | date from-human
             } catch {
-                print $"❌ Could not parse date: '($date_part)'"
+                print $"Could not parse date: '($date_part)'"
                 print "Try: '17 March' or 'March 17'"
                 return
             }
         } else {
-            print $"❌ Could not parse date: '($date_part)'"
+            print $"Could not parse date: '($date_part)'"
             print "Try: '17 March' or 'March 17'"
             return
         }
@@ -242,12 +230,11 @@ def add_recurring [recurring_file: string, args: list<string>] {
     let month_day = ($parsed | format date "%m-%d")
     let display_date = ($parsed | format date "%B %d")
 
-    # Append to recurring file
     if not ($recurring_file | path exists) {
         "# Recurring Annual Reminders\n# Format: MM-DD: Description\n\n" | save $recurring_file
     }
 
     $"($month_day): ($message)\n" | save --append $recurring_file
 
-    print $"✓ Recurring reminder added: ($message) on ($display_date) every year"
+    print $"Recurring reminder added: ($message) on ($display_date) every year"
 }

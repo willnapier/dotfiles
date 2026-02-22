@@ -52,9 +52,10 @@ Single-letter or short keys for common categories:
 ```
 p:: 45min piano-practice
 t:: 30min commute
-r:: 1hr reading
+rd:: 1hr reading
 dev:: 2hr coding
 w:: 3hr writing
+r:: next Tuesday: Call dentist           # reminder (see below)
 ```
 
 ### Hierarchical Dot Notation
@@ -112,10 +113,22 @@ The notation distinguishes between **activities** (things you do) and **states**
 ```
 p:: 45min piano-practice
 dev:: 2hr coding
-r:: 1hr reading-Kahneman
+rd:: 1hr reading-Kahneman
 ```
 
 Activities have a duration and involve intentional action.
+
+### Reminders
+
+```
+r:: in 3 days: Call dentist
+r:: on March 15: Jenny birthday party
+r:: next Tuesday: Follow up with Leigh
+```
+
+Reminder entries use the `r::` key with format `r:: <when>: <message>`. The `<when>` part is a natural language date expression parsed by Nushell's `date from-human`. `collect-entries` routes these to `~/Forge/NapierianLogs/Reminders/<target-date>.md`.
+
+The `remind` CLI wraps this: `remind "Call dentist" in 3 days` queues `r:: in 3 days: Call dentist` via `daypage-append`.
 
 ### States (Adjective-like)
 
@@ -134,13 +147,13 @@ Activities can be nested when two things happen simultaneously:
 ```
 partner:: 3hr dinner restaurant-name
   # Nested within the partner time:
-  r:: 30min menu-discussion
+  rd:: 30min menu-discussion
 ```
 
 Or expressed on a single line with multiple keys:
 
 ```
-t:: 45min train-commute r:: 45min reading-on-train
+t:: 45min train-commute rd:: 45min reading-on-train
 ```
 
 ## Parsing Patterns
