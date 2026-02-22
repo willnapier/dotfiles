@@ -21,12 +21,14 @@ P.website-redesign:: 2hr implemented-responsive-navigation
 P.research-paper:: 1hr reviewing-literature
 ```
 
-**Activity entries** use lowercase keys:
+**Activity entries** use lowercase long-form keys:
 ```
 piano:: 45min piano-practice
-t:: 30min commute
+sleep:: 7hr 2330-0630
 read:: 1hr reading
 dev:: 2hr rust-project
+diet:: shake-protein-powder-50g
+ex.walk:: 4k-steps reservoir-short
 ```
 
 **Reminder entries** use the `r::` key with `<when>: <message>` format:
@@ -43,10 +45,10 @@ r:: next Tuesday: Follow up with Leigh
 Both project and activity keys support hierarchical sub-categories using dot notation:
 
 ```
-piano.c:: 45min JSBach-WTC-I-Prelude-C       # piano → classical
-piano.j:: 30min Monk-Blue-Monk               # piano → jazz
-t.u:: 30min uber-ride                     # travel → uber
-dev.rust:: 2hr forge-graph                # dev → rust
+piano.c:: 45min JSBach-WTC-I-Prelude-C   # piano → classical
+piano.j:: 30min Monk-Blue-Monk           # piano → jazz
+ex.hiit:: 16min-1+1x8                    # exercise → HIIT
+dev.rust:: 2hr forge-graph               # dev → rust
 ```
 
 ### Attribute Syntax
@@ -55,7 +57,7 @@ Attributes are space-separated tokens after the `::` boundary. Order is flexible
 
 ```
 key:: duration description location cost
-t.u:: 30min airport-transfer LHR £25
+travel.uber:: 30min airport-transfer LHR £25
 ```
 
 Common attribute types:
@@ -102,7 +104,7 @@ The collection system routes entries based on key type:
 | Pattern | Destination | Example |
 |---------|-------------|---------|
 | `P.name` | `~/notes/Projects/name.md` | `P.website-redesign` |
-| `key` | `~/notes/logs/key.md` | `piano.c`, `t.u`, `dev` |
+| `key` | `~/notes/logs/key.md` | `piano.c`, `ex.walk`, `dev` |
 
 ### Duplicate Prevention
 

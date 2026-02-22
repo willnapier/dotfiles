@@ -27,27 +27,25 @@ Durations use Nushell-native format for direct parsing:
 |--------|---------|---------|
 | `30min` | 30 minutes | `piano:: 30min scales` |
 | `1hr` | 1 hour | `dev:: 1hr rust-project` |
-| `2hr30min` | 2.5 hours | `work:: 2hr30min deep-focus` |
-| `1430-1500` | Time span (30min) | `t:: 1430-1500 commute` |
-| `0900-1145` | Time span (2hr45min) | `work:: 0900-1145 writing` |
+| `2hr30min` | 2.5 hours | `dev:: 2hr30min deep-focus` |
+| `1430-1500` | Time span (30min) | `ex.walk:: 1430-1500 reservoir` |
+| `0900-1145` | Time span (2hr45min) | `dev:: 0900-1145 writing` |
 
 Time spans in `HHMM-HHMM` format are automatically expanded to include the computed duration:
 
 ```
 # Input (what you write):
-t:: 1430-1500 commute
+ex.walk:: 1430-1500 reservoir
 
 # After processing (what appears in the file):
-t:: 30min 1430-1500 commute
+ex.walk:: 30min 1430-1500 reservoir
 ```
 
 This processing is triggered on save by a file watcher or the `fdur` command.
 
 ## Activity Keys
 
-### Activity Keys
-
-Long-form descriptive keys for common categories:
+Long-form descriptive keys are preferred for readability:
 
 ```
 piano:: 45min piano-practice
@@ -56,6 +54,7 @@ read:: 1hr reading
 dev:: 2hr coding
 diet:: shake-protein-powder-50g-chia-seeds-100g
 ex.walk:: 4k-steps reservoir-short
+clinical-notes:: 12x 30min across day
 r:: next Tuesday: Call dentist           # reminder (see below)
 ```
 
@@ -64,10 +63,12 @@ r:: next Tuesday: Call dentist           # reminder (see below)
 Sub-categories use dot notation to create a parent-child hierarchy:
 
 ```
-piano.c:: 45min JSBach-WTC-I-Prelude-C       # piano → classical
-piano.j:: 30min Monk-Blue-Monk               # piano → jazz
-t.u:: 30min morning-commute                  # travel → uber
-t.w:: 15min walk-to-station                  # travel → walk
+piano.c:: 45min JSBach-WTC-I-Prelude-C   # piano → classical
+piano.j:: 30min Monk-Blue-Monk           # piano → jazz
+ex.walk:: 4k-steps reservoir-short       # exercise → walk
+ex.hiit:: 16min-1+1x8                    # exercise → HIIT
+ex.res:: deadlift-10+10+bar-10x3         # exercise → resistance
+ex.walkpad:: 50min 5.5k-steps            # exercise → walkpad
 dev.rust:: 2hr forge-graph               # dev → rust
 dev.nu:: 1hr watcher-refactor            # dev → nushell
 ```
@@ -76,21 +77,20 @@ Each sub-activity automatically links to its parent. The file `piano.c.md` conta
 
 ### Social Activity Keys
 
-Activities involving other people use the person as the key:
+Activities involving other people use the person's name as the key:
 
 ```
-partner:: 2hr dinner restaurant-name
-partner.tv:: 1hr documentary-title
-friend-Lee:: 1hr30min coffee catch-up
-colleague:: 45min lunch
-sister:: 30min phone-call
+jenny:: 1.5hr clearing-out-garage
+jenny.tv:: 2hr SlowHorses
+jenny.qt:: lovely
+mum:: 1hr phone-call
 ```
 
 Social keys support the same dot notation for sub-activities:
 
 ```
-partner.tv:: 1hr documentary-title      # time with partner → watching TV
-partner.conv:: 45min planning-weekend   # time with partner → conversation
+jenny.tv:: 1hr SlowHorses               # jenny → watching TV
+jenny.qt:: lovely morning                # jenny → quality time
 ```
 
 ## Type Markers
@@ -103,7 +103,8 @@ Special attribute types are distinguished by format:
 | Time span | `HHMM-HHMM` | `1430-1500` |
 | Currency | `£N` or `$N` | `£25`, `$40` |
 | Distance | `Nkm` or `Nmi` | `5km`, `3mi` |
-| Location | Uppercase code | `HQ`, `home`, `gym` |
+| Steps | `Nk-steps` | `4k-steps`, `5.5k-steps` |
+| Location | Descriptive | `reservoir`, `home`, `gym` |
 
 ## Activity vs. State
 
@@ -135,8 +136,8 @@ The `remind` CLI wraps this: `remind "Call dentist" in 3 days` queues `r:: in 3 
 
 ```
 sleep:: 7hr30min 2300-0630
-energy:: high
-mood:: focused
+state:: mixed anxiety-6 engaged-6 tired-5
+health:: pulled-muscle-neck-shoulders
 ```
 
 States describe conditions rather than actions. Sleep is tracked with both duration and time span.
@@ -146,15 +147,15 @@ States describe conditions rather than actions. Sleep is tracked with both durat
 Activities can be nested when two things happen simultaneously:
 
 ```
-partner:: 3hr dinner restaurant-name
-  # Nested within the partner time:
+jenny:: 3hr dinner restaurant-name
+  # Nested within the jenny time:
   read:: 30min menu-discussion
 ```
 
 Or expressed on a single line with multiple keys:
 
 ```
-t:: 45min train-commute read:: 45min reading-on-train
+ex.walk:: 45min reservoir read:: 45min reading-on-walk
 ```
 
 ## Parsing Patterns
@@ -167,7 +168,7 @@ Extract all entries from a DayPage:
 ^([a-zA-Z][a-zA-Z0-9._-]*):: (.+)$
 ```
 
-- Group 1: Activity key (e.g., `piano.c`, `dev.rust`, `partner.tv`)
+- Group 1: Activity key (e.g., `piano.c`, `dev.rust`, `jenny.tv`)
 - Group 2: Attributes (duration, description, etc.)
 
 ### Duration Extraction
@@ -201,7 +202,7 @@ Entries written in daily journal files are automatically collected into per-key 
 ```
 ~/notes/logs/piano.c.md    # All piano-classical entries, grouped by date
 ~/notes/logs/dev.rust.md   # All Rust development entries
-~/notes/logs/partner.md    # All partner activity entries
+~/notes/logs/jenny.md      # All jenny activity entries
 ```
 
 Each file contains entries grouped by date, enabling:
@@ -242,3 +243,8 @@ open ~/notes/logs/piano.md | lines | where {|l| $l starts-with "- "} | length
 - Aggregation at any level (sum all `piano.*` for total piano time)
 - File system mapping (`piano.c.md` is a real file)
 - Extensible without schema changes (add `piano.c.bach` when needed)
+
+**Why long-form keys?**
+- `piano::` is immediately legible; `p::` requires a lookup table
+- Consistent with the DayPage-as-journal philosophy — entries should read naturally
+- Dot notation still provides brevity for sub-categories (`ex.hiit::` not `exercise.high-intensity-interval-training::`)
