@@ -724,8 +724,8 @@ def process_reminder_entries [
         }
 
         # Parse the natural language date using nushell's date from-human
-        let target_date = try {
-            $when_part | date from-human | format date "%Y-%m-%d"
+        let parsed_dt = try {
+            $when_part | date from-human
         } catch {
             if $verbose {
                 print $"  ⚠️  Could not parse date '($when_part)' - skipping"
@@ -733,9 +733,14 @@ def process_reminder_entries [
             continue
         }
 
+        let target_date = ($parsed_dt | format date "%Y-%m-%d")
+        let time_part = ($parsed_dt | format date "%H:%M")
+        let has_time = ($time_part != "00:00")
+
         let reminder_file = ([$reminders_path $"($target_date).md"] | path join)
         let wikilink = $"[[($source_date)]]"
-        let reminder_line = $"- [ ] ($message) \(from ($wikilink)\)"
+        let time_marker = if $has_time { $" \(at ($time_part)\)" } else { "" }
+        let reminder_line = $"- [ ] ($message)($time_marker) \(from ($wikilink)\)"
 
         if $dry_run {
             print $"  Would create reminder for ($target_date): ($message)"

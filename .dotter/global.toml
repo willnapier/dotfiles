@@ -268,6 +268,8 @@ depends = []
 "scripts/service-health-check" = "~/.local/bin/service-health-check"
 "scripts/forge-metadata-backup" = "~/.local/bin/forge-metadata-backup"
 "scripts/forge-metadata-backup-monthly" = "~/.local/bin/forge-metadata-backup-monthly"
+# Reminder notification daemon
+"scripts/remind-notify" = "~/.local/bin/remind-notify"
 
 # Semantic search system - managed separately (has virtual environment)
 
@@ -302,6 +304,7 @@ depends = ["shared"]
 "launchd/com.user.readwise-sync.plist" = "~/Library/LaunchAgents/com.user.readwise-sync.plist"
 "launchd/com.user.mail-sync.plist" = "~/Library/LaunchAgents/com.user.mail-sync.plist"
 "launchd/com.user.claude-code-nightly-cleanup.plist" = "~/Library/LaunchAgents/com.user.claude-code-nightly-cleanup.plist"
+"launchd/com.user.remind-notify.plist" = "~/Library/LaunchAgents/com.user.remind-notify.plist"
 "macos/launchd/com.williamnapier.continuum-sync-claude.plist" = "~/Library/LaunchAgents/com.williamnapier.continuum-sync-claude.plist"
 "macos/launchd/com.williamnapier.link-service.plist" = "~/Library/LaunchAgents/com.williamnapier.link-service.plist"
 # NOTE: Individual files managed in [shared.files] for better reliability
