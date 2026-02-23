@@ -18,12 +18,12 @@ STATE_FILE="$STATE_DIR/$TODAY.txt"
 notify() {
     local title="$1"
     local body="$2"
-    if command -v terminal-notifier &>/dev/null; then
-        terminal-notifier -title "$title" -message "$body" -sound Glass
-    elif command -v notify-send &>/dev/null; then
+    if command -v notify-send &>/dev/null; then
+        # Linux (mako/dunst)
         notify-send "$title" "$body" --urgency=normal
     else
-        osascript -e "display alert \"$title\" message \"$body\"" 2>/dev/null || true
+        # macOS — auto-dismissing dialog works regardless of mirroring/Focus mode
+        osascript -e "display dialog \"$body\" with title \"$title\" giving up after 15 buttons {\"OK\"} default button \"OK\"" 2>/dev/null || true
     fi
 }
 
