@@ -22,10 +22,9 @@ notify() {
         # Linux (mako/dunst)
         notify-send "$title" "$body" --urgency=normal
     else
-        # macOS — auto-dismissing dialog, steals focus so you actually see it
+        # macOS — .app wrapper steals focus properly, even over fullscreen Chrome
         # Backgrounded so multiple reminders don't queue
-        osascript -e "tell application \"System Events\" to activate
-display dialog \"$body\" with title \"$title\" giving up after 30 buttons {\"OK\"} default button \"OK\"" &>/dev/null &
+        open -a "$HOME/.local/share/remind-notify-helper.app" --args "$title" "$body" &
     fi
 }
 
