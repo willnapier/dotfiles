@@ -134,3 +134,9 @@ if ($"($nu.default-config-dir)/env-secret.nu" | path exists) {
 if ($"($env.HOME)/.claude/auth-token.txt" | path exists) {
     $env.CLAUDE_CODE_OAUTH_TOKEN = (open ~/.claude/auth-token.txt | str trim)
 }
+# Point gcloud to its own bundled Python (adjust path if you installed elsewhere)
+let gcloud_root = $"($env.HOME)/google-cloud-sdk"
+$env.PATH = ($env.PATH | append $"($gcloud_root)/bin" | uniq)
+
+# This prevents gcloud from looking at your system Python 3.9 or 3.15
+$env.CLOUDSDK_PYTHON = $"($gcloud_root)/platform/bundledpython/bin/python3"
