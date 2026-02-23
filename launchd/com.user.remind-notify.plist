@@ -28,9 +28,6 @@
     </dict>
 
     <key>ProcessType</key>
-    <string>Background</string>
-
-    <key>Nice</key>
-    <integer>15</integer>
+    <string>Interactive</string>
 </dict>
 </plist>
