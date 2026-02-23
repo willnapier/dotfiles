@@ -23,7 +23,8 @@ notify() {
         notify-send "$title" "$body" --urgency=normal
     else
         # macOS — auto-dismissing dialog works regardless of mirroring/Focus mode
-        osascript -e "display dialog \"$body\" with title \"$title\" giving up after 15 buttons {\"OK\"} default button \"OK\"" 2>/dev/null || true
+        # Backgrounded so multiple reminders don't queue
+        osascript -e "display dialog \"$body\" with title \"$title\" giving up after 15 buttons {\"OK\"} default button \"OK\"" &>/dev/null &
     fi
 }
 
