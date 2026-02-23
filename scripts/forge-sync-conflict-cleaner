@@ -1,0 +1,32 @@
+#!/bin/bash
+# forge-sync-conflict-cleaner — deletes Syncthing sync-conflict files from ~/Forge
+# Runs daily via launchd. Only deletes files older than 7 days to allow review.
+
+set -euo pipefail
+
+FORGE_DIR="$HOME/Forge"
+LOG_FILE="$HOME/.local/share/forge-sync-conflict-cleaner.log"
+AGE_DAYS=7
+
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG_FILE"
+}
+
+if [ ! -d "$FORGE_DIR" ]; then
+    log "ERROR: $FORGE_DIR does not exist"
+    exit 1
+fi
+
+# Find and delete sync-conflict files older than AGE_DAYS
+count=0
+while IFS= read -r f; do
+    rm -f "$f"
+    log "DELETED: $f"
+    count=$((count + 1))
+done < <(find "$FORGE_DIR" -name '*sync-conflict*' -type f -mtime +"$AGE_DAYS" 2>/dev/null)
+
+if [ "$count" -eq 0 ]; then
+    log "No sync-conflict files older than ${AGE_DAYS} days found"
+else
+    log "Cleaned $count sync-conflict file(s)"
+fi
