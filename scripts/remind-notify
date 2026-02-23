@@ -66,4 +66,4 @@ while IFS= read -r line; do
         osascript -e "display notification \"$display_msg\" with title \"Reminder\" sound name \"Glass\"" 2>/dev/null || true
         echo "$msg" >> "$STATE_FILE"
     fi
-done < "$REMINDER_FILE"
+done < <(cat "$REMINDER_FILE"; echo)

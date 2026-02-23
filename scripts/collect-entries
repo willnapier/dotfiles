@@ -708,7 +708,7 @@ def process_reminder_entries [
 
         if $colon_idx < 0 {
             if $verbose {
-                print $"  ⚠️  Skipping malformed reminder (no ': '): ($content)"
+                print $"  ⚠️  Skipping malformed reminder - no ': ' separator: ($content)"
             }
             continue
         }
@@ -723,18 +723,28 @@ def process_reminder_entries [
             continue
         }
 
-        # Parse the natural language date using nushell's date from-human
-        let parsed_dt = try {
-            $when_part | date from-human
-        } catch {
-            if $verbose {
-                print $"  ⚠️  Could not parse date '($when_part)' - skipping"
+        # Check if when_part is a bare time (e.g. "23:00", "00:00")
+        # Bare times anchor to the source DayPage date, not date from-human
+        let is_bare_time = ($when_part =~ '^\d{1,2}:\d{2}$')
+
+        let target_date = if $is_bare_time {
+            $source_date
+        } else {
+            try {
+                $when_part | date from-human | format date "%Y-%m-%d"
+            } catch {
+                if $verbose {
+                    print $"  ⚠️  Could not parse date '($when_part)' - skipping"
+                }
+                continue
             }
-            continue
         }
 
-        let target_date = ($parsed_dt | format date "%Y-%m-%d")
-        let time_part = ($parsed_dt | format date "%H:%M")
+        let time_part = if $is_bare_time {
+            $when_part
+        } else {
+            try { $when_part | date from-human | format date "%H:%M" } catch { "00:00" }
+        }
         # Check if the input contained a time pattern (digits with colon)
         let has_time = ($when_part =~ '\d{1,2}:\d{2}')
 
