@@ -22,8 +22,11 @@ notify() {
         # Linux (mako/dunst)
         notify-send "$title" "$body" --urgency=normal
     else
-        # macOS — .app wrapper steals focus properly, even over fullscreen Chrome
-        open -a "$HOME/.local/share/remind-notify-helper.app" --args "$title" "$body"
+        # macOS — dialog via Finder (steals focus, works from launchd)
+        osascript -e "tell application \"Finder\"
+            activate
+            display dialog \"$body\" with title \"$title\" giving up after 30 buttons {\"OK\"} default button \"OK\"
+        end tell"
     fi
 }
 
