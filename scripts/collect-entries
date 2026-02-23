@@ -735,7 +735,8 @@ def process_reminder_entries [
 
         let target_date = ($parsed_dt | format date "%Y-%m-%d")
         let time_part = ($parsed_dt | format date "%H:%M")
-        let has_time = ($time_part != "00:00")
+        # Check if the input contained a time pattern (digits with colon)
+        let has_time = ($when_part =~ '\d{1,2}:\d{2}')
 
         let reminder_file = ([$reminders_path $"($target_date).md"] | path join)
         let wikilink = $"[[($source_date)]]"
