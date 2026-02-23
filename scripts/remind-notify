@@ -19,7 +19,7 @@ notify() {
     local title="$1"
     local body="$2"
     if command -v terminal-notifier &>/dev/null; then
-        terminal-notifier -title "$title" -message "$body" -sound Glass -group "remind-notify"
+        terminal-notifier -title "$title" -message "$body" -sound Glass
     elif command -v notify-send &>/dev/null; then
         notify-send "$title" "$body" --urgency=normal
     else
