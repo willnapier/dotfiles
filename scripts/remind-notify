@@ -23,8 +23,7 @@ notify() {
         notify-send "$title" "$body" --urgency=normal
     else
         # macOS — .app wrapper steals focus properly, even over fullscreen Chrome
-        # Backgrounded so multiple reminders don't queue
-        open -a "$HOME/.local/share/remind-notify-helper.app" --args "$title" "$body" &
+        open -a "$HOME/.local/share/remind-notify-helper.app" --args "$title" "$body"
     fi
 }
 
