@@ -1,8 +1,9 @@
 #!/bin/bash
 # remind-notify — Notification daemon for DayPage reminders
-# Runs every minute via launchd. Fires macOS notifications for:
+# Runs every minute via launchd/systemd. Fires notifications for:
 #   - Timed reminders: (at HH:MM) — when current time >= HH:MM
 #   - Date-only reminders: no time marker — once on first run of the day
+# Cross-platform: terminal-notifier (macOS), notify-send (Linux)
 
 set -euo pipefail
 
@@ -12,6 +13,19 @@ TODAY=$(date +%Y-%m-%d)
 NOW_HHMM=$(date +%H:%M)
 REMINDER_FILE="$REMINDERS_DIR/$TODAY.md"
 STATE_FILE="$STATE_DIR/$TODAY.txt"
+
+# Cross-platform notification function
+notify() {
+    local title="$1"
+    local body="$2"
+    if command -v terminal-notifier &>/dev/null; then
+        terminal-notifier -title "$title" -message "$body" -sound Glass -group "remind-notify"
+    elif command -v notify-send &>/dev/null; then
+        notify-send "$title" "$body" --urgency=normal
+    else
+        osascript -e "display alert \"$title\" message \"$body\"" 2>/dev/null || true
+    fi
+}
 
 # Ensure state directory exists
 mkdir -p "$STATE_DIR"
@@ -56,14 +70,14 @@ while IFS= read -r line; do
             continue
         fi
 
-        osascript -e "display notification \"$display_msg\" with title \"Reminder ($reminder_time)\" sound name \"Glass\"" 2>/dev/null || true
+        notify "Reminder ($reminder_time)" "$display_msg"
         echo "$msg" >> "$STATE_FILE"
     else
         # Date-only reminder — fire once (first run of the day)
         # Strip "(from [[...]])" for display
         display_msg=$(echo "$msg" | sed -E 's/ *\(from \[\[.*\]\]\)//')
 
-        osascript -e "display notification \"$display_msg\" with title \"Reminder\" sound name \"Glass\"" 2>/dev/null || true
+        notify "Reminder" "$display_msg"
         echo "$msg" >> "$STATE_FILE"
     fi
 done < <(cat "$REMINDER_FILE"; echo)
