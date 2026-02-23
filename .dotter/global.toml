@@ -12,6 +12,7 @@ depends = []
 "scripts/claude-voice" = "~/.local/bin/claude-voice"
 "scripts/email-attachments" = "~/.local/bin/email-attachments"
 "scripts/forge-batch-classifier" = "~/.local/bin/forge-batch-classifier"
+"scripts/forge-sync-conflict-cleaner" = "~/.local/bin/forge-sync-conflict-cleaner"
 "scripts/messageboard-edit" = "~/.local/bin/messageboard-edit"
 "scripts/messageboard-lock" = "~/.local/bin/messageboard-lock"
 "scripts/music-notation-lint" = "~/.local/bin/music-notation-lint"
@@ -305,6 +306,7 @@ depends = ["shared"]
 "launchd/com.user.mail-sync.plist" = "~/Library/LaunchAgents/com.user.mail-sync.plist"
 "launchd/com.user.claude-code-nightly-cleanup.plist" = "~/Library/LaunchAgents/com.user.claude-code-nightly-cleanup.plist"
 "launchd/com.user.remind-notify.plist" = "~/Library/LaunchAgents/com.user.remind-notify.plist"
+"launchd/com.user.forge-sync-conflict-cleaner.plist" = "~/Library/LaunchAgents/com.user.forge-sync-conflict-cleaner.plist"
 "macos/launchd/com.williamnapier.continuum-sync-claude.plist" = "~/Library/LaunchAgents/com.williamnapier.continuum-sync-claude.plist"
 "macos/launchd/com.williamnapier.link-service.plist" = "~/Library/LaunchAgents/com.williamnapier.link-service.plist"
 # NOTE: Individual files managed in [shared.files] for better reliability
