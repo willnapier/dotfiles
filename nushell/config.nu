@@ -4366,6 +4366,39 @@ def codex [...args] {
     }
 }
 
+def gemini [...args] {
+    let continuum_gemini = ($env.HOME | path join ".local/bin/continuum-gemini")
+
+    if ($continuum_gemini | path exists) {
+        ^$continuum_gemini ...$args
+    } else {
+        # Fallback to original gemini if wrapper not available
+        let gemini_path = (which --all gemini
+            | where type == "external"
+            | get 0?
+        )
+
+        let real_path = if $gemini_path != null and ($gemini_path.path | is-not-empty) {
+            $gemini_path.path
+        } else {
+            let fallback_paths = [
+                "/opt/homebrew/bin/gemini"
+                "/usr/local/bin/gemini"
+                "/usr/bin/gemini"
+            ]
+            ($fallback_paths | where {|path| $path | path exists} | first)
+        }
+
+        if ($real_path | is-empty) {
+            print "Gemini CLI not found. Install @google/gemini-cli or set up continuum-gemini."
+            return
+        }
+
+        print "(Warning: Using gemini directly - not capturing to continuum logs)"
+        ^$real_path ...$args
+    }
+}
+
 # Goose will use the ANTHROPIC_API_KEY from env-secret.nu normally
 
 # Activity Discovery - Find interactions and activities by semantic tags
