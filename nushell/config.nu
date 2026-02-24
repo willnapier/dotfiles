@@ -1571,6 +1571,38 @@ def fsv [] {
     }
 }
 
+# Forge ask — select one file via sk, send to Gemini with a question
+# Content goes via stdin (no shell argument limits), question via -p
+def forge-ask [...question: string] {
+    if (which fd | is-empty) or (which sk | is-empty) {
+        print "fd and sk are required."
+        return
+    }
+    if ($env.FORGE? | is-empty) or (not ($env.FORGE | path exists)) {
+        print "FORGE not set or does not exist"
+        return
+    }
+
+    let file = (fd . $env.FORGE --type f -e md --hidden -L --exclude .git --exclude .stversions --exclude '*/Reminders/*' | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'mdcat --columns 80 {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "Forge: " | str trim)
+
+    if ($file | is-empty) { return }
+
+    let q = if ($question | is-empty) {
+        input "Question: "
+    } else {
+        $question | str join " "
+    }
+
+    if ($q | is-empty) { return }
+
+    let basename = ($file | path basename)
+    let content = (open --raw $file)
+
+    # Pipe content via stdin, question via -p flag
+    # This avoids shell argument limits and Nushell interpolation gotchas
+    $content | ^gemini -p $"Based on the above file content from ($basename): ($q)"
+}
+
 # Global file search + open with appropriate application
 def gso [] {
     if (which fd | is-empty) or (which sk | is-empty) {
