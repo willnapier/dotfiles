@@ -74,7 +74,8 @@ fn extract_and_parse(content: &str) -> Result<Vec<Entry>> {
     let mut entries = Vec::new();
 
     for line in content.lines() {
-        if line.trim() == "clinic::" {
+        let line = line.trim_start();
+        if line == "clinic::" {
             in_block = true;
             continue;
         }
@@ -401,6 +402,39 @@ CC71 12:00 insurer ->
         assert_eq!(dna.len(), 2);
         assert_eq!(deferred.len(), 1);
         assert_eq!(pending.len(), 1);
+    }
+
+    #[test]
+    fn test_indented_lines_still_parsed() {
+        let content = "\
+clinic::
+- [x] EB88 07:50 insurer
+- [x] AO+AO 09:20
+- [x] BA90 10:10 insurer
+- [x] MPS94 11:30 insurer
+- [x] MA93 12:20 insurer
+ - BT07 15:50 cancelled
+- [x] CT71 17:30 insurer
+- [x] DV91 18:15
+- [x] NP+AP 19:05
+
+dev:: some other block
+";
+        let entries = extract_and_parse(content).unwrap();
+        assert_eq!(entries.len(), 9);
+
+        let attended: Vec<_> = entries
+            .iter()
+            .filter(|e| matches!(e.status, Status::Attended))
+            .collect();
+        let dna: Vec<_> = entries
+            .iter()
+            .filter(|e| matches!(e.status, Status::DnaLc))
+            .collect();
+
+        assert_eq!(attended.len(), 8);
+        assert_eq!(dna.len(), 1);
+        assert!(dna[0].content.contains("BT07"));
     }
 
     #[test]
