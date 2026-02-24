@@ -24,7 +24,7 @@ impl ClientMap {
     pub fn default_path() -> PathBuf {
         dirs::home_dir()
             .expect("Could not find home directory")
-            .join("Clinical/tm3-client-map.toml")
+            .join("Clinical/private/tm3-client-map.toml")
     }
 
     pub fn lookup(&self, name: &str) -> Option<&str> {
