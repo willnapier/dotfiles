@@ -52,9 +52,9 @@ if ($gcloud_root | path exists) {
         $env.CLOUDSDK_PYTHON = ($python_search | get 0.path)
     }
 
-    # ForgePodium project identity for Gemini CLI / Vertex AI
+    # ForgePodium project identity for Gemini CLI
     $env.GOOGLE_CLOUD_PROJECT = "forgepodium"
-    $env.GOOGLE_GENAI_USE_VERTEXAI = "true"
+    $env.GEMINI_API_KEY = "REDACTED_GEMINI_API_KEY"
 }
 
 # --- OpenAI Keychain Retrieval (macOS only) ---
