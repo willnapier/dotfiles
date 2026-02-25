@@ -4398,7 +4398,7 @@ def codex [...args] {
     }
 }
 
-def gemini [...args] {
+def --wrapped gemini [...args] {
     let continuum_gemini = ($env.HOME | path join ".local/bin/continuum-gemini")
 
     if ($continuum_gemini | path exists) {
