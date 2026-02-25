@@ -1,18 +1,29 @@
 mod cc_logs;
 mod continuum;
+mod dump;
 mod output;
 mod types;
 
 use anyhow::Result;
 use chrono::{Local, NaiveDate};
-use clap::Parser;
+use clap::{Parser, Subcommand};
 
 use types::DayActivity;
 
 #[derive(Parser)]
 #[command(name = "continuum-activity")]
 #[command(about = "Extract daily AI activity from Claude Code logs and Continuum archive")]
+#[command(args_conflicts_with_subcommands = true)]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+
+    #[command(flatten)]
+    report: ReportArgs,
+}
+
+#[derive(clap::Args)]
+struct ReportArgs {
     /// Target date (YYYY-MM-DD). Defaults to today.
     date: Option<NaiveDate>,
 
@@ -29,15 +40,46 @@ struct Cli {
     cc_only: bool,
 }
 
+#[derive(Subcommand)]
+enum Command {
+    /// Dump a session's full conversation text (for LLM context injection)
+    Dump(DumpArgs),
+}
+
+#[derive(clap::Args)]
+struct DumpArgs {
+    /// Session ID (or prefix) to dump
+    session_id: Option<String>,
+
+    /// Dump the most recent session
+    #[arg(long)]
+    last: bool,
+
+    /// Filter by assistant name (e.g. gemini-cli, claude-code)
+    #[arg(long)]
+    assistant: Option<String>,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let target_date = cli.date.unwrap_or_else(|| Local::now().date_naive());
+    match cli.command {
+        Some(Command::Dump(args)) => dump::dump_session(
+            args.session_id.as_deref(),
+            args.last,
+            args.assistant.as_deref(),
+        ),
+        None => run_report(cli.report),
+    }
+}
+
+fn run_report(args: ReportArgs) -> Result<()> {
+    let target_date = args.date.unwrap_or_else(|| Local::now().date_naive());
     let date_str = target_date.format("%Y-%m-%d").to_string();
 
-    let cc_sessions = cc_logs::extract_cc_sessions(target_date, cli.verbose)?;
+    let cc_sessions = cc_logs::extract_cc_sessions(target_date, args.verbose)?;
 
-    let continuum_sessions = if cli.cc_only {
+    let continuum_sessions = if args.cc_only {
         Vec::new()
     } else {
         continuum::extract_continuum_sessions(target_date)?
@@ -54,7 +96,7 @@ fn main() -> Result<()> {
         continuum_sessions,
     };
 
-    if cli.json {
+    if args.json {
         println!("{}", output::render_json(&activity));
     } else {
         print!("{}", output::render_markdown(&activity));
