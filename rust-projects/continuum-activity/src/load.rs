@@ -1,5 +1,6 @@
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Deserialize)]
@@ -22,10 +23,27 @@ struct SessionInfo {
     meta: SessionMeta,
 }
 
+struct SessionMatch {
+    session: SessionInfo,
+    /// Cleaned conversation text (cached after first build)
+    cleaned_text: String,
+    /// Approximate token count (chars / 4)
+    approx_tokens: usize,
+    /// First matching snippet for display
+    snippet: String,
+}
+
+/// Approximate token count: ~4 chars per token for English text.
+fn estimate_tokens(text: &str) -> usize {
+    (text.len() + 3) / 4
+}
+
 pub fn load_session(
     session_id: Option<&str>,
     last: bool,
     assistant_filter: Option<&str>,
+    search: Option<&str>,
+    all: bool,
 ) -> Result<()> {
     let base_dir = dirs::home_dir()
         .context("No home directory")?
@@ -35,15 +53,232 @@ pub fn load_session(
         bail!("Continuum logs directory not found: {}", base_dir.display());
     }
 
+    if let Some(query) = search {
+        return search_and_load(&base_dir, query, assistant_filter, all);
+    }
+
     let session = if last {
         find_last_session(&base_dir, assistant_filter)?
     } else if let Some(id) = session_id {
         find_session_by_id(&base_dir, id)?
     } else {
-        bail!("Specify --last or provide a session ID");
+        bail!("Specify --last, --search, or provide a session ID");
     };
 
-    output_session(&session)
+    let text = build_cleaned_text(&session)?;
+    let tokens = estimate_tokens(&text);
+    eprintln!(
+        "Session: {} | {} | approx {}k tokens",
+        session.meta.assistant,
+        format_time_range(&session.meta.start_time, &session.meta.end_time),
+        (tokens + 500) / 1000,
+    );
+    print!("{}", text);
+
+    Ok(())
+}
+
+fn search_and_load(
+    base_dir: &Path,
+    query: &str,
+    assistant_filter: Option<&str>,
+    all: bool,
+) -> Result<()> {
+    let sessions = collect_sessions(base_dir, assistant_filter)?;
+    let query_lower = query.to_lowercase();
+
+    let mut matches: Vec<SessionMatch> = Vec::new();
+
+    for session in sessions {
+        let messages_path = session.path.join("messages.jsonl");
+        if !messages_path.exists() {
+            continue;
+        }
+
+        let raw = std::fs::read_to_string(&messages_path).unwrap_or_default();
+        let raw_lower = raw.to_lowercase();
+
+        if !raw_lower.contains(&query_lower) {
+            continue;
+        }
+
+        // Extract a snippet around the first match
+        let snippet = extract_snippet(&raw, &query_lower);
+        let cleaned_text = build_cleaned_text(&session)?;
+        let approx_tokens = estimate_tokens(&cleaned_text);
+
+        matches.push(SessionMatch {
+            session,
+            cleaned_text,
+            approx_tokens,
+            snippet,
+        });
+    }
+
+    if matches.is_empty() {
+        bail!("No sessions found matching '{}'", query);
+    }
+
+    // Sort by start_time descending (most recent first)
+    matches.sort_by(|a, b| {
+        b.session
+            .meta
+            .start_time
+            .cmp(&a.session.meta.start_time)
+    });
+
+    if all {
+        return output_all_matches(&matches);
+    }
+
+    // Interactive selection on stderr
+    let total_tokens: usize = matches.iter().map(|m| m.approx_tokens).sum();
+
+    eprintln!(
+        "\nFound {} sessions matching '{}' (total approx {}k tokens):\n",
+        matches.len(),
+        query,
+        (total_tokens + 500) / 1000,
+    );
+
+    for (i, m) in matches.iter().enumerate() {
+        let time = format_time_range(
+            &m.session.meta.start_time,
+            &m.session.meta.end_time,
+        );
+        let msgs = m
+            .session
+            .meta
+            .message_count
+            .map(|c| format!("{} msgs", c))
+            .unwrap_or_else(|| "? msgs".to_string());
+        eprintln!(
+            "  [{}] {} | {} | {} | approx {}k tokens",
+            i + 1,
+            m.session.meta.assistant,
+            time,
+            msgs,
+            (m.approx_tokens + 500) / 1000,
+        );
+        eprintln!("      \"{}\"", m.snippet);
+    }
+
+    eprintln!(
+        "\n  [a] Load all ({} sessions, approx {}k tokens)",
+        matches.len(),
+        (total_tokens + 500) / 1000,
+    );
+    eprintln!();
+    eprint!("Select [1-{}/a]: ", matches.len());
+    std::io::stderr().flush()?;
+
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    let input = input.trim();
+
+    if input.eq_ignore_ascii_case("a") {
+        return output_all_matches(&matches);
+    }
+
+    let idx: usize = input
+        .parse::<usize>()
+        .ok()
+        .and_then(|n| if n >= 1 && n <= matches.len() { Some(n - 1) } else { None })
+        .ok_or_else(|| anyhow::anyhow!("Invalid selection"))?;
+
+    let m = &matches[idx];
+    eprintln!(
+        "\nLoading: {} | {} | approx {}k tokens",
+        m.session.meta.assistant,
+        format_time_range(&m.session.meta.start_time, &m.session.meta.end_time),
+        (m.approx_tokens + 500) / 1000,
+    );
+    print!("{}", m.cleaned_text);
+
+    Ok(())
+}
+
+fn output_all_matches(matches: &[SessionMatch]) -> Result<()> {
+    let total_tokens: usize = matches.iter().map(|m| m.approx_tokens).sum();
+    eprintln!(
+        "\nLoading {} sessions (approx {}k tokens total)",
+        matches.len(),
+        (total_tokens + 500) / 1000,
+    );
+
+    for (i, m) in matches.iter().enumerate() {
+        let time = format_time_range(
+            &m.session.meta.start_time,
+            &m.session.meta.end_time,
+        );
+        if i > 0 {
+            println!();
+        }
+        println!(
+            "--- Session: {} | {} ---\n",
+            m.session.meta.assistant, time,
+        );
+        print!("{}", m.cleaned_text);
+    }
+
+    Ok(())
+}
+
+fn extract_snippet(raw: &str, query_lower: &str) -> String {
+    let raw_lower = raw.to_lowercase();
+    if let Some(pos) = raw_lower.find(query_lower) {
+        let start = pos.saturating_sub(40);
+        let end = (pos + query_lower.len() + 60).min(raw.len());
+        // Find clean boundaries
+        let start = if start > 0 {
+            raw[start..].find(' ').map(|p| start + p + 1).unwrap_or(start)
+        } else {
+            start
+        };
+        let snippet: String = raw[start..end]
+            .chars()
+            .map(|c| if c == '\n' { ' ' } else { c })
+            .collect();
+        let snippet = snippet.trim();
+        if start > 0 {
+            format!("...{}", snippet)
+        } else {
+            snippet.to_string()
+        }
+    } else {
+        String::new()
+    }
+}
+
+fn build_cleaned_text(session: &SessionInfo) -> Result<String> {
+    let messages_path = session.path.join("messages.jsonl");
+    if !messages_path.exists() {
+        bail!("No messages file found for session {}", session.meta.id);
+    }
+
+    let content = std::fs::read_to_string(&messages_path)?;
+    let mut output = String::new();
+
+    for line in content.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+
+        if let Ok(msg) = serde_json::from_str::<Message>(line) {
+            let cleaned = clean_content(&msg.content);
+            if cleaned.is_empty() {
+                continue;
+            }
+            let role_label = match msg.role.as_str() {
+                "user" => "User",
+                "assistant" => "Assistant",
+                _ => &msg.role,
+            };
+            output.push_str(&format!("[{}]\n{}\n\n", role_label, cleaned));
+        }
+    }
+
+    Ok(output)
 }
 
 fn collect_sessions(base_dir: &Path, assistant_filter: Option<&str>) -> Result<Vec<SessionInfo>> {
@@ -102,7 +337,6 @@ fn find_last_session(base_dir: &Path, assistant_filter: Option<&str>) -> Result<
         );
     }
 
-    // Sort by start_time descending, take most recent
     sessions.sort_by(|a, b| b.meta.start_time.cmp(&a.meta.start_time));
 
     Ok(sessions.into_iter().next().unwrap())
@@ -112,11 +346,9 @@ fn find_session_by_id(base_dir: &Path, id: &str) -> Result<SessionInfo> {
     let sessions = collect_sessions(base_dir, None)?;
 
     for session in sessions {
-        // Match full ID or prefix
         if session.meta.id == id || session.meta.id.starts_with(id) {
             return Ok(session);
         }
-        // Also match directory name
         if let Some(dir_name) = session.path.file_name().and_then(|n| n.to_str()) {
             if dir_name == id || dir_name.starts_with(id) {
                 return Ok(session);
@@ -127,52 +359,12 @@ fn find_session_by_id(base_dir: &Path, id: &str) -> Result<SessionInfo> {
     bail!("No session found matching ID '{}'", id);
 }
 
-fn output_session(session: &SessionInfo) -> Result<()> {
-    let messages_path = session.path.join("messages.jsonl");
-    if !messages_path.exists() {
-        bail!("No messages file found for session {}", session.meta.id);
-    }
-
-    // Header on stderr (so stdout is clean for piping)
-    let time_range = format_time_range(&session.meta.start_time, &session.meta.end_time);
-    let msg_count = session
-        .meta
-        .message_count
-        .map(|c| format!(", {} messages", c))
-        .unwrap_or_default();
-    eprintln!("Session: {} | {}{}", session.meta.assistant, time_range, msg_count);
-
-    // Messages to stdout
-    let content = std::fs::read_to_string(&messages_path)?;
-    for line in content.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        if let Ok(msg) = serde_json::from_str::<Message>(line) {
-            let cleaned = clean_content(&msg.content);
-            if cleaned.is_empty() {
-                continue;
-            }
-            let role_label = match msg.role.as_str() {
-                "user" => "User",
-                "assistant" => "Assistant",
-                _ => &msg.role,
-            };
-            println!("[{}]\n{}\n", role_label, cleaned);
-        }
-    }
-
-    Ok(())
-}
-
 /// Strip system scaffolding, tool XML, and command noise from message content.
 fn clean_content(content: &str) -> String {
     let mut result = String::new();
     let mut in_tag = false;
     let mut tag_name = String::new();
 
-    // Tags whose entire content (open to close) should be stripped
     let skip_tags = [
         "local-command-caveat",
         "command-name",
@@ -188,9 +380,7 @@ fn clean_content(content: &str) -> String {
     for line in content.lines() {
         let trimmed = line.trim();
 
-        // Detect opening tags
         if let Some(rest) = trimmed.strip_prefix('<') {
-            // Closing tag
             if let Some(rest) = rest.strip_prefix('/') {
                 if let Some(name) = rest.split('>').next() {
                     let name = name.split_whitespace().next().unwrap_or(name);
@@ -200,9 +390,9 @@ fn clean_content(content: &str) -> String {
                         continue;
                     }
                 }
-            }
-            // Opening tag
-            else if let Some(name) = rest.split('>').next().or_else(|| rest.split_whitespace().next()) {
+            } else if let Some(name) =
+                rest.split('>').next().or_else(|| rest.split_whitespace().next())
+            {
                 let name = name.trim_end_matches('/');
                 if skip_tags.iter().any(|t| *t == name) {
                     in_tag = true;
@@ -216,7 +406,6 @@ fn clean_content(content: &str) -> String {
             continue;
         }
 
-        // Skip command-message lines
         if trimmed.starts_with("<command-message>") {
             continue;
         }
@@ -225,7 +414,6 @@ fn clean_content(content: &str) -> String {
         result.push('\n');
     }
 
-    // Collapse runs of 3+ blank lines to 2
     let mut collapsed = String::new();
     let mut blank_count = 0;
     for line in result.lines() {

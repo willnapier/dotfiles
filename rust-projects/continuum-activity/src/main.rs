@@ -58,6 +58,14 @@ struct LoadArgs {
     /// Filter by assistant name (e.g. gemini-cli, claude-code)
     #[arg(long)]
     assistant: Option<String>,
+
+    /// Search for sessions containing this text
+    #[arg(long)]
+    search: Option<String>,
+
+    /// Load all matching sessions (non-interactive)
+    #[arg(long)]
+    all: bool,
 }
 
 fn main() -> Result<()> {
@@ -68,6 +76,8 @@ fn main() -> Result<()> {
             args.session_id.as_deref(),
             args.last,
             args.assistant.as_deref(),
+            args.search.as_deref(),
+            args.all,
         ),
         None => run_report(cli.report),
     }
