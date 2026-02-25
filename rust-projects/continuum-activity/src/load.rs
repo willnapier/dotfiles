@@ -25,17 +25,77 @@ struct SessionInfo {
 
 struct SessionMatch {
     session: SessionInfo,
-    /// Cleaned conversation text (cached after first build)
     cleaned_text: String,
-    /// Approximate token count (chars / 4)
     approx_tokens: usize,
-    /// First matching snippet for display
     snippet: String,
+    relevance: Relevance,
 }
 
-/// Approximate token count: ~4 chars per token for English text.
+struct Relevance {
+    /// Total occurrences of the query in the session
+    match_count: usize,
+    /// Matches per 1000 tokens — how focused the session is on the topic
+    density: f64,
+    /// Whether the user (not just the assistant) mentions the query
+    user_initiated: bool,
+    /// Classification
+    tag: RelevanceTag,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum RelevanceTag {
+    /// High density or user-initiated with multiple matches — core discussion
+    Focused,
+    /// Moderate engagement — topic is substantive but not the main thread
+    Relevant,
+    /// Low density — passing mention in a session about something else
+    Mention,
+}
+
+impl RelevanceTag {
+    fn label(&self) -> &'static str {
+        match self {
+            RelevanceTag::Focused => "FOCUSED",
+            RelevanceTag::Relevant => "relevant",
+            RelevanceTag::Mention => "mention",
+        }
+    }
+}
+
 fn estimate_tokens(text: &str) -> usize {
     (text.len() + 3) / 4
+}
+
+fn compute_relevance(cleaned_text: &str, query_lower: &str) -> Relevance {
+    let text_lower = cleaned_text.to_lowercase();
+    let match_count = text_lower.matches(query_lower).count();
+    let tokens = estimate_tokens(cleaned_text).max(1);
+    let density = (match_count as f64 / tokens as f64) * 1000.0;
+
+    // Check if user messages contain the query
+    let user_initiated = cleaned_text
+        .split("[User]\n")
+        .skip(1) // skip text before first [User]
+        .any(|block| {
+            // Take text up to next role marker
+            let user_text = block.split("[Assistant]\n").next().unwrap_or(block);
+            user_text.to_lowercase().contains(query_lower)
+        });
+
+    let tag = if density >= 1.0 || (user_initiated && match_count >= 3) {
+        RelevanceTag::Focused
+    } else if (user_initiated && match_count >= 1) || match_count >= 3 || density >= 0.3 {
+        RelevanceTag::Relevant
+    } else {
+        RelevanceTag::Mention
+    };
+
+    Relevance {
+        match_count,
+        density,
+        user_initiated,
+        tag,
+    }
 }
 
 pub fn load_session(
@@ -102,16 +162,17 @@ fn search_and_load(
             continue;
         }
 
-        // Extract a snippet around the first match
         let snippet = extract_snippet(&raw, &query_lower);
         let cleaned_text = build_cleaned_text(&session)?;
         let approx_tokens = estimate_tokens(&cleaned_text);
+        let relevance = compute_relevance(&cleaned_text, &query_lower);
 
         matches.push(SessionMatch {
             session,
             cleaned_text,
             approx_tokens,
             snippet,
+            relevance,
         });
     }
 
@@ -130,6 +191,18 @@ fn search_and_load(
     if all {
         return output_all_matches(&matches);
     }
+
+    // Build recommended set: all Focused + Relevant sessions
+    let recommended_indices: Vec<usize> = matches
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.relevance.tag != RelevanceTag::Mention)
+        .map(|(i, _)| i)
+        .collect();
+    let recommended_tokens: usize = recommended_indices
+        .iter()
+        .map(|&i| matches[i].approx_tokens)
+        .sum();
 
     // Interactive selection on stderr
     let total_tokens: usize = matches.iter().map(|m| m.approx_tokens).sum();
@@ -152,24 +225,41 @@ fn search_and_load(
             .message_count
             .map(|c| format!("{} msgs", c))
             .unwrap_or_else(|| "? msgs".to_string());
+        let tag = m.relevance.tag.label();
+        let user_flag = if m.relevance.user_initiated { "+" } else { " " };
         eprintln!(
-            "  [{}] {} | {} | {} | approx {}k tokens",
+            "  [{}] {:8} {}{} | {} | {} | approx {}k tokens",
             i + 1,
+            tag,
+            user_flag,
             m.session.meta.assistant,
             time,
             msgs,
             (m.approx_tokens + 500) / 1000,
         );
-        eprintln!("      \"{}\"", m.snippet);
+        eprintln!(
+            "      ({} matches, {:.1}/1k density) \"{}\"",
+            m.relevance.match_count, m.relevance.density, m.snippet,
+        );
     }
 
+    // Show options
+    if !recommended_indices.is_empty() && recommended_indices.len() < matches.len() {
+        let rec_list: Vec<String> = recommended_indices.iter().map(|i| format!("{}", i + 1)).collect();
+        eprintln!(
+            "\n  [r] Recommended: sessions {} ({} sessions, approx {}k tokens)",
+            rec_list.join(","),
+            recommended_indices.len(),
+            (recommended_tokens + 500) / 1000,
+        );
+    }
     eprintln!(
-        "\n  [a] Load all ({} sessions, approx {}k tokens)",
+        "  [a] Load all ({} sessions, approx {}k tokens)",
         matches.len(),
         (total_tokens + 500) / 1000,
     );
     eprintln!();
-    eprint!("Select [1-{}/a]: ", matches.len());
+    eprint!("Select [1-{}/r/a]: ", matches.len());
     std::io::stderr().flush()?;
 
     let mut input = String::new();
@@ -180,25 +270,51 @@ fn search_and_load(
         return output_all_matches(&matches);
     }
 
-    let idx: usize = input
-        .parse::<usize>()
-        .ok()
-        .and_then(|n| if n >= 1 && n <= matches.len() { Some(n - 1) } else { None })
-        .ok_or_else(|| anyhow::anyhow!("Invalid selection"))?;
+    if input.eq_ignore_ascii_case("r") {
+        let recommended: Vec<&SessionMatch> = recommended_indices
+            .iter()
+            .map(|&i| &matches[i])
+            .collect();
+        return output_selected_matches(&recommended);
+    }
 
-    let m = &matches[idx];
-    eprintln!(
-        "\nLoading: {} | {} | approx {}k tokens",
-        m.session.meta.assistant,
-        format_time_range(&m.session.meta.start_time, &m.session.meta.end_time),
-        (m.approx_tokens + 500) / 1000,
-    );
-    print!("{}", m.cleaned_text);
+    // Support comma-separated selection: "3,4,10"
+    let indices: Result<Vec<usize>, _> = input
+        .split(',')
+        .map(|s| {
+            s.trim()
+                .parse::<usize>()
+                .ok()
+                .and_then(|n| if n >= 1 && n <= matches.len() { Some(n - 1) } else { None })
+                .ok_or_else(|| anyhow::anyhow!("Invalid selection: {}", s.trim()))
+        })
+        .collect();
+
+    let indices = indices?;
+
+    if indices.len() == 1 {
+        let m = &matches[indices[0]];
+        eprintln!(
+            "\nLoading: {} | {} | approx {}k tokens",
+            m.session.meta.assistant,
+            format_time_range(&m.session.meta.start_time, &m.session.meta.end_time),
+            (m.approx_tokens + 500) / 1000,
+        );
+        print!("{}", m.cleaned_text);
+    } else {
+        let selected: Vec<&SessionMatch> = indices.iter().map(|&i| &matches[i]).collect();
+        output_selected_matches(&selected)?;
+    }
 
     Ok(())
 }
 
 fn output_all_matches(matches: &[SessionMatch]) -> Result<()> {
+    let all_refs: Vec<&SessionMatch> = matches.iter().collect();
+    output_selected_matches(&all_refs)
+}
+
+fn output_selected_matches(matches: &[&SessionMatch]) -> Result<()> {
     let total_tokens: usize = matches.iter().map(|m| m.approx_tokens).sum();
     eprintln!(
         "\nLoading {} sessions (approx {}k tokens total)",
@@ -229,7 +345,6 @@ fn extract_snippet(raw: &str, query_lower: &str) -> String {
     if let Some(pos) = raw_lower.find(query_lower) {
         let start = pos.saturating_sub(40);
         let end = (pos + query_lower.len() + 60).min(raw.len());
-        // Find clean boundaries
         let start = if start > 0 {
             raw[start..].find(' ').map(|p| start + p + 1).unwrap_or(start)
         } else {
