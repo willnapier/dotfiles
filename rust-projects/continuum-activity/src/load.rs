@@ -204,11 +204,11 @@ fn search_and_load(
         .map(|&i| matches[i].approx_tokens)
         .sum();
 
-    // Interactive selection on stderr
+    // Build results display
     let total_tokens: usize = matches.iter().map(|m| m.approx_tokens).sum();
 
-    eprintln!(
-        "\nFound {} sessions matching '{}' (total approx {}k tokens):\n",
+    let mut display = format!(
+        "\nFound {} sessions matching '{}' (total approx {}k tokens):\n\n",
         matches.len(),
         query,
         (total_tokens + 500) / 1000,
@@ -227,8 +227,8 @@ fn search_and_load(
             .unwrap_or_else(|| "? msgs".to_string());
         let tag = m.relevance.tag.label();
         let user_flag = if m.relevance.user_initiated { "+" } else { " " };
-        eprintln!(
-            "  [{}] {:8} {}{} | {} | {} | approx {}k tokens",
+        display.push_str(&format!(
+            "  [{}] {:8} {}{} | {} | {} | approx {}k tokens\n",
             i + 1,
             tag,
             user_flag,
@@ -236,30 +236,33 @@ fn search_and_load(
             time,
             msgs,
             (m.approx_tokens + 500) / 1000,
-        );
-        eprintln!(
-            "      ({} matches, {:.1}/1k density) \"{}\"",
+        ));
+        display.push_str(&format!(
+            "      ({} matches, {:.1}/1k density) \"{}\"\n",
             m.relevance.match_count, m.relevance.density, m.snippet,
-        );
+        ));
     }
 
     // Show options
     if !recommended_indices.is_empty() && recommended_indices.len() < matches.len() {
         let rec_list: Vec<String> = recommended_indices.iter().map(|i| format!("{}", i + 1)).collect();
-        eprintln!(
-            "\n  [r] Recommended: sessions {} ({} sessions, approx {}k tokens)",
+        display.push_str(&format!(
+            "\n  [r] Recommended: sessions {} ({} sessions, approx {}k tokens)\n",
             rec_list.join(","),
             recommended_indices.len(),
             (recommended_tokens + 500) / 1000,
-        );
+        ));
     }
-    eprintln!(
-        "  [a] Load all ({} sessions, approx {}k tokens)",
+    display.push_str(&format!(
+        "  [a] Load all ({} sessions, approx {}k tokens)\n",
         matches.len(),
         (total_tokens + 500) / 1000,
-    );
-    eprintln!();
-    eprint!("Select [1-{}/r/a]: ", matches.len());
+    ));
+
+    // Display through pager (less -RFX: ANSI passthrough, quit-if-one-screen, no clear)
+    display_with_pager(&display);
+
+    eprint!("\nSelect [1-{}/r/a]: ", matches.len());
     std::io::stderr().flush()?;
 
     let mut input = String::new();
@@ -338,6 +341,27 @@ fn output_selected_matches(matches: &[&SessionMatch]) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Display text through a pager (less) for scrollable output.
+/// Falls back to direct stderr output if less is unavailable.
+fn display_with_pager(text: &str) {
+    // less -R: ANSI passthrough, -F: quit if fits on one screen, -X: don't clear on exit
+    if let Ok(mut child) = std::process::Command::new("less")
+        .args(["-RFX"])
+        .stdin(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .spawn()
+    {
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(text.as_bytes());
+            drop(stdin);
+        }
+        let _ = child.wait();
+    } else {
+        // Fallback: print directly to stderr
+        eprint!("{}", text);
+    }
 }
 
 fn extract_snippet(raw: &str, query_lower: &str) -> String {
