@@ -1,4 +1,5 @@
 mod cc_logs;
+mod clean;
 mod continuum;
 mod load;
 mod output;
@@ -44,6 +45,8 @@ struct ReportArgs {
 enum Command {
     /// Load a session's full conversation text (for LLM context injection)
     Load(LoadArgs),
+    /// Deduplicate messages across all sessions and fix metadata
+    Clean(CleanArgs),
 }
 
 #[derive(clap::Args)]
@@ -68,10 +71,22 @@ struct LoadArgs {
     all: bool,
 }
 
+#[derive(clap::Args)]
+struct CleanArgs {
+    /// Preview changes without modifying files
+    #[arg(long)]
+    dry_run: bool,
+
+    /// Skip creating a backup before cleaning
+    #[arg(long)]
+    no_backup: bool,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Some(Command::Clean(args)) => clean::clean_logs(args.dry_run, args.no_backup),
         Some(Command::Load(args)) => load::load_session(
             args.session_id.as_deref(),
             args.last,
