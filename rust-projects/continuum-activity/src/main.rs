@@ -1,6 +1,6 @@
 mod cc_logs;
 mod continuum;
-mod dump;
+mod load;
 mod output;
 mod types;
 
@@ -42,16 +42,16 @@ struct ReportArgs {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Dump a session's full conversation text (for LLM context injection)
-    Dump(DumpArgs),
+    /// Load a session's full conversation text (for LLM context injection)
+    Load(LoadArgs),
 }
 
 #[derive(clap::Args)]
-struct DumpArgs {
-    /// Session ID (or prefix) to dump
+struct LoadArgs {
+    /// Session ID (or prefix) to load
     session_id: Option<String>,
 
-    /// Dump the most recent session
+    /// Load the most recent session
     #[arg(long)]
     last: bool,
 
@@ -64,7 +64,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Some(Command::Dump(args)) => dump::dump_session(
+        Some(Command::Load(args)) => load::load_session(
             args.session_id.as_deref(),
             args.last,
             args.assistant.as_deref(),

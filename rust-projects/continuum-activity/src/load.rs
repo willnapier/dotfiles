@@ -22,7 +22,7 @@ struct SessionInfo {
     meta: SessionMeta,
 }
 
-pub fn dump_session(
+pub fn load_session(
     session_id: Option<&str>,
     last: bool,
     assistant_filter: Option<&str>,
@@ -150,16 +150,98 @@ fn output_session(session: &SessionInfo) -> Result<()> {
         }
 
         if let Ok(msg) = serde_json::from_str::<Message>(line) {
+            let cleaned = clean_content(&msg.content);
+            if cleaned.is_empty() {
+                continue;
+            }
             let role_label = match msg.role.as_str() {
                 "user" => "User",
                 "assistant" => "Assistant",
                 _ => &msg.role,
             };
-            println!("[{}]\n{}\n", role_label, msg.content);
+            println!("[{}]\n{}\n", role_label, cleaned);
         }
     }
 
     Ok(())
+}
+
+/// Strip system scaffolding, tool XML, and command noise from message content.
+fn clean_content(content: &str) -> String {
+    let mut result = String::new();
+    let mut in_tag = false;
+    let mut tag_name = String::new();
+
+    // Tags whose entire content (open to close) should be stripped
+    let skip_tags = [
+        "local-command-caveat",
+        "command-name",
+        "command-args",
+        "local-command-stdout",
+        "system-reminder",
+        "antml:function_calls",
+        "antml:invoke",
+        "antml:parameter",
+        "function_results",
+    ];
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        // Detect opening tags
+        if let Some(rest) = trimmed.strip_prefix('<') {
+            // Closing tag
+            if let Some(rest) = rest.strip_prefix('/') {
+                if let Some(name) = rest.split('>').next() {
+                    let name = name.split_whitespace().next().unwrap_or(name);
+                    if skip_tags.iter().any(|t| *t == name) {
+                        in_tag = false;
+                        tag_name.clear();
+                        continue;
+                    }
+                }
+            }
+            // Opening tag
+            else if let Some(name) = rest.split('>').next().or_else(|| rest.split_whitespace().next()) {
+                let name = name.trim_end_matches('/');
+                if skip_tags.iter().any(|t| *t == name) {
+                    in_tag = true;
+                    tag_name = name.to_string();
+                    continue;
+                }
+            }
+        }
+
+        if in_tag {
+            continue;
+        }
+
+        // Skip command-message lines
+        if trimmed.starts_with("<command-message>") {
+            continue;
+        }
+
+        result.push_str(line);
+        result.push('\n');
+    }
+
+    // Collapse runs of 3+ blank lines to 2
+    let mut collapsed = String::new();
+    let mut blank_count = 0;
+    for line in result.lines() {
+        if line.trim().is_empty() {
+            blank_count += 1;
+            if blank_count <= 2 {
+                collapsed.push('\n');
+            }
+        } else {
+            blank_count = 0;
+            collapsed.push_str(line);
+            collapsed.push('\n');
+        }
+    }
+
+    collapsed.trim().to_string()
 }
 
 fn format_time_range(start: &Option<String>, end: &Option<String>) -> String {
