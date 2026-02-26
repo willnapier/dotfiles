@@ -52,12 +52,32 @@ enum RelevanceTag {
     Mention,
 }
 
+// ANSI colour codes
+const BOLD: &str = "\x1b[1m";
+const DIM: &str = "\x1b[2m";
+const RESET: &str = "\x1b[0m";
+const GREEN: &str = "\x1b[32m";
+const YELLOW: &str = "\x1b[33m";
+const CYAN: &str = "\x1b[36m";
+const WHITE: &str = "\x1b[37m";
+const BRIGHT_GREEN: &str = "\x1b[92m";
+const BRIGHT_YELLOW: &str = "\x1b[93m";
+
 impl RelevanceTag {
+    #[allow(dead_code)]
     fn label(&self) -> &'static str {
         match self {
             RelevanceTag::Focused => "FOCUSED",
             RelevanceTag::Relevant => "relevant",
             RelevanceTag::Mention => "mention",
+        }
+    }
+
+    fn coloured_label(&self) -> String {
+        match self {
+            RelevanceTag::Focused => format!("{BOLD}{BRIGHT_GREEN}FOCUSED{RESET}"),
+            RelevanceTag::Relevant => format!("{BRIGHT_YELLOW}relevant{RESET}"),
+            RelevanceTag::Mention => format!("{DIM}mention{RESET}"),
         }
     }
 }
@@ -208,7 +228,7 @@ fn search_and_load(
     let total_tokens: usize = matches.iter().map(|m| m.approx_tokens).sum();
 
     let mut display = format!(
-        "\nFound {} sessions matching '{}' (total approx {}k tokens):\n\n",
+        "\n{BOLD}Found {} sessions matching '{CYAN}{}{RESET}{BOLD}'{RESET} {DIM}(total approx {}k tokens){RESET}\n\n",
         matches.len(),
         query,
         (total_tokens + 500) / 1000,
@@ -225,12 +245,16 @@ fn search_and_load(
             .message_count
             .map(|c| format!("{} msgs", c))
             .unwrap_or_else(|| "? msgs".to_string());
-        let tag = m.relevance.tag.label();
-        let user_flag = if m.relevance.user_initiated { "+" } else { " " };
+        let coloured_tag = m.relevance.tag.coloured_label();
+        let user_flag = if m.relevance.user_initiated {
+            format!("{GREEN}+{RESET}")
+        } else {
+            " ".to_string()
+        };
         display.push_str(&format!(
-            "  [{}] {:8} {}{} | {} | {} | approx {}k tokens\n",
+            "  {BOLD}{WHITE}[{}]{RESET} {} {}{BOLD}{}{RESET} {DIM}|{RESET} {} {DIM}|{RESET} {} {DIM}| approx {}k tokens{RESET}\n",
             i + 1,
-            tag,
+            coloured_tag,
             user_flag,
             m.session.meta.assistant,
             time,
@@ -238,7 +262,7 @@ fn search_and_load(
             (m.approx_tokens + 500) / 1000,
         ));
         display.push_str(&format!(
-            "      ({} matches, {:.1}/1k density) \"{}\"\n",
+            "      {DIM}({} matches, {:.1}/1k density) \"{}\"{RESET}\n",
             m.relevance.match_count, m.relevance.density, m.snippet,
         ));
     }
@@ -247,14 +271,14 @@ fn search_and_load(
     if !recommended_indices.is_empty() && recommended_indices.len() < matches.len() {
         let rec_list: Vec<String> = recommended_indices.iter().map(|i| format!("{}", i + 1)).collect();
         display.push_str(&format!(
-            "\n  [r] Recommended: sessions {} ({} sessions, approx {}k tokens)\n",
+            "\n  {BOLD}{GREEN}[r]{RESET} Recommended: sessions {GREEN}{}{RESET} ({} sessions, approx {}k tokens)\n",
             rec_list.join(","),
             recommended_indices.len(),
             (recommended_tokens + 500) / 1000,
         ));
     }
     display.push_str(&format!(
-        "  [a] Load all ({} sessions, approx {}k tokens)\n",
+        "  {BOLD}{YELLOW}[a]{RESET} Load all ({} sessions, approx {}k tokens)\n",
         matches.len(),
         (total_tokens + 500) / 1000,
     ));
@@ -262,7 +286,7 @@ fn search_and_load(
     // Display through pager (less -RFX: ANSI passthrough, quit-if-one-screen, no clear)
     display_with_pager(&display);
 
-    eprint!("\nSelect [1-{}/r/a]: ", matches.len());
+    eprint!("\n{BOLD}Select [1-{}/r/a]:{RESET} ", matches.len());
     std::io::stderr().flush()?;
 
     let mut input = String::new();
