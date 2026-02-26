@@ -137,15 +137,7 @@ fn main() -> Result<()> {
             AuthCommands::Check { append } => auth::check(append),
             AuthCommands::Letter { id, dry_run } => auth::letter(&id, dry_run),
         },
-        Commands::UpdateLetter { id, dry_run } => {
-            eprintln!("clinical update-letter: not yet implemented");
-            let _ = (id, dry_run);
-            Ok(())
-        }
-        Commands::Populate { apply } => {
-            eprintln!("clinical populate: not yet implemented");
-            let _ = apply;
-            Ok(())
-        }
+        Commands::UpdateLetter { id, dry_run } => letter::run(&id, dry_run),
+        Commands::Populate { apply } => populate::run(apply),
     }
 }
