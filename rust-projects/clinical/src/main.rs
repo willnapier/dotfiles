@@ -133,21 +133,9 @@ fn main() -> Result<()> {
             name_form,
         } => reidentify::run(&id, &file, dry_run, &name_form),
         Commands::Auth { command } => match command {
-            AuthCommands::Status { verbose } => {
-                eprintln!("clinical auth status: not yet implemented");
-                let _ = verbose;
-                Ok(())
-            }
-            AuthCommands::Check { append } => {
-                eprintln!("clinical auth check: not yet implemented");
-                let _ = append;
-                Ok(())
-            }
-            AuthCommands::Letter { id, dry_run } => {
-                eprintln!("clinical auth letter: not yet implemented");
-                let _ = (id, dry_run);
-                Ok(())
-            }
+            AuthCommands::Status { verbose } => auth::status(verbose),
+            AuthCommands::Check { append } => auth::check(append),
+            AuthCommands::Letter { id, dry_run } => auth::letter(&id, dry_run),
         },
         Commands::UpdateLetter { id, dry_run } => {
             eprintln!("clinical update-letter: not yet implemented");
