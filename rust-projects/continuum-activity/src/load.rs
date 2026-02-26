@@ -368,12 +368,22 @@ fn output_selected_matches(matches: &[&SessionMatch]) -> Result<()> {
 }
 
 /// Display text through a pager (less) for scrollable output.
-/// Falls back to direct stderr output if less is unavailable.
+/// Always writes to /dev/tty so the pager displays on the terminal
+/// even when stdout is piped (e.g. `continuum-activity ... | gemini`).
+/// Falls back to direct stderr output if less or /dev/tty is unavailable.
 fn display_with_pager(text: &str) {
+    // Open /dev/tty for writing so less displays on terminal, not into the pipe
+    let tty = std::fs::OpenOptions::new().write(true).open("/dev/tty");
+    let stdout_cfg = match tty {
+        Ok(f) => std::process::Stdio::from(f),
+        Err(_) => std::process::Stdio::inherit(),
+    };
+
     // less -R: ANSI passthrough, -F: quit if fits on one screen, -X: don't clear on exit
     if let Ok(mut child) = std::process::Command::new("less")
         .args(["-RFX"])
         .stdin(std::process::Stdio::piped())
+        .stdout(stdout_cfg)
         .stderr(std::process::Stdio::inherit())
         .spawn()
     {
