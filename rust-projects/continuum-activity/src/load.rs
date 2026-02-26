@@ -381,7 +381,7 @@ fn display_with_pager(text: &str) {
 
     // less -R: ANSI passthrough, -F: quit if fits on one screen, -X: don't clear on exit
     if let Ok(mut child) = std::process::Command::new("less")
-        .args(["-RFX"])
+        .args(["-RX"])
         .stdin(std::process::Stdio::piped())
         .stdout(stdout_cfg)
         .stderr(std::process::Stdio::inherit())
