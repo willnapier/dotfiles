@@ -125,21 +125,13 @@ fn main() -> Result<()> {
             file,
             dry_run,
             list,
-        } => {
-            eprintln!("clinical de-identify: not yet implemented");
-            let _ = (id, file, dry_run, list);
-            Ok(())
-        }
+        } => deidentify::run(&id, file.as_deref(), dry_run, list),
         Commands::ReIdentify {
             id,
             file,
             dry_run,
             name_form,
-        } => {
-            eprintln!("clinical re-identify: not yet implemented");
-            let _ = (id, file, dry_run, name_form);
-            Ok(())
-        }
+        } => reidentify::run(&id, &file, dry_run, &name_form),
         Commands::Auth { command } => match command {
             AuthCommands::Status { verbose } => {
                 eprintln!("clinical auth status: not yet implemented");
