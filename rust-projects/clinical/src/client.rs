@@ -1,11 +1,18 @@
 use anyhow::{bail, Context, Result};
 use std::path::PathBuf;
 
-/// Root of the clinical directory tree: ~/Clinical
+/// Root of the clinical directory tree.
+///
+/// Checks `CLINICAL_ROOT` env var first, then falls back to `~/Clinical`.
+/// This allows Leigh (Windows/Dropbox) to point at her Dropbox path.
 pub fn clinical_root() -> PathBuf {
-    dirs::home_dir()
-        .expect("Could not find home directory")
-        .join("Clinical")
+    if let Ok(root) = std::env::var("CLINICAL_ROOT") {
+        PathBuf::from(root)
+    } else {
+        dirs::home_dir()
+            .expect("Could not find home directory")
+            .join("Clinical")
+    }
 }
 
 /// Directory containing all client folders: ~/Clinical/clients/

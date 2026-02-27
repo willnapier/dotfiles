@@ -200,12 +200,17 @@ fn search_and_load(
         bail!("No sessions found matching '{}'", query);
     }
 
-    // Sort by start_time descending (most recent first)
+    // Sort by relevance tier first (Focused → Relevant → Mention), then recency within tier
     matches.sort_by(|a, b| {
-        b.session
-            .meta
-            .start_time
-            .cmp(&a.session.meta.start_time)
+        a.relevance
+            .tag
+            .cmp(&b.relevance.tag)
+            .then_with(|| {
+                b.session
+                    .meta
+                    .start_time
+                    .cmp(&a.session.meta.start_time)
+            })
     });
 
     if all {
@@ -234,7 +239,22 @@ fn search_and_load(
         (total_tokens + 500) / 1000,
     );
 
+    let mut current_tier: Option<RelevanceTag> = None;
     for (i, m) in matches.iter().enumerate() {
+        // Insert tier separator when the relevance tier changes
+        if current_tier != Some(m.relevance.tag) {
+            if current_tier.is_some() {
+                display.push('\n');
+            }
+            let tier_label = match m.relevance.tag {
+                RelevanceTag::Focused => format!("  {BOLD}{BRIGHT_GREEN}── Focused ──{RESET}\n"),
+                RelevanceTag::Relevant => format!("  {BRIGHT_YELLOW}── Relevant ──{RESET}\n"),
+                RelevanceTag::Mention => format!("  {DIM}── Passing mentions ──{RESET}\n"),
+            };
+            display.push_str(&tier_label);
+            current_tier = Some(m.relevance.tag);
+        }
+
         let time = format_time_range(
             &m.session.meta.start_time,
             &m.session.meta.end_time,
@@ -286,23 +306,31 @@ fn search_and_load(
     // Display through pager (less -RFX: ANSI passthrough, quit-if-one-screen, no clear)
     display_with_pager(&display);
 
-    eprint!("\n{BOLD}Select [1-{}/r/a]:{RESET} ", matches.len());
+    eprint!(
+        "\n{BOLD}Select [1-{}/a] (Enter = recommended):{RESET} ",
+        matches.len()
+    );
     std::io::stderr().flush()?;
 
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;
     let input = input.trim();
 
-    if input.eq_ignore_ascii_case("a") {
-        return output_all_matches(&matches);
-    }
-
-    if input.eq_ignore_ascii_case("r") {
+    // Empty input or 'r' → load recommended set
+    if input.is_empty() || input.eq_ignore_ascii_case("r") {
+        if recommended_indices.is_empty() {
+            // No recommended set — fall back to all
+            return output_all_matches(&matches);
+        }
         let recommended: Vec<&SessionMatch> = recommended_indices
             .iter()
             .map(|&i| &matches[i])
             .collect();
         return output_selected_matches(&recommended);
+    }
+
+    if input.eq_ignore_ascii_case("a") {
+        return output_all_matches(&matches);
     }
 
     // Support comma-separated selection: "3,4,10"
