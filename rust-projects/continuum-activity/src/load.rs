@@ -42,7 +42,7 @@ struct Relevance {
     tag: RelevanceTag,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum RelevanceTag {
     /// High density or user-initiated with multiple matches — core discussion
     Focused,
