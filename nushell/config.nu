@@ -4630,3 +4630,14 @@ def nm-read [
         ^email-extract $file | ^bat --style=plain --paging=always
     }
 }
+
+# Pre-upgrade btrfs snapshot (Linux only — run before pacman -Syu)
+# Creates a timestamped snapshot so you can roll back if an upgrade breaks the system
+def pre-upgrade [] {
+    let timestamp = (date now | format date "%Y%m%d-%H%M")
+    let name = $"pre-upgrade-($timestamp)"
+    print $"Creating btrfs snapshot: /.snapshots/($name)"
+    sudo btrfs subvolume snapshot / $"/.snapshots/($name)"
+    print $"Snapshot created. Safe to run: sudo pacman -Syu"
+    print $"To rollback if needed, boot from Arch USB and set-default to this snapshot."
+}
