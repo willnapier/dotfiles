@@ -132,7 +132,7 @@ def check_launchagents [verbose: bool, fix: bool, log_path: string] {
                 if $verbose { print $"  ❌ ($label): exit ($info.last_exit)" }
             }
         } else if $verbose {
-            let status = if $info.pid != null { $"running (pid ($info.pid))" } else { "loaded, idle" }
+            let status = if $info.pid != null { $"running \(pid ($info.pid)\)" } else { "loaded, idle" }
             print $"  ✅ ($label): ($status)"
         }
     }
