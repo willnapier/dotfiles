@@ -386,6 +386,9 @@ depends = ["shared"]
 # System health check - systemd units (script in shared.files)
 "systemd/system-health-check.service" = "~/.config/systemd/user/system-health-check.service"
 "systemd/system-health-check.timer" = "~/.config/systemd/user/system-health-check.timer"
+# Package list backup - daily snapshot of installed packages
+"systemd/package-list-backup.service" = "~/.config/systemd/user/package-list-backup.service"
+"systemd/package-list-backup.timer" = "~/.config/systemd/user/package-list-backup.timer"
 # Wayland compositor configuration - Niri + Waybar + WezTerm
 "niri/config.kdl" = "~/.config/niri/config.kdl"
 "waybar/config" = "~/.config/waybar/config"

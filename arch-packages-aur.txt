@@ -1,0 +1,14 @@
+claude-code
+clipvault-bin
+inlyne-bin
+mdcat
+paru
+paru-debug
+piper-tts-bin
+sioyek-dev
+surfshark-client
+wezterm-nightly-bin
+wl-kbptr
+yay
+zoom
+zotero-bin

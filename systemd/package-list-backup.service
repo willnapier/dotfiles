@@ -1,0 +1,9 @@
+[Unit]
+Description=Backup pacman package list to dotfiles
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'pacman -Qqe > %h/dotfiles/arch-packages.txt && pacman -Qqem > %h/dotfiles/arch-packages-aur.txt'
+
+[Install]
+WantedBy=default.target
