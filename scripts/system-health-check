@@ -1,15 +1,18 @@
 #!/usr/bin/env nu
 
 # system-health-check — Daily system health validator
-# Catches dead timers, failed services, uncommitted dotfiles, and missing Rust tool binaries.
-# Runs via systemd timer daily at 8am + 5min after boot.
+# Catches dead timers/agents, failed services, uncommitted dotfiles, and missing Rust tool binaries.
+# Cross-platform: systemd on Linux, launchd on macOS.
+# Runs via systemd timer (Linux) or launchd plist (macOS) daily at 8am.
+
+def is_macos [] { $nu.os-info.name == "macos" }
 
 def log_msg [log_path: string, level: string, message: string] {
     let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
     $"[($timestamp)] ($level) ($message)(char newline)" | save --append $log_path
 }
 
-# ── Check 1: Timer health ────────────────────────────────────────
+# ── Check 1a: Timer health (Linux) ──────────────────────────────
 # Any enabled timer that's not active is dead and needs attention.
 def check_timers [verbose: bool, fix: bool, log_path: string] {
     if $verbose { print "── Timers ──" }
@@ -56,7 +59,89 @@ def check_timers [verbose: bool, fix: bool, log_path: string] {
     $problems
 }
 
-# ── Check 2: Service health ──────────────────────────────────────
+# ── Check 1b: LaunchAgent health (macOS) ────────────────────────
+# Scans ~/Library/LaunchAgents/ for our plists, checks loaded state via launchctl.
+def check_launchagents [verbose: bool, fix: bool, log_path: string] {
+    if $verbose { print "── LaunchAgents ──" }
+    mut problems = []
+
+    let agents_dir = $"($env.HOME)/Library/LaunchAgents"
+    if not ($agents_dir | path exists) {
+        if $verbose { print "  No LaunchAgents directory"; print "" }
+        return []
+    }
+
+    let wn_plists = (glob $"($agents_dir)/com.williamnapier.*.plist")
+    let user_plists = (glob $"($agents_dir)/com.user.*.plist")
+    let all_plists = ($wn_plists | append $user_plists)
+
+    if ($all_plists | is-empty) {
+        if $verbose { print "  No managed agents found"; print "" }
+        return []
+    }
+
+    # Get all loaded services once (format: PID\tStatus\tLabel)
+    let loaded_list = try {
+        do { ^launchctl list } | complete | get stdout | lines
+        | where ($it | str contains "com.williamnapier.") or ($it | str contains "com.user.")
+        | each {|line|
+            let parts = ($line | split row "\t")
+            let pid = if ($parts | get 0) == "-" { null } else { try { $parts | get 0 | into int } catch { null } }
+            let exit_code = try { $parts | get 1 | into int } catch { null }
+            let label = ($parts | get 2 | str trim)
+            { label: $label, pid: $pid, last_exit: $exit_code }
+        }
+    } catch { [] }
+
+    for plist_path in $all_plists {
+        let label = ($plist_path | path basename | str replace ".plist" "")
+        # Skip ourselves
+        if $label == "com.williamnapier.system-health-check" { continue }
+
+        let info = ($loaded_list | where label == $label | first | default null)
+
+        if $info == null {
+            # Agent not loaded at all
+            if $fix {
+                let r = (do { ^launchctl load $plist_path } | complete)
+                if $r.exit_code == 0 {
+                    log_msg $log_path "FIX" $"Loaded agent ($label)"
+                    if $verbose { print $"  🔧 ($label): was not loaded, loaded" }
+                } else {
+                    $problems = ($problems | append $"Agent not loaded: ($label)")
+                    if $verbose { print $"  ❌ ($label): not loaded — fix failed" }
+                }
+            } else {
+                $problems = ($problems | append $"Agent not loaded: ($label)")
+                if $verbose { print $"  ❌ ($label): not loaded" }
+            }
+        } else if $info.last_exit != null and $info.last_exit != 0 {
+            # Loaded but last exit was non-zero
+            if $fix {
+                let _ = (do { ^launchctl unload $plist_path } | complete)
+                let r = (do { ^launchctl load $plist_path } | complete)
+                if $r.exit_code == 0 {
+                    log_msg $log_path "FIX" $"Reloaded agent ($label)"
+                    if $verbose { print $"  🔧 ($label): exit ($info.last_exit), reloaded" }
+                } else {
+                    $problems = ($problems | append $"Agent errored: ($label) [exit ($info.last_exit)]")
+                    if $verbose { print $"  ❌ ($label): exit ($info.last_exit) — fix failed" }
+                }
+            } else {
+                $problems = ($problems | append $"Agent errored: ($label) [exit ($info.last_exit)]")
+                if $verbose { print $"  ❌ ($label): exit ($info.last_exit)" }
+            }
+        } else if $verbose {
+            let status = if $info.pid != null { $"running (pid ($info.pid))" } else { "loaded, idle" }
+            print $"  ✅ ($label): ($status)"
+        }
+    }
+
+    if $verbose { print "" }
+    $problems
+}
+
+# ── Check 2a: Service health (Linux) ────────────────────────────
 # Failed services + key long-running services that should be active.
 def check_services [verbose: bool, fix: bool, log_path: string] {
     if $verbose { print "── Services ──" }
@@ -115,6 +200,65 @@ def check_services [verbose: bool, fix: bool, log_path: string] {
             }
         } else if $verbose {
             print $"  ✅ ($svc)"
+        }
+    }
+
+    if $verbose { print "" }
+    $problems
+}
+
+# ── Check 2b: Key macOS services ────────────────────────────────
+# Long-running agents that should have a PID (always-running daemons).
+def check_mac_services [verbose: bool, fix: bool, log_path: string] {
+    if $verbose { print "── Key Services ──" }
+    mut problems = []
+
+    let agents_dir = $"($env.HOME)/Library/LaunchAgents"
+
+    # Services that should always be running (have a PID)
+    let key_services = [
+        "com.williamnapier.link-service"
+        "com.williamnapier.syncthing-monitor"
+    ]
+
+    # Get loaded list
+    let loaded_list = try {
+        do { ^launchctl list } | complete | get stdout | lines
+        | where ($it | str contains "com.williamnapier.") or ($it | str contains "com.user.")
+        | each {|line|
+            let parts = ($line | split row "\t")
+            let pid = if ($parts | get 0) == "-" { null } else { try { $parts | get 0 | into int } catch { null } }
+            let label = ($parts | get 2 | str trim)
+            { label: $label, pid: $pid }
+        }
+    } catch { [] }
+
+    for svc in $key_services {
+        let plist_path = $"($agents_dir)/($svc).plist"
+        if not ($plist_path | path exists) {
+            if $verbose { print $"  ⚪ ($svc): no plist installed" }
+            continue
+        }
+
+        let info = ($loaded_list | where label == $svc | first | default null)
+
+        if $info == null or $info.pid == null {
+            if $fix {
+                if $info == null {
+                    let _ = (do { ^launchctl load $plist_path } | complete)
+                } else {
+                    let _ = (do { ^launchctl unload $plist_path } | complete)
+                    let _ = (do { ^launchctl load $plist_path } | complete)
+                }
+                log_msg $log_path "FIX" $"Reloaded service ($svc)"
+                if $verbose { print $"  🔧 ($svc): reloaded" }
+            } else {
+                let status = if $info == null { "not loaded" } else { "loaded but no PID" }
+                $problems = ($problems | append $"Service not running: ($svc)")
+                if $verbose { print $"  ❌ ($svc): ($status)" }
+            }
+        } else if $verbose {
+            print $"  ✅ ($svc): pid ($info.pid)"
         }
     }
 
@@ -218,13 +362,26 @@ def main [
     let log_path = $"($env.HOME)/.local/share/system-health-check.log"
 
     if $verbose {
-        print "System Health Check"
+        let platform = if (is_macos) { "macOS" } else { "Linux" }
+        print $"System Health Check [($platform)]"
         print "────────────────────────────────────────"
         print ""
     }
 
-    let timer_problems = (check_timers $verbose $fix $log_path)
-    let service_problems = (check_services $verbose $fix $log_path)
+    # Platform-specific checks
+    let timer_problems = if (is_macos) {
+        check_launchagents $verbose $fix $log_path
+    } else {
+        check_timers $verbose $fix $log_path
+    }
+
+    let service_problems = if (is_macos) {
+        check_mac_services $verbose $fix $log_path
+    } else {
+        check_services $verbose $fix $log_path
+    }
+
+    # Cross-platform checks
     let dotfile_problems = (check_dotfiles $verbose)
     let rust_problems = (check_rust_tools $verbose)
 
@@ -254,10 +411,13 @@ def main [
             print $"($count) ($label) found."
         }
 
-        # Desktop notification
+        # Desktop notification — platform-aware
         if (which notify-send | is-not-empty) {
             let body = ($all_problems | str join (char newline))
             do { notify-send --urgency=critical "System Health Check" $body } | ignore
+        } else if (which osascript | is-not-empty) {
+            let body = ($all_problems | str join ", ")
+            do { osascript -e $"display notification \"($body)\" with title \"System Health Check\" sound name \"Basso\"" } | ignore
         }
 
         exit 1

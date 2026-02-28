@@ -272,6 +272,8 @@ depends = []
 "scripts/forge-metadata-backup-monthly" = "~/.local/bin/forge-metadata-backup-monthly"
 # Reminder notification daemon
 "scripts/remind-notify" = "~/.local/bin/remind-notify"
+# System health check - cross-platform daily validator (launchd on mac, systemd on linux)
+"scripts/system-health-check" = "~/.local/bin/system-health-check"
 
 # Semantic search system - managed separately (has virtual environment)
 
@@ -310,6 +312,7 @@ depends = ["shared"]
 "launchd/com.user.forge-sync-conflict-cleaner.plist" = "~/Library/LaunchAgents/com.user.forge-sync-conflict-cleaner.plist"
 "macos/launchd/com.williamnapier.continuum-sync-claude.plist" = "~/Library/LaunchAgents/com.williamnapier.continuum-sync-claude.plist"
 "macos/launchd/com.williamnapier.link-service.plist" = "~/Library/LaunchAgents/com.williamnapier.link-service.plist"
+"macos/launchd/com.williamnapier.system-health-check.plist" = "~/Library/LaunchAgents/com.williamnapier.system-health-check.plist"
 # NOTE: Individual files managed in [shared.files] for better reliability
 # Removed directory symlinks that were causing orphan detection issues
 
@@ -378,8 +381,7 @@ depends = ["shared"]
 # Mail sync - lieer pull + notmuch indexing every 15 minutes
 "systemd/mail-sync.service" = "~/.config/systemd/user/mail-sync.service"
 "systemd/mail-sync.timer" = "~/.config/systemd/user/mail-sync.timer"
-# System health check - daily validator for timers, services, dotfiles, rust tools
-"scripts/system-health-check" = "~/.local/bin/system-health-check"
+# System health check - systemd units (script in shared.files)
 "systemd/system-health-check.service" = "~/.config/systemd/user/system-health-check.service"
 "systemd/system-health-check.timer" = "~/.config/systemd/user/system-health-check.timer"
 # Wayland compositor configuration - Niri + Waybar + WezTerm
