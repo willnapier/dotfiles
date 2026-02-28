@@ -1,0 +1,164 @@
+#!/usr/bin/env nu
+
+# context-staleness-check — Audit AI context files for staleness and drift
+# Checks: CLAUDE.md size, cross-machine drift, stale dated sections, messageboard unread.
+# Run manually: context-staleness-check --verbose
+
+def main [
+    --verbose (-v)  # Show all checks even when healthy
+] {
+    if $verbose {
+        print "Context Staleness Check"
+        print "────────────────────────────────────────"
+        print ""
+    }
+
+    mut problems = []
+
+    # ── Check 1: CLAUDE.md line count ─────────────────────────────
+    if $verbose { print "── CLAUDE.md Size ──" }
+
+    let claude_md = $"($env.HOME)/dotfiles/CLAUDE.md"
+    if ($claude_md | path exists) {
+        let line_count = (open $claude_md | lines | length)
+        if $line_count > 50 {
+            $problems = ($problems | append $"CLAUDE.md has ($line_count) lines (limit: 50) — journal creep?")
+            if $verbose { print $"  ⚠ ($line_count) lines (limit: 50)" }
+        } else if $verbose {
+            print $"  ✅ ($line_count) lines"
+        }
+    } else if $verbose {
+        print "  ⚪ ~/dotfiles/CLAUDE.md not found"
+    }
+
+    if $verbose { print "" }
+
+    # ── Check 2: Cross-machine memory drift ───────────────────────
+    if $verbose { print "── Cross-Machine Drift ──" }
+
+    let local_memory = $"($env.HOME)/.claude/projects/-home-will/memory/MEMORY.md"
+    let mac_host = "williamnapier@williams-macbook-air"
+
+    # Only check if SSH is reachable (1s timeout)
+    let ssh_ok = (do { ssh -o ConnectTimeout=1 -o BatchMode=yes $mac_host "echo ok" } | complete)
+
+    if $ssh_ok.exit_code == 0 {
+        # Compare memory file mtimes
+        let files_to_check = [
+            {
+                local: $local_memory
+                remote: "/Users/williamnapier/.claude/projects/-Users-williamnapier/memory/MEMORY.md"
+                label: "MEMORY.md"
+            }
+        ]
+
+        for file in $files_to_check {
+            if not ($file.local | path exists) {
+                if $verbose { print $"  ⚪ ($file.label): local file missing" }
+                continue
+            }
+
+            let local_mtime = (ls $file.local | get 0.modified)
+            let remote_result = (do { ssh $mac_host $"stat -f %m ($file.remote)" } | complete)
+
+            if $remote_result.exit_code == 0 {
+                let remote_epoch = ($remote_result.stdout | str trim | into int)
+                let remote_mtime = ($remote_epoch * 1_000_000_000 | into datetime)
+                let drift = if $local_mtime > $remote_mtime {
+                    $local_mtime - $remote_mtime
+                } else {
+                    $remote_mtime - $local_mtime
+                }
+
+                if $drift > 7day {
+                    let drift_days = ($drift / 1day | math round)
+                    $problems = ($problems | append $"($file.label): ($drift_days)-day drift between machines")
+                    if $verbose { print $"  ⚠ ($file.label): ($drift_days)-day drift" }
+                } else if $verbose {
+                    print $"  ✅ ($file.label): in sync"
+                }
+            } else if $verbose {
+                print $"  ⚪ ($file.label): remote file not found"
+            }
+        }
+    } else if $verbose {
+        print "  ⚪ Mac unreachable (Tailscale down?) — skipping drift check"
+    }
+
+    if $verbose { print "" }
+
+    # ── Check 3: Stale dated sections ─────────────────────────────
+    if $verbose { print "── Stale Dates ──" }
+
+    let files_to_scan = [
+        $claude_md
+        $local_memory
+    ] | where {|f| $f | path exists }
+
+    let now = (date now)
+    let cutoff = $now - 90day
+    let cutoff_str = ($cutoff | format date "%Y-%m-%d")
+
+    for file in $files_to_scan {
+        let label = ($file | path basename)
+        let content = (open $file)
+
+        # Find date patterns like (2025-08-27) or 2025-09-24
+        let dates = ($content | parse --regex '\((\d{4}-\d{2}-\d{2})\)' | get capture0 | uniq)
+
+        let stale_dates = ($dates | where {|d|
+            try { ($d | into datetime) < $cutoff } catch { false }
+        })
+
+        if ($stale_dates | is-not-empty) {
+            let count = ($stale_dates | length)
+            $problems = ($problems | append $"($label): ($count) dated sections older than 90 days")
+            if $verbose {
+                print $"  ⚠ ($label): ($count) dates before ($cutoff_str)"
+            }
+        } else if $verbose {
+            print $"  ✅ ($label): no stale dates"
+        }
+    }
+
+    if $verbose { print "" }
+
+    # ── Check 4: Messageboard unread ──────────────────────────────
+    if $verbose { print "── Messageboard ──" }
+
+    let messageboard = $"($env.HOME)/Assistants/shared/MESSAGEBOARD.md"
+    if ($messageboard | path exists) {
+        let content = (open $messageboard | str trim)
+        if ($content | is-not-empty) {
+            let line_count = ($content | lines | length)
+            $problems = ($problems | append $"MESSAGEBOARD.md has ($line_count) unread lines")
+            if $verbose { print $"  ⚠ ($line_count) unread lines" }
+        } else if $verbose {
+            print "  ✅ Empty (no messages)"
+        }
+    } else if $verbose {
+        print "  ⚪ MESSAGEBOARD.md not found"
+    }
+
+    if $verbose { print "" }
+
+    # ── Summary ───────────────────────────────────────────────────
+    if ($problems | is-empty) {
+        if $verbose { print "All checks passed." }
+    } else {
+        let count = ($problems | length)
+        let label = if $count == 1 { "issue" } else { "issues" }
+
+        if not $verbose {
+            print $"context-staleness-check: ($count) ($label):"
+        } else {
+            print $"($count) ($label) found."
+        }
+
+        for p in $problems {
+            print $"  - ($p)"
+        }
+
+        exit 1
+    }
+}

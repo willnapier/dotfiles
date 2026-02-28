@@ -274,6 +274,7 @@ depends = []
 "scripts/remind-notify" = "~/.local/bin/remind-notify"
 # System health check - cross-platform daily validator (launchd on mac, systemd on linux)
 "scripts/system-health-check" = "~/.local/bin/system-health-check"
+"scripts/context-staleness-check" = "~/.local/bin/context-staleness-check"
 
 # Semantic search system - managed separately (has virtual environment)
 
