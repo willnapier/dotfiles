@@ -107,9 +107,11 @@ y() {
 }
 
 # Zoxide integration (if available)
+# Note: do NOT alias cd='z' — Claude Code's shell snapshots capture the alias
+# but not zoxide's internal __zoxide_z function, breaking all cd commands.
+# Use 'z' explicitly for zoxide jump; cd stays native.
 if command -v zoxide &> /dev/null; then
     eval "$(zoxide init bash)"
-    alias cd='z'
 fi
 
 # Starship prompt (if available)
