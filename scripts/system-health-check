@@ -215,9 +215,9 @@ def check_mac_services [verbose: bool, fix: bool, log_path: string] {
 
     let agents_dir = $"($env.HOME)/Library/LaunchAgents"
 
-    # Services that should always be running (have a PID)
+    # Services that should always be running (have a PID).
+    # Note: link-service spawns child watchers then exits — it's not expected to have a PID.
     let key_services = [
-        "com.williamnapier.link-service"
         "com.williamnapier.syncthing-monitor"
     ]
 
