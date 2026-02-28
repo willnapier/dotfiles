@@ -2,8 +2,81 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+
+// ============================================================================
+// Skill matching
+// ============================================================================
+
+/// Read skill alias mappings from ~/.config/continuum/skill-aliases.json
+fn read_aliases() -> HashMap<String, String> {
+    let path = dirs::home_dir()
+        .map(|h| h.join(".config/continuum/skill-aliases.json"))
+        .unwrap_or_default();
+
+    if !path.exists() {
+        return HashMap::new();
+    }
+
+    match std::fs::read_to_string(&path) {
+        Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
+        Err(_) => HashMap::new(),
+    }
+}
+
+/// Read known skill names from ~/.claude/skills/ directory
+fn read_skill_dirs() -> Vec<String> {
+    let path = dirs::home_dir()
+        .map(|h| h.join(".claude/skills"))
+        .unwrap_or_default();
+
+    if !path.exists() {
+        return Vec::new();
+    }
+
+    std::fs::read_dir(&path)
+        .ok()
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|e| e.path().is_dir())
+                .filter_map(|e| {
+                    let name = e.file_name().to_str()?.to_string();
+                    if name.starts_with('.') { None } else { Some(name) }
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Match title against known skills and aliases
+fn match_skills(title: Option<&str>) -> Vec<String> {
+    let known_skills = read_skill_dirs();
+    let aliases = read_aliases();
+    let mut skills = Vec::new();
+
+    if let Some(candidate) = title {
+        let candidate_lower = candidate.to_lowercase();
+
+        // Direct skill name match
+        for skill in &known_skills {
+            if candidate_lower.contains(skill) && !skills.contains(skill) {
+                skills.push(skill.clone());
+            }
+        }
+
+        // Alias match (case-insensitive)
+        for (alias, skill) in &aliases {
+            if candidate_lower.contains(&alias.to_lowercase()) && !skills.contains(skill) {
+                skills.push(skill.clone());
+            }
+        }
+    }
+
+    skills
+}
 
 #[derive(Parser)]
 #[command(name = "claude-to-continuum")]
@@ -53,6 +126,10 @@ struct ContinuumSession {
     status: Option<String>,
     message_count: Option<u32>,
     created_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    title: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    skills: Vec<String>,
 }
 
 fn main() -> Result<()> {
@@ -132,6 +209,9 @@ fn process_conversation(conv: &ClaudeConversation, output_dir: &PathBuf) -> Resu
     // Parse update time
     let end_time: Option<DateTime<Utc>> = conv.updated_at.parse().ok();
 
+    // Match skills from conversation name
+    let skills = match_skills(Some(&conv.name));
+
     // Write session.json
     let session = ContinuumSession {
         id: conv.uuid.clone(),
@@ -141,6 +221,8 @@ fn process_conversation(conv: &ClaudeConversation, output_dir: &PathBuf) -> Resu
         status: Some("imported".to_string()),
         message_count: Some(messages.len() as u32),
         created_at: Some(conv.created_at.clone()),
+        title: Some(conv.name.clone()),
+        skills,
     };
 
     let session_path = session_dir.join("session.json");

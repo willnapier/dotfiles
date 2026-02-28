@@ -10,6 +10,8 @@ struct SessionMeta {
     start_time: Option<String>,
     end_time: Option<String>,
     message_count: Option<u32>,
+    #[serde(default)]
+    skills: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -123,6 +125,7 @@ pub fn load_session(
     last: bool,
     assistant_filter: Option<&str>,
     search: Option<&str>,
+    skill_filter: Option<&str>,
     all: bool,
 ) -> Result<()> {
     let base_dir = dirs::home_dir()
@@ -134,15 +137,27 @@ pub fn load_session(
     }
 
     if let Some(query) = search {
-        return search_and_load(&base_dir, query, assistant_filter, all);
+        return search_and_load(&base_dir, query, assistant_filter, skill_filter, all);
+    }
+
+    // If only --skill is provided (no search, no session_id, no last), search all sessions with that skill
+    if skill_filter.is_some() && !last && session_id.is_none() {
+        return search_and_load(&base_dir, "", assistant_filter, skill_filter, all);
     }
 
     let session = if last {
-        find_last_session(&base_dir, assistant_filter)?
+        let s = find_last_session(&base_dir, assistant_filter)?;
+        // Apply skill filter to --last
+        if let Some(skill) = skill_filter {
+            if !s.meta.skills.iter().any(|s| s == skill) {
+                bail!("Most recent session does not use skill '{}'", skill);
+            }
+        }
+        s
     } else if let Some(id) = session_id {
         find_session_by_id(&base_dir, id)?
     } else {
-        bail!("Specify --last, --search, or provide a session ID");
+        bail!("Specify --last, --search, --skill, or provide a session ID");
     };
 
     let text = build_cleaned_text(&session)?;
@@ -162,9 +177,10 @@ fn search_and_load(
     base_dir: &Path,
     query: &str,
     assistant_filter: Option<&str>,
+    skill_filter: Option<&str>,
     all: bool,
 ) -> Result<()> {
-    let sessions = collect_sessions(base_dir, assistant_filter)?;
+    let sessions = collect_sessions(base_dir, assistant_filter, skill_filter)?;
     let query_lower = query.to_lowercase();
 
     let mut matches: Vec<SessionMatch> = Vec::new();
@@ -176,16 +192,33 @@ fn search_and_load(
         }
 
         let raw = std::fs::read_to_string(&messages_path).unwrap_or_default();
-        let raw_lower = raw.to_lowercase();
 
-        if !raw_lower.contains(&query_lower) {
-            continue;
+        // If query is non-empty, filter by text match
+        if !query_lower.is_empty() {
+            let raw_lower = raw.to_lowercase();
+            if !raw_lower.contains(&query_lower) {
+                continue;
+            }
         }
 
-        let snippet = extract_snippet(&raw, &query_lower);
         let cleaned_text = build_cleaned_text(&session)?;
         let approx_tokens = estimate_tokens(&cleaned_text);
-        let relevance = compute_relevance(&cleaned_text, &query_lower);
+
+        let (snippet, relevance) = if query_lower.is_empty() {
+            // Skill-only filter: no text relevance scoring
+            let relevance = Relevance {
+                match_count: 0,
+                density: 0.0,
+                user_initiated: false,
+                tag: RelevanceTag::Focused,
+            };
+            (String::new(), relevance)
+        } else {
+            (
+                extract_snippet(&raw, &query_lower),
+                compute_relevance(&cleaned_text, &query_lower),
+            )
+        };
 
         matches.push(SessionMatch {
             session,
@@ -197,7 +230,13 @@ fn search_and_load(
     }
 
     if matches.is_empty() {
-        bail!("No sessions found matching '{}'", query);
+        let filter_desc = match (query.is_empty(), skill_filter) {
+            (false, Some(s)) => format!("'{}' with skill '{}'", query, s),
+            (false, None) => format!("'{}'", query),
+            (true, Some(s)) => format!("skill '{}'", s),
+            (true, None) => "the given filters".to_string(),
+        };
+        bail!("No sessions found matching {}", filter_desc);
     }
 
     // Sort by relevance tier first (Focused → Relevant → Mention), then recency within tier
@@ -232,12 +271,25 @@ fn search_and_load(
     // Build results display
     let total_tokens: usize = matches.iter().map(|m| m.approx_tokens).sum();
 
-    let mut display = format!(
-        "\n{BOLD}Found {} sessions matching '{CYAN}{}{RESET}{BOLD}'{RESET} {DIM}(total approx {}k tokens){RESET}\n\n",
-        matches.len(),
-        query,
-        (total_tokens + 500) / 1000,
-    );
+    let header = match (query.is_empty(), skill_filter) {
+        (false, Some(skill)) => format!(
+            "\n{BOLD}Found {} sessions matching '{CYAN}{}{RESET}{BOLD}' with skill '{CYAN}{}{RESET}{BOLD}'{RESET} {DIM}(total approx {}k tokens){RESET}\n\n",
+            matches.len(), query, skill, (total_tokens + 500) / 1000,
+        ),
+        (false, None) => format!(
+            "\n{BOLD}Found {} sessions matching '{CYAN}{}{RESET}{BOLD}'{RESET} {DIM}(total approx {}k tokens){RESET}\n\n",
+            matches.len(), query, (total_tokens + 500) / 1000,
+        ),
+        (true, Some(skill)) => format!(
+            "\n{BOLD}Found {} sessions with skill '{CYAN}{}{RESET}{BOLD}'{RESET} {DIM}(total approx {}k tokens){RESET}\n\n",
+            matches.len(), skill, (total_tokens + 500) / 1000,
+        ),
+        (true, None) => format!(
+            "\n{BOLD}Found {} sessions{RESET} {DIM}(total approx {}k tokens){RESET}\n\n",
+            matches.len(), (total_tokens + 500) / 1000,
+        ),
+    };
+    let mut display = header;
 
     let mut current_tier: Option<RelevanceTag> = None;
     for (i, m) in matches.iter().enumerate() {
@@ -271,20 +323,31 @@ fn search_and_load(
         } else {
             " ".to_string()
         };
+        let skill_tags = if m.session.meta.skills.is_empty() {
+            String::new()
+        } else {
+            let tags: Vec<String> = m.session.meta.skills.iter()
+                .map(|s| format!("{CYAN}[{}]{RESET}", s))
+                .collect();
+            format!(" {}", tags.join(" "))
+        };
         display.push_str(&format!(
-            "  {BOLD}{WHITE}[{}]{RESET} {} {}{BOLD}{}{RESET} {DIM}|{RESET} {} {DIM}|{RESET} {} {DIM}| approx {}k tokens{RESET}\n",
+            "  {BOLD}{WHITE}[{}]{RESET} {} {}{BOLD}{}{RESET}{} {DIM}|{RESET} {} {DIM}|{RESET} {} {DIM}| approx {}k tokens{RESET}\n",
             i + 1,
             coloured_tag,
             user_flag,
             m.session.meta.assistant,
+            skill_tags,
             time,
             msgs,
             (m.approx_tokens + 500) / 1000,
         ));
-        display.push_str(&format!(
-            "      {DIM}({} matches, {:.1}/1k density) \"{}\"{RESET}\n",
-            m.relevance.match_count, m.relevance.density, m.snippet,
-        ));
+        if !query_lower.is_empty() {
+            display.push_str(&format!(
+                "      {DIM}({} matches, {:.1}/1k density) \"{}\"{RESET}\n",
+                m.relevance.match_count, m.relevance.density, m.snippet,
+            ));
+        }
     }
 
     // Show options
@@ -482,7 +545,11 @@ fn build_cleaned_text(session: &SessionInfo) -> Result<String> {
     Ok(output)
 }
 
-fn collect_sessions(base_dir: &Path, assistant_filter: Option<&str>) -> Result<Vec<SessionInfo>> {
+fn collect_sessions(
+    base_dir: &Path,
+    assistant_filter: Option<&str>,
+    skill_filter: Option<&str>,
+) -> Result<Vec<SessionInfo>> {
     let mut all_sessions = Vec::new();
 
     for assistant_entry in std::fs::read_dir(base_dir)?.flatten() {
@@ -513,6 +580,13 @@ fn collect_sessions(base_dir: &Path, assistant_filter: Option<&str>) -> Result<V
 
                 if let Ok(content) = std::fs::read_to_string(&session_json) {
                     if let Ok(meta) = serde_json::from_str::<SessionMeta>(&content) {
+                        // Apply skill filter
+                        if let Some(skill) = skill_filter {
+                            if !meta.skills.iter().any(|s| s == skill) {
+                                continue;
+                            }
+                        }
+
                         all_sessions.push(SessionInfo {
                             path: session_dir,
                             meta,
@@ -527,7 +601,7 @@ fn collect_sessions(base_dir: &Path, assistant_filter: Option<&str>) -> Result<V
 }
 
 fn find_last_session(base_dir: &Path, assistant_filter: Option<&str>) -> Result<SessionInfo> {
-    let mut sessions = collect_sessions(base_dir, assistant_filter)?;
+    let mut sessions = collect_sessions(base_dir, assistant_filter, None)?;
 
     if sessions.is_empty() {
         bail!(
@@ -544,7 +618,7 @@ fn find_last_session(base_dir: &Path, assistant_filter: Option<&str>) -> Result<
 }
 
 fn find_session_by_id(base_dir: &Path, id: &str) -> Result<SessionInfo> {
-    let sessions = collect_sessions(base_dir, None)?;
+    let sessions = collect_sessions(base_dir, None, None)?;
 
     for session in sessions {
         if session.meta.id == id || session.meta.id.starts_with(id) {

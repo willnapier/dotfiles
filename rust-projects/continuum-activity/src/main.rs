@@ -1,3 +1,4 @@
+mod backfill;
 mod cc_logs;
 mod clean;
 mod continuum;
@@ -47,6 +48,8 @@ enum Command {
     Load(LoadArgs),
     /// Deduplicate messages across all sessions and fix metadata
     Clean(CleanArgs),
+    /// Backfill skills into existing session.json files
+    Backfill(BackfillArgs),
 }
 
 #[derive(clap::Args)]
@@ -66,6 +69,10 @@ struct LoadArgs {
     #[arg(long)]
     search: Option<String>,
 
+    /// Filter by skill name (e.g. senior-dev, music-scr)
+    #[arg(long)]
+    skill: Option<String>,
+
     /// Load all matching sessions (non-interactive)
     #[arg(long)]
     all: bool,
@@ -82,16 +89,25 @@ struct CleanArgs {
     no_backup: bool,
 }
 
+#[derive(clap::Args)]
+struct BackfillArgs {
+    /// Preview changes without modifying files
+    #[arg(long)]
+    dry_run: bool,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Some(Command::Backfill(args)) => backfill::run(args.dry_run),
         Some(Command::Clean(args)) => clean::clean_logs(args.dry_run, args.no_backup),
         Some(Command::Load(args)) => load::load_session(
             args.session_id.as_deref(),
             args.last,
             args.assistant.as_deref(),
             args.search.as_deref(),
+            args.skill.as_deref(),
             args.all,
         ),
         None => run_report(cli.report),

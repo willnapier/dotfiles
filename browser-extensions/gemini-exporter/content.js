@@ -76,6 +76,30 @@
     return messages;
   }
 
+  // Get project/Gem name if conversation is within a Gem
+  function getProject() {
+    try {
+      // Try Gem name elements (Gemini organises custom instructions as "Gems")
+      const gemEl = document.querySelector(
+        '[class*="gem-name"], [data-gem-name], [class*="gem-title"]'
+      );
+      if (gemEl) {
+        const name = gemEl.innerText?.trim();
+        if (name) return name;
+      }
+
+      // Try breadcrumb or collection indicators
+      const breadcrumbs = document.querySelectorAll('[class*="breadcrumb"] a, [class*="collection-name"]');
+      for (const bc of breadcrumbs) {
+        const name = bc.innerText?.trim();
+        if (name && name !== 'Gemini' && name !== 'Home') return name;
+      }
+    } catch (e) {
+      console.log('Gemini Exporter: getProject() failed:', e);
+    }
+    return '';
+  }
+
   // Get conversation title
   function getTitle() {
     // Try various selectors for title
@@ -122,6 +146,7 @@
         hour12: false
       });
 
+      const project = getProject();
       const conversation = {
         metadata: {
           user: { name: '', email: '' },
@@ -133,7 +158,8 @@
           powered_by: 'Gemini Exporter (custom extension)'
         },
         messages: messages,
-        title: title
+        title: title,
+        project: project
       };
 
       // Create and download file

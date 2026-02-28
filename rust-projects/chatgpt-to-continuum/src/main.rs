@@ -6,6 +6,78 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
+// ============================================================================
+// Skill matching
+// ============================================================================
+
+/// Read skill alias mappings from ~/.config/continuum/skill-aliases.json
+fn read_aliases() -> HashMap<String, String> {
+    let path = dirs::home_dir()
+        .map(|h| h.join(".config/continuum/skill-aliases.json"))
+        .unwrap_or_default();
+
+    if !path.exists() {
+        return HashMap::new();
+    }
+
+    match std::fs::read_to_string(&path) {
+        Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
+        Err(_) => HashMap::new(),
+    }
+}
+
+/// Read known skill names from ~/.claude/skills/ directory
+fn read_skill_dirs() -> Vec<String> {
+    let path = dirs::home_dir()
+        .map(|h| h.join(".claude/skills"))
+        .unwrap_or_default();
+
+    if !path.exists() {
+        return Vec::new();
+    }
+
+    std::fs::read_dir(&path)
+        .ok()
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|e| e.path().is_dir())
+                .filter_map(|e| {
+                    let name = e.file_name().to_str()?.to_string();
+                    if name.starts_with('.') { None } else { Some(name) }
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Match title and/or project against known skills and aliases
+fn match_skills(title: Option<&str>, project: Option<&str>) -> Vec<String> {
+    let known_skills = read_skill_dirs();
+    let aliases = read_aliases();
+    let mut skills = Vec::new();
+
+    for candidate in [project, title].into_iter().flatten() {
+        let candidate_lower = candidate.to_lowercase();
+
+        // Direct skill name match
+        for skill in &known_skills {
+            if candidate_lower.contains(skill) && !skills.contains(skill) {
+                skills.push(skill.clone());
+            }
+        }
+
+        // Alias match (case-insensitive)
+        for (alias, skill) in &aliases {
+            if candidate_lower.contains(&alias.to_lowercase()) && !skills.contains(skill) {
+                skills.push(skill.clone());
+            }
+        }
+    }
+
+    skills
+}
+
 #[derive(Parser)]
 #[command(name = "chatgpt-to-continuum")]
 #[command(about = "Convert ChatGPT/Grok export to continuum format")]
@@ -33,6 +105,9 @@ struct ExporterConversation {
     /// Grok has title at root level
     #[serde(default)]
     title: Option<String>,
+    /// Project/folder name from browser extension
+    #[serde(default)]
+    project: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -184,6 +259,8 @@ struct ContinuumSession {
     title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     source_url: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    skills: Vec<String>,
 }
 
 fn main() -> Result<()> {
@@ -372,6 +449,12 @@ fn process_exporter_conversation(conv: &ExporterConversation, output_dir: &PathB
     }
     fs::write(&messages_path, jsonl_content)?;
 
+    // Match skills from title and project
+    let skills = match_skills(
+        Some(&title),
+        conv.project.as_deref(),
+    );
+
     // Write session.json
     let session = ContinuumSession {
         id: id.clone(),
@@ -383,6 +466,7 @@ fn process_exporter_conversation(conv: &ExporterConversation, output_dir: &PathB
         created_at: Some(created.to_rfc3339()),
         title: Some(title),
         source_url: conv.metadata.link.clone(),
+        skills,
     };
 
     let session_path = session_dir.join("session.json");
@@ -513,6 +597,9 @@ fn process_browser_extension_export(export: &BrowserExtensionExport, output_dir:
     let end_time = continuum_messages.last()
         .map(|msg| msg.timestamp.clone());
 
+    // Match skills (browser extension format has no title, but future versions may)
+    let skills = match_skills(None, None);
+
     // Write session.json
     let session = ContinuumSession {
         id: id.clone(),
@@ -524,6 +611,7 @@ fn process_browser_extension_export(export: &BrowserExtensionExport, output_dir:
         created_at: Some(created.to_rfc3339()),
         title: None, // Browser extension format doesn't include title
         source_url: export.url.clone(),
+        skills,
     };
 
     let session_path = session_dir.join("session.json");
@@ -570,6 +658,9 @@ fn process_official_conversation(conv: &OfficialConversation, output_dir: &PathB
     }
     fs::write(&messages_path, jsonl_content)?;
 
+    // Match skills from title
+    let skills = match_skills(Some(&conv.title), None);
+
     // Write session.json
     let session = ContinuumSession {
         id: conv.id.clone(),
@@ -584,6 +675,7 @@ fn process_official_conversation(conv: &OfficialConversation, output_dir: &PathB
         created_at: Some(datetime.to_rfc3339()),
         title: Some(conv.title.clone()),
         source_url: None,
+        skills,
     };
 
     let session_path = session_dir.join("session.json");

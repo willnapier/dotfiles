@@ -27,6 +27,7 @@ depends = []
 "git/gitconfig" = "~/.gitconfig"
 # Helix config is platform-specific (Linux has scroll-lines=1 for Niri touchpad)
 # macOS uses config.toml (in [macos.files]), Linux uses config-linux.toml (in [linux.files])
+"config/continuum/skill-aliases.json" = "~/.config/continuum/skill-aliases.json"
 "helix/languages.toml" = "~/.config/helix/languages.toml"
 "inlyne/inlyne.toml" = "~/.config/inlyne/inlyne.toml"
 "gtk-3.0/gtk.css" = "~/.config/gtk-3.0/gtk.css"

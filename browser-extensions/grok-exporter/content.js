@@ -111,6 +111,29 @@
     });
   }
 
+  function getProject() {
+    try {
+      // Try sidebar folder/collection elements
+      const folderEl = document.querySelector(
+        '[class*="folder"] [class*="active"], [class*="collection"] [class*="selected"]'
+      );
+      if (folderEl) {
+        const name = folderEl.innerText?.trim();
+        if (name) return name;
+      }
+
+      // Try breadcrumb or folder indicator elements
+      const breadcrumbs = document.querySelectorAll('[class*="breadcrumb"] a, [class*="folder-name"]');
+      for (const bc of breadcrumbs) {
+        const name = bc.innerText?.trim();
+        if (name && name !== 'Grok' && name !== 'Home') return name;
+      }
+    } catch (e) {
+      console.log('Grok Exporter: getProject() failed:', e);
+    }
+    return '';
+  }
+
   function getTitle() {
     // Try page title, then conversation header elements
     const titleEl = document.querySelector('h1, [class*="conversation-title"], title');
@@ -144,6 +167,7 @@
         hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
       });
 
+      const project = getProject();
       const conversation = {
         metadata: {
           user: { name: '', email: '' },
@@ -151,7 +175,8 @@
           powered_by: 'Grok Exporter (custom extension)'
         },
         messages: messages,
-        title: title
+        title: title,
+        project: project
       };
 
       const blob = new Blob([JSON.stringify(conversation, null, 2)], { type: 'application/json' });

@@ -104,6 +104,38 @@
     });
   }
 
+  function getProject() {
+    try {
+      // Try project/folder indicators in the sidebar or breadcrumbs
+      const projectEl = document.querySelector(
+        'nav [data-testid*="project"] a, [class*="project-name"], [data-testid*="folder"] a'
+      );
+      if (projectEl) {
+        const name = projectEl.innerText?.trim();
+        if (name) return name;
+      }
+
+      // Try breadcrumb elements that might show project context
+      const breadcrumbs = document.querySelectorAll('[class*="breadcrumb"] a, [aria-label*="breadcrumb"] a');
+      for (const bc of breadcrumbs) {
+        const name = bc.innerText?.trim();
+        if (name && name !== 'ChatGPT' && name !== 'Home') return name;
+      }
+
+      // Try active/selected project in sidebar nav
+      const activeProject = document.querySelector(
+        'nav [class*="active"][class*="project"], nav [aria-selected="true"][class*="project"]'
+      );
+      if (activeProject) {
+        const name = activeProject.innerText?.trim();
+        if (name) return name;
+      }
+    } catch (e) {
+      console.log('ChatGPT Exporter: getProject() failed:', e);
+    }
+    return '';
+  }
+
   function getTitle() {
     // ChatGPT shows conversation title in the page title or sidebar
     const titleEl = document.querySelector('h1, [class*="conversation-title"], title');
@@ -137,6 +169,7 @@
         hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
       });
 
+      const project = getProject();
       const conversation = {
         metadata: {
           user: { name: '', email: '' },
@@ -144,7 +177,8 @@
           powered_by: 'ChatGPT Exporter (custom extension)'
         },
         messages: messages,
-        title: title
+        title: title,
+        project: project
       };
 
       const blob = new Blob([JSON.stringify(conversation, null, 2)], { type: 'application/json' });
