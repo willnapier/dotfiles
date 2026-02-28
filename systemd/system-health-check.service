@@ -1,0 +1,6 @@
+[Unit]
+Description=Daily system health check
+
+[Service]
+Type=oneshot
+ExecStart=/home/will/.local/bin/system-health-check

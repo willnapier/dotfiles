@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily system health check at 8am
+
+[Timer]
+OnCalendar=*-*-* 08:00:00
+OnBootSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

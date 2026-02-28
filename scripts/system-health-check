@@ -1,0 +1,265 @@
+#!/usr/bin/env nu
+
+# system-health-check — Daily system health validator
+# Catches dead timers, failed services, uncommitted dotfiles, and missing Rust tool binaries.
+# Runs via systemd timer daily at 8am + 5min after boot.
+
+def log_msg [log_path: string, level: string, message: string] {
+    let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
+    $"[($timestamp)] ($level) ($message)(char newline)" | save --append $log_path
+}
+
+# ── Check 1: Timer health ────────────────────────────────────────
+# Any enabled timer that's not active is dead and needs attention.
+def check_timers [verbose: bool, fix: bool, log_path: string] {
+    if $verbose { print "── Timers ──" }
+    mut problems = []
+
+    let result = (do { systemctl --user list-unit-files --type=timer --state=enabled --no-legend } | complete)
+    if $result.exit_code != 0 {
+        if $verbose { print "  Could not query timers" }
+        return []
+    }
+
+    let timer_names = ($result.stdout | str trim | lines
+        | where ($it | str trim | is-not-empty)
+        | each {|l| $l | str trim | split row " " | get 0 })
+
+    for timer in $timer_names {
+        # Skip ourselves to avoid false positives on first run
+        if $timer == "system-health-check.timer" { continue }
+
+        let status = (do { systemctl --user is-active $timer } | complete | get stdout | str trim)
+
+        if $status != "active" {
+            let name = ($timer | str replace ".timer" "")
+            if $fix {
+                let r = (do { systemctl --user start $timer } | complete)
+                if $r.exit_code == 0 {
+                    log_msg $log_path "FIX" $"Started timer ($timer)"
+                    if $verbose { print $"  🔧 ($name): was ($status), restarted" }
+                } else {
+                    $problems = ($problems | append $"Timer dead: ($name) [($status)]")
+                    if $verbose { print $"  ❌ ($name): ($status) — fix failed" }
+                }
+            } else {
+                $problems = ($problems | append $"Timer dead: ($name) [($status)]")
+                if $verbose { print $"  ❌ ($name): ($status)" }
+            }
+        } else if $verbose {
+            let name = ($timer | str replace ".timer" "")
+            print $"  ✅ ($name)"
+        }
+    }
+
+    if $verbose { print "" }
+    $problems
+}
+
+# ── Check 2: Service health ──────────────────────────────────────
+# Failed services + key long-running services that should be active.
+def check_services [verbose: bool, fix: bool, log_path: string] {
+    if $verbose { print "── Services ──" }
+    mut problems = []
+    mut reported_names = []
+
+    # Part A: any unit in failed state
+    let failed = (do { systemctl --user --state=failed --no-legend --no-pager } | complete)
+    if $failed.exit_code == 0 and ($failed.stdout | str trim | is-not-empty) {
+        let lines = ($failed.stdout | str trim | lines | where ($it | str trim | is-not-empty))
+        for line in $lines {
+            let unit = ($line | str trim | split row " " | get 0)
+            let name = ($unit | str replace ".service" "" | str replace ".timer" "")
+
+            if $fix {
+                let r = (do { systemctl --user restart $unit } | complete)
+                if $r.exit_code == 0 {
+                    log_msg $log_path "FIX" $"Restarted failed ($unit)"
+                    if $verbose { print $"  🔧 ($name): was failed, restarted" }
+                } else {
+                    $problems = ($problems | append $"Service failed: ($name)")
+                    $reported_names = ($reported_names | append $name)
+                    if $verbose { print $"  ❌ ($name): failed — fix failed" }
+                }
+            } else {
+                $problems = ($problems | append $"Service failed: ($name)")
+                $reported_names = ($reported_names | append $name)
+                if $verbose { print $"  ❌ ($name): failed" }
+            }
+        }
+    }
+
+    # Part B: key long-running services that should always be active
+    let key_services = ["link-service"]
+    for svc in $key_services {
+        if ($reported_names | any {|n| $n == $svc }) { continue }
+
+        let unit = $"($svc).service"
+        let enabled = (do { systemctl --user is-enabled $unit } | complete | get stdout | str trim)
+        if $enabled != "enabled" { continue }
+
+        let status = (do { systemctl --user is-active $unit } | complete | get stdout | str trim)
+        if $status != "active" {
+            if $fix {
+                let r = (do { systemctl --user start $unit } | complete)
+                if $r.exit_code == 0 {
+                    log_msg $log_path "FIX" $"Started service ($svc)"
+                    if $verbose { print $"  🔧 ($svc): was ($status), started" }
+                } else {
+                    $problems = ($problems | append $"Service dead: ($svc) [($status)]")
+                    if $verbose { print $"  ❌ ($svc): ($status) — fix failed" }
+                }
+            } else {
+                $problems = ($problems | append $"Service dead: ($svc) [($status)]")
+                if $verbose { print $"  ❌ ($svc): ($status)" }
+            }
+        } else if $verbose {
+            print $"  ✅ ($svc)"
+        }
+    }
+
+    if $verbose { print "" }
+    $problems
+}
+
+# ── Check 3: Uncommitted dotfiles ────────────────────────────────
+# Staged or modified files in ~/dotfiles/ older than 24h.
+def check_dotfiles [verbose: bool] {
+    if $verbose { print "── Dotfiles ──" }
+
+    let dotfiles_dir = $"($env.HOME)/dotfiles"
+    if not ($dotfiles_dir | path exists) {
+        if $verbose { print "  ~/dotfiles not found"; print "" }
+        return []
+    }
+
+    let result = (do { git -C $dotfiles_dir status --porcelain } | complete)
+    if $result.exit_code != 0 or ($result.stdout | str trim | is-empty) {
+        if $verbose { print "  ✅ Clean"; print "" }
+        return []
+    }
+
+    let changed_files = ($result.stdout | str trim | lines | each {|l|
+        $l | str substring 3..
+    })
+
+    let now = (date now)
+    let stale = ($changed_files | where {|f|
+        let p = $"($dotfiles_dir)/($f)"
+        if ($p | path exists) {
+            ($now - (ls $p | get 0.modified)) > 24hr
+        } else { false }
+    })
+
+    if ($stale | is-empty) {
+        if $verbose {
+            let n = ($changed_files | length)
+            print $"  ✅ ($n) changed, all recent"
+            print ""
+        }
+        return []
+    }
+
+    if $verbose {
+        for f in $stale { print $"  ⚠ ($f)" }
+        print ""
+    }
+
+    let count = ($stale | length)
+    let label = if $count == 1 { "file" } else { "files" }
+    [$"Dotfiles: ($count) uncommitted ($label) >24h old"]
+}
+
+# ── Check 4: Rust tool deployment ─────────────────────────────────
+# Source in rust-projects/ but binary missing from ~/.local/bin/.
+def check_rust_tools [verbose: bool] {
+    if $verbose { print "── Rust Tools ──" }
+
+    let rust_dir = $"($env.HOME)/dotfiles/rust-projects"
+    let bin_dir = $"($env.HOME)/.local/bin"
+
+    # Actively-used tools only — skip restore-*, *-to-continuum, etc.
+    let tools = [
+        [project binary];
+        [ai-export-watcher ai-export-watcher]
+        [concert-capture concert-capture]
+        [continuum-activity continuum-activity]
+        [forge-metadata-backup forge-metadata-backup]
+        [readwise-sync readwise-sync]
+        [wiki-resolve-batch wiki-resolve-batch]
+        [yt-transcript yt-transcript]
+    ]
+
+    mut problems = []
+
+    for tool in $tools {
+        let src = $"($rust_dir)/($tool.project)"
+        if not ($src | path exists) { continue }
+
+        let bin = $"($bin_dir)/($tool.binary)"
+        if ($bin | path exists) {
+            if $verbose { print $"  ✅ ($tool.binary)" }
+        } else {
+            $problems = ($problems | append $"Rust tool missing: ($tool.binary)")
+            if $verbose { print $"  ❌ ($tool.binary): source exists, no binary" }
+        }
+    }
+
+    if $verbose { print "" }
+    $problems
+}
+
+# ── Main ──────────────────────────────────────────────────────────
+
+def main [
+    --verbose (-v)  # Show all checks even when healthy
+    --fix (-f)      # Attempt auto-repair: restart dead timers/services
+] {
+    let log_path = $"($env.HOME)/.local/share/system-health-check.log"
+
+    if $verbose {
+        print "System Health Check"
+        print "────────────────────────────────────────"
+        print ""
+    }
+
+    let timer_problems = (check_timers $verbose $fix $log_path)
+    let service_problems = (check_services $verbose $fix $log_path)
+    let dotfile_problems = (check_dotfiles $verbose)
+    let rust_problems = (check_rust_tools $verbose)
+
+    let all_problems = ($timer_problems
+        | append $service_problems
+        | append $dotfile_problems
+        | append $rust_problems)
+
+    if ($all_problems | is-empty) {
+        log_msg $log_path "INFO" "All checks passed"
+        if $verbose { print "All checks passed." }
+    } else {
+        let count = ($all_problems | length)
+        let label = if $count == 1 { "problem" } else { "problems" }
+
+        log_msg $log_path "WARN" $"($count) ($label) found"
+        for p in $all_problems {
+            log_msg $log_path "WARN" $"  ($p)"
+        }
+
+        if not $verbose {
+            print $"system-health-check: ($count) ($label):"
+            for p in $all_problems {
+                print $"  - ($p)"
+            }
+        } else {
+            print $"($count) ($label) found."
+        }
+
+        # Desktop notification
+        if (which notify-send | is-not-empty) {
+            let body = ($all_problems | str join (char newline))
+            do { notify-send --urgency=critical "System Health Check" $body } | ignore
+        }
+
+        exit 1
+    }
+}
