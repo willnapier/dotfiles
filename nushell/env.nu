@@ -56,10 +56,13 @@ if ($gcloud_root | path exists) {
     $env.GOOGLE_CLOUD_PROJECT = "forgepodium"
 }
 
-# --- Gemini API Key Retrieval (macOS Keychain) ---
+# --- Gemini API Key Retrieval (macOS Keychain / Linux gnome-keyring) ---
 $env.GEMINI_API_KEY = (try {
     if $platform == "darwin" {
         let result = (^security find-generic-password -s "gemini-api-key" -a "forgepodium" -w | complete)
+        if $result.exit_code == 0 { $result.stdout | str trim } else { "" }
+    } else if (which secret-tool | is-not-empty) {
+        let result = (^secret-tool lookup service gemini-api-key account forgepodium | complete)
         if $result.exit_code == 0 { $result.stdout | str trim } else { "" }
     } else {
         ""
