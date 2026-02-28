@@ -98,6 +98,7 @@ depends = []
 "scripts/hx-insert-time" = "~/.local/bin/hx-insert-time"
 "scripts/hx-mark-revisit" = "~/.local/bin/hx-mark-revisit"
 "scripts/hx-toggle-todo" = "~/.local/bin/hx-toggle-todo"
+"scripts/remove-comments" = "~/.local/bin/remove-comments"
 "scripts/todo-scanner" = "~/.local/bin/todo-scanner"
 "scripts/new-script" = "~/.local/bin/new-script"
 "scripts/forge-content-search-interactive.sh" = "~/.local/bin/forge-content-search-interactive"

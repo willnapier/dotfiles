@@ -3010,6 +3010,7 @@ def clip [file: path] {
     }
 }
 
+
 # Smart directory navigation (up)
 def --env up [levels: int = 1] {
     let path = (1..$levels | each { ".." } | str join "/")

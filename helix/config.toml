@@ -127,6 +127,9 @@ M = ":write-all"     # Save all modified files
 # Claude skills queue entries via daypage-append; this merges them in
 U = [":write!", ":sh daypage-flush-wezterm"]
 
+# Remove comments and copy to clipboard - Space+# (strips # comments)
+"#" = ":sh remove-comments %{buffer_name}"
+
 # Clipboard yank - Space+y (cross-platform, works in Zellij/WezTerm)
 y = ":pipe-to hx-clipboard-copy"
 
