@@ -353,6 +353,136 @@ def check_rust_tools [verbose: bool] {
     $problems
 }
 
+# ── Check 5: DNA drift (Linux only) ──────────────────────────────
+# Detects drift from SYSTEM-DNA.md — user groups, system services,
+# snapper health, cargo crates, npm globals, expected user units.
+def check_dna_drift [verbose: bool] {
+    if (is_macos) { return [] }
+
+    if $verbose { print "── DNA Drift ──" }
+    mut problems = []
+
+    # 5a: User groups
+    let expected_groups = ["wheel", "video", "input", "seat", "ollama"]
+    let actual_groups = (do { id -nG } | complete | get stdout | str trim | split row " ")
+    for g in $expected_groups {
+        if not ($actual_groups | any {|a| $a == $g }) {
+            $problems = ($problems | append $"DNA: user missing group '($g)'")
+            if $verbose { print $"  ❌ group: ($g) missing" }
+        }
+    }
+    if $verbose and ($problems | is-empty) { print "  ✅ groups" }
+
+    # 5b: System services that should be enabled
+    let expected_system_svcs = [
+        "bluetooth" "keyd" "NetworkManager" "ollama"
+        "seatd" "sshd" "systemd-resolved" "systemd-timesyncd" "tailscaled"
+    ]
+    mut svc_ok = true
+    for svc in $expected_system_svcs {
+        let unit = $"($svc).service"
+        let status = (do { systemctl is-enabled $unit } | complete | get stdout | str trim)
+        if $status != "enabled" {
+            $problems = ($problems | append $"DNA: system service not enabled: ($svc)")
+            if $verbose { print $"  ❌ system svc: ($svc) [($status)]" }
+            $svc_ok = false
+        }
+    }
+    if $verbose and $svc_ok { print "  ✅ system services" }
+
+    # 5c: Snapper health
+    let snapper_configs = (do { snapper list-configs } | complete)
+    mut snapper_ok = true
+    if $snapper_configs.exit_code != 0 {
+        $problems = ($problems | append "DNA: snapper not accessible")
+        if $verbose { print "  ❌ snapper: cannot list configs" }
+        $snapper_ok = false
+    } else {
+        for cfg in ["root" "home"] {
+            if not ($snapper_configs.stdout | str contains $cfg) {
+                $problems = ($problems | append $"DNA: snapper config '($cfg)' missing")
+                if $verbose { print $"  ❌ snapper: ($cfg) config missing" }
+                $snapper_ok = false
+            }
+        }
+        # Check snapper timers are enabled at system level
+        for timer in ["snapper-timeline.timer" "snapper-cleanup.timer"] {
+            let status = (do { systemctl is-enabled $timer } | complete | get stdout | str trim)
+            if $status != "enabled" {
+                $problems = ($problems | append $"DNA: ($timer) not enabled")
+                if $verbose { print $"  ❌ snapper: ($timer) [($status)]" }
+                $snapper_ok = false
+            }
+        }
+    }
+    if $verbose and $snapper_ok { print "  ✅ snapper" }
+
+    # 5d: Cargo crates from crates.io (expected in PATH)
+    let expected_crates = [
+        "bat" "fd" "rg" "sd" "sk" "starship" "zoxide"
+        "dotter" "dprint" "himalaya" "trash" "yazi" "zellij" "nu"
+    ]
+    mut crates_ok = true
+    for bin in $expected_crates {
+        if (which $bin | is-empty) {
+            $problems = ($problems | append $"DNA: cargo crate not in PATH: ($bin)")
+            if $verbose { print $"  ❌ crate: ($bin)" }
+            $crates_ok = false
+        }
+    }
+    if $verbose and $crates_ok { print "  ✅ cargo crates" }
+
+    # 5e: npm globals
+    let expected_npm = ["gemini" "codex"]
+    mut npm_ok = true
+    for bin in $expected_npm {
+        if (which $bin | is-empty) {
+            $problems = ($problems | append $"DNA: npm global not in PATH: ($bin)")
+            if $verbose { print $"  ❌ npm: ($bin)" }
+            $npm_ok = false
+        }
+    }
+    if $verbose and $npm_ok { print "  ✅ npm globals" }
+
+    # 5f: Expected user units that should be enabled
+    let expected_user_units = [
+        "ai-export-watcher.service"
+        "collect-projects-watcher.service"
+        "dropbox.service"
+        "forge-link-manager.service"
+        "git-auto-pull-watcher.service"
+        "git-auto-push-watcher.service"
+        "link-service.service"
+        "syncthing.service"
+        "web-clip-watcher.service"
+        "claude-code-nightly-cleanup.timer"
+        "collect-projects.timer"
+        "continuum-auto-import.timer"
+        "continuum-sync-claude.timer"
+        "dotter-drift-monitor.timer"
+        "frecency-daemon.timer"
+        "helix-undo-cleanup.timer"
+        "mail-sync.timer"
+        "package-list-backup.timer"
+        "readwise-sync.timer"
+        "system-health-check.timer"
+    ]
+    mut units_ok = true
+    for unit in $expected_user_units {
+        let status = (do { systemctl --user is-enabled $unit } | complete | get stdout | str trim)
+        if $status != "enabled" {
+            let name = ($unit | str replace ".service" "" | str replace ".timer" "")
+            $problems = ($problems | append $"DNA: user unit not enabled: ($name)")
+            if $verbose { print $"  ❌ user unit: ($name) [($status)]" }
+            $units_ok = false
+        }
+    }
+    if $verbose and $units_ok { print "  ✅ user units" }
+
+    if $verbose { print "" }
+    $problems
+}
+
 # ── Main ──────────────────────────────────────────────────────────
 
 def main [
@@ -384,11 +514,13 @@ def main [
     # Cross-platform checks
     let dotfile_problems = (check_dotfiles $verbose)
     let rust_problems = (check_rust_tools $verbose)
+    let dna_problems = (check_dna_drift $verbose)
 
     let all_problems = ($timer_problems
         | append $service_problems
         | append $dotfile_problems
-        | append $rust_problems)
+        | append $rust_problems
+        | append $dna_problems)
 
     if ($all_problems | is-empty) {
         log_msg $log_path "INFO" "All checks passed"
