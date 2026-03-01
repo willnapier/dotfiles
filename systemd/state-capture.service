@@ -1,0 +1,29 @@
+[Unit]
+Description=Capture system state (packages, services, crates, groups) to dotfiles
+
+[Service]
+Type=oneshot
+Environment=PATH=/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:%h/.cargo/bin:%h/.local/bin
+
+# Arch packages (official + AUR)
+ExecStart=/bin/bash -c 'pacman -Qqe | sort > %h/dotfiles/arch-packages.txt'
+ExecStart=/bin/bash -c 'pacman -Qqem | sort > %h/dotfiles/arch-packages-aur.txt'
+
+# System services and timers (enabled)
+ExecStart=/bin/bash -c 'systemctl list-unit-files --type=service --state=enabled --no-legend --no-pager | awk "{print \$1}" | sort > %h/dotfiles/system-services-enabled.txt'
+ExecStart=/bin/bash -c 'systemctl list-unit-files --type=timer --state=enabled --no-legend --no-pager | awk "{print \$1}" | sort > %h/dotfiles/system-timers-enabled.txt'
+
+# User units (services + timers + sockets, enabled)
+ExecStart=/bin/bash -c 'systemctl --user list-unit-files --state=enabled --no-legend --no-pager | awk "{print \$1}" | sort > %h/dotfiles/user-units-enabled.txt'
+
+# Cargo crates (name, version, source)
+ExecStart=/bin/bash -c '%h/.local/bin/capture-cargo-crates > %h/dotfiles/cargo-crates.txt'
+
+# npm globals
+ExecStart=/bin/bash -c 'npm list -g --depth=0 --parseable 2>/dev/null | tail -n +2 | xargs -I{} basename {} | sort > %h/dotfiles/npm-globals.txt'
+
+# User groups
+ExecStart=/bin/bash -c 'id -nG | tr " " "\n" | sort > %h/dotfiles/user-groups.txt'
+
+[Install]
+WantedBy=default.target

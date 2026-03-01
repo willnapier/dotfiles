@@ -354,43 +354,65 @@ def check_rust_tools [verbose: bool] {
 }
 
 # ── Check 5: DNA drift (Linux only) ──────────────────────────────
-# Detects drift from SYSTEM-DNA.md — user groups, system services,
-# snapper health, cargo crates, npm globals, expected user units.
+# Detects drift from auto-captured state files in ~/dotfiles/*.txt.
+# The 04:30 state-capture creates the baseline; this 08:00 check compares
+# live state against it. Intentional changes update on next capture.
 def check_dna_drift [verbose: bool] {
     if (is_macos) { return [] }
 
     if $verbose { print "── DNA Drift ──" }
     mut problems = []
+    let dotfiles = $"($env.HOME)/dotfiles"
+
+    # Helper: read a .txt file into a list of non-empty lines
+    def read_baseline [filename: string] {
+        let path = $"($dotfiles)/($filename)"
+        if ($path | path exists) {
+            open $path | lines | where ($it | str trim | is-not-empty)
+        } else {
+            []
+        }
+    }
 
     # 5a: User groups
-    let expected_groups = ["wheel", "video", "input", "seat", "ollama"]
-    let actual_groups = (do { id -nG } | complete | get stdout | str trim | split row " ")
-    for g in $expected_groups {
-        if not ($actual_groups | any {|a| $a == $g }) {
-            $problems = ($problems | append $"DNA: user missing group '($g)'")
-            if $verbose { print $"  ❌ group: ($g) missing" }
+    let expected_groups = (read_baseline "user-groups.txt")
+    if ($expected_groups | is-empty) {
+        if $verbose { print "  ⚠ groups: no baseline (run state-capture)" }
+    } else {
+        let actual_groups = (do { id -nG } | complete | get stdout | str trim | split row " ")
+        mut groups_ok = true
+        for g in $expected_groups {
+            if $g == "will" { continue }  # skip user's own group
+            if not ($actual_groups | any {|a| $a == $g }) {
+                $problems = ($problems | append $"DNA: user missing group '($g)'")
+                if $verbose { print $"  ❌ group: ($g) missing" }
+                $groups_ok = false
+            }
         }
+        if $verbose and $groups_ok { print "  ✅ groups" }
     }
-    if $verbose and ($problems | is-empty) { print "  ✅ groups" }
 
     # 5b: System services that should be enabled
-    let expected_system_svcs = [
-        "bluetooth" "keyd" "NetworkManager" "ollama"
-        "seatd" "sshd" "systemd-resolved" "systemd-timesyncd" "tailscaled"
-    ]
-    mut svc_ok = true
-    for svc in $expected_system_svcs {
-        let unit = $"($svc).service"
-        let status = (do { systemctl is-enabled $unit } | complete | get stdout | str trim)
-        if $status != "enabled" {
-            $problems = ($problems | append $"DNA: system service not enabled: ($svc)")
-            if $verbose { print $"  ❌ system svc: ($svc) [($status)]" }
-            $svc_ok = false
+    let expected_system_svcs = (read_baseline "system-services-enabled.txt")
+    if ($expected_system_svcs | is-empty) {
+        if $verbose { print "  ⚠ system services: no baseline (run state-capture)" }
+    } else {
+        mut svc_ok = true
+        for unit in $expected_system_svcs {
+            # Skip template units (contain @) — they're always "enabled"
+            if ($unit | str contains "@") { continue }
+            let status = (do { systemctl is-enabled $unit } | complete | get stdout | str trim)
+            if $status != "enabled" {
+                let name = ($unit | str replace ".service" "")
+                $problems = ($problems | append $"DNA: system service not enabled: ($name)")
+                if $verbose { print $"  ❌ system svc: ($name) [($status)]" }
+                $svc_ok = false
+            }
         }
+        if $verbose and $svc_ok { print "  ✅ system services" }
     }
-    if $verbose and $svc_ok { print "  ✅ system services" }
 
-    # 5c: Snapper health
+    # 5c: Snapper health (structural — not a list, keep as-is)
     let snapper_configs = (do { snapper list-configs } | complete)
     mut snapper_ok = true
     if $snapper_configs.exit_code != 0 {
@@ -405,7 +427,8 @@ def check_dna_drift [verbose: bool] {
                 $snapper_ok = false
             }
         }
-        # Check snapper timers are enabled at system level
+        # Check snapper timers from system-timers-enabled.txt baseline
+        let expected_timers = (read_baseline "system-timers-enabled.txt")
         for timer in ["snapper-timeline.timer" "snapper-cleanup.timer"] {
             let status = (do { systemctl is-enabled $timer } | complete | get stdout | str trim)
             if $status != "enabled" {
@@ -417,67 +440,60 @@ def check_dna_drift [verbose: bool] {
     }
     if $verbose and $snapper_ok { print "  ✅ snapper" }
 
-    # 5d: Cargo crates from crates.io (expected in PATH)
-    let expected_crates = [
-        "bat" "fd" "rg" "sd" "sk" "starship" "zoxide"
-        "dotter" "dprint" "himalaya" "trash" "yazi" "zellij" "nu"
-    ]
-    mut crates_ok = true
-    for bin in $expected_crates {
-        if (which $bin | is-empty) {
-            $problems = ($problems | append $"DNA: cargo crate not in PATH: ($bin)")
-            if $verbose { print $"  ❌ crate: ($bin)" }
-            $crates_ok = false
+    # 5d: Cargo crates — compare live cargo install --list against baseline
+    let expected_crates = (read_baseline "cargo-crates.txt")
+    if ($expected_crates | is-empty) {
+        if $verbose { print "  ⚠ cargo crates: no baseline (run state-capture)" }
+    } else {
+        # Parse baseline: each line is "name\tversion\tsource"
+        let expected_names = ($expected_crates | each {|line| $line | split row "\t" | get 0 })
+        # Get live installed crates once
+        let live_output = (do { cargo install --list } | complete | get stdout | default "")
+        mut crates_ok = true
+        for name in $expected_names {
+            if not ($live_output | str contains $"($name) v") {
+                $problems = ($problems | append $"DNA: cargo crate missing: ($name)")
+                if $verbose { print $"  ❌ crate: ($name)" }
+                $crates_ok = false
+            }
         }
+        if $verbose and $crates_ok { print "  ✅ cargo crates" }
     }
-    if $verbose and $crates_ok { print "  ✅ cargo crates" }
 
     # 5e: npm globals
-    let expected_npm = ["gemini" "codex"]
-    mut npm_ok = true
-    for bin in $expected_npm {
-        if (which $bin | is-empty) {
-            $problems = ($problems | append $"DNA: npm global not in PATH: ($bin)")
-            if $verbose { print $"  ❌ npm: ($bin)" }
-            $npm_ok = false
+    let expected_npm = (read_baseline "npm-globals.txt")
+    if ($expected_npm | is-empty) {
+        if $verbose { print "  ⚠ npm globals: no baseline (run state-capture)" }
+    } else {
+        let live_npm = (do { npm list -g --depth=0 --parseable } | complete | get stdout | default "" | lines | where ($it | str trim | is-not-empty) | each {|l| $l | path basename })
+        mut npm_ok = true
+        for pkg in $expected_npm {
+            if not ($live_npm | any {|l| $l == $pkg }) {
+                $problems = ($problems | append $"DNA: npm global missing: ($pkg)")
+                if $verbose { print $"  ❌ npm: ($pkg)" }
+                $npm_ok = false
+            }
         }
+        if $verbose and $npm_ok { print "  ✅ npm globals" }
     }
-    if $verbose and $npm_ok { print "  ✅ npm globals" }
 
-    # 5f: Expected user units that should be enabled
-    let expected_user_units = [
-        "ai-export-watcher.service"
-        "collect-projects-watcher.service"
-        "dropbox.service"
-        "forge-link-manager.service"
-        "git-auto-pull-watcher.service"
-        "git-auto-push-watcher.service"
-        "link-service.service"
-        "syncthing.service"
-        "web-clip-watcher.service"
-        "claude-code-nightly-cleanup.timer"
-        "collect-projects.timer"
-        "continuum-auto-import.timer"
-        "continuum-sync-claude.timer"
-        "dotter-drift-monitor.timer"
-        "frecency-daemon.timer"
-        "helix-undo-cleanup.timer"
-        "mail-sync.timer"
-        "package-list-backup.timer"
-        "readwise-sync.timer"
-        "system-health-check.timer"
-    ]
-    mut units_ok = true
-    for unit in $expected_user_units {
-        let status = (do { systemctl --user is-enabled $unit } | complete | get stdout | str trim)
-        if $status != "enabled" {
-            let name = ($unit | str replace ".service" "" | str replace ".timer" "")
-            $problems = ($problems | append $"DNA: user unit not enabled: ($name)")
-            if $verbose { print $"  ❌ user unit: ($name) [($status)]" }
-            $units_ok = false
+    # 5f: User units that should be enabled
+    let expected_user_units = (read_baseline "user-units-enabled.txt")
+    if ($expected_user_units | is-empty) {
+        if $verbose { print "  ⚠ user units: no baseline (run state-capture)" }
+    } else {
+        mut units_ok = true
+        for unit in $expected_user_units {
+            let status = (do { systemctl --user is-enabled $unit } | complete | get stdout | str trim)
+            if $status != "enabled" {
+                let name = ($unit | str replace ".service" "" | str replace ".timer" "" | str replace ".socket" "")
+                $problems = ($problems | append $"DNA: user unit not enabled: ($name)")
+                if $verbose { print $"  ❌ user unit: ($name) [($status)]" }
+                $units_ok = false
+            }
         }
+        if $verbose and $units_ok { print "  ✅ user units" }
     }
-    if $verbose and $units_ok { print "  ✅ user units" }
 
     if $verbose { print "" }
     $problems

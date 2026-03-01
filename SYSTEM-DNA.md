@@ -138,6 +138,7 @@ EOF
 
 ### User
 ```bash
+# Groups — see ~/dotfiles/user-groups.txt for current auto-captured list
 useradd -m -G wheel,video,input,seat,ollama -s /bin/bash will
 passwd will
 # Add to sudoers: uncomment %wheel ALL=(ALL:ALL) ALL in visudo
@@ -147,10 +148,12 @@ passwd will
 
 ## Phase 3: Packages
 
+All package/crate/npm lists are auto-captured daily by `state-capture.timer` into `~/dotfiles/*.txt`.
+
 ### Official repos
 ```bash
-# Install from the tracked package list (dotfiles/arch-packages.txt)
-pacman -S --needed - < arch-packages.txt
+# Install from the tracked package list
+pacman -S --needed - < ~/dotfiles/arch-packages.txt
 ```
 
 ### AUR packages
@@ -159,20 +162,18 @@ pacman -S --needed - < arch-packages.txt
 git clone https://aur.archlinux.org/paru.git /tmp/paru
 cd /tmp/paru && makepkg -si
 
-# Then install AUR packages (dotfiles/arch-packages-aur.txt)
-paru -S --needed - < arch-packages-aur.txt
+# Then install AUR packages
+paru -S --needed - < ~/dotfiles/arch-packages-aur.txt
 ```
 
-### Rust toolchain + crates from crates.io
+### Rust toolchain + crates
 ```bash
 # Rustup should already be present via 'rust' package, or:
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
-# Crates (pinned versions — update as needed)
-cargo install bat fd-find ripgrep sd skim starship zoxide
-cargo install dotter dprint jaq himalaya trashy
-cargo install yazi-fm yazi-cli zellij
-cargo install nu  # nushell
+# Install crates.io crates (see ~/dotfiles/cargo-crates.txt for full list with versions)
+# Crates with source "crates.io" are installed via cargo install <name>
+# Crates with a local path source are from dotfiles/rust-projects/ (see below)
 ```
 
 ### Rust projects from dotfiles
@@ -188,6 +189,7 @@ done
 
 ### npm globals
 ```bash
+# See ~/dotfiles/npm-globals.txt for current list
 npm install -g @google/gemini-cli @openai/codex
 ```
 
@@ -211,21 +213,16 @@ sysrq = f20
 systemctl enable --now keyd
 ```
 
-### System-level services to enable
+### System-level services and timers to enable
+
+See `~/dotfiles/system-services-enabled.txt` and `~/dotfiles/system-timers-enabled.txt` for the current auto-captured lists. Enable all entries:
+
 ```bash
-systemctl enable bluetooth
-systemctl enable keyd
-systemctl enable NetworkManager
-systemctl enable NetworkManager-dispatcher
-systemctl enable NetworkManager-wait-online
-systemctl enable ollama
-systemctl enable seatd
-systemctl enable sshd
-systemctl enable systemd-resolved
-systemctl enable systemd-timesyncd
-systemctl enable tailscaled
-systemctl enable snapper-timeline.timer
-systemctl enable snapper-cleanup.timer
+# Services
+while read -r unit; do systemctl enable "$unit"; done < ~/dotfiles/system-services-enabled.txt
+
+# Timers
+while read -r unit; do systemctl enable "$unit"; done < ~/dotfiles/system-timers-enabled.txt
 ```
 
 ---
@@ -257,31 +254,11 @@ cd ~/dotfiles && dotter deploy
 ```
 
 ### User services to enable
+
+See `~/dotfiles/user-units-enabled.txt` for the current auto-captured list. Enable all entries:
+
 ```bash
-systemctl --user enable ai-export-watcher.service
-systemctl --user enable assistants-docs-watcher.service
-systemctl --user enable collect-projects-watcher.service
-systemctl --user enable dropbox.service
-systemctl --user enable forge-link-manager.service
-systemctl --user enable git-auto-pull-watcher.service
-systemctl --user enable git-auto-push-watcher.service
-systemctl --user enable link-service.service
-systemctl --user enable nushell-env.service
-systemctl --user enable ssh-import-env.service
-systemctl --user enable syncthing.service
-systemctl --user enable web-clip-watcher.service
-systemctl --user enable claude-code-nightly-cleanup.timer
-systemctl --user enable collect-projects.timer
-systemctl --user enable continuum-auto-import.timer
-systemctl --user enable continuum-sync-claude.timer
-systemctl --user enable dotter-drift-monitor.timer
-systemctl --user enable firefox-nightly-restart.timer
-systemctl --user enable frecency-daemon.timer
-systemctl --user enable helix-undo-cleanup.timer
-systemctl --user enable mail-sync.timer
-systemctl --user enable package-list-backup.timer
-systemctl --user enable readwise-sync.timer
-systemctl --user enable system-health-check.timer
+while read -r unit; do systemctl --user enable "$unit"; done < ~/dotfiles/user-units-enabled.txt
 ```
 
 ---
@@ -348,18 +325,27 @@ Once Syncthing and Dropbox are connected, data flows back automatically:
 
 ## Maintenance: Keeping DNA Current
 
-The package lists (`arch-packages.txt`, `arch-packages-aur.txt`) are auto-updated daily by `package-list-backup.timer`.
+The `state-capture.timer` runs daily at 04:30 and auto-captures all dynamic state into `~/dotfiles/*.txt`:
 
-**What needs manual updates to this file:**
-- New system services added/removed
-- User group changes
+| File | Contents |
+|------|----------|
+| `arch-packages.txt` | Official repo packages |
+| `arch-packages-aur.txt` | AUR packages |
+| `system-services-enabled.txt` | Enabled system services |
+| `system-timers-enabled.txt` | Enabled system timers |
+| `user-units-enabled.txt` | Enabled user units (services + timers + sockets) |
+| `cargo-crates.txt` | Installed cargo crates (name, version, source) |
+| `npm-globals.txt` | Global npm packages |
+| `user-groups.txt` | User group memberships |
+
+The `system-health-check` (08:00 daily) compares live state against these baselines. Intentional changes auto-update on the next 04:30 capture. Accidental losses get flagged.
+
+**What still needs manual updates to this file:**
 - Disk layout changes
-- New secret/credential requirements
 - Boot configuration changes
-- New cargo crate installs from crates.io (not from dotfiles/rust-projects)
-- New npm/pipx globals
+- New secret/credential requirements
 
-**Trigger**: When any of the above changes, update this file and commit. The `system-health-check` script could be extended to detect drift.
+Everything else (packages, services, crates, groups) is auto-captured.
 
 ---
 

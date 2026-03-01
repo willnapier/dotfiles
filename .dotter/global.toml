@@ -275,6 +275,7 @@ depends = []
 "scripts/remind-notify" = "~/.local/bin/remind-notify"
 # System health check - cross-platform daily validator (launchd on mac, systemd on linux)
 "scripts/system-health-check" = "~/.local/bin/system-health-check"
+"scripts/capture-cargo-crates" = "~/.local/bin/capture-cargo-crates"
 "scripts/context-staleness-check" = "~/.local/bin/context-staleness-check"
 
 # Semantic search system - managed separately (has virtual environment)
@@ -386,9 +387,9 @@ depends = ["shared"]
 # System health check - systemd units (script in shared.files)
 "systemd/system-health-check.service" = "~/.config/systemd/user/system-health-check.service"
 "systemd/system-health-check.timer" = "~/.config/systemd/user/system-health-check.timer"
-# Package list backup - daily snapshot of installed packages
-"systemd/package-list-backup.service" = "~/.config/systemd/user/package-list-backup.service"
-"systemd/package-list-backup.timer" = "~/.config/systemd/user/package-list-backup.timer"
+# State capture - daily snapshot of packages, services, crates, groups
+"systemd/state-capture.service" = "~/.config/systemd/user/state-capture.service"
+"systemd/state-capture.timer" = "~/.config/systemd/user/state-capture.timer"
 # Wayland compositor configuration - Niri + Waybar + WezTerm
 "niri/config.kdl" = "~/.config/niri/config.kdl"
 "waybar/config" = "~/.config/waybar/config"

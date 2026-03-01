@@ -1,0 +1,6 @@
+input
+ollama
+seat
+video
+wheel
+will

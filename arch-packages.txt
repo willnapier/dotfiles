@@ -39,8 +39,8 @@ ly
 mako
 mdcat
 nano
-network-manager-applet
 networkmanager
+network-manager-applet
 ninja
 niri
 nodejs
@@ -65,6 +65,8 @@ seatd
 sioyek-dev
 slurp
 smartmontools
+snap-pac
+snapper
 sox
 surfshark-client
 sway

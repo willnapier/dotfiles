@@ -1,0 +1,19 @@
+#!/bin/bash
+# capture-cargo-crates — Parse cargo install --list into clean TSV
+# Output: crate_name<TAB>version<TAB>source
+# Source is "crates.io" for registry crates, or the local path for --path installs.
+
+cargo install --list 2>/dev/null | while IFS= read -r line; do
+    # Crate lines match: "name v1.2.3:" or "name v1.2.3 (/path/to/src):"
+    if [[ "$line" =~ ^([a-zA-Z0-9_-]+)\ v([0-9][^ ]*)(.*)':' ]]; then
+        name="${BASH_REMATCH[1]}"
+        version="${BASH_REMATCH[2]}"
+        rest="${BASH_REMATCH[3]}"
+        if [[ "$rest" =~ \((.+)\) ]]; then
+            source="${BASH_REMATCH[1]}"
+        else
+            source="crates.io"
+        fi
+        printf '%s\t%s\t%s\n' "$name" "$version" "$source"
+    fi
+done
