@@ -373,9 +373,10 @@ def check_dna_drift [verbose: bool] {
                 if $cap.status == "drift" {
                     let added_count = ($cap | get -o added | default [] | length)
                     let removed_count = ($cap | get -o removed | default [] | length)
-                    $problems = ($problems | append $"DNA: ($cap.name) drift (+($added_count)/-($removed_count))")
+                    let drift_summary = ["+" $added_count "/-" $removed_count] | str join
+                    $problems = ($problems | append $"DNA: ($cap.name) drift ($drift_summary)")
                     if $verbose {
-                        print $"  ❌ ($cap.name): +($added_count)/-($removed_count)"
+                        print $"  ❌ ($cap.name): ($drift_summary)"
                         let added = ($cap | get -o added | default [])
                         for a in $added { print $"      + ($a)" }
                         let removed = ($cap | get -o removed | default [])
