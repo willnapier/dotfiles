@@ -192,32 +192,14 @@ def main [
     # before opening in Helix. Safe because file isn't open in Helix yet.
     run-external "daypage-flush"
 
-    # Debug information using structured Nushell data
-    let debug_info = {
-        cursor_line: $cursor_line,
-        daily_file: $daily_file,
-        file_exists: ($daily_file | path exists),
-        line_count: (if ($daily_file | path exists) {
-            (open $daily_file --raw | lines | length)
-        } else {
-            0
-        })
+    # If not inside Zellij, start a new session with the daily-note layout.
+    # Day navigation (g+[, g+]) depends on Zellij keystroke injection.
+    if ($env.ZELLIJ? | is-empty) {
+        print "Starting Zellij (required for day navigation)..."
+        ^zellij -n daily-note
+        return
     }
 
-    print $"DEBUG: (($debug_info | to json))"
-
-    # Open in Helix with proper positioning
-    let position_spec = if ($env.ZELLIJ? | is-not-empty) {
-        # Zellij mode
-        print "DEBUG: Inside Zellij - using Zellij-compatible positioning"
-        $"($daily_file):($cursor_line):1"
-    } else {
-        # Regular terminal
-        print "DEBUG: Regular terminal - using standard positioning"
-        $"($daily_file):($cursor_line):0"
-    }
-
-    # Use universal hx command (wraps hx-auto for theme detection)
-    print $"DEBUG: Executing: hx ($position_spec)"
+    let position_spec = $"($daily_file):($cursor_line):1"
     run-external hx $position_spec
 }

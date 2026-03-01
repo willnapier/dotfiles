@@ -1,0 +1,6 @@
+// Minimal layout for daily-note: single pane running daily-note
+layout {
+    pane command="daily-note" {
+        focus true
+    }
+}

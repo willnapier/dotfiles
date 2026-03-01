@@ -57,6 +57,7 @@ depends = []
 "zellij/layouts/desktop-niri.kdl" = "~/.config/zellij/layouts/desktop-niri.kdl"
 "zellij/layouts/minimal-test.kdl" = "~/.config/zellij/layouts/minimal-test.kdl"
 "zellij/layouts/test-basic.kdl" = "~/.config/zellij/layouts/test-basic.kdl"
+"zellij/layouts/daily-note.kdl" = "~/.config/zellij/layouts/daily-note.kdl"
 # Helix themes - individual files for reliability (no more drift!)
 "helix/themes/solarized_dark_modal.toml" = "~/.config/helix/themes/solarized_dark_modal.toml"
 "helix/themes/solarized_light_modal.toml" = "~/.config/helix/themes/solarized_light_modal.toml" 
