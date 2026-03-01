@@ -1,6 +1,0 @@
-codex
-gemini-cli
-node-gyp
-nopt
-npm
-semver

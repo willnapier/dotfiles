@@ -1,0 +1,7 @@
+claude-code
+codex
+corepack
+gemini-cli
+neovim
+npm
+yarle-evernote-to-md
