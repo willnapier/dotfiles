@@ -1,6 +1,7 @@
+claude-code
 codex
+corepack
 gemini-cli
-node-gyp
-nopt
+neovim
 npm
-semver
+yarle-evernote-to-md
