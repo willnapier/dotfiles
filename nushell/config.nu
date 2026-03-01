@@ -4642,3 +4642,47 @@ def pre-upgrade [] {
     print $"Snapshot created. Safe to run: sudo pacman -Syu"
     print $"To rollback if needed, boot from Arch USB and set-default to this snapshot."
 }
+
+# Tip — surface capabilities from the command inventory
+# `tip` — one random entry. `tip helix` — random from that section. `tip helix all` — list all.
+def tip [section?: string, show?: string] {
+    let inventory = "~/Assistants/shared/COMMAND-INVENTORY.md" | path expand
+    if not ($inventory | path exists) {
+        print "Command inventory not found at ~/Assistants/shared/COMMAND-INVENTORY.md"
+        return
+    }
+    let raw = (open $inventory | lines)
+    let entries = if ($section | is-empty) {
+        $raw | where ($it | str starts-with "- `")
+    } else {
+        # Find lines between the matching ## header and the next ## header
+        let section_lower = ($section | str downcase)
+        let headers = ($raw | enumerate | where {|r| $r.item | str starts-with "## "})
+        let match = ($headers | where {|h| ($h.item | str downcase) =~ $section_lower} | first)
+        if ($match | is-empty) {
+            let available = ($headers | get item | each {|h| $h | str replace "## " ""} | str join ", ")
+            print $"No section matching '($section)'. Available: ($available)"
+            return
+        }
+        let start = $match.index
+        let next = ($headers | where {|h| $h.index > $start} | first | get -o index | default ($raw | length))
+        $raw
+        | skip ($start + 1)
+        | first ($next - $start - 1)
+        | where ($it | str starts-with "- `")
+    }
+    if ($entries | is-empty) {
+        print "No entries found."
+        return
+    }
+    if ($show == "all") {
+        $entries | each {|e| print $e}
+    } else {
+        print ($entries | shuffle | first)
+    }
+}
+
+# Show a tip on interactive shell startup (suppress in non-interactive/CI contexts)
+if $nu.is-interactive {
+    tip
+}
