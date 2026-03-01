@@ -30,10 +30,16 @@ def main [] {
             continue
         }
 
-        # Skip if DayPage doesn't exist (can't flush to non-existent file)
+        # Create DayPage from template if it doesn't exist
         if not ($daypage | path exists) {
-            print -e $"DayPage not found: ($daypage) — skipping"
-            continue
+            let result = (do { daypage-template $date } | complete)
+            if $result.exit_code == 0 and ($result.stdout | str trim | is-not-empty) {
+                $result.stdout | save $daypage
+                print -e $"Created DayPage: ($daypage)"
+            } else {
+                print -e $"DayPage not found and template failed: ($daypage) — skipping"
+                continue
+            }
         }
 
         let lines = ($content_raw | lines)
