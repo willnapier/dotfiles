@@ -319,6 +319,7 @@ depends = ["shared"]
 "macos/launchd/com.williamnapier.continuum-sync-claude.plist" = "~/Library/LaunchAgents/com.williamnapier.continuum-sync-claude.plist"
 "macos/launchd/com.williamnapier.link-service.plist" = "~/Library/LaunchAgents/com.williamnapier.link-service.plist"
 "macos/launchd/com.williamnapier.system-health-check.plist" = "~/Library/LaunchAgents/com.williamnapier.system-health-check.plist"
+"macos/launchd/com.williamnapier.state-capture.plist" = "~/Library/LaunchAgents/com.williamnapier.state-capture.plist"
 # NOTE: Individual files managed in [shared.files] for better reliability
 # Removed directory symlinks that were causing orphan detection issues
 

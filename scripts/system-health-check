@@ -330,6 +330,7 @@ def check_rust_tools [verbose: bool] {
         [continuum-activity continuum-activity]
         [forge-metadata-backup forge-metadata-backup]
         [readwise-sync readwise-sync]
+        [state-capture state-capture]
         [wiki-resolve-batch wiki-resolve-batch]
         [yt-transcript yt-transcript]
     ]
@@ -353,73 +354,78 @@ def check_rust_tools [verbose: bool] {
     $problems
 }
 
-# ── Check 5: DNA drift (Linux only) ──────────────────────────────
+# ── Check 5: DNA drift ────────────────────────────────────────────
 # Shells out to `state-capture check --json` for list-based drift detection.
-# Snapper health is checked separately (structural, not a list capture).
+# Snapper health is checked separately (Linux only — structural, not a list capture).
 def check_dna_drift [verbose: bool] {
-    if (is_macos) { return [] }
-
     if $verbose { print "── DNA Drift ──" }
     mut problems = []
 
     # 5a: state-capture drift (packages, services, crates, groups, etc.)
-    let sc = (do { state-capture check --json --quiet } | complete)
-    if $sc.exit_code == 0 and ($sc.stdout | str trim | is-not-empty) {
-        if $verbose { print "  ✅ state-capture (all clean)" }
-    } else if ($sc.stdout | str trim | is-not-empty) {
-        # Parse JSON to extract drift details
-        let report = ($sc.stdout | from json)
-        for cap in $report.captures {
-            if $cap.status == "drift" {
-                let added_count = ($cap | get -o added | default [] | length)
-                let removed_count = ($cap | get -o removed | default [] | length)
-                $problems = ($problems | append $"DNA: ($cap.name) drift (+($added_count)/-($removed_count))")
-                if $verbose {
-                    print $"  ❌ ($cap.name): +($added_count)/-($removed_count)"
-                    let added = ($cap | get -o added | default [])
-                    for a in $added { print $"      + ($a)" }
-                    let removed = ($cap | get -o removed | default [])
-                    for r in $removed { print $"      - ($r)" }
+    if (which state-capture | is-not-empty) {
+        let sc = (do { state-capture check --json --quiet } | complete)
+        if $sc.exit_code == 0 and ($sc.stdout | str trim | is-not-empty) {
+            if $verbose { print "  ✅ state-capture (all clean)" }
+        } else if ($sc.stdout | str trim | is-not-empty) {
+            # Parse JSON to extract drift details
+            let report = ($sc.stdout | from json)
+            for cap in $report.captures {
+                if $cap.status == "drift" {
+                    let added_count = ($cap | get -o added | default [] | length)
+                    let removed_count = ($cap | get -o removed | default [] | length)
+                    $problems = ($problems | append $"DNA: ($cap.name) drift (+($added_count)/-($removed_count))")
+                    if $verbose {
+                        print $"  ❌ ($cap.name): +($added_count)/-($removed_count)"
+                        let added = ($cap | get -o added | default [])
+                        for a in $added { print $"      + ($a)" }
+                        let removed = ($cap | get -o removed | default [])
+                        for r in $removed { print $"      - ($r)" }
+                    }
+                } else if $cap.status == "nobaseline" {
+                    if $verbose { print $"  ⚠ ($cap.name): no baseline" }
+                } else if $cap.status == "error" {
+                    $problems = ($problems | append $"DNA: ($cap.name) check error")
+                    if $verbose { print $"  ❌ ($cap.name): error" }
+                } else if $verbose {
+                    print $"  ✅ ($cap.name)"
                 }
-            } else if $cap.status == "nobaseline" {
-                if $verbose { print $"  ⚠ ($cap.name): no baseline" }
-            } else if $cap.status == "error" {
-                $problems = ($problems | append $"DNA: ($cap.name) check error")
-                if $verbose { print $"  ❌ ($cap.name): error" }
-            } else if $verbose {
-                print $"  ✅ ($cap.name)"
             }
+        } else {
+            $problems = ($problems | append "DNA: state-capture check failed")
+            if $verbose { print "  ❌ state-capture: command failed" }
         }
     } else {
-        $problems = ($problems | append "DNA: state-capture not available")
-        if $verbose { print "  ❌ state-capture: command failed" }
+        $problems = ($problems | append "DNA: state-capture not installed")
+        if $verbose { print "  ❌ state-capture: not in PATH" }
     }
 
-    # 5b: Snapper health (structural — not a list-based capture)
-    let snapper_configs = (do { snapper list-configs } | complete)
-    mut snapper_ok = true
-    if $snapper_configs.exit_code != 0 {
-        $problems = ($problems | append "DNA: snapper not accessible")
-        if $verbose { print "  ❌ snapper: cannot list configs" }
-        $snapper_ok = false
-    } else {
-        for cfg in ["root" "home"] {
-            if not ($snapper_configs.stdout | str contains $cfg) {
-                $problems = ($problems | append $"DNA: snapper config '($cfg)' missing")
-                if $verbose { print $"  ❌ snapper: ($cfg) config missing" }
-                $snapper_ok = false
+    # 5b: Snapper health (Linux only — structural, not a list-based capture)
+    if not (is_macos) {
+        let snapper_configs = (do { snapper list-configs } | complete)
+        mut snapper_ok = true
+        if $snapper_configs.exit_code != 0 {
+            $problems = ($problems | append "DNA: snapper not accessible")
+            if $verbose { print "  ❌ snapper: cannot list configs" }
+            $snapper_ok = false
+        } else {
+            for cfg in ["root" "home"] {
+                if not ($snapper_configs.stdout | str contains $cfg) {
+                    $problems = ($problems | append $"DNA: snapper config '($cfg)' missing")
+                    if $verbose { print $"  ❌ snapper: ($cfg) config missing" }
+                    $snapper_ok = false
+                }
+            }
+            for timer in ["snapper-timeline.timer" "snapper-cleanup.timer"] {
+                let status = (do { systemctl is-enabled $timer } | complete | get stdout | str trim)
+                if $status != "enabled" {
+                    $problems = ($problems | append $"DNA: ($timer) not enabled")
+                    if $verbose { print $"  ❌ snapper: ($timer) [($status)]" }
+                    $snapper_ok = false
+                }
             }
         }
-        for timer in ["snapper-timeline.timer" "snapper-cleanup.timer"] {
-            let status = (do { systemctl is-enabled $timer } | complete | get stdout | str trim)
-            if $status != "enabled" {
-                $problems = ($problems | append $"DNA: ($timer) not enabled")
-                if $verbose { print $"  ❌ snapper: ($timer) [($status)]" }
-                $snapper_ok = false
-            }
-        }
+        if $verbose and $snapper_ok { print "  ✅ snapper" }
     }
-    if $verbose and $snapper_ok { print "  ✅ snapper" }
 
     if $verbose { print "" }
     $problems
