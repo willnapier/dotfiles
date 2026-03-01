@@ -1,9 +1,9 @@
+NetworkManager-dispatcher.service
+NetworkManager-wait-online.service
+NetworkManager.service
 bluetooth.service
 getty@.service
 keyd.service
-NetworkManager-dispatcher.service
-NetworkManager.service
-NetworkManager-wait-online.service
 ollama.service
 seatd.service
 sshd.service

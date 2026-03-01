@@ -1,8 +1,8 @@
 ai-export-watcher.service
 assistants-docs-watcher.service
 claude-code-nightly-cleanup.timer
-collect-projects.timer
 collect-projects-watcher.service
+collect-projects.timer
 continuum-auto-import.timer
 continuum-sync-claude.timer
 dotter-drift-monitor.timer

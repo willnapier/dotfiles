@@ -262,6 +262,8 @@ depends = []
 # "rust-projects/readwise-sync/target/release/readwise-sync" = "~/.local/bin/readwise-sync"
 # Daily AI activity extraction tool (Rust binary)
 "rust-projects/continuum-activity/target/release/continuum-activity" = { target = "~/.local/bin/continuum-activity", type = "symbolic" }
+# System state capture and drift detection (Rust binary)
+"rust-projects/state-capture/target/release/state-capture" = { target = "~/.local/bin/state-capture", type = "symbolic" }
 
 # MEDIUM PRIORITY: Additional essential scripts (added 2025-09-16)
 "scripts/get-openai-key" = "~/.local/bin/get-openai-key"
