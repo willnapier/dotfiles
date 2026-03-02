@@ -1,17 +1,25 @@
 #!/usr/bin/env nu
-# Mark a client as attended in today's DayPage.
+# Mark a client as attended in a DayPage.
 # Queues a DONE instruction for daypage-flush to process.
 # Changes "- [ ] CLIENT_ID ..." to "- [x] CLIENT_ID ..." in the clinic section.
 #
 # Usage: daypage-mark-done "EB88"
+#        daypage-mark-done "EB88" --date 2026-02-26
 # Flush: Space+U in Helix
 
-def main [client_id: string] {
+def main [
+    client_id: string
+    --date (-d): string  # Target date (YYYY-MM-DD), defaults to today
+] {
     let pending_dir = ($env.HOME | path join ".local" "share" "daypage-pending")
     mkdir $pending_dir
 
-    let today = (date now | format date "%Y-%m-%d")
-    let pending_file = ($pending_dir | path join $"($today).md")
+    let target = if ($date | is-empty) {
+        date now | format date "%Y-%m-%d"
+    } else {
+        $date
+    }
+    let pending_file = ($pending_dir | path join $"($target).md")
 
     $"DONE:($client_id)\n" | save --append $pending_file
 }
