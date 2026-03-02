@@ -63,15 +63,7 @@ fn main() -> Result<()> {
         }
     };
 
-    // When using --latest, only process today's date (schedule changes too
-    // quickly for future days to be useful).
-    let filter_date = cli.date.or_else(|| {
-        if cli.latest {
-            Some(chrono::Local::now().date_naive())
-        } else {
-            None
-        }
-    });
+    let filter_date = cli.date;
 
     let mut any_output = false;
     for schedule in &schedules {
