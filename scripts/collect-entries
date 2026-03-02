@@ -688,6 +688,123 @@ def ensure_social_files_for_leading_patterns [
     }
 }
 
+# Resolve a date expression anchored to a source date (not "now").
+# Relative expressions ("in N days", "next Tuesday", "tomorrow") are computed
+# from the source DayPage date. Absolute expressions ("on March 17", "2026-03-15")
+# fall through to date from-human, which handles them correctly regardless of when it runs.
+# Returns a record: { date: string, time: string, has_time: bool }
+def resolve_reminder_date [when_part: string, source_date: string]: nothing -> record {
+    let source_dt = ($source_date | into datetime)
+
+    # Strip optional trailing time (e.g. "in 2 days 14:00") for date parsing
+    let time_match = ($when_part | parse --regex '(\d{1,2}:\d{2})\s*$')
+    let explicit_time = if ($time_match | is-not-empty) {
+        $time_match | first | get capture0
+    } else {
+        null
+    }
+    let date_expr = if $explicit_time != null {
+        $when_part | str replace --regex '\s*\d{1,2}:\d{2}\s*$' '' | str trim
+    } else {
+        $when_part | str trim
+    }
+
+    # "in N days/weeks/months/years"
+    let in_match = ($date_expr | parse --regex '(?i)^in\s+(\d+)\s+(day|days|week|weeks|month|months|year|years)$')
+    if ($in_match | is-not-empty) {
+        let n = ($in_match | first | get capture0 | into int)
+        let unit = ($in_match | first | get capture1 | str downcase)
+        let resolved = (match $unit {
+            "day" | "days" => ($source_dt + ($n * 1day)),
+            "week" | "weeks" => ($source_dt + ($n * 7 * 1day)),
+            "month" | "months" => ($source_dt + ($n * 30 * 1day)),
+            "year" | "years" => ($source_dt + ($n * 365 * 1day)),
+            _ => $source_dt
+        })
+        return {
+            date: ($resolved | format date "%Y-%m-%d")
+            time: ($explicit_time | default "00:00")
+            has_time: ($explicit_time != null)
+        }
+    }
+
+    # "tomorrow"
+    if ($date_expr =~ '(?i)^tomorrow$') {
+        let resolved = ($source_dt + 1day)
+        return {
+            date: ($resolved | format date "%Y-%m-%d")
+            time: ($explicit_time | default "00:00")
+            has_time: ($explicit_time != null)
+        }
+    }
+
+    # "next week/month/year"
+    if ($date_expr =~ '(?i)^next\s+week$') {
+        return { date: ($source_dt + 7day | format date "%Y-%m-%d"), time: ($explicit_time | default "00:00"), has_time: ($explicit_time != null) }
+    }
+    if ($date_expr =~ '(?i)^next\s+month$') {
+        return { date: ($source_dt + 30day | format date "%Y-%m-%d"), time: ($explicit_time | default "00:00"), has_time: ($explicit_time != null) }
+    }
+    if ($date_expr =~ '(?i)^next\s+year$') {
+        return { date: ($source_dt + 365day | format date "%Y-%m-%d"), time: ($explicit_time | default "00:00"), has_time: ($explicit_time != null) }
+    }
+
+    # "next [weekday]" — find next occurrence after source date
+    let weekday_match = ($date_expr | parse --regex '(?i)^next\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)$')
+    if ($weekday_match | is-not-empty) {
+        let target_day_name = ($weekday_match | first | get capture0 | str downcase)
+        let day_num = (match $target_day_name {
+            "monday" => 1, "tuesday" => 2, "wednesday" => 3,
+            "thursday" => 4, "friday" => 5, "saturday" => 6, "sunday" => 7,
+            _ => 1
+        })
+        let source_day = ($source_dt | format date "%u" | into int)
+        let diff = (($day_num - $source_day + 7) mod 7)
+        let diff = if $diff == 0 { 7 } else { $diff }
+        let resolved = ($source_dt + ($diff * 1day))
+        return {
+            date: ($resolved | format date "%Y-%m-%d")
+            time: ($explicit_time | default "00:00")
+            has_time: ($explicit_time != null)
+        }
+    }
+
+    # "this [weekday]"
+    let this_weekday = ($date_expr | parse --regex '(?i)^this\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)$')
+    if ($this_weekday | is-not-empty) {
+        let target_day_name = ($this_weekday | first | get capture0 | str downcase)
+        let day_num = (match $target_day_name {
+            "monday" => 1, "tuesday" => 2, "wednesday" => 3,
+            "thursday" => 4, "friday" => 5, "saturday" => 6, "sunday" => 7,
+            _ => 1
+        })
+        let source_day = ($source_dt | format date "%u" | into int)
+        let diff = ($day_num - $source_day)
+        let diff = if $diff <= 0 { $diff + 7 } else { $diff }
+        let resolved = ($source_dt + ($diff * 1day))
+        return {
+            date: ($resolved | format date "%Y-%m-%d")
+            time: ($explicit_time | default "00:00")
+            has_time: ($explicit_time != null)
+        }
+    }
+
+    # Not a relative pattern — normalise then use date from-human.
+    # Strip "on " prefix, reorder "Month Day" → "Day Month" (which date from-human accepts).
+    let normalised = ($date_expr
+        | str replace --regex '(?i)^on\s+' ''
+        | str replace --regex '(?i)^(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})' '$2 $1'
+    )
+    let resolved = ($normalised | date from-human)
+    let time = try { $resolved | format date "%H:%M" } catch { "00:00" }
+    let has_time = ($when_part =~ '\d{1,2}:\d{2}')
+    {
+        date: ($resolved | format date "%Y-%m-%d")
+        time: $time
+        has_time: $has_time
+    }
+}
+
 # Process r:: reminder entries
 # Format: r:: <when>: <message>
 # Example: r:: in 1 year: Check back on this thought
@@ -713,7 +830,7 @@ def process_reminder_entries [
             continue
         }
 
-        let when_part = ($content | str substring 0..$colon_idx | str trim)
+        let when_part = ($content | str substring 0..<$colon_idx | str trim)
         let message = ($content | str substring ($colon_idx + 2).. | str trim)
 
         if ($message | is-empty) {
@@ -724,29 +841,26 @@ def process_reminder_entries [
         }
 
         # Check if when_part is a bare time (e.g. "23:00", "00:00")
-        # Bare times anchor to the source DayPage date, not date from-human
+        # Bare times anchor to the source DayPage date
         let is_bare_time = ($when_part =~ '^\d{1,2}:\d{2}$')
 
-        let target_date = if $is_bare_time {
-            $source_date
+        # Resolve date anchored to source DayPage date (not "now")
+        let resolved = if $is_bare_time {
+            { date: $source_date, time: $when_part, has_time: true }
         } else {
             try {
-                $when_part | date from-human | format date "%Y-%m-%d"
+                resolve_reminder_date $when_part $source_date
             } catch {
                 if $verbose {
-                    print $"  ⚠️  Could not parse date '($when_part)' - skipping"
+                    print $"  ⚠️  Could not parse date '($when_part)' from ($source_date) - skipping"
                 }
                 continue
             }
         }
 
-        let time_part = if $is_bare_time {
-            $when_part
-        } else {
-            try { $when_part | date from-human | format date "%H:%M" } catch { "00:00" }
-        }
-        # Check if the input contained a time pattern (digits with colon)
-        let has_time = ($when_part =~ '\d{1,2}:\d{2}')
+        let target_date = $resolved.date
+        let time_part = $resolved.time
+        let has_time = $resolved.has_time
 
         let reminder_file = ([$reminders_path $"($target_date).md"] | path join)
         let wikilink = $"[[($source_date)]]"
