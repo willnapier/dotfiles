@@ -8,6 +8,7 @@ depends = []
 "scripts/anki-push" = "~/.local/bin/anki-push"
 "scripts/assistants-docs-auto-push" = "~/.local/bin/assistants-docs-auto-push"
 "scripts/skill-mirror" = "~/.local/bin/skill-mirror"
+"scripts/tm3-watcher" = "~/.local/bin/tm3-watcher"
 "scripts/bulk-dedupe-backlinks" = "~/.local/bin/bulk-dedupe-backlinks"
 "scripts/claude-voice" = "~/.local/bin/claude-voice"
 "scripts/email-attachments" = "~/.local/bin/email-attachments"
@@ -320,6 +321,7 @@ depends = ["shared"]
 "macos/launchd/com.williamnapier.link-service.plist" = "~/Library/LaunchAgents/com.williamnapier.link-service.plist"
 "macos/launchd/com.williamnapier.system-health-check.plist" = "~/Library/LaunchAgents/com.williamnapier.system-health-check.plist"
 "macos/launchd/com.williamnapier.state-capture.plist" = "~/Library/LaunchAgents/com.williamnapier.state-capture.plist"
+"macos/launchd/com.williamnapier.tm3-watcher.plist" = "~/Library/LaunchAgents/com.williamnapier.tm3-watcher.plist"
 # NOTE: Individual files managed in [shared.files] for better reliability
 # Removed directory symlinks that were causing orphan detection issues
 
