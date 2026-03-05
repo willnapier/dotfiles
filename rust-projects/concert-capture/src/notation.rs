@@ -122,10 +122,10 @@ fn extract_work_title(title: &str) -> Option<String> {
         .trim()
         .to_string();
 
-    // If what remains looks like a title (starts with capital, reasonable length)
+    // If what remains looks like a title (starts with capital or digit, reasonable length)
     if !title_clean.is_empty()
         && title_clean.len() < 50
-        && title_clean.chars().next()?.is_uppercase()
+        && (title_clean.chars().next()?.is_uppercase() || title_clean.chars().next()?.is_ascii_digit())
     {
         // Don't return if it's just a work type we'd detect anyway
         let lower = title_clean.to_lowercase();
@@ -306,7 +306,18 @@ pub fn composer_to_tag(name: &str) -> String {
 /// Convert performer name to PascalCase tag for concert entry.
 pub fn performer_tag(name: &str) -> String {
     // Remove role descriptions like "piano", "violin", "director", etc.
-    let role_re = Regex::new(r"(?i)\s+(piano|violin|viola|cello|soprano|mezzo-soprano|alto|tenor|baritone|bass|conductor|director|guitar|flute|oboe|clarinet|bassoon|horn|trumpet|trombone|tuba|percussion|harp|organ|harpsichord)\s*$").unwrap();
+    // Handles comma-separated roles: "Giovanni Antonini recorder, dulcian, conductor"
+    let roles = [
+        "piano", "violin", "viola", "cello", "soprano", "mezzo-soprano", "alto",
+        "tenor", "baritone", "bass", "conductor", "director", "guitar", "flute",
+        "oboe", "clarinet", "bassoon", "horn", "trumpet", "trombone", "tuba",
+        "percussion", "harp", "organ", "harpsichord", "recorder", "dulcian",
+        "lute", "theorbo", "cornett", "sackbut", "viol", "viola da gamba",
+        "fortepiano", "celesta", "countertenor",
+    ];
+    // Strip trailing comma-separated role list (e.g., "recorder, dulcian, conductor")
+    let role_pattern = roles.join("|");
+    let role_re = Regex::new(&format!(r"(?i)\s+(?:(?:{})\s*,?\s*)+$", role_pattern)).unwrap();
     let cleaned = role_re.replace(name, "").to_string();
 
     // Handle ensemble names (keep as-is but PascalCase)
@@ -458,5 +469,13 @@ mod tests {
     fn test_key_to_tag() {
         assert_eq!(key_to_tag("C-sharp minor"), "C#min");
         assert_eq!(key_to_tag("D major"), "Dmaj");
+    }
+
+    #[test]
+    fn test_slug_bug() {
+        // These should NOT have a lowercase slug appended
+        assert_eq!(generate_notation("Giorgio Mainerio", "Gagliarda", None), "Mainerio-Gagliarda");
+        assert_eq!(generate_notation("Anon", "Pavana La Morte della Ragione", None), "Anon-PavanaLaMorteDellaRagione");
+        assert_eq!(generate_notation("Christopher Tye", "In Nomine Crye", None), "Tye-InNomineCrye");
     }
 }
