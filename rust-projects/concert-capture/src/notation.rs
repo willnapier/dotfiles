@@ -478,4 +478,16 @@ mod tests {
         assert_eq!(generate_notation("Anon", "Pavana La Morte della Ragione", None), "Anon-PavanaLaMorteDellaRagione");
         assert_eq!(generate_notation("Christopher Tye", "In Nomine Crye", None), "Tye-InNomineCrye");
     }
+
+    #[test]
+    fn test_digit_starting_title() {
+        // Titles starting with digits should use PascalCase, not slugify
+        assert_eq!(generate_notation("John Baldwine", "4 Vocum", None), "Baldwine-4Vocum");
+    }
+
+    #[test]
+    fn test_performer_multi_role() {
+        // Comma-separated roles should all be stripped
+        assert_eq!(performer_tag("Giovanni Antonini recorder, dulcian, conductor"), "GiovanniAntonini");
+    }
 }
