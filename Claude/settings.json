@@ -1,5 +1,12 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "deny": [
+      "Read(**/private/**)",
+      "Edit(**/private/**)",
+      "Write(**/private/**)"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {
@@ -22,13 +29,6 @@
           }
         ]
       }
-    ]
-  },
-  "permissions": {
-    "deny": [
-      "Read(**/private/**)",
-      "Edit(**/private/**)",
-      "Write(**/private/**)"
     ]
   },
   "enabledPlugins": {
