@@ -1,0 +1,10 @@
+[Unit]
+Description=Weekly dev-catchup on Saturday morning
+Requires=dev-catchup.service
+
+[Timer]
+OnCalendar=Sat *-*-* 09:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
