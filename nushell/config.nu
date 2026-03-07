@@ -1509,6 +1509,20 @@ def cse [] {
     }
 }
 
+# Assistants shared docs → edit
+def ase [] {
+    let shared = ($env.HOME | path join "Assistants/shared")
+    if not ($shared | path exists) {
+        print "~/Assistants/shared not found"
+        return
+    }
+    let file = (fd . $shared --type f --exclude .git --exclude .stversions | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'mdcat --columns 80 {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "Shared Doc: " | str trim)
+    if not ($file | is-empty) {
+        let editor = (if ($env.EDITOR? | is-empty) { "vi" } else { $env.EDITOR })
+        ^$editor $file
+    }
+}
+
 # Clinical content search → edit
 def cfe [] {
     let clinical = ($env.HOME | path join "Clinical")
