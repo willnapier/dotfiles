@@ -17,7 +17,7 @@ pub fn render_report(reports: &[DayReport], apply: bool) {
         let total = report
             .sessions
             .iter()
-            .filter(|(_, m)| !matches!(m, MatchResult::Trivial))
+            .filter(|(_, m)| !matches!(m, MatchResult::Trivial | MatchResult::Clinical))
             .count();
         let matched = report
             .sessions
@@ -28,6 +28,11 @@ pub fn render_report(reports: &[DayReport], apply: bool) {
             .sessions
             .iter()
             .filter(|(_, m)| matches!(m, MatchResult::Unmatched))
+            .count();
+        let clinical = report
+            .sessions
+            .iter()
+            .filter(|(_, m)| matches!(m, MatchResult::Clinical))
             .count();
         let trivial = report
             .sessions
@@ -51,6 +56,9 @@ pub fn render_report(reports: &[DayReport], apply: bool) {
         if unmatched > 0 {
             header.push_str(&format!(", {} unmatched", unmatched));
             any_unmatched = true;
+        }
+        if clinical > 0 {
+            header.push_str(&format!(", {} clinical", clinical));
         }
         if trivial > 0 {
             header.push_str(&format!(", {} trivial", trivial));
@@ -99,6 +107,12 @@ pub fn render_report(reports: &[DayReport], apply: bool) {
                     if !extras.is_empty() {
                         println!("    {}", extras.join(" | "));
                     }
+                }
+                MatchResult::Clinical => {
+                    println!(
+                        "  CLINICAL: {} Session {} ({}, {} msgs) — skipped",
+                        source_tag, short_id, time_range, session.message_count,
+                    );
                 }
                 MatchResult::Trivial => {
                     println!(

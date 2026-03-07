@@ -69,6 +69,8 @@ fn main() -> Result<()> {
             let unified = matching::unify_cc_session(cc);
             if matching::is_trivial(&unified) {
                 sessions.push((unified, MatchResult::Trivial));
+            } else if matching::is_clinical(cc) {
+                sessions.push((unified, MatchResult::Clinical));
             } else {
                 let result = matching::match_session(&unified, &dev_entries);
                 if matches!(result, MatchResult::Unmatched) {

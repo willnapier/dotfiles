@@ -192,6 +192,26 @@ pub fn is_trivial(session: &UnifiedSession) -> bool {
     }
 }
 
+/// Check if a CC session is clinical (not dev work).
+/// True if all modified files are under ~/Clinical/clients/ or the session uses clinical-notes skill.
+pub fn is_clinical(session: &CcSession) -> bool {
+    // Skill-based detection
+    if session.skills.iter().any(|s| s == "clinical-notes") {
+        return true;
+    }
+
+    // File-based detection: all modified files are clinical client files
+    if !session.files_modified.is_empty()
+        && session.files_modified.keys().all(|path| {
+            path.contains("/Clinical/clients/") || path.contains("/Clinical/private/")
+        })
+    {
+        return true;
+    }
+
+    false
+}
+
 /// Match a session against dev:: entries. Returns the best match result.
 pub fn match_session(session: &UnifiedSession, entries: &[DevEntry]) -> MatchResult {
     if entries.is_empty() || session.terms.is_empty() {

@@ -74,6 +74,8 @@ pub enum MatchResult {
     },
     Unmatched,
     Trivial,
+    /// Clinical session — not dev work, skip drafting
+    Clinical,
 }
 
 /// A drafted entry from claude -p.
