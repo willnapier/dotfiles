@@ -1523,6 +1523,34 @@ def ase [] {
     }
 }
 
+# Assistants shared docs content search → edit
+def ace [] {
+    let shared = ($env.HOME | path join "Assistants/shared")
+    if not ($shared | path exists) {
+        print "~/Assistants/shared not found"
+        return
+    }
+    let query = (input "Search shared docs: ")
+    if ($query | is-empty) {
+        return
+    }
+    let results = try {
+        ^rg -i -l $query $shared | lines | where $it != ""
+    } catch {
+        print "Content search failed"
+        return
+    }
+    if ($results | is-empty) {
+        print "No matches found"
+        return
+    }
+    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview $"rg --color=always -i -C 3 '($query)' {}" --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "Shared Content: " | str trim)
+    if not ($selected | is-empty) {
+        let editor = (if ($env.EDITOR? | is-empty) { "vi" } else { $env.EDITOR })
+        ^$editor $selected
+    }
+}
+
 # Clinical content search → edit
 def cfe [] {
     let clinical = ($env.HOME | path join "Clinical")
