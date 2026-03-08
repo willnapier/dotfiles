@@ -32,6 +32,7 @@ com.user.zotero-watcher
 com.williamnapier.assistants-auto-pull
 com.williamnapier.assistants-auto-push
 com.williamnapier.continuum-sync-claude
+com.williamnapier.dev-catchup
 com.williamnapier.git-auto-pull-watcher
 com.williamnapier.git-auto-push-watcher
 com.williamnapier.link-service
