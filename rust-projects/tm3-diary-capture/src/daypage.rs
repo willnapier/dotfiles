@@ -45,10 +45,6 @@ pub fn append_entry(date: &NaiveDate, entry: &str) -> Result<()> {
         .with_context(|| format!("Failed to read DayPage: {}", daypage_path.display()))?;
 
     if content.contains("clinic::") {
-        eprintln!(
-            "Warning: {} already has a clinic:: block, skipping",
-            daypage_path.display()
-        );
         return Ok(());
     }
 
