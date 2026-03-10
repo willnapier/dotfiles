@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.williamnapier.ghostty-config-validate</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/williamnapier/.local/bin/ghostty-config-validate</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Applications/Ghostty.app/Contents/MacOS:/Users/williamnapier/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>WatchPaths</key>
+    <array>
+        <string>/Applications/Ghostty.app</string>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/williamnapier/.local/share/ghostty-config-validate.stdout</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/williamnapier/.local/share/ghostty-config-validate.stderr</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+</dict>
+</plist>

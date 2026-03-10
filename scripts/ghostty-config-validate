@@ -1,0 +1,25 @@
+#!/bin/bash
+# Validates Ghostty config after app updates.
+# Triggered by WatchPaths on the Ghostty binary.
+
+GHOSTTY="/Applications/Ghostty.app/Contents/MacOS/ghostty"
+LOG="$HOME/.local/share/ghostty-config-validate.log"
+
+if [ ! -x "$GHOSTTY" ]; then
+    exit 0
+fi
+
+ERROR=$("$GHOSTTY" +show-config 2>&1 >/dev/null)
+
+if [ $? -ne 0 ]; then
+    TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
+    echo "$TIMESTAMP CONFIG ERROR: $ERROR" >> "$LOG"
+
+    osascript -e "display dialog \"Ghostty config is invalid after update. Fix ~/dotfiles/ghostty/config before launching.
+
+Error: ${ERROR}\" with title \"Ghostty Config Broken\" buttons {\"OK\"} default button \"OK\" with icon caution giving up after 30"
+else
+    TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
+    VERSION=$("$GHOSTTY" --version 2>&1 | head -1)
+    echo "$TIMESTAMP OK — $VERSION" >> "$LOG"
+fi

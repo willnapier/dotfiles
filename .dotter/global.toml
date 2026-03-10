@@ -281,6 +281,8 @@ depends = []
 "scripts/system-health-check" = "~/.local/bin/system-health-check"
 "scripts/capture-cargo-crates" = "~/.local/bin/capture-cargo-crates"
 "scripts/context-staleness-check" = "~/.local/bin/context-staleness-check"
+# Ghostty config validation - fires on app update
+"scripts/ghostty-config-validate" = "~/.local/bin/ghostty-config-validate"
 
 # Semantic search system - managed separately (has virtual environment)
 
@@ -323,6 +325,7 @@ depends = ["shared"]
 "macos/launchd/com.williamnapier.state-capture.plist" = "~/Library/LaunchAgents/com.williamnapier.state-capture.plist"
 "macos/launchd/com.williamnapier.tm3-watcher.plist" = "~/Library/LaunchAgents/com.williamnapier.tm3-watcher.plist"
 "macos/launchd/com.williamnapier.dev-catchup.plist" = "~/Library/LaunchAgents/com.williamnapier.dev-catchup.plist"
+"macos/LaunchAgents/com.williamnapier.ghostty-config-validate.plist" = "~/Library/LaunchAgents/com.williamnapier.ghostty-config-validate.plist"
 # NOTE: Individual files managed in [shared.files] for better reliability
 # Removed directory symlinks that were causing orphan detection issues
 

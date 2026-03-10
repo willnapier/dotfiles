@@ -3,7 +3,7 @@ mod daypage;
 mod html;
 
 use anyhow::{bail, Context, Result};
-use chrono::NaiveDate;
+use chrono::{Local, NaiveDate};
 use clap::Parser;
 use std::path::PathBuf;
 
@@ -32,6 +32,10 @@ struct Cli {
     /// Override client mapping file path
     #[arg(long)]
     map_file: Option<PathBuf>,
+
+    /// Include past dates (by default, only today and future dates are processed)
+    #[arg(long)]
+    include_past: bool,
 }
 
 fn main() -> Result<()> {
@@ -64,6 +68,7 @@ fn main() -> Result<()> {
     };
 
     let filter_date = cli.date;
+    let today = Local::now().date_naive();
 
     let mut any_output = false;
     for schedule in &schedules {
@@ -71,6 +76,8 @@ fn main() -> Result<()> {
             if schedule.date != filter_date {
                 continue;
             }
+        } else if !cli.include_past && schedule.date < today {
+            continue;
         }
 
         let booked: Vec<_> = schedule
