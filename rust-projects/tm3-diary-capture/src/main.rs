@@ -147,9 +147,9 @@ fn main() -> Result<()> {
             eprintln!("│  \"{}\"  ({} {})", name, date.format("%a %b %d"), time);
         }
         eprintln!("│");
-        eprintln!("│  Fix with:");
+        eprintln!("│  Fix with (check TM3 for DOB → initials + birth year):");
         for (name, _, _) in &unmapped {
-            eprintln!("│    tm3-client-add \"{}\" <CLIENT_ID>", name);
+            eprintln!("│    tm3-client-add \"{}\" <ID>", name);
         }
         eprintln!("╰────────────────────────────────────────────");
         eprintln!();
