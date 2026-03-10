@@ -41,8 +41,8 @@ mouse-scroll-multiplier = 3
 
 # CRITICAL FIX FOR CLAUDE CODE SCROLLING
 # Default is "keystroke,no-output" which breaks Claude Code scrolling
-# Setting to empty disables auto-scroll completely
-scroll-to-bottom =
+# Disable both to prevent unwanted auto-scroll
+scroll-to-bottom = no-keystroke,no-output
 
 # Mouse behavior for better Claude Code compatibility
 mouse-hide-while-typing = false
