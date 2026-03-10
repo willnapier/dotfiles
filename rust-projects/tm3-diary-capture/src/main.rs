@@ -1,14 +1,11 @@
-mod client_map;
-mod daypage;
-mod html;
-
 use anyhow::{bail, Context, Result};
 use chrono::{Local, NaiveDate};
 use clap::Parser;
 use std::path::PathBuf;
 
-use client_map::ClientMap;
-use html::Status;
+use tm3_diary_capture::client_map::ClientMap;
+use tm3_diary_capture::daypage;
+use tm3_diary_capture::html::{self, Status};
 
 #[derive(Parser)]
 #[command(about = "Parse TM3 clinical diary HTML snapshots into DayPage checklists")]
@@ -71,6 +68,8 @@ fn main() -> Result<()> {
     let today = Local::now().date_naive();
 
     let mut any_output = false;
+    let mut unmapped: Vec<(String, NaiveDate, String)> = Vec::new(); // (name, date, time)
+
     for schedule in &schedules {
         if let Some(filter_date) = filter_date {
             if schedule.date != filter_date {
@@ -100,7 +99,11 @@ fn main() -> Result<()> {
                 Some(map) => match map.lookup(&appt.client_name) {
                     Some(id) => id.to_string(),
                     None => {
-                        eprintln!("Warning: unmapped client: {}", appt.client_name);
+                        unmapped.push((
+                            appt.client_name.clone(),
+                            schedule.date,
+                            appt.start_time.clone(),
+                        ));
                         "???".to_string()
                     }
                 },
@@ -124,7 +127,6 @@ fn main() -> Result<()> {
 
         if !cli.dry_run {
             daypage::append_entry(&schedule.date, &block)?;
-            // Note: daypage::append_entry prints the "Queued" message
         }
 
         any_output = true;
@@ -134,8 +136,28 @@ fn main() -> Result<()> {
         eprintln!("No booked appointments found");
     }
 
-    // Delete source file after successful processing
-    if !cli.dry_run && any_output {
+    // Deduplicate unmapped clients (same person may appear on multiple days)
+    unmapped.sort_by(|a, b| a.0.cmp(&b.0));
+    unmapped.dedup_by(|a, b| a.0 == b.0);
+
+    if !unmapped.is_empty() {
+        eprintln!();
+        eprintln!("╭─ {} unmapped client(s) ─────────────────────", unmapped.len());
+        for (name, date, time) in &unmapped {
+            eprintln!("│  \"{}\"  ({} {})", name, date.format("%a %b %d"), time);
+        }
+        eprintln!("│");
+        eprintln!("│  Fix with:");
+        for (name, _, _) in &unmapped {
+            eprintln!("│    tm3-client-add \"{}\" <CLIENT_ID>", name);
+        }
+        eprintln!("╰────────────────────────────────────────────");
+        eprintln!();
+        eprintln!("HTML retained for re-processing: {}", file_path.display());
+    }
+
+    // Delete source file only if no unmapped clients remain
+    if !cli.dry_run && any_output && unmapped.is_empty() {
         std::fs::remove_file(&file_path)
             .with_context(|| format!("Failed to delete: {}", file_path.display()))?;
         eprintln!("Deleted: {}", file_path.display());

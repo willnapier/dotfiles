@@ -14,5 +14,13 @@ dirs = "6"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 
+[[bin]]
+name = "tm3-diary-capture"
+path = "src/main.rs"
+
+[[bin]]
+name = "tm3-client-add"
+path = "src/client_add.rs"
+
 [dev-dependencies]
 tempfile = "3.24.0"
