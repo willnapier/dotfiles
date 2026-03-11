@@ -1,5 +1,6 @@
 use anyhow::{bail, Context, Result};
 use chrono::NaiveDate;
+use regex::Regex;
 use std::path::Path;
 
 use crate::client;
@@ -83,49 +84,130 @@ pub fn run(id: &str, file: &str, dry_run: bool, name_form: &str) -> Result<()> {
     Ok(())
 }
 
+/// Resolve a name form for the client.
+fn resolve_client_name(ident: &Identity, form: &str) -> Option<String> {
+    let name = ident.name.as_deref().unwrap_or("");
+    let title = ident.title.as_deref().unwrap_or("");
+    let first = name.split_whitespace().next().unwrap_or("");
+    let surname = name.split_whitespace().last().unwrap_or("");
+
+    match form {
+        "first" if !first.is_empty() => Some(first.to_string()),
+        "title" if !title.is_empty() && !surname.is_empty() => {
+            Some(format!("{} {}", title, surname))
+        }
+        "full" if !name.is_empty() => Some(name.to_string()),
+        _ if !name.is_empty() => Some(name.to_string()),
+        _ => None,
+    }
+}
+
+/// Extract the first name from a referrer name like "Dr Laura Pollock".
+/// Skips common prefixes (Dr, Prof, Mr, Mrs, Ms, Miss).
+fn referrer_first_name(referrer_name: &str) -> Option<String> {
+    let prefixes = ["Dr", "Prof", "Professor", "Mr", "Mrs", "Ms", "Miss"];
+    let parts: Vec<&str> = referrer_name.split_whitespace().collect();
+
+    if parts.len() < 2 {
+        return parts.first().map(|s| s.to_string());
+    }
+
+    // Skip leading prefix if present
+    let start = if prefixes.iter().any(|p| parts[0].trim_end_matches('.') == *p) {
+        1
+    } else {
+        0
+    };
+
+    parts.get(start).map(|s| s.to_string())
+}
+
 /// Build re-identification substitution rules.
 fn build_subs(ident: &Identity, name_form: &str, content: &str) -> (Vec<Sub>, Vec<String>) {
     let mut subs = Vec::new();
     let mut warnings = Vec::new();
 
-    // Client name
     let client_name = ident.name.as_deref().unwrap_or("");
     let client_title = ident.title.as_deref().unwrap_or("");
 
-    let client_first = client_name.split_whitespace().next().unwrap_or("");
-    let client_surname = client_name.split_whitespace().last().unwrap_or("");
-
-    let name_replacement = match name_form {
-        "first" if !client_first.is_empty() => client_first.to_string(),
-        "title" if !client_title.is_empty() && !client_surname.is_empty() => {
-            format!("{} {}", client_title, client_surname)
+    // --- Inline {ID:form} placeholders ---
+    // Matches {ANYTHING:first}, {ANYTHING:full}, {ANYTHING:title}
+    let placeholder_re = Regex::new(r"\{[A-Za-z0-9+]+:(first|full|title)\}").unwrap();
+    let mut seen_placeholders = std::collections::HashSet::new();
+    for cap in placeholder_re.captures_iter(content) {
+        let whole = cap.get(0).unwrap().as_str().to_string();
+        if seen_placeholders.contains(&whole) {
+            continue;
         }
-        _ if !client_name.is_empty() => client_name.to_string(),
-        _ => {
-            warnings.push(
-                "No client name in identity.yaml — 'Client' not replaced".to_string(),
-            );
-            String::new()
-        }
-    };
+        seen_placeholders.insert(whole.clone());
 
-    if !name_replacement.is_empty() {
-        // "Re: Client" → "Re: Title Name" (formal context, always use title form)
-        let title_name = if !client_title.is_empty() {
-            format!("{} {}", client_title, client_name)
+        let form = &cap[1];
+        if let Some(replacement) = resolve_client_name(ident, form) {
+            subs.push(Sub {
+                find: whole,
+                replace: replacement,
+            });
+        }
+    }
+
+    // --- {referrer:first} placeholder ---
+    if content.contains("{referrer:first}") {
+        if let Some(ref_name) = &ident.referrer.name {
+            if let Some(first) = referrer_first_name(ref_name) {
+                subs.push(Sub {
+                    find: "{referrer:first}".to_string(),
+                    replace: first,
+                });
+            } else {
+                warnings.push("Could not extract referrer first name".to_string());
+            }
         } else {
-            client_name.to_string()
-        };
-        subs.push(Sub {
-            find: "Re: Client".to_string(),
-            replace: format!("Re: {}", title_name),
-        });
+            warnings.push("No referrer.name in identity.yaml — {referrer:first} not replaced".to_string());
+        }
+    }
 
-        // General "Client" → chosen name form
-        subs.push(Sub {
-            find: "Client".to_string(),
-            replace: name_replacement,
-        });
+    // --- {referrer:full} placeholder ---
+    if content.contains("{referrer:full}") {
+        if let Some(ref_name) = &ident.referrer.name {
+            subs.push(Sub {
+                find: "{referrer:full}".to_string(),
+                replace: ref_name.clone(),
+            });
+        } else {
+            warnings.push("No referrer.name in identity.yaml — {referrer:full} not replaced".to_string());
+        }
+    }
+
+    // --- Legacy bare "Client" replacement (backwards compatibility) ---
+    let name_replacement = resolve_client_name(ident, name_form);
+
+    match &name_replacement {
+        Some(replacement) => {
+            // "Re: Client" → "Re: Title Name" (formal context, always use title form)
+            let title_name = if !client_title.is_empty() {
+                format!("{} {}", client_title, client_name)
+            } else {
+                client_name.to_string()
+            };
+            subs.push(Sub {
+                find: "Re: Client".to_string(),
+                replace: format!("Re: {}", title_name),
+            });
+
+            // General "Client" → chosen name form
+            subs.push(Sub {
+                find: "Client".to_string(),
+                replace: replacement.clone(),
+            });
+        }
+        None => {
+            // Only warn about bare Client if there are no inline placeholders
+            if seen_placeholders.is_empty() {
+                warnings.push(
+                    "No client name in identity.yaml — 'Client' not replaced".to_string(),
+                );
+            }
+        }
     }
 
     // People: "initial (relationship)" → real name
@@ -306,6 +388,60 @@ mod tests {
         assert!(warnings
             .iter()
             .any(|w| w.contains("their organisation")));
+    }
+
+    #[test]
+    fn test_inline_placeholders_mixed_forms() {
+        let ident = test_identity();
+        let content = "Re: {JB92:full}\n\nDear {referrer:first},\n\n\
+            {JB92:first} has been engaging well. \
+            I would recommend continued sessions for {JB92:title}.\n";
+
+        let (subs, _) = build_subs(&ident, "full", content);
+        let mut sorted = subs;
+        sorted.sort_by(|a, b| b.find.len().cmp(&a.find.len()));
+
+        let mut result = content.to_string();
+        for sub in &sorted {
+            result = result.replace(&sub.find, &sub.replace);
+        }
+
+        assert!(result.contains("Re: Jane Bloggs"));
+        assert!(result.contains("Dear Sarah,"));
+        assert!(result.contains("Jane has been"));
+        assert!(result.contains("sessions for Ms Bloggs"));
+    }
+
+    #[test]
+    fn test_referrer_first_name_with_prefix() {
+        assert_eq!(referrer_first_name("Dr Sarah Smith"), Some("Sarah".to_string()));
+        assert_eq!(referrer_first_name("Prof James Wilson"), Some("James".to_string()));
+        assert_eq!(referrer_first_name("Laura Pollock"), Some("Laura".to_string()));
+        assert_eq!(referrer_first_name("Dr. Anna Lee"), Some("Anna".to_string()));
+    }
+
+    #[test]
+    fn test_referrer_full_placeholder() {
+        let ident = test_identity();
+        let content = "Referrer: {referrer:full}";
+        let (subs, _) = build_subs(&ident, "full", content);
+
+        let ref_sub = subs.iter().find(|s| s.find == "{referrer:full}").unwrap();
+        assert_eq!(ref_sub.replace, "Dr Sarah Smith");
+    }
+
+    #[test]
+    fn test_inline_placeholders_coexist_with_legacy() {
+        let ident = test_identity();
+        // Content with both inline placeholders and bare "Client"
+        let content = "{JB92:first} is doing well. Client attended regularly.";
+        let (subs, _) = build_subs(&ident, "full", content);
+
+        let inline = subs.iter().find(|s| s.find == "{JB92:first}").unwrap();
+        assert_eq!(inline.replace, "Jane");
+
+        let legacy = subs.iter().find(|s| s.find == "Client").unwrap();
+        assert_eq!(legacy.replace, "Jane Bloggs");
     }
 
     #[test]
