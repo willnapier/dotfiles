@@ -131,17 +131,21 @@ fn build_subs(ident: &Identity, name_form: &str, content: &str) -> (Vec<Sub>, Ve
     let client_title = ident.title.as_deref().unwrap_or("");
 
     // --- Inline {ID:form} placeholders ---
-    // Matches {ANYTHING:first}, {ANYTHING:full}, {ANYTHING:title}
-    let placeholder_re = Regex::new(r"\{[A-Za-z0-9+]+:(first|full|title)\}").unwrap();
+    // Matches {CLIENT_ID:form} but NOT {referrer:form} (handled separately below)
+    let placeholder_re = Regex::new(r"\{([A-Za-z0-9+]+):(first|full|title)\}").unwrap();
     let mut seen_placeholders = std::collections::HashSet::new();
     for cap in placeholder_re.captures_iter(content) {
+        let id_part = &cap[1];
+        if id_part == "referrer" {
+            continue; // handled separately
+        }
         let whole = cap.get(0).unwrap().as_str().to_string();
         if seen_placeholders.contains(&whole) {
             continue;
         }
         seen_placeholders.insert(whole.clone());
 
-        let form = &cap[1];
+        let form = &cap[2];
         if let Some(replacement) = resolve_client_name(ident, form) {
             subs.push(Sub {
                 find: whole,
@@ -353,6 +357,12 @@ mod tests {
             ],
             funding: Funding {
                 policy: Some("AXA-PP-123456".to_string()),
+                ..Default::default()
+            },
+            referrer: Referrer {
+                name: Some("Dr Sarah Smith".to_string()),
+                role: Some("GP".to_string()),
+                practice: Some("Riverside Medical Centre".to_string()),
                 ..Default::default()
             },
             ..Default::default()
