@@ -52,6 +52,20 @@ fn main() -> Result<()> {
 
     let schedules = html::parse_diary(&html_content)?;
 
+    // Warn if today isn't covered by this export
+    let today = Local::now().date_naive();
+    if !schedules.is_empty() {
+        let first = schedules.first().unwrap().date;
+        let last = schedules.last().unwrap().date;
+        if today < first || today > last {
+            eprintln!();
+            eprintln!("⚠️  WARNING: This export covers {} to {} — today ({}) is not included.",
+                first.format("%a %b %-d"), last.format("%a %b %-d"), today.format("%a %b %-d"));
+            eprintln!("   You may need to export a fresh diary page from TM3 in the browser.");
+            eprintln!();
+        }
+    }
+
     let map_path = cli
         .map_file
         .unwrap_or_else(ClientMap::default_path);
@@ -65,7 +79,6 @@ fn main() -> Result<()> {
     };
 
     let filter_date = cli.date;
-    let today = Local::now().date_naive();
 
     let mut any_output = false;
     let mut unmapped: Vec<(String, NaiveDate, String)> = Vec::new(); // (name, date, time)
