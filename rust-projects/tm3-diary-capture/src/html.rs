@@ -40,10 +40,13 @@ pub fn parse_diary(html: &str) -> Result<Vec<DaySchedule>> {
 
     let mut schedules = Vec::new();
     for (date, titles) in dates.into_iter().zip(columns) {
-        let appointments: Vec<Appointment> = titles
-            .iter()
-            .filter_map(|t| parse_title(t).ok())
-            .collect();
+        let mut appointments = Vec::new();
+        for t in &titles {
+            match parse_title(t) {
+                Ok(appt) => appointments.push(appt),
+                Err(e) => eprintln!("Warning: skipping unparseable appointment: {} ({})", t, e),
+            }
+        }
         schedules.push(DaySchedule {
             date,
             appointments,
@@ -198,9 +201,8 @@ fn parse_title(title: &str) -> Result<Appointment> {
     // Last segment: status
     let status_str = parts.last().unwrap().trim();
     let status = match status_str {
-        "Booked" => Status::Booked,
         "Cancelled" => Status::Cancelled,
-        _ => bail!("Unknown status: {}", status_str),
+        _ => Status::Booked, // Treat all non-cancelled statuses (Booked, Arrived, Completed, etc.) as active
     };
 
     // Second segment: client name
