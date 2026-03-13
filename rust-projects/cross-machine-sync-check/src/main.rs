@@ -116,16 +116,28 @@ fn run(cli: &Cli) -> Result<()> {
 
 /// Auto-detect remote based on hostname
 fn detect_remote() -> Option<String> {
+    // Try hostname command first, then /etc/hostname, then uname -n
     let hostname = std::process::Command::new("hostname")
         .arg("-s")
         .output()
-        .ok()?;
-    let hostname = String::from_utf8_lossy(&hostname.stdout).trim().to_string();
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| std::fs::read_to_string("/etc/hostname").ok().map(|s| s.trim().to_string()))
+        .or_else(|| {
+            std::process::Command::new("uname")
+                .arg("-n")
+                .output()
+                .ok()
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        })?;
 
-    if hostname.to_lowercase().contains("macbook") || hostname.to_lowercase().contains("william") {
+    let h = hostname.to_lowercase();
+    if h.contains("macbook") || h.contains("william") {
         Some("will@nimbini".to_string())
+    } else if h.contains("nimbini") {
+        Some("williamnapier@williams-macbook-air.local".to_string())
     } else {
-        // Assume we're on nimbini, target the Mac
-        Some("williamnapier@williams-macbook-air".to_string())
+        None
     }
 }
