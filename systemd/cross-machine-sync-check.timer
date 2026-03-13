@@ -1,0 +1,10 @@
+[Unit]
+Description=Weekly cross-machine sync check on Sunday morning
+Requires=cross-machine-sync-check.service
+
+[Timer]
+OnCalendar=Sun *-*-* 09:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,12 @@
+[Unit]
+Description=Cross-machine code propagation drift detection
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/cross-machine-sync-check
+Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=%h
+
+[Install]
+WantedBy=default.target
