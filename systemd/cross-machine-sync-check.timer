@@ -1,9 +1,10 @@
 [Unit]
-Description=Weekly cross-machine sync check on Sunday morning
+Description=Cross-machine sync check (Thu 18:00 + Mon 20:00)
 Requires=cross-machine-sync-check.service
 
 [Timer]
-OnCalendar=Sun *-*-* 09:00:00
+OnCalendar=Thu *-*-* 18:00:00
+OnCalendar=Mon *-*-* 20:00:00
 Persistent=true
 
 [Install]
