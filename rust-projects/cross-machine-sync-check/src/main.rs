@@ -11,7 +11,7 @@ use std::process;
 )]
 struct Cli {
     /// Remote SSH target (e.g. will@nimbini or williamnapier@williams-macbook-air)
-    #[arg(short, long, env = "SYNC_CHECK_REMOTE")]
+    #[arg(short, long)]
     remote: Option<String>,
 
     /// Output as JSON
