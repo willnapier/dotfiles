@@ -147,6 +147,7 @@ binds {
 
     // Keyboard-driven mouse (wl-kbptr)
     Mod+Shift+M    { spawn "wl-kbptr"; }
+
     // Power: systemctl poweroff/reboot/suspend, niri msg action quit
 
     // Focus (NEIO + arrows) - Mod+Shift for consistency

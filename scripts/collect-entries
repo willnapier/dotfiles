@@ -34,6 +34,16 @@ def main [
         print $"Reminders: ($reminders_path)\n"
     }
 
+    # Ensure Social files exist for leading :: patterns (inline entity references)
+    # This runs BEFORE entry routing so that ::name mentions create the Social file
+    # in time for name:: entries to be routed there in the same pass.
+    if not $dry_run {
+        if $verbose {
+            print "=== Ensuring Social Files for :: Patterns ==="
+        }
+        ensure_social_files_for_leading_patterns $journal_path $social_path $verbose
+    }
+
     # Find all entries (both P. projects and lowercase activities) in journal files
     let entries = (
         collect_entries $journal_path $verbose
@@ -149,14 +159,6 @@ def main [
         }
     }
 
-    # Ensure Social files exist for leading :: patterns (inline entity references)
-    # This allows typing ::colindye to auto-create Social/colindye.md
-    if not $dry_run {
-        if $verbose {
-            print "\n=== Ensuring Social Files for :: Patterns ==="
-        }
-        ensure_social_files_for_leading_patterns $journal_path $social_path $verbose
-    }
 }
 
 # Check if an activity file has "social" tag (for mention collection)
@@ -169,6 +171,30 @@ def is_social_activity [activities_path: string, activity_name: string]: nothing
 
     let content = (open $file_path)
     ($content | str contains "tags:") and ($content | str contains "- social")
+}
+
+# Find the nearest key:: entry above a given line index
+# Returns the key (e.g. "concert.wigmore") or empty string if none found
+def find_nearest_context [all_lines: list<string>, line_idx: int]: nothing -> string {
+    mut idx = ($line_idx - 1)
+    while $idx >= 0 {
+        let line = ($all_lines | get $idx)
+        # Look for a key:: pattern (trailing ::)
+        let key_match = try {
+            $line | parse --regex '^([a-zA-Z][a-zA-Z0-9.-]*)::'
+        } catch {
+            []
+        }
+        if ($key_match | is-not-empty) {
+            return ($key_match | first | get capture0)
+        }
+        # Stop at blank lines — context doesn't cross paragraph boundaries
+        if ($line | str trim | is-empty) {
+            return ""
+        }
+        $idx = ($idx - 1)
+    }
+    ""
 }
 
 # Extract all entries (P. projects and lowercase activities) from journal files
@@ -186,6 +212,8 @@ def collect_entries [journal_path: string, verbose: bool] {
         let date = extract_date_from_filename $file
         let all_lines = ($content | lines)
 
+        let social_path = ([$env.HOME "Forge" "NapierianLogs" "Social"] | path join)
+
         # Collect explicit activity entries (with ::)
         let explicit_entries = (
             $all_lines
@@ -199,7 +227,17 @@ def collect_entries [journal_path: string, verbose: bool] {
                         # Capture narrative continuation if present
                         let narrative = (capture_narrative $all_lines $row.index $entry.content)
 
+                        # Add context from nearest key:: above if this entry routes to Social/
+                        let social_file = ([$social_path $"($entry.key).md"] | path join)
+                        let context_prefix = if ($social_file | path exists) {
+                            let ctx = (find_nearest_context $all_lines $row.index)
+                            if ($ctx | is-not-empty) { $"(($ctx)) " } else { "" }
+                        } else {
+                            ""
+                        }
+
                         $entry | merge {
+                            content: $"($context_prefix)($entry.content)"
                             file: $file
                             date: $date
                             line_number: $row.index
@@ -241,8 +279,53 @@ def collect_entries [journal_path: string, verbose: bool] {
             | where $it != null
         )
 
-        # Combine explicit entries and mentions
-        [$explicit_entries, $mentions] | flatten
+        # Collect inline ::name entity references (route to Social/)
+        let entity_mentions = (
+            $all_lines
+            | enumerate
+            | each {|row|
+                # Find all ::name patterns (leading :: before lowercase name)
+                let matches = try {
+                    $row.item | parse --regex '::([a-z][a-z0-9.-]*)'
+                } catch {
+                    []
+                }
+
+                $matches | each {|match|
+                    let entity_name = $match.capture0
+                    # Skip very short names and reserved words
+                    if ($entity_name | str length) <= 2 or ($entity_name in ["dev", "sys", "env", "var", "tmp"]) {
+                        null
+                    } else {
+                        # Only collect if Social file exists (created by earlier ensure step)
+                        let social_file = ([$social_path $"($entity_name).md"] | path join)
+                        if ($social_file | path exists) {
+                            # Find nearest key:: context above this line
+                            let context_key = (find_nearest_context $all_lines $row.index)
+                            let content_prefix = if ($context_key | is-not-empty) {
+                                $"(($context_key)) "
+                            } else {
+                                ""
+                            }
+                            {
+                                key: $entity_name
+                                content: $"($content_prefix)($row.item | str trim)"
+                                file: $file
+                                date: $date
+                                line_number: $row.index
+                                narrative: ""
+                                is_mention: true
+                            }
+                        }
+                    }
+                }
+            }
+            | flatten
+            | where $it != null
+        )
+
+        # Combine explicit entries, mentions, and entity references
+        [$explicit_entries, $mentions, $entity_mentions] | flatten
     }
     | flatten
     | compact

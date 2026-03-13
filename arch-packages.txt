@@ -39,8 +39,8 @@ ly
 mako
 mdcat
 nano
-networkmanager
 network-manager-applet
+networkmanager
 ninja
 niri
 nodejs

@@ -3,6 +3,7 @@ clinic-attendance-report	0.1.0	/home/will/dotfiles/rust-projects/clinic-attendan
 clinical	0.1.0	/home/will/dotfiles/rust-projects/clinical
 concert-capture	0.1.0	/home/will/dotfiles/rust-projects/concert-capture
 continuum-activity	0.1.0	/home/will/dotfiles/rust-projects/continuum-activity
+dev-catchup	0.1.0	/home/will/dotfiles/rust-projects/dev-catchup
 dotter	0.13.4	crates.io
 dprint	0.50.2	crates.io
 email-extract	0.1.0	/home/will/dotfiles/rust-projects/email-extract
