@@ -189,27 +189,19 @@ binds {
     Mod+Alt+Shift+Period { move-column-to-monitor-right; }
 
     // Workspaces
-    Mod+Alt+1 { focus-workspace 1; }
-    Mod+Alt+2 { focus-workspace 2; }
-    Mod+Alt+3 { focus-workspace 3; }
-    Mod+Alt+4 { focus-workspace 4; }
-    Mod+Alt+5 { focus-workspace 5; }
-    Mod+Alt+6 { focus-workspace 6; }
-    Mod+Alt+7 { focus-workspace 7; }
-    Mod+Alt+8 { focus-workspace 8; }
-    Mod+Alt+9 { focus-workspace 9; }
-    Mod+Alt+0 { focus-workspace 10; }
+    Mod+Ctrl+Up   { focus-workspace-up; }
+    Mod+Ctrl+Down { focus-workspace-down; }
 
-    Mod+Alt+Shift+1 { move-column-to-workspace 1; }
-    Mod+Alt+Shift+2 { move-column-to-workspace 2; }
-    Mod+Alt+Shift+3 { move-column-to-workspace 3; }
-    Mod+Alt+Shift+4 { move-column-to-workspace 4; }
-    Mod+Alt+Shift+5 { move-column-to-workspace 5; }
-    Mod+Alt+Shift+6 { move-column-to-workspace 6; }
-    Mod+Alt+Shift+7 { move-column-to-workspace 7; }
-    Mod+Alt+Shift+8 { move-column-to-workspace 8; }
-    Mod+Alt+Shift+9 { move-column-to-workspace 9; }
-    Mod+Alt+Shift+0 { move-column-to-workspace 10; }
+    Mod+Shift+1 { move-window-to-workspace 1; }
+    Mod+Shift+2 { move-window-to-workspace 2; }
+    Mod+Shift+3 { move-window-to-workspace 3; }
+    Mod+Shift+4 { move-window-to-workspace 4; }
+    Mod+Shift+5 { move-window-to-workspace 5; }
+    Mod+Shift+6 { move-window-to-workspace 6; }
+    Mod+Shift+7 { move-window-to-workspace 7; }
+    Mod+Shift+8 { move-window-to-workspace 8; }
+    Mod+Shift+9 { move-window-to-workspace 9; }
+    Mod+Shift+0 { move-window-to-workspace 10; }
 
     // Sizing
     Mod+Alt+Minus       { set-column-width "-10%"; }
