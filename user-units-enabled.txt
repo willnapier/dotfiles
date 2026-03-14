@@ -5,6 +5,7 @@ collect-projects-watcher.service
 collect-projects.timer
 continuum-auto-import.timer
 continuum-sync-claude.timer
+cross-machine-sync-check.timer
 dev-catchup.timer
 dotter-drift-monitor.timer
 dropbox.service
