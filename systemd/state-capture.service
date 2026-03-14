@@ -5,6 +5,7 @@ Description=Capture system state (packages, services, crates, groups) to dotfile
 Type=oneshot
 Environment=PATH=/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin:%h/.cargo/bin:%h/.local/bin
 ExecStart=%h/.local/bin/state-capture capture
+ExecStartPost=/bin/bash -c 'cd %h/dotfiles && git add arch-packages.txt arch-packages-aur.txt cargo-crates.txt system-services-enabled.txt system-timers-enabled.txt user-units-enabled.txt npm-globals-nimbini.txt user-groups-nimbini.txt 2>/dev/null; git diff --cached --quiet || git commit -m "state-capture: auto-commit $(date +%%Y-%%m-%%d)" && git push'
 
 [Install]
 WantedBy=default.target
