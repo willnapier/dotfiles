@@ -32,6 +32,7 @@ com.user.zotero-watcher
 com.williamnapier.assistants-auto-pull
 com.williamnapier.assistants-auto-push
 com.williamnapier.continuum-sync-claude
+com.williamnapier.cross-machine-sync-check
 com.williamnapier.dev-catchup
 com.williamnapier.ghostty-config-validate
 com.williamnapier.git-auto-pull-watcher
