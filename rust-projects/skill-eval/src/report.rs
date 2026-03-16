@@ -38,12 +38,18 @@ pub fn print_totals(results: &[EvalResult]) {
 
     println!("=== SUMMARY ===");
     if na_count > 0 {
-        println!(
-            "  Total: {}/{} ({:.1}%) — {} N/A",
-            passed, total, pct, na_count
-        );
-    } else {
+        if total > 0 {
+            println!(
+                "  Total: {}/{} ({:.1}%) — {} N/A",
+                passed, total, pct, na_count
+            );
+        } else {
+            println!("  Total: {}/{} — {} N/A", passed, total, na_count);
+        }
+    } else if total > 0 {
         println!("  Total: {}/{} ({:.1}%)", passed, total, pct);
+    } else {
+        println!("  Total: {}/{}", passed, total);
     }
 
     let failures: Vec<_> = results
