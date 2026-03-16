@@ -34,6 +34,10 @@ enum Commands {
         /// Number of test runs per scenario (default 1)
         #[arg(long, default_value = "1")]
         runs: usize,
+
+        /// Include scenarios with side effects (SSH, skill edits)
+        #[arg(long)]
+        include_unsafe: bool,
     },
 
     /// Score assertions against an existing conversation log
@@ -67,6 +71,10 @@ enum Commands {
         /// Maximum improvement rounds
         #[arg(long, default_value = "5")]
         rounds: usize,
+
+        /// Include scenarios with side effects (SSH, skill edits)
+        #[arg(long)]
+        include_unsafe: bool,
     },
 }
 
@@ -79,14 +87,16 @@ fn main() -> Result<()> {
             skill,
             scenario,
             runs,
-        } => cmd_run(&cli_name, &skill, scenario.as_deref(), runs),
+            include_unsafe,
+        } => cmd_run(&cli_name, &skill, scenario.as_deref(), runs, include_unsafe),
         Commands::Score { log, skill } => cmd_score(&log, &skill),
         Commands::List { skill } => cmd_list(&skill),
         Commands::Improve {
             cli: cli_name,
             skill,
             rounds,
-        } => cmd_improve(&cli_name, &skill, rounds),
+            include_unsafe,
+        } => cmd_improve(&cli_name, &skill, rounds, include_unsafe),
     }
 }
 
@@ -124,7 +134,7 @@ fn run_scenarios(
     Ok(all_results)
 }
 
-fn cmd_run(cli_name: &str, skill: &str, scenario_filter: Option<&str>, runs: usize) -> Result<()> {
+fn cmd_run(cli_name: &str, skill: &str, scenario_filter: Option<&str>, runs: usize, include_unsafe: bool) -> Result<()> {
     let skill_dir = config::skill_dir(skill)?;
     let assertions = config::load_all_assertions(&skill_dir)?;
     let scenarios = config::load_scenarios(&skill_dir)?;
@@ -132,7 +142,7 @@ fn cmd_run(cli_name: &str, skill: &str, scenario_filter: Option<&str>, runs: usi
     let scenarios: Vec<_> = if let Some(filter) = scenario_filter {
         scenarios.into_iter().filter(|s| s.id == filter).collect()
     } else {
-        scenarios
+        filter_scenarios(scenarios, include_unsafe)
     };
 
     if scenarios.is_empty() {
@@ -209,7 +219,7 @@ fn cmd_list(skill: &str) -> Result<()> {
     Ok(())
 }
 
-fn cmd_improve(cli_name: &str, skill: &str, rounds: usize) -> Result<()> {
+fn cmd_improve(cli_name: &str, skill: &str, rounds: usize, include_unsafe: bool) -> Result<()> {
     let skill_dir = config::skill_dir(skill)?;
     let skill_md_path = skill_dir.join("SKILL.md");
 
@@ -218,7 +228,7 @@ fn cmd_improve(cli_name: &str, skill: &str, rounds: usize) -> Result<()> {
     }
 
     let assertions = config::load_all_assertions(&skill_dir)?;
-    let scenarios = config::load_scenarios(&skill_dir)?;
+    let scenarios = filter_scenarios(config::load_scenarios(&skill_dir)?, include_unsafe);
 
     println!("=== IMPROVEMENT LOOP: {} rounds against {} ===\n", rounds, cli_name);
 
@@ -264,7 +274,9 @@ fn cmd_improve(cli_name: &str, skill: &str, rounds: usize) -> Result<()> {
         let new_score = tally(&new_results);
         println!("  New score: {} (was {})", format_score(&new_score), format_score(&current_score));
 
-        if new_score.0 > current_score.0 || (new_score.0 == current_score.0 && new_score.1 < current_score.1) {
+        let new_pct = pct(&new_score);
+        let cur_pct = pct(&current_score);
+        if new_pct > cur_pct || (new_pct == cur_pct && new_score.0 > current_score.0) {
             println!("  KEPT — score improved.\n");
             current_score = new_score;
             current_failures = failures_from(&new_results);
@@ -286,6 +298,23 @@ fn cmd_improve(cli_name: &str, skill: &str, rounds: usize) -> Result<()> {
     Ok(())
 }
 
+/// Filter out scenarios with side effects unless --include-unsafe is set
+fn filter_scenarios(scenarios: Vec<config::Scenario>, include_unsafe: bool) -> Vec<config::Scenario> {
+    if include_unsafe {
+        return scenarios;
+    }
+    let (safe, skipped): (Vec<_>, Vec<_>) = scenarios
+        .into_iter()
+        .partition(|s| s.side_effects.is_empty());
+    for s in &skipped {
+        eprintln!(
+            "  Skipping {} (side effects: {:?}) — use --include-unsafe to run",
+            s.id, s.side_effects
+        );
+    }
+    safe
+}
+
 /// Tally (passed, failed, total_applicable) from results
 fn tally(results: &[evaluate::EvalResult]) -> (usize, usize, usize) {
     let applicable = results.iter().filter(|r| r.is_applicable()).count();
@@ -299,6 +328,14 @@ fn failures_from(results: &[evaluate::EvalResult]) -> Vec<evaluate::EvalResult> 
         .filter(|r| r.outcome == evaluate::EvalOutcome::Fail)
         .cloned()
         .collect()
+}
+
+fn pct(score: &(usize, usize, usize)) -> f64 {
+    if score.2 > 0 {
+        (score.0 as f64 / score.2 as f64) * 100.0
+    } else {
+        0.0
+    }
 }
 
 fn format_score(score: &(usize, usize, usize)) -> String {

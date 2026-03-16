@@ -156,6 +156,7 @@ struct Worktree {
     path: PathBuf,
     repo_dir: PathBuf,
     branch_name: String,
+    bare_path: Option<PathBuf>,
 }
 
 impl Worktree {
@@ -175,13 +176,14 @@ impl Worktree {
         );
         let worktree_path = std::env::temp_dir().join(&branch_name);
 
-        // Create worktree
+        // Create worktree on a temporary branch (not detached) so git commit works
         let output = Command::new("git")
             .arg("-C")
             .arg(&repo_dir)
             .arg("worktree")
             .arg("add")
-            .arg("--detach")
+            .arg("-b")
+            .arg(&branch_name)
             .arg(&worktree_path)
             .arg("HEAD")
             .output()
@@ -192,14 +194,41 @@ impl Worktree {
             anyhow::bail!("git worktree add failed: {}", stderr);
         }
 
+        // Set up a local bare remote so git push works inside the sandbox.
+        // This is a throwaway — the bare repo is cleaned up with the worktree.
+        let bare_path = std::env::temp_dir().join(format!("{}-bare", branch_name));
+        let _ = Command::new("git")
+            .arg("init")
+            .arg("--bare")
+            .arg(&bare_path)
+            .output();
+        let _ = Command::new("git")
+            .arg("-C")
+            .arg(&worktree_path)
+            .arg("remote")
+            .arg("add")
+            .arg("origin")
+            .arg(&bare_path)
+            .output();
+        // Push current state so the remote has the branch
+        let _ = Command::new("git")
+            .arg("-C")
+            .arg(&worktree_path)
+            .arg("push")
+            .arg("-u")
+            .arg("origin")
+            .arg(&branch_name)
+            .output();
+
         Ok(Worktree {
             path: worktree_path,
             repo_dir,
             branch_name,
+            bare_path: Some(bare_path),
         })
     }
 
-    /// Remove the worktree and its branch
+    /// Remove the worktree, its branch, and the bare remote
     fn cleanup(&self) -> Result<()> {
         // Remove worktree
         let output = Command::new("git")
@@ -213,8 +242,21 @@ impl Worktree {
             .context("Failed to remove git worktree")?;
 
         if !output.status.success() {
-            // Fallback: manual removal
             let _ = std::fs::remove_dir_all(&self.path);
+        }
+
+        // Delete the temporary branch from the main repo
+        let _ = Command::new("git")
+            .arg("-C")
+            .arg(&self.repo_dir)
+            .arg("branch")
+            .arg("-D")
+            .arg(&self.branch_name)
+            .output();
+
+        // Remove the bare remote repo
+        if let Some(ref bare) = self.bare_path {
+            let _ = std::fs::remove_dir_all(bare);
         }
 
         // Prune stale worktree entries
