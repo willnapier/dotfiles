@@ -1,11 +1,15 @@
 use anyhow::{Context, Result};
-use std::path::PathBuf;
 use std::process::Command;
 
 use crate::config::Scenario;
+use crate::log_parser::{EntryType, LogEntry};
 
-/// Run a scenario against an AI CLI and return the path to the conversation log
-pub fn run_scenario(cli_name: &str, skill: &str, scenario: &Scenario) -> Result<PathBuf> {
+/// Preamble cue prepended to scenario prompts to trigger full session behaviour
+const SESSION_CUE: &str = "You are starting a new interactive session. \
+Follow all session preamble instructions in your skill file before responding.\n\n";
+
+/// Run a scenario against an AI CLI and return parsed log entries
+pub fn run_scenario(cli_name: &str, skill: &str, scenario: &Scenario) -> Result<Vec<LogEntry>> {
     match cli_name {
         "claude" => run_claude(skill, scenario),
         "gemini" => run_gemini(skill, scenario),
@@ -13,21 +17,20 @@ pub fn run_scenario(cli_name: &str, skill: &str, scenario: &Scenario) -> Result<
     }
 }
 
-fn run_claude(skill: &str, scenario: &Scenario) -> Result<PathBuf> {
-    // Record which logs exist before we run
-    let logs_dir = cc_logs_dir()?;
-    let before: Vec<_> = list_jsonl_files(&logs_dir)?;
-
-    // Invoke claude -p with the skill
-    let skill_flag = format!("/{}",  skill);
-    let prompt = format!("{}\n{}", skill_flag, scenario.prompt);
+fn run_claude(skill: &str, scenario: &Scenario) -> Result<Vec<LogEntry>> {
+    let skill_flag = format!("/{}", skill);
+    let prompt = format!("{}\n{}{}", skill_flag, SESSION_CUE, scenario.prompt);
 
     eprintln!("  Invoking: claude -p \"{}\" ...", scenario.prompt);
 
     let output = Command::new("claude")
         .arg("-p")
         .arg(&prompt)
+        .arg("--output-format")
+        .arg("stream-json")
+        .arg("--verbose")
         .arg("--dangerously-skip-permissions")
+        .arg("--no-session-persistence")
         .output()
         .context("Failed to invoke claude CLI")?;
 
@@ -36,39 +39,14 @@ fn run_claude(skill: &str, scenario: &Scenario) -> Result<PathBuf> {
         anyhow::bail!("claude -p failed: {}", stderr);
     }
 
-    // Find the new log file (the one that wasn't there before)
-    let after: Vec<_> = list_jsonl_files(&logs_dir)?;
-    let new_logs: Vec<_> = after
-        .into_iter()
-        .filter(|p| !before.contains(p))
-        .collect();
-
-    match new_logs.len() {
-        0 => {
-            // Fallback: use the most recently modified JSONL
-            let latest = most_recent_jsonl(&logs_dir)?;
-            Ok(latest)
-        }
-        1 => Ok(new_logs.into_iter().next().unwrap()),
-        _ => {
-            // Multiple new logs — take the most recent
-            let mut sorted = new_logs;
-            sorted.sort_by_key(|p| {
-                std::fs::metadata(p)
-                    .and_then(|m| m.modified())
-                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
-            });
-            Ok(sorted.pop().unwrap())
-        }
-    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_stream_json(&stdout)
 }
 
-fn run_gemini(skill: &str, scenario: &Scenario) -> Result<PathBuf> {
-    // Gemini CLI uses -p for prompt mode
-    // Skills are loaded differently — via the prompt itself
+fn run_gemini(skill: &str, scenario: &Scenario) -> Result<Vec<LogEntry>> {
     let prompt = format!(
-        "Please read and follow the skill instructions in ~/.claude/skills/{}/SKILL.md\n\n{}",
-        skill, scenario.prompt
+        "Please read and follow the skill instructions in ~/.claude/skills/{}/SKILL.md\n\n{}{}",
+        skill, SESSION_CUE, scenario.prompt
     );
 
     eprintln!("  Invoking: gemini -p \"{}\" ...", scenario.prompt);
@@ -84,87 +62,131 @@ fn run_gemini(skill: &str, scenario: &Scenario) -> Result<PathBuf> {
         anyhow::bail!("gemini -p failed: {}", stderr);
     }
 
-    // Find the most recent continuum log for gemini
-    let home = dirs::home_dir().context("No home directory")?;
-    let gemini_logs = home.join("Assistants/continuum-logs/gemini-cli");
-
-    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-    let today_dir = gemini_logs.join(&today);
-
-    if today_dir.exists() {
-        // Find most recent session directory
-        let mut entries: Vec<_> = std::fs::read_dir(&today_dir)?
-            .filter_map(|e| e.ok())
-            .collect();
-        entries.sort_by_key(|e| {
-            e.metadata()
-                .and_then(|m| m.modified())
-                .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
-        });
-
-        if let Some(latest) = entries.last() {
-            let messages = latest.path().join("messages.jsonl");
-            if messages.exists() {
-                return Ok(messages);
-            }
-        }
-    }
-
-    anyhow::bail!("Could not find gemini conversation log")
+    // Gemini doesn't have stream-json; parse stdout as plain text response
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(vec![LogEntry {
+        role: "assistant".to_string(),
+        content_type: EntryType::Text,
+        content: stdout.to_string(),
+        timestamp: None,
+    }])
 }
 
-fn cc_logs_dir() -> Result<PathBuf> {
-    let home = dirs::home_dir().context("No home directory")?;
-    // CC stores logs per-project; find the most likely one
-    let projects_dir = home.join(".claude/projects");
-    if !projects_dir.exists() {
-        anyhow::bail!("No .claude/projects directory found");
-    }
+/// Parse Claude's --output-format stream-json --verbose output into LogEntries
+fn parse_stream_json(output: &str) -> Result<Vec<LogEntry>> {
+    let mut entries = Vec::new();
 
-    // Find the project dir with the most recent JSONL
-    let mut best_dir = None;
-    let mut best_time = std::time::SystemTime::UNIX_EPOCH;
+    for line in output.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
 
-    for entry in std::fs::read_dir(&projects_dir)? {
-        let entry = entry?;
-        if entry.file_type()?.is_dir() {
-            if let Ok(latest) = most_recent_jsonl(&entry.path()) {
-                if let Ok(meta) = std::fs::metadata(&latest) {
-                    if let Ok(modified) = meta.modified() {
-                        if modified > best_time {
-                            best_time = modified;
-                            best_dir = Some(entry.path());
+        let v: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let msg_type = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+        match msg_type {
+            "assistant" => {
+                let msg = match v.get("message") {
+                    Some(m) => m,
+                    None => continue,
+                };
+
+                let content = match msg.get("content").and_then(|c| c.as_array()) {
+                    Some(blocks) => blocks,
+                    None => continue,
+                };
+
+                for block in content {
+                    let block_type = block.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+                    match block_type {
+                        "tool_use" => {
+                            let tool_name = block
+                                .get("name")
+                                .and_then(|n| n.as_str())
+                                .unwrap_or("unknown")
+                                .to_string();
+                            let input = block
+                                .get("input")
+                                .map(|i| serde_json::to_string_pretty(i).unwrap_or_default())
+                                .unwrap_or_default();
+
+                            entries.push(LogEntry {
+                                role: "assistant".to_string(),
+                                content_type: EntryType::ToolUse {
+                                    tool_name: tool_name.clone(),
+                                    input: input.clone(),
+                                },
+                                content: format!("Tool: {} Input: {}", tool_name, input),
+                                timestamp: None,
+                            });
+                        }
+                        "text" => {
+                            let text = block
+                                .get("text")
+                                .and_then(|t| t.as_str())
+                                .unwrap_or("")
+                                .to_string();
+
+                            if !text.is_empty() {
+                                entries.push(LogEntry {
+                                    role: "assistant".to_string(),
+                                    content_type: EntryType::Text,
+                                    content: text,
+                                    timestamp: None,
+                                });
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            "user" => {
+                // Tool results come back as user messages
+                let msg = match v.get("message") {
+                    Some(m) => m,
+                    None => continue,
+                };
+
+                let content = match msg.get("content") {
+                    Some(c) => c,
+                    None => continue,
+                };
+
+                if let Some(blocks) = content.as_array() {
+                    for block in blocks {
+                        let block_type =
+                            block.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+                        if block_type == "tool_result" {
+                            let output = block
+                                .get("content")
+                                .and_then(|c| c.as_str())
+                                .unwrap_or("")
+                                .to_string();
+
+                            entries.push(LogEntry {
+                                role: "user".to_string(),
+                                content_type: EntryType::ToolResult {
+                                    tool_name: String::new(),
+                                    output: output.clone(),
+                                },
+                                content: output,
+                                timestamp: None,
+                            });
                         }
                     }
                 }
             }
+            // Skip system, rate_limit_event, result types
+            _ => {}
         }
     }
 
-    best_dir.context("No CC project directory with logs found")
-}
-
-fn list_jsonl_files(dir: &PathBuf) -> Result<Vec<PathBuf>> {
-    let mut files = Vec::new();
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("jsonl") {
-            files.push(path);
-        }
-    }
-    Ok(files)
-}
-
-fn most_recent_jsonl(dir: &PathBuf) -> Result<PathBuf> {
-    let mut files = list_jsonl_files(dir)?;
-    if files.is_empty() {
-        anyhow::bail!("No JSONL files found in {}", dir.display());
-    }
-    files.sort_by_key(|p| {
-        std::fs::metadata(p)
-            .and_then(|m| m.modified())
-            .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
-    });
-    Ok(files.pop().unwrap())
+    Ok(entries)
 }

@@ -123,8 +123,7 @@ fn cmd_run(cli_name: &str, skill: &str, scenario_filter: Option<&str>, runs: usi
                 println!("--- {} ---", scenario.id);
             }
 
-            let log_path = invoke::run_scenario(cli_name, skill, scenario)?;
-            let log_entries = log_parser::parse_log(&log_path, cli_name)?;
+            let log_entries = invoke::run_scenario(cli_name, skill, scenario)?;
 
             let relevant: Vec<_> = assertions
                 .iter()
