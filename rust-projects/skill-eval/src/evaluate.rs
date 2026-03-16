@@ -309,9 +309,12 @@ Respond with JSON only, no markdown fencing:"#,
     let stdout = String::from_utf8_lossy(&output.stdout);
     let clean = log_parser::strip_fences(&stdout);
 
-    // Parse the JSON response
-    let parsed: Vec<serde_json::Value> = serde_json::from_str(clean)
-        .with_context(|| format!("Failed to parse evaluator response: {}", clean))?;
+    // Extract just the JSON array, ignoring any trailing commentary from the LLM
+    let json_str = extract_json_array(clean)
+        .with_context(|| format!("No JSON array found in evaluator response: {}", clean))?;
+
+    let parsed: Vec<serde_json::Value> = serde_json::from_str(json_str)
+        .with_context(|| format!("Failed to parse evaluator response: {}", json_str))?;
 
     let mut results = Vec::new();
     for item in parsed {
@@ -403,4 +406,26 @@ fn build_log_summary(entries: &[LogEntry]) -> String {
     }
 
     summary
+}
+
+/// Extract the first JSON array from a string, ignoring any surrounding text.
+/// Handles cases where the LLM adds commentary before or after the JSON.
+fn extract_json_array(s: &str) -> Option<&str> {
+    let start = s.find('[')?;
+    // Find matching closing bracket by counting nesting
+    let bytes = s.as_bytes();
+    let mut depth = 0;
+    for i in start..bytes.len() {
+        match bytes[i] {
+            b'[' => depth += 1,
+            b']' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&s[start..=i]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
