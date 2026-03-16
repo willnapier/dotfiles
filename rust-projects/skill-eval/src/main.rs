@@ -359,7 +359,8 @@ Rules:
 - Make exactly ONE change (a single addition, modification, or rewrite of a section)
 - Do not remove existing instructions that are passing — only add or refine
 - Do not add meta-commentary or explanations — just output the file
-- The file MUST start with the YAML frontmatter delimiter (---) on the very first line
+- The file MUST start with the YAML frontmatter (--- / name / description / ---) exactly as in the original
+- NEVER omit the name: or description: fields from the frontmatter
 - If you believe no change would help, output exactly: NO_CHANGE
 
 ## Current SKILL.md
@@ -399,6 +400,12 @@ Output the updated SKILL.md:"#,
         // No frontmatter found — return as-is and let the caller decide
         clean.to_string()
     };
+
+    // Validate: must contain frontmatter with name and description
+    if !result.contains("name:") || !result.contains("description:") {
+        eprintln!("  Warning: proposer output missing frontmatter fields, treating as NO_CHANGE");
+        return Ok("NO_CHANGE".to_string());
+    }
 
     Ok(result)
 }

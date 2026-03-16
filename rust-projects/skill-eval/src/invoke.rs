@@ -10,13 +10,28 @@ const SESSION_CUE: &str = "You are starting a new interactive session. \
 Follow all session preamble instructions in your skill file before responding.\n\n";
 
 /// Run a scenario against an AI CLI and return parsed log entries.
-/// If the scenario has sandbox=true, runs inside a disposable git worktree.
+/// After capturing the transcript, any mutations to ~/dotfiles are auto-reverted
+/// so that scenario side effects never persist.
 pub fn run_scenario(cli_name: &str, skill: &str, scenario: &Scenario) -> Result<Vec<LogEntry>> {
-    if scenario.sandbox {
+    // Snapshot dotfiles state before the scenario runs
+    let home = dirs::home_dir().context("No home directory")?;
+    let dotfiles_dir = home.join("dotfiles");
+    let has_dotfiles = dotfiles_dir.join(".git").exists();
+
+    let result = if scenario.sandbox {
         run_sandboxed(cli_name, skill, scenario)
     } else {
         run_direct(cli_name, skill, scenario)
+    };
+
+    // Auto-revert ~/dotfiles after every scenario, regardless of outcome.
+    // The transcript is already captured — we only needed the agent's behaviour,
+    // not the persistent side effects.
+    if has_dotfiles {
+        revert_dotfiles(&dotfiles_dir, &scenario.id);
     }
+
+    result
 }
 
 fn run_direct(cli_name: &str, skill: &str, scenario: &Scenario) -> Result<Vec<LogEntry>> {
@@ -149,6 +164,51 @@ fn parse_stream_json(output: &str) -> Result<Vec<LogEntry>> {
     }
 
     Ok(entries)
+}
+
+/// Revert ~/dotfiles to its pre-scenario state.
+/// Unstages any staged changes and discards working tree modifications.
+/// This ensures no scenario mutations persist after transcript capture.
+fn revert_dotfiles(dotfiles_dir: &Path, scenario_id: &str) {
+    // Unstage everything
+    let reset = Command::new("git")
+        .arg("-C")
+        .arg(dotfiles_dir)
+        .arg("reset")
+        .arg("HEAD")
+        .arg(".")
+        .output();
+
+    if let Err(e) = &reset {
+        eprintln!("  Warning: git reset failed for {}: {}", scenario_id, e);
+    }
+
+    // Discard working tree changes
+    let checkout = Command::new("git")
+        .arg("-C")
+        .arg(dotfiles_dir)
+        .arg("checkout")
+        .arg("--")
+        .arg(".")
+        .output();
+
+    if let Err(e) = &checkout {
+        eprintln!("  Warning: git checkout failed for {}: {}", scenario_id, e);
+    }
+
+    // Clean untracked files the scenario may have created
+    let clean = Command::new("git")
+        .arg("-C")
+        .arg(dotfiles_dir)
+        .arg("clean")
+        .arg("-fd")
+        .output();
+
+    if let Err(e) = &clean {
+        eprintln!("  Warning: git clean failed for {}: {}", scenario_id, e);
+    }
+
+    eprintln!("  Auto-reverted ~/dotfiles after scenario '{}'", scenario_id);
 }
 
 /// Disposable git worktree for sandboxing scenario runs
