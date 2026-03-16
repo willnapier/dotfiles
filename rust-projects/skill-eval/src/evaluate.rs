@@ -298,8 +298,14 @@ Respond with JSON only, no markdown fencing:"#,
         .arg("-p")
         .arg(&prompt)
         .arg("--dangerously-skip-permissions")
+        .arg("--no-session-persistence")
         .output()
         .context("Failed to invoke evaluator LLM")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("Evaluator LLM failed (exit {}): {}", output.status, stderr);
+    }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 

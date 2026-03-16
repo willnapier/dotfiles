@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use serde::Deserialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Assertion {
@@ -36,7 +36,7 @@ pub fn skill_dir(skill_name: &str) -> Result<PathBuf> {
 }
 
 /// Load all assertions (universal + skill-specific) from eval/ directory
-pub fn load_all_assertions(skill_dir: &PathBuf) -> Result<Vec<Assertion>> {
+pub fn load_all_assertions(skill_dir: &Path) -> Result<Vec<Assertion>> {
     let eval_dir = skill_dir.join("eval");
     if !eval_dir.exists() {
         anyhow::bail!("No eval/ directory found in {}", skill_dir.display());
@@ -72,7 +72,7 @@ pub fn load_all_assertions(skill_dir: &PathBuf) -> Result<Vec<Assertion>> {
 }
 
 /// Load test scenarios
-pub fn load_scenarios(skill_dir: &PathBuf) -> Result<Vec<Scenario>> {
+pub fn load_scenarios(skill_dir: &Path) -> Result<Vec<Scenario>> {
     let path = skill_dir.join("eval").join("scenarios.json");
     if !path.exists() {
         anyhow::bail!("No scenarios.json found in {}", skill_dir.display());

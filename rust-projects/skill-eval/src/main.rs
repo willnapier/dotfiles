@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 mod config;
 mod evaluate;
@@ -143,7 +143,7 @@ fn cmd_run(cli_name: &str, skill: &str, scenario_filter: Option<&str>, runs: usi
     Ok(())
 }
 
-fn cmd_score(log_path: &PathBuf, skill: &str) -> Result<()> {
+fn cmd_score(log_path: &Path, skill: &str) -> Result<()> {
     let skill_dir = config::skill_dir(skill)?;
     let assertions = config::load_all_assertions(&skill_dir)?;
 
@@ -172,12 +172,12 @@ fn cmd_list(skill: &str) -> Result<()> {
 
     let mut current_layer = None;
     for a in &assertions {
-        let layer_label = if a.id.starts_with('U') {
-            "Universal"
-        } else if a.id.starts_with('Q') {
-            "Layer 2 (Quality)"
-        } else {
-            "Layer 1 (Compliance)"
+        let layer_label = match a.id.chars().next() {
+            Some('U') => "Universal",
+            _ => match a.layer {
+                Some(2) => "Layer 2 (Quality)",
+                _ => "Layer 1 (Compliance)",
+            },
         };
 
         if current_layer != Some(layer_label) {

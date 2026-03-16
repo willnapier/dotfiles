@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use std::process::Command;
 
 use crate::config::Scenario;
-use crate::log_parser::{EntryType, LogEntry};
+use crate::log_parser::{self, EntryType, LogEntry};
 
 /// Preamble cue prepended to scenario prompts to trigger full session behaviour
 const SESSION_CUE: &str = "You are starting a new interactive session. \
@@ -90,95 +90,21 @@ fn parse_stream_json(output: &str) -> Result<Vec<LogEntry>> {
         let msg_type = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
 
         match msg_type {
-            "assistant" => {
+            "assistant" | "user" => {
                 let msg = match v.get("message") {
                     Some(m) => m,
                     None => continue,
                 };
 
-                let content = match msg.get("content").and_then(|c| c.as_array()) {
-                    Some(blocks) => blocks,
-                    None => continue,
-                };
+                let role = msg
+                    .get("role")
+                    .and_then(|r| r.as_str())
+                    .unwrap_or(msg_type);
 
-                for block in content {
-                    let block_type = block.get("type").and_then(|t| t.as_str()).unwrap_or("");
-
-                    match block_type {
-                        "tool_use" => {
-                            let tool_name = block
-                                .get("name")
-                                .and_then(|n| n.as_str())
-                                .unwrap_or("unknown")
-                                .to_string();
-                            let input = block
-                                .get("input")
-                                .map(|i| serde_json::to_string_pretty(i).unwrap_or_default())
-                                .unwrap_or_default();
-
-                            entries.push(LogEntry {
-                                role: "assistant".to_string(),
-                                content_type: EntryType::ToolUse {
-                                    tool_name: tool_name.clone(),
-                                    input: input.clone(),
-                                },
-                                content: format!("Tool: {} Input: {}", tool_name, input),
-                                timestamp: None,
-                            });
-                        }
-                        "text" => {
-                            let text = block
-                                .get("text")
-                                .and_then(|t| t.as_str())
-                                .unwrap_or("")
-                                .to_string();
-
-                            if !text.is_empty() {
-                                entries.push(LogEntry {
-                                    role: "assistant".to_string(),
-                                    content_type: EntryType::Text,
-                                    content: text,
-                                    timestamp: None,
-                                });
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            "user" => {
-                // Tool results come back as user messages
-                let msg = match v.get("message") {
-                    Some(m) => m,
-                    None => continue,
-                };
-
-                let content = match msg.get("content") {
-                    Some(c) => c,
-                    None => continue,
-                };
-
-                if let Some(blocks) = content.as_array() {
+                if let Some(blocks) = msg.get("content").and_then(|c| c.as_array()) {
                     for block in blocks {
-                        let block_type =
-                            block.get("type").and_then(|t| t.as_str()).unwrap_or("");
-
-                        if block_type == "tool_result" {
-                            let output = block
-                                .get("content")
-                                .and_then(|c| c.as_str())
-                                .unwrap_or("")
-                                .to_string();
-
-                            entries.push(LogEntry {
-                                role: "user".to_string(),
-                                content_type: EntryType::ToolResult {
-                                    tool_name: String::new(),
-                                    output: output.clone(),
-                                },
-                                content: output,
-                                timestamp: None,
-                            });
+                        if let Some(entry) = log_parser::parse_content_block(block, role, None) {
+                            entries.push(entry);
                         }
                     }
                 }

@@ -89,70 +89,10 @@ fn parse_claude_log(path: &Path) -> Result<Vec<LogEntry>> {
             // Content can be a string or array of content blocks
             if let Some(blocks) = content.as_array() {
                 for block in blocks {
-                    let block_type = block.get("type").and_then(|t| t.as_str()).unwrap_or("");
-
-                    match block_type {
-                        "tool_use" => {
-                            let tool_name = block
-                                .get("name")
-                                .and_then(|n| n.as_str())
-                                .unwrap_or("unknown")
-                                .to_string();
-                            let input = block
-                                .get("input")
-                                .map(|i| serde_json::to_string_pretty(i).unwrap_or_default())
-                                .unwrap_or_default();
-
-                            entries.push(LogEntry {
-                                role: role.clone(),
-                                content_type: EntryType::ToolUse {
-                                    tool_name: tool_name.clone(),
-                                    input: input.clone(),
-                                },
-                                content: format!("Tool: {} Input: {}", tool_name, input),
-                                timestamp: timestamp.clone(),
-                            });
-                        }
-                        "tool_result" => {
-                            let output = block
-                                .get("content")
-                                .and_then(|c| c.as_str())
-                                .unwrap_or("")
-                                .to_string();
-
-                            // Try to find the tool name from toolUseResult or context
-                            let tool_name = v
-                                .get("toolUseResult")
-                                .map(|_| "unknown".to_string())
-                                .unwrap_or_default();
-
-                            entries.push(LogEntry {
-                                role: role.clone(),
-                                content_type: EntryType::ToolResult {
-                                    tool_name,
-                                    output: output.clone(),
-                                },
-                                content: output,
-                                timestamp: timestamp.clone(),
-                            });
-                        }
-                        "text" => {
-                            let text = block
-                                .get("text")
-                                .and_then(|t| t.as_str())
-                                .unwrap_or("")
-                                .to_string();
-
-                            if !text.is_empty() {
-                                entries.push(LogEntry {
-                                    role: role.clone(),
-                                    content_type: EntryType::Text,
-                                    content: text,
-                                    timestamp: timestamp.clone(),
-                                });
-                            }
-                        }
-                        _ => {}
+                    if let Some(entry) =
+                        parse_content_block(block, &role, timestamp.as_deref())
+                    {
+                        entries.push(entry);
                     }
                 }
             } else if let Some(text) = content.as_str() {
@@ -218,4 +158,79 @@ fn extract_between<'a>(text: &'a str, start: &str, end: &str) -> Option<&'a str>
     let start_pos = text.find(start)? + start.len();
     let end_pos = text[start_pos..].find(end)? + start_pos;
     Some(&text[start_pos..end_pos])
+}
+
+/// Parse a JSON content block (tool_use, text, tool_result) into a LogEntry.
+/// Shared between JSONL log parsing and stream-json parsing.
+pub fn parse_content_block(
+    block: &serde_json::Value,
+    role: &str,
+    timestamp: Option<&str>,
+) -> Option<LogEntry> {
+    let block_type = block.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+    match block_type {
+        "tool_use" => {
+            let tool_name = block
+                .get("name")
+                .and_then(|n| n.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let input = block
+                .get("input")
+                .map(|i| serde_json::to_string_pretty(i).unwrap_or_default())
+                .unwrap_or_default();
+
+            Some(LogEntry {
+                role: role.to_string(),
+                content_type: EntryType::ToolUse {
+                    tool_name: tool_name.clone(),
+                    input: input.clone(),
+                },
+                content: format!("Tool: {} Input: {}", tool_name, input),
+                timestamp: timestamp.map(String::from),
+            })
+        }
+        "tool_result" => {
+            let output = block
+                .get("content")
+                .and_then(|c| c.as_str())
+                .unwrap_or("")
+                .to_string();
+            let tool_use_id = block
+                .get("tool_use_id")
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            Some(LogEntry {
+                role: role.to_string(),
+                content_type: EntryType::ToolResult {
+                    tool_name: tool_use_id,
+                    output: output.clone(),
+                },
+                content: output,
+                timestamp: timestamp.map(String::from),
+            })
+        }
+        "text" => {
+            let text = block
+                .get("text")
+                .and_then(|t| t.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            if text.is_empty() {
+                None
+            } else {
+                Some(LogEntry {
+                    role: role.to_string(),
+                    content_type: EntryType::Text,
+                    content: text,
+                    timestamp: timestamp.map(String::from),
+                })
+            }
+        }
+        _ => None,
+    }
 }
