@@ -18,11 +18,26 @@ pub enum EntryType {
     /// Tool invocation (name + input)
     ToolUse { tool_name: String, input: String },
     /// Tool result
-    ToolResult { tool_name: String, output: String },
+    ToolResult { tool_use_id: String, output: String },
     /// Skill/command activation
     SkillActivation { skill_name: String },
     /// Meta (system, file snapshots, etc.)
     Meta,
+}
+
+/// Strip markdown code fences (```json, ```markdown, etc.) from LLM output
+pub fn strip_fences(s: &str) -> &str {
+    let s = s.trim();
+    if !s.starts_with("```") {
+        return s;
+    }
+    let inner = s
+        .strip_prefix("```json")
+        .or_else(|| s.strip_prefix("```markdown"))
+        .or_else(|| s.strip_prefix("```md"))
+        .or_else(|| s.strip_prefix("```"))
+        .unwrap_or(s);
+    inner.strip_suffix("```").unwrap_or(inner).trim()
 }
 
 /// Parse a conversation log file into structured entries
@@ -192,11 +207,17 @@ pub fn parse_content_block(
             })
         }
         "tool_result" => {
-            let output = block
-                .get("content")
-                .and_then(|c| c.as_str())
-                .unwrap_or("")
-                .to_string();
+            let content_val = block.get("content");
+            // Content can be a plain string or an array of content blocks
+            let output = match content_val {
+                Some(Value::String(s)) => s.clone(),
+                Some(Value::Array(blocks)) => blocks
+                    .iter()
+                    .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                _ => String::new(),
+            };
             let tool_use_id = block
                 .get("tool_use_id")
                 .and_then(|t| t.as_str())
@@ -206,7 +227,7 @@ pub fn parse_content_block(
             Some(LogEntry {
                 role: role.to_string(),
                 content_type: EntryType::ToolResult {
-                    tool_name: tool_use_id,
+                    tool_use_id,
                     output: output.clone(),
                 },
                 content: output,

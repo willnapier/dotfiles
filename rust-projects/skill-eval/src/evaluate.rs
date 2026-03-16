@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use std::process::Command;
 
 use crate::config::Assertion;
-use crate::log_parser::{EntryType, LogEntry};
+use crate::log_parser::{self, EntryType, LogEntry};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum EvalOutcome {
@@ -37,7 +37,6 @@ impl EvalResult {
 pub fn score(
     log_entries: &[LogEntry],
     assertions: &[&Assertion],
-    _scenario_prompt: &str,
 ) -> Result<Vec<EvalResult>> {
     let mut results = Vec::new();
 
@@ -308,18 +307,7 @@ Respond with JSON only, no markdown fencing:"#,
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-
-    // Strip markdown fencing if present
-    let clean = stdout.trim();
-    let clean = if clean.starts_with("```") {
-        let inner = clean
-            .strip_prefix("```json")
-            .or_else(|| clean.strip_prefix("```"))
-            .unwrap_or(clean);
-        inner.strip_suffix("```").unwrap_or(inner).trim()
-    } else {
-        clean
-    };
+    let clean = log_parser::strip_fences(&stdout);
 
     // Parse the JSON response
     let parsed: Vec<serde_json::Value> = serde_json::from_str(clean)
@@ -391,7 +379,7 @@ fn build_log_summary(entries: &[LogEntry]) -> String {
                     entry.role, tool_name, short_input
                 ));
             }
-            EntryType::ToolResult { output, .. } => {
+            EntryType::ToolResult { ref output, .. } => {
                 let short_output = if output.len() > 200 {
                     format!("{}...", truncate_utf8(output, 200))
                 } else {
