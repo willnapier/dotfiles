@@ -90,6 +90,40 @@ fn main() -> Result<()> {
     }
 }
 
+/// Run scenarios, score assertions, collect results. Core logic shared by cmd_run and cmd_improve.
+fn run_scenarios(
+    cli_name: &str,
+    skill: &str,
+    scenarios: &[config::Scenario],
+    assertions: &[config::Assertion],
+    runs: usize,
+) -> Result<Vec<evaluate::EvalResult>> {
+    let mut all_results = Vec::new();
+
+    for scenario in scenarios {
+        for run_num in 1..=runs {
+            if runs > 1 {
+                println!("--- {} (run {}/{}) ---", scenario.id, run_num, runs);
+            } else {
+                println!("--- {} ---", scenario.id);
+            }
+
+            let log_entries = invoke::run_scenario(cli_name, skill, scenario)?;
+
+            let relevant: Vec<_> = assertions
+                .iter()
+                .filter(|a| scenario.exercises.contains(&a.id))
+                .collect();
+
+            let results = evaluate::score(&log_entries, &relevant)?;
+            report::print_scenario_results(&scenario.id, &results);
+            all_results.extend(results);
+        }
+    }
+
+    Ok(all_results)
+}
+
 fn cmd_run(cli_name: &str, skill: &str, scenario_filter: Option<&str>, runs: usize) -> Result<()> {
     let skill_dir = config::skill_dir(skill)?;
     let assertions = config::load_all_assertions(&skill_dir)?;
@@ -113,29 +147,7 @@ fn cmd_run(cli_name: &str, skill: &str, scenario_filter: Option<&str>, runs: usi
     );
     println!();
 
-    let mut all_results = Vec::new();
-
-    for scenario in &scenarios {
-        for run_num in 1..=runs {
-            if runs > 1 {
-                println!("--- {} (run {}/{}) ---", scenario.id, run_num, runs);
-            } else {
-                println!("--- {} ---", scenario.id);
-            }
-
-            let log_entries = invoke::run_scenario(cli_name, skill, scenario)?;
-
-            let relevant: Vec<_> = assertions
-                .iter()
-                .filter(|a| scenario.exercises.contains(&a.id))
-                .collect();
-
-            let results = evaluate::score(&log_entries, &relevant, &scenario.prompt)?;
-            all_results.extend(results.clone());
-
-            report::print_scenario_results(&scenario.id, &results);
-        }
-    }
+    let all_results = run_scenarios(cli_name, skill, &scenarios, &assertions, runs)?;
 
     println!();
     report::print_summary(&all_results);
@@ -153,7 +165,6 @@ fn cmd_score(log_path: &Path, skill: &str) -> Result<()> {
     let results = evaluate::score(
         &log_entries,
         &assertions.iter().collect::<Vec<_>>(),
-        "(full session)",
     )?;
 
     report::print_scenario_results("full-session", &results);
@@ -206,13 +217,18 @@ fn cmd_improve(cli_name: &str, skill: &str, rounds: usize) -> Result<()> {
         anyhow::bail!("SKILL.md not found at {}", skill_md_path.display());
     }
 
+    let assertions = config::load_all_assertions(&skill_dir)?;
+    let scenarios = config::load_scenarios(&skill_dir)?;
+
     println!("=== IMPROVEMENT LOOP: {} rounds against {} ===\n", rounds, cli_name);
 
     // Run baseline
     println!("--- Baseline ---");
-    let (baseline_score, baseline_failures) = run_all_scenarios(cli_name, skill)?;
+    let baseline_results = run_scenarios(cli_name, skill, &scenarios, &assertions, 1)?;
+    let baseline_score = tally(&baseline_results);
     println!("  Baseline score: {}\n", format_score(&baseline_score));
 
+    let baseline_failures = failures_from(&baseline_results);
     if baseline_failures.is_empty() {
         println!("No failures to improve. Score is already perfect.");
         return Ok(());
@@ -224,11 +240,9 @@ fn cmd_improve(cli_name: &str, skill: &str, rounds: usize) -> Result<()> {
     for round in 1..=rounds {
         println!("--- Round {}/{} ---", round, rounds);
 
-        // Read current SKILL.md
         let skill_md = std::fs::read_to_string(&skill_md_path)
             .context("Failed to read SKILL.md")?;
 
-        // Ask LLM to propose ONE edit
         let failure_summary: Vec<String> = current_failures
             .iter()
             .map(|f| format!("  {} [{}]: {}", f.assertion_id, f.assertion_text, f.reason))
@@ -241,23 +255,20 @@ fn cmd_improve(cli_name: &str, skill: &str, rounds: usize) -> Result<()> {
             break;
         }
 
-        // Back up and apply
         let backup = skill_md.clone();
         println!("  Applying proposed edit...");
         std::fs::write(&skill_md_path, &proposal)
             .context("Failed to write SKILL.md")?;
 
-        // Re-run scenarios
-        let (new_score, new_failures) = run_all_scenarios(cli_name, skill)?;
+        let new_results = run_scenarios(cli_name, skill, &scenarios, &assertions, 1)?;
+        let new_score = tally(&new_results);
         println!("  New score: {} (was {})", format_score(&new_score), format_score(&current_score));
 
         if new_score.0 > current_score.0 || (new_score.0 == current_score.0 && new_score.1 < current_score.1) {
-            // Improved (higher pass count, or same pass count with fewer failures)
             println!("  KEPT — score improved.\n");
             current_score = new_score;
-            current_failures = new_failures;
+            current_failures = failures_from(&new_results);
         } else {
-            // No improvement — revert
             println!("  REVERTED — no improvement.\n");
             std::fs::write(&skill_md_path, &backup)
                 .context("Failed to revert SKILL.md")?;
@@ -275,37 +286,19 @@ fn cmd_improve(cli_name: &str, skill: &str, rounds: usize) -> Result<()> {
     Ok(())
 }
 
-/// Returns (passed, failed, total_applicable) and the list of failures
-fn run_all_scenarios(cli_name: &str, skill: &str) -> Result<((usize, usize, usize), Vec<evaluate::EvalResult>)> {
-    let skill_dir = config::skill_dir(skill)?;
-    let assertions = config::load_all_assertions(&skill_dir)?;
-    let scenarios = config::load_scenarios(&skill_dir)?;
+/// Tally (passed, failed, total_applicable) from results
+fn tally(results: &[evaluate::EvalResult]) -> (usize, usize, usize) {
+    let applicable = results.iter().filter(|r| r.is_applicable()).count();
+    let passed = results.iter().filter(|r| r.is_applicable() && r.passed()).count();
+    (passed, applicable - passed, applicable)
+}
 
-    let mut all_results = Vec::new();
-
-    for scenario in &scenarios {
-        let log_entries = invoke::run_scenario(cli_name, skill, scenario)?;
-
-        let relevant: Vec<_> = assertions
-            .iter()
-            .filter(|a| scenario.exercises.contains(&a.id))
-            .collect();
-
-        let results = evaluate::score(&log_entries, &relevant, &scenario.prompt)?;
-        report::print_scenario_results(&scenario.id, &results);
-        all_results.extend(results);
-    }
-
-    let applicable_count = all_results.iter().filter(|r| r.is_applicable()).count();
-    let passed = all_results.iter().filter(|r| r.is_applicable() && r.passed()).count();
-    let failed = applicable_count - passed;
-
-    let failures: Vec<_> = all_results
-        .into_iter()
+fn failures_from(results: &[evaluate::EvalResult]) -> Vec<evaluate::EvalResult> {
+    results
+        .iter()
         .filter(|r| r.outcome == evaluate::EvalOutcome::Fail)
-        .collect();
-
-    Ok(((passed, failed, applicable_count), failures))
+        .cloned()
+        .collect()
 }
 
 fn format_score(score: &(usize, usize, usize)) -> String {
@@ -350,20 +343,11 @@ Output the updated SKILL.md:"#,
         .output()
         .context("Failed to invoke proposer LLM")?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("Proposer LLM failed (exit {}): {}", output.status, stderr);
+    }
 
-    // Strip markdown fencing if present
-    let clean = stdout.trim();
-    let clean = if clean.starts_with("```") {
-        let inner = clean
-            .strip_prefix("```markdown")
-            .or_else(|| clean.strip_prefix("```md"))
-            .or_else(|| clean.strip_prefix("```"))
-            .unwrap_or(clean);
-        inner.strip_suffix("```").unwrap_or(inner).trim()
-    } else {
-        clean
-    };
-
-    Ok(clean.to_string())
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(log_parser::strip_fences(&stdout).to_string())
 }
