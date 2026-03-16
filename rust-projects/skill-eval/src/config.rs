@@ -23,6 +23,18 @@ pub struct Scenario {
     pub exercises: Vec<String>,
     #[serde(default)]
     pub description: String,
+    /// If true (default), run in a disposable git worktree to sandbox file modifications.
+    /// Set to false for read-only scenarios that don't need sandboxing.
+    #[serde(default = "default_sandbox")]
+    pub sandbox: bool,
+    /// Side effects that cannot be sandboxed (e.g. "ssh", "skill-edit").
+    /// Scenarios with side effects are skipped unless --include-unsafe is set.
+    #[serde(default)]
+    pub side_effects: Vec<String>,
+}
+
+fn default_sandbox() -> bool {
+    true
 }
 
 /// Resolve the skill directory path
