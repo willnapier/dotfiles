@@ -359,6 +359,7 @@ Rules:
 - Make exactly ONE change (a single addition, modification, or rewrite of a section)
 - Do not remove existing instructions that are passing — only add or refine
 - Do not add meta-commentary or explanations — just output the file
+- The file MUST start with the YAML frontmatter delimiter (---) on the very first line
 - If you believe no change would help, output exactly: NO_CHANGE
 
 ## Current SKILL.md
@@ -386,5 +387,18 @@ Output the updated SKILL.md:"#,
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(log_parser::strip_fences(&stdout).to_string())
+    let clean = log_parser::strip_fences(&stdout);
+
+    // Extract just the SKILL.md content — strip any preamble before the frontmatter
+    let result = if let Some(pos) = clean.find("\n---\n") {
+        // Preamble exists before frontmatter — skip to the --- line
+        clean[pos + 1..].to_string()
+    } else if clean.starts_with("---") {
+        clean.to_string()
+    } else {
+        // No frontmatter found — return as-is and let the caller decide
+        clean.to_string()
+    };
+
+    Ok(result)
 }
