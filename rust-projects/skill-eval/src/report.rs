@@ -25,7 +25,7 @@ pub fn print_scenario_results(scenario_id: &str, results: &[EvalResult]) {
     println!();
 }
 
-pub fn print_summary(results: &[EvalResult]) {
+pub fn print_totals(results: &[EvalResult]) {
     let applicable: Vec<_> = results.iter().filter(|r| r.is_applicable()).collect();
     let passed = applicable.iter().filter(|r| r.passed()).count();
     let na_count = results.len() - applicable.len();

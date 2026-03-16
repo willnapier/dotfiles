@@ -160,7 +160,7 @@ fn cmd_run(cli_name: &str, skill: &str, scenario_filter: Option<&str>, runs: usi
     let all_results = run_scenarios(cli_name, skill, &scenarios, &assertions, runs)?;
 
     println!();
-    report::print_summary(&all_results);
+    report::print_totals(&all_results);
 
     Ok(())
 }
@@ -179,7 +179,7 @@ fn cmd_score(log_path: &Path, skill: &str) -> Result<()> {
 
     report::print_scenario_results("full-session", &results);
     println!();
-    report::print_summary(&results);
+    report::print_totals(&results);
 
     Ok(())
 }
