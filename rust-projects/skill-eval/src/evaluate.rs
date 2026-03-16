@@ -4,12 +4,29 @@ use std::process::Command;
 use crate::config::Assertion;
 use crate::log_parser::{EntryType, LogEntry};
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum EvalOutcome {
+    Pass,
+    Fail,
+    NotApplicable,
+}
+
 #[derive(Debug, Clone)]
 pub struct EvalResult {
     pub assertion_id: String,
     pub assertion_text: String,
-    pub passed: bool,
+    pub outcome: EvalOutcome,
     pub reason: String,
+}
+
+impl EvalResult {
+    pub fn passed(&self) -> bool {
+        self.outcome == EvalOutcome::Pass
+    }
+
+    pub fn is_applicable(&self) -> bool {
+        self.outcome != EvalOutcome::NotApplicable
+    }
 }
 
 /// Score a set of assertions against parsed log entries.
@@ -28,6 +45,19 @@ pub fn score(
     let mut needs_llm = Vec::new();
 
     for assertion in assertions {
+        // Check condition first — if present and not met, assertion is N/A
+        if let Some(ref condition) = assertion.condition {
+            if !condition_met(log_entries, condition) {
+                results.push(EvalResult {
+                    assertion_id: assertion.id.clone(),
+                    assertion_text: assertion.assert_text.clone(),
+                    outcome: EvalOutcome::NotApplicable,
+                    reason: format!("Condition not met: {}", condition),
+                });
+                continue;
+            }
+        }
+
         if let Some(result) = try_mechanical_check(log_entries, assertion) {
             results.push(result);
         } else {
@@ -45,6 +75,39 @@ pub fn score(
     results.sort_by(|a, b| a.assertion_id.cmp(&b.assertion_id));
 
     Ok(results)
+}
+
+/// Check if a conditional assertion's trigger condition is met in the log.
+/// Condition strings are human-readable patterns like:
+///   "assistant text contains 'noted' or 'remember'"
+///   "assistant uses Write tool on memory files"
+fn condition_met(log_entries: &[LogEntry], condition: &str) -> bool {
+    // Extract quoted terms from the condition string
+    let terms: Vec<&str> = condition
+        .split('\'')
+        .enumerate()
+        .filter(|(i, _)| i % 2 == 1) // odd indices are inside quotes
+        .map(|(_, s)| s)
+        .collect();
+
+    if terms.is_empty() {
+        // No quoted terms — can't mechanically check, assume met (let LLM handle)
+        return true;
+    }
+
+    // Check if any term appears in assistant text
+    log_entries.iter().any(|e| {
+        if e.role == "assistant" {
+            match &e.content_type {
+                EntryType::Text => terms.iter().any(|t| {
+                    e.content.to_lowercase().contains(&t.to_lowercase())
+                }),
+                _ => false,
+            }
+        } else {
+            false
+        }
+    })
 }
 
 /// Try to evaluate an assertion purely mechanically (no LLM needed)
@@ -132,7 +195,7 @@ fn check_file_read(log_entries: &[LogEntry], assertion: &Assertion, pattern: &st
     EvalResult {
         assertion_id: assertion.id.clone(),
         assertion_text: assertion.assert_text.clone(),
-        passed: found,
+        outcome: if found { EvalOutcome::Pass } else { EvalOutcome::Fail },
         reason: if found {
             format!("Found read of file matching '{}'", pattern)
         } else {
@@ -150,7 +213,7 @@ fn check_command_run(log_entries: &[LogEntry], assertion: &Assertion, cmd: &str)
     EvalResult {
         assertion_id: assertion.id.clone(),
         assertion_text: assertion.assert_text.clone(),
-        passed: found,
+        outcome: if found { EvalOutcome::Pass } else { EvalOutcome::Fail },
         reason: if found {
             format!("Found '{}' command in log", cmd)
         } else {
@@ -169,7 +232,7 @@ fn check_no_daypage_write(log_entries: &[LogEntry], assertion: &Assertion) -> Ev
     EvalResult {
         assertion_id: assertion.id.clone(),
         assertion_text: assertion.assert_text.clone(),
-        passed: !violation,
+        outcome: if violation { EvalOutcome::Fail } else { EvalOutcome::Pass },
         reason: if violation {
             "VIOLATION: Write/Edit used on DayPage file".to_string()
         } else {
@@ -194,7 +257,7 @@ fn check_no_bash_command(
     EvalResult {
         assertion_id: assertion.id.clone(),
         assertion_text: assertion.assert_text.clone(),
-        passed: !violation,
+        outcome: if violation { EvalOutcome::Fail } else { EvalOutcome::Pass },
         reason: if violation {
             fail_msg.to_string()
         } else {
@@ -217,7 +280,7 @@ fn evaluate_with_llm(log_entries: &[LogEntry], assertions: &[&Assertion]) -> Res
     let prompt = format!(
         r#"You are evaluating an AI assistant's behaviour. Below is a conversation log including tool calls and file reads. For each assertion, determine PASS or FAIL based on the evidence in the log.
 
-Respond ONLY with valid JSON — an array of objects, each with "id" (string), "result" ("PASS" or "FAIL"), and "reason" (one-line string).
+Respond ONLY with valid JSON — an array of objects, each with "id" (string), "result" ("PASS", "FAIL", or "N/A"), and "reason" (one-line string). Use "N/A" only if the assertion's precondition was never triggered in the conversation.
 
 ## Assertions to evaluate
 {}
@@ -283,7 +346,11 @@ Respond with JSON only, no markdown fencing:"#,
         results.push(EvalResult {
             assertion_id: id,
             assertion_text: assert_text,
-            passed: result_str == "PASS",
+            outcome: match result_str {
+                "PASS" => EvalOutcome::Pass,
+                "N/A" => EvalOutcome::NotApplicable,
+                _ => EvalOutcome::Fail,
+            },
             reason,
         });
     }

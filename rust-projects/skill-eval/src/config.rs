@@ -10,6 +10,10 @@ pub struct Assertion {
     pub category: String,
     #[serde(default)]
     pub layer: Option<u8>,
+    /// Optional condition — if present, assertion only applies when condition is met.
+    /// If condition is not met in the log, result is NotApplicable.
+    #[serde(default)]
+    pub condition: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

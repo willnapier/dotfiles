@@ -15,6 +15,7 @@ module	0.1.0	/home/will/dotfiles/rust-projects/module
 nu	0.107.0	crates.io
 ripgrep	14.1.1	crates.io
 sd	1.0.0	crates.io
+skill-eval	0.1.0	/home/will/dotfiles/rust-projects/skill-eval
 skim	0.20.5	crates.io
 starship	1.23.0	crates.io
 tm3-diary-capture	0.1.0	/home/will/dotfiles/rust-projects/tm3-diary-capture
