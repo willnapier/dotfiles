@@ -472,17 +472,19 @@ fn check_no_write_tool_on_path(
     }
 }
 
-/// Check that assistant text contains a required pattern (case-insensitive substring match).
+/// Check that assistant text contains a required keyword as a heading or label.
+/// Matches the word regardless of markdown formatting: `Risk:`, `**Risk:**`, `## Risk`, `Risk Assessment:`, etc.
 fn check_assistant_text_contains(
     log_entries: &[LogEntry],
     assertion: &Assertion,
     pattern: &str,
     fail_msg: &str,
 ) -> EvalResult {
+    let keyword = pattern.trim_end_matches(':').to_lowercase();
     let found = log_entries.iter().any(|e| {
         e.role == "assistant"
             && matches!(&e.content_type, EntryType::Text)
-            && e.content.contains(pattern)
+            && e.content.to_lowercase().contains(&keyword)
     });
 
     EvalResult {
