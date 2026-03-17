@@ -13,10 +13,17 @@ Follow all session preamble instructions in your skill file before responding.\n
 /// After capturing the transcript, any mutations to ~/dotfiles are auto-reverted
 /// so that scenario side effects never persist.
 pub fn run_scenario(cli_name: &str, skill: &str, scenario: &Scenario) -> Result<Vec<LogEntry>> {
-    // Snapshot dotfiles state before the scenario runs
     let home = dirs::home_dir().context("No home directory")?;
     let dotfiles_dir = home.join("dotfiles");
     let has_dotfiles = dotfiles_dir.join(".git").exists();
+
+    // Stash any pre-existing uncommitted work before the scenario runs.
+    // This prevents the post-scenario revert from destroying legitimate work.
+    let had_stash = if has_dotfiles {
+        stash_dotfiles(&dotfiles_dir)
+    } else {
+        false
+    };
 
     let result = if scenario.sandbox {
         run_sandboxed(cli_name, skill, scenario)
@@ -24,11 +31,9 @@ pub fn run_scenario(cli_name: &str, skill: &str, scenario: &Scenario) -> Result<
         run_direct(cli_name, skill, scenario)
     };
 
-    // Auto-revert ~/dotfiles after every scenario, regardless of outcome.
-    // The transcript is already captured — we only needed the agent's behaviour,
-    // not the persistent side effects.
+    // Auto-revert scenario mutations, then restore stashed work.
     if has_dotfiles {
-        revert_dotfiles(&dotfiles_dir, &scenario.id);
+        revert_dotfiles(&dotfiles_dir, &scenario.id, had_stash);
     }
 
     result
@@ -168,12 +173,50 @@ fn parse_stream_json(output: &str) -> Result<Vec<LogEntry>> {
     Ok(entries)
 }
 
-/// Revert ~/dotfiles to its pre-scenario state.
-/// Unstages any staged changes and discards working tree modifications.
-/// This ensures no scenario mutations persist after transcript capture.
-fn revert_dotfiles(dotfiles_dir: &Path, scenario_id: &str) {
+/// Stash any pre-existing uncommitted work in ~/dotfiles before a scenario runs.
+/// Returns true if a stash was created (i.e., there was uncommitted work to save).
+fn stash_dotfiles(dotfiles_dir: &Path) -> bool {
+    // Check if there's anything to stash (staged or unstaged changes)
+    let status = Command::new("git")
+        .arg("-C")
+        .arg(dotfiles_dir)
+        .arg("status")
+        .arg("--porcelain")
+        .output();
+
+    let has_changes = match &status {
+        Ok(output) => !output.stdout.is_empty(),
+        Err(_) => false,
+    };
+
+    if has_changes {
+        let stash = Command::new("git")
+            .arg("-C")
+            .arg(dotfiles_dir)
+            .arg("stash")
+            .arg("push")
+            .arg("-m")
+            .arg("skill-eval: pre-scenario stash")
+            .arg("--include-untracked")
+            .output();
+
+        if let Err(e) = &stash {
+            eprintln!("  Warning: git stash failed: {}", e);
+            return false;
+        }
+        eprintln!("  Stashed pre-existing uncommitted work in ~/dotfiles");
+        true
+    } else {
+        false
+    }
+}
+
+/// Revert ~/dotfiles to its pre-scenario state, then restore any stashed work.
+/// Uses stash-based approach to avoid destroying uncommitted work that existed
+/// before the eval run started.
+fn revert_dotfiles(dotfiles_dir: &Path, scenario_id: &str, had_stash: bool) {
     // Unstage everything
-    let reset = Command::new("git")
+    let _ = Command::new("git")
         .arg("-C")
         .arg(dotfiles_dir)
         .arg("reset")
@@ -181,12 +224,8 @@ fn revert_dotfiles(dotfiles_dir: &Path, scenario_id: &str) {
         .arg(".")
         .output();
 
-    if let Err(e) = &reset {
-        eprintln!("  Warning: git reset failed for {}: {}", scenario_id, e);
-    }
-
-    // Discard working tree changes
-    let checkout = Command::new("git")
+    // Discard working tree changes from the scenario
+    let _ = Command::new("git")
         .arg("-C")
         .arg(dotfiles_dir)
         .arg("checkout")
@@ -194,20 +233,35 @@ fn revert_dotfiles(dotfiles_dir: &Path, scenario_id: &str) {
         .arg(".")
         .output();
 
-    if let Err(e) = &checkout {
-        eprintln!("  Warning: git checkout failed for {}: {}", scenario_id, e);
-    }
-
     // Clean untracked files the scenario may have created
-    let clean = Command::new("git")
+    let _ = Command::new("git")
         .arg("-C")
         .arg(dotfiles_dir)
         .arg("clean")
         .arg("-fd")
         .output();
 
-    if let Err(e) = &clean {
-        eprintln!("  Warning: git clean failed for {}: {}", scenario_id, e);
+    // Restore pre-existing work if we stashed it
+    if had_stash {
+        let pop = Command::new("git")
+            .arg("-C")
+            .arg(dotfiles_dir)
+            .arg("stash")
+            .arg("pop")
+            .output();
+
+        match &pop {
+            Ok(output) if output.status.success() => {
+                eprintln!("  Restored pre-existing uncommitted work from stash");
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                eprintln!("  Warning: git stash pop failed: {}", stderr);
+            }
+            Err(e) => {
+                eprintln!("  Warning: git stash pop failed: {}", e);
+            }
+        }
     }
 
     eprintln!("  Auto-reverted ~/dotfiles after scenario '{}'", scenario_id);
