@@ -347,6 +347,54 @@ fn format_score(score: &(usize, usize, usize)) -> String {
     format!("{}/{} ({:.0}%)", score.0, score.2, pct)
 }
 
+/// Extract SKILL.md content from LLM output that may contain preamble text,
+/// markdown fences, or both. Handles cases like:
+///   "Here is the updated SKILL.md:\n\n```markdown\n---\nname: ...\n```"
+///   "```\n---\nname: ...\n```"
+///   "---\nname: ..."
+fn extract_skill_md(raw: &str) -> String {
+    let trimmed = raw.trim();
+
+    // Try strip_fences first (handles case where output starts with ```)
+    let defenced = log_parser::strip_fences(trimmed);
+
+    // If strip_fences worked and result starts with ---, we're done
+    if defenced.starts_with("---") {
+        return defenced.to_string();
+    }
+
+    // Preamble text exists. Find the frontmatter start.
+    // Look for ``` fence containing ---, or bare --- on its own line.
+    // Handle: "preamble\n\n```markdown\n---\nname:...\n```"
+    // Handle: "preamble\n\n---\nname:..."
+
+    // First try to find a fenced block containing frontmatter
+    for fence_marker in ["```markdown\n", "```md\n", "```\n"] {
+        if let Some(fence_start) = defenced.find(fence_marker) {
+            let content_start = fence_start + fence_marker.len();
+            let after_fence = &defenced[content_start..];
+            // Strip trailing fence
+            let content = if let Some(end) = after_fence.rfind("\n```") {
+                &after_fence[..end]
+            } else {
+                after_fence.trim_end_matches("```")
+            };
+            let content = content.trim();
+            if content.starts_with("---") {
+                return content.to_string();
+            }
+        }
+    }
+
+    // No fences — look for bare --- on its own line after preamble
+    if let Some(pos) = defenced.find("\n---\n") {
+        return defenced[pos + 1..].to_string();
+    }
+
+    // Last resort: return as-is
+    defenced.to_string()
+}
+
 /// Ask the LLM to propose a single edit to SKILL.md to fix the worst failures
 fn propose_edit(current_skill_md: &str, failures: &[String]) -> Result<String> {
     let prompt = format!(
@@ -388,18 +436,7 @@ Output the updated SKILL.md:"#,
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let clean = log_parser::strip_fences(&stdout);
-
-    // Extract just the SKILL.md content — strip any preamble before the frontmatter
-    let result = if let Some(pos) = clean.find("\n---\n") {
-        // Preamble exists before frontmatter — skip to the --- line
-        clean[pos + 1..].to_string()
-    } else if clean.starts_with("---") {
-        clean.to_string()
-    } else {
-        // No frontmatter found — return as-is and let the caller decide
-        clean.to_string()
-    };
+    let result = extract_skill_md(&stdout);
 
     // Validate: must contain frontmatter with name and description
     if !result.contains("name:") || !result.contains("description:") {
