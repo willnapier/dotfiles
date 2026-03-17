@@ -34,8 +34,9 @@ pub fn draft_entries(
         input.push_str(&format!("\n--- Date: {} ---\n{}\n", date, detail));
     }
 
-    let mut child = Command::new("claude")
-        .args(["-p", DRAFT_PROMPT])
+    let mut child = Command::new("claude");
+    child.env_remove("ANTHROPIC_API_KEY");
+    let mut child = child.args(["-p", DRAFT_PROMPT])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

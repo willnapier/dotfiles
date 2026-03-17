@@ -17,6 +17,7 @@ Output ONLY a JSON array, no other text:
 
 pub fn extract_cards(input: &str) -> Result<Vec<Card>> {
     let mut cmd = Command::new("claude");
+    cmd.env_remove("ANTHROPIC_API_KEY");
     cmd.args(["-p", EXTRACTION_PROMPT]);
     cmd.stdin(std::process::Stdio::piped());
     cmd.stdout(std::process::Stdio::piped());
