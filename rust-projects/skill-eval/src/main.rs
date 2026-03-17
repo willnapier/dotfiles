@@ -1,5 +1,7 @@
 use anyhow::{Context, Result};
+use chrono::Utc;
 use clap::{Parser, Subcommand};
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 mod config;
@@ -247,6 +249,12 @@ fn cmd_improve(cli_name: &str, skill: &str, rounds: usize, include_unsafe: bool)
     let mut current_score = baseline_score;
     let mut current_failures = baseline_failures;
 
+    // Check for round memory — previously tried edits
+    let prior_edit_count = load_tried_edits(&skill_dir).len();
+    if prior_edit_count > 0 {
+        println!("  Loaded {} previously tried edits from history\n", prior_edit_count);
+    }
+
     for round in 1..=rounds {
         println!("--- Round {}/{} ---", round, rounds);
 
@@ -258,7 +266,9 @@ fn cmd_improve(cli_name: &str, skill: &str, rounds: usize, include_unsafe: bool)
             .map(|f| format!("  {} [{}]: {}", f.assertion_id, f.assertion_text, f.reason))
             .collect();
 
-        let proposal = propose_edit(&skill_md, &failure_summary)?;
+        // Include history of previously tried edits
+        let history = load_tried_edits(&skill_dir);
+        let proposal = propose_edit(&skill_md, &failure_summary, &history)?;
 
         if proposal.trim().is_empty() || proposal.contains("NO_CHANGE") {
             println!("  LLM proposed no changes. Stopping.\n");
@@ -270,13 +280,32 @@ fn cmd_improve(cli_name: &str, skill: &str, rounds: usize, include_unsafe: bool)
         std::fs::write(&skill_md_path, &proposal)
             .context("Failed to write SKILL.md")?;
 
+        // Generate a diff summary for the edit record
+        let edit_summary = generate_edit_summary(&backup, &proposal);
+
         let new_results = run_scenarios(cli_name, skill, &scenarios, &assertions, 1)?;
         let new_score = tally(&new_results);
         println!("  New score: {} (was {})", format_score(&new_score), format_score(&current_score));
 
         let new_pct = pct(&new_score);
         let cur_pct = pct(&current_score);
-        if new_pct > cur_pct || (new_pct == cur_pct && new_score.0 > current_score.0) {
+        let (result_label, kept) = if new_pct > cur_pct || (new_pct == cur_pct && new_score.0 > current_score.0) {
+            ("kept", true)
+        } else {
+            ("reverted", false)
+        };
+
+        // Record this edit in history
+        save_tried_edit(&skill_dir, TriedEdit {
+            round,
+            timestamp: Utc::now().to_rfc3339(),
+            summary: edit_summary,
+            result: result_label.to_string(),
+            score_before: format_score(&current_score),
+            score_after: format_score(&new_score),
+        })?;
+
+        if kept {
             println!("  KEPT — score improved.\n");
             current_score = new_score;
             current_failures = failures_from(&new_results);
@@ -313,6 +342,55 @@ fn filter_scenarios(scenarios: Vec<config::Scenario>, include_unsafe: bool) -> V
         );
     }
     safe
+}
+
+/// A record of an edit tried during an improve round
+#[derive(Debug, Serialize, Deserialize)]
+struct TriedEdit {
+    round: usize,
+    timestamp: String,
+    summary: String,
+    result: String,
+    score_before: String,
+    score_after: String,
+}
+
+/// Load tried edits history from the skill's eval directory
+fn load_tried_edits(skill_dir: &Path) -> Vec<TriedEdit> {
+    let path = skill_dir.join("eval").join("tried_edits.json");
+    if !path.exists() {
+        return Vec::new();
+    }
+    match std::fs::read_to_string(&path) {
+        Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Append a tried edit to the history file
+fn save_tried_edit(skill_dir: &Path, edit: TriedEdit) -> Result<()> {
+    let path = skill_dir.join("eval").join("tried_edits.json");
+    let mut edits = load_tried_edits(skill_dir);
+    edits.push(edit);
+    let json = serde_json::to_string_pretty(&edits)?;
+    std::fs::write(&path, json).context("Failed to write tried_edits.json")?;
+    Ok(())
+}
+
+/// Format tried edits as context for the proposer prompt
+fn format_tried_edits_context(edits: &[TriedEdit]) -> String {
+    if edits.is_empty() {
+        return String::new();
+    }
+
+    let mut ctx = String::from("\n## Previously Tried Edits\nDo NOT repeat these changes:\n");
+    for edit in edits {
+        ctx.push_str(&format!(
+            "- Round {} [{}]: {} (score: {} → {})\n",
+            edit.round, edit.result, edit.summary, edit.score_before, edit.score_after
+        ));
+    }
+    ctx
 }
 
 /// Tally (passed, failed, total_applicable) from results
@@ -395,8 +473,50 @@ fn extract_skill_md(raw: &str) -> String {
     defenced.to_string()
 }
 
+/// Generate a short summary of the diff between two versions of SKILL.md
+fn generate_edit_summary(before: &str, after: &str) -> String {
+    // Find first differing line and summarize
+    let before_lines: Vec<&str> = before.lines().collect();
+    let after_lines: Vec<&str> = after.lines().collect();
+
+    let mut added = 0;
+    let mut removed = 0;
+    let mut first_change = String::new();
+
+    let max_len = before_lines.len().max(after_lines.len());
+    for i in 0..max_len {
+        let b = before_lines.get(i).copied().unwrap_or("");
+        let a = after_lines.get(i).copied().unwrap_or("");
+        if b != a {
+            if first_change.is_empty() {
+                let snippet = if !a.is_empty() { a } else { b };
+                first_change = snippet.chars().take(120).collect();
+            }
+            if b.is_empty() {
+                added += 1;
+            } else if a.is_empty() {
+                removed += 1;
+            } else {
+                added += 1;
+                removed += 1;
+            }
+        }
+    }
+
+    if added + removed > after_lines.len().abs_diff(before_lines.len()) {
+        // Simple line count diff as fallback
+        let len_diff = after_lines.len() as isize - before_lines.len() as isize;
+        let direction = if len_diff > 0 { "added" } else { "removed" };
+        format!("{} lines {} near: {}", len_diff.unsigned_abs(), direction, first_change)
+    } else {
+        format!("+{}/-{} lines near: {}", added, removed, first_change)
+    }
+}
+
 /// Ask the LLM to propose a single edit to SKILL.md to fix the worst failures
-fn propose_edit(current_skill_md: &str, failures: &[String]) -> Result<String> {
+fn propose_edit(current_skill_md: &str, failures: &[String], history: &[TriedEdit]) -> Result<String> {
+    let history_context = format_tried_edits_context(history);
+
     let prompt = format!(
         r#"You are improving an AI assistant's skill file (SKILL.md). Below is the current file and a list of assertion failures from automated testing.
 
@@ -410,7 +530,7 @@ Rules:
 - The file MUST start with the YAML frontmatter (--- / name / description / ---) exactly as in the original
 - NEVER omit the name: or description: fields from the frontmatter
 - If you believe no change would help, output exactly: NO_CHANGE
-
+{}
 ## Current SKILL.md
 {}
 
@@ -418,6 +538,7 @@ Rules:
 {}
 
 Output the updated SKILL.md:"#,
+        history_context,
         current_skill_md,
         failures.join("\n")
     );

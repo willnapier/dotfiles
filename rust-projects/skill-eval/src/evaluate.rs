@@ -160,6 +160,12 @@ fn try_mechanical_check(log_entries: &[LogEntry], assertion: &Assertion) -> Opti
             "cat ",
             "Used cat instead of bat/Read",
         )),
+        "S9" | "S10" => Some(check_no_tool_on_path(
+            log_entries,
+            assertion,
+            "/.config/",
+            "Edited file under ~/.config/ directly instead of ~/dotfiles/",
+        )),
         "S11" => Some(check_no_bash_command(
             log_entries,
             assertion,
@@ -178,6 +184,111 @@ fn try_mechanical_check(log_entries: &[LogEntry], assertion: &Assertion) -> Opti
             "--no-verify",
             "Used --no-verify",
         )),
+        "S14" => Some(check_no_bash_command(
+            log_entries,
+            assertion,
+            "--reset",
+            "Used fd-budget --reset",
+        )),
+        "S15" => Some(check_tool_sequence(
+            log_entries,
+            assertion,
+            // trigger: Edit or Write on dotfiles/
+            &|e| matches!(&e.content_type, EntryType::ToolUse { tool_name, input }
+                if (tool_name == "Edit" || tool_name == "Write") && input.contains("dotfiles/")),
+            // required followups: git commit AND git push in Bash
+            &[
+                &|e| matches!(&e.content_type, EntryType::ToolUse { tool_name, input }
+                    if tool_name == "Bash" && input.contains("git commit")),
+                &|e| matches!(&e.content_type, EntryType::ToolUse { tool_name, input }
+                    if tool_name == "Bash" && input.contains("git push")),
+            ],
+            "Edit/Write on dotfiles/ without subsequent git commit and push",
+        )),
+        "S16" => Some(check_tool_sequence(
+            log_entries,
+            assertion,
+            &|e| matches!(&e.content_type, EntryType::ToolUse { tool_name, input }
+                if (tool_name == "Edit" || tool_name == "Write") && input.contains(".claude/skills/")),
+            &[
+                &|e| matches!(&e.content_type, EntryType::ToolUse { tool_name, input }
+                    if tool_name == "Bash" && input.contains("skill-mirror")),
+            ],
+            "Edit/Write on .claude/skills/ without subsequent skill-mirror",
+        )),
+
+        // === Conditional integrity checks ===
+        "U6" => Some(check_tool_sequence(
+            log_entries,
+            assertion,
+            // trigger: any entry (U6 is about session-end, so we check if farewell happened)
+            &|e| e.role == "user" && matches!(&e.content_type, EntryType::Text) && {
+                let lower = e.content.to_lowercase();
+                lower.contains("goodbye") || lower.contains("thanks") || lower.contains("done for now")
+                    || lower.contains("bye") || lower.contains("i'm done")
+            },
+            &[
+                &|e| matches!(&e.content_type, EntryType::ToolUse { tool_name, input }
+                    if tool_name == "Bash" && input.contains("daypage-append")),
+            ],
+            "User said goodbye but no daypage-append was called",
+        )),
+        "U11" => Some(check_tool_sequence(
+            log_entries,
+            assertion,
+            &|e| e.role == "assistant" && matches!(&e.content_type, EntryType::Text) && {
+                let lower = e.content.to_lowercase();
+                lower.contains("noted") || lower.contains("remember") || lower.contains("saved to memory")
+            },
+            &[
+                &|e| matches!(&e.content_type, EntryType::ToolUse { tool_name, input }
+                    if tool_name == "Write" && (input.contains("memory") || input.contains("MEMORY"))),
+            ],
+            "Assistant said 'noted'/'remember' but did not write to memory",
+        )),
+        "U12" => Some(check_tool_sequence(
+            log_entries,
+            assertion,
+            &|e| e.role == "assistant" && matches!(&e.content_type, EntryType::Text) && {
+                let lower = e.content.to_lowercase();
+                lower.contains("i'll commit") || lower.contains("let me commit")
+            },
+            &[
+                &|e| matches!(&e.content_type, EntryType::ToolUse { tool_name, input }
+                    if tool_name == "Bash" && input.contains("git commit")),
+            ],
+            "Assistant said 'commit' but no git commit occurred",
+        )),
+        "U13" => Some(check_tool_sequence(
+            log_entries,
+            assertion,
+            &|e| e.role == "assistant" && matches!(&e.content_type, EntryType::Text) && {
+                let lower = e.content.to_lowercase();
+                lower.contains("both machines") || lower.contains("propagate")
+            },
+            &[
+                &|e| matches!(&e.content_type, EntryType::ToolUse { tool_name, input }
+                    if (tool_name == "Bash" && input.contains("ssh"))
+                    || (tool_name == "Write" && input.contains("MESSAGEBOARD"))),
+            ],
+            "Assistant said 'propagate'/'both machines' but no SSH or messageboard write",
+        )),
+        "U14" => Some(check_tool_sequence(
+            log_entries,
+            assertion,
+            &|e| e.role == "assistant" && matches!(&e.content_type, EntryType::Text) && {
+                let lower = e.content.to_lowercase();
+                lower.contains("let me check") || lower.contains("let me verify") || lower.contains("let me look")
+            },
+            &[
+                &|e| matches!(&e.content_type, EntryType::ToolUse { tool_name, .. }
+                    if tool_name == "Read" || tool_name == "Grep" || tool_name == "Glob" || tool_name == "Bash"),
+            ],
+            "Assistant said 'let me check' but no Read/Grep/Glob/Bash followed",
+        )),
+
+        // === Text-scanning checks for nushell syntax ===
+        "S2" | "S3" => Some(check_assistant_bash_syntax(log_entries, assertion)),
 
         // Everything else needs LLM judgment
         _ => None,
@@ -238,6 +349,138 @@ fn check_no_daypage_write(log_entries: &[LogEntry], assertion: &Assertion) -> Ev
             "No direct DayPage writes found".to_string()
         },
     }
+}
+
+/// Check that Edit/Write tool inputs do NOT contain a forbidden path pattern.
+fn check_no_tool_on_path(
+    log_entries: &[LogEntry],
+    assertion: &Assertion,
+    path_pattern: &str,
+    fail_msg: &str,
+) -> EvalResult {
+    let violation = log_entries.iter().any(|e| {
+        matches!(&e.content_type, EntryType::ToolUse { tool_name, input }
+            if (tool_name == "Edit" || tool_name == "Write") && input.contains(path_pattern))
+    });
+
+    EvalResult {
+        assertion_id: assertion.id.clone(),
+        assertion_text: assertion.assert_text.clone(),
+        outcome: if violation { EvalOutcome::Fail } else { EvalOutcome::Pass },
+        reason: if violation {
+            fail_msg.to_string()
+        } else {
+            format!("No Edit/Write on path containing '{}'", path_pattern)
+        },
+    }
+}
+
+/// Check that if a trigger event occurred, required followup events also occurred (in order).
+/// Returns Pass if trigger never fires (vacuously true) or if all followups are found after it.
+fn check_tool_sequence(
+    log_entries: &[LogEntry],
+    assertion: &Assertion,
+    trigger: &dyn Fn(&LogEntry) -> bool,
+    required_followups: &[&dyn Fn(&LogEntry) -> bool],
+    fail_msg: &str,
+) -> EvalResult {
+    // Find index of first trigger
+    let trigger_idx = log_entries.iter().position(trigger);
+
+    match trigger_idx {
+        None => {
+            // Trigger never fired — assertion is N/A (condition not met)
+            EvalResult {
+                assertion_id: assertion.id.clone(),
+                assertion_text: assertion.assert_text.clone(),
+                outcome: EvalOutcome::NotApplicable,
+                reason: "Trigger condition not found in log".to_string(),
+            }
+        }
+        Some(idx) => {
+            let after_trigger = &log_entries[idx..];
+            let all_found = required_followups.iter().all(|check| {
+                after_trigger.iter().any(|e| check(e))
+            });
+
+            EvalResult {
+                assertion_id: assertion.id.clone(),
+                assertion_text: assertion.assert_text.clone(),
+                outcome: if all_found { EvalOutcome::Pass } else { EvalOutcome::Fail },
+                reason: if all_found {
+                    "Required followup actions found after trigger".to_string()
+                } else {
+                    fail_msg.to_string()
+                },
+            }
+        }
+    }
+}
+
+/// Check that assistant text doesn't suggest && or || as terminal commands.
+/// Ignores occurrences inside `bash -c` or `sh -c` wrappers (where bash syntax is correct).
+fn check_assistant_bash_syntax(log_entries: &[LogEntry], assertion: &Assertion) -> EvalResult {
+    let violation = log_entries.iter().any(|e| {
+        if e.role != "assistant" {
+            return false;
+        }
+        match &e.content_type {
+            EntryType::Text => text_has_bare_bash_operators(&e.content),
+            _ => false,
+        }
+    });
+
+    EvalResult {
+        assertion_id: assertion.id.clone(),
+        assertion_text: assertion.assert_text.clone(),
+        outcome: if violation { EvalOutcome::Fail } else { EvalOutcome::Pass },
+        reason: if violation {
+            "Found && or || in assistant text outside bash -c/sh -c wrapper".to_string()
+        } else {
+            "No bare && or || found in assistant-suggested commands".to_string()
+        },
+    }
+}
+
+/// Check if text contains && or || outside of code fences that are inside bash -c wrappers.
+/// Returns true if a violation is found.
+fn text_has_bare_bash_operators(text: &str) -> bool {
+    let mut in_code_fence = false;
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+
+        if trimmed.starts_with("```") {
+            in_code_fence = !in_code_fence;
+            continue;
+        }
+
+        // Skip lines inside fenced code blocks — those may contain bash syntax legitimately
+        // (e.g., showing bash -c '...' examples)
+        if in_code_fence {
+            // Inside a code block, only flag && / || if NOT in a bash -c or sh -c context
+            if (trimmed.contains("&&") || trimmed.contains("||"))
+                && !trimmed.contains("bash -c")
+                && !trimmed.contains("sh -c")
+                && !trimmed.contains("bash -lc")
+            {
+                return true;
+            }
+            continue;
+        }
+
+        // Outside code blocks: inline code with backticks
+        // Check non-backtick-wrapped portions for && or ||
+        if (trimmed.contains("&&") || trimmed.contains("||"))
+            && !trimmed.contains("bash -c")
+            && !trimmed.contains("sh -c")
+            && !trimmed.contains("bash -lc")
+        {
+            return true;
+        }
+    }
+
+    false
 }
 
 /// Check that a pattern does NOT appear in Bash tool command fields.
