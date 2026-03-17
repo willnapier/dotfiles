@@ -294,6 +294,7 @@ Respond with JSON only, no markdown fencing:"#,
 
     // Call claude -p as the evaluator
     let output = Command::new("claude")
+        .env_remove("ANTHROPIC_API_KEY")
         .arg("-p")
         .arg(&prompt)
         .arg("--dangerously-skip-permissions")

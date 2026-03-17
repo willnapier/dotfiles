@@ -423,6 +423,7 @@ Output the updated SKILL.md:"#,
     );
 
     let output = std::process::Command::new("claude")
+        .env_remove("ANTHROPIC_API_KEY")
         .arg("-p")
         .arg(&prompt)
         .arg("--dangerously-skip-permissions")

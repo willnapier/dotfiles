@@ -67,6 +67,8 @@ fn run_claude(skill: &str, scenario: &Scenario, sandbox_dir: Option<&Path>) -> R
     eprintln!("  Invoking: claude -p \"{}\" ...", scenario.prompt);
 
     let mut cmd = Command::new("claude");
+    // Clear ANTHROPIC_API_KEY so claude uses OAuth/Max, not the billed API.
+    cmd.env_remove("ANTHROPIC_API_KEY");
     cmd.arg("-p")
         .arg(&prompt)
         .arg("--output-format")
