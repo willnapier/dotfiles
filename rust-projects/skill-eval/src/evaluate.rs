@@ -317,6 +317,25 @@ fn try_mechanical_check(log_entries: &[LogEntry], assertion: &Assertion) -> Opti
             log_entries, assertion, "Clinical/clients/",
             "Used Write (full overwrite) on client file instead of Edit (append)",
         )),
+        "C9" => Some(check_assistant_text_contains(
+            log_entries,
+            assertion,
+            "Risk:",
+            "Enhanced note missing Risk: line",
+        )),
+        "C10" => Some(check_assistant_text_contains(
+            log_entries,
+            assertion,
+            "Formulation:",
+            "Insurer note missing Formulation: line",
+        )),
+        "C11" => Some(check_multiple_edits_on_path(
+            log_entries,
+            assertion,
+            "Clinical/clients/",
+            2,
+            "Only one Edit on client file — session count not incremented (expected 2+ edits)",
+        )),
         "C12" => Some(check_command_run(log_entries, assertion, "clinic-attendance-report")),
 
         // Everything else needs LLM judgment
@@ -449,6 +468,57 @@ fn check_no_write_tool_on_path(
             fail_msg.to_string()
         } else {
             format!("No Write (overwrite) on path containing '{}'", path_pattern)
+        },
+    }
+}
+
+/// Check that assistant text contains a required pattern (case-insensitive substring match).
+fn check_assistant_text_contains(
+    log_entries: &[LogEntry],
+    assertion: &Assertion,
+    pattern: &str,
+    fail_msg: &str,
+) -> EvalResult {
+    let found = log_entries.iter().any(|e| {
+        e.role == "assistant"
+            && matches!(&e.content_type, EntryType::Text)
+            && e.content.contains(pattern)
+    });
+
+    EvalResult {
+        assertion_id: assertion.id.clone(),
+        assertion_text: assertion.assert_text.clone(),
+        outcome: if found { EvalOutcome::Pass } else { EvalOutcome::Fail },
+        reason: if found {
+            format!("Found '{}' in assistant text", pattern)
+        } else {
+            fail_msg.to_string()
+        },
+    }
+}
+
+/// Check that Edit tool was used on a path pattern at least N times.
+/// Used for C11: after writing a note, the session count header should also be edited.
+fn check_multiple_edits_on_path(
+    log_entries: &[LogEntry],
+    assertion: &Assertion,
+    path_pattern: &str,
+    min_count: usize,
+    fail_msg: &str,
+) -> EvalResult {
+    let count = log_entries.iter().filter(|e| {
+        matches!(&e.content_type, EntryType::ToolUse { tool_name, input }
+            if tool_name == "Edit" && input.contains(path_pattern))
+    }).count();
+
+    EvalResult {
+        assertion_id: assertion.id.clone(),
+        assertion_text: assertion.assert_text.clone(),
+        outcome: if count >= min_count { EvalOutcome::Pass } else { EvalOutcome::Fail },
+        reason: if count >= min_count {
+            format!("Found {} Edit calls on '{}' (needed {})", count, path_pattern, min_count)
+        } else {
+            fail_msg.to_string()
         },
     }
 }
