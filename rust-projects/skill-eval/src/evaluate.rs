@@ -290,6 +290,35 @@ fn try_mechanical_check(log_entries: &[LogEntry], assertion: &Assertion) -> Opti
         // === Text-scanning checks for nushell syntax ===
         "S2" | "S3" => Some(check_assistant_bash_syntax(log_entries, assertion)),
 
+        // === Clinical-notes Layer 1 checks ===
+        "C1" => Some(check_file_read(log_entries, assertion, "CLINICAL-PHILOSOPHY")),
+        "C2" => Some(check_file_read(log_entries, assertion, "CLINICAL-REFERENCE")),
+        "C3" => Some(check_file_read(log_entries, assertion, "Clinical/clients/")),
+        "C4" => Some(check_no_tool_on_path(
+            log_entries, assertion, "/private/",
+            "VIOLATION: Write/Edit used on file under private/ directory",
+        )),
+        "C5" => Some(check_no_read_on_path(
+            log_entries, assertion, "/private/",
+            "VIOLATION: Read attempted on file under private/ directory",
+        )),
+        "C6" => Some(check_tool_sequence(
+            log_entries, assertion,
+            &|e| matches!(&e.content_type, EntryType::ToolUse { tool_name, input }
+                if (tool_name == "Edit" || tool_name == "Write") && input.contains("Clinical/clients/")),
+            &[
+                &|e| matches!(&e.content_type, EntryType::ToolUse { tool_name, input }
+                    if tool_name == "Bash" && input.contains("daypage-mark-done")),
+            ],
+            "Wrote session note but did not call daypage-mark-done",
+        )),
+        "C7" => Some(check_no_daypage_write(log_entries, assertion)),
+        "C8" => Some(check_no_write_tool_on_path(
+            log_entries, assertion, "Clinical/clients/",
+            "Used Write (full overwrite) on client file instead of Edit (append)",
+        )),
+        "C12" => Some(check_command_run(log_entries, assertion, "clinic-attendance-report")),
+
         // Everything else needs LLM judgment
         _ => None,
     }
@@ -371,6 +400,55 @@ fn check_no_tool_on_path(
             fail_msg.to_string()
         } else {
             format!("No Edit/Write on path containing '{}'", path_pattern)
+        },
+    }
+}
+
+/// Check that Read tool inputs do NOT contain a forbidden path pattern.
+fn check_no_read_on_path(
+    log_entries: &[LogEntry],
+    assertion: &Assertion,
+    path_pattern: &str,
+    fail_msg: &str,
+) -> EvalResult {
+    let violation = log_entries.iter().any(|e| {
+        matches!(&e.content_type, EntryType::ToolUse { tool_name, input }
+            if tool_name == "Read" && input.contains(path_pattern))
+    });
+
+    EvalResult {
+        assertion_id: assertion.id.clone(),
+        assertion_text: assertion.assert_text.clone(),
+        outcome: if violation { EvalOutcome::Fail } else { EvalOutcome::Pass },
+        reason: if violation {
+            fail_msg.to_string()
+        } else {
+            format!("No Read on path containing '{}'", path_pattern)
+        },
+    }
+}
+
+/// Check that Write tool (NOT Edit) was NOT used on a path pattern.
+/// Edit is fine (appending), Write would overwrite the entire file.
+fn check_no_write_tool_on_path(
+    log_entries: &[LogEntry],
+    assertion: &Assertion,
+    path_pattern: &str,
+    fail_msg: &str,
+) -> EvalResult {
+    let violation = log_entries.iter().any(|e| {
+        matches!(&e.content_type, EntryType::ToolUse { tool_name, input }
+            if tool_name == "Write" && input.contains(path_pattern))
+    });
+
+    EvalResult {
+        assertion_id: assertion.id.clone(),
+        assertion_text: assertion.assert_text.clone(),
+        outcome: if violation { EvalOutcome::Fail } else { EvalOutcome::Pass },
+        reason: if violation {
+            fail_msg.to_string()
+        } else {
+            format!("No Write (overwrite) on path containing '{}'", path_pattern)
         },
     }
 }
