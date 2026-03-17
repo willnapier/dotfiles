@@ -224,8 +224,9 @@ fn try_mechanical_check(log_entries: &[LogEntry], assertion: &Assertion) -> Opti
             // trigger: any entry (U6 is about session-end, so we check if farewell happened)
             &|e| e.role == "user" && matches!(&e.content_type, EntryType::Text) && {
                 let lower = e.content.to_lowercase();
-                lower.contains("goodbye") || lower.contains("thanks") || lower.contains("done for now")
-                    || lower.contains("bye") || lower.contains("i'm done")
+                lower.contains("goodbye") || lower.contains("thank") || lower.contains("done for now")
+                    || lower.contains("bye") || lower.contains("i'm done") || lower.contains("that's all")
+                    || lower.contains("cheers") || lower.contains("log this") || lower.contains("close session")
             },
             &[
                 &|e| matches!(&e.content_type, EntryType::ToolUse { tool_name, input }
