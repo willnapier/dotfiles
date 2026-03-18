@@ -8,6 +8,7 @@ mod config;
 mod evaluate;
 mod invoke;
 mod log_parser;
+mod propose;
 mod report;
 
 #[derive(Parser)]
@@ -60,6 +61,29 @@ enum Commands {
         skill: String,
     },
 
+    /// Mine structural patterns from LLM evaluations to propose mechanical checks
+    ProposeChecks {
+        /// AI CLI to use
+        #[arg(long, default_value = "claude")]
+        cli: String,
+
+        /// Skill name
+        #[arg(long)]
+        skill: String,
+
+        /// Assertion ID to analyze (e.g. CQ2)
+        #[arg(long)]
+        assertion: String,
+
+        /// Number of samples to collect
+        #[arg(long, default_value = "10")]
+        samples: usize,
+
+        /// Include scenarios with side effects (SSH, skill edits)
+        #[arg(long)]
+        include_unsafe: bool,
+    },
+
     /// Run the self-improvement loop (Karpathy autoresearch)
     Improve {
         /// AI CLI to use
@@ -93,6 +117,13 @@ fn main() -> Result<()> {
         } => cmd_run(&cli_name, &skill, scenario.as_deref(), runs, include_unsafe),
         Commands::Score { log, skill } => cmd_score(&log, &skill),
         Commands::List { skill } => cmd_list(&skill),
+        Commands::ProposeChecks {
+            cli: cli_name,
+            skill,
+            assertion,
+            samples,
+            include_unsafe,
+        } => cmd_propose_checks(&cli_name, &skill, &assertion, samples, include_unsafe),
         Commands::Improve {
             cli: cli_name,
             skill,
@@ -217,6 +248,244 @@ fn cmd_list(skill: &str) -> Result<()> {
     for s in &scenarios {
         println!("  {:>20}  exercises: {:?}", s.id, s.exercises);
     }
+
+    Ok(())
+}
+
+fn cmd_propose_checks(
+    cli_name: &str,
+    skill: &str,
+    assertion_id: &str,
+    samples: usize,
+    include_unsafe: bool,
+) -> Result<()> {
+    let skill_dir = config::skill_dir(skill)?;
+    let assertions = config::load_all_assertions(&skill_dir)?;
+    let scenarios = filter_scenarios(config::load_scenarios(&skill_dir)?, include_unsafe);
+
+    // Find the target assertion
+    let target = assertions
+        .iter()
+        .find(|a| a.id == assertion_id)
+        .with_context(|| format!("Assertion '{}' not found", assertion_id))?;
+
+    // Check if already mechanicalized
+    let empty_log: Vec<log_parser::LogEntry> = vec![];
+    if evaluate::try_mechanical_check(&empty_log, target).is_some() {
+        println!(
+            "{} is already mechanicalized — nothing to propose.",
+            assertion_id
+        );
+        return Ok(());
+    }
+
+    // Find scenarios that exercise this assertion
+    let relevant_scenarios: Vec<_> = scenarios
+        .iter()
+        .filter(|s| s.exercises.contains(&assertion_id.to_string()))
+        .collect();
+
+    if relevant_scenarios.is_empty() {
+        anyhow::bail!("No scenarios exercise assertion '{}'", assertion_id);
+    }
+
+    println!("=== PROPOSE CHECKS: {} ===", assertion_id);
+    println!("  Assertion: {}", target.assert_text);
+    println!(
+        "  Scenarios: {:?}",
+        relevant_scenarios
+            .iter()
+            .map(|s| &s.id)
+            .collect::<Vec<_>>()
+    );
+    println!("  Collecting {} samples...\n", samples);
+
+    // Collect corpus: run scenarios, LLM-evaluate target assertion each time
+    let mut corpus: Vec<propose::CorpusSample> = Vec::new();
+    let target_refs = vec![target];
+
+    for i in 0..samples {
+        let scenario = relevant_scenarios[i % relevant_scenarios.len()];
+        println!(
+            "  Sample {}/{} (scenario: {})...",
+            i + 1,
+            samples,
+            scenario.id
+        );
+
+        let log_entries = invoke::run_scenario(cli_name, skill, scenario)?;
+        let results = evaluate::score(&log_entries, &target_refs)?;
+
+        if let Some(result) = results.first() {
+            let label = match result.outcome {
+                evaluate::EvalOutcome::Pass => "PASS",
+                evaluate::EvalOutcome::Fail => "FAIL",
+                evaluate::EvalOutcome::NotApplicable => "N/A",
+            };
+            println!("    {} — {}", label, result.reason);
+
+            corpus.push(propose::CorpusSample {
+                entries: log_entries,
+                verdict: result.outcome.clone(),
+                reason: result.reason.clone(),
+            });
+        }
+    }
+
+    // Filter to applicable samples only
+    let applicable: Vec<&propose::CorpusSample> = corpus
+        .iter()
+        .filter(|s| s.verdict != evaluate::EvalOutcome::NotApplicable)
+        .collect();
+
+    let pass_count = applicable
+        .iter()
+        .filter(|s| s.verdict == evaluate::EvalOutcome::Pass)
+        .count();
+    let fail_count = applicable
+        .iter()
+        .filter(|s| s.verdict == evaluate::EvalOutcome::Fail)
+        .count();
+
+    println!(
+        "\n  Corpus: {} PASS, {} FAIL (out of {} applicable)",
+        pass_count,
+        fail_count,
+        applicable.len()
+    );
+
+    if pass_count == 0 || fail_count == 0 {
+        println!("  Need both PASS and FAIL examples to find a discriminating pattern.");
+        println!(
+            "  All applicable samples were {}. Try more samples or different scenarios.",
+            if pass_count == 0 { "FAIL" } else { "PASS" }
+        );
+        return Ok(());
+    }
+
+    // Build summaries for the analyzer (cap at 5 per class to fit context)
+    let pass_summaries: Vec<String> = corpus
+        .iter()
+        .filter(|s| s.verdict == evaluate::EvalOutcome::Pass)
+        .take(5)
+        .map(|s| evaluate::build_log_summary(&s.entries))
+        .collect();
+    let fail_summaries: Vec<String> = corpus
+        .iter()
+        .filter(|s| s.verdict == evaluate::EvalOutcome::Fail)
+        .take(5)
+        .map(|s| evaluate::build_log_summary(&s.entries))
+        .collect();
+
+    println!("\n  Analyzing patterns...");
+    let prompt = propose::build_analysis_prompt(target, &pass_summaries, &fail_summaries);
+
+    let output = std::process::Command::new("claude")
+        .env_remove("ANTHROPIC_API_KEY")
+        .arg("-p")
+        .arg(&prompt)
+        .arg("--dangerously-skip-permissions")
+        .arg("--no-session-persistence")
+        .output()
+        .context("Failed to invoke analyzer LLM")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("Analyzer LLM failed: {}", stderr);
+    }
+
+    let response = String::from_utf8_lossy(&output.stdout);
+    let proposal = propose::parse_proposal(&response, assertion_id)?;
+
+    println!("\n  Proposed check:");
+    println!("    Description: {}", proposal.description);
+    println!("    Rationale: {}", proposal.rationale);
+    println!(
+        "    Spec: {}",
+        serde_json::to_string(&proposal.spec).unwrap_or_default()
+    );
+
+    if matches!(proposal.spec, propose::CheckSpec::Custom { .. }) {
+        println!("\n  Result: No mechanical check possible (subjective/quality judgment).");
+        println!("  Assertion stays with LLM evaluator.");
+        save_proposal(&skill_dir, &proposal, None)?;
+    } else {
+        println!("\n  Validating against {} samples...", applicable.len());
+        let validation = propose::validate(&proposal, &corpus);
+
+        println!(
+            "  Agreement: {}/{} ({:.0}%)",
+            validation.agreements,
+            validation.agreements + validation.disagreements,
+            validation.agreement_rate * 100.0
+        );
+
+        for detail in &validation.details {
+            if !detail.agrees {
+                println!(
+                    "    Sample {}: mechanical={} llm={}",
+                    detail.sample_index + 1,
+                    detail.mechanical,
+                    detail.llm
+                );
+            }
+        }
+
+        if validation.agreement_rate >= 0.9 {
+            println!("\n  Agreement >= 90% — this check is a viable replacement.");
+            println!(
+                "  Add to evaluate.rs try_mechanical_check() for assertion {}.",
+                assertion_id
+            );
+        } else {
+            println!("\n  Agreement < 90% — check is not reliable enough.");
+            println!("  Assertion stays with LLM evaluator.");
+        }
+
+        save_proposal(&skill_dir, &proposal, Some(&validation))?;
+    }
+
+    Ok(())
+}
+
+fn save_proposal(
+    skill_dir: &Path,
+    proposal: &propose::ProposedCheck,
+    validation: Option<&propose::ValidationResult>,
+) -> Result<()> {
+    let path = skill_dir.join("eval").join("proposed_checks.json");
+
+    let mut proposals: Vec<serde_json::Value> = if path.exists() {
+        let content = std::fs::read_to_string(&path)?;
+        serde_json::from_str(&content).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    let mut entry = serde_json::json!({
+        "assertion_id": proposal.assertion_id,
+        "spec": proposal.spec,
+        "description": proposal.description,
+        "rationale": proposal.rationale,
+        "timestamp": Utc::now().to_rfc3339(),
+    });
+
+    if let Some(v) = validation {
+        entry["agreement_rate"] =
+            serde_json::json!(format!("{:.0}%", v.agreement_rate * 100.0));
+        entry["agreements"] = serde_json::json!(v.agreements);
+        entry["disagreements"] = serde_json::json!(v.disagreements);
+    }
+
+    // Replace existing proposal for same assertion
+    proposals.retain(|p| {
+        p.get("assertion_id").and_then(|a| a.as_str()) != Some(&proposal.assertion_id)
+    });
+    proposals.push(entry);
+
+    let json = serde_json::to_string_pretty(&proposals)?;
+    std::fs::write(&path, json).context("Failed to write proposed_checks.json")?;
+    println!("  Saved to eval/proposed_checks.json");
 
     Ok(())
 }

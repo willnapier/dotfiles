@@ -110,7 +110,7 @@ fn condition_met(log_entries: &[LogEntry], condition: &str) -> bool {
 }
 
 /// Try to evaluate an assertion purely mechanically (no LLM needed)
-fn try_mechanical_check(log_entries: &[LogEntry], assertion: &Assertion) -> Option<EvalResult> {
+pub(crate) fn try_mechanical_check(log_entries: &[LogEntry], assertion: &Assertion) -> Option<EvalResult> {
     let id = &assertion.id;
 
     match id.as_str() {
@@ -595,7 +595,7 @@ fn check_assistant_bash_syntax(log_entries: &[LogEntry], assertion: &Assertion) 
 
 /// Check if text contains && or || outside of code fences that are inside bash -c wrappers.
 /// Returns true if a violation is found.
-fn text_has_bare_bash_operators(text: &str) -> bool {
+pub(crate) fn text_has_bare_bash_operators(text: &str) -> bool {
     let mut in_code_fence = false;
 
     for line in text.lines() {
@@ -761,7 +761,7 @@ fn truncate_utf8(s: &str, max_bytes: usize) -> &str {
     &s[..end]
 }
 
-fn build_log_summary(entries: &[LogEntry]) -> String {
+pub(crate) fn build_log_summary(entries: &[LogEntry]) -> String {
     let mut summary = String::new();
 
     for entry in entries {
