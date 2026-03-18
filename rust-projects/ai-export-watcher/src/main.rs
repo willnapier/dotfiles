@@ -103,3 +103,34 @@ fn process_export(path: &Path) -> Result<()> {
     println!();
     Ok(())
 }
+
+fn process_tm3(path: &Path) -> Result<()> {
+    println!("📋 TM3 diary detected: {:?}", path.file_name().unwrap_or_default());
+
+    let output = Command::new("tm3-diary-capture")
+        .arg("--latest")
+        .output()
+        .context("Failed to run tm3-diary-capture")?;
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        println!("✅ DayPage updated");
+        for line in stdout.lines() {
+            if line.starts_with("clinic::") || line.contains("unmapped") {
+                println!("   {}", line.trim());
+            }
+        }
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+
+        let filename = path.file_name().unwrap_or_default().to_string_lossy();
+        let _ = Command::new("messageboard-edit")
+            .args(["insert", &format!("TM3 import FAILED: {}", filename)])
+            .output();
+
+        anyhow::bail!("tm3-diary-capture failed: {}", stderr);
+    }
+
+    println!();
+    Ok(())
+}
