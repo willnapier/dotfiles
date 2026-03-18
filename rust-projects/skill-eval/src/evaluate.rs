@@ -288,6 +288,14 @@ pub(crate) fn try_mechanical_check(log_entries: &[LogEntry], assertion: &Asserti
             "Assistant said 'let me check' but no Read/Grep/Glob/Bash followed",
         )),
 
+
+        // === Quality checks mechanicalized via propose-checks ===
+        "Q7" => Some(check_assistant_text_contains(
+            log_entries,
+            assertion,
+            "to verify",
+            "No verification steps found (expected 'to verify' with commands)",
+        )),
         // === Text-scanning checks for nushell syntax ===
         "S2" | "S3" => Some(check_assistant_bash_syntax(log_entries, assertion)),
 
