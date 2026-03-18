@@ -290,11 +290,11 @@ pub(crate) fn try_mechanical_check(log_entries: &[LogEntry], assertion: &Asserti
 
 
         // === Quality checks mechanicalized via propose-checks ===
-        "Q7" => Some(check_assistant_text_contains(
+        "Q7" => Some(check_assistant_text_contains_any(
             log_entries,
             assertion,
-            "to verify",
-            "No verification steps found (expected 'to verify' with commands)",
+            &["to verify", "to confirm", "confirm with", "check with", "verify with", "you can confirm", "you can check", "you can verify"],
+            "No verification steps found in assistant text",
         )),
         // === Text-scanning checks for nushell syntax ===
         "S2" | "S3" => Some(check_assistant_bash_syntax(log_entries, assertion)),
@@ -502,6 +502,34 @@ fn check_assistant_text_contains(
         outcome: if found { EvalOutcome::Pass } else { EvalOutcome::Fail },
         reason: if found {
             format!("Found '{}' in assistant text", pattern)
+        } else {
+            fail_msg.to_string()
+        },
+    }
+}
+
+/// Check that assistant text contains at least one of several keywords (case-insensitive).
+fn check_assistant_text_contains_any(
+    log_entries: &[LogEntry],
+    assertion: &Assertion,
+    patterns: &[&str],
+    fail_msg: &str,
+) -> EvalResult {
+    let found_pattern = patterns.iter().find(|p| {
+        let keyword = p.trim_end_matches(':').to_lowercase();
+        log_entries.iter().any(|e| {
+            e.role == "assistant"
+                && matches!(&e.content_type, EntryType::Text)
+                && e.content.to_lowercase().contains(&keyword)
+        })
+    });
+
+    EvalResult {
+        assertion_id: assertion.id.clone(),
+        assertion_text: assertion.assert_text.clone(),
+        outcome: if found_pattern.is_some() { EvalOutcome::Pass } else { EvalOutcome::Fail },
+        reason: if let Some(p) = found_pattern {
+            format!("Found '{}' in assistant text", p)
         } else {
             fail_msg.to_string()
         },
