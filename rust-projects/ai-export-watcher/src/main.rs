@@ -10,9 +10,9 @@ fn main() -> Result<()> {
     let home = std::env::var("HOME").context("HOME not set")?;
     let downloads_dir = PathBuf::from(&home).join("Downloads");
 
-    println!("AI Conversation Watcher starting...");
+    println!("AI/Clinical Export Watcher starting...");
     println!("Watching: {:?}", downloads_dir);
-    println!("Patterns: ChatGPT-*.json, Grok-*.json, grok-*.json, Gemini-*.json (case-insensitive)");
+    println!("Patterns: ChatGPT-*.json, Grok-*.json, Gemini-*.json, *TM3*Diary*.html");
 
     let (tx, rx) = channel();
 
@@ -29,6 +29,8 @@ fn main() -> Result<()> {
 
     // Regex to match AI assistant export files (case-insensitive)
     let export_pattern = Regex::new(r"(?i)^(ChatGPT|Grok|Gemini)-.*\.json$")?;
+    // TM3 diary HTML exports (SingleFile captures)
+    let tm3_pattern = Regex::new(r"(?i)TM3.*Diary.*\.html$")?;
 
     println!("Watching for new exports...\n");
 
@@ -36,11 +38,19 @@ fn main() -> Result<()> {
         if let EventKind::Create(_) | EventKind::Modify(_) = event.kind {
             for path in event.paths {
                 if let Some(filename) = path.file_name().and_then(|f| f.to_str()) {
-                    if export_pattern.is_match(filename) && path.exists() {
-                        // Small delay to ensure file is fully written
-                        std::thread::sleep(Duration::from_millis(500));
+                    if !path.exists() {
+                        continue;
+                    }
 
+                    // Small delay to ensure file is fully written
+                    std::thread::sleep(Duration::from_millis(500));
+
+                    if export_pattern.is_match(filename) {
                         if let Err(e) = process_export(&path) {
+                            eprintln!("Error processing {:?}: {}", path, e);
+                        }
+                    } else if tm3_pattern.is_match(filename) {
+                        if let Err(e) = process_tm3(&path) {
                             eprintln!("Error processing {:?}: {}", path, e);
                         }
                     }
