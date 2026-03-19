@@ -4,7 +4,7 @@
 # Sync test: $(date)
 
 # Theme selection
-theme = "catppuccin_mocha"
+theme = "solarized_dark"
 
 [editor]
 # Enable cursor shape changing
