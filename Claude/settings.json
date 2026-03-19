@@ -46,6 +46,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/config-path-guard.sh",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "PostToolUse": [
