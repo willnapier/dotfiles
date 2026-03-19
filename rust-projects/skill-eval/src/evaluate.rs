@@ -346,6 +346,7 @@ pub(crate) fn try_mechanical_check(log_entries: &[LogEntry], assertion: &Asserti
             "Only one Edit on client file — session count not incremented (expected 2+ edits)",
         )),
         "C12" => Some(check_command_run(log_entries, assertion, "clinic-attendance-report")),
+        "C13" => Some(check_session_note_appended(log_entries, assertion)),
 
         // Everything else needs LLM judgment
         _ => None,
@@ -692,6 +693,90 @@ fn check_no_bash_command(
         } else {
             format!("No '{}' pattern found in Bash commands", pattern)
         },
+    }
+}
+
+/// Check that the session note Edit targets the end of the client file, not a mid-file section.
+/// Parses the Edit tool JSON input to extract old_string and new_string, then verifies:
+/// 1. The edit adds a session date header (### 20...)
+/// 2. The edit is additive (new_string contains old_string)
+/// 3. The old_string doesn't target a mid-file section (Presenting Difficulties, Formulation, etc.)
+fn check_session_note_appended(log_entries: &[LogEntry], assertion: &Assertion) -> EvalResult {
+    // Find Edit calls on client files that add a session note
+    let session_edit = log_entries.iter().find(|e| {
+        if let EntryType::ToolUse { tool_name, input } = &e.content_type {
+            if tool_name == "Edit" && input.contains("Clinical/clients/") {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(input) {
+                    let new_str = v.get("new_string").and_then(|s| s.as_str()).unwrap_or("");
+                    return new_str.contains("### 20"); // session date header
+                }
+            }
+        }
+        false
+    });
+
+    let entry = match session_edit {
+        None => {
+            return EvalResult {
+                assertion_id: assertion.id.clone(),
+                assertion_text: assertion.assert_text.clone(),
+                outcome: EvalOutcome::NotApplicable,
+                reason: "No session note edit found in log".to_string(),
+            }
+        }
+        Some(e) => e,
+    };
+
+    if let EntryType::ToolUse { input, .. } = &entry.content_type {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(input) {
+            let old_str = v.get("old_string").and_then(|s| s.as_str()).unwrap_or("");
+            let new_str = v.get("new_string").and_then(|s| s.as_str()).unwrap_or("");
+
+            // Fail if old_string targets a mid-file section header
+            let mid_file_markers = [
+                "## Presenting",
+                "## Formulation",
+                "**Referral**",
+                "**Started**",
+            ];
+            for marker in &mid_file_markers {
+                if old_str.contains(marker) {
+                    return EvalResult {
+                        assertion_id: assertion.id.clone(),
+                        assertion_text: assertion.assert_text.clone(),
+                        outcome: EvalOutcome::Fail,
+                        reason: format!(
+                            "Session note edit targets mid-file section (old_string contains '{}')",
+                            marker
+                        ),
+                    };
+                }
+            }
+
+            // Check additive: new_string should contain old_string
+            if !old_str.is_empty() && !new_str.contains(old_str) {
+                return EvalResult {
+                    assertion_id: assertion.id.clone(),
+                    assertion_text: assertion.assert_text.clone(),
+                    outcome: EvalOutcome::Fail,
+                    reason: "Session note replaced content instead of appending (new_string doesn't contain old_string)".to_string(),
+                };
+            }
+
+            return EvalResult {
+                assertion_id: assertion.id.clone(),
+                assertion_text: assertion.assert_text.clone(),
+                outcome: EvalOutcome::Pass,
+                reason: "Session note appended at end of client file".to_string(),
+            };
+        }
+    }
+
+    EvalResult {
+        assertion_id: assertion.id.clone(),
+        assertion_text: assertion.assert_text.clone(),
+        outcome: EvalOutcome::Fail,
+        reason: "Could not parse Edit tool input".to_string(),
     }
 }
 
