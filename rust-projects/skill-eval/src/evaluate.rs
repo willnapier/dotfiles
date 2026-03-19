@@ -289,6 +289,14 @@ pub(crate) fn try_mechanical_check(log_entries: &[LogEntry], assertion: &Asserti
         )),
 
 
+        "S17" => Some(check_no_bash_command(
+            log_entries,
+            assertion,
+            "sudo ",
+            "Attempted to run sudo command (no TTY available)",
+        )),
+        "U15" => Some(check_completion_not_truncated(log_entries, assertion)),
+
         // === Quality checks mechanicalized via propose-checks ===
         "Q7" => Some(check_assistant_text_contains_any(
             log_entries,
@@ -347,6 +355,7 @@ pub(crate) fn try_mechanical_check(log_entries: &[LogEntry], assertion: &Asserti
         )),
         "C12" => Some(check_command_run(log_entries, assertion, "clinic-attendance-report")),
         "C13" => Some(check_session_note_appended(log_entries, assertion)),
+        "C14" => Some(check_no_clinical_refusal(log_entries, assertion)),
 
         // Everything else needs LLM judgment
         _ => None,
@@ -777,6 +786,82 @@ fn check_session_note_appended(log_entries: &[LogEntry], assertion: &Assertion) 
         assertion_text: assertion.assert_text.clone(),
         outcome: EvalOutcome::Fail,
         reason: "Could not parse Edit tool input".to_string(),
+    }
+}
+
+/// Check that the response was not truncated before completion.
+/// Condition: any Edit, Write, or Bash tool was used (i.e., changes were made).
+/// Pass: the final assistant text contains verification steps.
+/// This catches truncation where the model starts a response but gets cut off.
+fn check_completion_not_truncated(log_entries: &[LogEntry], assertion: &Assertion) -> EvalResult {
+    // Condition: was any change-making tool used?
+    let has_changes = log_entries.iter().any(|e| {
+        matches!(&e.content_type, EntryType::ToolUse { tool_name, .. }
+            if tool_name == "Edit" || tool_name == "Write" || tool_name == "Bash")
+    });
+
+    if !has_changes {
+        return EvalResult {
+            assertion_id: assertion.id.clone(),
+            assertion_text: assertion.assert_text.clone(),
+            outcome: EvalOutcome::NotApplicable,
+            reason: "No Edit, Write, or Bash tool used — no changes to verify".to_string(),
+        };
+    }
+
+    // Find the last assistant text entry
+    let last_assistant_text = log_entries.iter().rev().find(|e| {
+        e.role == "assistant" && matches!(&e.content_type, EntryType::Text)
+    });
+
+    let found = if let Some(entry) = last_assistant_text {
+        let lower = entry.content.to_lowercase();
+        lower.contains("to verify")
+            || lower.contains("to confirm")
+            || lower.contains("verify with")
+            || lower.contains("check with")
+            || lower.contains("you can confirm")
+            || lower.contains("you can check")
+            || lower.contains("you can verify")
+            || lower.contains("n/a — informational")
+    } else {
+        false
+    };
+
+    EvalResult {
+        assertion_id: assertion.id.clone(),
+        assertion_text: assertion.assert_text.clone(),
+        outcome: if found { EvalOutcome::Pass } else { EvalOutcome::Fail },
+        reason: if found {
+            "Final assistant text contains verification steps".to_string()
+        } else {
+            "Changes were made but final response lacks verification steps — possible truncation".to_string()
+        },
+    }
+}
+
+/// Check that the assistant did not refuse to produce a clinical note.
+/// Pass: assistant text contains a session note header (### 20) OR a template fallback ([MANUAL ENTRY]).
+/// Fail: neither present — model refused without providing a template.
+fn check_no_clinical_refusal(log_entries: &[LogEntry], assertion: &Assertion) -> EvalResult {
+    let has_note_or_template = log_entries.iter().any(|e| {
+        e.role == "assistant" && matches!(&e.content_type, EntryType::Text) && {
+            e.content.contains("### 20")
+                || e.content.contains("MANUAL ENTRY")
+                || e.content.contains("**Risk**:")
+                || e.content.contains("**Risk:**")
+        }
+    });
+
+    EvalResult {
+        assertion_id: assertion.id.clone(),
+        assertion_text: assertion.assert_text.clone(),
+        outcome: if has_note_or_template { EvalOutcome::Pass } else { EvalOutcome::Fail },
+        reason: if has_note_or_template {
+            "Clinical note or fallback template found in assistant output".to_string()
+        } else {
+            "No clinical note or template produced — model appears to have refused".to_string()
+        },
     }
 }
 
