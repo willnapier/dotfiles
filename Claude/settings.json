@@ -61,6 +61,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/clinical-write-guard.sh",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "PostToolUse": [
