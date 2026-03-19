@@ -39,6 +39,11 @@
             "type": "command",
             "command": "~/.claude/hooks/ssh-rewrite.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/legacy-tool-rewrite.sh",
+            "timeout": 5
           }
         ]
       }
