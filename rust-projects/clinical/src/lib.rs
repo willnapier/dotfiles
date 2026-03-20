@@ -5,6 +5,7 @@ pub mod finalise;
 pub mod identity;
 pub mod letter;
 pub mod markdown;
+pub mod note;
 pub mod populate;
 pub mod prepare;
 pub mod reidentify;

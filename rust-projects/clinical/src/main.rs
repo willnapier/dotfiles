@@ -5,6 +5,7 @@ mod finalise;
 mod identity;
 mod letter;
 mod markdown;
+mod note;
 mod populate;
 mod prepare;
 mod reidentify;
@@ -89,6 +90,19 @@ enum Commands {
         apply: bool,
     },
 
+    /// One-shot session note: prepare → LLM → validate → confirm → append → finalise
+    Note {
+        /// Client ID (e.g. CT71)
+        id: String,
+
+        /// William's session observation
+        observation: String,
+
+        /// Skip confirmation prompt
+        #[arg(long, short)]
+        yes: bool,
+    },
+
     /// Update session count and print alerts after a note has been appended
     #[command(name = "note-finalise")]
     NoteFinalise {
@@ -159,6 +173,11 @@ fn main() -> Result<()> {
         },
         Commands::UpdateLetter { id, dry_run } => letter::run(&id, dry_run),
         Commands::Populate { apply } => populate::run(apply),
+        Commands::Note {
+            id,
+            observation,
+            yes,
+        } => note::run(&id, &observation, yes),
         Commands::NoteFinalise { id } => finalise::run(&id),
         Commands::NotePrepare { id, sessions } => prepare::run(&id, sessions),
     }
