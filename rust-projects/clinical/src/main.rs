@@ -5,6 +5,7 @@ mod identity;
 mod letter;
 mod markdown;
 mod populate;
+mod prepare;
 mod reidentify;
 mod scaffold;
 mod session;
@@ -86,6 +87,17 @@ enum Commands {
         #[arg(long)]
         apply: bool,
     },
+
+    /// Pre-compute deterministic fields and template for a clinical note
+    #[command(name = "note-prepare")]
+    NotePrepare {
+        /// Client ID (e.g. CT71)
+        id: String,
+
+        /// Number of recent sessions to include for context
+        #[arg(long, default_value = "3")]
+        sessions: usize,
+    },
 }
 
 #[derive(Subcommand)]
@@ -139,5 +151,6 @@ fn main() -> Result<()> {
         },
         Commands::UpdateLetter { id, dry_run } => letter::run(&id, dry_run),
         Commands::Populate { apply } => populate::run(apply),
+        Commands::NotePrepare { id, sessions } => prepare::run(&id, sessions),
     }
 }

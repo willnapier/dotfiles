@@ -5,6 +5,7 @@ pub mod identity;
 pub mod letter;
 pub mod markdown;
 pub mod populate;
+pub mod prepare;
 pub mod reidentify;
 pub mod scaffold;
 pub mod session;

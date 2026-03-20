@@ -115,7 +115,7 @@ pub fn compute_auth_status(client_id: &str, content: &str) -> Option<AuthStatus>
 /// Determine update letter status.
 ///
 /// Rule: due at session 2, then every 6 sessions after last letter.
-fn compute_letter_status(total_sessions: u32, last_letter: &str, session_lines: &[&str]) -> String {
+pub fn compute_letter_status(total_sessions: u32, last_letter: &str, session_lines: &[&str]) -> String {
     if total_sessions < 2 {
         return String::new();
     }
