@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod client;
 pub mod deidentify;
+pub mod finalise;
 pub mod identity;
 pub mod letter;
 pub mod markdown;

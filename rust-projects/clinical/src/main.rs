@@ -1,6 +1,7 @@
 mod auth;
 mod client;
 mod deidentify;
+mod finalise;
 mod identity;
 mod letter;
 mod markdown;
@@ -88,6 +89,13 @@ enum Commands {
         apply: bool,
     },
 
+    /// Update session count and print alerts after a note has been appended
+    #[command(name = "note-finalise")]
+    NoteFinalise {
+        /// Client ID (e.g. CT71)
+        id: String,
+    },
+
     /// Pre-compute deterministic fields and template for a clinical note
     #[command(name = "note-prepare")]
     NotePrepare {
@@ -151,6 +159,7 @@ fn main() -> Result<()> {
         },
         Commands::UpdateLetter { id, dry_run } => letter::run(&id, dry_run),
         Commands::Populate { apply } => populate::run(apply),
+        Commands::NoteFinalise { id } => finalise::run(&id),
         Commands::NotePrepare { id, sessions } => prepare::run(&id, sessions),
     }
 }
