@@ -52,205 +52,138 @@ fn validate_note(note: &str) -> ValidationResult {
     ValidationResult { errors }
 }
 
-/// Build the full prompt for the LLM.
-fn build_prompt(context: &str, observation: &str) -> String {
-    format!(
-        "{context}\n\n\
-         === INSTRUCTION ===\n\
-         You are a clinical documentation assistant for a Chartered Psychologist.\n\
-         Write a session note translating the observation below into ACT/CBS process language.\n\
-         Use the template from the context above. Include **Risk**: and **Formulation**: lines.\n\
-         Output ONLY the session note (starting with ### DATE), no preamble or explanation.\n\n\
-         === OBSERVATION ===\n\
-         {observation}"
-    )
+/// Resolve the clinical reference directory.
+///
+/// Checks CLINICAL_NOTES_SKILL_DIR env var, then falls back to
+/// ~/.claude/skills/clinical-notes/
+fn skill_dir() -> std::path::PathBuf {
+    if let Ok(dir) = std::env::var("CLINICAL_NOTES_SKILL_DIR") {
+        std::path::PathBuf::from(dir)
+    } else {
+        dirs::home_dir()
+            .expect("Could not find home directory")
+            .join(".claude/skills/clinical-notes")
+    }
 }
 
-/// Capture the output of `clinical note-prepare` by running the logic directly.
-fn capture_note_prepare(id: &str) -> Result<String> {
-    // Redirect stdout to capture the output
+/// Load a reference file if it exists, returning empty string if not.
+fn load_reference(filename: &str) -> String {
+    let path = skill_dir().join(filename);
+    std::fs::read_to_string(&path).unwrap_or_default()
+}
+
+/// Find correspondence files in the client directory (letters, reports).
+fn find_correspondence(id: &str) -> Vec<(String, String)> {
+    let dir = client::client_dir(id);
+    let mut files = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        let corr_re = Regex::new(r"^\d{4}-\d{2}-\d{2}-.+\.(md|txt)$").unwrap();
+        let mut paths: Vec<std::path::PathBuf> = entries
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                corr_re.is_match(&name) && name != format!("{}.md", id)
+            })
+            .map(|e| e.path())
+            .collect();
+        paths.sort();
+
+        for path in paths {
+            let name = path.file_name().unwrap().to_string_lossy().to_string();
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                files.push((name, content));
+            }
+        }
+    }
+
+    files
+}
+
+/// Build the full prompt for the LLM, including all available context.
+fn build_prompt(id: &str, observation: &str) -> Result<String> {
     let path = client::notes_path(id);
-    let content = std::fs::read_to_string(&path)
+    let client_file = std::fs::read_to_string(&path)
         .with_context(|| format!("Could not read client file: {}", path.display()))?;
 
-    let lines: Vec<&str> = content.lines().collect();
+    let lines: Vec<&str> = client_file.lines().collect();
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
 
-    let funding = markdown::extract_field(&content, "Funding").unwrap_or_default();
-    let referral_type = markdown::extract_field(&content, "Referral type");
-    let referring_doctor = markdown::extract_field(&content, "Referring doctor");
-    let therapy_commenced = markdown::extract_field(&content, "Therapy commenced");
-    let last_letter_raw =
-        markdown::extract_field(&content, "Last update letter").unwrap_or_default();
-    let next_specialist = markdown::extract_field(&content, "Next specialist appointment");
-    let current_specialist = markdown::extract_field(&content, "Current specialist");
-
+    // Compute deterministic metadata
     let session_idx = session::find_session_section(&lines).unwrap_or(0);
     let session_lines = &lines[(session_idx + 1)..];
     let total_sessions = session::count_sessions(session_lines);
     let new_session_number = total_sessions + 1;
 
-    let dna_re = Regex::new(r"^### \d{4}-\d{2}-\d{2} DNA").unwrap();
-    let dna_count = session_lines.iter().filter(|l| dna_re.is_match(l)).count() as u32;
-
-    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-
-    let auth_status = session::compute_auth_status(id, &content);
+    // Auth status
+    let auth_status = session::compute_auth_status(id, &client_file);
     let auth_markers = session::parse_auth_markers(&lines);
-
-    let last_letter = if last_letter_raw == "none yet"
-        || last_letter_raw == "null"
-        || last_letter_raw.is_empty()
-    {
-        String::new()
-    } else {
-        last_letter_raw.clone()
-    };
-    let letter_status =
-        session::compute_letter_status(new_session_number, &last_letter, session_lines);
 
     let mut out = String::new();
 
-    out.push_str(&format!("=== CLINICAL NOTE CONTEXT: {} ===\n", id));
-    out.push_str(&format!("Date: {}\n", today));
-    out.push_str(&format!("Session number: {}\n", new_session_number));
-    if dna_count > 0 {
-        out.push_str(&format!("DNA sessions: {}\n", dna_count));
-    }
-    if let Some(ref tc) = therapy_commenced {
-        out.push_str(&format!("Therapy commenced: {}\n", tc));
-    }
-    if !funding.is_empty() {
-        out.push_str(&format!("Funding: {}\n", funding));
-    }
-    if let Some(ref rt) = referral_type {
-        out.push_str(&format!("Referral type: {}\n", rt));
-    }
-    if let Some(ref rd) = referring_doctor {
-        out.push_str(&format!("Referring doctor: {}\n", rd));
+    // Clinical reference material
+    let philosophy = load_reference("CLINICAL-PHILOSOPHY.md");
+    let reference = load_reference("CLINICAL-REFERENCE.md");
+
+    if !philosophy.is_empty() {
+        out.push_str("=== CLINICAL PHILOSOPHY ===\n");
+        out.push_str(&philosophy);
+        out.push_str("\n\n");
     }
 
-    out.push_str("\n=== AUTH STATUS ===\n");
+    if !reference.is_empty() {
+        out.push_str("=== CLINICAL REFERENCE ===\n");
+        out.push_str(&reference);
+        out.push_str("\n\n");
+    }
+
+    // Full client file
+    out.push_str(&format!("=== CLIENT FILE: {} ===\n", id));
+    out.push_str(&client_file);
+    out.push_str("\n\n");
+
+    // Correspondence
+    let correspondence = find_correspondence(id);
+    if !correspondence.is_empty() {
+        out.push_str("=== CORRESPONDENCE ===\n");
+        for (name, content) in &correspondence {
+            out.push_str(&format!("--- {} ---\n", name));
+            out.push_str(content);
+            out.push_str("\n\n");
+        }
+    }
+
+    // Deterministic metadata
+    out.push_str(&format!("=== SESSION METADATA ===\n"));
+    out.push_str(&format!("Date: {}\n", today));
+    out.push_str(&format!("Session number: {}\n", new_session_number));
+
     if let Some(ref auth) = auth_status {
         let auth_date = auth_markers
             .last()
             .map(|m| m.auth_date.as_str())
             .unwrap_or("unknown");
         out.push_str(&format!(
-            "{} of {} authorised sessions used (since {})\n",
-            auth.sessions_used, auth.sessions_authorised, auth_date
+            "Auth: {} of {} used (since {}), {} remaining\n",
+            auth.sessions_used, auth.sessions_authorised, auth_date, auth.remaining
         ));
-        out.push_str(&format!("Remaining: {}\n", auth.remaining));
-    } else {
-        out.push_str("N/A (not insurer-funded)\n");
     }
 
-    // Alerts
-    out.push_str("\n=== ALERTS ===\n");
-    let mut alerts: Vec<String> = Vec::new();
-
-    if let Some(ref auth) = auth_status {
-        if auth.remaining <= 2 {
-            alerts.push(format!(
-                "\u{26a0}\u{fe0f} Auth letter needed — {} sessions remaining",
-                auth.remaining
-            ));
-        }
-    }
-
-    if let Some(ref rt) = referral_type {
-        if rt.to_lowercase() == "doctor" && !letter_status.is_empty() {
-            alerts.push(format!(
-                "\u{1f4cb} Update letter due — session {}",
-                new_session_number
-            ));
-        }
-    }
-
-    if let Some(ref next_appt) = next_specialist {
-        if next_appt != "unknown" && next_appt != "N/A" && !next_appt.is_empty() {
-            if let Ok(appt_date) = chrono::NaiveDate::parse_from_str(next_appt, "%Y-%m-%d") {
-                let today_date = chrono::Local::now().date_naive();
-                let days_until = (appt_date - today_date).num_days();
-                if days_until >= 0 && days_until <= 14 {
-                    let specialist_name = current_specialist
-                        .as_deref()
-                        .or(referring_doctor.as_deref())
-                        .unwrap_or("specialist");
-                    alerts.push(format!(
-                        "\u{1f4cb} Update report due — {} appointment {}",
-                        specialist_name, next_appt
-                    ));
-                }
-            }
-        }
-    }
-
-    if referral_type.is_none() {
-        alerts.push("\u{2753} Referral type not set".to_string());
-    }
-
-    if alerts.is_empty() {
-        out.push_str("[none]\n");
-    } else {
-        for alert in &alerts {
-            out.push_str(&format!("{}\n", alert));
-        }
-    }
-
-    // Recent sessions (last 3)
-    out.push_str("\n=== RECENT SESSIONS (last 3) ===\n");
-    let header_re = Regex::new(r"^### \d{4}-\d{2}-\d{2}").unwrap();
-    let mut header_indices: Vec<usize> = Vec::new();
-    for (i, line) in lines.iter().enumerate() {
-        if header_re.is_match(line) {
-            header_indices.push(i);
-        }
-    }
-    let n = 3;
-    let start = if header_indices.len() > n {
-        header_indices.len() - n
-    } else {
-        0
-    };
-    let selected = &header_indices[start..];
-
-    if selected.is_empty() {
-        out.push_str("[no previous sessions]\n");
-    } else {
-        for (pos, &idx) in selected.iter().enumerate() {
-            if pos > 0 {
-                out.push('\n');
-            }
-            out.push_str(lines[idx]);
-            out.push('\n');
-
-            let end = if pos + 1 < selected.len() {
-                selected[pos + 1]
-            } else {
-                lines.len()
-            };
-
-            let block: String = lines[(idx + 1)..end]
-                .iter()
-                .copied()
-                .collect::<Vec<_>>()
-                .join("\n");
-            let block = block.trim_end();
-            if !block.is_empty() {
-                out.push_str(block);
-                out.push('\n');
-            }
-        }
-    }
-
-    // Template
+    // Instruction
     out.push_str(&format!(
-        "\n=== TEMPLATE ===\n\
-         ### {}\n\n\
-         **Risk**: [no immediate concerns noted — or document if present]\n\n\
-         [Session narrative in ACT/CBS process language]\n\n\
-         **Formulation**: [1-2 sentences on current clinical picture and direction]\n",
-        today
+        "\n=== INSTRUCTION ===\n\
+         You are a clinical documentation assistant for a Chartered Psychologist (BPS).\n\
+         You have the clinician's full therapeutic framework and the complete client file above.\n\
+         Write a session note for session {} on {} translating the observation below \
+         into ACT/CBS process language.\n\
+         Draw on the full therapeutic arc — reference previous sessions, ongoing themes, \
+         and the client's formulation where relevant.\n\
+         Use the clinician's voice and framework from the reference material.\n\
+         Include **Risk**: and **Formulation**: lines.\n\
+         Output ONLY the session note (starting with ### {}), no preamble or explanation.\n\n\
+         === OBSERVATION ===\n\
+         {}\n",
+        new_session_number, today, today, observation
     ));
 
     Ok(out)
@@ -285,12 +218,9 @@ fn append_note_to_path(path: &std::path::Path, note: &str) -> Result<()> {
 
 /// Run `clinical note <ID> <observation>`.
 pub fn run(id: &str, observation: &str, auto_confirm: bool) -> Result<()> {
-    // Step 1: Pre-compute context
+    // Step 1: Build full context prompt
     eprintln!("Preparing context for {}...", id);
-    let context = capture_note_prepare(id)?;
-
-    // Step 2: Build prompt and call LLM
-    let prompt = build_prompt(&context, observation);
+    let prompt = build_prompt(id, observation)?;
 
     let llm_cmd = std::env::var("CLINICAL_LLM_CMD").unwrap_or_else(|_| "claude".to_string());
     let llm_args = std::env::var("CLINICAL_LLM_ARGS")
@@ -433,11 +363,28 @@ Client explored workplace dynamics.
     }
 
     #[test]
-    fn test_build_prompt_contains_context_and_observation() {
-        let prompt = build_prompt("=== CONTEXT ===\nsome context", "She discussed dating");
-        assert!(prompt.contains("=== CONTEXT ==="));
+    fn test_build_prompt_contains_observation_and_instruction() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let clients_dir = tmp.path().join("clients").join("TEST01");
+        std::fs::create_dir_all(&clients_dir).unwrap();
+        let md_path = clients_dir.join("TEST01.md");
+        std::fs::write(
+            &md_path,
+            "# TEST01\n\n## Session Notes\n\n### 2026-01-15\nFirst note.\n",
+        )
+        .unwrap();
+
+        std::env::set_var("CLINICAL_ROOT", tmp.path());
+        std::env::set_var("CLINICAL_NOTES_SKILL_DIR", "/nonexistent");
+
+        let prompt = build_prompt("TEST01", "She discussed dating").unwrap();
         assert!(prompt.contains("She discussed dating"));
         assert!(prompt.contains("ACT/CBS"));
+        assert!(prompt.contains("# TEST01"));
+        assert!(prompt.contains("First note."));
+
+        std::env::remove_var("CLINICAL_ROOT");
+        std::env::remove_var("CLINICAL_NOTES_SKILL_DIR");
     }
 
     #[test]
