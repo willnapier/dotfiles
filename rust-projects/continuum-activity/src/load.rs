@@ -193,10 +193,27 @@ fn search_and_load(
 
         let raw = std::fs::read_to_string(&messages_path).unwrap_or_default();
 
-        // If query is non-empty, filter by text match
+        // If query is non-empty, filter by text match (messages + session title)
         if !query_lower.is_empty() {
             let raw_lower = raw.to_lowercase();
-            if !raw_lower.contains(&query_lower) {
+            let title_lower = session
+                .meta
+                .id
+                .to_lowercase();
+            let session_json_path = session.path.join("session.json");
+            let title_from_meta = std::fs::read_to_string(&session_json_path)
+                .ok()
+                .and_then(|s| {
+                    serde_json::from_str::<serde_json::Value>(&s)
+                        .ok()
+                        .and_then(|v| v.get("title")?.as_str().map(|s| s.to_lowercase()))
+                })
+                .unwrap_or_default();
+
+            if !raw_lower.contains(&query_lower)
+                && !title_lower.contains(&query_lower)
+                && !title_from_meta.contains(&query_lower)
+            {
                 continue;
             }
         }
