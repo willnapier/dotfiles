@@ -39,6 +39,7 @@ linux-firmware
 ly
 mako
 mdcat
+mosh
 nano
 network-manager-applet
 networkmanager
