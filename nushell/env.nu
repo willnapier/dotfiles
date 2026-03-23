@@ -12,6 +12,13 @@ $env.MOSH_SESSION = (try {
     if ($parent_name =~ "mosh-server") { "1" } else { "0" }
 } catch { "0" })
 
+# Force dumb terminal under Mosh to suppress reedline's CPR query (ESC[6n).
+# If Moshi doesn't respond to CPR, reedline's input parser gets stuck waiting
+# and eats subsequent keystrokes as potential escape sequence bytes.
+if $env.MOSH_SESSION == "1" {
+    $env.TERM = "dumb"
+}
+
 # --- Environment Conversions ---
 $env.ENV_CONVERSIONS = {
     "PATH": {
