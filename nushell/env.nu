@@ -2,23 +2,6 @@
 # ⚠️  NEVER EDIT ~/.config/nushell/env.nu - IT'S A SYMLINK TO THIS FILE
 # Nushell Environment Config File
 
-# --- Mosh compatibility detection ---
-# Reedline's input handling breaks over Mosh protocol (iOS Moshi app):
-# only the first keystroke registers, then subsequent input is swallowed.
-# Set flag here; config.nu disables problematic terminal features when set.
-$env.MOSH_SESSION = (try {
-    let ppid = (ps | where pid == $nu.pid | first | get ppid)
-    let parent_name = (ps | where pid == $ppid | first | get name)
-    if ($parent_name =~ "mosh-server") { "1" } else { "0" }
-} catch { "0" })
-
-# Force dumb terminal under Mosh to suppress reedline's CPR query (ESC[6n).
-# If Moshi doesn't respond to CPR, reedline's input parser gets stuck waiting
-# and eats subsequent keystrokes as potential escape sequence bytes.
-if $env.MOSH_SESSION == "1" {
-    $env.TERM = "dumb"
-}
-
 # --- Environment Conversions ---
 $env.ENV_CONVERSIONS = {
     "PATH": {

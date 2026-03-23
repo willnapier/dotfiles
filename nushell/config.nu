@@ -583,28 +583,6 @@ $env.config = {
     }
 }
 
-# --- Mosh compatibility: disable terminal features that break Moshi iOS input ---
-# Bracketed paste, shell integration OSC sequences, and cursor shape changes
-# all send escape sequences that Moshi's iOS keyboard relay may not handle,
-# causing reedline to desync and swallow keystrokes after the first character.
-if ($env.MOSH_SESSION? | default "0") == "1" {
-    $env.config.bracketed_paste = false
-    $env.config.use_kitty_protocol = false
-    $env.config.cursor_shape = {
-        emacs: inherit
-        vi_insert: inherit
-        vi_normal: inherit
-    }
-    $env.config.shell_integration = {
-        osc2: false
-        osc7: false
-        osc9_9: false
-        osc133: false
-        osc633: false
-        reset_application_mode: false
-    }
-}
-
 # Add explore configuration after main config - using upsert to merge properly
 # Dynamically set colors based on theme
 let explore_colors = if ($env.SYSTEM_THEME? | default "light") == "dark" {
