@@ -10,6 +10,7 @@ clang
 claude-code
 clipvault-bin
 cmake
+d2
 dmenu
 efibootmgr
 firefox
