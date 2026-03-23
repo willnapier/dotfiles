@@ -2,6 +2,18 @@
 # ⚠️  NEVER EDIT ~/.config/nushell/env.nu - IT'S A SYMLINK TO THIS FILE
 # Nushell Environment Config File
 
+# --- Mosh compatibility ---
+# Reedline's input handling (likely CPR queries) breaks over Mosh protocol:
+# only the first keystroke registers, then subsequent input is swallowed.
+# Detect mosh-server as parent and fall back to bash for usable input.
+try {
+    let ppid = (ps | where pid == $nu.pid | first | get ppid)
+    let parent_name = (ps | where pid == $ppid | first | get name)
+    if $parent_name =~ "mosh-server" {
+        exec bash
+    }
+}
+
 # --- Environment Conversions ---
 $env.ENV_CONVERSIONS = {
     "PATH": {
