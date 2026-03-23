@@ -1,6 +1,11 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
+    "deny": [
+      "Read(**/private/**)",
+      "Edit(**/private/**)",
+      "Write(**/private/**)"
+    ],
     "allow": [
       "Read",
       "Glob",
@@ -12,11 +17,6 @@
       "WebFetch",
       "WebSearch",
       "Skill"
-    ],
-    "deny": [
-      "Read(**/private/**)",
-      "Edit(**/private/**)",
-      "Write(**/private/**)"
     ]
   },
   "hooks": {
@@ -37,18 +37,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/ssh-rewrite.sh",
-            "timeout": 5
+            "command": "bash ~/.claude/hooks/legacy-tool-rewrite.sh",
+            "statusMessage": "Checking tool usage..."
           },
           {
             "type": "command",
-            "command": "~/.claude/hooks/legacy-tool-rewrite.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/sudo-guard.sh",
-            "timeout": 5
+            "command": "bash ~/.claude/hooks/ssh-rewrite.sh",
+            "statusMessage": "Checking SSH syntax..."
           }
         ]
       },
@@ -57,23 +52,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/config-path-guard.sh",
-            "timeout": 5
+            "command": "bash ~/.claude/hooks/config-path-guard.sh",
+            "statusMessage": "Checking file path..."
           },
           {
             "type": "command",
-            "command": "~/.claude/hooks/daypage-guard.sh",
-            "timeout": 5
-          }
-        ]
-      },
-      {
-        "matcher": "Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/clinical-write-guard.sh",
-            "timeout": 5
+            "command": "bash ~/.claude/hooks/daypage-guard.sh",
+            "statusMessage": "Checking DayPage safety..."
           }
         ]
       }
@@ -85,6 +70,18 @@
           {
             "type": "command",
             "command": "jq -r '.tool_input.file_path // .tool_input.filePath // empty' | { read file_path; if [[ \"$file_path\" == *\"MESSAGEBOARD.md\" ]]; then API_KEY=$(syncthing cli config gui apikey get 2>/dev/null) && curl -s -X POST \"http://127.0.0.1:8384/rest/db/scan?folder=Assistants\" -H \"X-API-Key: $API_KEY\" >/dev/null 2>&1; fi; }"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/hollow-ack-check.sh",
+            "statusMessage": "Checking for hollow acknowledgments..."
           }
         ]
       }
