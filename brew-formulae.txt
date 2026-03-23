@@ -26,6 +26,7 @@ cliclick
 cmake
 confuse
 coreutils
+d2
 dav1d
 deno
 dfu-programmer
