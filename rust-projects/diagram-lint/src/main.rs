@@ -435,6 +435,142 @@ fn check_symmetrical_margins(rects: &[Rect]) -> Vec<String> {
     failures
 }
 
+/// Auto-fix: centre content within zone backgrounds by shifting x-coordinates.
+/// Shifts all elements (rects, texts, lines, polylines) in the zone's y-range.
+fn fix_symmetrical_margins(svg: &str, rects: &[Rect]) -> String {
+    let mut result = svg.to_string();
+
+    let zones: Vec<&Rect> = rects.iter()
+        .filter(|r| r.width > 400.0 && r.height > 100.0)
+        .collect();
+    let content: Vec<&Rect> = rects.iter()
+        .filter(|r| r.width > 20.0 && r.width < 400.0 && r.height > 30.0 && r.height < 80.0)
+        .collect();
+
+    for zone in &zones {
+        let inside: Vec<&&Rect> = content.iter()
+            .filter(|c| c.x >= zone.x && c.x + c.width <= zone.x + zone.width
+                && c.y >= zone.y && c.y + c.height <= zone.y + zone.height)
+            .collect();
+
+        if inside.is_empty() {
+            continue;
+        }
+
+        let leftmost = inside.iter().map(|r| r.x).fold(f64::MAX, f64::min);
+        let rightmost = inside.iter().map(|r| r.x + r.width).fold(f64::MIN, f64::max);
+        let left_margin = leftmost - zone.x;
+        let right_margin = (zone.x + zone.width) - rightmost;
+
+        if (left_margin - right_margin).abs() <= 25.0 {
+            continue;
+        }
+
+        let shift = ((right_margin - left_margin) / 2.0).round();
+        let y_min = zone.y;
+        let y_max = zone.y + zone.height;
+        let x_min = zone.x;
+        let x_max = zone.x + zone.width;
+
+        // Shift all x-values in elements within this zone
+        // We need to find numeric x values in elements whose y is in range
+        // Strategy: find all x="N" preceded by y="M" where M is in range
+
+        // Shift rect x values
+        let re_rect = regex_lite::Regex::new(
+            r#"<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)""#
+        ).unwrap();
+
+        let mut replacements: Vec<(String, String)> = Vec::new();
+        for cap in re_rect.captures_iter(&result) {
+            let x: f64 = cap[1].parse().unwrap_or(0.0);
+            let y: f64 = cap[2].parse().unwrap_or(0.0);
+            let w: f64 = cap[3].parse().unwrap_or(0.0);
+            // Only shift content rects in this zone (not the zone bg itself)
+            if y >= y_min && y <= y_max && x >= x_min && x + w <= x_max && w < 400.0 {
+                let old = format!("x=\"{}\" y=\"{}\" width=\"{}\"", &cap[1], &cap[2], &cap[3]);
+                let new_x = x + shift;
+                let new_s = format!("x=\"{:.0}\" y=\"{}\" width=\"{}\"", new_x, &cap[2], &cap[3]);
+                replacements.push((old, new_s));
+            }
+        }
+
+        // Shift text x values
+        let re_text = regex_lite::Regex::new(
+            r#"<text x="([\d.]+)" y="([\d.]+)""#
+        ).unwrap();
+        for cap in re_text.captures_iter(&result) {
+            let x: f64 = cap[1].parse().unwrap_or(0.0);
+            let y: f64 = cap[2].parse().unwrap_or(0.0);
+            if y >= y_min && y <= y_max && x >= x_min && x <= x_max {
+                let old = format!("<text x=\"{}\" y=\"{}\"", &cap[1], &cap[2]);
+                let new_x = x + shift;
+                let new_s = format!("<text x=\"{:.0}\" y=\"{}\"", new_x, &cap[2]);
+                replacements.push((old, new_s));
+            }
+        }
+
+        // Shift line x1/x2 values
+        let re_line = regex_lite::Regex::new(
+            r#"x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)""#
+        ).unwrap();
+        for cap in re_line.captures_iter(&result) {
+            let x1: f64 = cap[1].parse().unwrap_or(0.0);
+            let y1: f64 = cap[2].parse().unwrap_or(0.0);
+            let x2: f64 = cap[3].parse().unwrap_or(0.0);
+            let y2: f64 = cap[4].parse().unwrap_or(0.0);
+            if (y1 >= y_min && y1 <= y_max) || (y2 >= y_min && y2 <= y_max) {
+                if x1 >= x_min && x2 >= x_min {
+                    let old = format!("x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\"",
+                        &cap[1], &cap[2], &cap[3], &cap[4]);
+                    let new_s = format!("x1=\"{:.0}\" y1=\"{}\" x2=\"{:.0}\" y2=\"{}\"",
+                        x1 + shift, &cap[2], x2 + shift, &cap[4]);
+                    replacements.push((old, new_s));
+                }
+            }
+        }
+
+        // Shift polyline points
+        let re_poly = regex_lite::Regex::new(r#"points="([^"]*)""#).unwrap();
+        for cap in re_poly.captures_iter(&result.clone()) {
+            let pts_str = &cap[1];
+            let pts: Vec<(f64, f64)> = pts_str.split_whitespace()
+                .filter_map(|p| {
+                    let parts: Vec<&str> = p.split(',').collect();
+                    if parts.len() == 2 {
+                        Some((parts[0].parse().unwrap_or(0.0), parts[1].parse().unwrap_or(0.0)))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            let in_zone = pts.iter().any(|(_, y)| *y >= y_min && *y <= y_max);
+            if in_zone {
+                let new_pts: Vec<String> = pts.iter()
+                    .map(|(x, y)| {
+                        if *x >= x_min {
+                            format!("{:.0},{}", x + shift, y)
+                        } else {
+                            format!("{},{}", x, y)
+                        }
+                    })
+                    .collect();
+                let old = format!("points=\"{}\"", pts_str);
+                let new_s = format!("points=\"{}\"", new_pts.join(" "));
+                replacements.push((old, new_s));
+            }
+        }
+
+        // Apply all replacements
+        for (old, new_s) in &replacements {
+            result = result.replacen(old, new_s, 1);
+        }
+    }
+
+    result
+}
+
 /// Auto-fix: standardise all arrow stroke-widths to 1.
 fn fix_stroke_consistency(svg: &str) -> String {
     regex_lite::Regex::new(r#"(<(?:line|polyline)[^>]*stroke-width=")[\d.]+(")"#)
@@ -521,6 +657,12 @@ fn main() -> Result<()> {
             if failures.iter().any(|f| f.starts_with("TEXT OVERFLOW")) {
                 svg = fix_text_overflow(&svg, &texts, &rects);
                 fixed.push("text overflow (widened rects)");
+            }
+
+            // Fix margin asymmetry
+            if failures.iter().any(|f| f.starts_with("ASYMMETRIC MARGINS")) {
+                svg = fix_symmetrical_margins(&svg, &rects);
+                fixed.push("margin symmetry (shifted content)");
             }
 
             if !fixed.is_empty() {
