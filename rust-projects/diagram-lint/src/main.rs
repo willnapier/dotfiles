@@ -571,6 +571,140 @@ fn fix_symmetrical_margins(svg: &str, rects: &[Rect]) -> String {
     result
 }
 
+/// Propose reroutes for arrows that cross unrelated elements.
+/// Returns human-readable proposals with SVG-ready polyline points.
+fn propose_arrow_reroutes(svg: &str, rects: &[Rect]) -> Vec<String> {
+    let mut proposals = Vec::new();
+
+    let content: Vec<&Rect> = rects.iter()
+        .filter(|r| r.width < 400.0 && r.width > 20.0 && r.height > 20.0 && r.height < 100.0)
+        .collect();
+
+    // Parse arrows from SVG (lines and polylines)
+    let re_line = regex_lite::Regex::new(
+        r#"x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)""#
+    ).unwrap();
+
+    for cap in re_line.captures_iter(svg) {
+        let x1: f64 = cap[1].parse().unwrap_or(0.0);
+        let y1: f64 = cap[2].parse().unwrap_or(0.0);
+        let x2: f64 = cap[3].parse().unwrap_or(0.0);
+        let y2: f64 = cap[4].parse().unwrap_or(0.0);
+
+        // Check if this arrow crosses any unrelated element
+        let seg_left = x1.min(x2);
+        let seg_right = x1.max(x2);
+        let seg_top = y1.min(y2);
+        let seg_bot = y1.max(y2);
+
+        let mut crossed: Vec<&Rect> = Vec::new();
+        for rect in &content {
+            let starts_at = x1 >= rect.x - 5.0 && x1 <= rect.x + rect.width + 5.0
+                && y1 >= rect.y - 5.0 && y1 <= rect.y + rect.height + 5.0;
+            let ends_at = x2 >= rect.x - 5.0 && x2 <= rect.x + rect.width + 5.0
+                && y2 >= rect.y - 5.0 && y2 <= rect.y + rect.height + 5.0;
+
+            if !starts_at && !ends_at {
+                let margin = 3.0;
+                if seg_right >= rect.x + margin && seg_left <= rect.x + rect.width - margin
+                    && seg_bot >= rect.y + margin && seg_top <= rect.y + rect.height - margin
+                {
+                    crossed.push(rect);
+                }
+            }
+        }
+
+        if crossed.is_empty() {
+            continue;
+        }
+
+        // Find the bounding box of all crossed elements
+        let obs_left = crossed.iter().map(|r| r.x).fold(f64::MAX, f64::min);
+        let obs_right = crossed.iter().map(|r| r.x + r.width).fold(f64::MIN, f64::max);
+        let obs_top = crossed.iter().map(|r| r.y).fold(f64::MAX, f64::min);
+        let obs_bot = crossed.iter().map(|r| r.y + r.height).fold(f64::MIN, f64::max);
+
+        let pad = 10.0; // clearance around obstacles
+
+        // Option A: route LEFT of obstacle
+        let left_x = obs_left - pad;
+        let route_a = vec![
+            (x1, y1),
+            (left_x, y1),
+            (left_x, y2),
+            (x2, y2),
+        ];
+
+        // Option B: route RIGHT of obstacle
+        let right_x = obs_right + pad;
+        let route_b = vec![
+            (x1, y1),
+            (right_x, y1),
+            (right_x, y2),
+            (x2, y2),
+        ];
+
+        // Option C: route BELOW obstacle
+        let below_y = obs_bot + pad;
+        let route_c = vec![
+            (x1, y1),
+            (x1, below_y),
+            (x2, below_y),
+            (x2, y2),
+        ];
+
+        // Check each route for crossings
+        let options = [("left", &route_a), ("right", &route_b), ("below", &route_c)];
+
+        proposals.push(format!(
+            "  Arrow ({:.0},{:.0})→({:.0},{:.0}) crosses element at ({:.0},{:.0}):",
+            x1, y1, x2, y2, obs_left, obs_top
+        ));
+
+        for (name, route) in &options {
+            let mut crosses = false;
+            for i in 0..route.len() - 1 {
+                let (sx, sy) = route[i];
+                let (ex, ey) = route[i + 1];
+                let sl = sx.min(ex);
+                let sr = sx.max(ex);
+                let st = sy.min(ey);
+                let sb = sy.max(ey);
+
+                for rect in &content {
+                    let at_start = sx >= rect.x - 5.0 && sx <= rect.x + rect.width + 5.0
+                        && sy >= rect.y - 5.0 && sy <= rect.y + rect.height + 5.0;
+                    let at_end = ex >= rect.x - 5.0 && ex <= rect.x + rect.width + 5.0
+                        && ey >= rect.y - 5.0 && ey <= rect.y + rect.height + 5.0;
+                    if !at_start && !at_end {
+                        if sr >= rect.x + 3.0 && sl <= rect.x + rect.width - 3.0
+                            && sb >= rect.y + 3.0 && st <= rect.y + rect.height - 3.0
+                        {
+                            crosses = true;
+                            break;
+                        }
+                    }
+                }
+                if crosses { break; }
+            }
+
+            let pts: String = route.iter()
+                .map(|(x, y)| format!("{:.0},{:.0}", x, y))
+                .collect::<Vec<_>>()
+                .join(" ");
+
+            let status = if crosses { "STILL CROSSES" } else { "clear" };
+            proposals.push(format!(
+                "    Option {}: route {:5} → points=\"{}\" ({})",
+                name.chars().next().unwrap().to_uppercase().collect::<String>(),
+                name, pts, status
+            ));
+        }
+    }
+
+    proposals
+}
+
 /// Auto-fix: increase spacing between overlapping or too-close rects.
 /// For horizontal pairs: shifts the right rect further right.
 /// For vertical pairs: shifts the lower rect further down.
@@ -861,6 +995,17 @@ fn main() -> Result<()> {
             if failures.iter().any(|f| f.starts_with("DIAMOND TEXT")) {
                 svg = fix_diamond_text(&svg);
                 fixed.push("diamond text (widened diamond)");
+            }
+
+            // Propose arrow crossing fixes
+            if failures.iter().any(|f| f.starts_with("ARROW CROSSES")) {
+                let proposals = propose_arrow_reroutes(&svg, &rects);
+                if !proposals.is_empty() {
+                    println!("  Arrow reroute proposals:");
+                    for p in &proposals {
+                        println!("    {}", p);
+                    }
+                }
             }
 
             if !fixed.is_empty() {
