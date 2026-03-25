@@ -3,6 +3,7 @@ mod scene;
 mod builder;
 mod style;
 mod lint;
+mod layout;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -73,6 +74,17 @@ enum Command {
     /// Show diagram info
     Info {
         file: PathBuf,
+    },
+
+    /// Auto-layout elements in a flow
+    Layout {
+        file: PathBuf,
+        /// Direction: down, right
+        #[arg(long, default_value = "down")]
+        direction: String,
+        /// Gap between elements (pixels)
+        #[arg(long, default_value = "24")]
+        gap: f64,
     },
 
     /// Lint the diagram for quality issues
@@ -164,6 +176,14 @@ fn main() -> Result<()> {
             let id = builder::add_arrow(&mut scene, &from_id, &to_id, from_pt, to_pt, &s, label.as_deref());
             scene.save(&file)?;
             println!("{}", id);
+        }
+
+        Command::Layout { file, direction, gap } => {
+            let mut scene = Scene::load(&file)?;
+            layout::flow(&mut scene, &direction, gap);
+            layout::recalculate_arrows(&mut scene);
+            scene.save(&file)?;
+            println!("Layout applied: {} direction, {:.0}px gap", direction, gap);
         }
 
         Command::Lint { file } => {
