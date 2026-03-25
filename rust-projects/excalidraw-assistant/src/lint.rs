@@ -2,6 +2,99 @@ use crate::builder::estimate_text_width;
 use crate::elements::Element;
 use crate::scene::Scene;
 
+/// Auto-fix all fixable issues. Returns list of what was fixed.
+pub fn fix(scene: &mut Scene) -> Vec<String> {
+    let mut fixed = Vec::new();
+
+    // Fix text overflow by widening containers
+    for i in 0..scene.elements.len() {
+        if scene.elements[i].element_type != "text" {
+            continue;
+        }
+        let text = match &scene.elements[i].text {
+            Some(t) => t.clone(),
+            None => continue,
+        };
+        let fs = scene.elements[i].font_size;
+        let cid = match &scene.elements[i].container_id {
+            Some(c) => c.clone(),
+            None => continue,
+        };
+
+        let est_width = estimate_text_width(&text, fs);
+
+        if let Some(container) = scene.elements.iter_mut().find(|e| e.id == cid) {
+            let available = if container.element_type == "diamond" {
+                container.width * 0.5
+            } else {
+                container.width - 20.0
+            };
+
+            if est_width > available {
+                if container.element_type == "diamond" {
+                    let new_w = (est_width * 1.15) / 0.5;
+                    let delta = new_w - container.width;
+                    container.x -= delta / 2.0;
+                    container.width = new_w;
+                } else {
+                    let new_w = est_width + 40.0;
+                    let delta = new_w - container.width;
+                    container.x -= delta / 2.0;
+                    container.width = new_w;
+                }
+                fixed.push(format!("Widened {} for \"{}\"", container.element_type, &text[..text.len().min(20)]));
+            }
+        }
+    }
+
+    // Fix short arrows by extending
+    for el in &mut scene.elements {
+        if el.element_type != "arrow" {
+            continue;
+        }
+        if let Some(ref mut points) = el.points {
+            if points.len() >= 2 {
+                let dx = points[1][0] - points[0][0];
+                let dy = points[1][1] - points[0][1];
+                let len = (dx * dx + dy * dy).sqrt();
+                if len > 0.0 && len < 15.0 {
+                    let scale = 18.0 / len;
+                    points[1][0] = points[0][0] + dx * scale;
+                    points[1][1] = points[0][1] + dy * scale;
+                    el.width = points[1][0];
+                    el.height = points[1][1];
+                    fixed.push(format!("Extended arrow at ({:.0},{:.0})", el.x, el.y));
+                }
+            }
+        }
+    }
+
+    // Fix inconsistent stroke — standardise to 2.0
+    let arrow_widths: Vec<f64> = scene.elements.iter()
+        .filter(|e| e.element_type == "arrow")
+        .map(|e| e.stroke_width)
+        .collect();
+    let has_inconsistency = {
+        let mut unique = arrow_widths.clone();
+        unique.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        unique.dedup();
+        unique.len() > 1
+    };
+    if has_inconsistency {
+        for el in &mut scene.elements {
+            if el.element_type == "arrow" {
+                el.stroke_width = 2.0;
+            }
+        }
+        fixed.push("Standardised arrow strokeWidth to 2.0".into());
+    }
+
+    // Reposition text after container changes
+    crate::layout::reposition_bound_text(scene);
+
+    fixed
+}
+
 /// Run all lint checks on a scene. Returns list of failures.
 pub fn check(scene: &Scene) -> Vec<String> {
     let mut failures = Vec::new();

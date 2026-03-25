@@ -60,7 +60,7 @@ fn layout_horizontal(scene: &mut Scene, shape_indices: &[usize], gap: f64) {
 }
 
 /// Reposition all bound text elements to the centre of their container.
-fn reposition_bound_text(scene: &mut Scene) {
+pub fn reposition_bound_text(scene: &mut Scene) {
     // Collect container positions first (avoid borrow issues)
     let container_positions: Vec<(String, f64, f64, f64, f64)> = scene.elements.iter()
         .filter(|e| e.element_type != "text")

@@ -105,6 +105,9 @@ enum Command {
     /// Lint the diagram for quality issues
     Lint {
         file: PathBuf,
+        /// Auto-fix violations
+        #[arg(long)]
+        fix: bool,
     },
 
     /// Export as JSON (pretty-printed)
@@ -208,8 +211,19 @@ fn main() -> Result<()> {
             println!("Layout applied: {} direction, {:.0}px gap", direction, gap);
         }
 
-        Command::Lint { file } => {
-            let scene = Scene::load(&file)?;
+        Command::Lint { file, fix } => {
+            let mut scene = Scene::load(&file)?;
+
+            if fix {
+                let fixed = lint::fix(&mut scene);
+                if !fixed.is_empty() {
+                    scene.save(&file)?;
+                    for f in &fixed {
+                        println!("  Fixed: {}", f);
+                    }
+                }
+            }
+
             let failures = lint::check(&scene);
             if failures.is_empty() {
                 println!("✓ All checks passed ({} elements)", scene.elements.len());
