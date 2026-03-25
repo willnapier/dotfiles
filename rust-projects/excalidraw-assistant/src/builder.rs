@@ -18,13 +18,15 @@ fn size_for_label(text: &str, font_size: f64) -> (f64, f64) {
     (width, height)
 }
 
-/// Add a rectangle with auto-sized label.
+/// Add a rectangle with auto-sized label (text element bound to shape).
 pub fn add_rect(scene: &mut Scene, x: f64, y: f64, label: &str, style: &Style) -> String {
     let (w, h) = size_for_label(label, style.font_size);
-    let id = new_id();
+    let shape_id = new_id();
+    let text_id = new_id();
 
+    // Shape with boundElements pointing to text
     scene.add(Element {
-        id: id.clone(),
+        id: shape_id.clone(),
         element_type: "rectangle".into(),
         x, y, width: w, height: h,
         stroke_color: style.stroke.clone(),
@@ -34,35 +36,63 @@ pub fn add_rect(scene: &mut Scene, x: f64, y: f64, label: &str, style: &Style) -
         stroke_style: String::new(),
         roughness: 0,
         opacity: style.opacity,
-        font_family: 2, // Nunito
+        font_family: 2,
         font_size: style.font_size,
         roundness: Some(Roundness { roundness_type: 3 }),
-        label: Some(Label {
-            text: label.into(),
-            font_size: style.font_size,
-            font_family: 2,
-        }),
-        // defaults
+        label: None,
+        bound_elements: Some(vec![BoundElement { id: text_id.clone(), bound_type: "text".into() }]),
         text: None, original_text: None, text_align: None,
         vertical_align: None, container_id: None,
         points: None, end_arrowhead: None, start_arrowhead: None,
-        start_binding: None, end_binding: None, bound_elements: None,
+        start_binding: None, end_binding: None,
         angle: None, is_deleted: false,
     });
 
-    id
+    // Text element bound to the shape
+    let text_width = estimate_text_width(label, style.font_size);
+    let text_height = style.font_size * 1.2 * label.split('\n').count() as f64;
+    scene.add(Element {
+        id: text_id,
+        element_type: "text".into(),
+        x: x + (w - text_width) / 2.0,
+        y: y + (h - text_height) / 2.0,
+        width: text_width,
+        height: text_height,
+        stroke_color: style.stroke.clone(),
+        background_color: "transparent".into(),
+        fill_style: "solid".into(),
+        stroke_width: 0.0,
+        stroke_style: String::new(),
+        roughness: 0,
+        opacity: 100,
+        font_family: 2,
+        font_size: style.font_size,
+        roundness: None,
+        label: None,
+        bound_elements: None,
+        text: Some(label.into()),
+        original_text: Some(label.into()),
+        text_align: Some("center".into()),
+        vertical_align: Some("middle".into()),
+        container_id: Some(shape_id.clone()),
+        points: None, end_arrowhead: None, start_arrowhead: None,
+        start_binding: None, end_binding: None,
+        angle: None, is_deleted: false,
+    });
+
+    shape_id
 }
 
-/// Add a diamond with auto-sized label.
+/// Add a diamond with auto-sized label (text element bound to shape).
 pub fn add_diamond(scene: &mut Scene, x: f64, y: f64, label: &str, style: &Style) -> String {
     let (w, h) = size_for_label(label, style.font_size);
-    // Diamond inscribes text at ~50% width, so double it
     let w = w * 2.0;
     let h = h * 1.5;
-    let id = new_id();
+    let shape_id = new_id();
+    let text_id = new_id();
 
     scene.add(Element {
-        id: id.clone(),
+        id: shape_id.clone(),
         element_type: "diamond".into(),
         x, y, width: w, height: h,
         stroke_color: style.stroke.clone(),
@@ -75,19 +105,47 @@ pub fn add_diamond(scene: &mut Scene, x: f64, y: f64, label: &str, style: &Style
         font_family: 2,
         font_size: style.font_size,
         roundness: None,
-        label: Some(Label {
-            text: label.into(),
-            font_size: style.font_size,
-            font_family: 2,
-        }),
+        label: None,
+        bound_elements: Some(vec![BoundElement { id: text_id.clone(), bound_type: "text".into() }]),
         text: None, original_text: None, text_align: None,
         vertical_align: None, container_id: None,
         points: None, end_arrowhead: None, start_arrowhead: None,
-        start_binding: None, end_binding: None, bound_elements: None,
+        start_binding: None, end_binding: None,
         angle: None, is_deleted: false,
     });
 
-    id
+    let text_width = estimate_text_width(label, style.font_size);
+    let text_height = style.font_size * 1.2 * label.split('\n').count() as f64;
+    scene.add(Element {
+        id: text_id,
+        element_type: "text".into(),
+        x: x + (w - text_width) / 2.0,
+        y: y + (h - text_height) / 2.0,
+        width: text_width,
+        height: text_height,
+        stroke_color: style.stroke.clone(),
+        background_color: "transparent".into(),
+        fill_style: "solid".into(),
+        stroke_width: 0.0,
+        stroke_style: String::new(),
+        roughness: 0,
+        opacity: 100,
+        font_family: 2,
+        font_size: style.font_size,
+        roundness: None,
+        label: None,
+        bound_elements: None,
+        text: Some(label.into()),
+        original_text: Some(label.into()),
+        text_align: Some("center".into()),
+        vertical_align: Some("middle".into()),
+        container_id: Some(shape_id.clone()),
+        points: None, end_arrowhead: None, start_arrowhead: None,
+        start_binding: None, end_binding: None,
+        angle: None, is_deleted: false,
+    });
+
+    shape_id
 }
 
 /// Add an arrow connecting two elements with proper binding.
