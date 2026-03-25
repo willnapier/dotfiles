@@ -713,6 +713,18 @@ fn main() -> Result<()> {
                 fixed.push("short arrows (extended shafts)");
             }
 
+            // Fix overlap and min gap
+            if failures.iter().any(|f| f.starts_with("OVERLAP") || f.starts_with("GAP TOO SMALL") || f.starts_with("VERTICAL GAP")) {
+                svg = fix_element_spacing(&svg);
+                fixed.push("element spacing (shifted downstream)");
+            }
+
+            // Fix diamond text overflow
+            if failures.iter().any(|f| f.starts_with("DIAMOND TEXT")) {
+                svg = fix_diamond_text(&svg);
+                fixed.push("diamond text (widened diamond)");
+            }
+
             if !fixed.is_empty() {
                 fs::write(path, &svg)
                     .with_context(|| format!("Failed to write: {}", path))?;
