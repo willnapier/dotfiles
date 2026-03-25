@@ -10,6 +10,8 @@ pub fn from_d2(d2_source: &str, style_preset: &str) -> Result<Scene> {
     let mut node_ids: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut connections: Vec<(String, String, Option<String>)> = Vec::new();
 
+    let mut depth = 0; // brace depth tracker
+
     for line in d2_source.lines() {
         let line = line.trim();
 
@@ -20,7 +22,21 @@ pub fn from_d2(d2_source: &str, style_preset: &str) -> Result<Scene> {
         if line.starts_with("direction:") || line.starts_with("title:") {
             continue;
         }
-        if line.starts_with('|') || line.starts_with('}') {
+        if line.starts_with('|') || line == "}" {
+            // Track closing braces
+            if line == "}" {
+                depth = (depth - 1).max(0);
+            }
+            continue;
+        }
+
+        // Track brace depth — lines inside blocks are properties, not nodes
+        let opens = line.chars().filter(|&c| c == '{').count() as i32;
+        let closes = line.chars().filter(|&c| c == '}').count() as i32;
+
+        // If we're inside a block and this isn't the opening line, skip it
+        if depth > 0 && opens == 0 {
+            depth += opens - closes;
             continue;
         }
 
@@ -106,6 +122,9 @@ pub fn from_d2(d2_source: &str, style_preset: &str) -> Result<Scene> {
                 };
 
                 node_ids.insert(name.to_string(), id);
+
+                // Track depth for lines that open a block
+                depth += opens - closes;
             }
         }
     }
