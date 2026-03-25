@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 quick-xml = "0.37"
 anyhow = "1"
+regex-lite = "0.1"

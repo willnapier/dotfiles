@@ -275,7 +275,7 @@ fn check_arrow_length(arrows: &[Arrow]) -> Vec<String> {
     failures
 }
 
-fn check_rect_overlap(rects: &[Rect]) -> Vec<String> {
+fn check_rect_overlap_and_gap(rects: &[Rect]) -> Vec<String> {
     let mut failures = Vec::new();
     let content: Vec<&Rect> = rects.iter()
         .filter(|r| r.width < 400.0 && r.height > 30.0 && r.height < 80.0)
@@ -283,6 +283,7 @@ fn check_rect_overlap(rects: &[Rect]) -> Vec<String> {
     for i in 0..content.len() {
         for j in (i + 1)..content.len() {
             let (a, b) = (content[i], content[j]);
+            // Same row?
             if (a.y - b.y).abs() < 10.0 && a.x < b.x {
                 let gap = b.x - (a.x + a.width);
                 if gap < 0.0 {
@@ -290,10 +291,103 @@ fn check_rect_overlap(rects: &[Rect]) -> Vec<String> {
                         "OVERLAP: rects at x={:.0} w={:.0} and x={:.0} gap={:.0} at y={:.0}",
                         a.x, a.width, b.x, gap, a.y
                     ));
+                } else if gap > 0.0 && gap < 12.0 {
+                    failures.push(format!(
+                        "GAP TOO SMALL: {:.0}px (min 12) between rects at x={:.0} and x={:.0} at y={:.0}",
+                        gap, a.x, b.x, a.y
+                    ));
+                }
+            }
+            // Same column?
+            if (a.x - b.x).abs() < 10.0 && a.y < b.y {
+                let gap = b.y - (a.y + a.height);
+                if gap > 0.0 && gap < 12.0 {
+                    failures.push(format!(
+                        "VERTICAL GAP TOO SMALL: {:.0}px (min 12) between rects at y={:.0} and y={:.0} at x={:.0}",
+                        gap, a.y, b.y, a.x
+                    ));
                 }
             }
         }
     }
+    failures
+}
+
+/// Check: all arrows have consistent strokeWidth.
+fn check_consistent_stroke(arrows: &[Arrow], svg: &str) -> Vec<String> {
+    let mut failures = Vec::new();
+    let mut widths = std::collections::HashMap::new();
+
+    // Parse stroke-width from line and polyline elements
+    for cap in regex_lite::Regex::new(r#"<(?:line|polyline)[^>]*stroke-width="([\d.]+)"[^>]*>"#)
+        .unwrap()
+        .captures_iter(svg)
+    {
+        let sw: f64 = cap[1].parse().unwrap_or(0.0);
+        if sw > 0.0 {
+            *widths.entry(format!("{:.1}", sw)).or_insert(0u32) += 1;
+        }
+    }
+
+    if widths.len() > 1 {
+        let detail: Vec<String> = widths.iter().map(|(k, v)| format!("{}×sw={}", v, k)).collect();
+        failures.push(format!("INCONSISTENT STROKE: {}", detail.join(", ")));
+    }
+
+    let _ = arrows; // used indirectly via svg parsing
+    failures
+}
+
+/// Check: no arrow segment crosses an unrelated element's bounding box.
+fn check_arrow_crossing(arrows: &[Arrow], rects: &[Rect]) -> Vec<String> {
+    let mut failures = Vec::new();
+
+    // Content rects only (skip zones/backgrounds)
+    let content: Vec<&Rect> = rects.iter()
+        .filter(|r| r.width < 400.0 && r.width > 20.0 && r.height > 20.0 && r.height < 100.0)
+        .collect();
+
+    for arrow in arrows {
+        for &(x1, y1, x2, y2) in &arrow.segments {
+            let seg_left = x1.min(x2);
+            let seg_right = x1.max(x2);
+            let seg_top = y1.min(y2);
+            let seg_bot = y1.max(y2);
+
+            for rect in &content {
+                // Does segment bounding box intersect rect?
+                if seg_right >= rect.x
+                    && seg_left <= rect.x + rect.width
+                    && seg_bot >= rect.y
+                    && seg_top <= rect.y + rect.height
+                {
+                    // Check: is this arrow connected to this rect?
+                    // Connected = arrow starts or ends at rect boundary (within 5px)
+                    let starts_at = (x1 >= rect.x - 5.0 && x1 <= rect.x + rect.width + 5.0
+                        && y1 >= rect.y - 5.0 && y1 <= rect.y + rect.height + 5.0);
+                    let ends_at = (x2 >= rect.x - 5.0 && x2 <= rect.x + rect.width + 5.0
+                        && y2 >= rect.y - 5.0 && y2 <= rect.y + rect.height + 5.0);
+
+                    if !starts_at && !ends_at {
+                        // Check it's not just a close pass — require actual overlap
+                        // (segment must pass through the interior, not just graze the edge)
+                        let margin = 3.0;
+                        if seg_right >= rect.x + margin
+                            && seg_left <= rect.x + rect.width - margin
+                            && seg_bot >= rect.y + margin
+                            && seg_top <= rect.y + rect.height - margin
+                        {
+                            failures.push(format!(
+                                "ARROW CROSSES ELEMENT: segment ({:.0},{:.0})→({:.0},{:.0}) crosses rect at ({:.0},{:.0} w={:.0})",
+                                x1, y1, x2, y2, rect.x, rect.y, rect.width
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     failures
 }
 
@@ -365,7 +459,9 @@ fn main() -> Result<()> {
         failures.extend(check_text_overflow(&texts, &rects));
         failures.extend(check_diamond_text(&texts, &diamonds));
         failures.extend(check_arrow_length(&arrows));
-        failures.extend(check_rect_overlap(&rects));
+        failures.extend(check_rect_overlap_and_gap(&rects));
+        failures.extend(check_consistent_stroke(&arrows, &svg));
+        failures.extend(check_arrow_crossing(&arrows, &rects));
         failures.extend(check_symmetrical_margins(&rects));
 
         if failures.is_empty() {
