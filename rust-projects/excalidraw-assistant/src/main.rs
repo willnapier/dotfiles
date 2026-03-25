@@ -198,8 +198,11 @@ fn main() -> Result<()> {
                 "left" => ([0.0, 0.5], [1.0, 0.5]),
                 _ => ([0.5, 1.0], [0.5, 0.0]),
             };
-            let id = builder::add_arrow(&mut scene, &from_id, &to_id, from_pt, to_pt, &s, label.as_deref());
+            let (id, note) = builder::smart_connect(&mut scene, &from_id, &to_id, from_pt, to_pt, &s, label.as_deref());
             scene.save(&file)?;
+            if let Some(n) = note {
+                eprintln!("{}", n);
+            }
             println!("{}", id);
         }
 

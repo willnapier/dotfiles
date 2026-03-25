@@ -274,3 +274,160 @@ pub fn connect_down(scene: &mut Scene, from_id: &str, to_id: &str, style: &Style
 pub fn connect_right(scene: &mut Scene, from_id: &str, to_id: &str, style: &Style) -> String {
     add_arrow(scene, from_id, to_id, [1.0, 0.5], [0.0, 0.5], style, None)
 }
+
+/// Check if a line segment intersects any element (other than from/to).
+fn segment_crosses_element(
+    x1: f64, y1: f64, x2: f64, y2: f64,
+    scene: &Scene, skip_ids: &[&str],
+) -> bool {
+    let sl = x1.min(x2);
+    let sr = x1.max(x2);
+    let st = y1.min(y2);
+    let sb = y1.max(y2);
+    let margin = 3.0;
+
+    for el in &scene.elements {
+        if el.element_type == "text" || el.element_type == "arrow" {
+            continue;
+        }
+        if skip_ids.contains(&el.id.as_str()) {
+            continue;
+        }
+        if sr >= el.x + margin && sl <= el.right() - margin
+            && sb >= el.y + margin && st <= el.bottom() - margin
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Check if a multi-segment path crosses any element.
+fn path_crosses(points: &[(f64, f64)], scene: &Scene, skip_ids: &[&str]) -> bool {
+    for i in 0..points.len().saturating_sub(1) {
+        if segment_crosses_element(points[i].0, points[i].1, points[i+1].0, points[i+1].1, scene, skip_ids) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Smart connect: if direct path crosses an obstacle, propose routes.
+/// Returns the arrow ID and any routing notes.
+pub fn smart_connect(
+    scene: &mut Scene,
+    from_id: &str,
+    to_id: &str,
+    from_point: [f64; 2],
+    to_point: [f64; 2],
+    style: &Style,
+    label: Option<&str>,
+) -> (String, Option<String>) {
+    let from = scene.get(from_id).expect("from not found").clone();
+    let to = scene.get(to_id).expect("to not found").clone();
+
+    let sx = from.x + from_point[0] * from.width;
+    let sy = from.y + from_point[1] * from.height;
+    let ex = to.x + to_point[0] * to.width;
+    let ey = to.y + to_point[1] * to.height;
+
+    let skip = [from_id, to_id];
+
+    // Try direct path first
+    if !segment_crosses_element(sx, sy, ex, ey, scene, &skip) {
+        let id = add_arrow(scene, from_id, to_id, from_point, to_point, style, label);
+        return (id, None);
+    }
+
+    // Find obstacles between start and end
+    let obs_left = scene.elements.iter()
+        .filter(|e| e.element_type != "text" && e.element_type != "arrow" && !skip.contains(&e.id.as_str()))
+        .filter(|e| {
+            let sl = sx.min(ex); let sr = sx.max(ex);
+            let st = sy.min(ey); let sb = sy.max(ey);
+            sr >= e.x && sl <= e.right() && sb >= e.y && st <= e.bottom()
+        })
+        .map(|e| e.x)
+        .fold(f64::MAX, f64::min);
+    let obs_right = scene.elements.iter()
+        .filter(|e| e.element_type != "text" && e.element_type != "arrow" && !skip.contains(&e.id.as_str()))
+        .filter(|e| {
+            let sl = sx.min(ex); let sr = sx.max(ex);
+            let st = sy.min(ey); let sb = sy.max(ey);
+            sr >= e.x && sl <= e.right() && sb >= e.y && st <= e.bottom()
+        })
+        .map(|e| e.right())
+        .fold(f64::MIN, f64::max);
+
+    let pad = 15.0;
+
+    // Route options
+    let route_left = vec![(sx, sy), (obs_left - pad, sy), (obs_left - pad, ey), (ex, ey)];
+    let route_right = vec![(sx, sy), (obs_right + pad, sy), (obs_right + pad, ey), (ex, ey)];
+
+    // Pick the tightest clear route
+    let (points, note) = if !path_crosses(&route_left, scene, &skip) {
+        (route_left, "routed left")
+    } else if !path_crosses(&route_right, scene, &skip) {
+        (route_right, "routed right")
+    } else {
+        // Fallback: direct (accept the crossing)
+        let id = add_arrow(scene, from_id, to_id, from_point, to_point, style, label);
+        return (id, Some("WARNING: no clear route found, direct path used".into()));
+    };
+
+    // Create multi-point arrow
+    let arrow_id = new_id();
+    let rel_points: Vec<[f64; 2]> = points.iter()
+        .map(|(px, py)| [px - sx, py - sy])
+        .collect();
+
+    let arrow = Element {
+        id: arrow_id.clone(),
+        element_type: "arrow".into(),
+        x: sx, y: sy,
+        width: ex - sx, height: ey - sy,
+        stroke_color: style.stroke.clone(),
+        background_color: "transparent".into(),
+        fill_style: "solid".into(),
+        stroke_width: 2.0,
+        stroke_style: String::new(),
+        roughness: 0,
+        opacity: style.opacity,
+        font_family: 2, font_size: 0.0,
+        roundness: None,
+        points: Some(rel_points),
+        end_arrowhead: Some("arrow".into()),
+        start_arrowhead: None,
+        start_binding: Some(crate::elements::Binding {
+            element_id: from_id.into(),
+            fixed_point: from_point,
+            focus: 0.0, gap: 0.0,
+        }),
+        end_binding: Some(crate::elements::Binding {
+            element_id: to_id.into(),
+            fixed_point: to_point,
+            focus: 0.0, gap: 0.0,
+        }),
+        bound_elements: None,
+        label: label.map(|l| crate::elements::Label {
+            text: l.into(), font_size: 14.0, font_family: 2,
+        }),
+        text: None, original_text: None, text_align: None,
+        vertical_align: None, container_id: None,
+        angle: None, is_deleted: false,
+    };
+
+    scene.add(arrow);
+
+    if let Some(el) = scene.get_mut(from_id) {
+        let bound = el.bound_elements.get_or_insert_with(Vec::new);
+        bound.push(crate::elements::BoundElement { id: arrow_id.clone(), bound_type: "arrow".into() });
+    }
+    if let Some(el) = scene.get_mut(to_id) {
+        let bound = el.bound_elements.get_or_insert_with(Vec::new);
+        bound.push(crate::elements::BoundElement { id: arrow_id.clone(), bound_type: "arrow".into() });
+    }
+
+    (arrow_id, Some(format!("Arrow {}", note)))
+}
