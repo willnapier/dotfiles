@@ -80,20 +80,24 @@ enum Command {
     },
 }
 
+/// Resolve element references. Filters to shapes only (skip text elements).
 fn resolve_ref(scene: &Scene, reference: &str) -> String {
+    let shapes: Vec<&elements::Element> = scene.elements.iter()
+        .filter(|e| e.element_type != "text")
+        .collect();
+
     if reference == "last" {
-        scene.elements.last().map(|e| e.id.clone()).unwrap_or_default()
+        shapes.last().map(|e| e.id.clone()).unwrap_or_default()
     } else if let Some(n) = reference.strip_prefix("last-") {
         let offset: usize = n.parse().unwrap_or(0);
-        let len = scene.elements.len();
-        if offset < len {
-            scene.elements[len - 1 - offset].id.clone()
+        if offset < shapes.len() {
+            shapes[shapes.len() - 1 - offset].id.clone()
         } else {
             String::new()
         }
     } else if let Ok(idx) = reference.parse::<usize>() {
-        if idx < scene.elements.len() {
-            return scene.elements[idx].id.clone();
+        if idx < shapes.len() {
+            return shapes[idx].id.clone();
         }
         reference.to_string()
     } else {
@@ -115,7 +119,7 @@ fn main() -> Result<()> {
             let mut scene = Scene::load(&file)?;
             let s = Style::by_name(&style);
             let (ax, ay) = if below {
-                if let Some(last) = scene.elements.last() {
+                if let Some(last) = scene.elements.iter().rev().find(|e| e.element_type != "text") {
                     (last.x, last.bottom() + gap)
                 } else { (x, y) }
             } else { (x, y) };
@@ -128,7 +132,7 @@ fn main() -> Result<()> {
             let mut scene = Scene::load(&file)?;
             let s = Style::by_name(&style);
             let (ax, ay) = if below {
-                if let Some(last) = scene.elements.last() {
+                if let Some(last) = scene.elements.iter().rev().find(|e| e.element_type != "text") {
                     (last.x, last.bottom() + gap)
                 } else { (x, y) }
             } else { (x, y) };
