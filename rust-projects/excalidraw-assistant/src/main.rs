@@ -4,6 +4,7 @@ mod builder;
 mod style;
 mod lint;
 mod layout;
+mod convert;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -108,6 +109,18 @@ enum Command {
         /// Auto-fix violations
         #[arg(long)]
         fix: bool,
+    },
+
+    /// Convert a D2 file to .excalidraw
+    Convert {
+        /// Input D2 file
+        input: PathBuf,
+        /// Output .excalidraw file
+        #[arg(long)]
+        output: Option<PathBuf>,
+        /// Style preset (clinical, default)
+        #[arg(long, default_value = "clinical")]
+        style: String,
     },
 
     /// Export as JSON (pretty-printed)
@@ -245,6 +258,17 @@ fn main() -> Result<()> {
             let arrows = scene.elements.iter().filter(|e| e.element_type == "arrow").count();
             println!("{}: {} elements ({} rects, {} diamonds, {} arrows)",
                 file.display(), scene.elements.len(), rects, diamonds, arrows);
+        }
+
+        Command::Convert { input, output, style } => {
+            let d2 = std::fs::read_to_string(&input)?;
+            let scene = convert::from_d2(&d2, &style)?;
+            let out_path = output.unwrap_or_else(|| input.with_extension("excalidraw"));
+            scene.save(&out_path)?;
+            let shapes = scene.elements.iter().filter(|e| e.element_type != "text" && e.element_type != "arrow").count();
+            let arrows = scene.elements.iter().filter(|e| e.element_type == "arrow").count();
+            println!("Converted: {} → {} ({} shapes, {} arrows)",
+                input.display(), out_path.display(), shapes, arrows);
         }
 
         Command::Export { file } => {
