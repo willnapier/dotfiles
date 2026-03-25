@@ -5,6 +5,7 @@ mod style;
 mod lint;
 mod layout;
 mod convert;
+mod export;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -121,6 +122,14 @@ enum Command {
         /// Style preset (clinical, default)
         #[arg(long, default_value = "clinical")]
         style: String,
+    },
+
+    /// Export as SVG
+    ExportSvg {
+        file: PathBuf,
+        /// Output file (defaults to stdout)
+        #[arg(long)]
+        output: Option<PathBuf>,
     },
 
     /// Export as JSON (pretty-printed)
@@ -269,6 +278,17 @@ fn main() -> Result<()> {
             let arrows = scene.elements.iter().filter(|e| e.element_type == "arrow").count();
             println!("Converted: {} → {} ({} shapes, {} arrows)",
                 input.display(), out_path.display(), shapes, arrows);
+        }
+
+        Command::ExportSvg { file, output } => {
+            let scene = Scene::load(&file)?;
+            let svg = export::to_svg(&scene);
+            if let Some(out) = output {
+                std::fs::write(&out, &svg)?;
+                println!("Exported: {}", out.display());
+            } else {
+                print!("{}", svg);
+            }
         }
 
         Command::Export { file } => {
