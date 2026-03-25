@@ -396,29 +396,24 @@ pub fn smart_connect(
         return (id, None);
     }
 
-    // Find obstacles between start and end
-    let obs_left = scene.elements.iter()
+    // Find ALL obstacles in the bounding box between start and end
+    let bbox_left = sx.min(ex) - 5.0;
+    let bbox_right = sx.max(ex) + 5.0;
+    let bbox_top = sy.min(ey);
+    let bbox_bot = sy.max(ey);
+
+    let obstacles: Vec<&crate::elements::Element> = scene.elements.iter()
         .filter(|e| e.element_type != "text" && e.element_type != "arrow" && !skip.contains(&e.id.as_str()))
-        .filter(|e| {
-            let sl = sx.min(ex); let sr = sx.max(ex);
-            let st = sy.min(ey); let sb = sy.max(ey);
-            sr >= e.x && sl <= e.right() && sb >= e.y && st <= e.bottom()
-        })
-        .map(|e| e.x)
-        .fold(f64::MAX, f64::min);
-    let obs_right = scene.elements.iter()
-        .filter(|e| e.element_type != "text" && e.element_type != "arrow" && !skip.contains(&e.id.as_str()))
-        .filter(|e| {
-            let sl = sx.min(ex); let sr = sx.max(ex);
-            let st = sy.min(ey); let sb = sy.max(ey);
-            sr >= e.x && sl <= e.right() && sb >= e.y && st <= e.bottom()
-        })
-        .map(|e| e.right())
-        .fold(f64::MIN, f64::max);
+        .filter(|e| e.right() >= bbox_left && e.x <= bbox_right && e.bottom() >= bbox_top && e.y <= bbox_bot)
+        .collect();
+
+    // Find the widest extent of ALL obstacles
+    let obs_left = obstacles.iter().map(|e| e.x).fold(f64::MAX, f64::min);
+    let obs_right = obstacles.iter().map(|e| e.right()).fold(f64::MIN, f64::max);
 
     let pad = 15.0;
 
-    // Route options
+    // Route options — go OUTSIDE all obstacles
     let route_left = vec![(sx, sy), (obs_left - pad, sy), (obs_left - pad, ey), (ex, ey)];
     let route_right = vec![(sx, sy), (obs_right + pad, sy), (obs_right + pad, ey), (ex, ey)];
 
