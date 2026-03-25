@@ -571,6 +571,144 @@ fn fix_symmetrical_margins(svg: &str, rects: &[Rect]) -> String {
     result
 }
 
+/// Auto-fix: increase spacing between overlapping or too-close rects.
+/// For horizontal pairs: shifts the right rect further right.
+/// For vertical pairs: shifts the lower rect further down.
+fn fix_element_spacing(svg: &str) -> String {
+    let mut result = svg.to_string();
+    let min_gap = 14.0; // target gap (slightly above 12px minimum)
+
+    let re = regex_lite::Regex::new(
+        r#"<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)""#
+    ).unwrap();
+
+    // Collect content rects
+    let content: Vec<(f64, f64, f64, f64)> = re.captures_iter(svg)
+        .map(|cap| {
+            (cap[1].parse().unwrap_or(0.0), cap[2].parse().unwrap_or(0.0),
+             cap[3].parse().unwrap_or(0.0), cap[4].parse().unwrap_or(0.0))
+        })
+        .filter(|(_, _, w, h)| *w < 400.0 && *w > 20.0 && *h > 30.0 && *h < 80.0)
+        .collect();
+
+    // Check horizontal pairs (same row)
+    for i in 0..content.len() {
+        for j in (i + 1)..content.len() {
+            let (ax, ay, aw, _) = content[i];
+            let (bx, by, bw, bh) = content[j];
+
+            if (ay - by).abs() < 10.0 && ax < bx {
+                let gap = bx - (ax + aw);
+                if gap < 12.0 {
+                    let shift = min_gap - gap;
+                    let old = format!("x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"",
+                        bx, by, bw, bh);
+                    let new_s = format!("x=\"{:.0}\" y=\"{}\" width=\"{}\" height=\"{}\"",
+                        bx + shift, by, bw, bh);
+                    result = result.replacen(&old, &new_s, 1);
+                }
+            }
+
+            // Vertical pairs (same column)
+            if (ax - bx).abs() < 10.0 && ay < by {
+                let gap = by - (ay + content[i].3);
+                if gap > 0.0 && gap < 12.0 {
+                    let shift = min_gap - gap;
+                    let old = format!("x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"",
+                        bx, by, bw, bh);
+                    let new_s = format!("x=\"{}\" y=\"{:.0}\" width=\"{}\" height=\"{}\"",
+                        bx, by + shift, bw, bh);
+                    result = result.replacen(&old, &new_s, 1);
+                }
+            }
+        }
+    }
+
+    result
+}
+
+/// Auto-fix: widen diamonds where text overflows the inscribed area.
+fn fix_diamond_text(svg: &str) -> String {
+    let mut result = svg.to_string();
+
+    // Parse diamonds and their text
+    let re_poly = regex_lite::Regex::new(r#"<polygon points="([^"]*)""#).unwrap();
+
+    for cap in re_poly.captures_iter(svg) {
+        let pts_str = &cap[1];
+        let pts: Vec<(f64, f64)> = pts_str.split_whitespace()
+            .filter_map(|p| {
+                let parts: Vec<&str> = p.split(',').collect();
+                if parts.len() == 2 {
+                    Some((parts[0].parse().unwrap_or(0.0), parts[1].parse().unwrap_or(0.0)))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if pts.len() != 4 {
+            continue;
+        }
+
+        let min_x = pts.iter().map(|p| p.0).fold(f64::MAX, f64::min);
+        let max_x = pts.iter().map(|p| p.0).fold(f64::MIN, f64::max);
+        let min_y = pts.iter().map(|p| p.1).fold(f64::MAX, f64::min);
+        let max_y = pts.iter().map(|p| p.1).fold(f64::MIN, f64::max);
+        let cx = (min_x + max_x) / 2.0;
+        let cy = (min_y + max_y) / 2.0;
+        let w = max_x - min_x;
+        let inscribed = w * 0.5;
+
+        // Find text near this diamond's center
+        let re_text = regex_lite::Regex::new(r#"<text[^>]*>([^<]+)</text>"#).unwrap();
+        let mut max_text_width = 0.0f64;
+        for tcap in re_text.captures_iter(svg) {
+            // Check if this text element is near the diamond center
+            // (we'd need to parse x/y from the text tag — simplified: check all text)
+            let text = tcap[1].trim();
+            if text.is_empty() {
+                continue;
+            }
+            // Very rough: see if this text's content matches what we'd expect in a diamond
+            // For now, check any text within ±50px of diamond center
+            let text_tag = &svg[tcap.get(0).unwrap().start()..tcap.get(0).unwrap().end()];
+            if let Some(xm) = regex_lite::Regex::new(r#"x="([\d.]+)""#).unwrap().captures(text_tag) {
+                if let Some(ym) = regex_lite::Regex::new(r#"y="([\d.]+)""#).unwrap().captures(text_tag) {
+                    let tx: f64 = xm[1].parse().unwrap_or(0.0);
+                    let ty: f64 = ym[1].parse().unwrap_or(0.0);
+                    if (tx - cx).abs() < w && (ty - cy).abs() < (max_y - min_y) {
+                        if let Some(fsm) = regex_lite::Regex::new(r#"font-size="([\d.]+)""#).unwrap().captures(text_tag) {
+                            let fs: f64 = fsm[1].parse().unwrap_or(12.0);
+                            let tw = text.len() as f64 * fs * 0.55;
+                            max_text_width = max_text_width.max(tw);
+                        }
+                    }
+                }
+            }
+        }
+
+        if max_text_width > inscribed * 1.05 {
+            // Need to widen diamond. New width so inscribed = max_text_width * 1.15
+            let new_w = (max_text_width * 1.15) / 0.5;
+            let expand = (new_w - w) / 2.0;
+
+            // Diamond points: top(cx,min_y) right(max_x,cy) bottom(cx,max_y) left(min_x,cy)
+            let new_pts = format!("{:.0},{:.0} {:.0},{:.0} {:.0},{:.0} {:.0},{:.0}",
+                cx, min_y,
+                max_x + expand, cy,
+                cx, max_y,
+                min_x - expand, cy
+            );
+            let old = format!("points=\"{}\"", pts_str);
+            let new_s = format!("points=\"{}\"", new_pts);
+            result = result.replacen(&old, &new_s, 1);
+        }
+    }
+
+    result
+}
+
 /// Auto-fix: extend short arrows to minimum 18px shaft length.
 /// Works on <line> elements by moving the endpoint further from the start.
 fn fix_short_arrows(svg: &str) -> String {
