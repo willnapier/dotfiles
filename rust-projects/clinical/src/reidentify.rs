@@ -182,6 +182,27 @@ fn build_subs(ident: &Identity, name_form: &str, content: &str) -> (Vec<Sub>, Ve
         }
     }
 
+    // --- {referrer:formal} placeholder (e.g. "Dr Mitchell") ---
+    if content.contains("{referrer:formal}") {
+        if let Some(ref_name) = &ident.referrer.name {
+            let parts: Vec<&str> = ref_name.split_whitespace().collect();
+            let prefixes = ["Dr", "Prof", "Professor", "Mr", "Mrs", "Ms", "Miss"];
+            let formal = if parts.len() >= 2 && prefixes.iter().any(|p| parts[0].trim_end_matches('.') == *p) {
+                format!("{} {}", parts[0], parts.last().unwrap())
+            } else if parts.len() >= 2 {
+                parts.last().unwrap().to_string()
+            } else {
+                ref_name.clone()
+            };
+            subs.push(Sub {
+                find: "{referrer:formal}".to_string(),
+                replace: formal,
+            });
+        } else {
+            warnings.push("No referrer.name in identity.yaml — {referrer:formal} not replaced".to_string());
+        }
+    }
+
     // --- Legacy bare "Client" replacement (backwards compatibility) ---
     let name_replacement = resolve_client_name(ident, name_form);
 
@@ -438,6 +459,16 @@ mod tests {
 
         let ref_sub = subs.iter().find(|s| s.find == "{referrer:full}").unwrap();
         assert_eq!(ref_sub.replace, "Dr Sarah Smith");
+    }
+
+    #[test]
+    fn test_referrer_formal_placeholder() {
+        let ident = test_identity();
+        let content = "Dear {referrer:formal},";
+        let (subs, _) = build_subs(&ident, "full", content);
+
+        let ref_sub = subs.iter().find(|s| s.find == "{referrer:formal}").unwrap();
+        assert_eq!(ref_sub.replace, "Dr Smith");
     }
 
     #[test]
