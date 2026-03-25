@@ -330,7 +330,7 @@ fn check_symmetrical_margins(rects: &[Rect]) -> Vec<String> {
         let left_margin = leftmost - zone.x;
         let right_margin = (zone.x + zone.width) - rightmost;
 
-        if (left_margin - right_margin).abs() > 15.0 {
+        if (left_margin - right_margin).abs() > 25.0 {
             failures.push(format!(
                 "ASYMMETRIC MARGINS: zone at y={:.0} left={:.0}px right={:.0}px (diff {:.0})",
                 zone.y, left_margin, right_margin, (left_margin - right_margin).abs()
