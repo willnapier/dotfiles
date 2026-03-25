@@ -60,6 +60,21 @@ enum Command {
         gap: f64,
     },
 
+    /// Add standalone text (title, annotation)
+    AddText {
+        file: PathBuf,
+        #[arg(long)]
+        label: String,
+        #[arg(long, default_value = "20")]
+        size: f64,
+        #[arg(long, default_value = "#1e1e1e")]
+        color: String,
+        #[arg(long, default_value = "100")]
+        x: f64,
+        #[arg(long, default_value = "50")]
+        y: f64,
+    },
+
     /// Connect two elements with an arrow
     Connect {
         file: PathBuf,
@@ -157,6 +172,13 @@ fn main() -> Result<()> {
                 } else { (x, y) }
             } else { (x, y) };
             let id = builder::add_diamond(&mut scene, ax, ay, &label, &s, below);
+            scene.save(&file)?;
+            println!("{}", id);
+        }
+
+        Command::AddText { file, label, size, color, x, y } => {
+            let mut scene = Scene::load(&file)?;
+            let id = builder::add_text(&mut scene, x, y, &label, size, &color);
             scene.save(&file)?;
             println!("{}", id);
         }

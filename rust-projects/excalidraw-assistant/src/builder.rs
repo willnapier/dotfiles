@@ -151,6 +151,41 @@ pub fn add_diamond(scene: &mut Scene, x: f64, y: f64, label: &str, style: &Style
     shape_id
 }
 
+/// Add standalone text (title, annotation — not bound to a shape).
+pub fn add_text(scene: &mut Scene, x: f64, y: f64, text: &str, font_size: f64, color: &str) -> String {
+    let text_id = new_id();
+    let text_width = estimate_text_width(text, font_size);
+    let text_height = font_size * 1.2 * text.split('\n').count() as f64;
+
+    scene.add(Element {
+        id: text_id.clone(),
+        element_type: "text".into(),
+        x, y, width: text_width, height: text_height,
+        stroke_color: color.into(),
+        background_color: "transparent".into(),
+        fill_style: "solid".into(),
+        stroke_width: 0.0,
+        stroke_style: String::new(),
+        roughness: 0,
+        opacity: 100,
+        font_family: 2,
+        font_size,
+        roundness: None,
+        label: None,
+        bound_elements: None,
+        text: Some(text.into()),
+        original_text: Some(text.into()),
+        text_align: Some("center".into()),
+        vertical_align: Some("middle".into()),
+        container_id: None,
+        points: None, end_arrowhead: None, start_arrowhead: None,
+        start_binding: None, end_binding: None,
+        angle: None, is_deleted: false,
+    });
+
+    text_id
+}
+
 /// Add an arrow connecting two elements with proper binding.
 pub fn add_arrow(
     scene: &mut Scene,
