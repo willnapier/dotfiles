@@ -80,14 +80,27 @@ pub fn from_d2(d2_source: &str, style_preset: &str) -> Result<Scene> {
                 // Determine style from D2 fill colour or preset
                 let style = guess_style_from_d2(line, d2_source, name, style_preset);
 
-                // Check if THIS node specifically is a diamond
-                let is_diamond = {
-                    let node_block_start = full_block_for_node(d2_source, name);
-                    node_block_start.map(|b| b.contains("shape: diamond")).unwrap_or(false)
-                };
+                // Check shape type for this node
+                let node_block = full_block_for_node(d2_source, name);
+                let is_diamond = node_block.map(|b| b.contains("shape: diamond")).unwrap_or(false);
+                let is_oval = node_block.map(|b| b.contains("shape: oval") || b.contains("shape: circle")).unwrap_or(false);
+                let is_page = node_block.map(|b| b.contains("shape: page")).unwrap_or(false);
+
+                // Skip shape type specifiers from label
+                let label = label.replace("shape: oval", "").replace("shape: circle", "")
+                    .replace("shape: page", "").replace("shape: diamond", "")
+                    .replace("shape: hexagon", "").replace("shape: package", "")
+                    .replace("shape: queue", "").replace("shape: person", "")
+                    .trim().to_string();
+
+                if label.is_empty() {
+                    continue;
+                }
 
                 let id = if is_diamond {
                     builder::add_diamond(&mut scene, 0.0, 0.0, &label, &style, false)
+                } else if is_oval {
+                    builder::add_ellipse(&mut scene, 0.0, 0.0, &label, &style, false)
                 } else {
                     builder::add_rect(&mut scene, 0.0, 0.0, &label, &style, false)
                 };
@@ -96,6 +109,9 @@ pub fn from_d2(d2_source: &str, style_preset: &str) -> Result<Scene> {
             }
         }
     }
+
+    // Layout BEFORE connecting so smart_connect can detect obstacles
+    crate::layout::flow(&mut scene, "down", 28.0);
 
     // Create connections
     for (from, to, label) in &connections {

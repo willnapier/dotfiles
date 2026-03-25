@@ -151,6 +151,63 @@ pub fn add_diamond(scene: &mut Scene, x: f64, y: f64, label: &str, style: &Style
     shape_id
 }
 
+/// Add an ellipse with auto-sized label.
+pub fn add_ellipse(scene: &mut Scene, x: f64, y: f64, label: &str, style: &Style, center_x: bool) -> String {
+    let (w, h) = size_for_label(label, style.font_size);
+    let w = w * 1.4; // ellipse needs more horizontal space
+    let h = h * 1.3;
+    let x = if center_x { x - w / 2.0 } else { x };
+    let shape_id = new_id();
+    let text_id = new_id();
+
+    scene.add(Element {
+        id: shape_id.clone(),
+        element_type: "ellipse".into(),
+        x, y, width: w, height: h,
+        stroke_color: style.stroke.clone(),
+        background_color: style.fill.clone(),
+        fill_style: "solid".into(),
+        stroke_width: 1.0,
+        stroke_style: String::new(),
+        roughness: 0,
+        opacity: style.opacity,
+        font_family: 2,
+        font_size: style.font_size,
+        roundness: None,
+        label: None,
+        bound_elements: Some(vec![BoundElement { id: text_id.clone(), bound_type: "text".into() }]),
+        text: None, original_text: None, text_align: None,
+        vertical_align: None, container_id: None,
+        points: None, end_arrowhead: None, start_arrowhead: None,
+        start_binding: None, end_binding: None,
+        angle: None, is_deleted: false,
+    });
+
+    let text_width = estimate_text_width(label, style.font_size);
+    let text_height = style.font_size * 1.2 * label.split('\n').count() as f64;
+    scene.add(Element {
+        id: text_id,
+        element_type: "text".into(),
+        x: x + (w - text_width) / 2.0,
+        y: y + (h - text_height) / 2.0,
+        width: text_width, height: text_height,
+        stroke_color: style.stroke.clone(),
+        background_color: "transparent".into(),
+        fill_style: "solid".into(),
+        stroke_width: 0.0, stroke_style: String::new(),
+        roughness: 0, opacity: 100, font_family: 2, font_size: style.font_size,
+        roundness: None, label: None, bound_elements: None,
+        text: Some(label.into()), original_text: Some(label.into()),
+        text_align: Some("center".into()), vertical_align: Some("middle".into()),
+        container_id: Some(shape_id.clone()),
+        points: None, end_arrowhead: None, start_arrowhead: None,
+        start_binding: None, end_binding: None,
+        angle: None, is_deleted: false,
+    });
+
+    shape_id
+}
+
 /// Add standalone text (title, annotation — not bound to a shape).
 pub fn add_text(scene: &mut Scene, x: f64, y: f64, text: &str, font_size: f64, color: &str) -> String {
     let text_id = new_id();

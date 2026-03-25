@@ -67,6 +67,18 @@ pub fn to_svg(scene: &Scene) -> String {
                 ));
             }
 
+            "ellipse" => {
+                let cx = el.x + el.width / 2.0;
+                let cy = el.y + el.height / 2.0;
+                svg.push_str(&format!(
+                    r#"<ellipse cx="{:.0}" cy="{:.0}" rx="{:.0}" ry="{:.0}" fill="{}" stroke="{}" stroke-width="{}" opacity="{}"/>
+"#,
+                    cx, cy, el.width / 2.0, el.height / 2.0,
+                    el.background_color, el.stroke_color, el.stroke_width,
+                    el.opacity as f64 / 100.0
+                ));
+            }
+
             "diamond" => {
                 let cx = el.x + el.width / 2.0;
                 let cy = el.y + el.height / 2.0;
