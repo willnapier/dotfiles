@@ -19,8 +19,10 @@ fn size_for_label(text: &str, font_size: f64) -> (f64, f64) {
 }
 
 /// Add a rectangle with auto-sized label (text element bound to shape).
-pub fn add_rect(scene: &mut Scene, x: f64, y: f64, label: &str, style: &Style) -> String {
+/// If `center_x` is true, `x` is treated as the desired centre, not left edge.
+pub fn add_rect(scene: &mut Scene, x: f64, y: f64, label: &str, style: &Style, center_x: bool) -> String {
     let (w, h) = size_for_label(label, style.font_size);
+    let x = if center_x { x - w / 2.0 } else { x };
     let shape_id = new_id();
     let text_id = new_id();
 
@@ -84,10 +86,11 @@ pub fn add_rect(scene: &mut Scene, x: f64, y: f64, label: &str, style: &Style) -
 }
 
 /// Add a diamond with auto-sized label (text element bound to shape).
-pub fn add_diamond(scene: &mut Scene, x: f64, y: f64, label: &str, style: &Style) -> String {
+pub fn add_diamond(scene: &mut Scene, x: f64, y: f64, label: &str, style: &Style, center_x: bool) -> String {
     let (w, h) = size_for_label(label, style.font_size);
     let w = w * 2.0;
     let h = h * 1.5;
+    let x = if center_x { x - w / 2.0 } else { x };
     let shape_id = new_id();
     let text_id = new_id();
 

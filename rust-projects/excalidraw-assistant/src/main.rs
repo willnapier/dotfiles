@@ -120,10 +120,11 @@ fn main() -> Result<()> {
             let s = Style::by_name(&style);
             let (ax, ay) = if below {
                 if let Some(last) = scene.elements.iter().rev().find(|e| e.element_type != "text") {
-                    (last.x, last.bottom() + gap)
+                    // Pass centre x; builder will adjust x based on actual width
+                    (last.center_x(), last.bottom() + gap)
                 } else { (x, y) }
             } else { (x, y) };
-            let id = builder::add_rect(&mut scene, ax, ay, &label, &s);
+            let id = builder::add_rect(&mut scene, ax, ay, &label, &s, below);
             scene.save(&file)?;
             println!("{}", id);
         }
@@ -133,10 +134,11 @@ fn main() -> Result<()> {
             let s = Style::by_name(&style);
             let (ax, ay) = if below {
                 if let Some(last) = scene.elements.iter().rev().find(|e| e.element_type != "text") {
-                    (last.x, last.bottom() + gap)
+                    // Pass centre x; builder will adjust x based on actual width
+                    (last.center_x(), last.bottom() + gap)
                 } else { (x, y) }
             } else { (x, y) };
-            let id = builder::add_diamond(&mut scene, ax, ay, &label, &s);
+            let id = builder::add_diamond(&mut scene, ax, ay, &label, &s, below);
             scene.save(&file)?;
             println!("{}", id);
         }
