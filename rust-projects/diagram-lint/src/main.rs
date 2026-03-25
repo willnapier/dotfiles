@@ -571,6 +571,48 @@ fn fix_symmetrical_margins(svg: &str, rects: &[Rect]) -> String {
     result
 }
 
+/// Auto-fix: extend short arrows to minimum 18px shaft length.
+/// Works on <line> elements by moving the endpoint further from the start.
+fn fix_short_arrows(svg: &str) -> String {
+    let mut result = svg.to_string();
+
+    let re = regex_lite::Regex::new(
+        r#"x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)""#
+    ).unwrap();
+
+    let mut replacements: Vec<(String, String)> = Vec::new();
+
+    for cap in re.captures_iter(svg) {
+        let x1: f64 = cap[1].parse().unwrap_or(0.0);
+        let y1: f64 = cap[2].parse().unwrap_or(0.0);
+        let x2: f64 = cap[3].parse().unwrap_or(0.0);
+        let y2: f64 = cap[4].parse().unwrap_or(0.0);
+
+        let dx = x2 - x1;
+        let dy = y2 - y1;
+        let len = (dx * dx + dy * dy).sqrt();
+
+        if len > 0.0 && len < 15.0 {
+            // Extend to 18px in the same direction
+            let scale = 18.0 / len;
+            let new_x2 = x1 + dx * scale;
+            let new_y2 = y1 + dy * scale;
+
+            let old = format!("x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\"",
+                &cap[1], &cap[2], &cap[3], &cap[4]);
+            let new_s = format!("x1=\"{}\" y1=\"{}\" x2=\"{:.0}\" y2=\"{:.0}\"",
+                &cap[1], &cap[2], new_x2, new_y2);
+            replacements.push((old, new_s));
+        }
+    }
+
+    for (old, new_s) in &replacements {
+        result = result.replacen(old, new_s, 1);
+    }
+
+    result
+}
+
 /// Auto-fix: standardise all arrow stroke-widths to 1.
 fn fix_stroke_consistency(svg: &str) -> String {
     regex_lite::Regex::new(r#"(<(?:line|polyline)[^>]*stroke-width=")[\d.]+(")"#)
@@ -663,6 +705,12 @@ fn main() -> Result<()> {
             if failures.iter().any(|f| f.starts_with("ASYMMETRIC MARGINS")) {
                 svg = fix_symmetrical_margins(&svg, &rects);
                 fixed.push("margin symmetry (shifted content)");
+            }
+
+            // Fix short arrows
+            if failures.iter().any(|f| f.starts_with("SHORT ARROW")) {
+                svg = fix_short_arrows(&svg);
+                fixed.push("short arrows (extended shafts)");
             }
 
             if !fixed.is_empty() {
