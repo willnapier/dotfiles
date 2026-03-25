@@ -435,18 +435,62 @@ fn check_symmetrical_margins(rects: &[Rect]) -> Vec<String> {
     failures
 }
 
+/// Auto-fix: standardise all arrow stroke-widths to 1.
+fn fix_stroke_consistency(svg: &str) -> String {
+    regex_lite::Regex::new(r#"(<(?:line|polyline)[^>]*stroke-width=")[\d.]+(")"#)
+        .unwrap()
+        .replace_all(svg, r#"${1}1${2}"#)
+        .to_string()
+}
+
+/// Auto-fix: widen rects where text overflows.
+fn fix_text_overflow(svg: &str, texts: &[Text], rects: &[Rect]) -> String {
+    let mut result = svg.to_string();
+
+    for text in texts {
+        if let Some(rect) = find_containing_rect(text, rects) {
+            let est_width = estimate_text_width(&text.content, text.font_size);
+            let margin_left = text.x - rect.x;
+            let margin_right = rect.x + rect.width - text.x;
+            let available = margin_left.min(margin_right) * 2.0;
+
+            if est_width > available * 0.95 {
+                // Need to widen: new width = est_width / 0.9 (give 10% padding)
+                let new_width = (est_width / 0.85).max(rect.width);
+                let width_delta = new_width - rect.width;
+                let new_x = rect.x - width_delta / 2.0;
+
+                let old = format!(
+                    "x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"",
+                    rect.x, rect.y, rect.width, rect.height
+                );
+                let new_attr = format!(
+                    "x=\"{:.0}\" y=\"{}\" width=\"{:.0}\" height=\"{}\"",
+                    new_x, rect.y, new_width, rect.height
+                );
+                result = result.replacen(&old, &new_attr, 1);
+            }
+        }
+    }
+
+    result
+}
+
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        eprintln!("Usage: diagram-lint <file.svg> [file2.svg ...]");
+    let fix_mode = args.iter().any(|a| a == "--fix");
+    let paths: Vec<&String> = args[1..].iter().filter(|a| *a != "--fix").collect();
+
+    if paths.is_empty() {
+        eprintln!("Usage: diagram-lint [--fix] <file.svg> [file2.svg ...]");
         std::process::exit(1);
     }
 
     let mut total_pass = 0;
     let mut total_fail = 0;
 
-    for path in &args[1..] {
-        let svg = fs::read_to_string(path).with_context(|| format!("Failed to read: {}", path))?;
+    for path in &paths {
+        let mut svg = fs::read_to_string(path).with_context(|| format!("Failed to read: {}", path))?;
         let (rects, texts, arrows, diamonds) = parse_svg(&svg)?;
 
         println!("=== {} ===", path);
@@ -463,6 +507,39 @@ fn main() -> Result<()> {
         failures.extend(check_consistent_stroke(&arrows, &svg));
         failures.extend(check_arrow_crossing(&arrows, &rects));
         failures.extend(check_symmetrical_margins(&rects));
+
+        if fix_mode && !failures.is_empty() {
+            let mut fixed = Vec::new();
+
+            // Fix stroke consistency
+            if failures.iter().any(|f| f.starts_with("INCONSISTENT STROKE")) {
+                svg = fix_stroke_consistency(&svg);
+                fixed.push("stroke consistency");
+            }
+
+            // Fix text overflow
+            if failures.iter().any(|f| f.starts_with("TEXT OVERFLOW")) {
+                svg = fix_text_overflow(&svg, &texts, &rects);
+                fixed.push("text overflow (widened rects)");
+            }
+
+            if !fixed.is_empty() {
+                fs::write(path, &svg)
+                    .with_context(|| format!("Failed to write: {}", path))?;
+                println!("  Fixed: {}", fixed.join(", "));
+
+                // Re-check after fixes
+                let (rects2, texts2, arrows2, diamonds2) = parse_svg(&svg)?;
+                failures.clear();
+                failures.extend(check_text_overflow(&texts2, &rects2));
+                failures.extend(check_diamond_text(&texts2, &diamonds2));
+                failures.extend(check_arrow_length(&arrows2));
+                failures.extend(check_rect_overlap_and_gap(&rects2));
+                failures.extend(check_consistent_stroke(&arrows2, &svg));
+                failures.extend(check_arrow_crossing(&arrows2, &rects2));
+                failures.extend(check_symmetrical_margins(&rects2));
+            }
+        }
 
         if failures.is_empty() {
             println!("  ✓ All checks passed");
