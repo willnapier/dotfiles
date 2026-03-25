@@ -2,6 +2,7 @@ mod elements;
 mod scene;
 mod builder;
 mod style;
+mod lint;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -71,6 +72,11 @@ enum Command {
 
     /// Show diagram info
     Info {
+        file: PathBuf,
+    },
+
+    /// Lint the diagram for quality issues
+    Lint {
         file: PathBuf,
     },
 
@@ -158,6 +164,19 @@ fn main() -> Result<()> {
             let id = builder::add_arrow(&mut scene, &from_id, &to_id, from_pt, to_pt, &s, label.as_deref());
             scene.save(&file)?;
             println!("{}", id);
+        }
+
+        Command::Lint { file } => {
+            let scene = Scene::load(&file)?;
+            let failures = lint::check(&scene);
+            if failures.is_empty() {
+                println!("✓ All checks passed ({} elements)", scene.elements.len());
+            } else {
+                for f in &failures {
+                    println!("✗ {}", f);
+                }
+                std::process::exit(1);
+            }
         }
 
         Command::Info { file } => {
