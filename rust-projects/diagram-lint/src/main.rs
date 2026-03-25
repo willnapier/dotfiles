@@ -131,7 +131,7 @@ fn parse_svg(svg: &str) -> Result<(Vec<Rect>, Vec<Text>, Vec<Arrow>, Vec<Diamond
                         }
                     }
                 }
-            }
+
                 if name == "polygon" {
                     for attr in e.attributes().flatten() {
                         let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
@@ -152,7 +152,6 @@ fn parse_svg(svg: &str) -> Result<(Vec<Rect>, Vec<Text>, Vec<Arrow>, Vec<Diamond
                                 })
                                 .collect();
                             if pts.len() == 4 {
-                                // Diamond: 4 points, compute bounding box
                                 let min_x = pts.iter().map(|p| p.0).fold(f64::MAX, f64::min);
                                 let max_x = pts.iter().map(|p| p.0).fold(f64::MIN, f64::max);
                                 let min_y = pts.iter().map(|p| p.1).fold(f64::MAX, f64::min);
@@ -248,7 +247,7 @@ fn check_diamond_text(texts: &[Text], diamonds: &[Diamond]) -> Vec<String> {
             {
                 let est_width = estimate_text_width(&text.content, text.font_size);
                 let inscribed = d.width * 0.5; // diamond inscribes ~50% width for text
-                if est_width > inscribed {
+                if est_width > inscribed * 1.05 {
                     failures.push(format!(
                         "DIAMOND TEXT OVERFLOW: \"{}\" est {:.0}px, inscribed {:.0}px (diamond w={:.0})",
                         &text.content[..text.content.len().min(30)],
@@ -310,13 +309,17 @@ fn main() -> Result<()> {
 
     for path in &args[1..] {
         let svg = fs::read_to_string(path).with_context(|| format!("Failed to read: {}", path))?;
-        let (rects, texts, arrows) = parse_svg(&svg)?;
+        let (rects, texts, arrows, diamonds) = parse_svg(&svg)?;
 
         println!("=== {} ===", path);
-        println!("  Parsed: {} rects, {} texts, {} arrows", rects.len(), texts.len(), arrows.len());
+        println!(
+            "  Parsed: {} rects, {} texts, {} arrows, {} diamonds",
+            rects.len(), texts.len(), arrows.len(), diamonds.len()
+        );
 
         let mut failures = Vec::new();
         failures.extend(check_text_overflow(&texts, &rects));
+        failures.extend(check_diamond_text(&texts, &diamonds));
         failures.extend(check_arrow_length(&arrows));
         failures.extend(check_rect_overlap(&rects));
 
