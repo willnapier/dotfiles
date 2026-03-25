@@ -108,7 +108,7 @@ enum Command {
     Lint {
         file: PathBuf,
         /// Auto-fix violations
-        #[arg(long)]
+        #[arg(long, default_value_t = false, num_args = 0)]
         fix: bool,
     },
 

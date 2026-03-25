@@ -40,19 +40,22 @@ pub fn from_d2(d2_source: &str, style_preset: &str) -> Result<Scene> {
             continue;
         }
 
-        // Connection: "a -> b" or "a -> b: label"
-        if line.contains(" -> ") && !line.contains('{') {
+        // Connection: "a -> b" or "a -> b: label" or "a -> b: { style... }"
+        if line.contains(" -> ") {
             let parts: Vec<&str> = line.splitn(2, " -> ").collect();
             if parts.len() == 2 {
                 let from = parts[0].trim().to_string();
                 let rest = parts[1].trim();
 
-                // Handle "b: label" or "b: { ... }" or just "b"
-                let (to, label) = if rest.contains(':') && !rest.contains('{') {
+                // Handle "b: label {", "b: {", "b: label", or just "b"
+                let (to, label) = if rest.contains(':') {
                     let p: Vec<&str> = rest.splitn(2, ':').collect();
-                    (p[0].trim().to_string(), Some(p[1].trim().to_string()))
+                    let to = p[0].trim().split('{').next().unwrap_or("").trim().to_string();
+                    let lbl = p[1].trim().split('{').next().unwrap_or("").trim();
+                    let lbl = lbl.trim_matches('"');
+                    if lbl.is_empty() { (to, None) } else { (to, Some(lbl.to_string())) }
                 } else {
-                    (rest.split(':').next().unwrap_or(rest).split('{').next().unwrap_or(rest).trim().to_string(), None)
+                    (rest.split('{').next().unwrap_or(rest).trim().to_string(), None)
                 };
 
                 // Handle chained connections: "a -> b -> c"
@@ -68,6 +71,8 @@ pub fn from_d2(d2_source: &str, style_preset: &str) -> Result<Scene> {
                 } else {
                     connections.push((from, to, label));
                 }
+                // Track depth for connection style blocks
+                depth += opens - closes;
                 continue;
             }
         }
