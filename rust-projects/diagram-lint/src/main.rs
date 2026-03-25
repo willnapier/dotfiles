@@ -297,6 +297,50 @@ fn check_rect_overlap(rects: &[Rect]) -> Vec<String> {
     failures
 }
 
+/// Check: content has symmetrical margins within zone backgrounds.
+/// Finds zone rects (wide, tall) and content rects within them,
+/// checks left margin ≈ right margin (within 10px tolerance).
+fn check_symmetrical_margins(rects: &[Rect]) -> Vec<String> {
+    let mut failures = Vec::new();
+
+    // Zone backgrounds: wide (>400) and tall (>100)
+    let zones: Vec<&Rect> = rects.iter()
+        .filter(|r| r.width > 400.0 && r.height > 100.0)
+        .collect();
+
+    // Content rects: reasonable size, not zones
+    let content: Vec<&Rect> = rects.iter()
+        .filter(|r| r.width > 20.0 && r.width < 400.0 && r.height > 30.0 && r.height < 80.0)
+        .collect();
+
+    for zone in &zones {
+        // Find content rects within this zone
+        let inside: Vec<&&Rect> = content.iter()
+            .filter(|c| c.x >= zone.x && c.x + c.width <= zone.x + zone.width
+                && c.y >= zone.y && c.y + c.height <= zone.y + zone.height)
+            .collect();
+
+        if inside.is_empty() {
+            continue;
+        }
+
+        let leftmost = inside.iter().map(|r| r.x).fold(f64::MAX, f64::min);
+        let rightmost = inside.iter().map(|r| r.x + r.width).fold(f64::MIN, f64::max);
+
+        let left_margin = leftmost - zone.x;
+        let right_margin = (zone.x + zone.width) - rightmost;
+
+        if (left_margin - right_margin).abs() > 15.0 {
+            failures.push(format!(
+                "ASYMMETRIC MARGINS: zone at y={:.0} left={:.0}px right={:.0}px (diff {:.0})",
+                zone.y, left_margin, right_margin, (left_margin - right_margin).abs()
+            ));
+        }
+    }
+
+    failures
+}
+
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
@@ -322,6 +366,7 @@ fn main() -> Result<()> {
         failures.extend(check_diamond_text(&texts, &diamonds));
         failures.extend(check_arrow_length(&arrows));
         failures.extend(check_rect_overlap(&rects));
+        failures.extend(check_symmetrical_margins(&rects));
 
         if failures.is_empty() {
             println!("  ✓ All checks passed");
