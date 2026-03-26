@@ -152,9 +152,8 @@ pub fn from_d2(d2_source: &str, style_preset: &str) -> Result<Scene> {
         }
     }
 
-    // Auto-layout
-    crate::layout::flow(&mut scene, "down", 28.0);
-    crate::layout::recalculate_arrows(&mut scene);
+    // Reposition bound text after connecting (don't re-layout shapes — it destroys smart routing)
+    crate::layout::reposition_bound_text(&mut scene);
 
     Ok(scene)
 }

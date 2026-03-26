@@ -108,11 +108,27 @@ pub fn recalculate_arrows(scene: &mut Scene) {
         });
 
         if let (Some((sx, sy)), Some((ex, ey))) = (start, end) {
-            el.x = sx;
-            el.y = sy;
-            el.width = ex - sx;
-            el.height = ey - sy;
-            el.points = Some(vec![[0.0, 0.0], [ex - sx, ey - sy]]);
+            // Preserve multi-point routed paths (from smart_connect obstacle routing)
+            let has_routing = el.points.as_ref().map(|p| p.len() > 2).unwrap_or(false);
+            if has_routing {
+                // Translate all waypoints relative to new start position
+                let dx = sx - el.x;
+                let dy = sy - el.y;
+                if let Some(ref mut pts) = el.points {
+                    for p in pts.iter_mut() {
+                        p[0] += dx;
+                        p[1] += dy;
+                    }
+                }
+                el.x = sx;
+                el.y = sy;
+            } else {
+                el.x = sx;
+                el.y = sy;
+                el.width = ex - sx;
+                el.height = ey - sy;
+                el.points = Some(vec![[0.0, 0.0], [ex - sx, ey - sy]]);
+            }
         }
     }
 }

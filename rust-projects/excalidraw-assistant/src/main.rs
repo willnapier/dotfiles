@@ -136,6 +136,21 @@ enum Command {
     Export {
         file: PathBuf,
     },
+
+    /// Convert D2 → lint+fix → export SVG (full pipeline)
+    Render {
+        /// Input D2 file
+        input: PathBuf,
+        /// Output SVG file (defaults to input with .svg extension)
+        #[arg(long)]
+        output: Option<PathBuf>,
+        /// Style preset (clinical, default)
+        #[arg(long, default_value = "clinical")]
+        style: String,
+        /// Open the SVG in the default browser
+        #[arg(long, default_value_t = false, num_args = 0)]
+        open: bool,
+    },
 }
 
 /// Resolve element references. Filters to shapes only (skip text elements).
@@ -294,6 +309,45 @@ fn main() -> Result<()> {
         Command::Export { file } => {
             let scene = Scene::load(&file)?;
             println!("{}", serde_json::to_string_pretty(&scene)?);
+        }
+
+        Command::Render { input, output, style, open } => {
+            // Step 1: Convert D2 → .excalidraw
+            let d2 = std::fs::read_to_string(&input)?;
+            let mut scene = convert::from_d2(&d2, &style)?;
+            let excalidraw_path = input.with_extension("excalidraw");
+
+            // Step 2: Lint + fix
+            let fixed = lint::fix(&mut scene);
+            for f in &fixed {
+                println!("  Fixed: {}", f);
+            }
+            let failures = lint::check(&scene);
+            if !failures.is_empty() {
+                for f in &failures {
+                    println!("✗ {}", f);
+                }
+            }
+
+            scene.save(&excalidraw_path)?;
+            let shapes = scene.elements.iter().filter(|e| e.element_type != "text" && e.element_type != "arrow").count();
+            let arrows = scene.elements.iter().filter(|e| e.element_type == "arrow").count();
+
+            // Step 3: Export SVG
+            let svg = export::to_svg(&scene);
+            let svg_path = output.unwrap_or_else(|| input.with_extension("svg"));
+            std::fs::write(&svg_path, &svg)?;
+
+            println!("Rendered: {} → {} ({} shapes, {} arrows)",
+                input.display(), svg_path.display(), shapes, arrows);
+
+            // Step 4: Optionally open
+            if open {
+                #[cfg(target_os = "macos")]
+                std::process::Command::new("open").arg(&svg_path).spawn()?;
+                #[cfg(target_os = "linux")]
+                std::process::Command::new("xdg-open").arg(&svg_path).spawn()?;
+            }
         }
     }
 
