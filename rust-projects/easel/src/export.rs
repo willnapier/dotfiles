@@ -166,12 +166,58 @@ pub fn to_svg(scene: &Scene) -> String {
                         .is_some();
 
                     if is_organic {
-                        // Render as filled organic path using perfect-freehand
-                        let abs_pts: Vec<[f64; 2]> = points.iter()
-                            .map(|p| [el.x + p[0], el.y + p[1]])
-                            .collect();
-                        let opts = freehand::organic_branch(el.stroke_width * 6.0);
-                        let outline = freehand::get_stroke(&abs_pts, None, &opts);
+                        // Read depth-based sizes from customData
+                        let cd = el.custom_data.as_ref().and_then(|c| c.get("strokeOptions"));
+                        let start_size = cd.and_then(|s| s.get("startSize")).and_then(|v| v.as_f64()).unwrap_or(10.0);
+                        let end_size = cd.and_then(|s| s.get("endSize")).and_then(|v| v.as_f64()).unwrap_or(4.0);
+
+                        // Sample cubic Bezier from the 4 arrow control points
+                        let abs_pts: Vec<[f64; 2]> = if points.len() == 4 {
+                            // Cubic Bezier: sample into dense points for freehand
+                            let p0 = [el.x + points[0][0], el.y + points[0][1]];
+                            let p1 = [el.x + points[1][0], el.y + points[1][1]];
+                            let p2 = [el.x + points[2][0], el.y + points[2][1]];
+                            let p3 = [el.x + points[3][0], el.y + points[3][1]];
+                            (0..=48).map(|i| {
+                                let t = i as f64 / 48.0;
+                                let u = 1.0 - t;
+                                let u2 = u * u;
+                                let t2 = t * t;
+                                [
+                                    u2 * u * p0[0] + 3.0 * u2 * t * p1[0] + 3.0 * u * t2 * p2[0] + t2 * t * p3[0],
+                                    u2 * u * p0[1] + 3.0 * u2 * t * p1[1] + 3.0 * u * t2 * p2[1] + t2 * t * p3[1],
+                                ]
+                            }).collect()
+                        } else {
+                            points.iter().map(|p| [el.x + p[0], el.y + p[1]]).collect()
+                        };
+
+                        // Generate pressure array: taper from start_size to end_size
+                        // Pressure 1.0 at start (full start_size), decreasing toward end
+                        let n = abs_pts.len();
+                        let pressures: Vec<f64> = (0..n).map(|i| {
+                            let t = i as f64 / (n - 1).max(1) as f64;
+                            let target_radius = start_size * (1.0 - t) + end_size * t;
+                            // Invert get_stroke_radius: pressure = 0.5 + (target/(size*1.0) - 0.5)/thinning
+                            // With thinning=0.6, easing=linear: radius = size * (0.5 - 0.6*(0.5 - p))
+                            // So p = 0.5 - (0.5 - radius/size) / 0.6
+                            (target_radius / start_size).clamp(0.05, 1.0)
+                        }).collect();
+
+                        let opts = freehand::StrokeOptions {
+                            size: start_size,
+                            thinning: 0.6,
+                            smoothing: 0.4,
+                            streamline: 0.3,
+                            simulate_pressure: false,
+                            start_taper: 0.0,
+                            start_cap: false,
+                            end_taper: 0.0,
+                            end_cap: false,
+                            last: true,
+                            ..Default::default()
+                        };
+                        let outline = freehand::get_stroke(&abs_pts, Some(&pressures), &opts);
                         if !outline.is_empty() {
                             let path_d = freehand::outline_to_svg_path(&outline);
                             svg.push_str(&format!(
