@@ -411,7 +411,7 @@ pub fn smart_connect(
     let obs_left = obstacles.iter().map(|e| e.x).fold(f64::MAX, f64::min);
     let obs_right = obstacles.iter().map(|e| e.right()).fold(f64::MIN, f64::max);
 
-    let pad = 15.0;
+    let pad = 40.0;
 
     // Route options — go OUTSIDE all obstacles
     let route_left = vec![(sx, sy), (obs_left - pad, sy), (obs_left - pad, ey), (ex, ey)];

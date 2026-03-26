@@ -99,7 +99,7 @@ pub fn from_d2(d2_source: &str, style_preset: &str) -> Result<Scene> {
                 }
 
                 // Determine style from D2 fill colour or preset
-                let style = guess_style_from_d2(line, d2_source, name, style_preset);
+                let style = guess_style_from_d2(d2_source, name, style_preset);
 
                 // Check shape type for this node
                 let node_block = full_block_for_node(d2_source, name);
@@ -184,14 +184,9 @@ fn full_block_for_node<'a>(source: &'a str, name: &str) -> Option<&'a str> {
 }
 
 /// Guess a style from D2 colour annotations or use the preset.
-fn guess_style_from_d2(line: &str, full_source: &str, node_name: &str, preset: &str) -> Style {
-    // Look for fill colour in the node's block
-    let block_start = full_source.find(&format!("{}: ", node_name))
-        .or_else(|| full_source.find(&format!("{}:", node_name)));
-
-    if let Some(start) = block_start {
-        let block = &full_source[start..full_source.len().min(start + 500)];
-
+fn guess_style_from_d2(full_source: &str, node_name: &str, preset: &str) -> Style {
+    // Use the exact node block, not an arbitrary window
+    if let Some(block) = full_block_for_node(full_source, node_name) {
         if block.contains("#aed6f1") || block.contains("#2471a3") {
             return Style::william();
         }
@@ -211,7 +206,7 @@ fn guess_style_from_d2(line: &str, full_source: &str, node_name: &str, preset: &
 
     // Fallback to preset default
     if preset == "clinical" {
-        Style::automated() // gold as default for clinical diagrams
+        Style::automated()
     } else {
         Style::default()
     }
