@@ -228,18 +228,31 @@ fn layout_node(
     }
 }
 
-/// Sample a quadratic Bezier into dense points for freedraw rendering.
-fn sample_quadratic_bezier(p0: [f64; 2], p1: [f64; 2], p2: [f64; 2], steps: usize) -> Vec<[f64; 2]> {
+/// Sample a cubic Bezier (4 control points) into dense points.
+fn sample_cubic_bezier(p0: [f64; 2], p1: [f64; 2], p2: [f64; 2], p3: [f64; 2], steps: usize) -> Vec<[f64; 2]> {
     (0..=steps)
         .map(|i| {
             let t = i as f64 / steps as f64;
             let u = 1.0 - t;
+            let u2 = u * u;
+            let t2 = t * t;
             [
-                u * u * p0[0] + 2.0 * u * t * p1[0] + t * t * p2[0],
-                u * u * p0[1] + 2.0 * u * t * p1[1] + t * t * p2[1],
+                u2 * u * p0[0] + 3.0 * u2 * t * p1[0] + 3.0 * u * t2 * p2[0] + t2 * t * p3[0],
+                u2 * u * p0[1] + 3.0 * u2 * t * p1[1] + 3.0 * u * t2 * p2[1] + t2 * t * p3[1],
             ]
         })
         .collect()
+}
+
+/// Branch width at a given depth. Returns (start_size, end_size) for the freehand stroke.
+/// End size of depth N roughly matches start size of depth N+1 for visual continuity.
+fn branch_sizes(depth: usize) -> (f64, f64) {
+    match depth {
+        0 => (14.0, 9.0),   // root→L1: thick, tapers to ~L2 start
+        1 => (9.0, 6.0),    // L1→L2: medium, tapers to ~L3 start
+        2 => (6.0, 3.5),    // L2→L3: thin
+        _ => (3.5, 2.0),    // deeper: fine
+    }
 }
 
 /// Organic stroke options for perfect-freehand (thick at start, tapers at end).
@@ -271,25 +284,34 @@ fn connector_color(cfg: &MindMapConfig, color_idx: usize) -> String {
 }
 
 /// Create curved arrow connectors with proper Excalidraw bindings.
-fn connect_tree(scene: &mut Scene, placed: &Placed, cfg: &MindMapConfig) {
+/// `depth` is the parent's depth (0=root, 1=L1, etc.).
+fn connect_tree(scene: &mut Scene, placed: &Placed, cfg: &MindMapConfig, depth: usize) {
     for child in &placed.children {
-        // Arrow: parent right edge → control point → child left edge
+        // Arrow: parent right edge → child left edge
         let sx = placed.x + placed.width;
         let sy = placed.y + placed.height / 2.0;
         let ex = child.x;
         let ey = child.y + child.height / 2.0;
+        let gap = ex - sx;
 
-        // 3-point curve: start, control, end (relative to start)
-        let mid_x = (ex - sx) * 0.5;
-        let cp_y = (ey - sy) * 0.3;
+        // Cubic Bezier S-curve: departs horizontally, arrives horizontally
+        let cp1 = [sx + gap * 0.4, sy];
+        let cp2 = [ex - gap * 0.4, ey];
+        let sampled = sample_cubic_bezier([sx, sy], cp1, cp2, [ex, ey], 48);
+
+        // Store as 4-point arrow for Excalidraw (start, cp1, cp2, end — relative to start)
         let rel_points = vec![
             [0.0, 0.0],
-            [mid_x, cp_y],
+            [gap * 0.4, 0.0],
+            [gap * 0.6, ey - sy],
             [ex - sx, ey - sy],
         ];
 
         // Connector inherits the child's branch colour
         let color = connector_color(cfg, child.color_idx);
+
+        // Depth-based sizing stored in customData for SVG renderer
+        let (start_size, end_size) = branch_sizes(depth);
 
         let conn_id = new_id();
         scene.add(Element {
@@ -303,7 +325,7 @@ fn connect_tree(scene: &mut Scene, placed: &Placed, cfg: &MindMapConfig) {
             stroke_width: 2.0,
             stroke_style: String::new(),
             roughness: 0,
-            opacity: 70,
+            opacity: 80,
             font_family: 1,
             font_size: 0.0,
             roundness: Some(Roundness { roundness_type: 2 }),
@@ -325,7 +347,14 @@ fn connect_tree(scene: &mut Scene, placed: &Placed, cfg: &MindMapConfig) {
                 focus: 0.0, gap: 1.0,
             }),
             angle: None, is_deleted: false,
-            custom_data: Some(serde_json::json!({ "strokeOptions": { "organic": true } })),
+            custom_data: Some(serde_json::json!({
+                "strokeOptions": {
+                    "organic": true,
+                    "startSize": start_size,
+                    "endSize": end_size,
+                    "depth": depth
+                }
+            })),
             group_ids: None,
             simulate_pressure: None,
         });
@@ -341,7 +370,7 @@ fn connect_tree(scene: &mut Scene, placed: &Placed, cfg: &MindMapConfig) {
         }
 
         // Recurse
-        connect_tree(scene, child, cfg);
+        connect_tree(scene, child, cfg, depth + 1);
     }
 }
 
@@ -411,7 +440,7 @@ pub fn generate(roots: &[MmNode], cfg: &MindMapConfig) -> Scene {
         let root_center = cursor_y + root_h / 2.0;
 
         let placed = layout_node(root, &mut scene, cfg, 0, start_x, root_center, ri);
-        connect_tree(&mut scene, &placed, cfg);
+        connect_tree(&mut scene, &placed, cfg, 0);
 
         cursor_y += root_h + cfg.gap_y * 3.0;
     }
