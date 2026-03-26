@@ -286,7 +286,7 @@ fn connect_tree(scene: &mut Scene, placed: &Placed, _cfg: &MindMapConfig) {
             stroke_color: "#999999".into(),
             background_color: "transparent".into(),
             fill_style: "solid".into(),
-            stroke_width: 2.0,
+            stroke_width: 0.5,
             stroke_style: String::new(),
             roughness: 0,
             opacity: 80,
