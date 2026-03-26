@@ -196,15 +196,15 @@ fn layout_node(
     };
 
     // Create the node shape
-    let elem_id = if depth == 0 {
-        // Root gets a rounded rectangle
-        builder::add_rect(scene, x, y, &node.text, &style, false)
-    } else {
-        builder::add_rect(scene, x, y, &node.text, &style, false)
-    };
+    let elem_id = builder::add_rect(scene, x, y, &node.text, &style, false);
 
-    // Layout children
-    let child_x = x + w + cfg.gap_x;
+    // Read back actual dimensions (add_rect uses size_for_label which differs from node_width)
+    let (actual_w, actual_h) = scene.get(&elem_id)
+        .map(|el| (el.width, el.height))
+        .unwrap_or((w, h));
+
+    // Layout children using actual element width
+    let child_x = x + actual_w + cfg.gap_x;
     let mut child_placed = Vec::new();
 
     if !node.children.is_empty() {
@@ -225,7 +225,7 @@ fn layout_node(
 
     Placed {
         element_id: elem_id,
-        x, y, width: w, height: h,
+        x, y, width: actual_w, height: actual_h,
         children: child_placed,
     }
 }
@@ -286,7 +286,7 @@ fn connect_tree(scene: &mut Scene, placed: &Placed, _cfg: &MindMapConfig) {
             stroke_color: "#999999".into(),
             background_color: "transparent".into(),
             fill_style: "solid".into(),
-            stroke_width: 0.5,
+            stroke_width: 1.0,
             stroke_style: String::new(),
             roughness: 0,
             opacity: 80,
