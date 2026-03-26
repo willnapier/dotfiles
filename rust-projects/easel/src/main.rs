@@ -8,6 +8,7 @@ mod convert;
 mod export;
 mod mindmap;
 mod viewer;
+pub mod freehand;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};

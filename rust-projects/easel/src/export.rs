@@ -1,3 +1,4 @@
+use crate::freehand;
 use crate::scene::Scene;
 
 /// Export a scene to SVG with Nunito font and consistent arrowhead markers.
