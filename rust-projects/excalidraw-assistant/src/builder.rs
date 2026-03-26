@@ -2,9 +2,32 @@ use crate::elements::*;
 use crate::scene::Scene;
 use crate::style::Style;
 
-/// Estimate text width: chars × fontSize × 0.55 (Nunito average).
+/// Per-character width ratios for Nunito (font_family 2), measured relative to fontSize.
+/// Covers ASCII printable range; unknown chars fall back to 0.55.
+fn char_width_ratio(ch: char) -> f64 {
+    match ch {
+        'i' | 'l' | '!' | '|' | '.' | ',' | ':' | ';' | '\'' => 0.30,
+        'f' | 'j' | 't' | 'r' | '(' | ')' | '[' | ']' | '{' | '}' => 0.38,
+        'a' | 'c' | 'e' | 'g' | 'k' | 'n' | 'o' | 'p' | 'q' | 's' | 'u' | 'v' | 'x' | 'y' | 'z' => 0.52,
+        'b' | 'd' | 'h' => 0.54,
+        'w' => 0.72,
+        'm' => 0.80,
+        'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H' | 'K' | 'L' | 'N' | 'P' | 'R' | 'S' | 'T' | 'U' | 'V' | 'X' | 'Y' | 'Z' => 0.62,
+        'M' | 'W' => 0.82,
+        'O' | 'Q' => 0.68,
+        'I' | 'J' => 0.42,
+        '0'..='9' => 0.55,
+        ' ' => 0.30,
+        '-' | '–' => 0.40,
+        '—' => 0.70,
+        '"' | '"' | '\u{201C}' | '\u{201D}' => 0.44,
+        _ => 0.55,
+    }
+}
+
+/// Estimate text width using per-character metrics for Nunito.
 pub fn estimate_text_width(text: &str, font_size: f64) -> f64 {
-    text.len() as f64 * font_size * 0.55
+    text.chars().map(|c| char_width_ratio(c) * font_size).sum()
 }
 
 /// Calculate appropriate box dimensions for a label.
@@ -48,6 +71,7 @@ pub fn add_rect(scene: &mut Scene, x: f64, y: f64, label: &str, style: &Style, c
         points: None, end_arrowhead: None, start_arrowhead: None,
         start_binding: None, end_binding: None,
         angle: None, is_deleted: false,
+        custom_data: None, group_ids: None,
     });
 
     // Text element bound to the shape

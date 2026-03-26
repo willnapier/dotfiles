@@ -72,6 +72,16 @@ pub struct Element {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<Label>,
+
+    /// Arbitrary metadata (mind map state, text-to-path, organic line config).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub custom_data: Option<serde_json::Value>,
+
+    /// Excalidraw group membership. Elements sharing a groupId are grouped.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub group_ids: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
