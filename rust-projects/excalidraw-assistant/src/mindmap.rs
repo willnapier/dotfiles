@@ -230,74 +230,85 @@ fn layout_node(
     }
 }
 
+/// Sample a quadratic Bezier into dense points for freedraw rendering.
+fn sample_quadratic_bezier(p0: [f64; 2], p1: [f64; 2], p2: [f64; 2], steps: usize) -> Vec<[f64; 2]> {
+    (0..=steps)
+        .map(|i| {
+            let t = i as f64 / steps as f64;
+            let u = 1.0 - t;
+            [
+                u * u * p0[0] + 2.0 * u * t * p1[0] + t * t * p2[0],
+                u * u * p0[1] + 2.0 * u * t * p1[1] + t * t * p2[1],
+            ]
+        })
+        .collect()
+}
+
+/// Organic stroke options for perfect-freehand (thick at start, tapers at end).
+fn organic_stroke_options() -> serde_json::Value {
+    serde_json::json!({
+        "strokeOptions": {
+            "thinning": 0.6,
+            "smoothing": 0.5,
+            "streamline": 0.5,
+            "start": { "taper": false },
+            "end": { "taper": true },
+            "easing": "linear",
+            "simulatePressure": false
+        }
+    })
+}
+
 /// Create curved connectors between parent and children.
-fn connect_tree(scene: &mut Scene, placed: &Placed, cfg: &MindMapConfig) {
+fn connect_tree(scene: &mut Scene, placed: &Placed, _cfg: &MindMapConfig) {
     for child in &placed.children {
-        // 3-point curved connector: parent right → midpoint → child left
+        // Bezier: parent right edge → control point → child left edge
         let sx = placed.x + placed.width;
         let sy = placed.y + placed.height / 2.0;
         let ex = child.x;
         let ey = child.y + child.height / 2.0;
 
-        // Control point: horizontal midpoint, Y biased toward child
-        let mid_x = sx + (ex - sx) * 0.5;
-        let cp_y = sy + (ey - sy) * 0.3;
+        // Control point at horizontal midpoint, Y biased toward child
+        let cp = [sx + (ex - sx) * 0.5, sy + (ey - sy) * 0.3];
 
-        let arrow_id = new_id();
-        let rel_points = vec![
-            [0.0, 0.0],
-            [mid_x - sx, cp_y - sy],
-            [ex - sx, ey - sy],
-        ];
+        // Sample the curve into dense points for freedraw
+        let abs_points = sample_quadratic_bezier([sx, sy], cp, [ex, ey], 32);
+        let rel_points: Vec<[f64; 2]> = abs_points.iter()
+            .map(|p| [p[0] - sx, p[1] - sy])
+            .collect();
 
+        let conn_id = new_id();
         scene.add(Element {
-            id: arrow_id.clone(),
-            element_type: "arrow".into(),
+            id: conn_id.clone(),
+            element_type: "freedraw".into(),
             x: sx, y: sy,
             width: ex - sx, height: ey - sy,
             stroke_color: "#999999".into(),
             background_color: "transparent".into(),
             fill_style: "solid".into(),
-            stroke_width: 1.5,
+            stroke_width: 2.0,
             stroke_style: String::new(),
             roughness: 0,
-            opacity: 60,
+            opacity: 80,
             font_family: 1,
             font_size: 0.0,
-            roundness: Some(Roundness { roundness_type: 2 }),
+            roundness: None,
             label: None,
             bound_elements: None,
             text: None, original_text: None, text_align: None,
             vertical_align: None, container_id: None,
             points: Some(rel_points),
-            end_arrowhead: None, // mind map connectors: no arrowhead
+            end_arrowhead: None,
             start_arrowhead: None,
-            start_binding: Some(Binding {
-                element_id: placed.element_id.clone(),
-                fixed_point: [1.0, 0.5],
-                focus: 0.0, gap: 0.0,
-            }),
-            end_binding: Some(Binding {
-                element_id: child.element_id.clone(),
-                fixed_point: [0.0, 0.5],
-                focus: 0.0, gap: 0.0,
-            }),
+            start_binding: None,
+            end_binding: None,
             angle: None, is_deleted: false,
-            custom_data: None, group_ids: None,
+            custom_data: Some(organic_stroke_options()),
+            group_ids: None,
         });
 
-        // Add bound_elements references
-        if let Some(el) = scene.get_mut(&placed.element_id) {
-            let bound = el.bound_elements.get_or_insert_with(Vec::new);
-            bound.push(BoundElement { id: arrow_id.clone(), bound_type: "arrow".into() });
-        }
-        if let Some(el) = scene.get_mut(&child.element_id) {
-            let bound = el.bound_elements.get_or_insert_with(Vec::new);
-            bound.push(BoundElement { id: arrow_id.clone(), bound_type: "arrow".into() });
-        }
-
         // Recurse
-        connect_tree(scene, child, cfg);
+        connect_tree(scene, child, _cfg);
     }
 }
 
@@ -375,7 +386,7 @@ pub fn generate(roots: &[MmNode], cfg: &MindMapConfig) -> Scene {
     // Z-order: arrows at back, then shapes, then text on top.
     // This ensures shapes paint over arrow origins.
     scene.elements.sort_by_key(|el| match el.element_type.as_str() {
-        "arrow" => 0,
+        "arrow" | "freedraw" => 0,
         "line" => 1,
         "rectangle" | "diamond" | "ellipse" => 2,
         "text" => 3,
@@ -424,7 +435,7 @@ mod tests {
         let nodes = parse_markdown("- Root\n  - A\n  - B\n");
         let cfg = MindMapConfig::default();
         let scene = generate(&nodes, &cfg);
-        // Root (rect+text) + A (rect+text) + B (rect+text) + 2 arrows = 8
+        // Root (rect+text) + A (rect+text) + B (rect+text) + 2 freedraw connectors = 8
         assert_eq!(scene.elements.len(), 8);
     }
 }
