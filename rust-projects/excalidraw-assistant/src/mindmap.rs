@@ -313,17 +313,12 @@ fn root_style(font_size: f64) -> Style {
     }
 }
 
-fn node_style(depth: usize, font_size: f64) -> Style {
-    let opacity = match depth {
-        1 => 85,
-        2 => 75,
-        _ => 65,
-    };
+fn node_style(_depth: usize, font_size: f64) -> Style {
     Style {
         fill: "#f7f9fc".into(),
         stroke: "#7f8c8d".into(),
         text_color: "#2c3e50".into(),
-        opacity,
+        opacity: 100,
         font_size,
     }
 }
@@ -345,7 +340,7 @@ fn branch_color(index: usize, font_size: f64) -> Style {
         fill: fill.into(),
         stroke: stroke.into(),
         text_color: stroke.into(),
-        opacity: 90,
+        opacity: 100,
         font_size,
     }
 }
