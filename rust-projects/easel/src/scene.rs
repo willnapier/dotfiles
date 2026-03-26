@@ -28,7 +28,7 @@ impl Scene {
         Scene {
             scene_type: "excalidraw".into(),
             version: 2,
-            source: "excalidraw-assistant".into(),
+            source: "easel".into(),
             elements: Vec::new(),
             app_state: AppState {
                 grid_size: None,

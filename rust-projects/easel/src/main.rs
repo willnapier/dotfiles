@@ -17,7 +17,7 @@ use scene::Scene;
 use style::Style;
 
 #[derive(Parser)]
-#[command(name = "ea", about = "Excalidraw Assistant — programmatic diagram creation")]
+#[command(name = "ea", about = "Easel — visual composition from markup")]
 struct Cli {
     #[command(subcommand)]
     command: Command,

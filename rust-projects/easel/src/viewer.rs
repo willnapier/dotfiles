@@ -13,7 +13,7 @@ pub fn to_html(scene: &Scene) -> Result<String> {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ea — Excalidraw Viewer</title>
+<title>Easel — Visual Composition</title>
 <style>
   html, body, #root {{ margin: 0; padding: 0; width: 100vw; height: 100vh; overflow: hidden; }}
   .loading {{ display: flex; align-items: center; justify-content: center; height: 100vh;
