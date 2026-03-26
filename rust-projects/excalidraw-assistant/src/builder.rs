@@ -413,13 +413,15 @@ pub fn smart_connect(
 
     let pad = 40.0;
 
-    // Find the bottom of the lowest obstacle to compute approach midpoint
+    // Departure: drop below source before going horizontal
+    let depart_y = from.bottom() + 20.0;
+    // Approach: midpoint between lowest obstacle bottom and target top
     let obs_bottom = obstacles.iter().map(|e| e.bottom()).fold(f64::MIN, f64::max);
-    let approach_y = (obs_bottom + to.y) / 2.0; // midpoint of gap between last obstacle and target
+    let approach_y = (obs_bottom + to.y) / 2.0;
 
     // Route options — go OUTSIDE all obstacles, approach target vertically
-    let route_left = vec![(sx, sy), (obs_left - pad, sy), (obs_left - pad, approach_y), (ex, approach_y), (ex, ey)];
-    let route_right = vec![(sx, sy), (obs_right + pad, sy), (obs_right + pad, approach_y), (ex, approach_y), (ex, ey)];
+    let route_left = vec![(sx, sy), (sx, depart_y), (obs_left - pad, depart_y), (obs_left - pad, approach_y), (ex, approach_y), (ex, ey)];
+    let route_right = vec![(sx, sy), (sx, depart_y), (obs_right + pad, depart_y), (obs_right + pad, approach_y), (ex, approach_y), (ex, ey)];
 
     // Pick the tightest clear route
     let (points, note) = if !path_crosses(&route_left, scene, &skip) {

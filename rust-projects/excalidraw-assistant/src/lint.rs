@@ -105,6 +105,7 @@ pub fn check(scene: &Scene) -> Vec<String> {
     failures.extend(check_consistent_stroke(scene));
     failures.extend(check_binding_integrity(scene));
     failures.extend(check_text_container_integrity(scene));
+    failures.extend(check_arrow_shape_clearance(scene));
 
     failures
 }
@@ -248,6 +249,83 @@ fn check_binding_integrity(scene: &Scene) -> Vec<String> {
                     "BROKEN BINDING: arrow {} endBinding references missing element {}",
                     &el.id[..8], &binding.element_id[..8.min(binding.element_id.len())]
                 ));
+            }
+        }
+    }
+
+    failures
+}
+
+/// Check: arrow segments maintain minimum clearance from non-connected shapes.
+/// Catches: arrows grazing shape edges, arrows cutting through shapes.
+fn check_arrow_shape_clearance(scene: &Scene) -> Vec<String> {
+    let mut failures = Vec::new();
+    let min_clearance = 12.0;
+
+    let shapes: Vec<&Element> = scene.elements.iter()
+        .filter(|e| e.element_type != "text" && e.element_type != "arrow")
+        .collect();
+
+    for arrow in scene.elements.iter().filter(|e| e.element_type == "arrow") {
+        // Get IDs of connected shapes (skip clearance check against these)
+        let connected: Vec<&str> = [
+            arrow.start_binding.as_ref().map(|b| b.element_id.as_str()),
+            arrow.end_binding.as_ref().map(|b| b.element_id.as_str()),
+        ].iter().filter_map(|x| *x).collect();
+
+        if let Some(ref points) = arrow.points {
+            for seg in 0..points.len().saturating_sub(1) {
+                let x1 = arrow.x + points[seg][0];
+                let y1 = arrow.y + points[seg][1];
+                let x2 = arrow.x + points[seg + 1][0];
+                let y2 = arrow.y + points[seg + 1][1];
+
+                let seg_left = x1.min(x2);
+                let seg_right = x1.max(x2);
+                let seg_top = y1.min(y2);
+                let seg_bot = y1.max(y2);
+
+                for shape in &shapes {
+                    if connected.contains(&shape.id.as_str()) {
+                        continue;
+                    }
+
+                    // Check if segment passes through or grazes this shape
+                    let overlap_x = seg_right > shape.x && seg_left < shape.right();
+                    let overlap_y = seg_bot > shape.y && seg_top < shape.bottom();
+
+                    if overlap_x && overlap_y {
+                        failures.push(format!(
+                            "ARROW CROSSES SHAPE: arrow at ({:.0},{:.0}) segment {}-{} intersects shape at ({:.0},{:.0})",
+                            arrow.x, arrow.y, seg, seg + 1, shape.x, shape.y
+                        ));
+                        break; // one failure per arrow is enough
+                    }
+
+                    // Check clearance for segments that pass alongside shapes
+                    if overlap_x {
+                        let gap_top = (seg_top - shape.bottom()).abs();
+                        let gap_bot = (seg_bot - shape.y).abs();
+                        let min_gap = gap_top.min(gap_bot);
+                        if min_gap < min_clearance && min_gap > 0.0 {
+                            failures.push(format!(
+                                "ARROW CLEARANCE: {:.0}px (min {:.0}) from shape at ({:.0},{:.0})",
+                                min_gap, min_clearance, shape.x, shape.y
+                            ));
+                        }
+                    }
+                    if overlap_y {
+                        let gap_left = (seg_left - shape.right()).abs();
+                        let gap_right = (seg_right - shape.x).abs();
+                        let min_gap = gap_left.min(gap_right);
+                        if min_gap < min_clearance && min_gap > 0.0 {
+                            failures.push(format!(
+                                "ARROW CLEARANCE: {:.0}px (min {:.0}) from shape at ({:.0},{:.0})",
+                                min_gap, min_clearance, shape.x, shape.y
+                            ));
+                        }
+                    }
+                }
             }
         }
     }
