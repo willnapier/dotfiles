@@ -18,40 +18,39 @@ pub fn to_html(scene: &Scene) -> Result<String> {
   html, body, #root {{ margin: 0; padding: 0; width: 100vw; height: 100vh; overflow: hidden; }}
   .loading {{ display: flex; align-items: center; justify-content: center; height: 100vh;
               font-family: system-ui; color: #666; font-size: 18px; }}
+  .error {{ color: #c00; font-family: monospace; padding: 2em; white-space: pre-wrap; }}
 </style>
 </head>
 <body>
 <div id="root"><div class="loading">Loading Excalidraw…</div></div>
 
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@excalidraw/excalidraw/dist/excalidraw.production.min.js"></script>
+<script>window.__SCENE_DATA__ = {scene_json};</script>
 
-<script>
-const sceneData = {scene_json};
+<script type="module">
+import {{ createElement }} from 'https://esm.sh/react@18?dev';
+import {{ createRoot }} from 'https://esm.sh/react-dom@18/client?dev';
+import {{ Excalidraw }} from 'https://esm.sh/@excalidraw/excalidraw@0.18.0?alias=react:react@18,react-dom:react-dom@18';
 
-const App = () => {{
-  return React.createElement(
+try {{
+  const scene = window.__SCENE_DATA__;
+  const App = () => createElement(
     "div",
     {{ style: {{ width: "100vw", height: "100vh" }} }},
-    React.createElement(ExcalidrawLib.Excalidraw, {{
+    createElement(Excalidraw, {{
       initialData: {{
-        elements: sceneData.elements,
+        elements: scene.elements,
         appState: {{
-          viewBackgroundColor: sceneData.appState.viewBackgroundColor || "#ffffff",
-          gridSize: sceneData.appState.gridSize || null,
-        }},
-      }},
-      UIOptions: {{
-        canvasActions: {{
-          export: {{ saveFileToDisk: true }},
+          viewBackgroundColor: scene.appState.viewBackgroundColor || "#ffffff",
+          gridSize: scene.appState.gridSize || null,
         }},
       }},
     }})
   );
-}};
-
-ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+  createRoot(document.getElementById("root")).render(createElement(App));
+}} catch (e) {{
+  document.getElementById("root").innerHTML =
+    '<div class="error">Failed to load Excalidraw:\n' + e.message + '</div>';
+}}
 </script>
 </body>
 </html>"##
@@ -64,4 +63,39 @@ pub fn write_viewer(scene: &Scene, base_path: &Path) -> Result<std::path::PathBu
     let html_path = base_path.with_extension("html");
     std::fs::write(&html_path, html)?;
     Ok(html_path)
+}
+
+/// Serve the viewer on localhost and open in browser.
+/// Blocks until Ctrl-C or the first request is served (then exits after a grace period).
+pub fn serve_and_open(scene: &Scene) -> Result<()> {
+    let html = to_html(scene)?;
+
+    // Find an available port
+    let server = tiny_http::Server::http("127.0.0.1:0")
+        .map_err(|e| anyhow::anyhow!("Failed to start server: {}", e))?;
+    let port = server.server_addr().to_ip().map(|a| a.port()).unwrap_or(8080);
+    let url = format!("http://127.0.0.1:{}", port);
+
+    eprintln!("Serving at {} (Ctrl-C to stop)", url);
+
+    // Open browser
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open").args(["-a", "Safari"]).arg(&url).spawn()?;
+    #[cfg(target_os = "linux")]
+    std::process::Command::new("xdg-open").arg(&url).spawn()?;
+
+    // Serve requests until Ctrl-C
+    let html_bytes = html.into_bytes();
+    for request in server.incoming_requests() {
+        let response = tiny_http::Response::from_data(html_bytes.clone())
+            .with_header(
+                tiny_http::Header::from_bytes(
+                    &b"Content-Type"[..],
+                    &b"text/html; charset=utf-8"[..],
+                ).unwrap()
+            );
+        let _ = request.respond(response);
+    }
+
+    Ok(())
 }

@@ -401,9 +401,7 @@ fn main() -> Result<()> {
 
         Command::View { file } => {
             let scene = Scene::load(&file)?;
-            let html_path = viewer::write_viewer(&scene, &file)?;
-            println!("Viewer: {}", html_path.display());
-            open_in_browser(&html_path)?;
+            viewer::serve_and_open(&scene)?;
         }
 
         Command::Mindmap { input, output, svg, gap_x, gap_y, font_size, multicolor, open } => {
@@ -440,9 +438,7 @@ fn main() -> Result<()> {
             }
 
             if open {
-                let html_path = viewer::write_viewer(&scene, &out_path)?;
-                println!("Viewer: {}", html_path.display());
-                open_in_browser(&html_path)?;
+                viewer::serve_and_open(&scene)?;
             }
         }
 
@@ -478,8 +474,7 @@ fn main() -> Result<()> {
 
             // Step 4: Optionally open in Excalidraw viewer
             if open {
-                let html_path = viewer::write_viewer(&scene, &excalidraw_path)?;
-                open_in_browser(&html_path)?;
+                viewer::serve_and_open(&scene)?;
             }
         }
     }
