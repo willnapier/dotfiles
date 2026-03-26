@@ -1,8 +1,19 @@
 use crate::freehand;
+use crate::rough;
 use crate::scene::Scene;
+use crate::visual_style::VisualStyle;
 
 /// Export a scene to SVG with Nunito font and consistent arrowhead markers.
+/// When `style` is None or clean, uses geometric primitives (current behaviour).
+/// When a non-clean style is provided, renders shapes with rough/hand-drawn paths.
 pub fn to_svg(scene: &Scene) -> String {
+    to_svg_styled(scene, None)
+}
+
+/// Export a scene to SVG with an optional visual style for hand-drawn rendering.
+pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
+    let is_rough = style.map_or(false, |s| !s.is_clean());
+
     // Calculate viewBox from element bounds
     let mut min_x = f64::MAX;
     let mut min_y = f64::MAX;
@@ -50,52 +61,241 @@ pub fn to_svg(scene: &Scene) -> String {
 "#
     );
 
+    // Element index used to vary seeds per element for deterministic but unique wobble
+    let mut el_idx: u64 = 0;
+
     // Render elements in order (z-order = array order)
     for el in &scene.elements {
         if el.is_deleted {
             continue;
         }
+        el_idx += 1;
+
+        let el_seed = style.map_or(0, |s| s.seed.wrapping_add(el_idx * 97));
 
         match el.element_type.as_str() {
             "rectangle" => {
-                let rx = if el.roundness.is_some() { 8 } else { 0 };
-                svg.push_str(&format!(
-                    r#"<rect x="{}" y="{}" width="{}" height="{}" fill="{}" stroke="{}" stroke-width="{}" rx="{}" opacity="{}"/>
+                if is_rough {
+                    let vs = style.unwrap();
+                    // Rough rectangle outline
+                    let path_d = rough::rough_rect(el.x, el.y, el.width, el.height, vs.roughness, el_seed);
+                    // Fill: either hachure or solid
+                    if vs.hachure && el.background_color != "transparent" {
+                        // Solid fill underneath for background color
+                        let rx = if el.roundness.is_some() { 8 } else { 0 };
+                        svg.push_str(&format!(
+                            r#"<rect x="{}" y="{}" width="{}" height="{}" fill="{}" stroke="none" rx="{}" opacity="{}"/>
 "#,
-                    el.x, el.y, el.width, el.height,
-                    el.background_color, el.stroke_color, el.stroke_width,
-                    rx, el.opacity as f64 / 100.0
-                ));
+                            el.x, el.y, el.width, el.height,
+                            el.background_color, rx, el.opacity as f64 / 100.0
+                        ));
+                        // Hachure fill overlay
+                        let hachure_d = rough::hachure_fill(
+                            el.x, el.y, el.width, el.height,
+                            vs.hachure_angle.to_radians(), vs.hachure_gap,
+                            vs.roughness, el_seed.wrapping_add(7),
+                        );
+                        if !hachure_d.is_empty() {
+                            svg.push_str(&format!(
+                                r#"<path d="{}" fill="none" stroke="{}" stroke-width="1" opacity="{}"/>
+"#,
+                                hachure_d, el.stroke_color,
+                                (el.opacity as f64 / 100.0) * 0.5
+                            ));
+                        }
+                    } else if el.background_color != "transparent" {
+                        // Solid fill with rough edges (use the rough path as a filled shape)
+                        let fill_path = rough::rough_rect(el.x, el.y, el.width, el.height, vs.roughness * 0.3, el_seed.wrapping_add(3));
+                        svg.push_str(&format!(
+                            r#"<path d="{}" fill="{}" stroke="none" opacity="{}"/>
+"#,
+                            fill_path, el.background_color,
+                            el.opacity as f64 / 100.0
+                        ));
+                    }
+                    // Rough outline stroke
+                    svg.push_str(&format!(
+                        r#"<path d="{}" fill="none" stroke="{}" stroke-width="{}" opacity="{}"/>
+"#,
+                        path_d, el.stroke_color, el.stroke_width,
+                        el.opacity as f64 / 100.0
+                    ));
+                } else {
+                    let rx = if el.roundness.is_some() { 8 } else { 0 };
+                    svg.push_str(&format!(
+                        r#"<rect x="{}" y="{}" width="{}" height="{}" fill="{}" stroke="{}" stroke-width="{}" rx="{}" opacity="{}"/>
+"#,
+                        el.x, el.y, el.width, el.height,
+                        el.background_color, el.stroke_color, el.stroke_width,
+                        rx, el.opacity as f64 / 100.0
+                    ));
+                }
             }
 
             "ellipse" => {
                 let cx = el.x + el.width / 2.0;
                 let cy = el.y + el.height / 2.0;
-                svg.push_str(&format!(
-                    r#"<ellipse cx="{:.0}" cy="{:.0}" rx="{:.0}" ry="{:.0}" fill="{}" stroke="{}" stroke-width="{}" opacity="{}"/>
+                let rx = el.width / 2.0;
+                let ry = el.height / 2.0;
+
+                if is_rough {
+                    let vs = style.unwrap();
+                    // Fill
+                    if vs.hachure && el.background_color != "transparent" {
+                        // Solid background
+                        svg.push_str(&format!(
+                            r#"<ellipse cx="{:.0}" cy="{:.0}" rx="{:.0}" ry="{:.0}" fill="{}" stroke="none" opacity="{}"/>
 "#,
-                    cx, cy, el.width / 2.0, el.height / 2.0,
-                    el.background_color, el.stroke_color, el.stroke_width,
-                    el.opacity as f64 / 100.0
-                ));
+                            cx, cy, rx, ry,
+                            el.background_color, el.opacity as f64 / 100.0
+                        ));
+                        // Hachure (use bounding rect)
+                        let hachure_d = rough::hachure_fill(
+                            el.x, el.y, el.width, el.height,
+                            vs.hachure_angle.to_radians(), vs.hachure_gap,
+                            vs.roughness, el_seed.wrapping_add(7),
+                        );
+                        if !hachure_d.is_empty() {
+                            // Clip to ellipse
+                            let clip_id = format!("ec{}", el_idx);
+                            svg.push_str(&format!(
+                                r#"<clipPath id="{}"><ellipse cx="{:.0}" cy="{:.0}" rx="{:.0}" ry="{:.0}"/></clipPath>
+"#,
+                                clip_id, cx, cy, rx, ry
+                            ));
+                            svg.push_str(&format!(
+                                r#"<path d="{}" fill="none" stroke="{}" stroke-width="1" opacity="{}" clip-path="url(#{})"/>
+"#,
+                                hachure_d, el.stroke_color,
+                                (el.opacity as f64 / 100.0) * 0.5, clip_id
+                            ));
+                        }
+                    } else if el.background_color != "transparent" {
+                        let fill_path = rough::rough_ellipse(cx, cy, rx, ry, vs.roughness * 0.3, el_seed.wrapping_add(3));
+                        svg.push_str(&format!(
+                            r#"<path d="{}" fill="{}" stroke="none" opacity="{}"/>
+"#,
+                            fill_path, el.background_color,
+                            el.opacity as f64 / 100.0
+                        ));
+                    }
+                    // Rough outline
+                    let path_d = rough::rough_ellipse(cx, cy, rx, ry, vs.roughness, el_seed);
+                    svg.push_str(&format!(
+                        r#"<path d="{}" fill="none" stroke="{}" stroke-width="{}" opacity="{}"/>
+"#,
+                        path_d, el.stroke_color, el.stroke_width,
+                        el.opacity as f64 / 100.0
+                    ));
+                } else {
+                    svg.push_str(&format!(
+                        r#"<ellipse cx="{:.0}" cy="{:.0}" rx="{:.0}" ry="{:.0}" fill="{}" stroke="{}" stroke-width="{}" opacity="{}"/>
+"#,
+                        cx, cy, rx, ry,
+                        el.background_color, el.stroke_color, el.stroke_width,
+                        el.opacity as f64 / 100.0
+                    ));
+                }
             }
 
             "diamond" => {
                 let cx = el.x + el.width / 2.0;
                 let cy = el.y + el.height / 2.0;
-                svg.push_str(&format!(
-                    r#"<polygon points="{:.0},{:.0} {:.0},{:.0} {:.0},{:.0} {:.0},{:.0}" fill="{}" stroke="{}" stroke-width="{}" opacity="{}"/>
+
+                if is_rough {
+                    let vs = style.unwrap();
+                    // Diamond as 4 rough lines
+                    let corners = [
+                        (cx, el.y),
+                        (el.x + el.width, cy),
+                        (cx, el.y + el.height),
+                        (el.x, cy),
+                    ];
+
+                    // Fill
+                    if vs.hachure && el.background_color != "transparent" {
+                        svg.push_str(&format!(
+                            r#"<polygon points="{:.0},{:.0} {:.0},{:.0} {:.0},{:.0} {:.0},{:.0}" fill="{}" stroke="none" opacity="{}"/>
 "#,
-                    cx, el.y,
-                    el.x + el.width, cy,
-                    cx, el.y + el.height,
-                    el.x, cy,
-                    el.background_color, el.stroke_color, el.stroke_width,
-                    el.opacity as f64 / 100.0
-                ));
+                            corners[0].0, corners[0].1,
+                            corners[1].0, corners[1].1,
+                            corners[2].0, corners[2].1,
+                            corners[3].0, corners[3].1,
+                            el.background_color, el.opacity as f64 / 100.0
+                        ));
+                        let hachure_d = rough::hachure_fill(
+                            el.x, el.y, el.width, el.height,
+                            vs.hachure_angle.to_radians(), vs.hachure_gap,
+                            vs.roughness, el_seed.wrapping_add(7),
+                        );
+                        if !hachure_d.is_empty() {
+                            let clip_id = format!("dc{}", el_idx);
+                            svg.push_str(&format!(
+                                r#"<clipPath id="{}"><polygon points="{:.0},{:.0} {:.0},{:.0} {:.0},{:.0} {:.0},{:.0}"/></clipPath>
+"#,
+                                clip_id,
+                                corners[0].0, corners[0].1,
+                                corners[1].0, corners[1].1,
+                                corners[2].0, corners[2].1,
+                                corners[3].0, corners[3].1,
+                            ));
+                            svg.push_str(&format!(
+                                r#"<path d="{}" fill="none" stroke="{}" stroke-width="1" opacity="{}" clip-path="url(#{})"/>
+"#,
+                                hachure_d, el.stroke_color,
+                                (el.opacity as f64 / 100.0) * 0.5, clip_id
+                            ));
+                        }
+                    } else if el.background_color != "transparent" {
+                        svg.push_str(&format!(
+                            r#"<polygon points="{:.0},{:.0} {:.0},{:.0} {:.0},{:.0} {:.0},{:.0}" fill="{}" stroke="none" opacity="{}"/>
+"#,
+                            corners[0].0, corners[0].1,
+                            corners[1].0, corners[1].1,
+                            corners[2].0, corners[2].1,
+                            corners[3].0, corners[3].1,
+                            el.background_color, el.opacity as f64 / 100.0
+                        ));
+                    }
+
+                    // Rough outline edges
+                    let mut outline_d = String::new();
+                    for i in 0..4 {
+                        let (x1, y1) = corners[i];
+                        let (x2, y2) = corners[(i + 1) % 4];
+                        let edge_seed = el_seed.wrapping_add(i as u64 * 17);
+                        let pts = rough::rough_line(x1, y1, x2, y2, vs.roughness, edge_seed);
+                        for (j, p) in pts.iter().enumerate() {
+                            if i == 0 && j == 0 {
+                                outline_d.push_str(&format!("M{:.2},{:.2}", p[0], p[1]));
+                            } else {
+                                outline_d.push_str(&format!(" L{:.2},{:.2}", p[0], p[1]));
+                            }
+                        }
+                    }
+                    outline_d.push_str(" Z");
+                    svg.push_str(&format!(
+                        r#"<path d="{}" fill="none" stroke="{}" stroke-width="{}" opacity="{}"/>
+"#,
+                        outline_d, el.stroke_color, el.stroke_width,
+                        el.opacity as f64 / 100.0
+                    ));
+                } else {
+                    svg.push_str(&format!(
+                        r#"<polygon points="{:.0},{:.0} {:.0},{:.0} {:.0},{:.0} {:.0},{:.0}" fill="{}" stroke="{}" stroke-width="{}" opacity="{}"/>
+"#,
+                        cx, el.y,
+                        el.x + el.width, cy,
+                        cx, el.y + el.height,
+                        el.x, cy,
+                        el.background_color, el.stroke_color, el.stroke_width,
+                        el.opacity as f64 / 100.0
+                    ));
+                }
             }
 
             "text" => {
+                // Text always renders clean (readable)
                 let anchor = el.text_align.as_deref().unwrap_or("center");
                 let svg_anchor = match anchor {
                     "center" => "middle",
@@ -144,16 +344,43 @@ pub fn to_svg(scene: &Scene) -> String {
             "line" => {
                 if let Some(ref points) = el.points {
                     if points.len() >= 2 {
-                        let pts: Vec<String> = points.iter()
-                            .map(|p| format!("{:.0},{:.0}", el.x + p[0], el.y + p[1]))
-                            .collect();
-                        svg.push_str(&format!(
-                            r#"<polyline points="{}" fill="none" stroke="{}" stroke-width="{}" opacity="{}" stroke-linecap="round" stroke-linejoin="round"/>
+                        if is_rough {
+                            let vs = style.unwrap();
+                            // Render line segments with rough perturbation
+                            let mut path_d = String::new();
+                            for i in 0..points.len() - 1 {
+                                let seg_seed = el_seed.wrapping_add(i as u64 * 23);
+                                let pts = rough::rough_line(
+                                    el.x + points[i][0], el.y + points[i][1],
+                                    el.x + points[i + 1][0], el.y + points[i + 1][1],
+                                    vs.roughness, seg_seed,
+                                );
+                                for (j, p) in pts.iter().enumerate() {
+                                    if i == 0 && j == 0 {
+                                        path_d.push_str(&format!("M{:.2},{:.2}", p[0], p[1]));
+                                    } else {
+                                        path_d.push_str(&format!(" L{:.2},{:.2}", p[0], p[1]));
+                                    }
+                                }
+                            }
+                            svg.push_str(&format!(
+                                r#"<path d="{}" fill="none" stroke="{}" stroke-width="{}" opacity="{}" stroke-linecap="round" stroke-linejoin="round"/>
 "#,
-                            pts.join(" "),
-                            el.stroke_color, el.stroke_width,
-                            el.opacity as f64 / 100.0
-                        ));
+                                path_d, el.stroke_color, el.stroke_width,
+                                el.opacity as f64 / 100.0
+                            ));
+                        } else {
+                            let pts: Vec<String> = points.iter()
+                                .map(|p| format!("{:.0},{:.0}", el.x + p[0], el.y + p[1]))
+                                .collect();
+                            svg.push_str(&format!(
+                                r#"<polyline points="{}" fill="none" stroke="{}" stroke-width="{}" opacity="{}" stroke-linecap="round" stroke-linejoin="round"/>
+"#,
+                                pts.join(" "),
+                                el.stroke_color, el.stroke_width,
+                                el.opacity as f64 / 100.0
+                            ));
+                        }
                     }
                 }
             }
@@ -192,15 +419,19 @@ pub fn to_svg(scene: &Scene) -> String {
                             points.iter().map(|p| [el.x + p[0], el.y + p[1]]).collect()
                         };
 
+                        // For organic connectors with rough style: jitter the outline points
+                        let final_pts = if is_rough {
+                            let vs = style.unwrap();
+                            rough::jitter_points(&abs_pts, vs.stroke_jitter, el_seed.wrapping_add(11))
+                        } else {
+                            abs_pts
+                        };
+
                         // Generate pressure array: taper from start_size to end_size
-                        // Pressure 1.0 at start (full start_size), decreasing toward end
-                        let n = abs_pts.len();
+                        let n = final_pts.len();
                         let pressures: Vec<f64> = (0..n).map(|i| {
                             let t = i as f64 / (n - 1).max(1) as f64;
                             let target_radius = start_size * (1.0 - t) + end_size * t;
-                            // Invert get_stroke_radius: pressure = 0.5 + (target/(size*1.0) - 0.5)/thinning
-                            // With thinning=0.6, easing=linear: radius = size * (0.5 - 0.6*(0.5 - p))
-                            // So p = 0.5 - (0.5 - radius/size) / 0.6
                             (target_radius / start_size).clamp(0.05, 1.0)
                         }).collect();
 
@@ -217,7 +448,7 @@ pub fn to_svg(scene: &Scene) -> String {
                             last: true,
                             ..Default::default()
                         };
-                        let outline = freehand::get_stroke(&abs_pts, Some(&pressures), &opts);
+                        let outline = freehand::get_stroke(&final_pts, Some(&pressures), &opts);
                         if !outline.is_empty() {
                             let path_d = freehand::outline_to_svg_path(&outline);
                             svg.push_str(&format!(
@@ -227,8 +458,56 @@ pub fn to_svg(scene: &Scene) -> String {
                                 el.opacity as f64 / 100.0
                             ));
                         }
+                    } else if is_rough && style.map_or(false, |s| s.connector_rough) {
+                        // Non-organic arrow with rough style: use rough lines
+                        let vs = style.unwrap();
+                        if points.len() == 2 {
+                            let pts = rough::rough_line(
+                                el.x + points[0][0], el.y + points[0][1],
+                                el.x + points[1][0], el.y + points[1][1],
+                                vs.roughness * 0.7, el_seed,
+                            );
+                            let mut path_d = String::new();
+                            for (j, p) in pts.iter().enumerate() {
+                                if j == 0 {
+                                    path_d.push_str(&format!("M{:.2},{:.2}", p[0], p[1]));
+                                } else {
+                                    path_d.push_str(&format!(" L{:.2},{:.2}", p[0], p[1]));
+                                }
+                            }
+                            svg.push_str(&format!(
+                                r#"<path d="{}" fill="none" stroke="{}" stroke-width="{}" opacity="{}" marker-end="url(#ah)"/>
+"#,
+                                path_d, el.stroke_color, el.stroke_width,
+                                el.opacity as f64 / 100.0
+                            ));
+                        } else {
+                            // Multi-point: rough each segment
+                            let mut path_d = String::new();
+                            for i in 0..points.len() - 1 {
+                                let seg_seed = el_seed.wrapping_add(i as u64 * 29);
+                                let pts = rough::rough_line(
+                                    el.x + points[i][0], el.y + points[i][1],
+                                    el.x + points[i + 1][0], el.y + points[i + 1][1],
+                                    vs.roughness * 0.7, seg_seed,
+                                );
+                                for (j, p) in pts.iter().enumerate() {
+                                    if i == 0 && j == 0 {
+                                        path_d.push_str(&format!("M{:.2},{:.2}", p[0], p[1]));
+                                    } else {
+                                        path_d.push_str(&format!(" L{:.2},{:.2}", p[0], p[1]));
+                                    }
+                                }
+                            }
+                            svg.push_str(&format!(
+                                r#"<path d="{}" fill="none" stroke="{}" stroke-width="{}" opacity="{}" marker-end="url(#ah)"/>
+"#,
+                                path_d, el.stroke_color, el.stroke_width,
+                                el.opacity as f64 / 100.0
+                            ));
+                        }
                     } else if points.len() == 2 {
-                        // Simple line
+                        // Simple line (clean)
                         svg.push_str(&format!(
                             r#"<line x1="{:.0}" y1="{:.0}" x2="{:.0}" y2="{:.0}" stroke="{}" stroke-width="{}" opacity="{}" marker-end="url(#ah)"/>
 "#,
@@ -238,7 +517,7 @@ pub fn to_svg(scene: &Scene) -> String {
                             el.opacity as f64 / 100.0
                         ));
                     } else {
-                        // Multi-point polyline
+                        // Multi-point polyline (clean)
                         let pts: Vec<String> = points.iter()
                             .map(|p| format!("{:.0},{:.0}", el.x + p[0], el.y + p[1]))
                             .collect();
@@ -251,7 +530,7 @@ pub fn to_svg(scene: &Scene) -> String {
                         ));
                     }
 
-                    // Render arrow label at midpoint
+                    // Render arrow label at midpoint (always clean text)
                     if let Some(ref label) = el.label {
                         let mid_idx = points.len() / 2;
                         let (mx, my) = if points.len() % 2 == 0 {

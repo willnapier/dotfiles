@@ -8,7 +8,10 @@ mod convert;
 mod export;
 mod mindmap;
 mod viewer;
+mod boap;
 pub mod freehand;
+pub mod rough;
+pub mod visual_style;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -150,6 +153,9 @@ enum Command {
         /// Output file (defaults to stdout)
         #[arg(long)]
         output: Option<PathBuf>,
+        /// Visual style: clean (default), subtle, sketchy
+        #[arg(long, default_value = "clean")]
+        visual_style: String,
     },
 
     /// Export as JSON (pretty-printed)
@@ -187,6 +193,24 @@ enum Command {
         /// Layout mode: right (default) or radial
         #[arg(long, default_value = "right")]
         layout: String,
+        /// Visual style: clean (default), subtle, sketchy
+        #[arg(long, default_value = "clean")]
+        visual_style: String,
+        /// Open output in browser
+        #[arg(long)]
+        open: bool,
+    },
+
+    /// Generate a book-on-a-page from a TOML manifest
+    Boap {
+        /// Input TOML manifest file
+        input: PathBuf,
+        /// Output .excalidraw file
+        #[arg(long)]
+        output: Option<PathBuf>,
+        /// Also export SVG
+        #[arg(long)]
+        svg: bool,
         /// Open output in browser
         #[arg(long)]
         open: bool,
@@ -202,6 +226,9 @@ enum Command {
         /// Style preset (clinical, default)
         #[arg(long, default_value = "clinical")]
         style: String,
+        /// Visual style: clean (default), subtle, sketchy
+        #[arg(long, default_value = "clean")]
+        visual_style: String,
         /// Open the SVG in the default browser
         #[arg(long, default_value_t = false, num_args = 0)]
         open: bool,
@@ -387,12 +414,13 @@ fn main() -> Result<()> {
                 input.display(), out_path.display(), shapes, arrows);
         }
 
-        Command::ExportSvg { file, output } => {
+        Command::ExportSvg { file, output, visual_style } => {
             let scene = Scene::load(&file)?;
-            let svg = export::to_svg(&scene);
+            let vs = visual_style::VisualStyle::by_name(&visual_style);
+            let svg = export::to_svg_styled(&scene, vs.as_ref());
             if let Some(out) = output {
                 std::fs::write(&out, &svg)?;
-                println!("Exported: {}", out.display());
+                println!("Exported ({}): {}", visual_style, out.display());
             } else {
                 print!("{}", svg);
             }
@@ -408,7 +436,7 @@ fn main() -> Result<()> {
             viewer::serve_and_open(&scene)?;
         }
 
-        Command::Mindmap { input, output, svg, gap_x, gap_y, font_size, multicolor, layout, open } => {
+        Command::Mindmap { input, output, svg, gap_x, gap_y, font_size, multicolor, layout, visual_style, open } => {
             let md = std::fs::read_to_string(&input)?;
             let nodes = mindmap::parse_markdown(&md);
             if nodes.is_empty() {
@@ -439,6 +467,36 @@ fn main() -> Result<()> {
             println!("Mind map: {} → {} ({} nodes, {} connectors)",
                 input.display(), out_path.display(), shapes, arrows);
 
+            let vs = visual_style::VisualStyle::by_name(&visual_style);
+            if vs.is_none() && visual_style != "clean" {
+                anyhow::bail!("Unknown visual style '{}'. Options: clean, subtle, sketchy", visual_style);
+            }
+
+            if svg {
+                let svg_content = export::to_svg_styled(&scene, vs.as_ref());
+                let svg_path = out_path.with_extension("svg");
+                std::fs::write(&svg_path, &svg_content)?;
+                println!("SVG ({}): {}", visual_style, svg_path.display());
+            }
+
+            if open {
+                viewer::serve_and_open(&scene)?;
+            }
+        }
+
+        Command::Boap { input, output, svg, open } => {
+            let toml_str = std::fs::read_to_string(&input)?;
+            let manifest = boap::parse_manifest(&toml_str)?;
+            let scene = boap::generate(&manifest);
+
+            let out_path = output.unwrap_or_else(|| input.with_extension("excalidraw"));
+            scene.save(&out_path)?;
+
+            let rects = scene.elements.iter().filter(|e| e.element_type == "rectangle").count();
+            let arrows = scene.elements.iter().filter(|e| e.element_type == "arrow").count();
+            println!("Book-on-a-page: {} -> {} ({} clusters, {} connections)",
+                input.display(), out_path.display(), rects, arrows);
+
             if svg {
                 let svg_content = export::to_svg(&scene);
                 let svg_path = out_path.with_extension("svg");
@@ -451,7 +509,7 @@ fn main() -> Result<()> {
             }
         }
 
-        Command::Render { input, output, style, open } => {
+        Command::Render { input, output, style, visual_style, open } => {
             // Step 1: Convert D2 → .excalidraw
             let d2 = std::fs::read_to_string(&input)?;
             let mut scene = convert::from_d2(&d2, &style)?;
@@ -474,12 +532,13 @@ fn main() -> Result<()> {
             let arrows = scene.elements.iter().filter(|e| e.element_type == "arrow").count();
 
             // Step 3: Export SVG
-            let svg = export::to_svg(&scene);
+            let vs = visual_style::VisualStyle::by_name(&visual_style);
+            let svg = export::to_svg_styled(&scene, vs.as_ref());
             let svg_path = output.unwrap_or_else(|| input.with_extension("svg"));
             std::fs::write(&svg_path, &svg)?;
 
-            println!("Rendered: {} → {} ({} shapes, {} arrows)",
-                input.display(), svg_path.display(), shapes, arrows);
+            println!("Rendered ({}): {} -> {} ({} shapes, {} arrows)",
+                visual_style, input.display(), svg_path.display(), shapes, arrows);
 
             // Step 4: Optionally open in Excalidraw viewer
             if open {
