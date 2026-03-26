@@ -92,7 +92,7 @@ impl Style {
             "william" | "blue" => Self::william(),
             "leigh" | "purple" => Self::leigh(),
             "ai" | "green" => Self::ai(),
-            "automated" | "gold" => Self::automated(),
+            "automated" | "gold" | "amber" => Self::automated(),
             "urgent" | "red" => Self::urgent(),
             "arrow" => Self::arrow(),
             _ => Self::default(),

@@ -14,3 +14,4 @@ anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 uuid = { version = "1", features = ["v4"] }
 tiny_http = "0.12"
+toml = "0.8"
