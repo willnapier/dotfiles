@@ -408,13 +408,18 @@ fn main() -> Result<()> {
             viewer::serve_and_open(&scene)?;
         }
 
-        Command::Mindmap { input, output, svg, gap_x, gap_y, font_size, multicolor, open } => {
+        Command::Mindmap { input, output, svg, gap_x, gap_y, font_size, multicolor, layout, open } => {
             let md = std::fs::read_to_string(&input)?;
             let nodes = mindmap::parse_markdown(&md);
             if nodes.is_empty() {
                 anyhow::bail!("No nodes parsed from {}", input.display());
             }
+            let layout_mode = match layout.as_str() {
+                "radial" => mindmap::Layout::Radial,
+                _ => mindmap::Layout::Right,
+            };
             let cfg = mindmap::MindMapConfig {
+                layout: layout_mode,
                 gap_x,
                 gap_y,
                 root_font_size: font_size,
