@@ -20,6 +20,7 @@ pub fn to_html(scene: &Scene) -> Result<String> {
               font-family: system-ui; color: #666; font-size: 18px; }}
   .error {{ color: #c00; font-family: monospace; padding: 2em; white-space: pre-wrap; }}
 </style>
+<link rel="stylesheet" href="https://esm.sh/@excalidraw/excalidraw@0.18.0/dist/prod/index.css">
 </head>
 <body>
 <div id="root"><div class="loading">Loading Excalidraw…</div></div>
@@ -27,9 +28,9 @@ pub fn to_html(scene: &Scene) -> Result<String> {
 <script>window.__SCENE_DATA__ = {scene_json};</script>
 
 <script type="module">
-import {{ createElement }} from 'https://esm.sh/react@18?dev';
-import {{ createRoot }} from 'https://esm.sh/react-dom@18/client?dev';
-import {{ Excalidraw }} from 'https://esm.sh/@excalidraw/excalidraw@0.18.0?alias=react:react@18,react-dom:react-dom@18';
+import {{ createElement }} from 'https://esm.sh/react@18?bundle';
+import {{ createRoot }} from 'https://esm.sh/react-dom@18/client?bundle';
+import {{ Excalidraw }} from 'https://esm.sh/@excalidraw/excalidraw@0.18.0?bundle&alias=react:react@18,react-dom:react-dom@18';
 
 try {{
   const scene = window.__SCENE_DATA__;
