@@ -31,7 +31,7 @@ pub fn estimate_text_width(text: &str, font_size: f64) -> f64 {
 }
 
 /// Calculate appropriate box dimensions for a label.
-fn size_for_label(text: &str, font_size: f64) -> (f64, f64) {
+pub fn size_for_label(text: &str, font_size: f64) -> (f64, f64) {
     let lines: Vec<&str> = text.split('\n').collect();
     let max_line = lines.iter().map(|l| l.len()).max().unwrap_or(0);
     let text_width = max_line as f64 * font_size * 0.6;

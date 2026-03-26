@@ -150,19 +150,19 @@ fn subtree_height(node: &MmNode, cfg: &MindMapConfig, depth: usize) -> f64 {
     }
 }
 
-/// Height of a single node box.
-fn node_height(node: &MmNode, cfg: &MindMapConfig, depth: usize) -> f64 {
+/// Dimensions of a single node box — delegates to builder::size_for_label
+/// so layout matches exactly what add_rect creates.
+fn node_size(node: &MmNode, cfg: &MindMapConfig, depth: usize) -> (f64, f64) {
     let fs = font_size_at_depth(cfg, depth);
-    let lines = node.text.split('\n').count();
-    let line_height = fs * 1.4;
-    (lines as f64 * line_height + 16.0).max(32.0)
+    builder::size_for_label(&node.text, fs)
 }
 
-/// Width of a single node box.
+fn node_height(node: &MmNode, cfg: &MindMapConfig, depth: usize) -> f64 {
+    node_size(node, cfg, depth).1
+}
+
 fn node_width(node: &MmNode, cfg: &MindMapConfig, depth: usize) -> f64 {
-    let fs = font_size_at_depth(cfg, depth);
-    let max_line = node.text.split('\n').map(|l| builder::estimate_text_width(l, fs)).fold(0.0f64, f64::max);
-    (max_line + 28.0).max(60.0)
+    node_size(node, cfg, depth).0
 }
 
 /// Font size at a given depth.
@@ -195,16 +195,12 @@ fn layout_node(
         node_style(depth, fs)
     };
 
-    // Create the node shape
+    // Create the node shape — dimensions now match because node_width/node_height
+    // delegate to the same size_for_label that add_rect uses.
     let elem_id = builder::add_rect(scene, x, y, &node.text, &style, false);
 
-    // Read back actual dimensions (add_rect uses size_for_label which differs from node_width)
-    let (actual_w, actual_h) = scene.get(&elem_id)
-        .map(|el| (el.width, el.height))
-        .unwrap_or((w, h));
-
-    // Layout children using actual element width
-    let child_x = x + actual_w + cfg.gap_x;
+    // Layout children
+    let child_x = x + w + cfg.gap_x;
     let mut child_placed = Vec::new();
 
     if !node.children.is_empty() {
@@ -225,7 +221,7 @@ fn layout_node(
 
     Placed {
         element_id: elem_id,
-        x, y, width: actual_w, height: actual_h,
+        x, y, width: w, height: h,
         children: child_placed,
     }
 }
