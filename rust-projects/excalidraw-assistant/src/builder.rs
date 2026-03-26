@@ -71,7 +71,7 @@ pub fn add_rect(scene: &mut Scene, x: f64, y: f64, label: &str, style: &Style, c
         points: None, end_arrowhead: None, start_arrowhead: None,
         start_binding: None, end_binding: None,
         angle: None, is_deleted: false,
-        custom_data: None, group_ids: None,
+        custom_data: None, group_ids: None, simulate_pressure: None,
     });
 
     // Text element bound to the shape
@@ -104,7 +104,7 @@ pub fn add_rect(scene: &mut Scene, x: f64, y: f64, label: &str, style: &Style, c
         points: None, end_arrowhead: None, start_arrowhead: None,
         start_binding: None, end_binding: None,
         angle: None, is_deleted: false,
-        custom_data: None, group_ids: None,
+        custom_data: None, group_ids: None, simulate_pressure: None,
     });
 
     shape_id
@@ -140,7 +140,7 @@ pub fn add_diamond(scene: &mut Scene, x: f64, y: f64, label: &str, style: &Style
         points: None, end_arrowhead: None, start_arrowhead: None,
         start_binding: None, end_binding: None,
         angle: None, is_deleted: false,
-        custom_data: None, group_ids: None,
+        custom_data: None, group_ids: None, simulate_pressure: None,
     });
 
     let text_width = estimate_text_width(label, style.font_size);
@@ -172,7 +172,7 @@ pub fn add_diamond(scene: &mut Scene, x: f64, y: f64, label: &str, style: &Style
         points: None, end_arrowhead: None, start_arrowhead: None,
         start_binding: None, end_binding: None,
         angle: None, is_deleted: false,
-        custom_data: None, group_ids: None,
+        custom_data: None, group_ids: None, simulate_pressure: None,
     });
 
     shape_id
@@ -208,7 +208,7 @@ pub fn add_ellipse(scene: &mut Scene, x: f64, y: f64, label: &str, style: &Style
         points: None, end_arrowhead: None, start_arrowhead: None,
         start_binding: None, end_binding: None,
         angle: None, is_deleted: false,
-        custom_data: None, group_ids: None,
+        custom_data: None, group_ids: None, simulate_pressure: None,
     });
 
     let text_width = estimate_text_width(label, style.font_size);
@@ -231,7 +231,7 @@ pub fn add_ellipse(scene: &mut Scene, x: f64, y: f64, label: &str, style: &Style
         points: None, end_arrowhead: None, start_arrowhead: None,
         start_binding: None, end_binding: None,
         angle: None, is_deleted: false,
-        custom_data: None, group_ids: None,
+        custom_data: None, group_ids: None, simulate_pressure: None,
     });
 
     shape_id
@@ -267,7 +267,7 @@ pub fn add_text(scene: &mut Scene, x: f64, y: f64, text: &str, font_size: f64, c
         points: None, end_arrowhead: None, start_arrowhead: None,
         start_binding: None, end_binding: None,
         angle: None, is_deleted: false,
-        custom_data: None, group_ids: None,
+        custom_data: None, group_ids: None, simulate_pressure: None,
     });
 
     text_id
@@ -335,7 +335,7 @@ pub fn add_arrow(
         text: None, original_text: None, text_align: None,
         vertical_align: None, container_id: None,
         angle: None, is_deleted: false,
-        custom_data: None, group_ids: None,
+        custom_data: None, group_ids: None, simulate_pressure: None,
     };
 
     scene.add(arrow);
@@ -455,7 +455,7 @@ fn create_routed_arrow(
         text: None, original_text: None, text_align: None,
         vertical_align: None, container_id: None,
         angle: None, is_deleted: false,
-        custom_data: None, group_ids: None,
+        custom_data: None, group_ids: None, simulate_pressure: None,
     };
 
     scene.add(arrow);
@@ -594,7 +594,7 @@ pub fn add_line(scene: &mut Scene, points: &[[f64; 2]], style: &Style) -> String
         end_arrowhead: None, start_arrowhead: None,
         start_binding: None, end_binding: None,
         angle: None, is_deleted: false,
-        custom_data: None, group_ids: None,
+        custom_data: None, group_ids: None, simulate_pressure: None,
     });
 
     line_id

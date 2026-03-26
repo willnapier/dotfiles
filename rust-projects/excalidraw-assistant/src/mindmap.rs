@@ -271,27 +271,10 @@ fn connect_tree(scene: &mut Scene, placed: &Placed, _cfg: &MindMapConfig) {
         // Control point at horizontal midpoint, Y biased toward child
         let cp = [sx + (ex - sx) * 0.5, sy + (ey - sy) * 0.3];
 
-        // Sample the curve into dense points with pressure for thick-to-thin taper.
-        // Pressure range 0.0-0.5: higher = thicker stroke.
-        let n_steps = 32;
-        let abs_points = sample_quadratic_bezier([sx, sy], cp, [ex, ey], n_steps);
-        let rel_points: Vec<[f64; 2]> = abs_points.iter().enumerate()
-            .map(|(i, p)| {
-                let t = i as f64 / n_steps as f64;
-                let pressure = 0.5 * (1.0 - t * 0.7); // 0.5 at start → 0.15 at end
-                // Store as [x, y] — pressure appended via separate field
-                // Excalidraw freedraw: points can be [x, y] or [x, y, pressure]
-                let _ = pressure; // used below in pressures vec
-                [p[0] - sx, p[1] - sy]
-            })
-            .collect();
-        // Build points with pressure as 3-element arrays
-        let rel_points_with_pressure: Vec<serde_json::Value> = abs_points.iter().enumerate()
-            .map(|(i, p)| {
-                let t = i as f64 / n_steps as f64;
-                let pressure = 0.5 * (1.0 - t * 0.7);
-                serde_json::json!([p[0] - sx, p[1] - sy, pressure])
-            })
+        // Sample the curve densely for freedraw with simulatePressure.
+        let abs_points = sample_quadratic_bezier([sx, sy], cp, [ex, ey], 48);
+        let rel_points: Vec<[f64; 2]> = abs_points.iter()
+            .map(|p| [p[0] - sx, p[1] - sy])
             .collect();
 
         let conn_id = new_id();
@@ -322,6 +305,7 @@ fn connect_tree(scene: &mut Scene, placed: &Placed, _cfg: &MindMapConfig) {
             angle: None, is_deleted: false,
             custom_data: Some(organic_stroke_options()),
             group_ids: None,
+            simulate_pressure: Some(true),
         });
 
         // Recurse

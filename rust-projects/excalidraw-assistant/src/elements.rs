@@ -82,6 +82,11 @@ pub struct Element {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub group_ids: Option<Vec<String>>,
+
+    /// Whether to simulate pressure for freedraw strokes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub simulate_pressure: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
