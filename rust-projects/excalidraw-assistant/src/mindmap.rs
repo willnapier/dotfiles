@@ -255,48 +255,40 @@ fn organic_stroke_options() -> serde_json::Value {
     })
 }
 
-/// Create curved connectors between parent and children.
+/// Create curved arrow connectors with proper Excalidraw bindings.
 fn connect_tree(scene: &mut Scene, placed: &Placed, _cfg: &MindMapConfig) {
     for child in &placed.children {
-        // Bezier: parent right edge → control point → child left edge
+        // Arrow: parent right edge → control point → child left edge
         let sx = placed.x + placed.width;
         let sy = placed.y + placed.height / 2.0;
         let ex = child.x;
         let ey = child.y + child.height / 2.0;
 
-        // Control point at horizontal midpoint, Y biased toward child
-        let cp = [sx + (ex - sx) * 0.5, sy + (ey - sy) * 0.3];
-
-        // Sample the curve densely for freedraw with simulatePressure.
-        let abs_points = sample_quadratic_bezier([sx, sy], cp, [ex, ey], 48);
-
-        // Compute bounding box — Excalidraw expects x,y at top-left, positive w/h
-        let min_x = abs_points.iter().map(|p| p[0]).fold(f64::MAX, f64::min);
-        let min_y = abs_points.iter().map(|p| p[1]).fold(f64::MAX, f64::min);
-        let max_x = abs_points.iter().map(|p| p[0]).fold(f64::MIN, f64::max);
-        let max_y = abs_points.iter().map(|p| p[1]).fold(f64::MIN, f64::max);
-
-        // Points relative to bounding box origin
-        let rel_points: Vec<[f64; 2]> = abs_points.iter()
-            .map(|p| [p[0] - min_x, p[1] - min_y])
-            .collect();
+        // 3-point curve: start, control, end (relative to start)
+        let mid_x = (ex - sx) * 0.5;
+        let cp_y = (ey - sy) * 0.3;
+        let rel_points = vec![
+            [0.0, 0.0],
+            [mid_x, cp_y],
+            [ex - sx, ey - sy],
+        ];
 
         let conn_id = new_id();
         scene.add(Element {
             id: conn_id.clone(),
-            element_type: "freedraw".into(),
-            x: min_x, y: min_y,
-            width: max_x - min_x, height: max_y - min_y,
-            stroke_color: "#999999".into(),
+            element_type: "arrow".into(),
+            x: sx, y: sy,
+            width: ex - sx, height: ey - sy,
+            stroke_color: "#aaaaaa".into(),
             background_color: "transparent".into(),
             fill_style: "solid".into(),
-            stroke_width: 1.0,
+            stroke_width: 2.0,
             stroke_style: String::new(),
             roughness: 0,
-            opacity: 80,
+            opacity: 70,
             font_family: 1,
             font_size: 0.0,
-            roundness: None,
+            roundness: Some(Roundness { roundness_type: 2 }),
             label: None,
             bound_elements: None,
             text: None, original_text: None, text_align: None,
@@ -304,13 +296,30 @@ fn connect_tree(scene: &mut Scene, placed: &Placed, _cfg: &MindMapConfig) {
             points: Some(rel_points),
             end_arrowhead: None,
             start_arrowhead: None,
-            start_binding: None,
-            end_binding: None,
+            start_binding: Some(Binding {
+                element_id: placed.element_id.clone(),
+                fixed_point: [1.0, 0.5],
+                focus: 0.0, gap: 1.0,
+            }),
+            end_binding: Some(Binding {
+                element_id: child.element_id.clone(),
+                fixed_point: [0.0, 0.5],
+                focus: 0.0, gap: 1.0,
+            }),
             angle: None, is_deleted: false,
-            custom_data: Some(organic_stroke_options()),
-            group_ids: None,
-            simulate_pressure: Some(true),
+            custom_data: None, group_ids: None,
+            simulate_pressure: None,
         });
+
+        // Register bindings on parent and child shapes
+        if let Some(el) = scene.get_mut(&placed.element_id) {
+            el.bound_elements.get_or_insert_with(Vec::new)
+                .push(BoundElement { id: conn_id.clone(), bound_type: "arrow".into() });
+        }
+        if let Some(el) = scene.get_mut(&child.element_id) {
+            el.bound_elements.get_or_insert_with(Vec::new)
+                .push(BoundElement { id: conn_id.clone(), bound_type: "arrow".into() });
+        }
 
         // Recurse
         connect_tree(scene, child, _cfg);
