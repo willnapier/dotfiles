@@ -377,6 +377,16 @@ pub fn generate(roots: &[MmNode], cfg: &MindMapConfig) -> Scene {
         cursor_y += root_h + cfg.gap_y * 3.0;
     }
 
+    // Z-order: arrows at back, then shapes, then text on top.
+    // This ensures shapes paint over arrow origins.
+    scene.elements.sort_by_key(|el| match el.element_type.as_str() {
+        "arrow" => 0,
+        "line" => 1,
+        "rectangle" | "diamond" | "ellipse" => 2,
+        "text" => 3,
+        _ => 2,
+    });
+
     scene
 }
 
