@@ -103,6 +103,13 @@ enum Commands {
         yes: bool,
     },
 
+    /// Save a pre-drafted note from stdin: validate, append, finalise
+    #[command(name = "note-save")]
+    NoteSave {
+        /// Client ID (e.g. CT71)
+        id: String,
+    },
+
     /// Update session count and print alerts after a note has been appended
     #[command(name = "note-finalise")]
     NoteFinalise {
@@ -178,6 +185,7 @@ fn main() -> Result<()> {
             observation,
             yes,
         } => note::run(&id, &observation, yes),
+        Commands::NoteSave { id } => note::save(&id),
         Commands::NoteFinalise { id } => finalise::run(&id),
         Commands::NotePrepare { id, sessions } => prepare::run(&id, sessions),
     }

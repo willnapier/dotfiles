@@ -1,13 +1,13 @@
 use anyhow::{bail, Context, Result};
 use regex::Regex;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::process::Command;
 
 use crate::{client, finalise, markdown, session};
 
 /// Validation errors for LLM-generated notes.
-struct ValidationResult {
-    errors: Vec<String>,
+pub struct ValidationResult {
+    pub errors: Vec<String>,
 }
 
 impl ValidationResult {
@@ -17,7 +17,7 @@ impl ValidationResult {
 }
 
 /// Validate that a generated note has the required structure.
-fn validate_note(note: &str) -> ValidationResult {
+pub fn validate_note(note: &str) -> ValidationResult {
     let mut errors = Vec::new();
 
     let date_re = Regex::new(r"^### \d{4}-\d{2}-\d{2}").unwrap();
@@ -190,13 +190,13 @@ fn build_prompt(id: &str, observation: &str) -> Result<String> {
 }
 
 /// Append a note to the end of a client file.
-fn append_note(id: &str, note: &str) -> Result<()> {
+pub fn append_note(id: &str, note: &str) -> Result<()> {
     let path = client::notes_path(id);
     append_note_to_path(&path, note)
 }
 
 /// Append a note to a specific file path.
-fn append_note_to_path(path: &std::path::Path, note: &str) -> Result<()> {
+pub fn append_note_to_path(path: &std::path::Path, note: &str) -> Result<()> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Could not read: {}", path.display()))?;
 
@@ -212,6 +212,49 @@ fn append_note_to_path(path: &std::path::Path, note: &str) -> Result<()> {
     let new_content = format!("{}{}{}\n", content, separator, note.trim_end());
     std::fs::write(path, new_content)
         .with_context(|| format!("Failed to write: {}", path.display()))?;
+
+    Ok(())
+}
+
+/// Run `clinical note-save <ID>`.
+///
+/// Reads a pre-drafted note from stdin, validates it, appends to the
+/// client file, and runs finalise. This is the deterministic save path
+/// called after the LLM has drafted a note and the clinician has approved it.
+pub fn save(id: &str) -> Result<()> {
+    let mut note = String::new();
+    io::stdin()
+        .read_to_string(&mut note)
+        .context("Failed to read note from stdin")?;
+
+    let note = note.trim().to_string();
+    if note.is_empty() {
+        bail!("Empty note on stdin");
+    }
+
+    // Validate
+    let validation = validate_note(&note);
+    if !validation.is_ok() {
+        eprintln!("Validation errors:");
+        for err in &validation.errors {
+            eprintln!("  - {}", err);
+        }
+        bail!("Note failed validation — not saved");
+    }
+
+    // Append
+    let path = client::notes_path(id);
+    if !path.exists() {
+        bail!("Client file not found: {}", path.display());
+    }
+
+    append_note(id, &note)?;
+
+    let line_count = note.lines().count();
+    eprintln!("Saved to {}.md ({} lines appended)", id, line_count);
+
+    // Finalise (session count + alerts)
+    finalise::run(id)?;
 
     Ok(())
 }
@@ -352,6 +395,22 @@ Client explored workplace dynamics.
         let result = validate_note(note);
         assert!(!result.is_ok());
         assert!(result.errors.iter().any(|e| e.contains("header")));
+    }
+
+    #[test]
+    fn test_validate_note_valid_all_fields() {
+        let note = "\
+### 2026-03-26
+
+**Risk**: No immediate concerns noted.
+
+Client engaged in values clarification work around career transition.
+
+**Formulation**: Increasing flexibility in responding to uncertainty; moving from avoidance to approach.
+";
+        let result = validate_note(note);
+        assert!(result.is_ok());
+        assert!(result.errors.is_empty());
     }
 
     #[test]
