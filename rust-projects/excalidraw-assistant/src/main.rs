@@ -418,7 +418,7 @@ fn main() -> Result<()> {
 
                 if open {
                     #[cfg(target_os = "macos")]
-                    std::process::Command::new("open").arg(&svg_path).spawn()?;
+                    std::process::Command::new("open").args(["-a", "Safari"]).arg(&svg_path).spawn()?;
                     #[cfg(target_os = "linux")]
                     std::process::Command::new("xdg-open").arg(&svg_path).spawn()?;
                 }
