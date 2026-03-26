@@ -135,7 +135,7 @@ pub fn from_d2(d2_source: &str, style_preset: &str) -> Result<Scene> {
     }
 
     // Layout BEFORE connecting so smart_connect can detect obstacles
-    crate::layout::flow(&mut scene, "down", 28.0);
+    crate::layout::flow(&mut scene, "down", 56.0);
 
     // Create connections
     for (from, to, label) in &connections {
