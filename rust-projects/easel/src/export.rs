@@ -160,7 +160,28 @@ pub fn to_svg(scene: &Scene) -> String {
 
             "arrow" => {
                 if let Some(ref points) = el.points {
-                    if points.len() == 2 {
+                    // Check for organic stroke rendering via customData
+                    let is_organic = el.custom_data.as_ref()
+                        .and_then(|cd| cd.get("strokeOptions"))
+                        .is_some();
+
+                    if is_organic {
+                        // Render as filled organic path using perfect-freehand
+                        let abs_pts: Vec<[f64; 2]> = points.iter()
+                            .map(|p| [el.x + p[0], el.y + p[1]])
+                            .collect();
+                        let opts = freehand::organic_branch(el.stroke_width * 6.0);
+                        let outline = freehand::get_stroke(&abs_pts, None, &opts);
+                        if !outline.is_empty() {
+                            let path_d = freehand::outline_to_svg_path(&outline);
+                            svg.push_str(&format!(
+                                r#"<path d="{}" fill="{}" stroke="none" opacity="{}"/>
+"#,
+                                path_d, el.stroke_color,
+                                el.opacity as f64 / 100.0
+                            ));
+                        }
+                    } else if points.len() == 2 {
                         // Simple line
                         svg.push_str(&format!(
                             r#"<line x1="{:.0}" y1="{:.0}" x2="{:.0}" y2="{:.0}" stroke="{}" stroke-width="{}" opacity="{}" marker-end="url(#ah)"/>

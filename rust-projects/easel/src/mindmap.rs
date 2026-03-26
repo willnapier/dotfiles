@@ -307,7 +307,8 @@ fn connect_tree(scene: &mut Scene, placed: &Placed, _cfg: &MindMapConfig) {
                 focus: 0.0, gap: 1.0,
             }),
             angle: None, is_deleted: false,
-            custom_data: None, group_ids: None,
+            custom_data: Some(serde_json::json!({ "strokeOptions": { "organic": true } })),
+            group_ids: None,
             simulate_pressure: None,
         });
 
