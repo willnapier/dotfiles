@@ -369,72 +369,22 @@ fn path_crosses(points: &[(f64, f64)], scene: &Scene, skip_ids: &[&str]) -> bool
     false
 }
 
-/// Smart connect: if direct path crosses an obstacle, propose routes.
-/// Returns the arrow ID and any routing notes.
-pub fn smart_connect(
+/// Create a multi-point routed arrow between two elements.
+fn create_routed_arrow(
     scene: &mut Scene,
     from_id: &str,
     to_id: &str,
     from_point: [f64; 2],
     to_point: [f64; 2],
+    points: &[(f64, f64)],
     style: &Style,
     label: Option<&str>,
-) -> (String, Option<String>) {
-    let from = scene.get(from_id).expect("from not found").clone();
-    let to = scene.get(to_id).expect("to not found").clone();
+) -> String {
+    let sx = points[0].0;
+    let sy = points[0].1;
+    let ex = points.last().unwrap().0;
+    let ey = points.last().unwrap().1;
 
-    let sx = from.x + from_point[0] * from.width;
-    let sy = from.y + from_point[1] * from.height;
-    let ex = to.x + to_point[0] * to.width;
-    let ey = to.y + to_point[1] * to.height;
-
-    let skip = [from_id, to_id];
-
-    // Try direct path first
-    if !segment_crosses_element(sx, sy, ex, ey, scene, &skip) {
-        let id = add_arrow(scene, from_id, to_id, from_point, to_point, style, label);
-        return (id, None);
-    }
-
-    // Find ALL obstacles in the bounding box between start and end
-    let bbox_left = sx.min(ex) - 5.0;
-    let bbox_right = sx.max(ex) + 5.0;
-    let bbox_top = sy.min(ey);
-    let bbox_bot = sy.max(ey);
-
-    let obstacles: Vec<&crate::elements::Element> = scene.elements.iter()
-        .filter(|e| e.element_type != "text" && e.element_type != "arrow" && !skip.contains(&e.id.as_str()))
-        .filter(|e| e.right() >= bbox_left && e.x <= bbox_right && e.bottom() >= bbox_top && e.y <= bbox_bot)
-        .collect();
-
-    // Find the widest extent of ALL obstacles
-    let obs_left = obstacles.iter().map(|e| e.x).fold(f64::MAX, f64::min);
-    let obs_right = obstacles.iter().map(|e| e.right()).fold(f64::MIN, f64::max);
-
-    let pad = 40.0;
-
-    // Departure: drop below source before going horizontal
-    let depart_y = from.bottom() + 20.0;
-    // Approach: midpoint between lowest obstacle bottom and target top
-    let obs_bottom = obstacles.iter().map(|e| e.bottom()).fold(f64::MIN, f64::max);
-    let approach_y = (obs_bottom + to.y) / 2.0;
-
-    // Route options — go OUTSIDE all obstacles, approach target vertically
-    let route_left = vec![(sx, sy), (sx, depart_y), (obs_left - pad, depart_y), (obs_left - pad, approach_y), (ex, approach_y), (ex, ey)];
-    let route_right = vec![(sx, sy), (sx, depart_y), (obs_right + pad, depart_y), (obs_right + pad, approach_y), (ex, approach_y), (ex, ey)];
-
-    // Pick the tightest clear route
-    let (points, note) = if !path_crosses(&route_left, scene, &skip) {
-        (route_left, "routed left")
-    } else if !path_crosses(&route_right, scene, &skip) {
-        (route_right, "routed right")
-    } else {
-        // Fallback: direct (accept the crossing)
-        let id = add_arrow(scene, from_id, to_id, from_point, to_point, style, label);
-        return (id, Some("WARNING: no clear route found, direct path used".into()));
-    };
-
-    // Create multi-point arrow
     let arrow_id = new_id();
     let rel_points: Vec<[f64; 2]> = points.iter()
         .map(|(px, py)| [px - sx, py - sy])
@@ -487,5 +437,92 @@ pub fn smart_connect(
         bound.push(crate::elements::BoundElement { id: arrow_id.clone(), bound_type: "arrow".into() });
     }
 
+    arrow_id
+}
+
+/// Smart connect: if direct path crosses an obstacle, propose routes.
+/// Returns the arrow ID and any routing notes.
+pub fn smart_connect(
+    scene: &mut Scene,
+    from_id: &str,
+    to_id: &str,
+    from_point: [f64; 2],
+    to_point: [f64; 2],
+    style: &Style,
+    label: Option<&str>,
+) -> (String, Option<String>) {
+    let from = scene.get(from_id).expect("from not found").clone();
+    let to = scene.get(to_id).expect("to not found").clone();
+
+    let sx = from.x + from_point[0] * from.width;
+    let sy = from.y + from_point[1] * from.height;
+    let ex = to.x + to_point[0] * to.width;
+    let ey = to.y + to_point[1] * to.height;
+
+    let skip = [from_id, to_id];
+
+    // For perpendicular connections (side exit → top entry), force L-routing
+    let is_side_exit = from_point[1] == 0.5 && (from_point[0] == 0.0 || from_point[0] == 1.0);
+    let is_top_entry = to_point[1] == 0.0 && to_point[0] == 0.5;
+    if is_side_exit && is_top_entry && (ey - sy).abs() > 10.0 {
+        // L-route: horizontal from source side, then vertical down to target top
+        let points = vec![(sx, sy), (ex, sy), (ex, ey)];
+        if !path_crosses(&points, scene, &skip) {
+            let arrow_id = create_routed_arrow(scene, from_id, to_id, from_point, to_point, &points, style, label);
+            return (arrow_id, Some("L-routed".into()));
+        }
+        // Try alternative L: vertical first, then horizontal
+        let points2 = vec![(sx, sy), (sx, ey), (ex, ey)];
+        if !path_crosses(&points2, scene, &skip) {
+            let arrow_id = create_routed_arrow(scene, from_id, to_id, from_point, to_point, &points2, style, label);
+            return (arrow_id, Some("L-routed alt".into()));
+        }
+    }
+
+    // Try direct path first
+    if !segment_crosses_element(sx, sy, ex, ey, scene, &skip) {
+        let id = add_arrow(scene, from_id, to_id, from_point, to_point, style, label);
+        return (id, None);
+    }
+
+    // Find ALL obstacles in the bounding box between start and end
+    let bbox_left = sx.min(ex) - 5.0;
+    let bbox_right = sx.max(ex) + 5.0;
+    let bbox_top = sy.min(ey);
+    let bbox_bot = sy.max(ey);
+
+    let obstacles: Vec<&crate::elements::Element> = scene.elements.iter()
+        .filter(|e| e.element_type != "text" && e.element_type != "arrow" && !skip.contains(&e.id.as_str()))
+        .filter(|e| e.right() >= bbox_left && e.x <= bbox_right && e.bottom() >= bbox_top && e.y <= bbox_bot)
+        .collect();
+
+    // Find the widest extent of ALL obstacles
+    let obs_left = obstacles.iter().map(|e| e.x).fold(f64::MAX, f64::min);
+    let obs_right = obstacles.iter().map(|e| e.right()).fold(f64::MIN, f64::max);
+
+    let pad = 40.0;
+
+    // Departure: drop below source before going horizontal
+    let depart_y = from.bottom() + 20.0;
+    // Approach: midpoint between lowest obstacle bottom and target top
+    let obs_bottom = obstacles.iter().map(|e| e.bottom()).fold(f64::MIN, f64::max);
+    let approach_y = (obs_bottom + to.y) / 2.0;
+
+    // Route options — go OUTSIDE all obstacles, approach target vertically
+    let route_left = vec![(sx, sy), (sx, depart_y), (obs_left - pad, depart_y), (obs_left - pad, approach_y), (ex, approach_y), (ex, ey)];
+    let route_right = vec![(sx, sy), (sx, depart_y), (obs_right + pad, depart_y), (obs_right + pad, approach_y), (ex, approach_y), (ex, ey)];
+
+    // Pick the tightest clear route
+    let (points, note) = if !path_crosses(&route_left, scene, &skip) {
+        (route_left, "routed left")
+    } else if !path_crosses(&route_right, scene, &skip) {
+        (route_right, "routed right")
+    } else {
+        // Fallback: direct (accept the crossing)
+        let id = add_arrow(scene, from_id, to_id, from_point, to_point, style, label);
+        return (id, Some("WARNING: no clear route found, direct path used".into()));
+    };
+
+    let arrow_id = create_routed_arrow(scene, from_id, to_id, from_point, to_point, &points, style, label);
     (arrow_id, Some(format!("Arrow {}", note)))
 }

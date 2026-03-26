@@ -165,6 +165,24 @@ pub fn to_svg(scene: &Scene) -> String {
                             el.opacity as f64 / 100.0
                         ));
                     }
+
+                    // Render arrow label at midpoint
+                    if let Some(ref label) = el.label {
+                        let mid_idx = points.len() / 2;
+                        let (mx, my) = if points.len() % 2 == 0 {
+                            let p1 = &points[mid_idx - 1];
+                            let p2 = &points[mid_idx];
+                            ((el.x + p1[0] + el.x + p2[0]) / 2.0,
+                             (el.y + p1[1] + el.y + p2[1]) / 2.0)
+                        } else {
+                            (el.x + points[mid_idx][0], el.y + points[mid_idx][1])
+                        };
+                        let label_color = "#666666";
+                        svg.push_str(&format!(
+                            "<text x=\"{:.0}\" y=\"{:.0}\" text-anchor=\"middle\" dominant-baseline=\"central\" font-size=\"{}\" fill=\"{}\" opacity=\"0.8\"><tspan dx=\"12\" dy=\"-8\">{}</tspan></text>\n",
+                            mx, my, label.font_size, label_color, xml_escape(&label.text)
+                        ));
+                    }
                 }
             }
 

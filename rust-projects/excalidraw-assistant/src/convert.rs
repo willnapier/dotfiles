@@ -156,23 +156,32 @@ pub fn from_d2(d2_source: &str, style_preset: &str) -> Result<Scene> {
 
             // Determine anchor points based on relative positions
             let (from_pt, to_pt) = if let (Some(f), Some(t)) = (from_el, to_el) {
-                let dx = (t.x + t.width / 2.0) - (f.x + f.width / 2.0);
-                let dy = (t.y + t.height / 2.0) - (f.y + f.height / 2.0);
+                let fcx = f.x + f.width / 2.0;
+                let fcy = f.y + f.height / 2.0;
+                let tcx = t.x + t.width / 2.0;
+                let tcy = t.y + t.height / 2.0;
+                let dx = tcx - fcx;
+                let dy = tcy - fcy;
 
-                if dy.abs() > dx.abs() {
-                    // Primarily vertical
-                    if dy > 0.0 {
-                        ([0.5, 1.0], [0.5, 0.0]) // down
-                    } else {
-                        ([0.5, 0.0], [0.5, 1.0]) // up
-                    }
-                } else {
-                    // Primarily horizontal
+                let is_diamond = f.element_type == "diamond";
+                let target_below = dy > 20.0;
+                let significant_horizontal = dx.abs() > f.width * 0.3;
+
+                if is_diamond && target_below && significant_horizontal {
+                    // Diamond side branch: exit from side, enter target from top
                     if dx > 0.0 {
-                        ([1.0, 0.5], [0.0, 0.5]) // right
+                        ([1.0, 0.5], [0.5, 0.0]) // right side of diamond → top of target
                     } else {
-                        ([0.0, 0.5], [1.0, 0.5]) // left
+                        ([0.0, 0.5], [0.5, 0.0]) // left side of diamond → top of target
                     }
+                } else if target_below {
+                    ([0.5, 1.0], [0.5, 0.0]) // straight down
+                } else if dy < -20.0 {
+                    ([0.5, 0.0], [0.5, 1.0]) // up
+                } else if dx > 0.0 {
+                    ([1.0, 0.5], [0.0, 0.5]) // right
+                } else {
+                    ([0.0, 0.5], [1.0, 0.5]) // left
                 }
             } else {
                 ([0.5, 1.0], [0.5, 0.0]) // default: down
