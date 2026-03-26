@@ -269,16 +269,24 @@ fn connect_tree(scene: &mut Scene, placed: &Placed, _cfg: &MindMapConfig) {
 
         // Sample the curve densely for freedraw with simulatePressure.
         let abs_points = sample_quadratic_bezier([sx, sy], cp, [ex, ey], 48);
+
+        // Compute bounding box — Excalidraw expects x,y at top-left, positive w/h
+        let min_x = abs_points.iter().map(|p| p[0]).fold(f64::MAX, f64::min);
+        let min_y = abs_points.iter().map(|p| p[1]).fold(f64::MAX, f64::min);
+        let max_x = abs_points.iter().map(|p| p[0]).fold(f64::MIN, f64::max);
+        let max_y = abs_points.iter().map(|p| p[1]).fold(f64::MIN, f64::max);
+
+        // Points relative to bounding box origin
         let rel_points: Vec<[f64; 2]> = abs_points.iter()
-            .map(|p| [p[0] - sx, p[1] - sy])
+            .map(|p| [p[0] - min_x, p[1] - min_y])
             .collect();
 
         let conn_id = new_id();
         scene.add(Element {
             id: conn_id.clone(),
             element_type: "freedraw".into(),
-            x: sx, y: sy,
-            width: ex - sx, height: ey - sy,
+            x: min_x, y: min_y,
+            width: max_x - min_x, height: max_y - min_y,
             stroke_color: "#999999".into(),
             background_color: "transparent".into(),
             fill_style: "solid".into(),
