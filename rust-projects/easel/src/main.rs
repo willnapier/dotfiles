@@ -184,6 +184,9 @@ enum Command {
         /// Use distinct colours per L1 branch
         #[arg(long)]
         multicolor: bool,
+        /// Layout mode: right (default) or radial
+        #[arg(long, default_value = "right")]
+        layout: String,
         /// Open output in browser
         #[arg(long)]
         open: bool,

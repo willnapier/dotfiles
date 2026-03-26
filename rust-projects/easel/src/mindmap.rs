@@ -11,8 +11,16 @@ pub struct MmNode {
     pub children: Vec<MmNode>,
 }
 
+/// Layout direction for the mind map.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Layout {
+    Right,  // standard left-to-right tree
+    Radial, // nodes radiate outward from central root
+}
+
 /// Configuration for mind map generation.
 pub struct MindMapConfig {
+    pub layout: Layout,
     pub gap_x: f64,
     pub gap_y: f64,
     pub root_font_size: f64,
@@ -24,6 +32,7 @@ pub struct MindMapConfig {
 impl Default for MindMapConfig {
     fn default() -> Self {
         MindMapConfig {
+            layout: Layout::Right,
             gap_x: 80.0,
             gap_y: 16.0,
             root_font_size: 24.0,
@@ -152,10 +161,15 @@ fn subtree_height(node: &MmNode, cfg: &MindMapConfig, depth: usize) -> f64 {
 }
 
 /// Dimensions of a single node box — delegates to builder::size_for_label
-/// so layout matches exactly what add_rect creates.
+/// so layout matches exactly what add_rect/add_ellipse creates.
 fn node_size(node: &MmNode, cfg: &MindMapConfig, depth: usize) -> (f64, f64) {
     let fs = font_size_at_depth(cfg, depth);
-    builder::size_for_label(&node.text, fs)
+    let (w, h) = builder::size_for_label(&node.text, fs);
+    if depth == 0 {
+        (w * 1.4, h * 1.3) // ellipse scaling matches builder::add_ellipse
+    } else {
+        (w, h)
+    }
 }
 
 fn node_height(node: &MmNode, cfg: &MindMapConfig, depth: usize) -> f64 {
@@ -196,9 +210,12 @@ fn layout_node(
         node_style(depth, fs)
     };
 
-    // Create the node shape — dimensions now match because node_width/node_height
-    // delegate to the same size_for_label that add_rect uses.
-    let elem_id = builder::add_rect(scene, x, y, &node.text, &style, false);
+    // Root node is an ellipse, others are rectangles
+    let elem_id = if depth == 0 {
+        builder::add_ellipse(scene, x, y, &node.text, &style, false)
+    } else {
+        builder::add_rect(scene, x, y, &node.text, &style, false)
+    };
 
     // Layout children
     let child_x = x + w + cfg.gap_x;
@@ -227,6 +244,223 @@ fn layout_node(
         children: child_placed,
     }
 }
+
+// ── Radial Layout ────────────────────────────────────────────────────
+
+/// Lay out nodes in a radial pattern: root at center, L1 around it, L2 fanning outward.
+fn layout_radial(
+    root: &MmNode,
+    scene: &mut Scene,
+    cfg: &MindMapConfig,
+    center_x: f64,
+    center_y: f64,
+    root_color_idx: usize,
+) -> Placed {
+    let fs = font_size_at_depth(cfg, 0);
+    let (w, h) = node_size(root, cfg, 0);
+
+    // Root at center
+    let root_style = root_style(fs);
+    let root_id = builder::add_ellipse(scene, center_x - w / 2.0, center_y - h / 2.0,
+                                        &root.text, &root_style, false);
+
+    if root.children.is_empty() {
+        return Placed {
+            element_id: root_id, x: center_x - w / 2.0, y: center_y - h / 2.0,
+            width: w, height: h, color_idx: root_color_idx, children: Vec::new(),
+        };
+    }
+
+    let n = root.children.len();
+    // Radius from center to L1 nodes — proportional to root size + gap
+    let l1_radius = (w + h) / 2.0 + cfg.gap_x * 1.5;
+
+    // Compute angular span for each child proportional to its subtree size
+    let subtree_sizes: Vec<f64> = root.children.iter()
+        .map(|c| subtree_height(c, cfg, 1))
+        .collect();
+    let total_size: f64 = subtree_sizes.iter().sum();
+
+    // Start angle: top-right, sweep clockwise
+    let start_angle = -std::f64::consts::FRAC_PI_2; // -90 degrees (top)
+    let sweep = std::f64::consts::PI * 2.0;
+
+    let mut child_placed = Vec::new();
+    let mut angle_cursor = start_angle;
+
+    for (ci, child) in root.children.iter().enumerate() {
+        let angular_span = sweep * (subtree_sizes[ci] / total_size);
+        let child_angle = angle_cursor + angular_span / 2.0;
+        angle_cursor += angular_span;
+
+        let child_cx = center_x + l1_radius * child_angle.cos();
+        let child_cy = center_y + l1_radius * child_angle.sin();
+
+        let placed = layout_radial_subtree(child, scene, cfg, 1, child_cx, child_cy,
+                                            child_angle, l1_radius, ci);
+        child_placed.push(placed);
+    }
+
+    Placed {
+        element_id: root_id,
+        x: center_x - w / 2.0, y: center_y - h / 2.0,
+        width: w, height: h,
+        color_idx: root_color_idx,
+        children: child_placed,
+    }
+}
+
+/// Lay out a subtree node in the radial layout, fanning children outward.
+fn layout_radial_subtree(
+    node: &MmNode,
+    scene: &mut Scene,
+    cfg: &MindMapConfig,
+    depth: usize,
+    cx: f64,
+    cy: f64,
+    parent_angle: f64, // angle from center to this node
+    parent_radius: f64,
+    color_idx: usize,
+) -> Placed {
+    let fs = font_size_at_depth(cfg, depth);
+    let (w, h) = node_size(node, cfg, depth);
+
+    let style = if cfg.multicolor && depth <= 1 {
+        branch_color(color_idx, fs)
+    } else {
+        node_style(depth, fs)
+    };
+
+    let elem_id = builder::add_rect(scene, cx - w / 2.0, cy - h / 2.0,
+                                     &node.text, &style, false);
+
+    let mut child_placed = Vec::new();
+
+    if !node.children.is_empty() {
+        let n = node.children.len();
+        let child_radius = cfg.gap_x * 1.2;
+
+        // Fan children in an arc centered on the parent angle
+        let fan_spread = (n as f64 * 0.4).min(std::f64::consts::PI * 0.8);
+        let fan_start = parent_angle - fan_spread / 2.0;
+        let angle_step = if n > 1 { fan_spread / (n - 1) as f64 } else { 0.0 };
+
+        for (ci, child) in node.children.iter().enumerate() {
+            let child_angle = if n == 1 { parent_angle } else { fan_start + ci as f64 * angle_step };
+            let child_cx = cx + child_radius * child_angle.cos();
+            let child_cy = cy + child_radius * child_angle.sin();
+
+            let placed = layout_radial_subtree(child, scene, cfg, depth + 1,
+                                                child_cx, child_cy,
+                                                child_angle, child_radius, color_idx);
+            child_placed.push(placed);
+        }
+    }
+
+    Placed {
+        element_id: elem_id,
+        x: cx - w / 2.0, y: cy - h / 2.0,
+        width: w, height: h,
+        color_idx,
+        children: child_placed,
+    }
+}
+
+/// Connect radial tree: straight lines from center of parent to center of child.
+fn connect_radial(scene: &mut Scene, placed: &Placed, cfg: &MindMapConfig, depth: usize) {
+    for child in &placed.children {
+        let sx = placed.x + placed.width / 2.0;
+        let sy = placed.y + placed.height / 2.0;
+        let ex = child.x + child.width / 2.0;
+        let ey = child.y + child.height / 2.0;
+
+        // Direction from parent center to child center
+        let dx = ex - sx;
+        let dy = ey - sy;
+        let dist = (dx * dx + dy * dy).sqrt();
+        if dist < 1.0 { continue; }
+
+        // Start from parent edge, end at child edge
+        let nx = dx / dist;
+        let ny = dy / dist;
+        let start_x = sx + nx * (placed.width / 2.0).min(placed.height / 2.0);
+        let start_y = sy + ny * (placed.width / 2.0).min(placed.height / 2.0);
+        let end_x = ex - nx * (child.width / 2.0).min(child.height / 2.0);
+        let end_y = ey - ny * (child.width / 2.0).min(child.height / 2.0);
+
+        // Cubic Bezier for smooth curve
+        let gap = ((end_x - start_x).powi(2) + (end_y - start_y).powi(2)).sqrt();
+        let cp_dist = gap * 0.35;
+        let rel_points = vec![
+            [0.0, 0.0],
+            [nx * cp_dist, ny * cp_dist],
+            [end_x - start_x - nx * cp_dist, end_y - start_y - ny * cp_dist],
+            [end_x - start_x, end_y - start_y],
+        ];
+
+        let color = connector_color(cfg, child.color_idx);
+        let (start_size, end_size) = branch_sizes(depth);
+
+        let conn_id = new_id();
+        scene.add(Element {
+            id: conn_id.clone(),
+            element_type: "arrow".into(),
+            x: start_x, y: start_y,
+            width: end_x - start_x, height: end_y - start_y,
+            stroke_color: color,
+            background_color: "transparent".into(),
+            fill_style: "solid".into(),
+            stroke_width: 2.0,
+            stroke_style: String::new(),
+            roughness: 0,
+            opacity: 80,
+            font_family: 1,
+            font_size: 0.0,
+            roundness: Some(Roundness { roundness_type: 2 }),
+            label: None,
+            bound_elements: None,
+            text: None, original_text: None, text_align: None,
+            vertical_align: None, container_id: None,
+            points: Some(rel_points),
+            end_arrowhead: None,
+            start_arrowhead: None,
+            start_binding: Some(Binding {
+                element_id: placed.element_id.clone(),
+                fixed_point: [0.5, 0.5],
+                focus: 0.0, gap: 1.0,
+            }),
+            end_binding: Some(Binding {
+                element_id: child.element_id.clone(),
+                fixed_point: [0.5, 0.5],
+                focus: 0.0, gap: 1.0,
+            }),
+            angle: None, is_deleted: false,
+            custom_data: Some(serde_json::json!({
+                "strokeOptions": {
+                    "organic": true,
+                    "startSize": start_size,
+                    "endSize": end_size,
+                    "depth": depth
+                }
+            })),
+            group_ids: None,
+            simulate_pressure: None,
+        });
+
+        if let Some(el) = scene.get_mut(&placed.element_id) {
+            el.bound_elements.get_or_insert_with(Vec::new)
+                .push(BoundElement { id: conn_id.clone(), bound_type: "arrow".into() });
+        }
+        if let Some(el) = scene.get_mut(&child.element_id) {
+            el.bound_elements.get_or_insert_with(Vec::new)
+                .push(BoundElement { id: conn_id.clone(), bound_type: "arrow".into() });
+        }
+
+        connect_radial(scene, child, cfg, depth + 1);
+    }
+}
+
+// ── Bezier helpers ───────────────────────────────────────────────────
 
 /// Sample a cubic Bezier (4 control points) into dense points.
 fn sample_cubic_bezier(p0: [f64; 2], p1: [f64; 2], p2: [f64; 2], p3: [f64; 2], steps: usize) -> Vec<[f64; 2]> {
@@ -424,29 +658,12 @@ fn branch_color(index: usize, font_size: f64) -> Style {
 pub fn generate(roots: &[MmNode], cfg: &MindMapConfig) -> Scene {
     let mut scene = Scene::new();
 
-    let start_x = 100.0;
-    let mut total_height = 0.0;
-
-    // Calculate total height across all roots
-    for root in roots {
-        total_height += subtree_height(root, cfg, 0);
-    }
-    total_height += (roots.len() as f64 - 1.0).max(0.0) * cfg.gap_y * 3.0;
-
-    let mut cursor_y = 200.0; // top margin
-
-    for (ri, root) in roots.iter().enumerate() {
-        let root_h = subtree_height(root, cfg, 0);
-        let root_center = cursor_y + root_h / 2.0;
-
-        let placed = layout_node(root, &mut scene, cfg, 0, start_x, root_center, ri);
-        connect_tree(&mut scene, &placed, cfg, 0);
-
-        cursor_y += root_h + cfg.gap_y * 3.0;
+    match cfg.layout {
+        Layout::Right => generate_right(&mut scene, roots, cfg),
+        Layout::Radial => generate_radial(&mut scene, roots, cfg),
     }
 
     // Z-order: arrows at back, then shapes, then text on top.
-    // This ensures shapes paint over arrow origins.
     scene.elements.sort_by_key(|el| match el.element_type.as_str() {
         "arrow" | "freedraw" => 0,
         "line" => 1,
@@ -456,6 +673,32 @@ pub fn generate(roots: &[MmNode], cfg: &MindMapConfig) -> Scene {
     });
 
     scene
+}
+
+fn generate_right(scene: &mut Scene, roots: &[MmNode], cfg: &MindMapConfig) {
+    let start_x = 100.0;
+    let mut cursor_y = 200.0;
+
+    for (ri, root) in roots.iter().enumerate() {
+        let root_h = subtree_height(root, cfg, 0);
+        let root_center = cursor_y + root_h / 2.0;
+
+        let placed = layout_node(root, scene, cfg, 0, start_x, root_center, ri);
+        connect_tree(scene, &placed, cfg, 0);
+
+        cursor_y += root_h + cfg.gap_y * 3.0;
+    }
+}
+
+fn generate_radial(scene: &mut Scene, roots: &[MmNode], cfg: &MindMapConfig) {
+    let center_x = 600.0;
+    let center_y = 600.0;
+
+    for (ri, root) in roots.iter().enumerate() {
+        let cy = center_y + ri as f64 * 800.0;
+        let placed = layout_radial(root, scene, cfg, center_x, cy, ri);
+        connect_radial(scene, &placed, cfg, 0);
+    }
 }
 
 #[cfg(test)]
