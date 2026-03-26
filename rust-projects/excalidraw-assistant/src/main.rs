@@ -77,6 +77,23 @@ enum Command {
         y: f64,
     },
 
+    /// Add a polyline (no arrowheads) from a series of x,y points
+    AddLine {
+        file: PathBuf,
+        /// Points as "x1,y1;x2,y2;x3,y3" (semicolon-separated pairs)
+        #[arg(long)]
+        points: String,
+        #[arg(long, default_value = "default")]
+        style: String,
+    },
+
+    /// Group elements together
+    Group {
+        file: PathBuf,
+        /// Element references (comma-separated: "last,last-1" or indices "0,1,2")
+        elements: String,
+    },
+
     /// Connect two elements with an arrow
     Connect {
         file: PathBuf,
@@ -221,6 +238,34 @@ fn main() -> Result<()> {
             let id = builder::add_text(&mut scene, x, y, &label, size, &color);
             scene.save(&file)?;
             println!("{}", id);
+        }
+
+        Command::AddLine { file, points, style } => {
+            let mut scene = Scene::load(&file)?;
+            let s = Style::by_name(&style);
+            let pts: Vec<[f64; 2]> = points.split(';')
+                .filter_map(|pair| {
+                    let xy: Vec<f64> = pair.split(',').filter_map(|v| v.trim().parse().ok()).collect();
+                    if xy.len() == 2 { Some([xy[0], xy[1]]) } else { None }
+                })
+                .collect();
+            if pts.len() < 2 {
+                anyhow::bail!("Need at least 2 points (got {})", pts.len());
+            }
+            let id = builder::add_line(&mut scene, &pts, &s);
+            scene.save(&file)?;
+            println!("{}", id);
+        }
+
+        Command::Group { file, elements } => {
+            let mut scene = Scene::load(&file)?;
+            let refs: Vec<String> = elements.split(',')
+                .map(|r| resolve_ref(&scene, r.trim()))
+                .collect();
+            let ref_strs: Vec<&str> = refs.iter().map(|s| s.as_str()).collect();
+            let group_id = builder::add_to_group(&mut scene, &ref_strs);
+            scene.save(&file)?;
+            println!("{}", group_id);
         }
 
         Command::Connect { file, from, to, arrow, label } => {

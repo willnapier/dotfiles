@@ -20,7 +20,7 @@ fn char_width_ratio(ch: char) -> f64 {
         ' ' => 0.30,
         '-' | '–' => 0.40,
         '—' => 0.70,
-        '"' | '"' | '\u{201C}' | '\u{201D}' => 0.44,
+        '"' | '\u{201C}' | '\u{201D}' => 0.44,
         _ => 0.55,
     }
 }
@@ -104,6 +104,7 @@ pub fn add_rect(scene: &mut Scene, x: f64, y: f64, label: &str, style: &Style, c
         points: None, end_arrowhead: None, start_arrowhead: None,
         start_binding: None, end_binding: None,
         angle: None, is_deleted: false,
+        custom_data: None, group_ids: None,
     });
 
     shape_id
@@ -139,6 +140,7 @@ pub fn add_diamond(scene: &mut Scene, x: f64, y: f64, label: &str, style: &Style
         points: None, end_arrowhead: None, start_arrowhead: None,
         start_binding: None, end_binding: None,
         angle: None, is_deleted: false,
+        custom_data: None, group_ids: None,
     });
 
     let text_width = estimate_text_width(label, style.font_size);
@@ -170,6 +172,7 @@ pub fn add_diamond(scene: &mut Scene, x: f64, y: f64, label: &str, style: &Style
         points: None, end_arrowhead: None, start_arrowhead: None,
         start_binding: None, end_binding: None,
         angle: None, is_deleted: false,
+        custom_data: None, group_ids: None,
     });
 
     shape_id
@@ -205,6 +208,7 @@ pub fn add_ellipse(scene: &mut Scene, x: f64, y: f64, label: &str, style: &Style
         points: None, end_arrowhead: None, start_arrowhead: None,
         start_binding: None, end_binding: None,
         angle: None, is_deleted: false,
+        custom_data: None, group_ids: None,
     });
 
     let text_width = estimate_text_width(label, style.font_size);
@@ -227,6 +231,7 @@ pub fn add_ellipse(scene: &mut Scene, x: f64, y: f64, label: &str, style: &Style
         points: None, end_arrowhead: None, start_arrowhead: None,
         start_binding: None, end_binding: None,
         angle: None, is_deleted: false,
+        custom_data: None, group_ids: None,
     });
 
     shape_id
@@ -262,6 +267,7 @@ pub fn add_text(scene: &mut Scene, x: f64, y: f64, text: &str, font_size: f64, c
         points: None, end_arrowhead: None, start_arrowhead: None,
         start_binding: None, end_binding: None,
         angle: None, is_deleted: false,
+        custom_data: None, group_ids: None,
     });
 
     text_id
@@ -329,6 +335,7 @@ pub fn add_arrow(
         text: None, original_text: None, text_align: None,
         vertical_align: None, container_id: None,
         angle: None, is_deleted: false,
+        custom_data: None, group_ids: None,
     };
 
     scene.add(arrow);
@@ -448,6 +455,7 @@ fn create_routed_arrow(
         text: None, original_text: None, text_align: None,
         vertical_align: None, container_id: None,
         angle: None, is_deleted: false,
+        custom_data: None, group_ids: None,
     };
 
     scene.add(arrow);
@@ -549,4 +557,137 @@ pub fn smart_connect(
 
     let arrow_id = create_routed_arrow(scene, from_id, to_id, from_point, to_point, &points, style, label);
     (arrow_id, Some(format!("Arrow {}", note)))
+}
+
+/// Add a polyline (no arrowheads) from a sequence of absolute points.
+/// Returns the element ID. Points are stored relative to the first point.
+pub fn add_line(scene: &mut Scene, points: &[[f64; 2]], style: &Style) -> String {
+    let line_id = new_id();
+    let origin = points.first().copied().unwrap_or([0.0, 0.0]);
+    let rel_points: Vec<[f64; 2]> = points.iter()
+        .map(|p| [p[0] - origin[0], p[1] - origin[1]])
+        .collect();
+    let last = points.last().copied().unwrap_or([0.0, 0.0]);
+
+    scene.add(Element {
+        id: line_id.clone(),
+        element_type: "line".into(),
+        x: origin[0],
+        y: origin[1],
+        width: last[0] - origin[0],
+        height: last[1] - origin[1],
+        stroke_color: style.stroke.clone(),
+        background_color: "transparent".into(),
+        fill_style: "solid".into(),
+        stroke_width: style.font_size.max(2.0).min(4.0), // sensible default
+        stroke_style: String::new(),
+        roughness: 0,
+        opacity: style.opacity,
+        font_family: 1,
+        font_size: 0.0,
+        roundness: Some(Roundness { roundness_type: 2 }),
+        label: None,
+        bound_elements: None,
+        text: None, original_text: None, text_align: None,
+        vertical_align: None, container_id: None,
+        points: Some(rel_points),
+        end_arrowhead: None, start_arrowhead: None,
+        start_binding: None, end_binding: None,
+        angle: None, is_deleted: false,
+        custom_data: None, group_ids: None,
+    });
+
+    line_id
+}
+
+/// Assign a set of elements to a shared Excalidraw group.
+/// Returns the generated groupId.
+pub fn add_to_group(scene: &mut Scene, element_ids: &[&str]) -> String {
+    let group_id = new_id();
+    for eid in element_ids {
+        if let Some(el) = scene.get_mut(eid) {
+            let groups = el.group_ids.get_or_insert_with(Vec::new);
+            groups.push(group_id.clone());
+        }
+    }
+    group_id
+}
+
+/// Named connection sides for `connect_objects`.
+pub enum ConnectionSide {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
+impl ConnectionSide {
+    /// Parse from string (CLI-friendly).
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "top" => Self::Top,
+            "bottom" => Self::Bottom,
+            "left" => Self::Left,
+            "right" => Self::Right,
+            _ => Self::Bottom,
+        }
+    }
+
+    /// Convert to Excalidraw fixedPoint [x_ratio, y_ratio].
+    pub fn to_fixed_point(&self) -> [f64; 2] {
+        match self {
+            Self::Top => [0.5, 0.0],
+            Self::Bottom => [0.5, 1.0],
+            Self::Left => [0.0, 0.5],
+            Self::Right => [1.0, 0.5],
+        }
+    }
+}
+
+/// High-level connector: connect two elements by named sides.
+/// Uses smart_connect internally for obstacle avoidance.
+pub fn connect_objects(
+    scene: &mut Scene,
+    from_id: &str,
+    from_side: ConnectionSide,
+    to_id: &str,
+    to_side: ConnectionSide,
+    style: &Style,
+    label: Option<&str>,
+) -> (String, Option<String>) {
+    smart_connect(
+        scene, from_id, to_id,
+        from_side.to_fixed_point(),
+        to_side.to_fixed_point(),
+        style, label,
+    )
+}
+
+/// Compute bounding box of a set of elements.
+/// Returns (min_x, min_y, width, height).
+pub fn bounding_box(scene: &Scene, element_ids: &[&str]) -> (f64, f64, f64, f64) {
+    let mut min_x = f64::MAX;
+    let mut min_y = f64::MAX;
+    let mut max_x = f64::MIN;
+    let mut max_y = f64::MIN;
+
+    for eid in element_ids {
+        if let Some(el) = scene.get(eid) {
+            min_x = min_x.min(el.x);
+            min_y = min_y.min(el.y);
+            max_x = max_x.max(el.right());
+            max_y = max_y.max(el.bottom());
+            // Include points for lines/arrows
+            if let Some(ref pts) = el.points {
+                for p in pts {
+                    min_x = min_x.min(el.x + p[0]);
+                    min_y = min_y.min(el.y + p[1]);
+                    max_x = max_x.max(el.x + p[0]);
+                    max_y = max_y.max(el.y + p[1]);
+                }
+            }
+        }
+    }
+
+    (min_x, min_y, max_x - min_x, max_y - min_y)
 }

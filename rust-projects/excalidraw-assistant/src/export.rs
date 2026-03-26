@@ -140,6 +140,23 @@ pub fn to_svg(scene: &Scene) -> String {
                 }
             }
 
+            "line" => {
+                if let Some(ref points) = el.points {
+                    if points.len() >= 2 {
+                        let pts: Vec<String> = points.iter()
+                            .map(|p| format!("{:.0},{:.0}", el.x + p[0], el.y + p[1]))
+                            .collect();
+                        svg.push_str(&format!(
+                            r#"<polyline points="{}" fill="none" stroke="{}" stroke-width="{}" opacity="{}" stroke-linecap="round" stroke-linejoin="round"/>
+"#,
+                            pts.join(" "),
+                            el.stroke_color, el.stroke_width,
+                            el.opacity as f64 / 100.0
+                        ));
+                    }
+                }
+            }
+
             "arrow" => {
                 if let Some(ref points) = el.points {
                     if points.len() == 2 {
