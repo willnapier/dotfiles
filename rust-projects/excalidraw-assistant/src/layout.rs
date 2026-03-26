@@ -1,4 +1,5 @@
 use crate::scene::Scene;
+use std::collections::{HashMap, HashSet};
 
 /// Arrange all shapes in a vertical or horizontal flow.
 /// Centres all shapes on a common axis with consistent gaps.
@@ -21,6 +22,146 @@ pub fn flow(scene: &mut Scene, direction: &str, gap: f64) {
     }
 
     // Reposition text elements to match their containers
+    reposition_bound_text(scene);
+}
+
+/// Graph-aware tree layout that handles branching at decision points.
+/// Finds connected components, lays each out as a tree, stacks components vertically.
+pub fn tree(
+    scene: &mut Scene,
+    connections: &[(String, String, Option<String>)],
+    node_ids: &HashMap<String, String>,
+    gap: f64,
+) {
+    let h_gap = gap * 1.5;
+
+    // Build adjacency
+    let mut children: HashMap<String, Vec<String>> = HashMap::new();
+    let mut has_parent: HashSet<String> = HashSet::new();
+
+    for (from, to, _) in connections {
+        let from_key = from.split('.').next().unwrap_or(from).to_string();
+        let to_key = to.split('.').next().unwrap_or(to).to_string();
+        if node_ids.contains_key(&from_key) && node_ids.contains_key(&to_key) {
+            children.entry(from_key.clone()).or_default().push(to_key.clone());
+            has_parent.insert(to_key);
+        }
+    }
+
+    // Find connected components via roots
+    let all_names: Vec<String> = node_ids.keys().cloned().collect();
+    let mut roots: Vec<String> = all_names.iter()
+        .filter(|n| !has_parent.contains(*n))
+        .cloned()
+        .collect();
+    // Sort roots by their first appearance in the connections for stable ordering
+    roots.sort_by_key(|r| {
+        connections.iter().position(|(f, _, _)| f.split('.').next().unwrap_or(f) == r)
+            .unwrap_or(usize::MAX)
+    });
+
+    // BFS from each root to find component members and assign levels
+    let mut placed: HashSet<String> = HashSet::new();
+    let mut current_y = 100.0;
+
+    for root in &roots {
+        if placed.contains(root) {
+            continue;
+        }
+
+        // BFS to assign levels within this component
+        let mut levels: Vec<Vec<String>> = Vec::new();
+        let mut queue: Vec<(String, usize)> = vec![(root.clone(), 0)];
+        let mut node_level: HashMap<String, usize> = HashMap::new();
+        let mut component_visited: HashSet<String> = HashSet::new();
+
+        while let Some((node, level)) = queue.first().cloned() {
+            queue.remove(0);
+
+            // For convergence nodes (multiple parents), use the deepest level
+            if let Some(&existing) = node_level.get(&node) {
+                if level > existing {
+                    // Remove from old level, re-add at deeper level
+                    if existing < levels.len() {
+                        levels[existing].retain(|n| n != &node);
+                    }
+                    node_level.insert(node.clone(), level);
+                    while levels.len() <= level {
+                        levels.push(Vec::new());
+                    }
+                    levels[level].push(node.clone());
+                }
+                continue;
+            }
+
+            if component_visited.contains(&node) {
+                continue;
+            }
+            component_visited.insert(node.clone());
+            node_level.insert(node.clone(), level);
+
+            while levels.len() <= level {
+                levels.push(Vec::new());
+            }
+            levels[level].push(node.clone());
+
+            if let Some(kids) = children.get(&node) {
+                for kid in kids {
+                    queue.push((kid.clone(), level + 1));
+                }
+            }
+        }
+
+        // Position this component
+        let component_centre_x = 400.0; // centre of canvas
+
+        for level in &levels {
+            if level.is_empty() {
+                continue;
+            }
+
+            // Calculate total width needed for this row
+            let widths: Vec<f64> = level.iter()
+                .filter_map(|name| node_ids.get(name).and_then(|id| scene.get(id)).map(|e| e.width))
+                .collect();
+            let total_w: f64 = widths.iter().sum::<f64>() + h_gap * (widths.len() as f64 - 1.0).max(0.0);
+            let mut x_cursor = component_centre_x - total_w / 2.0;
+            let mut row_height = 0.0f64;
+
+            for name in level {
+                if let Some(elem_id) = node_ids.get(name) {
+                    if let Some(el) = scene.get_mut(elem_id) {
+                        let w = el.width;
+                        el.x = x_cursor;
+                        el.y = current_y;
+                        x_cursor += w + h_gap;
+                        row_height = row_height.max(el.height);
+                        placed.insert(name.clone());
+                    }
+                }
+            }
+
+            current_y += row_height + gap;
+        }
+
+        current_y += gap; // extra gap between components
+    }
+
+    // Place any remaining unconnected nodes
+    for name in &all_names {
+        if placed.contains(name) {
+            continue;
+        }
+        if let Some(elem_id) = node_ids.get(name) {
+            if let Some(el) = scene.get_mut(elem_id) {
+                el.x = 400.0 - el.width / 2.0;
+                el.y = current_y;
+                current_y += el.height + gap;
+                placed.insert(name.clone());
+            }
+        }
+    }
+
     reposition_bound_text(scene);
 }
 

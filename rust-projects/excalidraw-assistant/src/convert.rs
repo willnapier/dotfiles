@@ -134,25 +134,60 @@ pub fn from_d2(d2_source: &str, style_preset: &str) -> Result<Scene> {
         }
     }
 
-    // Layout BEFORE connecting so smart_connect can detect obstacles
-    crate::layout::flow(&mut scene, "down", 56.0);
+    // Tree layout — positions shapes with proper branching
+    crate::layout::tree(&mut scene, &connections, &node_ids, 56.0);
 
-    // Create connections
+    // Build outgoing edge count for anchor point selection
+    let mut out_count: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for (from, _, _) in &connections {
+        let from_key = from.split('.').next().unwrap_or(from).to_string();
+        *out_count.entry(from_key).or_insert(0) += 1;
+    }
+
+    // Create connections with appropriate anchor points
+    let mut branch_index: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     for (from, to, label) in &connections {
         let from_key = from.split('.').next().unwrap_or(from);
         let to_key = to.split('.').next().unwrap_or(to);
 
         if let (Some(from_id), Some(to_id)) = (node_ids.get(from_key), node_ids.get(to_key)) {
+            let from_el = scene.get(from_id);
+            let to_el = scene.get(to_id);
+
+            // Determine anchor points based on relative positions
+            let (from_pt, to_pt) = if let (Some(f), Some(t)) = (from_el, to_el) {
+                let dx = (t.x + t.width / 2.0) - (f.x + f.width / 2.0);
+                let dy = (t.y + t.height / 2.0) - (f.y + f.height / 2.0);
+
+                if dy.abs() > dx.abs() {
+                    // Primarily vertical
+                    if dy > 0.0 {
+                        ([0.5, 1.0], [0.5, 0.0]) // down
+                    } else {
+                        ([0.5, 0.0], [0.5, 1.0]) // up
+                    }
+                } else {
+                    // Primarily horizontal
+                    if dx > 0.0 {
+                        ([1.0, 0.5], [0.0, 0.5]) // right
+                    } else {
+                        ([0.0, 0.5], [1.0, 0.5]) // left
+                    }
+                }
+            } else {
+                ([0.5, 1.0], [0.5, 0.0]) // default: down
+            };
+
             let s = Style::arrow();
             builder::smart_connect(
                 &mut scene, from_id, to_id,
-                [0.5, 1.0], [0.5, 0.0],
+                from_pt, to_pt,
                 &s, label.as_deref(),
             );
         }
     }
 
-    // Reposition bound text after connecting (don't re-layout shapes — it destroys smart routing)
+    // Reposition bound text after connecting
     crate::layout::reposition_bound_text(&mut scene);
 
     Ok(scene)
