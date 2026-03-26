@@ -7,6 +7,7 @@ mod layout;
 mod convert;
 mod export;
 mod mindmap;
+mod viewer;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -155,6 +156,11 @@ enum Command {
         file: PathBuf,
     },
 
+    /// Open an .excalidraw file in the full Excalidraw viewer (browser)
+    View {
+        file: PathBuf,
+    },
+
     /// Generate a mind map from indented Markdown
     Mindmap {
         /// Input Markdown file (indented bullets or plain text)
@@ -221,6 +227,15 @@ fn resolve_ref(scene: &Scene, reference: &str) -> String {
     } else {
         reference.to_string()
     }
+}
+
+/// Open a file in the default browser.
+fn open_in_browser(path: &std::path::Path) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    std::process::Command::new("open").args(["-a", "Safari"]).arg(path).spawn()?;
+    #[cfg(target_os = "linux")]
+    std::process::Command::new("xdg-open").arg(path).spawn()?;
+    Ok(())
 }
 
 fn main() -> Result<()> {
@@ -384,6 +399,13 @@ fn main() -> Result<()> {
             println!("{}", serde_json::to_string_pretty(&scene)?);
         }
 
+        Command::View { file } => {
+            let scene = Scene::load(&file)?;
+            let html_path = viewer::write_viewer(&scene, &file)?;
+            println!("Viewer: {}", html_path.display());
+            open_in_browser(&html_path)?;
+        }
+
         Command::Mindmap { input, output, svg, gap_x, gap_y, font_size, multicolor, open } => {
             let md = std::fs::read_to_string(&input)?;
             let nodes = mindmap::parse_markdown(&md);
@@ -410,18 +432,17 @@ fn main() -> Result<()> {
             println!("Mind map: {} → {} ({} nodes, {} connectors)",
                 input.display(), out_path.display(), shapes, arrows);
 
-            if svg || open {
+            if svg {
                 let svg_content = export::to_svg(&scene);
                 let svg_path = out_path.with_extension("svg");
                 std::fs::write(&svg_path, &svg_content)?;
                 println!("SVG: {}", svg_path.display());
+            }
 
-                if open {
-                    #[cfg(target_os = "macos")]
-                    std::process::Command::new("open").args(["-a", "Safari"]).arg(&svg_path).spawn()?;
-                    #[cfg(target_os = "linux")]
-                    std::process::Command::new("xdg-open").arg(&svg_path).spawn()?;
-                }
+            if open {
+                let html_path = viewer::write_viewer(&scene, &out_path)?;
+                println!("Viewer: {}", html_path.display());
+                open_in_browser(&html_path)?;
             }
         }
 
@@ -455,12 +476,10 @@ fn main() -> Result<()> {
             println!("Rendered: {} → {} ({} shapes, {} arrows)",
                 input.display(), svg_path.display(), shapes, arrows);
 
-            // Step 4: Optionally open
+            // Step 4: Optionally open in Excalidraw viewer
             if open {
-                #[cfg(target_os = "macos")]
-                std::process::Command::new("open").arg(&svg_path).spawn()?;
-                #[cfg(target_os = "linux")]
-                std::process::Command::new("xdg-open").arg(&svg_path).spawn()?;
+                let html_path = viewer::write_viewer(&scene, &excalidraw_path)?;
+                open_in_browser(&html_path)?;
             }
         }
     }
