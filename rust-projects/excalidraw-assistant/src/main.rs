@@ -6,6 +6,7 @@ mod lint;
 mod layout;
 mod convert;
 mod export;
+mod mindmap;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -152,6 +153,33 @@ enum Command {
     /// Export as JSON (pretty-printed)
     Export {
         file: PathBuf,
+    },
+
+    /// Generate a mind map from indented Markdown
+    Mindmap {
+        /// Input Markdown file (indented bullets or plain text)
+        input: PathBuf,
+        /// Output .excalidraw file
+        #[arg(long)]
+        output: Option<PathBuf>,
+        /// Also export SVG
+        #[arg(long)]
+        svg: bool,
+        /// Horizontal gap between levels (pixels)
+        #[arg(long, default_value = "80")]
+        gap_x: f64,
+        /// Vertical gap between siblings (pixels)
+        #[arg(long, default_value = "16")]
+        gap_y: f64,
+        /// Root node font size
+        #[arg(long, default_value = "24")]
+        font_size: f64,
+        /// Use distinct colours per L1 branch
+        #[arg(long)]
+        multicolor: bool,
+        /// Open output in browser
+        #[arg(long)]
+        open: bool,
     },
 
     /// Convert D2 → lint+fix → export SVG (full pipeline)
@@ -354,6 +382,47 @@ fn main() -> Result<()> {
         Command::Export { file } => {
             let scene = Scene::load(&file)?;
             println!("{}", serde_json::to_string_pretty(&scene)?);
+        }
+
+        Command::Mindmap { input, output, svg, gap_x, gap_y, font_size, multicolor, open } => {
+            let md = std::fs::read_to_string(&input)?;
+            let nodes = mindmap::parse_markdown(&md);
+            if nodes.is_empty() {
+                anyhow::bail!("No nodes parsed from {}", input.display());
+            }
+            let cfg = mindmap::MindMapConfig {
+                gap_x,
+                gap_y,
+                root_font_size: font_size,
+                multicolor,
+                ..Default::default()
+            };
+            let scene = mindmap::generate(&nodes, &cfg);
+            let out_path = output.unwrap_or_else(|| input.with_extension("excalidraw"));
+            scene.save(&out_path)?;
+
+            let shapes = scene.elements.iter()
+                .filter(|e| e.element_type != "text" && e.element_type != "arrow")
+                .count();
+            let arrows = scene.elements.iter()
+                .filter(|e| e.element_type == "arrow")
+                .count();
+            println!("Mind map: {} → {} ({} nodes, {} connectors)",
+                input.display(), out_path.display(), shapes, arrows);
+
+            if svg || open {
+                let svg_content = export::to_svg(&scene);
+                let svg_path = out_path.with_extension("svg");
+                std::fs::write(&svg_path, &svg_content)?;
+                println!("SVG: {}", svg_path.display());
+
+                if open {
+                    #[cfg(target_os = "macos")]
+                    std::process::Command::new("open").arg(&svg_path).spawn()?;
+                    #[cfg(target_os = "linux")]
+                    std::process::Command::new("xdg-open").arg(&svg_path).spawn()?;
+                }
+            }
         }
 
         Command::Render { input, output, style, open } => {
