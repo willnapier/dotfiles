@@ -133,6 +133,7 @@ struct Placed {
     y: f64,
     width: f64,
     height: f64,
+    color_idx: usize,
     children: Vec<Placed>,
 }
 
@@ -222,6 +223,7 @@ fn layout_node(
     Placed {
         element_id: elem_id,
         x, y, width: w, height: h,
+        color_idx,
         children: child_placed,
     }
 }
@@ -255,8 +257,21 @@ fn organic_stroke_options() -> serde_json::Value {
     })
 }
 
+/// Connector colour: uses branch colour in multicolor mode, else gray.
+fn connector_color(cfg: &MindMapConfig, color_idx: usize) -> String {
+    if cfg.multicolor {
+        let palettes = [
+            "#1a73e8", "#d93025", "#188038", "#e37400",
+            "#8430ce", "#00838f", "#c2185b", "#e65100",
+        ];
+        palettes[color_idx % palettes.len()].into()
+    } else {
+        "#aaaaaa".into()
+    }
+}
+
 /// Create curved arrow connectors with proper Excalidraw bindings.
-fn connect_tree(scene: &mut Scene, placed: &Placed, _cfg: &MindMapConfig) {
+fn connect_tree(scene: &mut Scene, placed: &Placed, cfg: &MindMapConfig) {
     for child in &placed.children {
         // Arrow: parent right edge → control point → child left edge
         let sx = placed.x + placed.width;
@@ -273,13 +288,16 @@ fn connect_tree(scene: &mut Scene, placed: &Placed, _cfg: &MindMapConfig) {
             [ex - sx, ey - sy],
         ];
 
+        // Connector inherits the child's branch colour
+        let color = connector_color(cfg, child.color_idx);
+
         let conn_id = new_id();
         scene.add(Element {
             id: conn_id.clone(),
             element_type: "arrow".into(),
             x: sx, y: sy,
             width: ex - sx, height: ey - sy,
-            stroke_color: "#aaaaaa".into(),
+            stroke_color: color,
             background_color: "transparent".into(),
             fill_style: "solid".into(),
             stroke_width: 2.0,
@@ -323,7 +341,7 @@ fn connect_tree(scene: &mut Scene, placed: &Placed, _cfg: &MindMapConfig) {
         }
 
         // Recurse
-        connect_tree(scene, child, _cfg);
+        connect_tree(scene, child, cfg);
     }
 }
 
