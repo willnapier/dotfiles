@@ -444,6 +444,7 @@ fn main() -> Result<()> {
             }
             let layout_mode = match layout.as_str() {
                 "radial" => mindmap::Layout::Radial,
+                "buzan" => mindmap::Layout::Buzan,
                 _ => mindmap::Layout::Right,
             };
             let cfg = mindmap::MindMapConfig {

@@ -762,6 +762,311 @@ fn branch_color(index: usize, font_size: f64) -> Style {
     }
 }
 
+// ── Buzan Layout (text on branches, no boxes) ───────────────────────
+
+/// Buzan layout: radial positions but text placed directly on branches.
+fn generate_buzan(scene: &mut Scene, roots: &[MmNode], cfg: &MindMapConfig) {
+    let center_x = 600.0;
+    let center_y = 600.0;
+
+    for (ri, root) in roots.iter().enumerate() {
+        let cy = center_y + ri as f64 * 800.0;
+        let placed = layout_buzan_root(root, scene, cfg, center_x, cy, ri);
+        // Connectors are created during layout (branch = connector + text)
+        // No separate connect pass needed
+        let _ = placed;
+    }
+}
+
+/// Buzan root: ellipse at center, then radial branches with text on them.
+fn layout_buzan_root(
+    root: &MmNode,
+    scene: &mut Scene,
+    cfg: &MindMapConfig,
+    center_x: f64,
+    center_y: f64,
+    _root_color_idx: usize,
+) -> Placed {
+    let fs = font_size_at_depth(cfg, 0);
+    let (w, h) = node_size(root, cfg, 0);
+
+    // Root still gets an ellipse (Buzan allows a central image/shape)
+    let style = root_style(fs);
+    let root_id = builder::add_ellipse(scene, center_x - w / 2.0, center_y - h / 2.0,
+                                        &root.text, &style, false);
+
+    if root.children.is_empty() {
+        return Placed {
+            element_id: root_id, x: center_x - w / 2.0, y: center_y - h / 2.0,
+            width: w, height: h, color_idx: 0, children: Vec::new(),
+        };
+    }
+
+    // Same angular allocation as radial layout
+    let root_r = (w + h) / 4.0;
+    let weights: Vec<f64> = root.children.iter().map(subtree_weight).collect();
+    let total_weight: f64 = weights.iter().sum();
+    let full_circle = std::f64::consts::PI * 2.0;
+    let min_angle = MIN_ANGLE_DEG.to_radians();
+    let max_angle = MAX_ANGLE_DEG.to_radians();
+
+    let mut angles: Vec<f64> = weights.iter()
+        .map(|w| (full_circle * w / total_weight).clamp(min_angle, max_angle))
+        .collect();
+    let angle_sum: f64 = angles.iter().sum();
+    for a in &mut angles { *a *= full_circle / angle_sum; }
+
+    let start_angle = -std::f64::consts::FRAC_PI_4 - angles[0] / 2.0;
+    let mut angle_cursor = start_angle;
+    let mut child_placed = Vec::new();
+
+    for (ci, child) in root.children.iter().enumerate() {
+        let raw_angle = angle_cursor + angles[ci] / 2.0;
+        // Slight horizontal pull on L1
+        let horiz = if raw_angle.cos() >= 0.0 { 0.0 } else { std::f64::consts::PI };
+        let mut src = raw_angle;
+        let mut tgt = horiz;
+        while (tgt - src).abs() > std::f64::consts::PI {
+            if tgt > src { src += std::f64::consts::PI * 2.0; } else { tgt += std::f64::consts::PI * 2.0; }
+        }
+        let child_angle = src + (tgt - src) * 0.15;
+
+        // Branch length based on text width + visible margins
+        let child_fs = font_size_at_depth(cfg, 1);
+        let text_width = builder::estimate_text_width(&child.text, child_fs);
+        let branch_len = root_r + 40.0 + text_width + 40.0; // root edge + gap + text + gap
+
+        // Branch endpoint
+        let end_x = center_x + branch_len * child_angle.cos();
+        let end_y = center_y + branch_len * child_angle.sin();
+
+        // Text midpoint along the branch (after root edge + gap)
+        let text_mid_dist = root_r + 40.0 + text_width / 2.0;
+        let text_cx = center_x + text_mid_dist * child_angle.cos();
+        let text_cy = center_y + text_mid_dist * child_angle.sin();
+
+        // Text angle: follow the branch but keep readable (not upside down)
+        let mut text_angle = child_angle;
+        if text_angle.cos() < 0.0 {
+            text_angle += std::f64::consts::PI; // flip so text reads left-to-right
+        }
+
+        // Color
+        let color = if cfg.multicolor {
+            let palettes = ["#1a73e8", "#d93025", "#188038", "#e37400", "#8430ce", "#00838f", "#c2185b", "#e65100"];
+            palettes[ci % palettes.len()]
+        } else { "#2c3e50" };
+
+        // Create the branch (arrow from root edge to endpoint)
+        let start_x = center_x + root_r * child_angle.cos();
+        let start_y = center_y + root_r * child_angle.sin();
+        let dx = end_x - start_x;
+        let dy = end_y - start_y;
+        let nx = child_angle.cos();
+        let ny = child_angle.sin();
+        let gap = (dx * dx + dy * dy).sqrt();
+        let cp_dist = gap * 0.4;
+        let horiz_dir = if end_x > start_x { -1.0 } else { 1.0 };
+
+        let (start_size, end_size) = branch_sizes(0);
+        let conn_id = new_id();
+        scene.add(Element {
+            id: conn_id.clone(),
+            element_type: "arrow".into(),
+            x: start_x, y: start_y,
+            width: dx, height: dy,
+            stroke_color: color.into(),
+            background_color: "transparent".into(),
+            fill_style: "solid".into(),
+            stroke_width: 2.0,
+            stroke_style: String::new(),
+            roughness: 0,
+            opacity: 80,
+            font_family: 1, font_size: 0.0,
+            roundness: Some(Roundness { roundness_type: 2 }),
+            label: None, bound_elements: None,
+            text: None, original_text: None, text_align: None,
+            vertical_align: None, container_id: None,
+            points: Some(vec![
+                [0.0, 0.0],
+                [nx * cp_dist, ny * cp_dist],
+                [dx + horiz_dir * cp_dist, dy],
+                [dx, dy],
+            ]),
+            end_arrowhead: None, start_arrowhead: None,
+            start_binding: Some(Binding {
+                element_id: root_id.clone(),
+                fixed_point: [0.5, 0.5],
+                focus: 0.0, gap: 1.0,
+            }),
+            end_binding: None,
+            angle: None, is_deleted: false,
+            custom_data: Some(serde_json::json!({
+                "strokeOptions": { "organic": true, "startSize": start_size, "endSize": end_size, "depth": 0 }
+            })),
+            group_ids: None, simulate_pressure: None,
+        });
+
+        // Place text ON the branch (rotated, no box)
+        let text_id = new_id();
+        let text_h = child_fs * 1.2;
+        scene.add(Element {
+            id: text_id.clone(),
+            element_type: "text".into(),
+            x: text_cx - text_width / 2.0,
+            y: text_cy - text_h / 2.0,
+            width: text_width, height: text_h,
+            stroke_color: color.into(),
+            background_color: "transparent".into(),
+            fill_style: "solid".into(),
+            stroke_width: 0.0, stroke_style: String::new(),
+            roughness: 0, opacity: 100,
+            font_family: 2, font_size: child_fs,
+            roundness: None, label: None, bound_elements: None,
+            text: Some(child.text.clone()),
+            original_text: Some(child.text.clone()),
+            text_align: Some("center".into()),
+            vertical_align: Some("middle".into()),
+            container_id: None,
+            points: None, end_arrowhead: None, start_arrowhead: None,
+            start_binding: None, end_binding: None,
+            angle: Some(text_angle),
+            is_deleted: false,
+            custom_data: None, group_ids: None, simulate_pressure: None,
+        });
+
+        // Now layout L2 children branching from the endpoint
+        let mut l2_placed = Vec::new();
+        if !child.children.is_empty() {
+            let n2 = child.children.len();
+            let fan_sector = angles[ci] * FAN_RATIO;
+            let l2_weights: Vec<f64> = child.children.iter().map(subtree_weight).collect();
+            let l2_total: f64 = l2_weights.iter().sum();
+            let l2_angles: Vec<f64> = l2_weights.iter().map(|w| fan_sector * w / l2_total).collect();
+            let fan_start = child_angle - fan_sector / 2.0;
+            let mut l2_cursor = fan_start;
+
+            for (ci2, child2) in child.children.iter().enumerate() {
+                let raw_a = l2_cursor + l2_angles[ci2] / 2.0;
+                // Horizontal pull at L2
+                let h2 = if raw_a.cos() >= 0.0 { 0.0 } else { std::f64::consts::PI };
+                let mut s2 = raw_a; let mut t2 = h2;
+                while (t2 - s2).abs() > std::f64::consts::PI {
+                    if t2 > s2 { s2 += std::f64::consts::PI * 2.0; } else { t2 += std::f64::consts::PI * 2.0; }
+                }
+                let l2_angle = s2 + (t2 - s2) * 0.35;
+
+                let l2_fs = font_size_at_depth(cfg, 2);
+                let l2_tw = builder::estimate_text_width(&child2.text, l2_fs);
+                let l2_branch_len = l2_tw + 60.0;
+
+                // L2 branch from L1 endpoint
+                let l2_start_x = end_x;
+                let l2_start_y = end_y;
+                let l2_end_x = end_x + l2_branch_len * l2_angle.cos();
+                let l2_end_y = end_y + l2_branch_len * l2_angle.sin();
+
+                let l2_text_dist = l2_tw / 2.0 + 20.0;
+                let l2_text_cx = end_x + l2_text_dist * l2_angle.cos();
+                let l2_text_cy = end_y + l2_text_dist * l2_angle.sin();
+
+                let mut l2_text_angle = l2_angle;
+                if l2_text_angle.cos() < 0.0 {
+                    l2_text_angle += std::f64::consts::PI;
+                }
+
+                let l2_dx = l2_end_x - l2_start_x;
+                let l2_dy = l2_end_y - l2_start_y;
+                let l2_nx = l2_angle.cos();
+                let l2_ny = l2_angle.sin();
+                let l2_gap = (l2_dx * l2_dx + l2_dy * l2_dy).sqrt();
+                let l2_cp = l2_gap * 0.4;
+                let l2_hdir = if l2_end_x > l2_start_x { -1.0 } else { 1.0 };
+
+                let (l2_ss, l2_es) = branch_sizes(1);
+                let l2_conn_id = new_id();
+                scene.add(Element {
+                    id: l2_conn_id.clone(),
+                    element_type: "arrow".into(),
+                    x: l2_start_x, y: l2_start_y,
+                    width: l2_dx, height: l2_dy,
+                    stroke_color: color.into(),
+                    background_color: "transparent".into(),
+                    fill_style: "solid".into(),
+                    stroke_width: 2.0, stroke_style: String::new(),
+                    roughness: 0, opacity: 80,
+                    font_family: 1, font_size: 0.0,
+                    roundness: Some(Roundness { roundness_type: 2 }),
+                    label: None, bound_elements: None,
+                    text: None, original_text: None, text_align: None,
+                    vertical_align: None, container_id: None,
+                    points: Some(vec![
+                        [0.0, 0.0],
+                        [l2_nx * l2_cp, l2_ny * l2_cp],
+                        [l2_dx + l2_hdir * l2_cp, l2_dy],
+                        [l2_dx, l2_dy],
+                    ]),
+                    end_arrowhead: None, start_arrowhead: None,
+                    start_binding: None, end_binding: None,
+                    angle: None, is_deleted: false,
+                    custom_data: Some(serde_json::json!({
+                        "strokeOptions": { "organic": true, "startSize": l2_ss, "endSize": l2_es, "depth": 1 }
+                    })),
+                    group_ids: None, simulate_pressure: None,
+                });
+
+                // L2 text on branch
+                let l2_text_id = new_id();
+                let l2_text_h = l2_fs * 1.2;
+                scene.add(Element {
+                    id: l2_text_id,
+                    element_type: "text".into(),
+                    x: l2_text_cx - l2_tw / 2.0,
+                    y: l2_text_cy - l2_text_h / 2.0,
+                    width: l2_tw, height: l2_text_h,
+                    stroke_color: color.into(),
+                    background_color: "transparent".into(),
+                    fill_style: "solid".into(),
+                    stroke_width: 0.0, stroke_style: String::new(),
+                    roughness: 0, opacity: 100,
+                    font_family: 2, font_size: l2_fs,
+                    roundness: None, label: None, bound_elements: None,
+                    text: Some(child2.text.clone()),
+                    original_text: Some(child2.text.clone()),
+                    text_align: Some("center".into()),
+                    vertical_align: Some("middle".into()),
+                    container_id: None,
+                    points: None, end_arrowhead: None, start_arrowhead: None,
+                    start_binding: None, end_binding: None,
+                    angle: Some(l2_text_angle),
+                    is_deleted: false,
+                    custom_data: None, group_ids: None, simulate_pressure: None,
+                });
+
+                l2_cursor += l2_angles[ci2];
+            }
+        }
+
+        child_placed.push(Placed {
+            element_id: text_id,
+            x: text_cx - text_width / 2.0, y: text_cy - 10.0,
+            width: text_width, height: 20.0,
+            color_idx: ci,
+            children: l2_placed,
+        });
+
+        angle_cursor += angles[ci];
+    }
+
+    Placed {
+        element_id: root_id,
+        x: center_x - w / 2.0, y: center_y - h / 2.0,
+        width: w, height: h,
+        color_idx: 0,
+        children: child_placed,
+    }
+}
+
 // ── Public API ───────────────────────────────────────────────────────
 
 /// Generate a mind map from parsed nodes.
@@ -771,6 +1076,7 @@ pub fn generate(roots: &[MmNode], cfg: &MindMapConfig) -> Scene {
     match cfg.layout {
         Layout::Right => generate_right(&mut scene, roots, cfg),
         Layout::Radial => generate_radial(&mut scene, roots, cfg),
+        Layout::Buzan => generate_buzan(&mut scene, roots, cfg),
     }
 
     // Z-order: arrows at back, then shapes, then text on top.
