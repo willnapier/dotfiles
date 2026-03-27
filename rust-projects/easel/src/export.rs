@@ -295,7 +295,25 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
             }
 
             "text" => {
-                // Text always renders clean (readable)
+                // Check if this text should follow a branch path
+                let on_branch = el.custom_data.as_ref()
+                    .and_then(|cd| cd.get("onBranch"))
+                    .and_then(|v| v.as_str());
+
+                if let (Some(branch_id), Some(ref text)) = (on_branch, &el.text) {
+                    // Text on path — use SVG textPath along the branch center-line
+                    let offset = el.font_size * 1.5; // start offset to clear parent node
+                    svg.push_str(&format!(
+                        r#"<text font-size="{}" fill="{}" font-family="'Nunito', sans-serif" font-weight="600" dominant-baseline="text-after-edge"><textPath href="#cl-{}" startOffset="{:.0}">{}</textPath></text>
+"#,
+                        el.font_size, el.stroke_color,
+                        branch_id, offset,
+                        xml_escape(text)
+                    ));
+                    continue;
+                }
+
+                // Regular text rendering
                 let anchor = el.text_align.as_deref().unwrap_or("center");
                 let svg_anchor = match anchor {
                     "center" => "middle",
@@ -474,6 +492,16 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
                                 el.opacity as f64 / 100.0
                             ));
                         }
+                        // Emit hidden center-line path for textPath references
+                        let mut cl_d = format!("M{:.1},{:.1}", final_pts[0][0], final_pts[0][1]);
+                        for p in &final_pts[1..] {
+                            cl_d.push_str(&format!(" L{:.1},{:.1}", p[0], p[1]));
+                        }
+                        svg.push_str(&format!(
+                            r#"<path id="cl-{}" d="{}" fill="none" stroke="none"/>
+"#,
+                            el.id, cl_d
+                        ));
                     } else if is_rough && style.map_or(false, |s| s.connector_rough) {
                         // Non-organic arrow with rough style: use rough lines
                         let vs = style.unwrap();

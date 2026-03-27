@@ -932,7 +932,8 @@ fn layout_buzan_root(
             start_binding: None, end_binding: None,
             angle: Some(text_angle),
             is_deleted: false,
-            custom_data: None, group_ids: None, simulate_pressure: None,
+            custom_data: Some(serde_json::json!({ "onBranch": conn_id })),
+            group_ids: None, simulate_pressure: None,
         });
 
         // Now layout L2 children branching from the endpoint
@@ -1040,7 +1041,8 @@ fn layout_buzan_root(
                     start_binding: None, end_binding: None,
                     angle: Some(l2_text_angle),
                     is_deleted: false,
-                    custom_data: None, group_ids: None, simulate_pressure: None,
+                    custom_data: Some(serde_json::json!({ "onBranch": l2_conn_id })),
+                    group_ids: None, simulate_pressure: None,
                 });
 
                 l2_cursor += l2_angles[ci2];
