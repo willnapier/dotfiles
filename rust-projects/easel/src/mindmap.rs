@@ -317,8 +317,9 @@ fn layout_radial(
         *a *= full_circle / angle_sum;
     }
 
-    // Start at diagonal (X pattern, not + pattern)
-    let start_angle = -std::f64::consts::FRAC_PI_4; // 45° from top = top-right diagonal
+    // X pattern: center first branch at top-right diagonal (-45°)
+    // Offset start so the first branch's CENTER lands at -45°
+    let start_angle = -std::f64::consts::FRAC_PI_4 - angles[0] / 2.0;
     let mut angle_cursor = start_angle;
     let mut child_placed = Vec::new();
 
