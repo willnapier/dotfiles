@@ -305,7 +305,7 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
                     // Shift text above the branch surface with dy
                     let href = format!("#cl-{}", branch_id);
                     // Push text well past the junction/fan-out zone
-                    let offset = el.font_size * 4.0;
+                    let offset = el.font_size * 5.0;
                     // Read branch size from the arrow's customData to compute vertical offset
                     let branch_half = el.custom_data.as_ref()
                         .and_then(|cd| cd.get("onBranch"))
@@ -319,7 +319,7 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
                                 .and_then(|v| v.as_f64())
                         })
                         .unwrap_or(8.0) / 2.0;
-                    let dy = -(branch_half + 2.0); // sit just above the branch edge
+                    let dy = -(branch_half + 3.0); // sit just above the branch edge
                     svg.push_str(&format!(
                         "<text font-size=\"{}\" fill=\"{}\" font-family=\"'Nunito', sans-serif\" font-weight=\"600\" dy=\"{:.1}\"><textPath href=\"{}\" startOffset=\"{:.0}\">{}</textPath></text>\n",
                         el.font_size, el.stroke_color,

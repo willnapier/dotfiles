@@ -834,7 +834,8 @@ fn layout_buzan_root(
         // Branch length based on text width + visible margins
         let child_fs = font_size_at_depth(cfg, 1);
         let text_width = builder::estimate_text_width(&child.text, child_fs);
-        let branch_len = root_r + 40.0 + text_width + 40.0; // root edge + gap + text + gap
+        let text_start_offset = child_fs * 5.0; // matches SVG startOffset
+        let branch_len = root_r + text_start_offset + text_width + 30.0;
 
         // Branch endpoint
         let end_x = center_x + branch_len * child_angle.cos();
@@ -975,11 +976,21 @@ fn layout_buzan_root(
 
                 let l2_fs = font_size_at_depth(cfg, 2);
                 let l2_tw = builder::estimate_text_width(&child2.text, l2_fs);
-                let l2_branch_len = l2_tw + 60.0;
+                let l2_text_offset = l2_fs * 5.0; // matches SVG startOffset
+                let l2_branch_len = l2_text_offset + l2_tw + 30.0;
 
-                // L2 branch from L1 endpoint
-                let l2_start_x = end_x;
-                let l2_start_y = end_y;
+                // C-shaped fan: stagger start points along the L1 branch direction.
+                // Each L2 starts offset back along L1 + perpendicular spread.
+                let fan_position = if n2 > 1 { ci2 as f64 / (n2 - 1) as f64 - 0.5 } else { 0.0 };
+                // Perpendicular to L1 direction
+                let l1_nx = child_angle.cos();
+                let l1_ny = child_angle.sin();
+                let perp_x = -l1_ny;
+                let perp_y = l1_nx;
+                let spread = 18.0; // px perpendicular spread per side
+                let stagger = 15.0; // px back along L1 per side
+                let l2_start_x = end_x - l1_nx * stagger * fan_position.abs() + perp_x * spread * fan_position;
+                let l2_start_y = end_y - l1_ny * stagger * fan_position.abs() + perp_y * spread * fan_position;
                 let l2_end_x = end_x + l2_branch_len * l2_angle.cos();
                 let l2_end_y = end_y + l2_branch_len * l2_angle.sin();
 
