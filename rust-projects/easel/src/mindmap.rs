@@ -16,6 +16,7 @@ pub struct MmNode {
 pub enum Layout {
     Right,  // standard left-to-right tree
     Radial, // nodes radiate outward from central root
+    Buzan,  // radial with text ON branches, no boxes
 }
 
 /// Configuration for mind map generation.
