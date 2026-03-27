@@ -255,10 +255,10 @@ fn layout_node(
 //   Sub-branch fan: 55% of parent's angular sector
 //   Start angle: 1 o'clock (clockwise, like reading a clock)
 
-const MIN_ANGLE_DEG: f64 = 20.0;
+const MIN_ANGLE_DEG: f64 = 25.0;
 const MAX_ANGLE_DEG: f64 = 120.0;
-const DISTANCE_DECAY: f64 = 0.65;
-const FAN_RATIO: f64 = 0.55;
+const DISTANCE_DECAY: f64 = 0.95;
+const FAN_RATIO: f64 = 0.85;
 
 /// Count total descendants (for angular allocation weighting).
 fn subtree_weight(node: &MmNode) -> f64 {
@@ -295,7 +295,7 @@ fn layout_radial(
 
     // L1 radius: 2.5× average root radius
     let root_r = (w + h) / 4.0; // average radius of ellipse
-    let l1_distance = root_r * 2.5 + cfg.gap_x;
+    let l1_distance = root_r * 3.0 + cfg.gap_x;
 
     // Compute angular spans proportional to subtree weight
     let weights: Vec<f64> = root.children.iter().map(subtree_weight).collect();
@@ -317,8 +317,8 @@ fn layout_radial(
         *a *= full_circle / angle_sum;
     }
 
-    // Start at 1 o'clock (30 degrees from top, clockwise)
-    let start_angle = -std::f64::consts::FRAC_PI_2 + 0.5; // approx -60°
+    // Start at diagonal (X pattern, not + pattern)
+    let start_angle = -std::f64::consts::FRAC_PI_4; // 45° from top = top-right diagonal
     let mut angle_cursor = start_angle;
     let mut child_placed = Vec::new();
 
@@ -395,14 +395,25 @@ fn layout_radial_subtree(
 
         for (ci, child) in node.children.iter().enumerate() {
             let child_angle = cursor + child_angles[ci] / 2.0;
-            let child_cx = cx + child_distance * child_angle.cos();
-            let child_cy = cy + child_distance * child_angle.sin();
+            let (cw, ch) = node_size(child, cfg, depth + 1);
+
+            // Push outward if node would be too close to sibling
+            let min_arc_gap = cw.max(ch) + 20.0; // minimum pixels between node centers
+            let arc_at_distance = child_distance * child_angles[ci].max(0.1);
+            let actual_distance = if arc_at_distance < min_arc_gap && n > 1 {
+                child_distance * (min_arc_gap / arc_at_distance)
+            } else {
+                child_distance
+            };
+
+            let child_cx = cx + actual_distance * child_angle.cos();
+            let child_cy = cy + actual_distance * child_angle.sin();
 
             let placed = layout_radial_subtree(
                 child, scene, cfg, depth + 1,
                 child_cx, child_cy,
                 child_angle, child_angles[ci],
-                child_distance, color_idx,
+                actual_distance, color_idx,
             );
             child_placed.push(placed);
 
