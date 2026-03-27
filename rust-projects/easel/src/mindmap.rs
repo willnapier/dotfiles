@@ -943,17 +943,12 @@ fn layout_buzan_root(
             let n2 = child.children.len();
             let l2_fs = font_size_at_depth(cfg, 2);
             let (_, l2_ss) = branch_sizes(1);
-            // Minimum clearance between adjacent L2 branches:
-            // text height + branch width + gap, as an arc angle
-            let min_clearance_px = l2_fs + l2_ss + 36.0;
-            let avg_l2_branch_len = child.children.iter()
-                .map(|c| builder::estimate_text_width(&c.text, l2_fs) + 60.0)
-                .sum::<f64>() / n2 as f64;
-            let min_angle_per_child = min_clearance_px / avg_l2_branch_len.max(1.0);
-
-            // Fan sector: at least enough for minimum clearance × n children
-            let min_fan = min_angle_per_child * n2 as f64;
-            let fan_sector = (angles[ci] * FAN_RATIO).max(min_fan);
+            // Wide semicircular fan — Buzan style:
+            // 3 children → 120° (7-11 o'clock), 4+ → up to 160°
+            let base_fan = std::f64::consts::PI * 0.65; // ~117°
+            let extra_per_child = std::f64::consts::PI * 0.08; // ~14° more per additional child
+            let fan_sector = (base_fan + (n2 as f64 - 2.0).max(0.0) * extra_per_child)
+                .min(std::f64::consts::PI * 0.9); // cap at 162°
 
             let l2_weights: Vec<f64> = child.children.iter().map(subtree_weight).collect();
             let l2_total: f64 = l2_weights.iter().sum();
@@ -997,11 +992,12 @@ fn layout_buzan_root(
                 let l2_dx = l2_end_x - l2_start_x;
                 let l2_dy = l2_end_y - l2_start_y;
                 let l2_gap = (l2_dx * l2_dx + l2_dy * l2_dy).sqrt();
-                let l2_cp = l2_gap * 0.4;
-                // CP1: depart in the L1 direction (creates smooth fork)
-                let l1_nx = child_angle.cos();
-                let l1_ny = child_angle.sin();
-                // CP2: arrive horizontally at L2 endpoint
+                // C-shape: CP1 points in the fan direction (wide opening at junction),
+                // CP2 brings it horizontal (parallel at tips)
+                let l2_cp1_dist = l2_gap * 0.35;
+                let l2_cp2_dist = l2_gap * 0.35;
+                let l2_nx = l2_angle.cos(); // fan direction — immediate spread
+                let l2_ny = l2_angle.sin();
                 let l2_hdir = if l2_end_x > l2_start_x { -1.0 } else { 1.0 };
 
                 let (l2_ss, l2_es) = branch_sizes(1);
@@ -1023,8 +1019,8 @@ fn layout_buzan_root(
                     vertical_align: None, container_id: None,
                     points: Some(vec![
                         [0.0, 0.0],
-                        [l1_nx * l2_cp, l1_ny * l2_cp], // depart in L1 direction (smooth fork)
-                        [l2_dx + l2_hdir * l2_cp, l2_dy],
+                        [l2_nx * l2_cp1_dist, l2_ny * l2_cp1_dist], // spread outward at junction
+                        [l2_dx + l2_hdir * l2_cp2_dist, l2_dy],     // arrive horizontal at tip
                         [l2_dx, l2_dy],
                     ]),
                     end_arrowhead: None, start_arrowhead: None,
