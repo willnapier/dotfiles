@@ -313,12 +313,28 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
                         el.x
                     };
 
+                    // Rotation transform for text on branches
+                    let rot_attr = if let Some(angle) = el.angle {
+                        if angle.abs() > 0.01 {
+                            let deg = angle.to_degrees();
+                            let cx = el.x + el.width / 2.0;
+                            let cy = el.y + el.height / 2.0;
+                            format!(r#" transform="rotate({:.1},{:.0},{:.0})""#, deg, cx, cy)
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        String::new()
+                    };
+
                     if lines.len() == 1 {
-                        let ty = el.y + el.height / 2.0;
+                        // Position text ABOVE the branch (offset up by font size)
+                        let ty = el.y + el.height / 2.0 - if el.angle.is_some() { el.font_size * 0.3 } else { 0.0 };
                         svg.push_str(&format!(
-                            r#"<text x="{:.0}" y="{:.0}" text-anchor="{}" dominant-baseline="central" font-size="{}" fill="{}" opacity="{}">{}</text>
+                            r#"<text x="{:.0}" y="{:.0}" text-anchor="{}" dominant-baseline="central" font-size="{}" fill="{}"{} opacity="{}">{}</text>
 "#,
                             tx, ty, svg_anchor, el.font_size, el.stroke_color,
+                            rot_attr,
                             el.opacity as f64 / 100.0,
                             xml_escape(lines[0])
                         ));
