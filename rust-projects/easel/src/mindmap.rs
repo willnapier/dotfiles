@@ -246,6 +246,36 @@ fn layout_node(
     }
 }
 
+/// Clamp a branch angle so it's never steeper than max_tilt from horizontal.
+fn clamp_to_readable(angle: f64, max_tilt: f64) -> f64 {
+    // Normalize to [-PI, PI]
+    let mut a = angle;
+    while a > std::f64::consts::PI { a -= std::f64::consts::PI * 2.0; }
+    while a < -std::f64::consts::PI { a += std::f64::consts::PI * 2.0; }
+
+    // Compute tilt from horizontal (0° or 180°)
+    let tilt = if a.abs() <= std::f64::consts::FRAC_PI_2 {
+        a.abs() // right side: tilt from 0°
+    } else {
+        std::f64::consts::PI - a.abs() // left side: tilt from 180°
+    };
+
+    if tilt <= max_tilt {
+        return a; // already within limit
+    }
+
+    // Clamp: push toward nearest horizontal
+    if a >= 0.0 && a <= std::f64::consts::FRAC_PI_2 {
+        max_tilt // upper right → clamp to +max_tilt
+    } else if a > std::f64::consts::FRAC_PI_2 {
+        std::f64::consts::PI - max_tilt // upper left → clamp to PI-max_tilt
+    } else if a < -std::f64::consts::FRAC_PI_2 {
+        -(std::f64::consts::PI - max_tilt) // lower left → clamp to -(PI-max_tilt)
+    } else {
+        -max_tilt // lower right → clamp to -max_tilt
+    }
+}
+
 // ── Radial Layout (Buzan principles) ─────────────────────────────────
 //
 // Key ratios:
@@ -829,7 +859,7 @@ fn layout_buzan_root(
         while (tgt - src).abs() > std::f64::consts::PI {
             if tgt > src { src += std::f64::consts::PI * 2.0; } else { tgt += std::f64::consts::PI * 2.0; }
         }
-        let child_angle = src + (tgt - src) * 0.15;
+        let child_angle = clamp_to_readable(src + (tgt - src) * 0.15, std::f64::consts::FRAC_PI_4);
 
         // Branch length based on text width + visible margins
         let child_fs = font_size_at_depth(cfg, 1);
@@ -837,11 +867,16 @@ fn layout_buzan_root(
         // Gap before text (junction clearance) and after text (branch tip)
         let pre_text_gap = (child_fs * 2.5).min(45.0);
         let post_text_gap = 10.0;
-        let branch_len = root_r + pre_text_gap + text_width + post_text_gap;
+        let branch_distance = pre_text_gap + text_width + post_text_gap;
 
-        // Branch endpoint
-        let end_x = center_x + branch_len * child_angle.cos();
-        let end_y = center_y + branch_len * child_angle.sin();
+        // Start from ellipse edge, end along child_angle direction FROM start
+        let rx = w / 2.0;
+        let ry = h / 2.0;
+        let overlap = 8.0;
+        let start_x = center_x + (rx - overlap) * child_angle.cos();
+        let start_y = center_y + (ry - overlap) * child_angle.sin();
+        let end_x = start_x + branch_distance * child_angle.cos();
+        let end_y = start_y + branch_distance * child_angle.sin();
 
         // Text midpoint along the branch (after root edge + gap)
         let text_mid_dist = root_r + 40.0 + text_width / 2.0;
@@ -862,11 +897,7 @@ fn layout_buzan_root(
 
         // Create the branch — start slightly inside the ellipse so the organic
         // stroke overlaps the edge and blends seamlessly
-        let rx = w / 2.0;
-        let ry = h / 2.0;
-        let overlap = 8.0; // px inside the ellipse
-        let start_x = center_x + (rx - overlap) * child_angle.cos();
-        let start_y = center_y + (ry - overlap) * child_angle.sin();
+        // Arrow geometry
         let dx = end_x - start_x;
         let dy = end_y - start_y;
         let nx = child_angle.cos();
@@ -973,7 +1004,7 @@ fn layout_buzan_root(
                 while (t2 - s2).abs() > std::f64::consts::PI {
                     if t2 > s2 { s2 += std::f64::consts::PI * 2.0; } else { t2 += std::f64::consts::PI * 2.0; }
                 }
-                let l2_angle = s2 + (t2 - s2) * 0.35;
+                let l2_angle = clamp_to_readable(s2 + (t2 - s2) * 0.35, std::f64::consts::FRAC_PI_4);
 
                 let l2_fs = font_size_at_depth(cfg, 2);
                 let l2_tw = builder::estimate_text_width(&child2.text, l2_fs);
