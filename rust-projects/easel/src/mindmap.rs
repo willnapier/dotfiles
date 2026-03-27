@@ -999,22 +999,31 @@ fn layout_buzan_root(
             let n2 = child.children.len();
             let l2_fs = font_size_at_depth(cfg, 2);
 
-            // L2 fan: full ±45° readable range on this side
-            let max_tilt = std::f64::consts::FRAC_PI_4;
+            // L2 fan: ±35° from horizontal (leaves 10° buffer between adjacent L1 fans)
+            let l2_max_tilt = 35.0f64.to_radians();
             let (fan_lo, fan_hi) = if child_angle.cos() >= 0.0 {
-                (-max_tilt, max_tilt)
+                (-l2_max_tilt, l2_max_tilt)
             } else {
-                (std::f64::consts::PI - max_tilt, std::f64::consts::PI + max_tilt)
+                (std::f64::consts::PI - l2_max_tilt, std::f64::consts::PI + l2_max_tilt)
             };
             let available_fan = fan_hi - fan_lo;
 
             // Distribute children evenly across available range
+            // Minimum angular gap: at the text offset distance, siblings must clear
+            let l2_fs_calc = font_size_at_depth(cfg, 2);
+            let text_offset_dist = (l2_fs_calc * 2.5).min(45.0); // where text begins
+            let min_clearance = l2_fs_calc * 1.8 + 12.0; // text height + branch + gap
+            let min_angle_gap = (min_clearance / text_offset_dist.max(1.0)).min(available_fan / n2 as f64);
+
             let l2_weights: Vec<f64> = child.children.iter().map(subtree_weight).collect();
             let l2_total: f64 = l2_weights.iter().sum();
             let l2_angles: Vec<f64> = l2_weights.iter()
-                .map(|w| available_fan * w / l2_total)
+                .map(|w| (available_fan * w / l2_total).max(min_angle_gap))
                 .collect();
-            let mut l2_cursor = fan_lo;
+            // Re-center fan if angles expanded beyond available
+            let actual_fan: f64 = l2_angles.iter().sum();
+            let fan_center = (fan_lo + fan_hi) / 2.0;
+            let mut l2_cursor = fan_center - actual_fan / 2.0;
 
             for (ci2, child2) in child.children.iter().enumerate() {
                 let l2_angle = l2_cursor + l2_angles[ci2] / 2.0;
