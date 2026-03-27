@@ -979,32 +979,36 @@ fn layout_buzan_root(
         if !child.children.is_empty() {
             let n2 = child.children.len();
             let l2_fs = font_size_at_depth(cfg, 2);
-            let (_, l2_ss) = branch_sizes(1);
-            // Wide semicircular fan — Buzan style:
-            // 3 children → 120° (7-11 o'clock), 4+ → up to 160°
-            let base_fan = std::f64::consts::PI * 0.65; // ~117°
-            let extra_per_child = std::f64::consts::PI * 0.08; // ~14° more per additional child
-            let fan_sector = (base_fan + (n2 as f64 - 2.0).max(0.0) * extra_per_child)
-                .min(std::f64::consts::PI * 0.9); // cap at 162°
 
+            // Compute available angular range within 45° readability limit.
+            // The fan is centered on child_angle, bounded by ±45° from horizontal.
+            let max_tilt = std::f64::consts::FRAC_PI_4;
+            let (fan_min, fan_max) = if child_angle.cos() >= 0.0 {
+                // Right side: angles must be within [-45°, +45°]
+                (-max_tilt, max_tilt)
+            } else {
+                // Left side: angles within [135°, 225°]
+                (std::f64::consts::PI - max_tilt, -(std::f64::consts::PI - max_tilt) + std::f64::consts::PI * 2.0)
+            };
+            // Normalize fan_min/fan_max for left side
+            let (fan_lo, fan_hi) = if child_angle.cos() >= 0.0 {
+                (fan_min, fan_max)
+            } else {
+                // Left side wraps around PI
+                (std::f64::consts::PI - max_tilt, std::f64::consts::PI + max_tilt)
+            };
+            let available_fan = fan_hi - fan_lo;
+
+            // Distribute children evenly across available range
             let l2_weights: Vec<f64> = child.children.iter().map(subtree_weight).collect();
             let l2_total: f64 = l2_weights.iter().sum();
             let l2_angles: Vec<f64> = l2_weights.iter()
-                .map(|w| fan_sector * w / l2_total)
+                .map(|w| available_fan * w / l2_total)
                 .collect();
-            let actual_fan: f64 = l2_angles.iter().sum();
-            let fan_start = child_angle - actual_fan / 2.0;
-            let mut l2_cursor = fan_start;
+            let mut l2_cursor = fan_lo;
 
             for (ci2, child2) in child.children.iter().enumerate() {
-                let raw_a = l2_cursor + l2_angles[ci2] / 2.0;
-                // Horizontal pull at L2
-                let h2 = if raw_a.cos() >= 0.0 { 0.0 } else { std::f64::consts::PI };
-                let mut s2 = raw_a; let mut t2 = h2;
-                while (t2 - s2).abs() > std::f64::consts::PI {
-                    if t2 > s2 { s2 += std::f64::consts::PI * 2.0; } else { t2 += std::f64::consts::PI * 2.0; }
-                }
-                let l2_angle = clamp_to_readable(s2 + (t2 - s2) * 0.35, std::f64::consts::FRAC_PI_4);
+                let l2_angle = l2_cursor + l2_angles[ci2] / 2.0;
 
                 let l2_fs = font_size_at_depth(cfg, 2);
                 let l2_tw = builder::estimate_text_width(&child2.text, l2_fs);
