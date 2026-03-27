@@ -864,10 +864,9 @@ fn layout_buzan_root(
         // Branch length based on text width + visible margins
         let child_fs = font_size_at_depth(cfg, 1);
         let text_width = builder::estimate_text_width(&child.text, child_fs);
-        // Gap before text (junction clearance) and after text (branch tip)
-        let pre_text_gap = (child_fs * 2.5).min(45.0);
-        let post_text_gap = 10.0;
-        let branch_distance = pre_text_gap + text_width + post_text_gap;
+        // Symmetric gap on both sides of text
+        let text_margin = (child_fs * 2.0).min(40.0);
+        let branch_distance = text_margin + text_width + text_margin;
 
         // Start from ellipse edge, end along child_angle direction FROM start
         let rx = w / 2.0;
@@ -1012,9 +1011,8 @@ fn layout_buzan_root(
 
                 let l2_fs = font_size_at_depth(cfg, 2);
                 let l2_tw = builder::estimate_text_width(&child2.text, l2_fs);
-                let l2_pre_gap = (l2_fs * 3.0).min(45.0);
-                let l2_post_gap = 8.0;
-                let l2_branch_len = l2_pre_gap + l2_tw + l2_post_gap;
+                let l2_margin = (l2_fs * 2.0).min(35.0);
+                let l2_branch_len = l2_margin + l2_tw + l2_margin;
 
                 // All L2 branches start from L1 endpoint (organic continuity)
                 let l2_start_x = end_x;
