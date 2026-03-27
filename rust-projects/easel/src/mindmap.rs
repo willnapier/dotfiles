@@ -257,7 +257,7 @@ fn layout_node(
 
 const MIN_ANGLE_DEG: f64 = 25.0;
 const MAX_ANGLE_DEG: f64 = 120.0;
-const DISTANCE_DECAY: f64 = 0.95;
+const DISTANCE_DECAY: f64 = 0.75;
 const FAN_RATIO: f64 = 0.85;
 
 /// Count total descendants (for angular allocation weighting).
@@ -295,7 +295,7 @@ fn layout_radial(
 
     // L1 radius: 2.5× average root radius
     let root_r = (w + h) / 4.0; // average radius of ellipse
-    let l1_distance = root_r * 2.0 + cfg.gap_x;
+    let l1_distance = root_r * 1.5 + cfg.gap_x;
 
     // Compute angular spans proportional to subtree weight
     let weights: Vec<f64> = root.children.iter().map(subtree_weight).collect();
