@@ -300,14 +300,29 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
                     .and_then(|cd| cd.get("onBranch"))
                     .and_then(|v| v.as_str());
 
-                if let (Some(branch_id), Some(ref text)) = (on_branch, &el.text) {
+                if let (Some(branch_id), Some(text)) = (on_branch, &el.text) {
                     // Text on path — use SVG textPath along the branch center-line
+                    // Shift text above the branch surface with dy
                     let href = format!("#cl-{}", branch_id);
                     let offset = el.font_size * 1.5;
+                    // Read branch size from the arrow's customData to compute vertical offset
+                    let branch_half = el.custom_data.as_ref()
+                        .and_then(|cd| cd.get("onBranch"))
+                        .and_then(|_| {
+                            // Find the arrow element to get its stroke size
+                            scene.elements.iter()
+                                .find(|a| a.id == branch_id)
+                                .and_then(|a| a.custom_data.as_ref())
+                                .and_then(|cd| cd.get("strokeOptions"))
+                                .and_then(|so| so.get("startSize"))
+                                .and_then(|v| v.as_f64())
+                        })
+                        .unwrap_or(8.0) / 2.0;
+                    let dy = -(branch_half + 2.0); // sit just above the branch edge
                     svg.push_str(&format!(
-                        "<text font-size=\"{}\" fill=\"{}\" font-family=\"'Nunito', sans-serif\" font-weight=\"600\" dominant-baseline=\"text-after-edge\"><textPath href=\"{}\" startOffset=\"{:.0}\">{}</textPath></text>\n",
+                        "<text font-size=\"{}\" fill=\"{}\" font-family=\"'Nunito', sans-serif\" font-weight=\"600\" dy=\"{:.1}\"><textPath href=\"{}\" startOffset=\"{:.0}\">{}</textPath></text>\n",
                         el.font_size, el.stroke_color,
-                        href, offset,
+                        dy, href, offset,
                         xml_escape(text)
                     ));
                     continue;
@@ -492,9 +507,16 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
                                 el.opacity as f64 / 100.0
                             ));
                         }
-                        // Emit hidden center-line path for textPath references
-                        let mut cl_d = format!("M{:.1},{:.1}", final_pts[0][0], final_pts[0][1]);
-                        for p in &final_pts[1..] {
+                        // Emit hidden center-line path for textPath references.
+                        // Reverse path for left-going branches so text reads left-to-right.
+                        let goes_left = final_pts.last().map(|p| p[0] < final_pts[0][0]).unwrap_or(false);
+                        let cl_pts: Vec<&[f64; 2]> = if goes_left {
+                            final_pts.iter().rev().collect()
+                        } else {
+                            final_pts.iter().collect()
+                        };
+                        let mut cl_d = format!("M{:.1},{:.1}", cl_pts[0][0], cl_pts[0][1]);
+                        for p in &cl_pts[1..] {
                             cl_d.push_str(&format!(" L{:.1},{:.1}", p[0], p[1]));
                         }
                         svg.push_str(&format!(
