@@ -1132,8 +1132,6 @@ fn layout_buzan_root(
             color_idx: ci,
             children: l2_placed,
         });
-
-        angle_cursor += angles[ci];
     }
 
     Placed {
