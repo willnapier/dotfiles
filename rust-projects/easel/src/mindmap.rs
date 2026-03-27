@@ -257,7 +257,7 @@ fn layout_node(
 
 const MIN_ANGLE_DEG: f64 = 25.0;
 const MAX_ANGLE_DEG: f64 = 120.0;
-const DISTANCE_DECAY: f64 = 0.75;
+const DISTANCE_DECAY: f64 = 0.85;
 const FAN_RATIO: f64 = 0.85;
 
 /// Count total descendants (for angular allocation weighting).
@@ -425,14 +425,20 @@ fn layout_radial_subtree(
 
             let (cw, ch) = node_size(child, cfg, depth + 1);
 
-            // Push outward if node would be too close to sibling
-            let min_arc_gap = cw.max(ch) + 20.0; // minimum pixels between node centers
+            // Minimum distance: branch must be visible beyond both node labels
+            let min_visible_branch = 30.0; // px of visible branch
+            let min_distance = (w.max(h) + cw.max(ch)) / 2.0 + min_visible_branch;
+
+            // Push outward if siblings would overlap, but cap at 1.5× base
+            let min_arc_gap = ch + 16.0;
             let arc_at_distance = child_distance * child_angles[ci].max(0.1);
-            let actual_distance = if arc_at_distance < min_arc_gap && n > 1 {
-                child_distance * (min_arc_gap / arc_at_distance)
+            let collision_distance = if arc_at_distance < min_arc_gap && n > 1 {
+                (child_distance * (min_arc_gap / arc_at_distance)).min(child_distance * 1.5)
             } else {
                 child_distance
             };
+
+            let actual_distance = collision_distance.max(min_distance);
 
             let child_cx = cx + actual_distance * child_angle.cos();
             let child_cy = cy + actual_distance * child_angle.sin();
