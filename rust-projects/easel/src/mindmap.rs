@@ -426,8 +426,9 @@ fn layout_radial_subtree(
             let (cw, ch) = node_size(child, cfg, depth + 1);
 
             // Minimum distance: branch must be visible beyond both node labels
-            let min_visible_branch = 30.0; // px of visible branch
-            let min_distance = (w.max(h) + cw.max(ch)) / 2.0 + min_visible_branch;
+            // Use width (not height) since branches trend horizontal
+            let min_visible_branch = 80.0; // px of visible branch
+            let min_distance = (w + cw) / 2.0 + min_visible_branch;
 
             // Push outward if siblings would overlap, but cap at 1.5× base
             let min_arc_gap = ch + 16.0;
