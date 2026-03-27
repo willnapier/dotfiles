@@ -858,9 +858,13 @@ fn layout_buzan_root(
             palettes[ci % palettes.len()]
         } else { "#2c3e50" };
 
-        // Create the branch (arrow from root edge to endpoint)
-        let start_x = center_x + root_r * child_angle.cos();
-        let start_y = center_y + root_r * child_angle.sin();
+        // Create the branch — start slightly inside the ellipse so the organic
+        // stroke overlaps the edge and blends seamlessly
+        let rx = w / 2.0;
+        let ry = h / 2.0;
+        let overlap = 8.0; // px inside the ellipse
+        let start_x = center_x + (rx - overlap) * child_angle.cos();
+        let start_y = center_y + (ry - overlap) * child_angle.sin();
         let dx = end_x - start_x;
         let dy = end_y - start_y;
         let nx = child_angle.cos();
