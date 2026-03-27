@@ -419,10 +419,10 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
                             points.iter().map(|p| [el.x + p[0], el.y + p[1]]).collect()
                         };
 
-                        // For organic connectors with rough style: jitter the outline points
+                        // For organic connectors with rough style: gently wander the center path
                         let final_pts = if is_rough {
                             let vs = style.unwrap();
-                            rough::jitter_points(&abs_pts, vs.stroke_jitter, el_seed.wrapping_add(11))
+                            rough::wander_path(&abs_pts, vs.stroke_jitter * 4.0, el_seed.wrapping_add(11))
                         } else {
                             abs_pts
                         };

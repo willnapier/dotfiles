@@ -363,6 +363,58 @@ pub fn jitter_points(points: &[[f64; 2]], roughness: f64, seed: u64) -> Vec<[f64
         .collect()
 }
 
+/// Gently wander a center-line path. Instead of per-point noise (jagged edges),
+/// this applies a smoothly drifting perpendicular offset — the path meanders
+/// organically while keeping smooth edges when rendered through freehand.
+pub fn wander_path(points: &[[f64; 2]], amplitude: f64, seed: u64) -> Vec<[f64; 2]> {
+    if amplitude <= 0.0 || points.len() < 3 {
+        return points.to_vec();
+    }
+
+    let mut rng = Rng::new(seed);
+    let n = points.len();
+
+    // Random walk: accumulate small steps, then smooth
+    let mut offsets = vec![0.0f64; n];
+    let mut drift = 0.0f64;
+    for i in 1..n - 1 {
+        // Small random step
+        drift += rng.next_signed() * amplitude * 0.3;
+        // Mean-revert gently (prevents wandering too far)
+        drift *= 0.95;
+        // Clamp
+        drift = drift.clamp(-amplitude, amplitude);
+        offsets[i] = drift;
+    }
+    // Pin start and end to zero offset (connect exactly to shapes)
+    offsets[0] = 0.0;
+    offsets[n - 1] = 0.0;
+
+    // Smooth the offsets with a simple box filter (3 passes)
+    for _ in 0..3 {
+        let prev = offsets.clone();
+        for i in 1..n - 1 {
+            offsets[i] = (prev[i - 1] + prev[i] + prev[i + 1]) / 3.0;
+        }
+    }
+
+    // Apply offset perpendicular to the path direction
+    points.iter().enumerate().map(|(i, p)| {
+        if i == 0 || i == n - 1 {
+            return *p;
+        }
+        // Direction vector from previous to next point
+        let dx = points[(i + 1).min(n - 1)][0] - points[i.saturating_sub(1)][0];
+        let dy = points[(i + 1).min(n - 1)][1] - points[i.saturating_sub(1)][1];
+        let len = (dx * dx + dy * dy).sqrt();
+        if len < 0.001 { return *p; }
+        // Perpendicular
+        let px = -dy / len;
+        let py = dx / len;
+        [p[0] + px * offsets[i], p[1] + py * offsets[i]]
+    }).collect()
+}
+
 // ── Tests ───────────────────────────────────────────────────────────
 
 #[cfg(test)]
