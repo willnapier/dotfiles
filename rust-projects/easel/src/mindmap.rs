@@ -835,7 +835,7 @@ fn layout_buzan_root(
         let child_fs = font_size_at_depth(cfg, 1);
         let text_width = builder::estimate_text_width(&child.text, child_fs);
         let text_start_offset = child_fs * 5.0; // matches SVG startOffset
-        let branch_len = root_r + text_start_offset + text_width + 30.0;
+        let branch_len = root_r + text_start_offset + text_width + 10.0; // tight fit
 
         // Branch endpoint
         let end_x = center_x + branch_len * child_angle.cos();
@@ -976,7 +976,7 @@ fn layout_buzan_root(
                 let l2_fs = font_size_at_depth(cfg, 2);
                 let l2_tw = builder::estimate_text_width(&child2.text, l2_fs);
                 let l2_text_offset = l2_fs * 7.0; // matches SVG startOffset for L2
-                let l2_branch_len = l2_text_offset + l2_tw + 30.0;
+                let l2_branch_len = l2_text_offset + l2_tw + 10.0; // tight fit
 
                 // All L2 branches start from L1 endpoint (organic continuity)
                 let l2_start_x = end_x;
