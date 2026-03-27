@@ -8,6 +8,7 @@ cross-machine-sync-check	0.1.0	/home/will/dotfiles/rust-projects/cross-machine-s
 dev-catchup	0.1.0	/home/will/dotfiles/rust-projects/dev-catchup
 dotter	0.13.4	crates.io
 dprint	0.50.2	crates.io
+easel	0.1.0	/home/will/dotfiles/rust-projects/easel
 email-extract	0.1.0	/home/will/dotfiles/rust-projects/email-extract
 fd-find	10.3.0	crates.io
 himalaya	1.1.0	https://github.com/pimalaya/himalaya.git#85988da4
