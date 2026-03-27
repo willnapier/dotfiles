@@ -394,7 +394,26 @@ fn layout_radial_subtree(
         let mut cursor = fan_start;
 
         for (ci, child) in node.children.iter().enumerate() {
-            let child_angle = cursor + child_angles[ci] / 2.0;
+            let raw_angle = cursor + child_angles[ci] / 2.0;
+
+            // Bend toward horizontal at deeper levels:
+            // Right side → angle trends toward 0, Left side → trends toward PI
+            let horizontal = if raw_angle.cos() >= 0.0 { 0.0 } else { std::f64::consts::PI };
+            // Normalize angles for interpolation
+            let mut target = horizontal;
+            let mut source = raw_angle;
+            // Handle wrap-around: ensure we interpolate the short way
+            while (target - source).abs() > std::f64::consts::PI {
+                if target > source { source += std::f64::consts::PI * 2.0; }
+                else { target += std::f64::consts::PI * 2.0; }
+            }
+            let blend = match depth {
+                1 => 0.35, // L2: moderate horizontal pull
+                2 => 0.55, // L3: strong horizontal pull
+                _ => 0.65, // deeper: mostly horizontal
+            };
+            let child_angle = source + (target - source) * blend;
+
             let (cw, ch) = node_size(child, cfg, depth + 1);
 
             // Push outward if node would be too close to sibling
