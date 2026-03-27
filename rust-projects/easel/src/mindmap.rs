@@ -295,7 +295,7 @@ fn layout_radial(
 
     // L1 radius: 2.5× average root radius
     let root_r = (w + h) / 4.0; // average radius of ellipse
-    let l1_distance = root_r * 3.0 + cfg.gap_x;
+    let l1_distance = root_r * 2.0 + cfg.gap_x;
 
     // Compute angular spans proportional to subtree weight
     let weights: Vec<f64> = root.children.iter().map(subtree_weight).collect();
@@ -324,7 +324,15 @@ fn layout_radial(
     let mut child_placed = Vec::new();
 
     for (ci, child) in root.children.iter().enumerate() {
-        let child_angle = angle_cursor + angles[ci] / 2.0;
+        let raw_angle = angle_cursor + angles[ci] / 2.0;
+        // Slight horizontal pull on L1 too (15% toward horizontal)
+        let horiz = if raw_angle.cos() >= 0.0 { 0.0 } else { std::f64::consts::PI };
+        let mut src = raw_angle;
+        let mut tgt = horiz;
+        while (tgt - src).abs() > std::f64::consts::PI {
+            if tgt > src { src += std::f64::consts::PI * 2.0; } else { tgt += std::f64::consts::PI * 2.0; }
+        }
+        let child_angle = src + (tgt - src) * 0.15;
         let child_cx = center_x + l1_distance * child_angle.cos();
         let child_cy = center_y + l1_distance * child_angle.sin();
 
