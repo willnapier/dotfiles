@@ -245,72 +245,109 @@ fn layout_node(
     }
 }
 
-// ── Radial Layout ────────────────────────────────────────────────────
+// ── Radial Layout (Buzan principles) ─────────────────────────────────
+//
+// Key ratios:
+//   L1 distance from center: 2.5× root radius
+//   L2 distance from L1: 0.65× L1 distance
+//   L3 distance from L2: 0.65× L2 distance
+//   Angular allocation: proportional to subtree weight, min 20°, max 120°
+//   Sub-branch fan: 55% of parent's angular sector
+//   Start angle: 1 o'clock (clockwise, like reading a clock)
 
-/// Lay out nodes in a radial pattern: root at center, L1 around it, L2 fanning outward.
+const MIN_ANGLE_DEG: f64 = 20.0;
+const MAX_ANGLE_DEG: f64 = 120.0;
+const DISTANCE_DECAY: f64 = 0.65;
+const FAN_RATIO: f64 = 0.55;
+
+/// Count total descendants (for angular allocation weighting).
+fn subtree_weight(node: &MmNode) -> f64 {
+    if node.children.is_empty() {
+        1.0
+    } else {
+        1.0 + node.children.iter().map(subtree_weight).sum::<f64>()
+    }
+}
+
+/// Lay out nodes in a radial pattern following Buzan mind map principles.
 fn layout_radial(
     root: &MmNode,
     scene: &mut Scene,
     cfg: &MindMapConfig,
     center_x: f64,
     center_y: f64,
-    root_color_idx: usize,
+    _root_color_idx: usize,
 ) -> Placed {
     let fs = font_size_at_depth(cfg, 0);
     let (w, h) = node_size(root, cfg, 0);
 
-    // Root at center
-    let root_style = root_style(fs);
+    // Root at center (ellipse)
+    let style = root_style(fs);
     let root_id = builder::add_ellipse(scene, center_x - w / 2.0, center_y - h / 2.0,
-                                        &root.text, &root_style, false);
+                                        &root.text, &style, false);
 
     if root.children.is_empty() {
         return Placed {
             element_id: root_id, x: center_x - w / 2.0, y: center_y - h / 2.0,
-            width: w, height: h, color_idx: root_color_idx, children: Vec::new(),
+            width: w, height: h, color_idx: 0, children: Vec::new(),
         };
     }
 
+    // L1 radius: 2.5× average root radius
+    let root_r = (w + h) / 4.0; // average radius of ellipse
+    let l1_distance = root_r * 2.5 + cfg.gap_x;
+
+    // Compute angular spans proportional to subtree weight
+    let weights: Vec<f64> = root.children.iter().map(subtree_weight).collect();
+    let total_weight: f64 = weights.iter().sum();
     let n = root.children.len();
-    // Radius from center to L1 nodes — proportional to root size + gap
-    let l1_radius = (w + h) / 2.0 + cfg.gap_x * 1.5;
 
-    // Compute angular span for each child proportional to its subtree size
-    let subtree_sizes: Vec<f64> = root.children.iter()
-        .map(|c| subtree_height(c, cfg, 1))
+    let min_angle = MIN_ANGLE_DEG.to_radians();
+    let max_angle = MAX_ANGLE_DEG.to_radians();
+    let full_circle = std::f64::consts::PI * 2.0;
+
+    // Raw proportional angles, then clamp
+    let mut angles: Vec<f64> = weights.iter()
+        .map(|w| (full_circle * w / total_weight).clamp(min_angle, max_angle))
         .collect();
-    let total_size: f64 = subtree_sizes.iter().sum();
 
-    // Start angle: top-right, sweep clockwise
-    let start_angle = -std::f64::consts::FRAC_PI_2; // -90 degrees (top)
-    let sweep = std::f64::consts::PI * 2.0;
+    // Normalize so they sum to full circle
+    let angle_sum: f64 = angles.iter().sum();
+    for a in &mut angles {
+        *a *= full_circle / angle_sum;
+    }
 
-    let mut child_placed = Vec::new();
+    // Start at 1 o'clock (30 degrees from top, clockwise)
+    let start_angle = -std::f64::consts::FRAC_PI_2 + 0.5; // approx -60°
     let mut angle_cursor = start_angle;
+    let mut child_placed = Vec::new();
 
     for (ci, child) in root.children.iter().enumerate() {
-        let angular_span = sweep * (subtree_sizes[ci] / total_size);
-        let child_angle = angle_cursor + angular_span / 2.0;
-        angle_cursor += angular_span;
+        let child_angle = angle_cursor + angles[ci] / 2.0;
+        let child_cx = center_x + l1_distance * child_angle.cos();
+        let child_cy = center_y + l1_distance * child_angle.sin();
 
-        let child_cx = center_x + l1_radius * child_angle.cos();
-        let child_cy = center_y + l1_radius * child_angle.sin();
-
-        let placed = layout_radial_subtree(child, scene, cfg, 1, child_cx, child_cy,
-                                            child_angle, l1_radius, ci);
+        let placed = layout_radial_subtree(
+            child, scene, cfg, 1,
+            child_cx, child_cy,
+            child_angle, angles[ci],
+            l1_distance, ci,
+        );
         child_placed.push(placed);
+
+        angle_cursor += angles[ci];
     }
 
     Placed {
         element_id: root_id,
         x: center_x - w / 2.0, y: center_y - h / 2.0,
         width: w, height: h,
-        color_idx: root_color_idx,
+        color_idx: 0,
         children: child_placed,
     }
 }
 
-/// Lay out a subtree node in the radial layout, fanning children outward.
+/// Lay out a subtree node, fanning children outward within the allocated angular sector.
 fn layout_radial_subtree(
     node: &MmNode,
     scene: &mut Scene,
@@ -318,8 +355,9 @@ fn layout_radial_subtree(
     depth: usize,
     cx: f64,
     cy: f64,
-    parent_angle: f64, // angle from center to this node
-    parent_radius: f64,
+    my_angle: f64,          // radial angle from map center to this node
+    my_angular_sector: f64, // how much angular space this branch owns
+    parent_distance: f64,   // distance from parent to this node
     color_idx: usize,
 ) -> Placed {
     let fs = font_size_at_depth(cfg, depth);
@@ -338,22 +376,37 @@ fn layout_radial_subtree(
 
     if !node.children.is_empty() {
         let n = node.children.len();
-        let child_radius = cfg.gap_x * 1.2;
+        // Distance decays per level
+        let child_distance = parent_distance * DISTANCE_DECAY;
+        // Sub-branches fan within a portion of parent's sector
+        let fan_sector = my_angular_sector * FAN_RATIO;
 
-        // Fan children in an arc centered on the parent angle
-        let fan_spread = (n as f64 * 0.4).min(std::f64::consts::PI * 0.8);
-        let fan_start = parent_angle - fan_spread / 2.0;
-        let angle_step = if n > 1 { fan_spread / (n - 1) as f64 } else { 0.0 };
+        // Proportional allocation within fan sector
+        let weights: Vec<f64> = node.children.iter().map(subtree_weight).collect();
+        let total_w: f64 = weights.iter().sum();
+
+        let mut child_angles: Vec<f64> = weights.iter()
+            .map(|w| fan_sector * w / total_w)
+            .collect();
+
+        // Start fan centered on parent angle
+        let fan_start = my_angle - fan_sector / 2.0;
+        let mut cursor = fan_start;
 
         for (ci, child) in node.children.iter().enumerate() {
-            let child_angle = if n == 1 { parent_angle } else { fan_start + ci as f64 * angle_step };
-            let child_cx = cx + child_radius * child_angle.cos();
-            let child_cy = cy + child_radius * child_angle.sin();
+            let child_angle = cursor + child_angles[ci] / 2.0;
+            let child_cx = cx + child_distance * child_angle.cos();
+            let child_cy = cy + child_distance * child_angle.sin();
 
-            let placed = layout_radial_subtree(child, scene, cfg, depth + 1,
-                                                child_cx, child_cy,
-                                                child_angle, child_radius, color_idx);
+            let placed = layout_radial_subtree(
+                child, scene, cfg, depth + 1,
+                child_cx, child_cy,
+                child_angle, child_angles[ci],
+                child_distance, color_idx,
+            );
             child_placed.push(placed);
+
+            cursor += child_angles[ci];
         }
     }
 
@@ -388,13 +441,18 @@ fn connect_radial(scene: &mut Scene, placed: &Placed, cfg: &MindMapConfig, depth
         let end_x = ex - nx * (child.width / 2.0).min(child.height / 2.0);
         let end_y = ey - ny * (child.width / 2.0).min(child.height / 2.0);
 
-        // Cubic Bezier for smooth curve
+        // Cubic Bezier with gentle arc — control points offset slightly
+        // perpendicular to the radial direction for an organic curve
         let gap = ((end_x - start_x).powi(2) + (end_y - start_y).powi(2)).sqrt();
-        let cp_dist = gap * 0.35;
+        let cp_dist = gap * 0.4;
+        // Perpendicular to direction (gentle bow)
+        let perp_x = -ny;
+        let perp_y = nx;
+        let bow = gap * 0.08; // 8% perpendicular offset
         let rel_points = vec![
             [0.0, 0.0],
-            [nx * cp_dist, ny * cp_dist],
-            [end_x - start_x - nx * cp_dist, end_y - start_y - ny * cp_dist],
+            [nx * cp_dist + perp_x * bow, ny * cp_dist + perp_y * bow],
+            [end_x - start_x - nx * cp_dist - perp_x * bow, end_y - start_y - ny * cp_dist - perp_y * bow],
             [end_x - start_x, end_y - start_y],
         ];
 
