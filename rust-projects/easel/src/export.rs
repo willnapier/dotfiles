@@ -422,7 +422,7 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
                         // For organic connectors with rough style: gently wander the center path
                         let final_pts = if is_rough {
                             let vs = style.unwrap();
-                            rough::wander_path(&abs_pts, vs.stroke_jitter * 4.0, el_seed.wrapping_add(11))
+                            rough::wander_path(&abs_pts, vs.stroke_jitter * 2.0, el_seed.wrapping_add(11))
                         } else {
                             abs_pts
                         };
@@ -438,8 +438,8 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
                         let opts = freehand::StrokeOptions {
                             size: start_size,
                             thinning: 0.6,
-                            smoothing: 0.4,
-                            streamline: 0.3,
+                            smoothing: 0.7,
+                            streamline: 0.5,
                             simulate_pressure: false,
                             start_taper: 0.0,
                             start_cap: false,
