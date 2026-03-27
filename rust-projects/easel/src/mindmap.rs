@@ -832,34 +832,54 @@ fn layout_buzan_root(
         };
     }
 
-    // Same angular allocation as radial layout
+    // Split branches between right and left sides, distribute within ±45° range.
     let root_r = (w + h) / 4.0;
-    let weights: Vec<f64> = root.children.iter().map(subtree_weight).collect();
-    let total_weight: f64 = weights.iter().sum();
-    let full_circle = std::f64::consts::PI * 2.0;
-    let min_angle = MIN_ANGLE_DEG.to_radians();
-    let max_angle = MAX_ANGLE_DEG.to_radians();
+    let n = root.children.len();
+    let max_tilt = std::f64::consts::FRAC_PI_4;
 
-    let mut angles: Vec<f64> = weights.iter()
-        .map(|w| (full_circle * w / total_weight).clamp(min_angle, max_angle))
-        .collect();
-    let angle_sum: f64 = angles.iter().sum();
-    for a in &mut angles { *a *= full_circle / angle_sum; }
+    // Split: alternate right/left for balance (odd extras go right)
+    let n_right = (n + 1) / 2;
+    let n_left = n - n_right;
 
-    let start_angle = -std::f64::consts::FRAC_PI_4 - angles[0] / 2.0;
-    let mut angle_cursor = start_angle;
+    // Compute angles: right side = [-max_tilt, +max_tilt], left = [PI-max_tilt, PI+max_tilt]
+    let mut child_angles: Vec<f64> = Vec::with_capacity(n);
+    // Right side: indices 0, 2, 4, ... → evenly within [-max_tilt, +max_tilt]
+    // Left side: indices 1, 3, 5, ... → evenly within [PI-max_tilt, PI+max_tilt]
+    let right_angles: Vec<f64> = if n_right == 1 {
+        vec![0.0] // single right branch → horizontal
+    } else {
+        (0..n_right).map(|i| -max_tilt + (2.0 * max_tilt) * i as f64 / (n_right - 1) as f64).collect()
+    };
+    let left_angles: Vec<f64> = if n_left == 0 {
+        vec![]
+    } else if n_left == 1 {
+        vec![std::f64::consts::PI]
+    } else {
+        (0..n_left).map(|i| {
+            (std::f64::consts::PI - max_tilt) + (2.0 * max_tilt) * i as f64 / (n_left - 1) as f64
+        }).collect()
+    };
+
+    // Interleave: child 0→right[0], child 1→left[0], child 2→right[1], etc.
+    let mut ri = 0;
+    let mut li = 0;
+    for ci in 0..n {
+        if ci % 2 == 0 && ri < n_right {
+            child_angles.push(right_angles[ri]);
+            ri += 1;
+        } else if li < n_left {
+            child_angles.push(left_angles[li]);
+            li += 1;
+        } else {
+            child_angles.push(right_angles[ri]);
+            ri += 1;
+        }
+    }
+
     let mut child_placed = Vec::new();
 
     for (ci, child) in root.children.iter().enumerate() {
-        let raw_angle = angle_cursor + angles[ci] / 2.0;
-        // Slight horizontal pull on L1
-        let horiz = if raw_angle.cos() >= 0.0 { 0.0 } else { std::f64::consts::PI };
-        let mut src = raw_angle;
-        let mut tgt = horiz;
-        while (tgt - src).abs() > std::f64::consts::PI {
-            if tgt > src { src += std::f64::consts::PI * 2.0; } else { tgt += std::f64::consts::PI * 2.0; }
-        }
-        let child_angle = clamp_to_readable(src + (tgt - src) * 0.15, std::f64::consts::FRAC_PI_4);
+        let child_angle = child_angles[ci];
 
         // Branch length based on text width + visible margins
         let child_fs = font_size_at_depth(cfg, 1);
