@@ -953,7 +953,7 @@ fn layout_buzan_root(
             let l2_weights: Vec<f64> = child.children.iter().map(subtree_weight).collect();
             let l2_total: f64 = l2_weights.iter().sum();
             let l2_angles: Vec<f64> = l2_weights.iter()
-                .map(|w| (fan_sector * w / l2_total).max(min_angle_per_child))
+                .map(|w| fan_sector * w / l2_total)
                 .collect();
             let actual_fan: f64 = l2_angles.iter().sum();
             let fan_start = child_angle - actual_fan / 2.0;
@@ -971,7 +971,7 @@ fn layout_buzan_root(
 
                 let l2_fs = font_size_at_depth(cfg, 2);
                 let l2_tw = builder::estimate_text_width(&child2.text, l2_fs);
-                let l2_text_offset = l2_fs * 5.0; // matches SVG startOffset
+                let l2_text_offset = l2_fs * 7.0; // matches SVG startOffset for L2
                 let l2_branch_len = l2_text_offset + l2_tw + 30.0;
 
                 // All L2 branches start from L1 endpoint (organic continuity)
