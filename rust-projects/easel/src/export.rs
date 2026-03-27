@@ -321,10 +321,45 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
                         })
                         .unwrap_or(8.0) / 2.0;
                     let dy = -(branch_half + 3.0); // sit just above the branch edge
+
+                    // Compute center-line path length to stretch text across the branch
+                    let path_length: f64 = scene.elements.iter()
+                        .find(|a| a.id == branch_id)
+                        .and_then(|a| a.points.as_ref())
+                        .map(|pts| {
+                            // Sample the cubic Bezier and measure total length
+                            if pts.len() == 4 {
+                                let mut len = 0.0;
+                                let mut prev = [0.0f64, 0.0];
+                                for i in 0..=48 {
+                                    let t = i as f64 / 48.0;
+                                    let u = 1.0 - t;
+                                    let u2 = u * u;
+                                    let t2 = t * t;
+                                    let p = [
+                                        u2*u*pts[0][0] + 3.0*u2*t*pts[1][0] + 3.0*u*t2*pts[2][0] + t2*t*pts[3][0],
+                                        u2*u*pts[0][1] + 3.0*u2*t*pts[1][1] + 3.0*u*t2*pts[2][1] + t2*t*pts[3][1],
+                                    ];
+                                    if i > 0 {
+                                        len += ((p[0]-prev[0]).powi(2) + (p[1]-prev[1]).powi(2)).sqrt();
+                                    }
+                                    prev = p;
+                                }
+                                len
+                            } else {
+                                pts.windows(2).map(|w| ((w[1][0]-w[0][0]).powi(2) + (w[1][1]-w[0][1]).powi(2)).sqrt()).sum()
+                            }
+                        })
+                        .unwrap_or(200.0);
+
+                    // Text fills the branch: available = path_length - startOffset - end margin
+                    let end_margin = 15.0;
+                    let text_length = (path_length - offset - end_margin).max(20.0);
+
                     svg.push_str(&format!(
-                        "<text font-size=\"{}\" fill=\"{}\" font-family=\"'Nunito', sans-serif\" font-weight=\"600\" dy=\"{:.1}\"><textPath href=\"{}\" startOffset=\"{:.0}\">{}</textPath></text>\n",
+                        "<text font-size=\"{}\" fill=\"{}\" font-family=\"'Nunito', sans-serif\" font-weight=\"600\" dy=\"{:.1}\"><textPath href=\"{}\" startOffset=\"{:.0}\" textLength=\"{:.0}\" lengthAdjust=\"spacing\">{}</textPath></text>\n",
                         el.font_size, el.stroke_color,
-                        dy, href, offset,
+                        dy, href, offset, text_length,
                         xml_escape(text)
                     ));
                     continue;
