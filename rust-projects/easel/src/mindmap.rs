@@ -999,24 +999,28 @@ fn layout_buzan_root(
             let n2 = child.children.len();
             let l2_fs = font_size_at_depth(cfg, 2);
 
-            // Compute available angular range within 45° readability limit.
-            // The fan is centered on child_angle, bounded by ±45° from horizontal.
+            // Compute available angular range: bounded by midpoints to adjacent L1 branches.
+            // This prevents L2 fans from different L1 branches overlapping.
+            let mut nearest_below = child_angle - std::f64::consts::FRAC_PI_4;
+            let mut nearest_above = child_angle + std::f64::consts::FRAC_PI_4;
+            for other_angle in &child_angles {
+                if (*other_angle - child_angle).abs() < 0.01 { continue; }
+                let diff = other_angle - child_angle;
+                // Normalize diff to [-PI, PI]
+                let mut d = diff;
+                while d > std::f64::consts::PI { d -= std::f64::consts::PI * 2.0; }
+                while d < -std::f64::consts::PI { d += std::f64::consts::PI * 2.0; }
+                let midpoint = child_angle + d / 2.0;
+                if d > 0.0 && midpoint < nearest_above { nearest_above = midpoint; }
+                if d < 0.0 && midpoint > nearest_below { nearest_below = midpoint; }
+            }
+            // Also clamp to ±45° readability
             let max_tilt = std::f64::consts::FRAC_PI_4;
-            let (fan_min, fan_max) = if child_angle.cos() >= 0.0 {
-                // Right side: angles must be within [-45°, +45°]
-                (-max_tilt, max_tilt)
-            } else {
-                // Left side: angles within [135°, 225°]
-                (std::f64::consts::PI - max_tilt, -(std::f64::consts::PI - max_tilt) + std::f64::consts::PI * 2.0)
-            };
-            // Normalize fan_min/fan_max for left side
-            let (fan_lo, fan_hi) = if child_angle.cos() >= 0.0 {
-                (fan_min, fan_max)
-            } else {
-                // Left side wraps around PI
-                (std::f64::consts::PI - max_tilt, std::f64::consts::PI + max_tilt)
-            };
-            let available_fan = fan_hi - fan_lo;
+            let readable_lo = if child_angle.cos() >= 0.0 { -max_tilt } else { std::f64::consts::PI - max_tilt };
+            let readable_hi = if child_angle.cos() >= 0.0 { max_tilt } else { std::f64::consts::PI + max_tilt };
+            let fan_lo = nearest_below.max(readable_lo);
+            let fan_hi = nearest_above.min(readable_hi);
+            let available_fan = (fan_hi - fan_lo).max(0.1);
 
             // Distribute children evenly across available range
             let l2_weights: Vec<f64> = child.children.iter().map(subtree_weight).collect();
