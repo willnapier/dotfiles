@@ -945,7 +945,7 @@ fn layout_buzan_root(
             let (_, l2_ss) = branch_sizes(1);
             // Minimum clearance between adjacent L2 branches:
             // text height + branch width + gap, as an arc angle
-            let min_clearance_px = l2_fs + l2_ss + 24.0;
+            let min_clearance_px = l2_fs + l2_ss + 36.0;
             let avg_l2_branch_len = child.children.iter()
                 .map(|c| builder::estimate_text_width(&c.text, l2_fs) + 60.0)
                 .sum::<f64>() / n2 as f64;
@@ -979,18 +979,9 @@ fn layout_buzan_root(
                 let l2_text_offset = l2_fs * 5.0; // matches SVG startOffset
                 let l2_branch_len = l2_text_offset + l2_tw + 30.0;
 
-                // C-shaped fan: stagger start points along the L1 branch direction.
-                // Each L2 starts offset back along L1 + perpendicular spread.
-                let fan_position = if n2 > 1 { ci2 as f64 / (n2 - 1) as f64 - 0.5 } else { 0.0 };
-                // Perpendicular to L1 direction
-                let l1_nx = child_angle.cos();
-                let l1_ny = child_angle.sin();
-                let perp_x = -l1_ny;
-                let perp_y = l1_nx;
-                let spread = 18.0; // px perpendicular spread per side
-                let stagger = 15.0; // px back along L1 per side
-                let l2_start_x = end_x - l1_nx * stagger * fan_position.abs() + perp_x * spread * fan_position;
-                let l2_start_y = end_y - l1_ny * stagger * fan_position.abs() + perp_y * spread * fan_position;
+                // All L2 branches start from L1 endpoint (organic continuity)
+                let l2_start_x = end_x;
+                let l2_start_y = end_y;
                 let l2_end_x = end_x + l2_branch_len * l2_angle.cos();
                 let l2_end_y = end_y + l2_branch_len * l2_angle.sin();
 
@@ -1005,10 +996,12 @@ fn layout_buzan_root(
 
                 let l2_dx = l2_end_x - l2_start_x;
                 let l2_dy = l2_end_y - l2_start_y;
-                let l2_nx = l2_angle.cos();
-                let l2_ny = l2_angle.sin();
                 let l2_gap = (l2_dx * l2_dx + l2_dy * l2_dy).sqrt();
                 let l2_cp = l2_gap * 0.4;
+                // CP1: depart in the L1 direction (creates smooth fork)
+                let l1_nx = child_angle.cos();
+                let l1_ny = child_angle.sin();
+                // CP2: arrive horizontally at L2 endpoint
                 let l2_hdir = if l2_end_x > l2_start_x { -1.0 } else { 1.0 };
 
                 let (l2_ss, l2_es) = branch_sizes(1);
@@ -1030,7 +1023,7 @@ fn layout_buzan_root(
                     vertical_align: None, container_id: None,
                     points: Some(vec![
                         [0.0, 0.0],
-                        [l2_nx * l2_cp, l2_ny * l2_cp],
+                        [l1_nx * l2_cp, l1_ny * l2_cp], // depart in L1 direction (smooth fork)
                         [l2_dx + l2_hdir * l2_cp, l2_dy],
                         [l2_dx, l2_dy],
                     ]),
