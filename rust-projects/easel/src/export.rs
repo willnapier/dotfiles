@@ -302,12 +302,12 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
 
                 if let (Some(branch_id), Some(ref text)) = (on_branch, &el.text) {
                     // Text on path — use SVG textPath along the branch center-line
-                    let offset = el.font_size * 1.5; // start offset to clear parent node
+                    let href = format!("#cl-{}", branch_id);
+                    let offset = el.font_size * 1.5;
                     svg.push_str(&format!(
-                        r#"<text font-size="{}" fill="{}" font-family="'Nunito', sans-serif" font-weight="600" dominant-baseline="text-after-edge"><textPath href="#cl-{}" startOffset="{:.0}">{}</textPath></text>
-"#,
+                        "<text font-size=\"{}\" fill=\"{}\" font-family=\"'Nunito', sans-serif\" font-weight=\"600\" dominant-baseline=\"text-after-edge\"><textPath href=\"{}\" startOffset=\"{:.0}\">{}</textPath></text>\n",
                         el.font_size, el.stroke_color,
-                        branch_id, offset,
+                        href, offset,
                         xml_escape(text)
                     ));
                     continue;
