@@ -480,18 +480,23 @@ fn connect_radial(scene: &mut Scene, placed: &Placed, cfg: &MindMapConfig, depth
         let end_x = ex - nx * (child.width / 2.0).min(child.height / 2.0);
         let end_y = ey - ny * (child.width / 2.0).min(child.height / 2.0);
 
-        // Cubic Bezier with gentle arc — control points offset slightly
-        // perpendicular to the radial direction for an organic curve
+        // Cubic Bezier: depart in radial direction, arrive horizontally.
+        // CP1: follows the radial direction (diagonal departure)
+        // CP2: approaches the child horizontally (from the root side)
         let gap = ((end_x - start_x).powi(2) + (end_y - start_y).powi(2)).sqrt();
-        let cp_dist = gap * 0.4;
-        // Perpendicular to direction (gentle bow)
-        let perp_x = -ny;
-        let perp_y = nx;
-        let bow = gap * 0.08; // 8% perpendicular offset
+        let cp1_dist = gap * 0.4;
+        let cp2_dist = gap * 0.4;
+        // CP1: radial direction from parent
+        let cp1_x = nx * cp1_dist;
+        let cp1_y = ny * cp1_dist;
+        // CP2: horizontal approach to child (from the side closest to parent)
+        let horiz_dir = if ex > sx { -1.0 } else { 1.0 }; // approach from root's side
+        let cp2_x = (end_x - start_x) + horiz_dir * cp2_dist;
+        let cp2_y = end_y - start_y; // same Y as endpoint (horizontal)
         let rel_points = vec![
             [0.0, 0.0],
-            [nx * cp_dist + perp_x * bow, ny * cp_dist + perp_y * bow],
-            [end_x - start_x - nx * cp_dist - perp_x * bow, end_y - start_y - ny * cp_dist - perp_y * bow],
+            [cp1_x, cp1_y],
+            [cp2_x, cp2_y],
             [end_x - start_x, end_y - start_y],
         ];
 
