@@ -35,7 +35,7 @@ impl Rng {
 
 /// Perturb a single point by an offset proportional to roughness and segment length.
 fn offset_point(x: f64, y: f64, roughness: f64, seg_len: f64, rng: &mut Rng) -> [f64; 2] {
-    let max_offset = roughness * seg_len * 0.15;
+    let max_offset = (roughness * seg_len * 0.15).min(3.0); // cap at 3px
     [
         x + rng.next_signed() * max_offset,
         y + rng.next_signed() * max_offset,
@@ -354,7 +354,7 @@ pub fn jitter_points(points: &[[f64; 2]], roughness: f64, seed: u64) -> Vec<[f64
     points
         .iter()
         .map(|p| {
-            let max_offset = roughness * 1.5;
+            let max_offset = (roughness * 1.5).min(2.0);
             [
                 p[0] + rng.next_signed() * max_offset,
                 p[1] + rng.next_signed() * max_offset,

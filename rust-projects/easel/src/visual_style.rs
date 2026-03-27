@@ -39,11 +39,11 @@ impl VisualStyle {
     /// solid fills with rough edges.
     pub fn subtle() -> Self {
         VisualStyle {
-            roughness: 1.0,
+            roughness: 0.15,
             hachure: false,
             hachure_angle: -41.0,
             hachure_gap: 8.0,
-            stroke_jitter: 0.8,
+            stroke_jitter: 0.3,
             connector_rough: true,
             seed: 42,
         }
@@ -52,11 +52,11 @@ impl VisualStyle {
     /// Sketchy hand-drawn look: more jitter, optionally hachure fills.
     pub fn sketchy() -> Self {
         VisualStyle {
-            roughness: 2.5,
+            roughness: 0.5,
             hachure: true,
             hachure_angle: -41.0,
             hachure_gap: 8.0,
-            stroke_jitter: 1.5,
+            stroke_jitter: 0.6,
             connector_rough: true,
             seed: 42,
         }
@@ -94,7 +94,7 @@ mod tests {
     fn sketchy_has_hachure() {
         let s = VisualStyle::sketchy();
         assert!(s.hachure);
-        assert!(s.roughness > 2.0);
+        assert!(s.roughness > 0.3);
     }
 
     #[test]
