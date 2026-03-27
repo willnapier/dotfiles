@@ -940,11 +940,27 @@ fn layout_buzan_root(
         let mut l2_placed = Vec::new();
         if !child.children.is_empty() {
             let n2 = child.children.len();
-            let fan_sector = angles[ci] * FAN_RATIO;
+            let l2_fs = font_size_at_depth(cfg, 2);
+            let (_, l2_ss) = branch_sizes(1);
+            // Minimum clearance between adjacent L2 branches:
+            // text height + branch width + gap, as an arc angle
+            let min_clearance_px = l2_fs + l2_ss + 24.0;
+            let avg_l2_branch_len = child.children.iter()
+                .map(|c| builder::estimate_text_width(&c.text, l2_fs) + 60.0)
+                .sum::<f64>() / n2 as f64;
+            let min_angle_per_child = min_clearance_px / avg_l2_branch_len.max(1.0);
+
+            // Fan sector: at least enough for minimum clearance × n children
+            let min_fan = min_angle_per_child * n2 as f64;
+            let fan_sector = (angles[ci] * FAN_RATIO).max(min_fan);
+
             let l2_weights: Vec<f64> = child.children.iter().map(subtree_weight).collect();
             let l2_total: f64 = l2_weights.iter().sum();
-            let l2_angles: Vec<f64> = l2_weights.iter().map(|w| fan_sector * w / l2_total).collect();
-            let fan_start = child_angle - fan_sector / 2.0;
+            let l2_angles: Vec<f64> = l2_weights.iter()
+                .map(|w| (fan_sector * w / l2_total).max(min_angle_per_child))
+                .collect();
+            let actual_fan: f64 = l2_angles.iter().sum();
+            let fan_start = child_angle - actual_fan / 2.0;
             let mut l2_cursor = fan_start;
 
             for (ci2, child2) in child.children.iter().enumerate() {

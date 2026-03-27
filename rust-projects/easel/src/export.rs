@@ -304,7 +304,8 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
                     // Text on path — use SVG textPath along the branch center-line
                     // Shift text above the branch surface with dy
                     let href = format!("#cl-{}", branch_id);
-                    let offset = el.font_size * 1.5;
+                    // Push text well past the junction/fan-out zone
+                    let offset = el.font_size * 4.0;
                     // Read branch size from the arrow's customData to compute vertical offset
                     let branch_half = el.custom_data.as_ref()
                         .and_then(|cd| cd.get("onBranch"))
