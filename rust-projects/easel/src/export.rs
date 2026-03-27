@@ -305,7 +305,7 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
                     // Shift text above the branch surface with dy
                     let href = format!("#cl-{}", branch_id);
                     // Symmetric margin — matches layout calculation
-                    let offset = (el.font_size * 2.0).min(if el.font_size < 16.0 { 35.0 } else { 40.0 });
+                    let offset = (el.font_size * 2.5).min(if el.font_size < 16.0 { 45.0 } else { 40.0 });
                     // Read branch size from the arrow's customData to compute vertical offset
                     let branch_half = el.custom_data.as_ref()
                         .and_then(|cd| cd.get("onBranch"))
