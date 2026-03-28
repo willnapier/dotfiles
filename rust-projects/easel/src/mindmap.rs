@@ -1000,8 +1000,19 @@ fn layout_buzan_root(
             let l2_fs = font_size_at_depth(cfg, 2);
 
             // L2 fan: ±30° from horizontal (leaves 15° buffer between adjacent L1 fans)
-            // HARD RULE: minimum clearance between any elements (text or branch)
-            let l2_max_tilt = 28.0f64.to_radians();
+            // Dynamic L2 fan: depends on gap to nearest L1 neighbor.
+            // With buffer so outermost L2 doesn't cross into adjacent L1 territory.
+            let mut min_l1_half_gap = std::f64::consts::FRAC_PI_4; // default 45°
+            for other_angle in &child_angles {
+                if (*other_angle - child_angle).abs() < 0.01 { continue; }
+                let mut d = other_angle - child_angle;
+                while d > std::f64::consts::PI { d -= std::f64::consts::PI * 2.0; }
+                while d < -std::f64::consts::PI { d += std::f64::consts::PI * 2.0; }
+                min_l1_half_gap = min_l1_half_gap.min(d.abs() / 2.0);
+            }
+            // Fan = half-gap minus buffer for branch width at distance
+            let buffer = 8.0f64.to_radians();
+            let l2_max_tilt = (min_l1_half_gap - buffer).clamp(15.0f64.to_radians(), 35.0f64.to_radians());
             let (fan_lo, fan_hi) = if child_angle.cos() >= 0.0 {
                 (-l2_max_tilt, l2_max_tilt)
             } else {
@@ -1057,8 +1068,8 @@ fn layout_buzan_root(
                 let branch_half = branch_start_w / 2.0;
                 let dy_gap = 3.0; // the gap between branch edge and text bottom
                 let required = 2.0 * branch_half + dy_gap + font_h;
-                let l2_margin = (required / min_sibling_gap.sin().max(0.05) * 1.15).clamp(45.0, 120.0);
-                let tip_clearance = 60.0; // clearance from tip to avoid cross-L1 overlap
+                let l2_margin = (required / min_sibling_gap.sin().max(0.05) * 1.30).clamp(50.0, 130.0);
+                let tip_clearance = 20.0;
                 let l2_branch_len = l2_margin + l2_tw + tip_clearance;
 
                 // All L2 branches start from L1 endpoint (organic continuity)
