@@ -307,7 +307,7 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
                     // Text offset: must start past the point where sibling branches diverge.
                     // At the junction, all siblings share the same origin — text must begin
                     // further along where angular separation has created clearance.
-                    let offset = if el.font_size < 16.0 { 80.0 } else { 45.0 };
+                    let offset = if el.font_size < 16.0 { 65.0 } else { 45.0 };
                     // Read branch size from the arrow's customData to compute vertical offset
                     let branch_half = el.custom_data.as_ref()
                         .and_then(|cd| cd.get("onBranch"))
