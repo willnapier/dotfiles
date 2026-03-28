@@ -321,7 +321,7 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
                                 .and_then(|v| v.as_f64())
                         })
                         .unwrap_or(8.0) / 2.0;
-                    let dy = -(branch_half + 3.0); // sit just above the branch edge
+                    let dy = -(branch_half + 3.0);
 
                     svg.push_str(&format!(
                         "<text font-size=\"{}\" fill=\"{}\" font-family=\"'Nunito', sans-serif\" font-weight=\"600\" dy=\"{:.1}\"><textPath href=\"{}\" startOffset=\"{:.0}\">{}</textPath></text>\n",
