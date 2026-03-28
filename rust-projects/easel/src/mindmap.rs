@@ -1031,16 +1031,8 @@ fn layout_buzan_root(
 
                 let l2_fs = font_size_at_depth(cfg, 2);
                 let l2_tw = builder::estimate_text_width(&child2.text, l2_fs);
-                // DETERMINISTIC CLEARANCE: at distance d from junction, skeleton gap = d × sin(θ).
-                // Rendered gap = skeleton_gap - branch_width (both halves of both branches).
-                // Text needs: rendered_gap ≥ font_h + clearance.
-                // So: d × sin(θ) ≥ font_h + branch_width + clearance
-                let font_h = l2_fs * 1.3;
-                let (branch_start_w, _) = branch_sizes(1);
-                let clearance = 8.0;
-                let min_angle_between = if n2 > 1 { available_fan / n2 as f64 } else { 1.0 };
-                let required_gap = font_h + branch_start_w + clearance; // full branch width, not half
-                let l2_margin = (required_gap / min_angle_between.sin().max(0.1)).min(70.0).max(40.0);
+                // Symmetric margin — proven working at 65px
+                let l2_margin = 65.0;
                 let l2_branch_len = l2_margin + l2_tw + 15.0;
 
                 // All L2 branches start from L1 endpoint (organic continuity)
