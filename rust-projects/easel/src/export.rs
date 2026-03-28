@@ -322,10 +322,10 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
 
                     // For reversed paths, convert junction offset to path-start offset
                     let offset = if goes_right {
-                        junction_offset // right-side: startOffset = distance from junction
+                        junction_offset
                     } else {
-                        // Left-side reversed: path goes tip→junction
-                        // Compute actual path length from center-line points
+                        // Left-side reversed: text near tip works best for within-fan clearance.
+                        // Compute path length to position text properly.
                         let path_len: f64 = arrow_el
                             .and_then(|a| a.points.as_ref())
                             .map(|pts| {
@@ -347,8 +347,6 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
                                 } else { 200.0 }
                             })
                             .unwrap_or(200.0);
-                        // Text should END at junction_offset from junction (= path end)
-                        // So text starts at path_len - junction_offset - text_width from tip (= path start)
                         (path_len - junction_offset - el.width).max(5.0)
                     };
                     // Read branch size from the arrow's customData to compute vertical offset

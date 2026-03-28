@@ -1050,7 +1050,7 @@ fn layout_buzan_root(
                 let font_h = l2_fs * 1.3;
                 let (branch_w, _) = branch_sizes(1);
                 let required_gap = font_h + branch_w + 8.0;
-                let l2_margin = (required_gap / min_sibling_gap.sin().max(0.05)).clamp(40.0, 100.0);
+                let l2_margin = (required_gap / min_sibling_gap.sin().max(0.05)).clamp(50.0, 100.0);
                 let l2_branch_len = l2_margin + l2_tw + 15.0;
 
                 // All L2 branches start from L1 endpoint (organic continuity)
