@@ -1034,7 +1034,7 @@ fn layout_buzan_root(
                 // Text offset from junction: at distance d with angle θ between siblings,
                 // arc gap = d × sin(θ). Need gap ≥ font_h + branch_w + clearance.
                 // For 3 children in ±30° fan: θ=20°, need d ≥ (17+9+6)/sin(20°) = 94px
-                let l2_margin = 110.0; // worst case (right-side)
+                let l2_margin = 130.0; // worst case (right-side)
                 let l2_branch_len = l2_margin + l2_tw + 15.0;
 
                 // All L2 branches start from L1 endpoint (organic continuity)

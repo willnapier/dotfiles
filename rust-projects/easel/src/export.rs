@@ -315,7 +315,7 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
                     let offset = if el.font_size >= 16.0 {
                         45.0 // L1
                     } else if goes_right {
-                        110.0 // L2 right-side: offset from junction
+                        130.0 // L2 right-side: offset from junction
                     } else {
                         90.0  // L2 left-side: offset from tip (reversed path)
                     };
