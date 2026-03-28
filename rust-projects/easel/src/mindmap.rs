@@ -1097,7 +1097,10 @@ fn layout_buzan_root(
 
                 // Minimum offset + small safety for curve deviation
                 let l2_margin = (sibling_offset.max(cross_l1_offset) + 8.0).clamp(40.0, 150.0);
-                let l2_branch_len = l2_margin + l2_tw + 51.0;
+                // Shorten outermost branches (first/last child) that face adjacent L1
+                let is_outermost = ci2 == 0 || ci2 == n2 - 1;
+                let tip_space = if is_outermost && cross_l1_offset > 10.0 { 28.0 } else { 51.0 };
+                let l2_branch_len = l2_margin + l2_tw + tip_space;
 
                 // All L2 branches start from L1 endpoint (organic continuity)
                 let l2_start_x = end_x;
