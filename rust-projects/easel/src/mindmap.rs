@@ -1093,7 +1093,7 @@ fn layout_buzan_root(
                     start_binding: None, end_binding: None,
                     angle: None, is_deleted: false,
                     custom_data: Some(serde_json::json!({
-                        "strokeOptions": { "organic": true, "startSize": l2_ss, "endSize": l2_es, "depth": 1 }
+                        "strokeOptions": { "organic": true, "startSize": l2_ss, "endSize": l2_es, "depth": 1, "textMargin": l2_margin }
                     })),
                     group_ids: None, simulate_pressure: None,
                 });
