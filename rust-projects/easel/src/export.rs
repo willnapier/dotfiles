@@ -305,9 +305,20 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
                     // Shift text above the branch surface with dy
                     let href = format!("#cl-{}", branch_id);
 
-                    // Text offset from junction — must clear sibling branches.
-                    // 90px for L2 (from geometry), 45px for L1.
-                    let offset = if el.font_size < 16.0 { 90.0 } else { 45.0 };
+                    // Text offset — right-side needs more since offset is from junction.
+                    // Left-side reversed paths naturally have more junction clearance.
+                    let arrow_el = scene.elements.iter().find(|a| a.id == branch_id);
+                    let goes_right = arrow_el
+                        .and_then(|a| a.points.as_ref())
+                        .map(|pts| pts.last().map(|p| p[0] >= 0.0).unwrap_or(true))
+                        .unwrap_or(true);
+                    let offset = if el.font_size >= 16.0 {
+                        45.0 // L1
+                    } else if goes_right {
+                        110.0 // L2 right-side: offset from junction
+                    } else {
+                        90.0  // L2 left-side: offset from tip (reversed path)
+                    };
                     // Read branch size from the arrow's customData to compute vertical offset
                     let branch_half = el.custom_data.as_ref()
                         .and_then(|cd| cd.get("onBranch"))
