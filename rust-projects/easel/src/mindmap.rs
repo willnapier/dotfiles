@@ -1058,7 +1058,8 @@ fn layout_buzan_root(
                 let dy_gap = 3.0; // the gap between branch edge and text bottom
                 let required = 2.0 * branch_half + dy_gap + font_h;
                 let l2_margin = (required / min_sibling_gap.sin().max(0.05) * 1.15).clamp(45.0, 120.0);
-                let l2_branch_len = l2_margin + l2_tw + 15.0;
+                let tip_clearance = 60.0; // clearance from tip to avoid cross-L1 overlap
+                let l2_branch_len = l2_margin + l2_tw + tip_clearance;
 
                 // All L2 branches start from L1 endpoint (organic continuity)
                 let l2_start_x = end_x;
