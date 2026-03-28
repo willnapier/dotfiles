@@ -456,28 +456,38 @@ fn main() -> Result<()> {
                 ..Default::default()
             };
             let scene = mindmap::generate(&nodes, &cfg);
-            let out_path = output.unwrap_or_else(|| input.with_extension("excalidraw"));
-            scene.save(&out_path)?;
-
-            let shapes = scene.elements.iter()
-                .filter(|e| e.element_type != "text" && e.element_type != "arrow")
-                .count();
-            let arrows = scene.elements.iter()
-                .filter(|e| e.element_type == "arrow")
-                .count();
-            println!("Mind map: {} → {} ({} nodes, {} connectors)",
-                input.display(), out_path.display(), shapes, arrows);
+            let is_buzan = layout == "buzan";
 
             let vs = visual_style::VisualStyle::by_name(&visual_style);
             if vs.is_none() && visual_style != "clean" {
                 anyhow::bail!("Unknown visual style '{}'. Options: clean, subtle, sketchy", visual_style);
             }
 
-            if svg {
+            if is_buzan {
+                // Buzan mode: SVG is the primary (and only) output
                 let svg_content = export::to_svg_styled(&scene, vs.as_ref());
-                let svg_path = out_path.with_extension("svg");
+                let svg_path = output.unwrap_or_else(|| input.with_extension("svg"));
                 std::fs::write(&svg_path, &svg_content)?;
-                println!("SVG ({}): {}", visual_style, svg_path.display());
+                println!("Mind map (Buzan): {} → {} (SVG)", input.display(), svg_path.display());
+            } else {
+                // Right/Radial: save scene, optionally export SVG
+                let out_path = output.unwrap_or_else(|| input.with_extension("excalidraw"));
+                scene.save(&out_path)?;
+                let shapes = scene.elements.iter()
+                    .filter(|e| e.element_type != "text" && e.element_type != "arrow")
+                    .count();
+                let arrows = scene.elements.iter()
+                    .filter(|e| e.element_type == "arrow")
+                    .count();
+                println!("Mind map: {} → {} ({} nodes, {} connectors)",
+                    input.display(), out_path.display(), shapes, arrows);
+
+                if svg {
+                    let svg_content = export::to_svg_styled(&scene, vs.as_ref());
+                    let svg_path = out_path.with_extension("svg");
+                    std::fs::write(&svg_path, &svg_content)?;
+                    println!("SVG ({}): {}", visual_style, svg_path.display());
+                }
             }
 
             if open {
