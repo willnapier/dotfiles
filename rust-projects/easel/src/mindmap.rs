@@ -999,8 +999,8 @@ fn layout_buzan_root(
             let n2 = child.children.len();
             let l2_fs = font_size_at_depth(cfg, 2);
 
-            // L2 fan: ±35° from horizontal (leaves 10° buffer between adjacent L1 fans)
-            let l2_max_tilt = 35.0f64.to_radians();
+            // L2 fan: ±30° from horizontal (leaves 15° buffer between adjacent L1 fans)
+            let l2_max_tilt = 30.0f64.to_radians();
             let (fan_lo, fan_hi) = if child_angle.cos() >= 0.0 {
                 (-l2_max_tilt, l2_max_tilt)
             } else {
