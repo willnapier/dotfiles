@@ -304,21 +304,24 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
                     // Text on path — use SVG textPath along the branch center-line
                     // Shift text above the branch surface with dy
                     let href = format!("#cl-{}", branch_id);
-                    // Junction clearance: text must start past where sibling branches diverge.
-                    let junction_clearance = if el.font_size < 16.0 { 85.0 } else { 45.0 };
 
-                    // For reversed paths (left-side), startOffset is from the TIP, not junction.
-                    // Compute path length and adjust so clearance is always from the junction.
+                    // DETERMINISTIC CLEARANCE: read the margin computed by layout
+                    // from the arrow's customData, or compute from font size.
                     let arrow_el = scene.elements.iter().find(|a| a.id == branch_id);
+                    let junction_clearance = arrow_el
+                        .and_then(|a| a.custom_data.as_ref())
+                        .and_then(|cd| cd.get("strokeOptions"))
+                        .and_then(|so| so.get("textMargin"))
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(if el.font_size < 16.0 { 80.0 } else { 45.0 });
+
+                    // For reversed paths (left-side), startOffset measures from tip.
                     let goes_left = arrow_el
                         .and_then(|a| a.points.as_ref())
                         .map(|pts| pts.last().map(|p| p[0] < 0.0).unwrap_or(false))
                         .unwrap_or(false);
 
                     let offset = if goes_left {
-                        // Path is reversed: startOffset from tip.
-                        // We want text at (path_length - junction_clearance) from tip.
-                        // Estimate path length from arrow width/height
                         let path_len = arrow_el
                             .map(|a| (a.width.powi(2) + a.height.powi(2)).sqrt())
                             .unwrap_or(200.0);
