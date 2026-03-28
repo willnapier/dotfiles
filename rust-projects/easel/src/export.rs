@@ -348,8 +348,7 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
                             })
                             .unwrap_or(200.0);
                         // Text near tip but with minimum tip clearance
-                        // Text near tip but floor at junction_offset (same clearance from both ends)
-                        (path_len - junction_offset - el.width).max(junction_offset)
+                        (path_len - junction_offset - el.width).max(55.0)
                     };
                     // Read branch size from the arrow's customData to compute vertical offset
                     let branch_half = el.custom_data.as_ref()
