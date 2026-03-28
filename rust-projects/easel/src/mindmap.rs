@@ -1047,10 +1047,17 @@ fn layout_buzan_root(
                 } else {
                     std::f64::consts::FRAC_PI_4
                 };
+                // Required clearance: text on branch A must not touch branch B's edge.
+                // Text extends: branch_half + dy_gap + font_h above A's center.
+                // B's edge is at: d×sin(θ) - branch_half from A's center.
+                // So: branch_half + dy_gap + font_h ≤ d×sin(θ) - branch_half
+                // d ≥ (2×branch_half + dy_gap + font_h) / sin(θ)
                 let font_h = l2_fs * 1.3;
-                let (branch_w, _) = branch_sizes(1);
-                let required_gap = font_h + branch_w + 8.0;
-                let l2_margin = (required_gap / min_sibling_gap.sin().max(0.05)).clamp(50.0, 100.0);
+                let (branch_start_w, _) = branch_sizes(1);
+                let branch_half = branch_start_w / 2.0;
+                let dy_gap = 3.0; // the gap between branch edge and text bottom
+                let required = 2.0 * branch_half + dy_gap + font_h;
+                let l2_margin = (required / min_sibling_gap.sin().max(0.05) * 1.15).clamp(45.0, 120.0);
                 let l2_branch_len = l2_margin + l2_tw + 15.0;
 
                 // All L2 branches start from L1 endpoint (organic continuity)
