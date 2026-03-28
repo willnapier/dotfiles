@@ -304,10 +304,28 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
                     // Text on path — use SVG textPath along the branch center-line
                     // Shift text above the branch surface with dy
                     let href = format!("#cl-{}", branch_id);
-                    // Text offset: must start past the point where sibling branches diverge.
-                    // At the junction, all siblings share the same origin — text must begin
-                    // further along where angular separation has created clearance.
-                    let offset = if el.font_size < 16.0 { 85.0 } else { 45.0 };
+                    // Junction clearance: text must start past where sibling branches diverge.
+                    let junction_clearance = if el.font_size < 16.0 { 85.0 } else { 45.0 };
+
+                    // For reversed paths (left-side), startOffset is from the TIP, not junction.
+                    // Compute path length and adjust so clearance is always from the junction.
+                    let arrow_el = scene.elements.iter().find(|a| a.id == branch_id);
+                    let goes_left = arrow_el
+                        .and_then(|a| a.points.as_ref())
+                        .map(|pts| pts.last().map(|p| p[0] < 0.0).unwrap_or(false))
+                        .unwrap_or(false);
+
+                    let offset = if goes_left {
+                        // Path is reversed: startOffset from tip.
+                        // We want text at (path_length - junction_clearance) from tip.
+                        // Estimate path length from arrow width/height
+                        let path_len = arrow_el
+                            .map(|a| (a.width.powi(2) + a.height.powi(2)).sqrt())
+                            .unwrap_or(200.0);
+                        (path_len - junction_clearance - el.width).max(10.0)
+                    } else {
+                        junction_clearance
+                    };
                     // Read branch size from the arrow's customData to compute vertical offset
                     let branch_half = el.custom_data.as_ref()
                         .and_then(|cd| cd.get("onBranch"))
