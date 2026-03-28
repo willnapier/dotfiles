@@ -312,19 +312,44 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
                         .and_then(|a| a.points.as_ref())
                         .map(|pts| pts.last().map(|p| p[0] >= 0.0).unwrap_or(true))
                         .unwrap_or(true);
-                    // Detect L1 vs L2 by checking depth in the branch's customData
-                    let branch_depth = arrow_el
+                    // Read per-branch junction offset from customData
+                    let junction_offset = arrow_el
                         .and_then(|a| a.custom_data.as_ref())
                         .and_then(|cd| cd.get("strokeOptions"))
-                        .and_then(|so| so.get("depth"))
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0);
-                    let offset = if branch_depth == 0 {
-                        45.0 // L1
-                    } else if goes_right {
-                        130.0 // L2+ right-side: offset from junction
+                        .and_then(|so| so.get("junctionOffset"))
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(45.0); // L1 default
+
+                    // For reversed paths, convert junction offset to path-start offset
+                    let offset = if goes_right {
+                        junction_offset // right-side: startOffset = distance from junction
                     } else {
-                        90.0  // L2+ left-side: offset from tip (reversed path)
+                        // Left-side reversed: path goes tip→junction
+                        // Compute actual path length from center-line points
+                        let path_len: f64 = arrow_el
+                            .and_then(|a| a.points.as_ref())
+                            .map(|pts| {
+                                if pts.len() >= 4 {
+                                    let mut len = 0.0;
+                                    let mut prev = [0.0f64; 2];
+                                    for i in 0..=48 {
+                                        let t = i as f64 / 48.0;
+                                        let u = 1.0 - t;
+                                        let (u2, t2) = (u * u, t * t);
+                                        let p = [
+                                            u2*u*pts[0][0] + 3.0*u2*t*pts[1][0] + 3.0*u*t2*pts[2][0] + t2*t*pts[3][0],
+                                            u2*u*pts[0][1] + 3.0*u2*t*pts[1][1] + 3.0*u*t2*pts[2][1] + t2*t*pts[3][1],
+                                        ];
+                                        if i > 0 { len += ((p[0]-prev[0]).powi(2) + (p[1]-prev[1]).powi(2)).sqrt(); }
+                                        prev = p;
+                                    }
+                                    len
+                                } else { 200.0 }
+                            })
+                            .unwrap_or(200.0);
+                        // Text should END at junction_offset from junction (= path end)
+                        // So text starts at path_len - junction_offset - text_width from tip (= path start)
+                        (path_len - junction_offset - el.width).max(5.0)
                     };
                     // Read branch size from the arrow's customData to compute vertical offset
                     let branch_half = el.custom_data.as_ref()

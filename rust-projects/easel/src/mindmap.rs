@@ -1001,7 +1001,7 @@ fn layout_buzan_root(
 
             // L2 fan: ±30° from horizontal (leaves 15° buffer between adjacent L1 fans)
             // HARD RULE: minimum clearance between any elements (text or branch)
-            let l2_max_tilt = 30.0f64.to_radians();
+            let l2_max_tilt = 28.0f64.to_radians();
             let (fan_lo, fan_hi) = if child_angle.cos() >= 0.0 {
                 (-l2_max_tilt, l2_max_tilt)
             } else {
@@ -1031,10 +1031,26 @@ fn layout_buzan_root(
 
                 let l2_fs = font_size_at_depth(cfg, 2);
                 let l2_tw = builder::estimate_text_width(&child2.text, l2_fs);
-                // Text offset from junction: at distance d with angle θ between siblings,
-                // arc gap = d × sin(θ). Need gap ≥ font_h + branch_w + clearance.
-                // For 3 children in ±30° fan: θ=20°, need d ≥ (17+9+6)/sin(20°) = 94px
-                let l2_margin = 130.0; // worst case (right-side)
+                // PER-BRANCH offset: compute from actual angle to nearest sibling.
+                let min_sibling_gap = if n2 > 1 {
+                    let my_angle = l2_cursor + l2_angles[ci2] / 2.0;
+                    let mut min_gap = std::f64::consts::PI;
+                    let mut scan = fan_center - actual_fan / 2.0;
+                    for k in 0..n2 {
+                        let other = scan + l2_angles[k] / 2.0;
+                        scan += l2_angles[k];
+                        if k == ci2 { continue; }
+                        let diff = (other - my_angle).abs();
+                        if diff < min_gap { min_gap = diff; }
+                    }
+                    min_gap
+                } else {
+                    std::f64::consts::FRAC_PI_4
+                };
+                let font_h = l2_fs * 1.3;
+                let (branch_w, _) = branch_sizes(1);
+                let required_gap = font_h + branch_w + 8.0;
+                let l2_margin = (required_gap / min_sibling_gap.sin().max(0.05)).clamp(40.0, 100.0);
                 let l2_branch_len = l2_margin + l2_tw + 15.0;
 
                 // All L2 branches start from L1 endpoint (organic continuity)
@@ -1089,7 +1105,7 @@ fn layout_buzan_root(
                     start_binding: None, end_binding: None,
                     angle: None, is_deleted: false,
                     custom_data: Some(serde_json::json!({
-                        "strokeOptions": { "organic": true, "startSize": l2_ss, "endSize": l2_es, "depth": 1, "textMargin": l2_margin }
+                        "strokeOptions": { "organic": true, "startSize": l2_ss, "endSize": l2_es, "depth": 1, "junctionOffset": l2_margin }
                     })),
                     group_ids: None, simulate_pressure: None,
                 });
