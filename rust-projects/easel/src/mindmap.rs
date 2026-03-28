@@ -1030,7 +1030,7 @@ fn layout_buzan_root(
 
                 let l2_fs = font_size_at_depth(cfg, 2);
                 let l2_tw = builder::estimate_text_width(&child2.text, l2_fs);
-                let l2_margin = 80.0; // matches SVG startOffset for L2
+                let l2_margin = 65.0; // matches SVG startOffset for L2
                 let l2_branch_len = l2_margin + l2_tw + 15.0;
 
                 // All L2 branches start from L1 endpoint (organic continuity)
