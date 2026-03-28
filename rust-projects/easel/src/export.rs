@@ -349,7 +349,7 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
                             .unwrap_or(200.0);
                         // Text near tip but with minimum tip clearance
                         // Minimum 12% of path from tip to avoid cross-L1 overlap
-                        (path_len - junction_offset - el.width).max(path_len * 0.13)
+                        (path_len - junction_offset - el.width).max(path_len * 0.11)
                     };
                     // Read branch size from the arrow's customData to compute vertical offset
                     let branch_half = el.custom_data.as_ref()

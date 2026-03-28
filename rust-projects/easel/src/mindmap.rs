@@ -1011,7 +1011,7 @@ fn layout_buzan_root(
                 min_l1_half_gap = min_l1_half_gap.min(d.abs() / 2.0);
             }
             // Fan = half-gap minus buffer for branch width at distance
-            let buffer = 9.0f64.to_radians();
+            let buffer = 11.0f64.to_radians();
             let l2_max_tilt = (min_l1_half_gap - buffer).clamp(20.0f64.to_radians(), 35.0f64.to_radians());
             let (fan_lo, fan_hi) = if child_angle.cos() >= 0.0 {
                 (-l2_max_tilt, l2_max_tilt)
@@ -1096,7 +1096,7 @@ fn layout_buzan_root(
                 };
 
                 // Use the LARGER of sibling and cross-L1 offsets + 15% for curve deviation
-                let l2_margin = (sibling_offset.max(cross_l1_offset) * 1.20).clamp(40.0, 150.0);
+                let l2_margin = (sibling_offset.max(cross_l1_offset) * 1.25).clamp(40.0, 150.0);
                 let l2_branch_len = l2_margin + l2_tw + 45.0; // tip space for reversed-path text
 
                 // All L2 branches start from L1 endpoint (organic continuity)
