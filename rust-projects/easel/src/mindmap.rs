@@ -1051,18 +1051,11 @@ fn layout_buzan_root(
                 let l2_dx = l2_end_x - l2_start_x;
                 let l2_dy = l2_end_y - l2_start_y;
                 let l2_gap = (l2_dx * l2_dx + l2_dy * l2_dy).sqrt();
-                // E-shape: CP1 points perpendicular to L1 (fast separation at junction),
-                // then curves toward final L2 angle. CP2 arrives horizontal.
+                // CP1 points in fan direction (immediate spread), CP2 arrives horizontal
                 let l2_cp1_dist = l2_gap * 0.35;
                 let l2_cp2_dist = l2_gap * 0.35;
-                // Blend between L1 perpendicular and L2 fan direction for CP1
-                // More perpendicular = faster separation (E-shape)
-                let l1_perp_angle = child_angle + std::f64::consts::FRAC_PI_2 *
-                    if l2_angle > child_angle { 1.0 } else { -1.0 };
-                let blend = 0.6; // 0=pure fan direction, 1=pure perpendicular
-                let cp1_angle = l2_angle + (l1_perp_angle - l2_angle) * blend;
-                let l2_nx = cp1_angle.cos();
-                let l2_ny = cp1_angle.sin();
+                let l2_nx = l2_angle.cos();
+                let l2_ny = l2_angle.sin();
                 let l2_hdir = if l2_end_x > l2_start_x { -1.0 } else { 1.0 };
 
                 let (l2_ss, l2_es) = branch_sizes(1);
