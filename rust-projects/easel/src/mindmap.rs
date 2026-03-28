@@ -1031,8 +1031,10 @@ fn layout_buzan_root(
 
                 let l2_fs = font_size_at_depth(cfg, 2);
                 let l2_tw = builder::estimate_text_width(&child2.text, l2_fs);
-                // Symmetric margin — proven working at 65px
-                let l2_margin = 65.0;
+                // Text offset from junction: at distance d with angle θ between siblings,
+                // arc gap = d × sin(θ). Need gap ≥ font_h + branch_w + clearance.
+                // For 3 children in ±30° fan: θ=20°, need d ≥ (17+9+6)/sin(20°) = 94px
+                let l2_margin = 90.0;
                 let l2_branch_len = l2_margin + l2_tw + 15.0;
 
                 // All L2 branches start from L1 endpoint (organic continuity)
