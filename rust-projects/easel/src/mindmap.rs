@@ -1095,9 +1095,9 @@ fn layout_buzan_root(
                     }
                 };
 
-                // Use the LARGER of sibling and cross-L1 offsets (exact, no safety factor)
-                let l2_margin = sibling_offset.max(cross_l1_offset).clamp(40.0, 150.0);
-                let l2_branch_len = l2_margin + l2_tw + 15.0;
+                // Use the LARGER of sibling and cross-L1 offsets + 15% for curve deviation
+                let l2_margin = (sibling_offset.max(cross_l1_offset) * 1.15).clamp(40.0, 150.0);
+                let l2_branch_len = l2_margin + l2_tw + 30.0; // tip space for reversed-path text
 
                 // All L2 branches start from L1 endpoint (organic continuity)
                 let l2_start_x = end_x;
