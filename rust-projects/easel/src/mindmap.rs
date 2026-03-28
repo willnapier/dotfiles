@@ -1058,19 +1058,46 @@ fn layout_buzan_root(
                 } else {
                     std::f64::consts::FRAC_PI_4
                 };
-                // Required clearance: text on branch A must not touch branch B's edge.
-                // Text extends: branch_half + dy_gap + font_h above A's center.
-                // B's edge is at: d×sin(θ) - branch_half from A's center.
-                // So: branch_half + dy_gap + font_h ≤ d×sin(θ) - branch_half
-                // d ≥ (2×branch_half + dy_gap + font_h) / sin(θ)
+                // MIN_CLEARANCE: hard minimum distance between any element of one branch
+                // and any element of another.
+                const MIN_CLEARANCE: f64 = 35.0;
                 let font_h = l2_fs * 1.3;
                 let (branch_start_w, _) = branch_sizes(1);
                 let branch_half = branch_start_w / 2.0;
-                let dy_gap = 3.0; // the gap between branch edge and text bottom
+                let dy_gap = 3.0;
                 let required = 2.0 * branch_half + dy_gap + font_h;
-                let l2_margin = (required / min_sibling_gap.sin().max(0.05) * 1.65).clamp(50.0, 150.0);
-                let tip_clearance = 35.0;
-                let l2_branch_len = l2_margin + l2_tw + tip_clearance;
+
+                // Sibling clearance: offset from junction
+                let sibling_offset = required / min_sibling_gap.sin().max(0.05);
+
+                // Cross-L1 clearance: offset from TIP based on angle to nearest L2 from adjacent L1.
+                // Nearest adjacent L1 fan edge angle
+                let cross_l1_offset = {
+                    let my_abs_angle = l2_angle;
+                    let mut min_cross_gap = std::f64::consts::PI;
+                    // Check against outermost L2s of adjacent L1 branches
+                    for (oi, other_l1_angle) in child_angles.iter().enumerate() {
+                        if (other_l1_angle - child_angle).abs() < 0.01 { continue; }
+                        // Other L1's L2 fan edges
+                        let other_lo = if other_l1_angle.cos() >= 0.0 { -l2_max_tilt } else { std::f64::consts::PI - l2_max_tilt };
+                        let other_hi = if other_l1_angle.cos() >= 0.0 { l2_max_tilt } else { std::f64::consts::PI + l2_max_tilt };
+                        // Nearest edge
+                        let mut d1 = (other_lo - my_abs_angle).abs();
+                        let mut d2 = (other_hi - my_abs_angle).abs();
+                        while d1 > std::f64::consts::PI { d1 -= std::f64::consts::PI * 2.0; d1 = d1.abs(); }
+                        while d2 > std::f64::consts::PI { d2 -= std::f64::consts::PI * 2.0; d2 = d2.abs(); }
+                        min_cross_gap = min_cross_gap.min(d1.min(d2));
+                    }
+                    if min_cross_gap < 0.5 {
+                        required / min_cross_gap.sin().max(0.05)
+                    } else {
+                        0.0 // far from any cross-L1 branch
+                    }
+                };
+
+                // Use the LARGER of sibling and cross-L1 offsets (exact, no safety factor)
+                let l2_margin = sibling_offset.max(cross_l1_offset).clamp(40.0, 150.0);
+                let l2_branch_len = l2_margin + l2_tw + 15.0;
 
                 // All L2 branches start from L1 endpoint (organic continuity)
                 let l2_start_x = end_x;
