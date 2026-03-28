@@ -305,17 +305,16 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
                     // Shift text above the branch surface with dy
                     let href = format!("#cl-{}", branch_id);
 
-                    // DETERMINISTIC CLEARANCE: read the margin computed by layout
-                    // from the arrow's customData, or compute from font size.
+                    // Read the deterministic text margin from layout
                     let arrow_el = scene.elements.iter().find(|a| a.id == branch_id);
                     let junction_clearance = arrow_el
                         .and_then(|a| a.custom_data.as_ref())
                         .and_then(|cd| cd.get("strokeOptions"))
                         .and_then(|so| so.get("textMargin"))
                         .and_then(|v| v.as_f64())
-                        .unwrap_or(if el.font_size < 16.0 { 80.0 } else { 45.0 });
+                        .unwrap_or(if el.font_size < 16.0 { 60.0 } else { 45.0 });
 
-                    // For reversed paths (left-side), startOffset measures from tip.
+                    // For reversed paths (left-side), offset from tip instead of junction
                     let goes_left = arrow_el
                         .and_then(|a| a.points.as_ref())
                         .map(|pts| pts.last().map(|p| p[0] < 0.0).unwrap_or(false))
@@ -323,7 +322,7 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
 
                     let offset = if goes_left {
                         let path_len = arrow_el
-                            .map(|a| (a.width.powi(2) + a.height.powi(2)).sqrt())
+                            .map(|a| (a.width.powi(2) + a.height.powi(2)).sqrt() * 1.1)
                             .unwrap_or(200.0);
                         (path_len - junction_clearance - el.width).max(10.0)
                     } else {
