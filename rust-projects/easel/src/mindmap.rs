@@ -881,12 +881,29 @@ fn layout_buzan_root(
     for (ci, child) in root.children.iter().enumerate() {
         let child_angle = child_angles[ci];
 
-        // Branch length based on text width + visible margins
+        // Branch geometry
         let child_fs = font_size_at_depth(cfg, 1);
         let text_width = builder::estimate_text_width(&child.text, child_fs);
-        // Symmetric gap on both sides of text
-        let text_margin = (child_fs * 2.0).min(40.0);
-        let branch_distance = text_margin + text_width + text_margin;
+
+        // Compute gap from root edge to text start: just enough to clear
+        // the adjacent branch line, based on actual angular separation.
+        let (l1_start_w, _) = branch_sizes(0);
+        let text_h = child_fs * 1.2;
+        let nearest_angle_gap = {
+            let mut min_gap = std::f64::consts::PI;
+            for (oi, &oa) in child_angles.iter().enumerate() {
+                if oi == ci { continue; }
+                let d = (oa - child_angle).abs();
+                let d = if d > std::f64::consts::PI { std::f64::consts::PI * 2.0 - d } else { d };
+                if d < min_gap { min_gap = d; }
+            }
+            min_gap
+        };
+        let clearance = text_h / 2.0 + l1_start_w / 2.0 + 4.0;
+        let text_gap = (clearance / nearest_angle_gap.sin().max(0.1)).clamp(8.0, 60.0);
+
+        let tail_margin = text_gap.min(20.0);
+        let branch_distance = text_gap + text_width + tail_margin;
 
         // Start from ellipse edge, end along child_angle direction FROM start
         let rx = w / 2.0;
@@ -896,9 +913,7 @@ fn layout_buzan_root(
         let start_y = center_y + (ry - overlap) * child_angle.sin();
         let end_x = start_x + branch_distance * child_angle.cos();
         let end_y = start_y + branch_distance * child_angle.sin();
-
-        // Text midpoint along the branch (after root edge + gap)
-        let text_mid_dist = root_r + 40.0 + text_width / 2.0;
+        let text_mid_dist = root_r + text_gap + text_width / 2.0;
         let text_cx = center_x + text_mid_dist * child_angle.cos();
         let text_cy = center_y + text_mid_dist * child_angle.sin();
 
@@ -1108,7 +1123,11 @@ fn layout_buzan_root(
                 let l2_end_x = end_x + l2_branch_len * l2_angle.cos();
                 let l2_end_y = end_y + l2_branch_len * l2_angle.sin();
 
-                let l2_text_dist = l2_tw / 2.0 + 20.0;
+                // Text gap: just enough to clear adjacent L2 branch
+                let l2_text_h = l2_fs * 1.2;
+                let l2_text_clearance = l2_text_h / 2.0 + branch_half + 4.0;
+                let l2_text_gap = (l2_text_clearance / min_sibling_gap.sin().max(0.1)).clamp(6.0, 50.0);
+                let l2_text_dist = l2_tw / 2.0 + l2_text_gap;
                 let l2_text_cx = end_x + l2_text_dist * l2_angle.cos();
                 let l2_text_cy = end_y + l2_text_dist * l2_angle.sin();
 
