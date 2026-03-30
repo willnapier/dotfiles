@@ -1036,7 +1036,7 @@ fn layout_buzan_root(
             }
             // Fan = half-gap minus buffer for branch width at distance
             let buffer = 11.0f64.to_radians();
-            let l2_max_tilt = (min_l1_half_gap - buffer).clamp(10.0f64.to_radians(), 35.0f64.to_radians());
+            let l2_max_tilt = (min_l1_half_gap - buffer).clamp(20.0f64.to_radians(), 35.0f64.to_radians());
             let (fan_lo, fan_hi) = if child_angle.cos() >= 0.0 {
                 (-l2_max_tilt, l2_max_tilt)
             } else {
@@ -1139,7 +1139,7 @@ fn layout_buzan_root(
                 let l2_stroke_floor = branch_half * 3.0;
                 let l2_clearance = l2_text_upward + branch_half * 2.0 + 5.0;
                 let l2_angular = l2_clearance / min_sibling_gap.sin().max(0.2);
-                let l2_text_gap = l2_stroke_floor.max(l2_angular).min(80.0);
+                let l2_text_gap = l2_stroke_floor.max(l2_angular).min(120.0);
                 let l2_text_dist = l2_tw / 2.0 + l2_text_gap;
                 let l2_text_cx = end_x + l2_text_dist * l2_angle.cos();
                 let l2_text_cy = end_y + l2_text_dist * l2_angle.sin();
