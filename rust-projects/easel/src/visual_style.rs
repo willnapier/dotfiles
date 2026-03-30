@@ -39,11 +39,11 @@ impl VisualStyle {
     /// solid fills with rough edges.
     pub fn subtle() -> Self {
         VisualStyle {
-            roughness: 0.15,
+            roughness: 1.0,
             hachure: false,
             hachure_angle: -41.0,
             hachure_gap: 8.0,
-            stroke_jitter: 0.3,
+            stroke_jitter: 2.0,
             connector_rough: true,
             seed: 42,
         }

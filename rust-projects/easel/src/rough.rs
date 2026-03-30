@@ -35,7 +35,7 @@ impl Rng {
 
 /// Perturb a single point by an offset proportional to roughness and segment length.
 fn offset_point(x: f64, y: f64, roughness: f64, seg_len: f64, rng: &mut Rng) -> [f64; 2] {
-    let max_offset = (roughness * seg_len * 0.15).min(3.0); // cap at 3px
+    let max_offset = (roughness * seg_len * 0.15).min(6.0); // cap at 6px
     [
         x + rng.next_signed() * max_offset,
         y + rng.next_signed() * max_offset,
