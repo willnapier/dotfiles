@@ -974,7 +974,7 @@ fn layout_buzan_root(
             end_binding: None,
             angle: None, is_deleted: false,
             custom_data: Some(serde_json::json!({
-                "strokeOptions": { "organic": true, "startSize": start_size, "endSize": end_size, "depth": 0 }
+                "strokeOptions": { "organic": true, "startSize": start_size, "endSize": end_size, "depth": 0, "junctionOffset": text_gap }
             })),
             group_ids: None, simulate_pressure: None,
         });
@@ -1173,7 +1173,7 @@ fn layout_buzan_root(
                     start_binding: None, end_binding: None,
                     angle: None, is_deleted: false,
                     custom_data: Some(serde_json::json!({
-                        "strokeOptions": { "organic": true, "startSize": l2_ss, "endSize": l2_es, "depth": 1, "junctionOffset": l2_margin }
+                        "strokeOptions": { "organic": true, "startSize": l2_ss, "endSize": l2_es, "depth": 1, "junctionOffset": l2_text_gap }
                     })),
                     group_ids: None, simulate_pressure: None,
                 });
