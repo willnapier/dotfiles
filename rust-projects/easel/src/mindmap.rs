@@ -899,12 +899,12 @@ fn layout_buzan_root(
             }
             min_gap
         };
-        // Floor: text must clear the thick stroke at the junction
-        let stroke_floor = l1_start_w + 6.0;
-        // Angular clearance: distance where adjacent branch has moved far enough
-        let clearance = text_h / 2.0 + l1_start_w / 2.0 + 6.0;
-        let angular_gap = clearance / nearest_angle_gap.sin().max(0.15);
-        let text_gap = stroke_floor.max(angular_gap).min(60.0);
+        // Floor: must be past the thick convergence zone (6 branches × 14px strokes)
+        let stroke_floor = l1_start_w * 3.0;
+        // Angular clearance: distance where text clears the nearest adjacent branch
+        let clearance = text_h / 2.0 + l1_start_w / 2.0 + 8.0;
+        let angular_gap = clearance / nearest_angle_gap.sin().max(0.2);
+        let text_gap = stroke_floor.max(angular_gap).min(80.0);
 
         let tail_margin = 12.0;
         let branch_distance = text_gap + text_width + tail_margin;
@@ -1129,10 +1129,10 @@ fn layout_buzan_root(
 
                 // Text gap: past L2 stroke, then clear adjacent L2 branch
                 let l2_text_h = l2_fs * 1.2;
-                let l2_stroke_floor = branch_half * 2.0 + 4.0;
-                let l2_clearance = l2_text_h / 2.0 + branch_half + 4.0;
-                let l2_angular = l2_clearance / min_sibling_gap.sin().max(0.15);
-                let l2_text_gap = l2_stroke_floor.max(l2_angular).min(50.0);
+                let l2_stroke_floor = branch_half * 3.0;
+                let l2_clearance = l2_text_h / 2.0 + branch_half + 6.0;
+                let l2_angular = l2_clearance / min_sibling_gap.sin().max(0.2);
+                let l2_text_gap = l2_stroke_floor.max(l2_angular).min(80.0);
                 let l2_text_dist = l2_tw / 2.0 + l2_text_gap;
                 let l2_text_cx = end_x + l2_text_dist * l2_angle.cos();
                 let l2_text_cy = end_y + l2_text_dist * l2_angle.sin();
