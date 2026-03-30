@@ -38,9 +38,42 @@ pub fn to_svg_styled(scene: &Scene, style: Option<&VisualStyle>) -> String {
                 min_y = min_y.min(el.y + p[1]);
             }
         }
+
+        // Text on branch: rendered via textPath, so actual extent follows
+        // the arrow path. Find the arrow and extend bounds along its direction
+        // by the text width beyond the arrow tip.
+        if el.element_type == "text" {
+            let on_branch = el.custom_data.as_ref()
+                .and_then(|cd| cd.get("onBranch"))
+                .and_then(|v| v.as_str());
+            if let Some(branch_id) = on_branch {
+                if let Some(arrow) = scene.elements.iter().find(|a| a.id == branch_id) {
+                    // Arrow tip direction: from last control point to endpoint
+                    if let Some(ref pts) = arrow.points {
+                        if pts.len() >= 4 {
+                            let tip = pts[3];
+                            let pre_tip = pts[2];
+                            let dx = tip[0] - pre_tip[0];
+                            let dy = tip[1] - pre_tip[1];
+                            let len = (dx * dx + dy * dy).sqrt().max(1.0);
+                            let nx = dx / len;
+                            let ny = dy / len;
+                            // Text can extend beyond arrow tip along its direction
+                            let overshoot = el.width * 0.5;
+                            let tip_x = arrow.x + tip[0];
+                            let tip_y = arrow.y + tip[1];
+                            max_x = max_x.max(tip_x + nx * overshoot);
+                            min_x = min_x.min(tip_x + nx * overshoot);
+                            max_y = max_y.max(tip_y + ny * overshoot);
+                            min_y = min_y.min(tip_y + ny * overshoot);
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    let pad = 30.0;
+    let pad = 80.0;
     let vx = (min_x - pad).floor();
     let vy = (min_y - pad).floor();
     let vw = (max_x - min_x + pad * 2.0).ceil();
