@@ -902,11 +902,12 @@ fn layout_buzan_root(
         // Floor: must be past the thick convergence zone (6 branches × 14px strokes)
         let stroke_floor = l1_start_w * 3.0;
         // Angular clearance: text is lifted above branch by dy = branch_half + 3,
-        // so upward reach = dy + ascent, not text_h/2.
+        // so upward reach = dy + ascent. Must clear the LOWER edge of the branch
+        // above, which is a full stroke width from center (not half).
         let branch_half_l1 = l1_start_w / 2.0;
         let dy_offset = branch_half_l1 + 3.0;
-        let text_upward = dy_offset + child_fs * 0.8; // baseline offset + ascent
-        let clearance = text_upward + l1_start_w / 2.0 + 5.0;
+        let text_upward = dy_offset + child_fs * 0.8;
+        let clearance = text_upward + l1_start_w + 5.0;
         let angular_gap = clearance / nearest_angle_gap.sin().max(0.2);
         let text_gap = stroke_floor.max(angular_gap).min(80.0);
 
@@ -1136,7 +1137,7 @@ fn layout_buzan_root(
                 let l2_dy_offset = branch_half + 3.0;
                 let l2_text_upward = l2_dy_offset + l2_fs * 0.8;
                 let l2_stroke_floor = branch_half * 3.0;
-                let l2_clearance = l2_text_upward + branch_half + 5.0;
+                let l2_clearance = l2_text_upward + branch_half * 2.0 + 5.0;
                 let l2_angular = l2_clearance / min_sibling_gap.sin().max(0.2);
                 let l2_text_gap = l2_stroke_floor.max(l2_angular).min(80.0);
                 let l2_text_dist = l2_tw / 2.0 + l2_text_gap;
