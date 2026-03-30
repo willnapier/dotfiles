@@ -901,8 +901,12 @@ fn layout_buzan_root(
         };
         // Floor: must be past the thick convergence zone (6 branches × 14px strokes)
         let stroke_floor = l1_start_w * 3.0;
-        // Angular clearance: distance where text clears the nearest adjacent branch
-        let clearance = text_h / 2.0 + l1_start_w / 2.0 + 8.0;
+        // Angular clearance: text is lifted above branch by dy = branch_half + 3,
+        // so upward reach = dy + ascent, not text_h/2.
+        let branch_half_l1 = l1_start_w / 2.0;
+        let dy_offset = branch_half_l1 + 3.0;
+        let text_upward = dy_offset + child_fs * 0.8; // baseline offset + ascent
+        let clearance = text_upward + l1_start_w / 2.0 + 5.0;
         let angular_gap = clearance / nearest_angle_gap.sin().max(0.2);
         let text_gap = stroke_floor.max(angular_gap).min(80.0);
 
@@ -1031,7 +1035,7 @@ fn layout_buzan_root(
             }
             // Fan = half-gap minus buffer for branch width at distance
             let buffer = 11.0f64.to_radians();
-            let l2_max_tilt = (min_l1_half_gap - buffer).clamp(20.0f64.to_radians(), 35.0f64.to_radians());
+            let l2_max_tilt = (min_l1_half_gap - buffer).clamp(10.0f64.to_radians(), 35.0f64.to_radians());
             let (fan_lo, fan_hi) = if child_angle.cos() >= 0.0 {
                 (-l2_max_tilt, l2_max_tilt)
             } else {
@@ -1127,10 +1131,12 @@ fn layout_buzan_root(
                 let l2_end_x = end_x + l2_branch_len * l2_angle.cos();
                 let l2_end_y = end_y + l2_branch_len * l2_angle.sin();
 
-                // Text gap: past L2 stroke, then clear adjacent L2 branch
-                let l2_text_h = l2_fs * 1.2;
+                // Text gap: past L2 stroke, then clear adjacent L2 branch.
+                // Text is lifted above branch by dy = branch_half + 3.
+                let l2_dy_offset = branch_half + 3.0;
+                let l2_text_upward = l2_dy_offset + l2_fs * 0.8;
                 let l2_stroke_floor = branch_half * 3.0;
-                let l2_clearance = l2_text_h / 2.0 + branch_half + 6.0;
+                let l2_clearance = l2_text_upward + branch_half + 5.0;
                 let l2_angular = l2_clearance / min_sibling_gap.sin().max(0.2);
                 let l2_text_gap = l2_stroke_floor.max(l2_angular).min(80.0);
                 let l2_text_dist = l2_tw / 2.0 + l2_text_gap;
