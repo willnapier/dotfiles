@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use serde::Deserialize;
 use std::fs;
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -6,9 +7,7 @@ use std::process::{Command, Stdio};
 use crate::orient;
 use crate::types::{DreamResponse, MemoryState};
 
-const SYSTEM_PROMPT: &str = r#"CRITICAL: You MUST respond with ONLY a raw JSON object. No markdown, no explanation, no preamble, no summary. Just the JSON object starting with { and ending with }.
-
-You are a memory consolidation agent for a multi-vendor AI assistant system. Your job is to update a set of memory files based on new conversation sessions.
+const SYSTEM_PROMPT: &str = r#"You are a memory consolidation agent for a multi-vendor AI assistant system. Your job is to update a set of memory files based on new conversation sessions.
 
 MEMORY FILE FORMAT:
 Each memory file has YAML frontmatter (name, description, type) followed by a markdown body.
@@ -29,20 +28,29 @@ RULES:
 10. Fix any integrity issues (orphaned references, unindexed files) in your proposed changes.
 11. Convert any relative dates ("last week", "yesterday") to absolute dates.
 
-OUTPUT FORMAT:
-Respond with ONLY a JSON object (no markdown fences, no explanation outside the JSON):
-{
-  "files_to_update": [{"filename": "existing_file.md", "content": "---\nname: ...\ndescription: ...\ntype: ...\n---\n\nbody...", "reason": "why"}],
-  "files_to_create": [{"filename": "type_topic.md", "content": "---\nname: ...\ndescription: ...\ntype: ...\n---\n\nbody...", "reason": "why"}],
-  "files_to_delete": [{"filename": "stale_file.md", "reason": "why"}],
-  "memory_index": "full new MEMORY.md content OR the literal string UNCHANGED",
-  "summary": "Human-readable summary of what changed and why"
+If no changes are warranted, return empty arrays and "UNCHANGED" for memory_index."#;
+
+/// JSON Schema for DreamResponse, used with claude's --json-schema flag to force structured output.
+const DREAM_RESPONSE_SCHEMA: &str = r#"{"type":"object","properties":{"files_to_update":{"type":"array","items":{"type":"object","properties":{"filename":{"type":"string"},"content":{"type":"string"},"reason":{"type":"string"}},"required":["filename","content","reason"]}},"files_to_create":{"type":"array","items":{"type":"object","properties":{"filename":{"type":"string"},"content":{"type":"string"},"reason":{"type":"string"}},"required":["filename","content","reason"]}},"files_to_delete":{"type":"array","items":{"type":"object","properties":{"filename":{"type":"string"},"reason":{"type":"string"}},"required":["filename","reason"]}},"memory_index":{"type":"string"},"summary":{"type":"string"}},"required":["files_to_update","files_to_create","files_to_delete","memory_index","summary"]}"#;
+
+/// Wrapper structure for `claude -p --output-format json` responses.
+/// The actual model output lives in `structured_output` when --json-schema is used,
+/// or in `result` as a plain string otherwise.
+#[derive(Deserialize)]
+struct ClaudeJsonEnvelope {
+    #[serde(default)]
+    is_error: bool,
+    #[serde(default)]
+    result: Option<String>,
+    #[serde(default)]
+    structured_output: Option<serde_json::Value>,
 }
 
-If no changes are warranted, return:
-{"files_to_update": [], "files_to_create": [], "files_to_delete": [], "memory_index": "UNCHANGED", "summary": "No consolidation needed."}
-
-REMINDER: Your ENTIRE response must be a single JSON object. Do not write any text before or after the JSON. Do not use markdown code fences. Start your response with { and end with }."#;
+/// Check if the model command is a `claude` invocation (i.e. supports --output-format/--json-schema).
+fn is_claude_cmd(model_cmd: &str) -> bool {
+    let first = model_cmd.split_whitespace().next().unwrap_or("");
+    first == "claude" || first.ends_with("/claude")
+}
 
 /// Run the AI consolidation phase
 pub fn run(
@@ -66,6 +74,8 @@ pub fn run(
         memory_context, index_note, session_context
     );
 
+    let use_structured = is_claude_cmd(model_cmd);
+
     // Split model command: "claude -p" -> ["claude", "-p"]
     let parts: Vec<&str> = model_cmd.split_whitespace().collect();
     if parts.is_empty() {
@@ -74,12 +84,23 @@ pub fn run(
     let cmd = parts[0];
     let args = &parts[1..];
 
-    let mut child = Command::new(cmd)
+    let mut command = Command::new(cmd);
+    command
         .args(args)
         .arg(SYSTEM_PROMPT)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    if use_structured {
+        command
+            .arg("--output-format")
+            .arg("json")
+            .arg("--json-schema")
+            .arg(DREAM_RESPONSE_SCHEMA);
+    }
+
+    let mut child = command
         .spawn()
         .with_context(|| format!("Failed to spawn '{}'. Is it in PATH?", cmd))?;
 
@@ -102,7 +123,39 @@ pub fn run(
     let response_text = String::from_utf8(output.stdout)
         .context("Model output is not valid UTF-8")?;
 
-    parse_response(&response_text)
+    if use_structured {
+        parse_structured_response(&response_text)
+    } else {
+        parse_response(&response_text)
+    }
+}
+
+/// Parse a structured response from `claude -p --output-format json --json-schema`.
+/// The response is a JSON envelope with the actual data in `structured_output`.
+fn parse_structured_response(text: &str) -> Result<DreamResponse> {
+    let trimmed = text.trim();
+
+    let envelope: ClaudeJsonEnvelope = serde_json::from_str(trimmed)
+        .context("Failed to parse claude JSON envelope")?;
+
+    if envelope.is_error {
+        let msg = envelope.result.unwrap_or_else(|| "unknown error".to_string());
+        anyhow::bail!("Claude returned an error: {}", msg);
+    }
+
+    // When --json-schema is used, the structured data is in structured_output
+    if let Some(structured) = envelope.structured_output {
+        let response: DreamResponse = serde_json::from_value(structured)
+            .context("Failed to parse structured_output as DreamResponse")?;
+        return Ok(response);
+    }
+
+    // Fallback: try parsing the result field as JSON (shouldn't happen with --json-schema, but be defensive)
+    if let Some(result_text) = &envelope.result {
+        return parse_response(result_text);
+    }
+
+    anyhow::bail!("Claude JSON envelope contained neither structured_output nor result")
 }
 
 /// Try multiple strategies to extract JSON from the AI response
