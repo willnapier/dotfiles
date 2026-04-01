@@ -6,7 +6,9 @@ use std::process::{Command, Stdio};
 use crate::orient;
 use crate::types::{DreamResponse, MemoryState};
 
-const SYSTEM_PROMPT: &str = r#"You are a memory consolidation agent for a multi-vendor AI assistant system. Your job is to update a set of memory files based on new conversation sessions.
+const SYSTEM_PROMPT: &str = r#"CRITICAL: You MUST respond with ONLY a raw JSON object. No markdown, no explanation, no preamble, no summary. Just the JSON object starting with { and ending with }.
+
+You are a memory consolidation agent for a multi-vendor AI assistant system. Your job is to update a set of memory files based on new conversation sessions.
 
 MEMORY FILE FORMAT:
 Each memory file has YAML frontmatter (name, description, type) followed by a markdown body.
