@@ -46,9 +46,7 @@ depends = []
 "yazi/flavors/solarized-dark.yazi" = { target = "~/.config/yazi/flavors/solarized-dark.yazi", type = "symbolic" }
 "yazi/flavors/solarized-light.yazi" = { target = "~/.config/yazi/flavors/solarized-light.yazi", type = "symbolic" }
 "yazi/flavors/dracula.yazi" = { target = "~/.config/yazi/flavors/dracula.yazi", type = "symbolic" }
-# Yazi plugins and scripts - individual directory symlinks
-"yazi/plugins" = { target = "~/.config/yazi/plugins", type = "symbolic" }
-"yazi/scripts" = { target = "~/.config/yazi/scripts", type = "symbolic" }
+# Yazi plugins and scripts removed — directories no longer exist in dotfiles
 # Zellij layouts - individual files for reliability  
 "zellij/layouts/laptop.kdl" = "~/.config/zellij/layouts/laptop.kdl"
 "zellij/layouts/desktop.kdl" = "~/.config/zellij/layouts/desktop.kdl"
