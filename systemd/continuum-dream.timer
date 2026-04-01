@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily continuum-dream at 04:00
+Requires=continuum-dream.service
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

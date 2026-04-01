@@ -1,0 +1,12 @@
+[Unit]
+Description=Continuum Dream - nightly AI conversation analysis
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/continuum-dream
+Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=%h
+
+[Install]
+WantedBy=default.target

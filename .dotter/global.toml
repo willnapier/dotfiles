@@ -405,6 +405,9 @@ depends = ["shared"]
 # State capture - daily snapshot of packages, services, crates, groups
 "systemd/state-capture.service" = "~/.config/systemd/user/state-capture.service"
 "systemd/state-capture.timer" = "~/.config/systemd/user/state-capture.timer"
+# Continuum Dream - nightly AI conversation analysis
+"systemd/continuum-dream.service" = "~/.config/systemd/user/continuum-dream.service"
+"systemd/continuum-dream.timer" = "~/.config/systemd/user/continuum-dream.timer"
 # Wayland compositor configuration - Niri + Waybar + WezTerm
 "niri/config.kdl" = "~/.config/niri/config.kdl"
 "waybar/config" = "~/.config/waybar/config"
