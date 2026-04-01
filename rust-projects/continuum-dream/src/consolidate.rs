@@ -40,7 +40,9 @@ Respond with ONLY a JSON object (no markdown fences, no explanation outside the 
 }
 
 If no changes are warranted, return:
-{"files_to_update": [], "files_to_create": [], "files_to_delete": [], "memory_index": "UNCHANGED", "summary": "No consolidation needed."}"#;
+{"files_to_update": [], "files_to_create": [], "files_to_delete": [], "memory_index": "UNCHANGED", "summary": "No consolidation needed."}
+
+REMINDER: Your ENTIRE response must be a single JSON object. Do not write any text before or after the JSON. Do not use markdown code fences. Start your response with { and end with }."#;
 
 /// Run the AI consolidation phase
 pub fn run(
@@ -50,9 +52,18 @@ pub fn run(
 ) -> Result<DreamResponse> {
     let memory_context = orient::format_memory_state(memory_state);
 
+    let index_note = if memory_state.index_line_count > 200 {
+        format!(
+            "\n\nURGENT: MEMORY.md is {} lines (limit: 200). It contains substantive content that MUST be extracted into topic files. The index should contain ONLY short pointer entries.\n",
+            memory_state.index_line_count
+        )
+    } else {
+        String::new()
+    };
+
     let context_document = format!(
-        "# Current Memory State\n\n{}\n---\n\n# New Sessions Since Last Dream\n\n{}",
-        memory_context, session_context
+        "# Current Memory State\n\n{}{}\n---\n\n# New Sessions Since Last Dream\n\n{}",
+        memory_context, index_note, session_context
     );
 
     // Split model command: "claude -p" -> ["claude", "-p"]
