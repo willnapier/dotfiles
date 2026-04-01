@@ -102,6 +102,9 @@ pub fn run(
     let response_text = String::from_utf8(output.stdout)
         .context("Model output is not valid UTF-8")?;
 
+    // Debug: show first 500 chars of response
+    eprintln!("AI response preview: {}", &response_text[..response_text.len().min(500)]);
+
     parse_response(&response_text)
 }
 
