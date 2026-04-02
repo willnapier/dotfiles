@@ -44,7 +44,7 @@ pub fn parse_diary(html: &str) -> Result<Vec<DaySchedule>> {
         for t in &titles {
             match parse_title(t) {
                 Ok(appt) => appointments.push(appt),
-                Err(e) => eprintln!("Warning: skipping unparseable appointment: {} ({})", t, e),
+                Err(_) => {} // Non-client entries (Administration, etc.) silently skipped
             }
         }
         schedules.push(DaySchedule {
@@ -203,7 +203,8 @@ fn extract_day_columns(html: &str) -> Result<Vec<Vec<String>>> {
 fn parse_title(title: &str) -> Result<Appointment> {
     let parts: Vec<&str> = title.split(" - ").collect();
     if parts.len() < 4 {
-        bail!("Title has too few segments: {}", title);
+        // Administration blocks and other non-client entries have fewer segments — skip silently
+        bail!("non-client entry");
     }
 
     // First segment: time range "HH:MM-HH:MM"
