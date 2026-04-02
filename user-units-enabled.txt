@@ -4,6 +4,7 @@ claude-code-nightly-cleanup.timer
 collect-projects-watcher.service
 collect-projects.timer
 continuum-auto-import.timer
+continuum-dream.timer
 continuum-sync-claude.timer
 cross-machine-sync-check.timer
 dev-catchup.timer
