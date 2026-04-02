@@ -31,6 +31,7 @@ com.user.zotero-bridge
 com.user.zotero-watcher
 com.williamnapier.assistants-auto-pull
 com.williamnapier.assistants-auto-push
+com.williamnapier.continuum-dream
 com.williamnapier.continuum-sync-claude
 com.williamnapier.cross-machine-sync-check
 com.williamnapier.dev-catchup
