@@ -1,0 +1,28 @@
+#!/usr/bin/env nu
+
+# Render all clinical D2 diagrams and copy SVGs to ~/Clinical/workflows/ (Dropbox-synced)
+
+let diagrams_dir = ($env.HOME | path join "Forge/diagrams")
+let output_dir = ($env.HOME | path join "Clinical/workflows")
+
+mkdir $output_dir
+
+let clinical_files = (ls ($diagrams_dir | path join "clinical-*.d2") | get name)
+
+if ($clinical_files | is-empty) {
+    print "No clinical-*.d2 files found"
+    exit 1
+}
+
+for file in $clinical_files {
+    let stem = ($file | path parse | get stem)
+    let svg = ($diagrams_dir | path join $"($stem).svg")
+
+    print $"Rendering ($stem)..."
+    d2 --layout elk $file $svg
+
+    print $"Copying to ($output_dir)..."
+    cp $svg $output_dir
+}
+
+print $"\n(ansi green)Done.(ansi reset) ($clinical_files | length) diagrams rendered and copied to ~/Clinical/workflows/"

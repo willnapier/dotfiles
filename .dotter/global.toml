@@ -235,6 +235,7 @@ depends = []
 "scripts/zellij-skim-search.nu" = { target = "~/.local/bin/zellij-skim-search.nu", type = "symbolic" }
 "scripts/theme-status" = "~/.local/bin/theme-status"
 "scripts/fview" = "~/.local/bin/fview"
+"scripts/clinical-diagrams-render" = "~/.local/bin/clinical-diagrams-render"
 # Unified entry collection system - projects (P.) and activities (p::, t::, etc.) (added 2025-10-08)
 "scripts/collect-entries" = "~/.local/bin/collect-entries"
 "scripts/generate-subactivity-lists" = "~/.local/bin/generate-subactivity-lists"
