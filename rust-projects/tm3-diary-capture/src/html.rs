@@ -81,6 +81,7 @@ fn extract_day_headers(html: &str) -> Result<Vec<String>> {
 }
 
 /// Convert "Mon 26th" + "January 2026" into NaiveDate.
+/// Handles month boundaries: if day numbers decrease, roll month forward.
 fn resolve_dates(headers: &[String], month_year: &str) -> Result<Vec<NaiveDate>> {
     let re = Regex::new(r"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) (\d{1,2})(?:st|nd|rd|th)")?;
     let my_re = Regex::new(r"([A-Z][a-z]+) (\d{4})")?;
@@ -89,16 +90,31 @@ fn resolve_dates(headers: &[String], month_year: &str) -> Result<Vec<NaiveDate>>
         .context("Invalid month/year format")?;
     let month_name = &my_cap[1];
     let year: i32 = my_cap[2].parse()?;
-    let month = parse_month(month_name)?;
+    let mut month = parse_month(month_name)?;
+    let mut current_year = year;
 
     let mut dates = Vec::new();
+    let mut prev_day: Option<u32> = None;
     for header in headers {
         let cap = re
             .captures(header)
             .with_context(|| format!("Invalid day header: {}", header))?;
         let day: u32 = cap[1].parse()?;
-        let date = NaiveDate::from_ymd_opt(year, month, day)
-            .with_context(|| format!("Invalid date: {} {} {}", year, month, day))?;
+
+        // If day number drops, we've crossed a month boundary
+        if let Some(prev) = prev_day {
+            if day < prev {
+                month += 1;
+                if month > 12 {
+                    month = 1;
+                    current_year += 1;
+                }
+            }
+        }
+        prev_day = Some(day);
+
+        let date = NaiveDate::from_ymd_opt(current_year, month, day)
+            .with_context(|| format!("Invalid date: {} {} {}", current_year, month, day))?;
         dates.push(date);
     }
     Ok(dates)
@@ -427,5 +443,24 @@ mod tests {
         let dates = resolve_dates(&headers, "January 2026").unwrap();
         assert_eq!(dates[0], NaiveDate::from_ymd_opt(2026, 1, 26).unwrap());
         assert_eq!(dates[1], NaiveDate::from_ymd_opt(2026, 1, 27).unwrap());
+    }
+
+    #[test]
+    fn test_resolve_dates_month_boundary() {
+        let headers = vec![
+            "Mon 30th".to_string(),
+            "Tue 31st".to_string(),
+            "Wed 1st".to_string(),
+            "Thu 2nd".to_string(),
+            "Fri 3rd".to_string(),
+            "Sat 4th".to_string(),
+        ];
+        let dates = resolve_dates(&headers, "March 2026").unwrap();
+        assert_eq!(dates[0], NaiveDate::from_ymd_opt(2026, 3, 30).unwrap());
+        assert_eq!(dates[1], NaiveDate::from_ymd_opt(2026, 3, 31).unwrap());
+        assert_eq!(dates[2], NaiveDate::from_ymd_opt(2026, 4, 1).unwrap());
+        assert_eq!(dates[3], NaiveDate::from_ymd_opt(2026, 4, 2).unwrap());
+        assert_eq!(dates[4], NaiveDate::from_ymd_opt(2026, 4, 3).unwrap());
+        assert_eq!(dates[5], NaiveDate::from_ymd_opt(2026, 4, 4).unwrap());
     }
 }
