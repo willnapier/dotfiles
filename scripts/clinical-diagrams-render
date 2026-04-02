@@ -7,7 +7,7 @@ let output_dir = ($env.HOME | path join "Clinical/workflows")
 
 mkdir $output_dir
 
-let clinical_files = (ls ($diagrams_dir | path join "clinical-*.d2") | get name)
+let clinical_files = (glob ($diagrams_dir | path join "clinical-*.d2"))
 
 if ($clinical_files | is-empty) {
     print "No clinical-*.d2 files found"
@@ -19,10 +19,13 @@ for file in $clinical_files {
     let svg = ($diagrams_dir | path join $"($stem).svg")
 
     print $"Rendering ($stem)..."
-    d2 --layout elk $file $svg
-
-    print $"Copying to ($output_dir)..."
-    cp $svg $output_dir
+    try {
+        d2 --layout elk $file $svg
+        print $"Copying to ($output_dir)..."
+        cp $svg $output_dir
+    } catch {
+        print $"(ansi red)Failed to render ($stem) — skipping(ansi reset)"
+    }
 }
 
 print $"\n(ansi green)Done.(ansi reset) ($clinical_files | length) diagrams rendered and copied to ~/Clinical/workflows/"
