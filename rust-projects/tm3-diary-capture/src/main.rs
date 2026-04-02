@@ -153,20 +153,74 @@ fn main() -> Result<()> {
     unmapped.sort_by(|a, b| a.0.cmp(&b.0));
     unmapped.dedup_by(|a, b| a.0 == b.0);
 
-    if !unmapped.is_empty() {
+    if !unmapped.is_empty() && !cli.dry_run {
         eprintln!();
         eprintln!("╭─ {} unmapped client(s) ─────────────────────", unmapped.len());
         for (name, date, time) in &unmapped {
             eprintln!("│  \"{}\"  ({} {})", name, date.format("%a %b %d"), time);
         }
-        eprintln!("│");
-        eprintln!("│  Fix with (check TM3 for DOB → initials + birth year):");
-        for (name, _, _) in &unmapped {
-            eprintln!("│    tm3-client-add \"{}\" <ID>", name);
+        eprintln!("╰────────────────────────────────────────────");
+
+        for (name, _date, _time) in &unmapped {
+            eprintln!();
+            eprint!("Client ID for \"{}\" (initials + birth year, or 's' to skip): ", name);
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input).context("Failed to read input")?;
+            let id = input.trim();
+
+            if id.is_empty() || id.eq_ignore_ascii_case("s") {
+                eprintln!("Skipped \"{}\"", name);
+                continue;
+            }
+
+            eprintln!("Adding: \"{}\" = \"{}\"", name, id);
+            let status = std::process::Command::new("tm3-client-add")
+                .args([name.as_str(), id, "--no-recapture"])
+                .status()
+                .context("Failed to run tm3-client-add")?;
+
+            if !status.success() {
+                eprintln!("Warning: tm3-client-add failed for \"{}\"", name);
+            }
+        }
+
+        // Check if all unmapped clients were resolved
+        let map_path = map_path.clone();
+        let resolved = if let Ok(map) = ClientMap::load(&map_path) {
+            unmapped.iter().all(|(name, _, _)| map.lookup(name).is_some())
+        } else {
+            false
+        };
+
+        if resolved {
+            eprintln!();
+            eprintln!("All clients mapped. Re-processing...");
+            // Re-run ourselves on the same file to generate complete output
+            let mut rerun_args = vec!["--include-past".to_string(), file_path.display().to_string()];
+            if let Some(d) = cli.date {
+                rerun_args.push("--date".to_string());
+                rerun_args.push(d.to_string());
+            }
+            let status = std::process::Command::new("tm3-diary-capture")
+                .args(&rerun_args)
+                .status()
+                .context("Failed to re-run tm3-diary-capture")?;
+            if !status.success() {
+                eprintln!("Warning: re-run exited with error");
+            }
+            return Ok(());
+        } else {
+            eprintln!();
+            eprintln!("Some clients still unmapped. HTML retained: {}", file_path.display());
+        }
+    } else if !unmapped.is_empty() {
+        // dry-run mode: just list them
+        eprintln!();
+        eprintln!("╭─ {} unmapped client(s) ─────────────────────", unmapped.len());
+        for (name, date, time) in &unmapped {
+            eprintln!("│  \"{}\"  ({} {})", name, date.format("%a %b %d"), time);
         }
         eprintln!("╰────────────────────────────────────────────");
-        eprintln!();
-        eprintln!("HTML retained for re-processing: {}", file_path.display());
     }
 
     // Delete source file only if no unmapped clients remain
