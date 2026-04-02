@@ -5,7 +5,7 @@ use regex::Regex;
 use std::path::PathBuf;
 
 #[derive(Parser)]
-#[command(about = "Parse DayPage clinic block and open WhatsApp attendance report")]
+#[command(about = "Parse DayPage clinic block and save attendance report to Dropbox")]
 struct Cli {
     /// Override date (YYYY-MM-DD), defaults to today
     #[arg(long)]
@@ -50,7 +50,7 @@ fn main() -> Result<()> {
     println!("{}", message);
 
     if !cli.dry_run {
-        copy_and_notify(&message)?;
+        save_and_notify(&date, &message)?;
     }
 
     Ok(())
@@ -201,42 +201,36 @@ fn format_message(date: &NaiveDate, entries: &[Entry]) -> String {
     lines.join("\n")
 }
 
-fn copy_and_notify(message: &str) -> Result<()> {
-    // Copy readable message to clipboard
+fn save_and_notify(date: &NaiveDate, message: &str) -> Result<()> {
+    let attendance_dir = dirs::home_dir()
+        .expect("Could not find home directory")
+        .join("Clinical/attendance");
+
+    std::fs::create_dir_all(&attendance_dir)
+        .with_context(|| format!("Failed to create {}", attendance_dir.display()))?;
+
+    let filename = format!("{}.txt", date.format("%Y-%m-%d"));
+    let path = attendance_dir.join(&filename);
+
+    std::fs::write(&path, message)
+        .with_context(|| format!("Failed to write {}", path.display()))?;
+
+    eprintln!("Saved: {}", path.display());
+
     #[cfg(target_os = "macos")]
     {
-        let mut child = std::process::Command::new("pbcopy")
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .context("Failed to run pbcopy")?;
-        if let Some(stdin) = child.stdin.as_mut() {
-            use std::io::Write;
-            stdin.write_all(message.as_bytes()).context("Failed to write to pbcopy")?;
-        }
-        child.wait().context("pbcopy failed")?;
-
         std::process::Command::new("osascript")
             .arg("-e")
-            .arg("display notification \"Attendance report copied to clipboard — paste in WhatsApp\" with title \"Clinic Attendance Report\"")
+            .arg("display notification \"Attendance report saved to Dropbox\" with title \"Clinic Attendance Report\"")
             .spawn()
             .context("Failed to send notification")?;
     }
 
     #[cfg(target_os = "linux")]
     {
-        let mut child = std::process::Command::new("wl-copy")
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .context("Failed to run wl-copy")?;
-        if let Some(stdin) = child.stdin.as_mut() {
-            use std::io::Write;
-            stdin.write_all(message.as_bytes()).context("Failed to write to wl-copy")?;
-        }
-        child.wait().context("wl-copy failed")?;
-
         std::process::Command::new("notify-send")
             .arg("Clinic Attendance Report")
-            .arg("Attendance report copied to clipboard — paste in WhatsApp")
+            .arg("Attendance report saved to Dropbox")
             .spawn()
             .context("Failed to send notification")?;
     }
