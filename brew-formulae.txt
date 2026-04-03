@@ -36,6 +36,7 @@ dotnet@8
 dotter
 dprint
 dtc
+duti
 emacs
 expat
 eza
