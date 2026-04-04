@@ -4,7 +4,7 @@
 
 WATCH_DIR="$HOME/Clinical"
 
-fswatch -0 --exclude '\.DS_Store' \
+/opt/homebrew/bin/fswatch -0 --exclude '\.DS_Store' \
     --include '\.pdf$' \
     --include '\.yaml$' \
     --include '\.md$' \
