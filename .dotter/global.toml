@@ -325,6 +325,7 @@ depends = ["shared"]
 "macos/launchd/com.williamnapier.tm3-watcher.plist" = "~/Library/LaunchAgents/com.williamnapier.tm3-watcher.plist"
 "macos/launchd/com.williamnapier.cross-machine-sync-check.plist" = "~/Library/LaunchAgents/com.williamnapier.cross-machine-sync-check.plist"
 "macos/launchd/com.williamnapier.dev-catchup.plist" = "~/Library/LaunchAgents/com.williamnapier.dev-catchup.plist"
+"launchd/com.willnapier.clinical-watch.plist" = "~/Library/LaunchAgents/com.willnapier.clinical-watch.plist"
 "macos/LaunchAgents/com.williamnapier.ghostty-config-validate.plist" = "~/Library/LaunchAgents/com.williamnapier.ghostty-config-validate.plist"
 # NOTE: Individual files managed in [shared.files] for better reliability
 # Removed directory symlinks that were causing orphan detection issues
