@@ -96,6 +96,9 @@ if (which vivid | is-not-empty) {
     $env.LS_COLORS = (^vivid generate $theme)
 }
 
+# --- Clinical Tools ---
+$env.CLINICAL_NOTIFY_EMAIL = "pa@willnapier.com"
+
 # --- Tools Initialization ---
 if (which zoxide | is-not-empty) {
     zoxide init nushell | save -f ~/.zoxide.nu
