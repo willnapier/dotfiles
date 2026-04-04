@@ -4,7 +4,9 @@
     "deny": [
       "Read(**/private/**)",
       "Edit(**/private/**)",
-      "Write(**/private/**)"
+      "Write(**/private/**)",
+      "Read(**/*TM3*)",
+      "Read(**/*tm3*)"
     ],
     "allow": [
       "Read",
