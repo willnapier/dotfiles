@@ -1,0 +1,24 @@
+#!/bin/bash
+# clinical-watch — notify on meaningful changes in ~/Clinical
+# Runs as a launchd daemon. Watches for new/modified PDFs, YAML, and markdown files.
+
+WATCH_DIR="$HOME/Clinical"
+
+fswatch -0 --exclude '\.DS_Store' \
+    --include '\.pdf$' \
+    --include '\.yaml$' \
+    --include '\.md$' \
+    --include '\.txt$' \
+    --exclude '.*' \
+    "$WATCH_DIR" | while IFS= read -r -d '' file; do
+
+    filename=$(basename "$file")
+    relpath="${file#$WATCH_DIR/}"
+
+    # Skip temp files and swap files
+    case "$filename" in
+        .*.swp|*.tmp|*~) continue ;;
+    esac
+
+    osascript -e "display notification \"$relpath\" with title \"Clinical file changed\""
+done
