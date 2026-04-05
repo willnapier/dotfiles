@@ -1,0 +1,14 @@
+[package]
+name = "bequest"
+version = "0.1.0"
+edition = "2021"
+description = "Digital estate orchestrator — Shamir secret sharing and vault management"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+rand = "0.8"
+base64 = "0.22"
+
+[dev-dependencies]
+tempfile = "3"
