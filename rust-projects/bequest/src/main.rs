@@ -1,3 +1,6 @@
+mod config;
+mod disclose;
+mod enrol;
 mod gf256;
 mod heartbeat;
 mod page;
@@ -64,6 +67,31 @@ enum Commands {
         #[command(subcommand)]
         command: HeartbeatCommands,
     },
+
+    /// Enrol trustees — split vault key and create bundles
+    Enrol {
+        /// Minimum shares needed to reconstruct
+        #[arg(short = 'k', long, default_value = "2")]
+        threshold: u8,
+
+        /// Total number of shares (must match number of trustees in config)
+        #[arg(short = 'n', long, default_value = "3")]
+        shares: u8,
+
+        /// Email bundles to trustees via himalaya
+        #[arg(long)]
+        send: bool,
+    },
+
+    /// Send disclosure notification to all trustees
+    Disclose {
+        /// Preview emails without sending
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Show current configuration
+    Config,
 }
 
 #[derive(Subcommand)]
@@ -153,6 +181,17 @@ fn main() -> Result<()> {
             }
             HeartbeatCommands::Check { threshold, grace } => {
                 let state = heartbeat::check(threshold, grace)?;
+                // On WARNING, send warning email to William
+                if state == heartbeat::State::Warning {
+                    let elapsed = threshold; // approximate
+                    let remaining = grace;
+                    let _ = disclose::warn(elapsed, remaining);
+                }
+                // On TRIGGERED, auto-disclose
+                if state == heartbeat::State::Triggered {
+                    eprintln!("Auto-disclosure triggered...");
+                    let _ = disclose::run(false);
+                }
                 std::process::exit(match state {
                     heartbeat::State::Normal => 0,
                     heartbeat::State::Warning => 1,
@@ -160,6 +199,23 @@ fn main() -> Result<()> {
                 });
             }
         },
+        Commands::Enrol {
+            threshold,
+            shares,
+            send,
+        } => {
+            enrol::run(threshold, shares)?;
+            if send {
+                enrol::send_bundles()?;
+            }
+            Ok(())
+        }
+        Commands::Disclose { dry_run } => disclose::run(dry_run),
+        Commands::Config => {
+            let config = config::Config::load()?;
+            println!("{}", toml::to_string_pretty(&config)?);
+            Ok(())
+        }
     }
 }
 

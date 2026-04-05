@@ -1,3 +1,6 @@
+pub mod config;
+pub mod disclose;
+pub mod enrol;
 pub mod gf256;
 pub mod heartbeat;
 pub mod page;
