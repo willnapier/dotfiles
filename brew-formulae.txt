@@ -44,6 +44,7 @@ fd
 ffmpeg
 ffmpegthumbnailer
 flac
+flyctl
 fontconfig
 freetype
 frei0r
