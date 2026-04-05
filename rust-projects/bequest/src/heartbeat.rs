@@ -76,6 +76,25 @@ fn latest_activity() -> Result<(SystemTime, Vec<Signal>)> {
         });
     }
 
+    // Signal 6: Mail database (notmuch xapian — updates on every mail sync)
+    // This is the key iPhone signal: mail flows even when only using phone
+    let mail_db = home.join("Mail/.notmuch/xapian/postlist.glass");
+    if let Some(t) = file_mtime(&mail_db) {
+        signals.push(Signal {
+            name: "mail activity (notmuch)".into(),
+            time: t,
+        });
+    }
+
+    // Signal 7: Syncthing index (any file sync from any device)
+    let syncthing_dir = home.join(".local/state/syncthing/index-v2");
+    if let Some(t) = most_recent_file_in(&syncthing_dir, "db") {
+        signals.push(Signal {
+            name: "syncthing activity".into(),
+            time: t,
+        });
+    }
+
     Ok((
         signals.iter().map(|s| s.time).max().unwrap_or(SystemTime::UNIX_EPOCH),
         signals,

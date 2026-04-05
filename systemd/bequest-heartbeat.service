@@ -1,0 +1,6 @@
+[Unit]
+Description=Bequest heartbeat check (dead man's switch)
+
+[Service]
+Type=oneshot
+ExecStart=/home/will/.local/bin/bequest heartbeat check
