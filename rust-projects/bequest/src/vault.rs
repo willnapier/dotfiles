@@ -1,0 +1,381 @@
+use std::fs;
+use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use anyhow::{bail, ensure, Context, Result};
+use base64::{engine::general_purpose::STANDARD, Engine};
+
+use crate::shamir;
+
+fn bequest_dir() -> PathBuf {
+    dirs::home_dir()
+        .expect("could not find home directory")
+        .join(".bequest")
+}
+
+fn vault_dir() -> PathBuf {
+    bequest_dir().join("vault")
+}
+
+fn vault_archive() -> PathBuf {
+    bequest_dir().join("vault.age")
+}
+
+fn identity_file() -> PathBuf {
+    bequest_dir().join("identity.key")
+}
+
+fn check_age() -> Result<()> {
+    Command::new("age")
+        .arg("--version")
+        .output()
+        .context("age is not installed — run: sudo pacman -S age")?;
+    Ok(())
+}
+
+/// Extract the public key (recipient) from the identity file.
+fn read_recipient() -> Result<String> {
+    let path = identity_file();
+    ensure!(
+        path.exists(),
+        "no identity file at {} — run `bequest vault init` first",
+        path.display()
+    );
+    let content = fs::read_to_string(&path)
+        .with_context(|| format!("reading {}", path.display()))?;
+    // Public key is in a comment line: # public key: age1...
+    for line in content.lines() {
+        if let Some(key) = line.strip_prefix("# public key: ") {
+            return Ok(key.trim().to_string());
+        }
+    }
+    bail!("could not find public key in {}", path.display());
+}
+
+/// Read the full identity file content (this is what gets Shamir-split).
+fn read_identity() -> Result<String> {
+    let path = identity_file();
+    ensure!(
+        path.exists(),
+        "no identity file at {} — run `bequest vault init` first",
+        path.display()
+    );
+    fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))
+}
+
+pub fn init() -> Result<()> {
+    let base = bequest_dir();
+    let vault = vault_dir();
+    let id_path = identity_file();
+
+    if id_path.exists() {
+        bail!(
+            "vault already initialised at {} — identity key exists",
+            base.display()
+        );
+    }
+
+    // Create directory structure
+    fs::create_dir_all(vault.join("vault-export")).context("creating vault-export/")?;
+    fs::create_dir_all(vault.join("legal")).context("creating legal/")?;
+    fs::create_dir_all(vault.join("personal")).context("creating personal/")?;
+
+    // Write README for trustees
+    fs::write(
+        vault.join("README.md"),
+        r#"# Bequest Vault
+
+This vault contains William's digital estate information.
+
+## Contents
+
+- **vault-export/** — password manager exports
+- **legal/** — will location, solicitor details, financial accounts
+- **personal/** — letters, memorabilia guide, important photos
+
+## How you got here
+
+Someone reconstructed the vault key using Shamir's Secret Sharing
+and decrypted this archive. If you're reading this, follow the playbook
+below to handle accounts and subscriptions in an orderly way.
+"#,
+    )
+    .context("writing README.md")?;
+
+    // Generate age identity (key pair)
+    check_age()?;
+    let keygen = Command::new("age-keygen")
+        .args(["-o"])
+        .arg(&id_path)
+        .output()
+        .context("running age-keygen")?;
+
+    ensure!(
+        keygen.status.success(),
+        "age-keygen failed: {}",
+        String::from_utf8_lossy(&keygen.stderr)
+    );
+
+    // Restrict permissions
+    fs::set_permissions(&id_path, fs::Permissions::from_mode(0o600))
+        .context("setting identity key permissions")?;
+
+    let recipient = read_recipient()?;
+
+    eprintln!("Vault initialised at {}", base.display());
+    eprintln!("Identity key: {} (mode 0600)", id_path.display());
+    eprintln!("Public key:   {}", recipient);
+    eprintln!();
+    eprintln!("Next steps:");
+    eprintln!("  1. Add files to {}", vault.display());
+    eprintln!("  2. bequest vault seal     — encrypt and remove plaintext");
+    eprintln!("  3. bequest vault split    — generate Shamir shares of the key");
+
+    Ok(())
+}
+
+pub fn seal() -> Result<()> {
+    check_age()?;
+    let vault = vault_dir();
+    let archive = vault_archive();
+    let recipient = read_recipient()?;
+
+    ensure!(
+        vault.exists(),
+        "vault directory not found at {} — nothing to seal (already sealed?)",
+        vault.display()
+    );
+
+    // tar the vault directory
+    let tar_output = Command::new("tar")
+        .args(["-cf", "-", "-C"])
+        .arg(bequest_dir())
+        .arg("vault")
+        .output()
+        .context("running tar")?;
+
+    ensure!(
+        tar_output.status.success(),
+        "tar failed: {}",
+        String::from_utf8_lossy(&tar_output.stderr)
+    );
+
+    // Encrypt with age using recipient public key (no interactive prompt)
+    if archive.exists() {
+        fs::remove_file(&archive).ok();
+    }
+
+    let mut age_child = Command::new("age")
+        .args(["-r", &recipient, "-o"])
+        .arg(&archive)
+        .stdin(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .context("starting age")?;
+
+    {
+        let stdin = age_child.stdin.as_mut().unwrap();
+        stdin
+            .write_all(&tar_output.stdout)
+            .context("writing to age stdin")?;
+    }
+
+    let age_result = age_child.wait_with_output().context("waiting for age")?;
+    ensure!(
+        age_result.status.success(),
+        "age encryption failed: {}",
+        String::from_utf8_lossy(&age_result.stderr)
+    );
+
+    // Remove plaintext vault directory
+    fs::remove_dir_all(&vault).context("removing plaintext vault directory")?;
+
+    eprintln!("Vault sealed → {}", archive.display());
+    eprintln!("Plaintext removed.");
+
+    Ok(())
+}
+
+pub fn open() -> Result<()> {
+    check_age()?;
+    let vault = vault_dir();
+    let archive = vault_archive();
+    let id_path = identity_file();
+
+    ensure!(
+        archive.exists(),
+        "no sealed vault at {} — run `bequest vault seal` first",
+        archive.display()
+    );
+    ensure!(
+        id_path.exists(),
+        "no identity key at {} — cannot decrypt",
+        id_path.display()
+    );
+
+    if vault.exists() {
+        bail!(
+            "vault directory already exists at {} — already open? Remove it or seal first.",
+            vault.display()
+        );
+    }
+
+    // Decrypt with age using identity file
+    let age_output = Command::new("age")
+        .args(["-d", "-i"])
+        .arg(&id_path)
+        .arg(&archive)
+        .output()
+        .context("running age decrypt")?;
+
+    ensure!(
+        age_output.status.success(),
+        "age decryption failed: {}",
+        String::from_utf8_lossy(&age_output.stderr)
+    );
+
+    // Untar into bequest directory
+    let mut tar_child = Command::new("tar")
+        .args(["-xf", "-", "-C"])
+        .arg(bequest_dir())
+        .stdin(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .context("starting tar")?;
+
+    {
+        let stdin = tar_child.stdin.as_mut().unwrap();
+        stdin
+            .write_all(&age_output.stdout)
+            .context("writing to tar stdin")?;
+    }
+
+    let tar_result = tar_child.wait_with_output().context("waiting for tar")?;
+    ensure!(
+        tar_result.status.success(),
+        "tar extraction failed: {}",
+        String::from_utf8_lossy(&tar_result.stderr)
+    );
+
+    eprintln!("Vault opened at {}", vault.display());
+    eprintln!("Edit contents, then run `bequest vault seal` when done.");
+
+    Ok(())
+}
+
+pub fn status() -> Result<()> {
+    let base = bequest_dir();
+    let vault = vault_dir();
+    let archive = vault_archive();
+    let id = identity_file();
+
+    if !base.exists() {
+        println!("No vault found. Run `bequest vault init` to create one.");
+        return Ok(());
+    }
+
+    let vault_exists = vault.exists();
+    let archive_exists = archive.exists();
+    let id_exists = id.exists();
+
+    let state = match (vault_exists, archive_exists) {
+        (true, false) => "OPEN (plaintext available, not yet sealed)",
+        (false, true) => "SEALED (encrypted archive only)",
+        (true, true) => "MIXED (both plaintext and archive exist — seal or remove one)",
+        (false, false) => "EMPTY (initialised but no content)",
+    };
+
+    println!("Vault: {}", base.display());
+    println!("State: {}", state);
+    println!(
+        "Identity key: {}",
+        if id_exists { "present" } else { "MISSING" }
+    );
+
+    if id_exists {
+        if let Ok(recipient) = read_recipient() {
+            println!("Public key: {}", recipient);
+        }
+    }
+
+    if vault_exists {
+        println!();
+        println!("Contents:");
+        print_tree(&vault, &vault, 0)?;
+    }
+
+    if archive_exists {
+        let meta = fs::metadata(&archive)?;
+        println!();
+        println!("Archive: {} ({} bytes)", archive.display(), meta.len());
+    }
+
+    Ok(())
+}
+
+fn print_tree(_base: &Path, dir: &Path, depth: usize) -> Result<()> {
+    let mut entries: Vec<_> = fs::read_dir(dir)
+        .with_context(|| format!("reading {}", dir.display()))?
+        .filter_map(|e| e.ok())
+        .collect();
+    entries.sort_by_key(|e| e.file_name());
+
+    for entry in entries {
+        let path = entry.path();
+        let indent = "  ".repeat(depth + 1);
+        if path.is_dir() {
+            println!("{}{}/", indent, entry.file_name().to_string_lossy());
+            print_tree(_base, &path, depth + 1)?;
+        } else {
+            let meta = fs::metadata(&path)?;
+            println!(
+                "{}{} ({} bytes)",
+                indent,
+                entry.file_name().to_string_lossy(),
+                meta.len()
+            );
+        }
+    }
+    Ok(())
+}
+
+pub fn split_key(k: u8, n: u8, output: Option<PathBuf>) -> Result<()> {
+    let identity = read_identity()?;
+    let shares = shamir::split(identity.as_bytes(), k, n)?;
+
+    if let Some(dir) = output {
+        fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
+        for (i, share) in shares.iter().enumerate() {
+            let encoded = STANDARD.encode(share);
+            let label = format!(
+                "Share {} of {} (threshold: {}): {}\n",
+                i + 1,
+                n,
+                k,
+                encoded
+            );
+            let path = dir.join(format!("share-{}.txt", i + 1));
+            fs::write(&path, &label)
+                .with_context(|| format!("writing {}", path.display()))?;
+            eprintln!("Wrote {}", path.display());
+        }
+    } else {
+        let stdout = std::io::stdout();
+        let mut out = stdout.lock();
+        for (i, share) in shares.iter().enumerate() {
+            let encoded = STANDARD.encode(share);
+            writeln!(
+                out,
+                "Share {} of {} (threshold: {}): {}",
+                i + 1,
+                n,
+                k,
+                encoded
+            )?;
+        }
+    }
+
+    Ok(())
+}

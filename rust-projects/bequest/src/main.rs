@@ -1,6 +1,7 @@
 mod gf256;
 mod page;
 mod shamir;
+mod vault;
 
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::PathBuf;
@@ -50,6 +51,42 @@ enum Commands {
         #[arg(long, default_value = "10")]
         rounds: usize,
     },
+
+    /// Manage the encrypted estate vault
+    Vault {
+        #[command(subcommand)]
+        command: VaultCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum VaultCommands {
+    /// Create a new vault with generated passphrase
+    Init,
+
+    /// Decrypt the vault for editing
+    Open,
+
+    /// Encrypt the vault and remove plaintext
+    Seal,
+
+    /// Show vault state and contents
+    Status,
+
+    /// Split the vault passphrase into Shamir shares
+    Split {
+        /// Minimum shares needed to reconstruct
+        #[arg(short = 'k', long, default_value = "2")]
+        threshold: u8,
+
+        /// Total number of shares to generate
+        #[arg(short = 'n', long, default_value = "3")]
+        shares: u8,
+
+        /// Write each share to a separate file in this directory
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -63,6 +100,17 @@ fn main() -> Result<()> {
         Commands::Reconstruct => cmd_reconstruct(),
         Commands::GeneratePage { output } => cmd_generate_page(output),
         Commands::Test { rounds } => cmd_test(rounds),
+        Commands::Vault { command } => match command {
+            VaultCommands::Init => vault::init(),
+            VaultCommands::Open => vault::open(),
+            VaultCommands::Seal => vault::seal(),
+            VaultCommands::Status => vault::status(),
+            VaultCommands::Split {
+                threshold,
+                shares,
+                output,
+            } => vault::split_key(threshold, shares, output),
+        },
     }
 }
 
