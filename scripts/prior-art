@@ -1,0 +1,263 @@
+#!/usr/bin/env nu
+
+# prior-art — Pre-build research tool
+# Searches package registries, GitHub, and local Forge for existing solutions
+#
+# Usage:
+#   prior-art "file watcher with debounce"
+#   prior-art "markdown to PDF" --rust --save
+#   prior-art "OTP email verification" --save --synthesize
+
+def truncate [max: int]: string -> string {
+    let s = ($in | str replace --all "|" "/" | str replace --all "\n" " " | str trim)
+    if ($s | str length) > $max {
+        $"($s | str substring 0..<$max)…"
+    } else {
+        $s
+    }
+}
+
+def safe-first [n: int] {
+    let items = $in
+    if ($items | length) <= $n { $items } else { $items | first $n }
+}
+
+def search-crates [query: string, limit: int] {
+    let q = ($query | str replace --all " " "+")
+    try {
+        let resp = (http get --headers {User-Agent: "prior-art/1.0"} $"https://crates.io/api/v1/crates?q=($q)&per_page=($limit)")
+        $resp.crates | each { |c|
+            {
+                name: $c.name
+                desc: ($c.description | default "" | truncate 80)
+                downloads: $c.downloads
+                recent: $c.recent_downloads
+                version: $c.max_version
+                updated: ($c.updated_at | str substring 0..<10)
+            }
+        }
+    } catch { [] }
+}
+
+def search-npm [query: string, limit: int] {
+    let q = ($query | str replace --all " " "+")
+    try {
+        let resp = (http get $"https://registry.npmjs.org/-/v1/search?text=($q)&size=($limit)")
+        $resp.objects | each { |o|
+            {
+                name: $o.package.name
+                desc: ($o.package.description | default "" | truncate 80)
+                version: $o.package.version
+                score: ($o.score.final * 100 | math round)
+            }
+        }
+    } catch { [] }
+}
+
+def search-github [query: string, limit: int, rust_only: bool] {
+    try {
+        let raw = if $rust_only {
+            ^gh search repos $query --limit $limit --language rust --json "fullName,description,stargazersCount,updatedAt,url,language"
+        } else {
+            ^gh search repos $query --limit $limit --json "fullName,description,stargazersCount,updatedAt,url,language"
+        }
+        $raw | from json | each { |r|
+            {
+                name: $r.fullName
+                desc: ($r.description | default "" | truncate 80)
+                stars: $r.stargazersCount
+                updated: ($r.updatedAt | str substring 0..<10)
+                lang: ($r.language | default "")
+                url: $r.url
+            }
+        }
+    } catch { [] }
+}
+
+def search-aur [query: string, limit: int] {
+    let q = ($query | str replace --all " " "+")
+    try {
+        let resp = (http get $"https://aur.archlinux.org/rpc/v5/search/($q)")
+        $resp.results | safe-first $limit | each { |r|
+            {
+                name: $r.Name
+                desc: ($r.Description | default "" | truncate 80)
+                votes: $r.NumVotes
+                popularity: $r.Popularity
+            }
+        }
+    } catch { [] }
+}
+
+def search-hf [query: string, limit: int] {
+    let q = ($query | str replace --all " " "+")
+    try {
+        let resp = (http get $"https://huggingface.co/api/models?search=($q)&limit=($limit)")
+        $resp | each { |m|
+            {
+                name: ($m.modelId | default "")
+                downloads: ($m.downloads | default 0)
+                likes: ($m.likes | default 0)
+                task: ($m.pipeline_tag | default "")
+            }
+        }
+    } catch { [] }
+}
+
+def search-local [query: string] {
+    let words = ($query | split row " " | where { |w| ($w | str length) > 2 })
+    let pattern = ($words | str join "|")
+
+    let forge = try {
+        ^rg -l -i $pattern $"($env.HOME)/Forge/" --max-count 1 -g "!.git" | lines | safe-first 10
+    } catch { [] }
+
+    let projects = try {
+        ^rg -l -i $pattern $"($env.HOME)/dotfiles/rust-projects/" --max-count 1 -g "!target" -g "!.git" | lines | safe-first 10
+    } catch { [] }
+
+    let convos = try {
+        ^rg -l -i $pattern $"($env.HOME)/Assistants/continuum-logs/" --max-count 1 | lines | safe-first 5
+    } catch { [] }
+
+    {forge: $forge, projects: $projects, conversations: $convos}
+}
+
+def format-report [query: string, results: record] {
+    mut out = $"# Prior Art: \"($query)\"\nGenerated: (date now | format date '%Y-%m-%dT%H:%MZ')\n\n"
+
+    # Local matches
+    let loc = $results.local
+    let local_count = ($loc.forge | length) + ($loc.projects | length) + ($loc.conversations | length)
+    if $local_count > 0 {
+        $out += "## Local Matches\n\n"
+        if ($loc.forge | length) > 0 {
+            $out += "**Forge:**\n"
+            for f in $loc.forge { $out += $"- ($f)\n" }
+            $out += "\n"
+        }
+        if ($loc.projects | length) > 0 {
+            $out += "**Rust Projects:**\n"
+            for f in $loc.projects { $out += $"- ($f)\n" }
+            $out += "\n"
+        }
+        if ($loc.conversations | length) > 0 {
+            $out += "**Past Conversations:**\n"
+            for f in $loc.conversations { $out += $"- ($f)\n" }
+            $out += "\n"
+        }
+    }
+
+    # crates.io
+    if ($results.crates | length) > 0 {
+        $out += "## crates.io\n\n"
+        $out += "| Crate | Downloads | Recent | Version | Updated | Description |\n"
+        $out += "|-------|-----------|--------|---------|---------|-------------|\n"
+        for c in $results.crates {
+            $out += $"| ($c.name) | ($c.downloads) | ($c.recent) | ($c.version) | ($c.updated) | ($c.desc) |\n"
+        }
+        $out += "\n"
+    }
+
+    # npm
+    if ($results.npm | length) > 0 {
+        $out += "## npm\n\n"
+        $out += "| Package | Version | Score | Description |\n"
+        $out += "|---------|---------|-------|-------------|\n"
+        for p in $results.npm {
+            $out += $"| ($p.name) | ($p.version) | ($p.score) | ($p.desc) |\n"
+        }
+        $out += "\n"
+    }
+
+    # GitHub
+    if ($results.github | length) > 0 {
+        $out += "## GitHub\n\n"
+        $out += "| Repo | Stars | Language | Updated | Description |\n"
+        $out += "|------|-------|----------|---------|-------------|\n"
+        for r in $results.github {
+            let link = "[" + $r.name + "](" + $r.url + ")"
+            $out += $"| ($link) | ($r.stars) | ($r.lang) | ($r.updated) | ($r.desc) |\n"
+        }
+        $out += "\n"
+    }
+
+    # AUR
+    if ($results.aur | length) > 0 {
+        $out += "## AUR\n\n"
+        $out += "| Package | Votes | Popularity | Description |\n"
+        $out += "|---------|-------|------------|-------------|\n"
+        for a in $results.aur {
+            $out += $"| ($a.name) | ($a.votes) | ($a.popularity) | ($a.desc) |\n"
+        }
+        $out += "\n"
+    }
+
+    # HuggingFace
+    if ($results.hf | length) > 0 {
+        $out += "## HuggingFace\n\n"
+        $out += "| Model | Downloads | Likes | Task |\n"
+        $out += "|-------|-----------|-------|------|\n"
+        for m in $results.hf {
+            $out += $"| ($m.name) | ($m.downloads) | ($m.likes) | ($m.task) |\n"
+        }
+        $out += "\n"
+    }
+
+    let total = ($results.crates | length) + ($results.npm | length) + ($results.github | length) + ($results.aur | length) + ($results.hf | length) + $local_count
+    $out += $"---\n*($total) results across sources.*\n"
+
+    $out
+}
+
+def main [
+    query: string                # What you're building or looking for
+    --rust (-r)                  # Focus on Rust ecosystem (crates.io + Rust GitHub only)
+    --deep (-d)                  # Include HuggingFace models
+    --local-only (-l)            # Just search Forge, dotfiles, continuum-logs
+    --save (-s)                  # Save report to ~/Forge/research/
+    --synthesize                 # Pipe to claude -p for build/buy assessment
+    --json (-j)                  # Raw JSON output instead of markdown
+    --limit (-n): int = 5        # Results per source (default 5)
+] {
+    let local = (search-local $query)
+
+    let crates = if $local_only { [] } else { search-crates $query $limit }
+    let npm_results = if ($local_only or $rust) { [] } else { search-npm $query $limit }
+    let github = if $local_only { [] } else { search-github $query $limit $rust }
+    let aur = if ($local_only or $rust) { [] } else { search-aur $query $limit }
+    let hf = if $deep { search-hf $query $limit } else { [] }
+
+    let results = {
+        local: $local
+        crates: $crates
+        npm: $npm_results
+        github: $github
+        aur: $aur
+        hf: $hf
+    }
+
+    if $json {
+        $results | to json
+        return
+    }
+
+    let report = (format-report $query $results)
+    print $report
+
+    if $save {
+        let dir = $"($env.HOME)/Forge/research"
+        mkdir $dir
+        let slug = ($query | str downcase | str replace --all --regex '[^a-z0-9]+' "-" | str substring 0..<60 | str trim --char "-")
+        let date = (date now | format date "%Y-%m-%d")
+        let path = $"($dir)/($date)-($slug).md"
+        $report | save --force $path
+        print $"✅ Saved to ($path)"
+    }
+
+    if $synthesize {
+        print "\n🧠 Synthesizing with Claude..."
+        let prompt = "Given this prior art research report, assess concisely: (1) Does a complete solution already exist? (2) Do composable components exist? (3) What gap justifies building? (4) Recommendation: use existing / fork / build from scratch / combine. Be direct and specific."
+        $report | ^claude -p $prompt
+    }
+}

@@ -6,6 +6,7 @@ depends = []
 
 [shared.files]
 "scripts/anki-push" = "~/.local/bin/anki-push"
+"scripts/prior-art" = "~/.local/bin/prior-art"
 "scripts/assistants-docs-auto-push" = "~/.local/bin/assistants-docs-auto-push"
 "scripts/skill-mirror" = "~/.local/bin/skill-mirror"
 "scripts/tm3-watcher" = "~/.local/bin/tm3-watcher"
