@@ -12,14 +12,23 @@ fn bequest_dir() -> PathBuf {
 }
 
 fn heartbeat_file() -> PathBuf {
+    // Syncthing-shared location — visible to all machines
+    let shared = dirs::home_dir()
+        .expect("could not find home directory")
+        .join("Assistants/shared/bequest-heartbeat");
+    if shared.parent().map_or(false, |p| p.exists()) {
+        return shared;
+    }
+    // Fallback to local if shared dir doesn't exist
     bequest_dir().join("last-heartbeat")
 }
 
 /// Record a heartbeat (touch the heartbeat file).
 pub fn record() -> Result<()> {
-    let dir = bequest_dir();
-    fs::create_dir_all(&dir).context("creating ~/.bequest")?;
     let path = heartbeat_file();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).context("creating heartbeat file directory")?;
+    }
     // Write current timestamp as content, and the mtime updates too
     let now = humantime::format_rfc3339_seconds(SystemTime::now()).to_string();
     fs::write(&path, &now).context("writing heartbeat file")?;
@@ -40,10 +49,26 @@ fn latest_activity() -> Result<(SystemTime, Vec<Signal>)> {
     }
 
     // Signal 2: git index (any dotfiles activity)
+    // Fetch first so we see pushes from other machines
     let home = dirs::home_dir().unwrap();
-    if let Some(t) = file_mtime(&home.join("dotfiles/.git/index")) {
+    let dotfiles_dir = home.join("dotfiles");
+    if dotfiles_dir.join(".git").exists() {
+        let _ = Command::new("git")
+            .args(["-C", &dotfiles_dir.to_string_lossy(), "fetch", "--quiet"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+    if let Some(t) = file_mtime(&dotfiles_dir.join(".git/FETCH_HEAD")) {
         signals.push(Signal {
             name: "dotfiles git activity".into(),
+            time: t,
+        });
+    }
+    // Also check local index (local commits that haven't been pushed)
+    if let Some(t) = file_mtime(&dotfiles_dir.join(".git/index")) {
+        signals.push(Signal {
+            name: "dotfiles local git".into(),
             time: t,
         });
     }
