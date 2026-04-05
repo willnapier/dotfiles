@@ -76,24 +76,18 @@ fn latest_activity() -> Result<(SystemTime, Vec<Signal>)> {
         });
     }
 
-    // Signal 6: Mail database (notmuch xapian — updates on every mail sync)
-    // This is the key iPhone signal: mail flows even when only using phone
-    let mail_db = home.join("Mail/.notmuch/xapian/postlist.glass");
-    if let Some(t) = file_mtime(&mail_db) {
+    // Signal 6: Sent email (proves human action, not just incoming spam)
+    if let Some(t) = last_sent_email() {
         signals.push(Signal {
-            name: "mail activity (notmuch)".into(),
+            name: "sent email".into(),
             time: t,
         });
     }
 
-    // Signal 7: Syncthing index (any file sync from any device)
-    let syncthing_dir = home.join(".local/state/syncthing/index-v2");
-    if let Some(t) = most_recent_file_in(&syncthing_dir, "db") {
-        signals.push(Signal {
-            name: "syncthing activity".into(),
-            time: t,
-        });
-    }
+    // Signal 7: explicit heartbeat via SSH from iPhone
+    // iPhone Shortcut → "Run Script Over SSH" → nimbini via Tailscale
+    // → bequest heartbeat ping (touches the heartbeat file)
+    // This is picked up by Signal 1 (heartbeat file) — no separate signal needed.
 
     Ok((
         signals.iter().map(|s| s.time).max().unwrap_or(SystemTime::UNIX_EPOCH),
@@ -125,6 +119,66 @@ fn most_recent_file_in(dir: &PathBuf, ext: &str) -> Option<SystemTime> {
         }
     }
     latest
+}
+
+fn last_sent_email() -> Option<SystemTime> {
+    // Query himalaya for the most recent sent email
+    let output = Command::new("himalaya")
+        .args([
+            "--quiet",
+            "envelope",
+            "list",
+            "-f",
+            "[Google Mail]/Sent Mail",
+            "-s",
+            "1",
+            "-o",
+            "json",
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    // Find the JSON array in the output (skip any non-JSON lines)
+    let json_start = text.find("[{")?;
+    let json_text = &text[json_start..];
+    // Extract the date field: "date":"2026-04-04 13:51+01:00"
+    let date_start = json_text.find("\"date\":\"")?;
+    let date_val = &json_text[date_start + 8..];
+    let date_end = date_val.find('"')?;
+    let date_str = &date_val[..date_end];
+    // Format: "2026-04-04 13:51+01:00" — normalize to RFC 3339
+    // Find the date/time split (space), and the timezone part
+    let space = date_str.find(' ')?;
+    let date_part = &date_str[..space];
+    let rest = &date_str[space + 1..];
+    // rest is "13:51+01:00" — find where time ends and tz begins
+    // Time is HH:MM or HH:MM:SS, tz starts with + or - after the time
+    let tz_start = rest[5..].find(['+', '-']).map(|i| i + 5)?;
+    let time_part = &rest[..tz_start];
+    let tz_part = &rest[tz_start..];
+    let time_with_secs = if time_part.len() == 5 {
+        format!("{}:00", time_part) // HH:MM → HH:MM:SS
+    } else {
+        time_part.to_string()
+    };
+    // humantime only accepts Z (UTC), so convert the offset to UTC
+    // Parse timezone offset like "+01:00" or "-05:00"
+    let tz_sign: i64 = if tz_part.starts_with('+') { 1 } else { -1 };
+    let tz_hours: i64 = tz_part[1..3].parse().ok()?;
+    let tz_mins: i64 = tz_part[4..6].parse().ok()?;
+    let tz_offset_secs = tz_sign * (tz_hours * 3600 + tz_mins * 60);
+    // Parse as UTC then adjust
+    let utc_str = format!("{}T{}Z", date_part, time_with_secs);
+    let t = humantime::parse_rfc3339(&utc_str).ok()?;
+    // Subtract the offset to get actual UTC
+    if tz_offset_secs >= 0 {
+        t.checked_sub(Duration::from_secs(tz_offset_secs as u64))
+    } else {
+        t.checked_add(Duration::from_secs((-tz_offset_secs) as u64))
+    }
 }
 
 fn last_login() -> Option<SystemTime> {
