@@ -1,4 +1,5 @@
 mod gf256;
+mod heartbeat;
 mod page;
 mod shamir;
 mod vault;
@@ -57,6 +58,12 @@ enum Commands {
         #[command(subcommand)]
         command: VaultCommands,
     },
+
+    /// Dead man's switch — heartbeat monitoring
+    Heartbeat {
+        #[command(subcommand)]
+        command: HeartbeatCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -89,6 +96,34 @@ enum VaultCommands {
     },
 }
 
+#[derive(Subcommand)]
+enum HeartbeatCommands {
+    /// Record a heartbeat (I'm still here)
+    Ping,
+
+    /// Show heartbeat status and all detected signals
+    Status {
+        /// Days of inactivity before warning
+        #[arg(long, default_value = "14")]
+        threshold: u64,
+
+        /// Days of grace period after threshold
+        #[arg(long, default_value = "7")]
+        grace: u64,
+    },
+
+    /// Check heartbeat state (for automated use). Exit: 0=normal, 1=warning, 2=triggered
+    Check {
+        /// Days of inactivity before warning
+        #[arg(long, default_value = "14")]
+        threshold: u64,
+
+        /// Days of grace period after threshold
+        #[arg(long, default_value = "7")]
+        grace: u64,
+    },
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
@@ -110,6 +145,20 @@ fn main() -> Result<()> {
                 shares,
                 output,
             } => vault::split_key(threshold, shares, output),
+        },
+        Commands::Heartbeat { command } => match command {
+            HeartbeatCommands::Ping => heartbeat::record(),
+            HeartbeatCommands::Status { threshold, grace } => {
+                heartbeat::status(threshold, grace)
+            }
+            HeartbeatCommands::Check { threshold, grace } => {
+                let state = heartbeat::check(threshold, grace)?;
+                std::process::exit(match state {
+                    heartbeat::State::Normal => 0,
+                    heartbeat::State::Warning => 1,
+                    heartbeat::State::Triggered => 2,
+                });
+            }
         },
     }
 }
