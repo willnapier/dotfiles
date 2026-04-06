@@ -1,3 +1,4 @@
+age
 base
 base-devel
 blueman
@@ -87,6 +88,8 @@ texlive-luatex
 ttf-jetbrains-mono-nerd
 unzip
 usbutils
+vaultwarden
+vaultwarden-web
 vim
 vulkan-intel
 waybar

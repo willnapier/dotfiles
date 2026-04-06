@@ -1,4 +1,5 @@
 bat	0.25.0	crates.io
+bequest	0.1.0	/home/will/dotfiles/rust-projects/bequest
 clinic-attendance-report	0.1.0	/home/will/dotfiles/rust-projects/clinic-attendance-report
 clinical	0.1.0	/home/will/dotfiles/rust-projects/clinical
 concert-capture	0.1.0	/home/will/dotfiles/rust-projects/concert-capture
@@ -20,6 +21,7 @@ ripgrep	14.1.1	crates.io
 sd	1.0.0	crates.io
 skill-eval	0.1.0	/home/will/dotfiles/rust-projects/skill-eval
 skim	0.20.5	crates.io
+sr	0.1.0	/home/will/dotfiles/rust-projects/sr
 starship	1.23.0	crates.io
 tm3-diary-capture	0.1.0	/home/will/dotfiles/rust-projects/tm3-diary-capture
 trashy	2.0.0	crates.io

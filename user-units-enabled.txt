@@ -1,5 +1,6 @@
 ai-export-watcher.service
 assistants-docs-watcher.service
+bequest-heartbeat.timer
 claude-code-nightly-cleanup.timer
 collect-projects-watcher.service
 collect-projects.timer

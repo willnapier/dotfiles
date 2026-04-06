@@ -10,3 +10,4 @@ sshd.service
 systemd-resolved.service
 systemd-timesyncd.service
 tailscaled.service
+vaultwarden.service
