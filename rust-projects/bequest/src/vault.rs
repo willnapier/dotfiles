@@ -6,6 +6,7 @@ use std::process::Command;
 
 use anyhow::{bail, ensure, Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine};
+use serde::Deserialize;
 
 use crate::shamir;
 
@@ -339,6 +340,165 @@ fn print_tree(_base: &Path, dir: &Path, depth: usize) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Pull the "Estate" folder from Vaultwarden and update the vault.
+///
+/// Flow: bw unlock → find Estate folder → export items → open vault → write → re-seal.
+pub fn update() -> Result<()> {
+    check_age()?;
+    let id_path = identity_file();
+    ensure!(id_path.exists(), "no identity key — run `bequest vault init` first");
+
+    // Check bw is installed
+    let bw_ver = bw_cmd()
+        .arg("--version")
+        .output()
+        .context("bw (bitwarden-cli) not installed — run: sudo pacman -S bitwarden-cli")?;
+    ensure!(bw_ver.status.success(), "bw --version failed");
+
+    // Check login status
+    let status_out = bw_cmd().args(["status"]).output()?;
+    let status_str = String::from_utf8_lossy(&status_out.stdout);
+    if status_str.contains("\"unauthenticated\"") {
+        bail!("Not logged in. Run: NODE_TLS_REJECT_UNAUTHORIZED=0 bw login");
+    }
+
+    // Get session token — either from env or by unlocking
+    let session = get_bw_session()?;
+
+    // List folders to find "Estate"
+    let folders_out = bw_cmd()
+        .args(["list", "folders", "--session", &session])
+        .output()
+        .context("listing folders")?;
+    ensure!(folders_out.status.success(), "bw list folders failed");
+
+    let folders_json = String::from_utf8_lossy(&folders_out.stdout);
+    let folders: Vec<BwFolder> =
+        serde_json::from_str(&folders_json).context("parsing folders JSON")?;
+
+    let estate_folder = folders
+        .iter()
+        .find(|f| f.name.eq_ignore_ascii_case("estate"))
+        .ok_or_else(|| {
+            let names: Vec<_> = folders.iter().map(|f| f.name.as_str()).collect();
+            anyhow::anyhow!(
+                "No 'Estate' folder found in Vaultwarden. Found: {:?}. \
+                 Create a folder called 'Estate' in the web vault first.",
+                names
+            )
+        })?;
+
+    eprintln!("Found folder: {} ({})", estate_folder.name, estate_folder.id);
+
+    // List items in the Estate folder
+    let items_out = bw_cmd()
+        .args([
+            "list",
+            "items",
+            "--folderid",
+            &estate_folder.id,
+            "--session",
+            &session,
+        ])
+        .output()
+        .context("listing items")?;
+    ensure!(items_out.status.success(), "bw list items failed");
+
+    let items_json = String::from_utf8_lossy(&items_out.stdout);
+    let items: Vec<serde_json::Value> =
+        serde_json::from_str(&items_json).context("parsing items JSON")?;
+
+    eprintln!("{} items in Estate folder", items.len());
+
+    if items.is_empty() {
+        eprintln!("Warning: Estate folder is empty. Nothing to export.");
+    }
+
+    // Determine vault state and handle accordingly
+    let vault = vault_dir();
+    let archive = vault_archive();
+    let was_sealed = !vault.exists() && archive.exists();
+
+    // Open vault if sealed
+    if was_sealed {
+        open()?;
+    } else if !vault.exists() {
+        bail!("No vault — run `bequest vault init` first");
+    }
+
+    // Write the export
+    let export_dir = vault.join("vault-export");
+    fs::create_dir_all(&export_dir).context("creating vault-export/")?;
+    let export_path = export_dir.join("vaultwarden-estate.json");
+    let pretty = serde_json::to_string_pretty(&items).context("formatting JSON")?;
+    fs::write(&export_path, &pretty)
+        .with_context(|| format!("writing {}", export_path.display()))?;
+
+    eprintln!(
+        "Wrote {} items to {}",
+        items.len(),
+        export_path.display()
+    );
+
+    // Re-seal if it was sealed before
+    if was_sealed {
+        seal()?;
+    } else {
+        eprintln!("Vault is open — run `bequest vault seal` when ready.");
+    }
+
+    // Lock bw session
+    let _ = bw_cmd()
+        .args(["lock"])
+        .output();
+
+    Ok(())
+}
+
+fn bw_cmd() -> Command {
+    let mut cmd = Command::new("bw");
+    cmd.env("NODE_TLS_REJECT_UNAUTHORIZED", "0");
+    cmd.stderr(std::process::Stdio::piped());
+    cmd
+}
+
+fn get_bw_session() -> Result<String> {
+    // Check if BW_SESSION is already set
+    if let Ok(s) = std::env::var("BW_SESSION") {
+        if !s.is_empty() {
+            return Ok(s);
+        }
+    }
+
+    // Prompt for master password and unlock
+    eprint!("Vaultwarden master password: ");
+    std::io::stderr().flush()?;
+    let mut password = String::new();
+    std::io::stdin().read_line(&mut password)?;
+    let password = password.trim().to_string();
+
+    let unlock = bw_cmd()
+        .args(["unlock", "--raw", &password])
+        .output()
+        .context("running bw unlock")?;
+
+    ensure!(
+        unlock.status.success(),
+        "bw unlock failed: {}",
+        String::from_utf8_lossy(&unlock.stderr)
+    );
+
+    let session = String::from_utf8_lossy(&unlock.stdout).trim().to_string();
+    ensure!(!session.is_empty(), "bw unlock returned empty session");
+    Ok(session)
+}
+
+#[derive(Deserialize)]
+struct BwFolder {
+    id: String,
+    name: String,
 }
 
 pub fn split_key(k: u8, n: u8, output: Option<PathBuf>) -> Result<()> {

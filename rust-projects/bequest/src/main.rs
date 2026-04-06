@@ -108,6 +108,9 @@ enum VaultCommands {
     /// Show vault state and contents
     Status,
 
+    /// Pull Estate folder from Vaultwarden and update the vault export
+    Update,
+
     /// Split the vault passphrase into Shamir shares
     Split {
         /// Minimum shares needed to reconstruct
@@ -168,6 +171,7 @@ fn main() -> Result<()> {
             VaultCommands::Open => vault::open(),
             VaultCommands::Seal => vault::seal(),
             VaultCommands::Status => vault::status(),
+            VaultCommands::Update => vault::update(),
             VaultCommands::Split {
                 threshold,
                 shares,

@@ -16,7 +16,7 @@ fn heartbeat_file() -> PathBuf {
     let shared = dirs::home_dir()
         .expect("could not find home directory")
         .join("Assistants/shared/bequest-heartbeat");
-    if shared.parent().map_or(false, |p| p.exists()) {
+    if shared.parent().is_some_and(|p| p.exists()) {
         return shared;
     }
     // Fallback to local if shared dir doesn't exist
