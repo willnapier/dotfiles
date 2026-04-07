@@ -1,3 +1,4 @@
+cli
 codex
 gemini-cli
 node-gyp

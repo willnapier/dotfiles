@@ -13,6 +13,7 @@ dprint	0.50.2	crates.io
 easel	0.1.0	/home/will/dotfiles/rust-projects/easel
 email-extract	0.1.0	/home/will/dotfiles/rust-projects/email-extract
 fd-find	10.3.0	crates.io
+grok-publish	0.1.0	/home/will/dotfiles/rust-projects/grok-publish
 himalaya	1.1.0	https://github.com/pimalaya/himalaya.git#85988da4
 jaq	2.3.0	crates.io
 module	0.1.0	/home/will/dotfiles/rust-projects/module

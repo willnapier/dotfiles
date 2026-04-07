@@ -1,6 +1,7 @@
 age
 base
 base-devel
+bitwarden-cli
 blueman
 bluez
 bluez-utils
@@ -47,7 +48,6 @@ network-manager-applet
 networkmanager
 ninja
 niri
-nodejs
 notmuch
 npm
 oculante
