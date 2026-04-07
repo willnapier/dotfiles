@@ -94,6 +94,11 @@
             "type": "command",
             "command": "bash ~/.claude/hooks/doc-gate-check.sh",
             "statusMessage": "Checking documentation gate..."
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/diagram-gate-check.sh",
+            "statusMessage": "Checking diagram impact gate..."
           }
         ]
       }
