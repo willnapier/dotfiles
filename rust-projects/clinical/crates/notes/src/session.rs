@@ -14,6 +14,13 @@ pub struct AuthMarker {
 }
 
 /// Computed auth status for a single client.
+///
+/// Some fields (`total_sessions`, `therapy_commenced`, `funding_label`) are
+/// populated by `compute_auth_status` and exercised by the unit tests but
+/// not currently consumed by non-test code paths. They remain as part of
+/// the public data shape so future displays/exports don't need to re-derive
+/// them, and so the tests stay meaningful.
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct AuthStatus {
     pub client_id: String,

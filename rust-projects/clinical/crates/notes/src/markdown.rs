@@ -52,11 +52,12 @@ const REFERENCE_FIELDS: &[&str] = &[
 ///
 /// If no reference fields are found, inserts after line 1 (after the `# ID` heading).
 /// Returns the modified lines.
+///
+/// The reference field list is the single `REFERENCE_FIELDS` constant; the regex
+/// is built from it so adding a new field requires only one edit.
 pub fn insert_field_after_last(lines: &[String], field_name: &str, value: &str) -> Vec<String> {
-    let re = Regex::new(
-        r"^\*\*(Therapy commenced|Formal notes|Referral source|Referral type|Referring doctor|Funding|Session count|Last update letter)\*\*:",
-    )
-    .unwrap();
+    let pattern = format!(r"^\*\*({})\*\*:", REFERENCE_FIELDS.join("|"));
+    let re = Regex::new(&pattern).unwrap();
 
     // Find the last reference field line
     let mut last_ref_idx = None;

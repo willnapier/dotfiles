@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
 use regex::Regex;
 
-use crate::{client, markdown, session};
+use clinical_core::client;
+
+use crate::{markdown, session};
 
 /// Extract the last N session blocks from content.
 ///

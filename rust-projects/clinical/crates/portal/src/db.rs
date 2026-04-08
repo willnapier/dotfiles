@@ -54,6 +54,14 @@ pub fn init(path: &str) -> Result<Pool> {
     Ok(Arc::new(Mutex::new(conn)))
 }
 
+/// Mirrors a row in the `documents` SQLite table.
+///
+/// Several fields (`token`, `recipient_name`, `created_at`, `access_count`)
+/// are populated from the row but not currently consumed by route handlers;
+/// they remain as part of the row schema so the struct stays a faithful
+/// representation of the database and future endpoints don't need to
+/// re-fetch them.
+#[allow(dead_code)]
 pub struct Document {
     pub id: String,
     pub token: String,

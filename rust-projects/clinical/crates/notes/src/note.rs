@@ -3,7 +3,9 @@ use regex::Regex;
 use std::io::{self, Read, Write};
 use std::process::Command;
 
-use crate::{client, finalise, markdown, session};
+use clinical_core::client;
+
+use crate::{finalise, session};
 
 /// Validation errors for LLM-generated notes.
 pub struct ValidationResult {

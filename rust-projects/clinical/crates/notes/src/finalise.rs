@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
 use regex::Regex;
 
-use crate::{client, markdown, session};
+use clinical_core::client;
+
+use crate::{markdown, session};
 
 /// Run `clinical note-finalise <ID>`.
 ///
@@ -85,7 +87,6 @@ pub fn run(id: &str) -> Result<()> {
 
     // Re-check alerts now that the note is written
     let auth_status = session::compute_auth_status(id, &content);
-    let auth_markers = session::parse_auth_markers(&lines);
 
     let last_letter_raw =
         markdown::extract_field(&content, "Last update letter").unwrap_or_default();
