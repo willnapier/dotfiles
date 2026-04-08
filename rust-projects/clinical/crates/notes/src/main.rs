@@ -1,12 +1,17 @@
+// Shared types live in the clinical-core crate; re-export them as
+// `crate::client` and `crate::identity` so the rest of the bin source
+// keeps using the existing paths unchanged.
+use clinical_core::client;
+use clinical_core::identity;
+
 mod auth;
-mod client;
 mod deidentify;
 mod finalise;
-mod identity;
 mod letter;
 mod markdown;
 mod note;
 mod populate;
+mod portal_client;
 mod prepare;
 mod reidentify;
 mod scaffold;
@@ -127,6 +132,60 @@ enum Commands {
         #[arg(long, default_value = "3")]
         sessions: usize,
     },
+
+    /// Upload a built letter PDF and email a secure link to the recipient
+    Share {
+        /// Client ID (defaults to last clinical-letter-build state)
+        client_id: Option<String>,
+
+        /// Path to the PDF (defaults to last clinical-letter-build state)
+        #[arg(long)]
+        pdf: Option<String>,
+
+        /// Recipient email (defaults to identity.yaml referrer.email)
+        #[arg(long)]
+        to: Option<String>,
+
+        /// Recipient name (defaults to identity.yaml referrer.name)
+        #[arg(long)]
+        name: Option<String>,
+
+        /// Link expiry in days
+        #[arg(long, default_value = "14")]
+        expiry_days: u32,
+
+        /// Override the portal base URL
+        #[arg(long)]
+        portal_url: Option<String>,
+
+        /// Print resolved values without uploading
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// List all shared documents and their status
+    Status {
+        /// Override the portal base URL
+        #[arg(long)]
+        portal_url: Option<String>,
+    },
+
+    /// Revoke a previously shared document by token
+    Revoke {
+        /// The token from the share link (UUID after /d/)
+        token: String,
+
+        /// Override the portal base URL
+        #[arg(long)]
+        portal_url: Option<String>,
+    },
+
+    /// Show recently changed files in ~/Clinical/clients
+    Changes {
+        /// Number of days to look back
+        #[arg(long, default_value = "7")]
+        days: u32,
+    },
 }
 
 #[derive(Subcommand)]
@@ -188,5 +247,17 @@ fn main() -> Result<()> {
         Commands::NoteSave { id } => note::save(&id),
         Commands::NoteFinalise { id } => finalise::run(&id),
         Commands::NotePrepare { id, sessions } => prepare::run(&id, sessions),
+        Commands::Share {
+            client_id,
+            pdf,
+            to,
+            name,
+            expiry_days,
+            portal_url,
+            dry_run,
+        } => portal_client::share(client_id, pdf, to, name, expiry_days, portal_url, dry_run),
+        Commands::Status { portal_url } => portal_client::status(portal_url),
+        Commands::Revoke { token, portal_url } => portal_client::revoke(token, portal_url),
+        Commands::Changes { days } => portal_client::changes(days),
     }
 }

@@ -1,0 +1,23 @@
+[package]
+name = "clinical-portal"
+version.workspace = true
+edition.workspace = true
+description = "Secure clinical letter delivery portal HTTP server (deployed to Fly.io)"
+
+[[bin]]
+name = "clinical-portal"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+chrono.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+axum.workspace = true
+tokio.workspace = true
+tower-http.workspace = true
+rusqlite.workspace = true
+rand.workspace = true
+uuid.workspace = true
+reqwest.workspace = true

@@ -1,0 +1,11 @@
+[package]
+name = "clinical-core"
+version.workspace = true
+edition.workspace = true
+description = "Shared types and helpers for clinical notes + portal"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_yaml.workspace = true
+dirs.workspace = true
