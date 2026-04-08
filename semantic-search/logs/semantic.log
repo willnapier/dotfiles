@@ -6696,3 +6696,568 @@ Incremental update completed
 2026-04-08 23:42:19,607 - SemanticIndexer - INFO - Starting incremental index update
 2026-04-08 23:42:19,607 - SemanticIndexer - INFO - Found 0 markdown files
 2026-04-08 23:42:19,607 - SemanticIndexer - INFO - No files need updating
+2026-04-08 23:44:18,783 - SemanticIndexer - INFO - OpenAI client initialized with model: text-embedding-3-large
+2026-04-08 23:44:18,814 - SemanticIndexer - INFO - Loaded existing FAISS index with 5745 vectors
+2026-04-08 23:44:18,826 - SemanticIndexer - INFO - Loaded metadata for 5745 files
+2026-04-08 23:44:18,826 - SemanticIndexer - INFO - Starting incremental index update
+2026-04-08 23:44:18,864 - SemanticIndexer - INFO - Skipping excluded file: Icon - under the hood, reverse engineering.md
+2026-04-08 23:44:18,865 - SemanticIndexer - INFO - Found 6925 markdown files
+2026-04-08 23:44:18,918 - SemanticIndexer - ERROR - Error checking file /Users/williamnapier/Forge/NapierianLogs/Scenarios/Scenario - Financial Planning Context.md: [Errno 2] No such file or directory: '/Users/williamnapier/Forge/NapierianLogs/Scenarios/Scenario - Financial Planning Context.md'
+2026-04-08 23:44:18,921 - SemanticIndexer - ERROR - Error checking file /Users/williamnapier/Forge/Scenario - 2026-01-23 Financial Architecture Redesign.md: [Errno 2] No such file or directory: '/Users/williamnapier/Forge/Scenario - 2026-01-23 Financial Architecture Redesign.md'
+2026-04-08 23:44:18,923 - SemanticIndexer - INFO - Found 6925 files to update
+2026-04-08 23:44:21,519 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:21,520 - openai._base_client - INFO - Retrying request to /embeddings in 0.378779 seconds
+2026-04-08 23:44:24,096 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:24,097 - openai._base_client - INFO - Retrying request to /embeddings in 0.803423 seconds
+2026-04-08 23:44:24,995 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:24,998 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:44:25,072 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:25,073 - openai._base_client - INFO - Retrying request to /embeddings in 0.448657 seconds
+2026-04-08 23:44:25,593 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:25,594 - openai._base_client - INFO - Retrying request to /embeddings in 0.933452 seconds
+2026-04-08 23:44:26,613 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:26,614 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:44:26,690 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:26,691 - openai._base_client - INFO - Retrying request to /embeddings in 0.431871 seconds
+2026-04-08 23:44:27,215 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:27,216 - openai._base_client - INFO - Retrying request to /embeddings in 0.862739 seconds
+2026-04-08 23:44:28,156 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:28,157 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:44:28,231 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:28,231 - openai._base_client - INFO - Retrying request to /embeddings in 0.483050 seconds
+2026-04-08 23:44:28,792 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:28,792 - openai._base_client - INFO - Retrying request to /embeddings in 0.867463 seconds
+2026-04-08 23:44:29,739 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:29,740 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:44:29,813 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:29,814 - openai._base_client - INFO - Retrying request to /embeddings in 0.383628 seconds
+2026-04-08 23:44:30,272 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:30,272 - openai._base_client - INFO - Retrying request to /embeddings in 0.761269 seconds
+2026-04-08 23:44:31,109 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:31,110 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:44:31,185 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:31,186 - openai._base_client - INFO - Retrying request to /embeddings in 0.440791 seconds
+2026-04-08 23:44:31,709 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:31,710 - openai._base_client - INFO - Retrying request to /embeddings in 0.835580 seconds
+2026-04-08 23:44:32,619 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:32,620 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:44:32,691 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:32,691 - openai._base_client - INFO - Retrying request to /embeddings in 0.409679 seconds
+2026-04-08 23:44:33,185 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:33,186 - openai._base_client - INFO - Retrying request to /embeddings in 0.801954 seconds
+2026-04-08 23:44:34,067 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:34,068 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:44:34,152 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:34,153 - openai._base_client - INFO - Retrying request to /embeddings in 0.494169 seconds
+2026-04-08 23:44:34,731 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:34,731 - openai._base_client - INFO - Retrying request to /embeddings in 0.922944 seconds
+2026-04-08 23:44:35,734 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:35,735 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:44:35,818 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:35,819 - openai._base_client - INFO - Retrying request to /embeddings in 0.432882 seconds
+2026-04-08 23:44:36,339 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:36,340 - openai._base_client - INFO - Retrying request to /embeddings in 0.959087 seconds
+2026-04-08 23:44:37,407 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:37,408 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:44:37,483 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:37,484 - openai._base_client - INFO - Retrying request to /embeddings in 0.458576 seconds
+2026-04-08 23:44:38,020 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:38,021 - openai._base_client - INFO - Retrying request to /embeddings in 0.970283 seconds
+2026-04-08 23:44:39,066 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:39,067 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:44:39,149 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:39,149 - openai._base_client - INFO - Retrying request to /embeddings in 0.493873 seconds
+2026-04-08 23:44:39,720 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:39,721 - openai._base_client - INFO - Retrying request to /embeddings in 0.832363 seconds
+2026-04-08 23:44:40,664 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:40,664 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:44:40,739 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:40,740 - openai._base_client - INFO - Retrying request to /embeddings in 0.399458 seconds
+2026-04-08 23:44:41,211 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:41,212 - openai._base_client - INFO - Retrying request to /embeddings in 0.838599 seconds
+2026-04-08 23:44:42,128 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:42,129 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:44:42,207 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:42,208 - openai._base_client - INFO - Retrying request to /embeddings in 0.431080 seconds
+2026-04-08 23:44:42,718 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:42,719 - openai._base_client - INFO - Retrying request to /embeddings in 0.805784 seconds
+2026-04-08 23:44:43,598 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:43,599 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:44:43,668 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:43,669 - openai._base_client - INFO - Retrying request to /embeddings in 0.484230 seconds
+2026-04-08 23:44:44,270 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:44,271 - openai._base_client - INFO - Retrying request to /embeddings in 0.901846 seconds
+2026-04-08 23:44:45,248 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:45,248 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:44:45,397 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:45,397 - openai._base_client - INFO - Retrying request to /embeddings in 0.447680 seconds
+2026-04-08 23:44:45,916 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:45,916 - openai._base_client - INFO - Retrying request to /embeddings in 0.857754 seconds
+2026-04-08 23:44:46,879 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:46,880 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:44:46,967 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:46,967 - openai._base_client - INFO - Retrying request to /embeddings in 0.424791 seconds
+2026-04-08 23:44:47,478 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:47,479 - openai._base_client - INFO - Retrying request to /embeddings in 0.965755 seconds
+2026-04-08 23:44:48,536 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:48,537 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:44:48,628 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:48,628 - openai._base_client - INFO - Retrying request to /embeddings in 0.429211 seconds
+2026-04-08 23:44:49,149 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:49,150 - openai._base_client - INFO - Retrying request to /embeddings in 0.802053 seconds
+2026-04-08 23:44:50,048 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:50,049 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:44:50,136 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:50,137 - openai._base_client - INFO - Retrying request to /embeddings in 0.406401 seconds
+2026-04-08 23:44:50,637 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:50,637 - openai._base_client - INFO - Retrying request to /embeddings in 0.905316 seconds
+2026-04-08 23:44:51,633 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:51,634 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:44:51,726 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:51,727 - openai._base_client - INFO - Retrying request to /embeddings in 0.483275 seconds
+2026-04-08 23:44:52,290 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:52,290 - openai._base_client - INFO - Retrying request to /embeddings in 0.861353 seconds
+2026-04-08 23:44:53,238 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:53,238 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:44:53,326 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:53,326 - openai._base_client - INFO - Retrying request to /embeddings in 0.485481 seconds
+2026-04-08 23:44:53,928 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:53,929 - openai._base_client - INFO - Retrying request to /embeddings in 0.905978 seconds
+2026-04-08 23:44:54,920 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:54,920 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:44:55,020 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:55,021 - openai._base_client - INFO - Retrying request to /embeddings in 0.457411 seconds
+2026-04-08 23:44:55,572 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:55,573 - openai._base_client - INFO - Retrying request to /embeddings in 0.841007 seconds
+2026-04-08 23:44:56,505 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:56,506 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:44:56,651 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:56,651 - openai._base_client - INFO - Retrying request to /embeddings in 0.420320 seconds
+2026-04-08 23:44:57,162 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:57,163 - openai._base_client - INFO - Retrying request to /embeddings in 0.979318 seconds
+2026-04-08 23:44:58,238 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:58,239 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:44:58,337 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:58,337 - openai._base_client - INFO - Retrying request to /embeddings in 0.420225 seconds
+2026-04-08 23:44:58,848 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:58,849 - openai._base_client - INFO - Retrying request to /embeddings in 0.845326 seconds
+2026-04-08 23:44:59,787 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:59,788 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:44:59,878 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:44:59,878 - openai._base_client - INFO - Retrying request to /embeddings in 0.475448 seconds
+2026-04-08 23:45:00,442 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:00,443 - openai._base_client - INFO - Retrying request to /embeddings in 0.942585 seconds
+2026-04-08 23:45:01,477 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:01,478 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:01,586 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:01,587 - openai._base_client - INFO - Retrying request to /embeddings in 0.393524 seconds
+2026-04-08 23:45:02,066 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:02,067 - openai._base_client - INFO - Retrying request to /embeddings in 0.778875 seconds
+2026-04-08 23:45:02,954 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:02,955 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:03,030 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:03,031 - openai._base_client - INFO - Retrying request to /embeddings in 0.418921 seconds
+2026-04-08 23:45:03,524 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:03,525 - openai._base_client - INFO - Retrying request to /embeddings in 0.818286 seconds
+2026-04-08 23:45:04,418 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:04,419 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:04,491 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:04,492 - openai._base_client - INFO - Retrying request to /embeddings in 0.391089 seconds
+2026-04-08 23:45:04,964 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:04,966 - openai._base_client - INFO - Retrying request to /embeddings in 0.795772 seconds
+2026-04-08 23:45:05,832 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:05,833 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:05,903 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:05,904 - openai._base_client - INFO - Retrying request to /embeddings in 0.451869 seconds
+2026-04-08 23:45:06,430 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:06,431 - openai._base_client - INFO - Retrying request to /embeddings in 0.823749 seconds
+2026-04-08 23:45:07,333 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:07,333 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:07,403 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:07,403 - openai._base_client - INFO - Retrying request to /embeddings in 0.412923 seconds
+2026-04-08 23:45:07,891 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:07,891 - openai._base_client - INFO - Retrying request to /embeddings in 0.772213 seconds
+2026-04-08 23:45:08,750 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:08,751 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:08,820 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:08,821 - openai._base_client - INFO - Retrying request to /embeddings in 0.477978 seconds
+2026-04-08 23:45:09,378 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:09,379 - openai._base_client - INFO - Retrying request to /embeddings in 0.848974 seconds
+2026-04-08 23:45:10,309 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:10,309 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:10,379 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:10,379 - openai._base_client - INFO - Retrying request to /embeddings in 0.452971 seconds
+2026-04-08 23:45:10,919 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:10,920 - openai._base_client - INFO - Retrying request to /embeddings in 0.751956 seconds
+2026-04-08 23:45:11,747 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:11,747 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:11,821 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:11,822 - openai._base_client - INFO - Retrying request to /embeddings in 0.467241 seconds
+2026-04-08 23:45:12,364 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:12,364 - openai._base_client - INFO - Retrying request to /embeddings in 0.757379 seconds
+2026-04-08 23:45:13,192 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:13,193 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:13,265 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:13,266 - openai._base_client - INFO - Retrying request to /embeddings in 0.438664 seconds
+2026-04-08 23:45:13,779 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:13,780 - openai._base_client - INFO - Retrying request to /embeddings in 0.988442 seconds
+2026-04-08 23:45:14,842 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:14,843 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:14,920 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:14,921 - openai._base_client - INFO - Retrying request to /embeddings in 0.442596 seconds
+2026-04-08 23:45:15,509 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:15,510 - openai._base_client - INFO - Retrying request to /embeddings in 0.899722 seconds
+2026-04-08 23:45:16,484 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:16,485 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:16,630 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:16,630 - openai._base_client - INFO - Retrying request to /embeddings in 0.388296 seconds
+2026-04-08 23:45:17,104 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:17,104 - openai._base_client - INFO - Retrying request to /embeddings in 0.871579 seconds
+2026-04-08 23:45:18,064 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:18,064 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:18,143 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:18,144 - openai._base_client - INFO - Retrying request to /embeddings in 0.426052 seconds
+2026-04-08 23:45:18,641 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:18,642 - openai._base_client - INFO - Retrying request to /embeddings in 0.794308 seconds
+2026-04-08 23:45:19,523 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:19,524 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:19,594 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:19,594 - openai._base_client - INFO - Retrying request to /embeddings in 0.427798 seconds
+2026-04-08 23:45:20,098 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:20,098 - openai._base_client - INFO - Retrying request to /embeddings in 0.776255 seconds
+2026-04-08 23:45:20,962 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:20,963 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:21,038 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:21,039 - openai._base_client - INFO - Retrying request to /embeddings in 0.454078 seconds
+2026-04-08 23:45:21,565 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:21,566 - openai._base_client - INFO - Retrying request to /embeddings in 0.922088 seconds
+2026-04-08 23:45:22,568 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:22,568 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:22,643 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:22,644 - openai._base_client - INFO - Retrying request to /embeddings in 0.463324 seconds
+2026-04-08 23:45:23,286 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:23,286 - openai._base_client - INFO - Retrying request to /embeddings in 0.975841 seconds
+2026-04-08 23:45:24,341 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:24,342 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:24,416 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:24,417 - openai._base_client - INFO - Retrying request to /embeddings in 0.466544 seconds
+2026-04-08 23:45:24,955 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:24,956 - openai._base_client - INFO - Retrying request to /embeddings in 0.884720 seconds
+2026-04-08 23:45:25,918 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:25,919 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:25,991 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:25,991 - openai._base_client - INFO - Retrying request to /embeddings in 0.375565 seconds
+2026-04-08 23:45:26,460 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:26,460 - openai._base_client - INFO - Retrying request to /embeddings in 0.751893 seconds
+2026-04-08 23:45:27,287 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:27,287 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:27,359 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:27,359 - openai._base_client - INFO - Retrying request to /embeddings in 0.469520 seconds
+2026-04-08 23:45:27,905 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:27,906 - openai._base_client - INFO - Retrying request to /embeddings in 0.935515 seconds
+2026-04-08 23:45:28,915 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:28,916 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:28,991 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:28,992 - openai._base_client - INFO - Retrying request to /embeddings in 0.411620 seconds
+2026-04-08 23:45:29,480 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:29,481 - openai._base_client - INFO - Retrying request to /embeddings in 0.924393 seconds
+2026-04-08 23:45:30,494 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:30,495 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:30,565 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:30,566 - openai._base_client - INFO - Retrying request to /embeddings in 0.380945 seconds
+2026-04-08 23:45:31,028 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:31,029 - openai._base_client - INFO - Retrying request to /embeddings in 0.853174 seconds
+2026-04-08 23:45:31,960 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:31,961 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:32,032 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:32,033 - openai._base_client - INFO - Retrying request to /embeddings in 0.482834 seconds
+2026-04-08 23:45:32,586 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:32,586 - openai._base_client - INFO - Retrying request to /embeddings in 0.882731 seconds
+2026-04-08 23:45:33,629 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:33,630 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:33,700 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:33,700 - openai._base_client - INFO - Retrying request to /embeddings in 0.383428 seconds
+2026-04-08 23:45:34,179 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:34,180 - openai._base_client - INFO - Retrying request to /embeddings in 0.912795 seconds
+2026-04-08 23:45:35,172 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:35,173 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:35,245 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:35,246 - openai._base_client - INFO - Retrying request to /embeddings in 0.401750 seconds
+2026-04-08 23:45:35,726 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:35,726 - openai._base_client - INFO - Retrying request to /embeddings in 0.909332 seconds
+2026-04-08 23:45:36,726 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:36,726 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:36,797 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:36,798 - openai._base_client - INFO - Retrying request to /embeddings in 0.401896 seconds
+2026-04-08 23:45:37,275 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:37,276 - openai._base_client - INFO - Retrying request to /embeddings in 0.875676 seconds
+2026-04-08 23:45:38,256 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:38,257 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:38,391 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:38,391 - openai._base_client - INFO - Retrying request to /embeddings in 0.412178 seconds
+2026-04-08 23:45:38,878 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:38,879 - openai._base_client - INFO - Retrying request to /embeddings in 0.919204 seconds
+2026-04-08 23:45:39,877 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:39,878 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:39,976 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:39,977 - openai._base_client - INFO - Retrying request to /embeddings in 0.432168 seconds
+2026-04-08 23:45:40,486 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:40,486 - openai._base_client - INFO - Retrying request to /embeddings in 0.816028 seconds
+2026-04-08 23:45:41,379 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:41,379 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:41,449 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:41,449 - openai._base_client - INFO - Retrying request to /embeddings in 0.491100 seconds
+2026-04-08 23:45:42,021 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:42,021 - openai._base_client - INFO - Retrying request to /embeddings in 0.880785 seconds
+2026-04-08 23:45:42,998 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:42,999 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:43,068 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:43,069 - openai._base_client - INFO - Retrying request to /embeddings in 0.475472 seconds
+2026-04-08 23:45:43,635 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:43,635 - openai._base_client - INFO - Retrying request to /embeddings in 0.986821 seconds
+2026-04-08 23:45:44,698 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:44,699 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:44,771 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:44,771 - openai._base_client - INFO - Retrying request to /embeddings in 0.382524 seconds
+2026-04-08 23:45:45,227 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:45,228 - openai._base_client - INFO - Retrying request to /embeddings in 0.858340 seconds
+2026-04-08 23:45:46,162 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:46,165 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:46,235 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:46,235 - openai._base_client - INFO - Retrying request to /embeddings in 0.398771 seconds
+2026-04-08 23:45:46,707 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:46,708 - openai._base_client - INFO - Retrying request to /embeddings in 0.997093 seconds
+2026-04-08 23:45:47,881 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:47,882 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:47,955 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:47,955 - openai._base_client - INFO - Retrying request to /embeddings in 0.408815 seconds
+2026-04-08 23:45:48,436 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:48,437 - openai._base_client - INFO - Retrying request to /embeddings in 0.964740 seconds
+2026-04-08 23:45:49,484 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:49,485 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:49,556 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:49,556 - openai._base_client - INFO - Retrying request to /embeddings in 0.460466 seconds
+2026-04-08 23:45:50,097 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:50,100 - openai._base_client - INFO - Retrying request to /embeddings in 0.887375 seconds
+2026-04-08 23:45:51,063 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:51,064 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:51,136 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:51,137 - openai._base_client - INFO - Retrying request to /embeddings in 0.494418 seconds
+2026-04-08 23:45:51,703 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:51,704 - openai._base_client - INFO - Retrying request to /embeddings in 0.914865 seconds
+2026-04-08 23:45:52,694 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:52,698 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:52,772 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:52,772 - openai._base_client - INFO - Retrying request to /embeddings in 0.428306 seconds
+2026-04-08 23:45:53,289 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:53,289 - openai._base_client - INFO - Retrying request to /embeddings in 0.818296 seconds
+2026-04-08 23:45:54,181 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:54,182 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:54,257 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:54,257 - openai._base_client - INFO - Retrying request to /embeddings in 0.461206 seconds
+2026-04-08 23:45:54,803 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:54,804 - openai._base_client - INFO - Retrying request to /embeddings in 0.990612 seconds
+2026-04-08 23:45:55,880 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:55,880 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:55,953 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:55,954 - openai._base_client - INFO - Retrying request to /embeddings in 0.435646 seconds
+2026-04-08 23:45:56,466 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:56,467 - openai._base_client - INFO - Retrying request to /embeddings in 0.802405 seconds
+2026-04-08 23:45:57,348 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:57,348 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:57,423 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:57,424 - openai._base_client - INFO - Retrying request to /embeddings in 0.493712 seconds
+2026-04-08 23:45:57,999 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:57,999 - openai._base_client - INFO - Retrying request to /embeddings in 0.835477 seconds
+2026-04-08 23:45:58,923 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:58,924 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:45:59,065 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:59,066 - openai._base_client - INFO - Retrying request to /embeddings in 0.416235 seconds
+2026-04-08 23:45:59,557 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:45:59,558 - openai._base_client - INFO - Retrying request to /embeddings in 0.783511 seconds
+2026-04-08 23:46:00,415 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:00,416 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:00,486 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:00,487 - openai._base_client - INFO - Retrying request to /embeddings in 0.419410 seconds
+2026-04-08 23:46:00,980 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:00,981 - openai._base_client - INFO - Retrying request to /embeddings in 0.907461 seconds
+2026-04-08 23:46:01,972 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:01,975 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:02,051 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:02,056 - openai._base_client - INFO - Retrying request to /embeddings in 0.413601 seconds
+2026-04-08 23:46:02,545 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:02,546 - openai._base_client - INFO - Retrying request to /embeddings in 0.874600 seconds
+2026-04-08 23:46:03,491 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:03,492 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:03,567 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:03,568 - openai._base_client - INFO - Retrying request to /embeddings in 0.391865 seconds
+2026-04-08 23:46:04,045 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:04,046 - openai._base_client - INFO - Retrying request to /embeddings in 0.819851 seconds
+2026-04-08 23:46:04,941 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:04,941 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:05,009 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:05,010 - openai._base_client - INFO - Retrying request to /embeddings in 0.381960 seconds
+2026-04-08 23:46:05,463 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:05,464 - openai._base_client - INFO - Retrying request to /embeddings in 0.902253 seconds
+2026-04-08 23:46:06,452 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:06,453 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:06,525 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:06,525 - openai._base_client - INFO - Retrying request to /embeddings in 0.391326 seconds
+2026-04-08 23:46:06,995 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:06,996 - openai._base_client - INFO - Retrying request to /embeddings in 0.834485 seconds
+2026-04-08 23:46:07,904 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:07,904 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:07,974 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:07,975 - openai._base_client - INFO - Retrying request to /embeddings in 0.415689 seconds
+2026-04-08 23:46:08,473 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:08,474 - openai._base_client - INFO - Retrying request to /embeddings in 0.968354 seconds
+2026-04-08 23:46:09,518 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:09,519 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:09,589 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:09,589 - openai._base_client - INFO - Retrying request to /embeddings in 0.413155 seconds
+2026-04-08 23:46:10,080 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:10,080 - openai._base_client - INFO - Retrying request to /embeddings in 0.960611 seconds
+2026-04-08 23:46:11,111 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:11,111 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:11,181 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:11,182 - openai._base_client - INFO - Retrying request to /embeddings in 0.459685 seconds
+2026-04-08 23:46:11,714 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:11,715 - openai._base_client - INFO - Retrying request to /embeddings in 0.850323 seconds
+2026-04-08 23:46:12,638 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:12,639 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:12,709 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:12,709 - openai._base_client - INFO - Retrying request to /embeddings in 0.484234 seconds
+2026-04-08 23:46:13,297 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:13,301 - openai._base_client - INFO - Retrying request to /embeddings in 0.948446 seconds
+2026-04-08 23:46:14,331 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:14,331 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:14,417 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:14,417 - openai._base_client - INFO - Retrying request to /embeddings in 0.469466 seconds
+2026-04-08 23:46:14,974 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:14,975 - openai._base_client - INFO - Retrying request to /embeddings in 0.848648 seconds
+2026-04-08 23:46:15,900 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:15,900 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:16,005 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:16,005 - openai._base_client - INFO - Retrying request to /embeddings in 0.429025 seconds
+2026-04-08 23:46:16,513 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:16,513 - openai._base_client - INFO - Retrying request to /embeddings in 0.904418 seconds
+2026-04-08 23:46:17,499 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:17,500 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:17,572 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:17,572 - openai._base_client - INFO - Retrying request to /embeddings in 0.486391 seconds
+2026-04-08 23:46:18,136 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:18,136 - openai._base_client - INFO - Retrying request to /embeddings in 0.771979 seconds
+2026-04-08 23:46:18,984 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:18,985 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:19,058 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:19,058 - openai._base_client - INFO - Retrying request to /embeddings in 0.384741 seconds
+2026-04-08 23:46:19,565 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:19,566 - openai._base_client - INFO - Retrying request to /embeddings in 0.754184 seconds
+2026-04-08 23:46:20,408 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:20,409 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:20,482 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:20,483 - openai._base_client - INFO - Retrying request to /embeddings in 0.469713 seconds
+2026-04-08 23:46:21,030 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:21,031 - openai._base_client - INFO - Retrying request to /embeddings in 0.861631 seconds
+2026-04-08 23:46:21,981 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:21,982 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:22,054 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:22,055 - openai._base_client - INFO - Retrying request to /embeddings in 0.419051 seconds
+2026-04-08 23:46:22,547 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:22,548 - openai._base_client - INFO - Retrying request to /embeddings in 0.786156 seconds
+2026-04-08 23:46:23,499 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:23,500 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:23,570 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:23,571 - openai._base_client - INFO - Retrying request to /embeddings in 0.447520 seconds
+2026-04-08 23:46:24,091 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:24,092 - openai._base_client - INFO - Retrying request to /embeddings in 0.862331 seconds
+2026-04-08 23:46:25,049 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:25,050 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:25,129 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:25,130 - openai._base_client - INFO - Retrying request to /embeddings in 0.474693 seconds
+2026-04-08 23:46:25,694 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:25,695 - openai._base_client - INFO - Retrying request to /embeddings in 0.910869 seconds
+2026-04-08 23:46:26,688 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:26,689 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:26,774 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:26,774 - openai._base_client - INFO - Retrying request to /embeddings in 0.442069 seconds
+2026-04-08 23:46:27,295 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:27,295 - openai._base_client - INFO - Retrying request to /embeddings in 0.852138 seconds
+2026-04-08 23:46:28,224 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:28,225 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:28,300 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:28,300 - openai._base_client - INFO - Retrying request to /embeddings in 0.436316 seconds
+2026-04-08 23:46:28,816 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:28,817 - openai._base_client - INFO - Retrying request to /embeddings in 0.846764 seconds
+2026-04-08 23:46:29,742 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:29,743 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:29,818 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:29,819 - openai._base_client - INFO - Retrying request to /embeddings in 0.406464 seconds
+2026-04-08 23:46:30,300 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:30,301 - openai._base_client - INFO - Retrying request to /embeddings in 0.830407 seconds
+2026-04-08 23:46:31,212 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:31,213 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:31,285 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:31,286 - openai._base_client - INFO - Retrying request to /embeddings in 0.450904 seconds
+2026-04-08 23:46:31,895 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:31,895 - openai._base_client - INFO - Retrying request to /embeddings in 0.910138 seconds
+2026-04-08 23:46:32,878 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:32,879 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:33,021 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:33,022 - openai._base_client - INFO - Retrying request to /embeddings in 0.422478 seconds
+2026-04-08 23:46:33,518 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:33,518 - openai._base_client - INFO - Retrying request to /embeddings in 0.899246 seconds
+2026-04-08 23:46:34,494 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:34,495 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:34,573 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:34,574 - openai._base_client - INFO - Retrying request to /embeddings in 0.465130 seconds
+2026-04-08 23:46:35,115 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:35,115 - openai._base_client - INFO - Retrying request to /embeddings in 0.785192 seconds
+2026-04-08 23:46:35,992 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:35,993 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:36,063 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:36,064 - openai._base_client - INFO - Retrying request to /embeddings in 0.387291 seconds
+2026-04-08 23:46:36,567 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:36,568 - openai._base_client - INFO - Retrying request to /embeddings in 0.948201 seconds
+2026-04-08 23:46:37,609 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:37,610 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:37,682 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:37,683 - openai._base_client - INFO - Retrying request to /embeddings in 0.416953 seconds
+2026-04-08 23:46:38,173 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:38,174 - openai._base_client - INFO - Retrying request to /embeddings in 0.999852 seconds
+2026-04-08 23:46:39,248 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:39,249 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:39,324 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:39,324 - openai._base_client - INFO - Retrying request to /embeddings in 0.468132 seconds
+2026-04-08 23:46:39,891 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:39,892 - openai._base_client - INFO - Retrying request to /embeddings in 0.787705 seconds
+2026-04-08 23:46:40,777 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:40,780 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:40,859 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:40,859 - openai._base_client - INFO - Retrying request to /embeddings in 0.402796 seconds
+2026-04-08 23:46:41,338 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:41,338 - openai._base_client - INFO - Retrying request to /embeddings in 0.760732 seconds
+2026-04-08 23:46:42,179 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:42,180 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:42,253 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:42,254 - openai._base_client - INFO - Retrying request to /embeddings in 0.380554 seconds
+2026-04-08 23:46:42,716 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:42,717 - openai._base_client - INFO - Retrying request to /embeddings in 0.904218 seconds
+2026-04-08 23:46:43,708 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:43,709 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:43,784 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:43,785 - openai._base_client - INFO - Retrying request to /embeddings in 0.384172 seconds
+2026-04-08 23:46:44,285 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:44,286 - openai._base_client - INFO - Retrying request to /embeddings in 0.936129 seconds
+2026-04-08 23:46:45,308 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:45,309 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:45,383 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:45,383 - openai._base_client - INFO - Retrying request to /embeddings in 0.489502 seconds
+2026-04-08 23:46:45,946 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:45,947 - openai._base_client - INFO - Retrying request to /embeddings in 0.954273 seconds
+2026-04-08 23:46:46,987 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:46,988 - SemanticIndexer - ERROR - Failed to get embedding: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}}
+2026-04-08 23:46:47,063 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:47,064 - openai._base_client - INFO - Retrying request to /embeddings in 0.462685 seconds
+2026-04-08 23:46:47,613 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 429 Too Many Requests"
+2026-04-08 23:46:47,613 - openai._base_client - INFO - Retrying request to /embeddings in 0.900012 seconds
