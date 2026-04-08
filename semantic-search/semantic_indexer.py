@@ -298,7 +298,7 @@ class SemanticIndexer:
             
     def _find_markdown_files(self) -> List[str]:
         """Find all markdown files in the vault."""
-        vault_path = Path(self.config['vault']['path'])
+        vault_path = Path(os.path.expanduser(self.config['vault']['path']))
         extensions = self.config['vault']['extensions']
         exclude_dirs = set(self.config['vault']['exclude_dirs'])
         exclude_files = set(self.config['vault'].get('exclude_files', []))
