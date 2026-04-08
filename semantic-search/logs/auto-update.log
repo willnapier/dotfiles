@@ -140,3 +140,12 @@ Incremental update completed
 2025-10-04 08:00:01 - ERROR: OPENAI_API_KEY not set, skipping update
 2025-10-04 20:00:00 - ERROR: OPENAI_API_KEY not set, skipping update
 2025-10-05 08:00:00 - ERROR: OPENAI_API_KEY not set, skipping update
+2026-04-08 23:42:17 - Starting automatic semantic search update
+2026-04-08 23:42:19,567 - SemanticIndexer - INFO - OpenAI client initialized with model: text-embedding-3-large
+2026-04-08 23:42:19,594 - SemanticIndexer - INFO - Loaded existing FAISS index with 5745 vectors
+2026-04-08 23:42:19,607 - SemanticIndexer - INFO - Loaded metadata for 5745 files
+2026-04-08 23:42:19,607 - SemanticIndexer - INFO - Starting incremental index update
+2026-04-08 23:42:19,607 - SemanticIndexer - INFO - Found 0 markdown files
+2026-04-08 23:42:19,607 - SemanticIndexer - INFO - No files need updating
+2026-04-08 23:42:19 - Update completed successfully
+2026-04-08 23:42:19 - Automatic update finished

@@ -6690,3 +6690,9 @@ Incremental update completed
 2025-10-10 10:29:26,846 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
 2025-10-10 10:29:27,241 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
 2025-10-10 10:29:27,621 - httpx - INFO - HTTP Request: POST https://api.openai.com/v1/embeddings "HTTP/1.1 200 OK"
+2026-04-08 23:42:19,567 - SemanticIndexer - INFO - OpenAI client initialized with model: text-embedding-3-large
+2026-04-08 23:42:19,594 - SemanticIndexer - INFO - Loaded existing FAISS index with 5745 vectors
+2026-04-08 23:42:19,607 - SemanticIndexer - INFO - Loaded metadata for 5745 files
+2026-04-08 23:42:19,607 - SemanticIndexer - INFO - Starting incremental index update
+2026-04-08 23:42:19,607 - SemanticIndexer - INFO - Found 0 markdown files
+2026-04-08 23:42:19,607 - SemanticIndexer - INFO - No files need updating

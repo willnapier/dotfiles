@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Cron wrapper for semantic-indexer auto-update
+# Pulls OPENAI_API_KEY from macOS Keychain (matches nushell env.nu pattern)
+#
+# Recreated 2026-04-08 after being accidentally deleted in commit 7980a10
+# (Auto-commit on 2025-10-05 that wiped 26 scripts). Original wrapper sourced
+# ~/.zshrc which never had OPENAI_API_KEY because the user runs nushell —
+# this version reads directly from Keychain so it is shell-agnostic.
+
+set -e
+
+LOGFILE="$HOME/.local/share/semantic-search/logs/auto-update.log"
+mkdir -p "$(dirname "$LOGFILE")"
+
+log() { echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOGFILE"; }
+
+# Pull API key from Keychain
+OPENAI_API_KEY=$(security find-generic-password -s "openai-api-key" -a "semantic-search" -w 2>/dev/null || true)
+export OPENAI_API_KEY
+
+if [[ -z "$OPENAI_API_KEY" ]]; then
+    log "ERROR: Could not retrieve OPENAI_API_KEY from Keychain (service=openai-api-key, account=semantic-search)"
+    exit 1
+fi
+
+export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
+
+# Delegate to the existing auto-update script
+exec "$HOME/.local/bin/semantic-auto-update"
