@@ -1,0 +1,16 @@
+app = "clinical-portal"
+primary_region = "lhr"  # London Heathrow — UK data residency
+
+[build]
+
+[http_service]
+  internal_port = 3849
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[mounts]
+  source = "clinical_data"
+  destination = "/data"
+  initial_size = "1"
