@@ -413,9 +413,26 @@ fn process_exporter_conversation(conv: &ExporterConversation, output_dir: &PathB
     fs::create_dir_all(&session_dir)
         .with_context(|| format!("Failed to create {:?}", session_dir))?;
 
-    // Convert messages
-    let mut continuum_messages = Vec::new();
-    for (idx, msg) in conv.messages.iter().enumerate() {
+    // Convert messages.
+    //
+    // The Gemini browser-extension export has two known quirks that need
+    // handling here, beyond the per-message cleanup in clean_message_content:
+    //
+    //   1. Stray "Gemini" label messages: each assistant turn includes an
+    //      extra Response with content just "Gemini" (the literal model name
+    //      rendered as a label in the UI, captured as if it were a message).
+    //      Drop these.
+    //
+    //   2. Per-turn duplication: each user message and each assistant message
+    //      appears twice, once with the UI label prefix ("You said\n\n" /
+    //      "Gemini said\n\n") and once without. After stripping the prefixes
+    //      in clean_message_content, the two copies become byte-identical.
+    //      Dedupe consecutive messages with the same role and content.
+    //
+    // The result is a clean alternating user/assistant sequence at the
+    // logical conversation length, not the export's inflated count.
+    let mut continuum_messages: Vec<ContinuumMessage> = Vec::new();
+    for msg in conv.messages.iter() {
         // Map roles: "Prompt" -> "user", "Response" -> "assistant"
         let role = match msg.role.as_str() {
             "Prompt" => "user".to_string(),
@@ -423,17 +440,32 @@ fn process_exporter_conversation(conv: &ExporterConversation, output_dir: &PathB
             other => other.to_lowercase(),
         };
 
-        // Clean up the content (remove trailing timestamps like "11:32 AM11:32")
         let content = clean_message_content(&msg.say);
 
-        if !content.trim().is_empty() {
-            continuum_messages.push(ContinuumMessage {
-                id: (idx + 1) as u32,
-                role,
-                content,
-                timestamp: created.to_rfc3339(),
-            });
+        // Skip empty messages
+        if content.trim().is_empty() {
+            continue;
         }
+
+        // Skip stray model-label messages from the Gemini export quirk
+        let trimmed = content.trim();
+        if matches!(trimmed, "Gemini" | "ChatGPT" | "Claude" | "Grok") {
+            continue;
+        }
+
+        // Skip duplicate-of-previous (the per-turn duplication quirk)
+        if let Some(last) = continuum_messages.last() {
+            if last.role == role && last.content == content {
+                continue;
+            }
+        }
+
+        continuum_messages.push(ContinuumMessage {
+            id: (continuum_messages.len() + 1) as u32,
+            role,
+            content,
+            timestamp: created.to_rfc3339(),
+        });
     }
 
     if continuum_messages.is_empty() {
@@ -501,6 +533,22 @@ fn clean_message_content(content: &str) -> String {
     // Remove trailing timestamp patterns like "11:32 AM11:32" or "11:54 AM11:54"
     let timestamp_re = regex::Regex::new(r"\n\n\d{1,2}:\d{2}\s*[AP]M\d{1,2}:\d{2}\s*$").unwrap();
     result = timestamp_re.replace(&result, "").to_string();
+
+    // Strip Gemini browser-extension UI label prefixes from message bodies.
+    // The "Gemini Exporter (custom extension)" includes the rendered UI labels
+    // ("You said", "Gemini said") inline at the start of message content. Strip
+    // them so the message body is just the actual text.
+    if let Some(rest) = result.strip_prefix("You said\n\n") {
+        result = rest.to_string();
+    }
+    if let Some(rest) = result.strip_prefix("Gemini said\n\n") {
+        result = rest.to_string();
+    }
+
+    // Strip the trailing "Sources" footer label from Gemini assistant messages
+    // (the source-citation widget renders as a literal "Sources" line at the end).
+    let sources_re = regex::Regex::new(r"\n+Sources\s*$").unwrap();
+    result = sources_re.replace(&result, "").to_string();
 
     // Remove Gemini UI artifacts
     // "Edit" on its own line
