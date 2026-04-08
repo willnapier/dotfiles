@@ -3,8 +3,8 @@ use chrono::NaiveDate;
 use regex::Regex;
 use std::path::Path;
 
-use crate::client;
-use crate::identity::{self, Identity};
+use clinical_core::client;
+use clinical_core::identity::{self, Identity};
 
 /// A single find/replace substitution rule.
 #[derive(Debug)]
@@ -360,7 +360,7 @@ fn print_dry_run(subs: &[Sub], content: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::identity::*;
+    use clinical_core::identity::*;
 
     fn test_identity() -> Identity {
         Identity {

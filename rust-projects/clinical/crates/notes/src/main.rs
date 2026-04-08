@@ -1,9 +1,3 @@
-// Shared types live in the clinical-core crate; re-export them as
-// `crate::client` and `crate::identity` so the rest of the bin source
-// keeps using the existing paths unchanged.
-use clinical_core::client;
-use clinical_core::identity;
-
 mod auth;
 mod deidentify;
 mod finalise;

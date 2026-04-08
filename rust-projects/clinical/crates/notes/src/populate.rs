@@ -2,8 +2,8 @@ use anyhow::{Context, Result};
 use regex::Regex;
 use std::path::{Path, PathBuf};
 
-use crate::client;
-use crate::identity;
+use clinical_core::{client, identity};
+
 use crate::markdown;
 use crate::session;
 

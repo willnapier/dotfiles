@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 
-use crate::client;
+use clinical_core::client;
 
 /// Run the scaffold command: create a new client directory with all required files.
 ///

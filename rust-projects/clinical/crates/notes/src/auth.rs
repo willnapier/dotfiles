@@ -1,7 +1,8 @@
 use anyhow::{bail, Context, Result};
 use std::process::Command;
 
-use crate::client;
+use clinical_core::client;
+
 use crate::markdown;
 use crate::session;
 

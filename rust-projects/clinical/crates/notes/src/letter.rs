@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Result};
 
-use crate::client;
+use clinical_core::client;
+
 use crate::markdown;
 use crate::session;
 
