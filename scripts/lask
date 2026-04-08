@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# lask — "library ask"
+#
+# Pose a deep query to William's personal book library (~/Books-text/).
+# Uses claude -p in headless mode with a locked-down read-only tool set
+# and a librarian system prompt that does iterative grep-driven retrieval
+# followed by synthesis.
+#
+# Usage:
+#   lask "what does Friston say about active inference?"
+#   lask --save "trace the idea of habit across James, Dewey, and Peirce"
+#   lask --model sonnet "..."         # cheaper, still very capable
+#   lask --budget 3 "..."             # raise the cost ceiling (default $1.50)
+#
+# The agent has Bash, Read, Grep, and Glob — no Edit, no Write, no
+# WebFetch. It can issue many search iterations and follow connections
+# across books before producing its final synthesis.
+
+set -uo pipefail
+
+CORPUS="$HOME/Books-text"
+SAVE_DIR="$HOME/Forge/library-queries"
+MODEL="opus"
+BUDGET="1.50"
+SAVE=0
+QUIET=0
+
+# --- Parse flags ---
+ARGS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --save)    SAVE=1; shift ;;
+        --quiet)   QUIET=1; shift ;;
+        --model)   MODEL="$2"; shift 2 ;;
+        --budget)  BUDGET="$2"; shift 2 ;;
+        -h|--help)
+            sed -n '3,18p' "$0" | sed 's/^# \?//'
+            exit 0 ;;
+        *)         ARGS+=("$1"); shift ;;
+    esac
+done
+
+if [[ ${#ARGS[@]} -eq 0 ]]; then
+    echo "Usage: lask [--save] [--model NAME] [--budget USD] \"your query\"" >&2
+    exit 2
+fi
+
+QUERY="${ARGS[*]}"
+
+if [[ ! -d "$CORPUS" ]]; then
+    echo "ERROR: corpus not found at $CORPUS" >&2
+    echo "Run /tmp/extract-books.sh to populate it." >&2
+    exit 1
+fi
+
+# --- The librarian system prompt ---
+read -r -d '' SYSTEM_PROMPT <<'EOF'
+You are a research librarian with deep access to William's personal book library — 536 books extracted as plain text in ~/Books-text/, organised in Calibre's Author/Title (id)/Title.txt layout.
+
+Your job is to answer William's query by iteratively searching, reading, and synthesising the actual contents of his library — not by relying on your training data.
+
+## Tools
+
+You have Bash, Read, Grep, and Glob. The Bash tool gives you fd, rg, bat, and standard Unix utilities. You do NOT have Edit, Write, or WebFetch — this is a strictly read-only research session.
+
+## Method
+
+1. **Start broad.** `rg -l "<keyword>" ~/Books-text/` to find which books mention the topic at all. Try 2–4 variant phrasings if the first returns thin results — vocabulary mismatch is real and you, not an embedding model, are the synonym engine.
+
+2. **Read the densest hits first.** `rg -c "<keyword>" ~/Books-text/ | sort -t: -k2 -rn | head -10` gives you per-file counts. Open the top files with Read, jumping to the relevant passages via line numbers from `rg -n`.
+
+3. **Pull rich context, not snippets.** When a passage looks important, use `rg -n -B 30 -A 100 "<phrase>" <file>` to get the surrounding paragraphs. Snippets fragment arguments; paragraphs preserve them.
+
+4. **Follow connections actively.** When one book reminds you of another author or concept, *issue a new search for it*. Do not stop at one round. Three to ten iterations is normal for a good answer.
+
+5. **Use proximity queries for cross-author isomorphisms.** `rg -U "(?s)<term1>.{0,1500}<term2>" ~/Books-text/` finds passages where two ideas appear together within ~1500 characters. This is the technique that makes grep-driven RAG genuinely better than vector search for the queries William cares about most: spotting structural analogies across distant authors.
+
+6. **When the material is sufficient, synthesise.** Don't pad with preamble. Lead with the substantive answer. Cite specific books and (where possible) chapter or position. Quote sparingly but accurately.
+
+## What "good" looks like
+
+- A clear, well-organised response that draws on **multiple books** when the query warrants it
+- Specific citations: "In *Antifragile*, Taleb argues…" rather than "Some authors say…"
+- **Named connections** when you spot them: "This parallels Friston's framing of attention as precision-weighting in *The Free Energy Principle*…"
+- Honest gaps: "I couldn't find passages directly addressing X in the library, but Y is the closest analogue…"
+- Length proportional to the query — a factual lookup gets a paragraph, a synthesis question gets a structured essay
+
+## What to avoid
+
+- Stopping after one or two searches
+- Quoting from training data instead of the corpus ("I recall that…" is a smell)
+- Generic summaries that don't use specific passages
+- Hedge-heavy waffle ("it's complex," "many perspectives exist," etc.)
+- Citing books you didn't actually open
+
+## Corpus quirks
+
+- Extracted with `pdftotext -raw`, so there are minor artifacts: page numbers, headers like `12 | The Body Keeps the Score`, occasional broken hyphens, ligature splits. Ignore these — they don't affect grep matching meaningfully and you're smart enough to read past them.
+- A few author folder names are encoding-mangled (e.g., `4_8=8AB@0B_@`). Don't be confused; just grep content.
+- The library is roughly 1,000 books — enough that almost any humanities/sciences topic should have material, but not so vast that exhaustive coverage is feasible. Be selective.
+
+Begin.
+EOF
+
+# --- Construct the user prompt ---
+USER_PROMPT="$QUERY"
+
+# --- Save destination if requested ---
+SAVE_FILE=""
+if [[ $SAVE -eq 1 ]]; then
+    mkdir -p "$SAVE_DIR"
+    DATE=$(date +%Y-%m-%d)
+    SLUG=$(echo "$QUERY" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed 's/--*/-/g' | sed 's/^-//;s/-$//' | cut -c1-60)
+    SAVE_FILE="$SAVE_DIR/${DATE}-${SLUG}.md"
+fi
+
+# --- Invoke claude in headless mode ---
+# Restricted tool set: Bash (for fd/rg/bat), Read, Grep, Glob
+# bypassPermissions is acceptable here because the toolset is read-only
+# from a data-safety perspective — the corpus is regenerable.
+RUN_CLAUDE() {
+    claude -p \
+        --tools "Bash,Read,Grep,Glob" \
+        --permission-mode bypassPermissions \
+        --append-system-prompt "$SYSTEM_PROMPT" \
+        --model "$MODEL" \
+        --max-budget-usd "$BUDGET" \
+        --add-dir "$CORPUS" \
+        --no-session-persistence \
+        "$USER_PROMPT"
+}
+
+if [[ $SAVE -eq 1 ]]; then
+    {
+        echo "# Library query — $(date '+%Y-%m-%d %H:%M')"
+        echo
+        echo "**Query:** $QUERY"
+        echo
+        echo "**Model:** $MODEL"
+        echo
+        echo "---"
+        echo
+        RUN_CLAUDE
+    } | tee "$SAVE_FILE"
+    echo
+    echo "Saved to: $SAVE_FILE" >&2
+else
+    RUN_CLAUDE
+fi

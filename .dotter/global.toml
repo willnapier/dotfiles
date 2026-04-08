@@ -20,6 +20,8 @@ depends = []
 "scripts/music-notation-lint" = "~/.local/bin/music-notation-lint"
 "scripts/music-notation-lookup" = "~/.local/bin/music-notation-lookup"
 "scripts/piper-preview" = "~/.local/bin/piper-preview"
+"scripts/lask" = "~/.local/bin/lask"
+"scripts/semantic-cron-wrapper" = "~/.local/bin/semantic-cron-wrapper"
 
 "scripts/ai-brief.nu" = { target = "~/.local/bin/ai-brief.nu", type = "symbolic" }
 "scripts/tag-search" = { target = "~/.local/bin/tag-search", type = "symbolic" }
