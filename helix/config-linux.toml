@@ -125,7 +125,7 @@ m = ":write"         # Quick save current file
 M = ":write-all"     # Save all modified files
 # Flush pending DayPage entries - Space+U (Update from queue)
 # Claude skills queue entries via daypage-append; this merges them in
-U = [":write!", ":sh daypage-flush-wezterm"]
+U = [":write!", ":sh daypage-flush", ":reload"]
 
 # Remove comments and copy to clipboard - Space+# (strips # comments)
 "#" = ":sh remove-comments %{buffer_name}"
