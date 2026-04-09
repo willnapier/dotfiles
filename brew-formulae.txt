@@ -64,6 +64,7 @@ gnu-sed
 gnupg
 gnutls
 gpgme
+gpgmepp
 graphite2
 harfbuzz
 helix
@@ -187,6 +188,7 @@ openssl@3
 opus
 p11-kit
 p7zip
+pandoc
 pango
 pcre2
 pillow
