@@ -25,6 +25,14 @@ def main [direction: string, buffer_name?: string] {
 
     let note_path = $"($env.HOME)/Forge/NapierianLogs/DayPages/($target_date).md"
 
+    # Create from template if DayPage doesn't exist
+    if not ($note_path | path exists) {
+        let result = (do { daypage-template $target_date } | complete)
+        if $result.exit_code == 0 and ($result.stdout | str trim | is-not-empty) {
+            $result.stdout | save -f $note_path
+        }
+    }
+
     # Also write to file for other consumers
     $note_path | save -f /tmp/helix-day-target.txt
 
