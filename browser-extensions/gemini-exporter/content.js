@@ -15,6 +15,41 @@
     document.body.appendChild(btn);
   }
 
+  // Drop any element whose ancestor is also in the matched set.
+  // Gemini's DOM has nested classes (e.g. a query-text-container wraps a
+  // query-text inner node), and broad [class*="..."] selectors match both.
+  // Without this filter, every logical message gets captured twice — once
+  // from the outer container and once from the inner text node, producing
+  // the per-turn duplication seen in older exports.
+  function filterToOutermost(nodeList) {
+    const arr = Array.from(nodeList);
+    return arr.filter(el => !arr.some(other => other !== el && other.contains(el)));
+  }
+
+  // Strip the UI label prefixes/suffixes that Gemini renders inline.
+  // These markers are part of the rendered chat UI ("You said" above each
+  // user message, "Gemini said" above each response, "Sources" footer
+  // beneath responses with citations) and they get captured by innerText
+  // even though they aren't part of the message content itself.
+  function cleanMarkers(text) {
+    if (!text) return '';
+    let cleaned = text;
+    // Leading "You said\n" or "You said\n\n"
+    cleaned = cleaned.replace(/^You said\s*\n+/, '');
+    // Leading "Gemini said\n" or "Gemini said\n\n"
+    cleaned = cleaned.replace(/^Gemini said\s*\n+/, '');
+    // Trailing "Sources" footer (with optional surrounding whitespace)
+    cleaned = cleaned.replace(/\s*\n+Sources\s*$/, '');
+    return cleaned.trim();
+  }
+
+  // Reject extractions that are just a model label (the "Gemini" header
+  // string that appears as a sender label in some response containers).
+  function isStrayLabel(text) {
+    const t = (text || '').trim();
+    return t === 'Gemini' || t === 'ChatGPT' || t === 'Claude' || t === 'Grok';
+  }
+
   // Extract conversation from page
   function extractConversation() {
     const messages = [];
@@ -25,26 +60,30 @@
     // - conversation-container: main chat area
 
     // Find user queries
-    const userQueries = document.querySelectorAll('[class*="query-text"]');
+    const userQueriesRaw = document.querySelectorAll('[class*="query-text"]');
+    const userQueries = filterToOutermost(userQueriesRaw);
 
     // Find model responses - try multiple selectors
-    const modelResponses = document.querySelectorAll('[class*="model-response-text"], [class*="bard-text"], .response-container-content');
+    const modelResponsesRaw = document.querySelectorAll('[class*="model-response-text"], [class*="bard-text"], .response-container-content');
+    const modelResponses = filterToOutermost(modelResponsesRaw);
 
-    console.log('Gemini Exporter: Found', userQueries.length, 'user queries and', modelResponses.length, 'model responses');
+    console.log('Gemini Exporter: Found',
+      userQueries.length, 'user queries (from', userQueriesRaw.length, 'raw matches),',
+      modelResponses.length, 'model responses (from', modelResponsesRaw.length, 'raw matches)');
 
     // Interleave messages - Gemini alternates user/model
     const maxLen = Math.max(userQueries.length, modelResponses.length);
 
     for (let i = 0; i < maxLen; i++) {
       if (userQueries[i]) {
-        const text = userQueries[i].innerText?.trim();
-        if (text && text.length > 0) {
+        const text = cleanMarkers(userQueries[i].innerText);
+        if (text && text.length > 0 && !isStrayLabel(text)) {
           messages.push({ role: 'Prompt', say: text });
         }
       }
       if (modelResponses[i]) {
-        const text = modelResponses[i].innerText?.trim();
-        if (text && text.length > 0) {
+        const text = cleanMarkers(modelResponses[i].innerText);
+        if (text && text.length > 0 && !isStrayLabel(text)) {
           messages.push({ role: 'Response', say: text });
         }
       }

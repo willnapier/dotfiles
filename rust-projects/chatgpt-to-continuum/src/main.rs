@@ -415,41 +415,26 @@ fn process_exporter_conversation(conv: &ExporterConversation, output_dir: &PathB
 
     // Convert messages.
     //
-    // The Gemini browser-extension export has THREE known quirks that need
-    // handling here, beyond the per-message cleanup in clean_message_content:
+    // The primary fix for the Gemini Exporter's known quirks (per-turn
+    // duplication, line-by-line paste fragmentation, stray "Gemini" label
+    // messages) lives in the browser extension itself, in
+    // ~/dotfiles/browser-extensions/gemini-exporter/content.js. After that
+    // fix, exports are clean at source.
     //
-    //   1. Stray "Gemini" label messages: each assistant turn includes an
-    //      extra Response with content just "Gemini" (the literal model name
-    //      rendered as a label in the UI, captured as if it were a message).
-    //      Drop these.
+    // We keep two defensive layers here as belt-and-braces against
+    // regression and against similar bugs in other browser exporters:
     //
-    //   2. Per-turn duplication: each user message and each assistant message
-    //      appears twice, once with the UI label prefix ("You said\n\n" /
-    //      "Gemini said\n\n") and once without. After stripping the prefixes
-    //      in clean_message_content, the two copies become byte-identical
-    //      but are not always consecutive — the export interleaves them with
-    //      messages from neighbouring turns. Need *global* dedup, not just
-    //      consecutive.
-    //
-    //   3. Multi-line user pastes: when the user pastes multi-line text into
-    //      the Gemini UI, the exporter captures EACH LINE as a separate
-    //      Prompt message AND ALSO captures the full blob as one Prompt.
-    //      So a 70-line paste shows up as 71 Prompts: one big one + 70 small
-    //      ones whose content is each a substring of the big one.
-    //
-    // The fix is a four-phase pipeline:
-    //   Phase 1: clean each message, drop empties + stray labels
-    //   Phase 2: merge consecutive same-role messages (collapses the
-    //            line-by-line tail of a multi-line paste back into one)
-    //   Phase 3: global (role, content) dedup (handles offset duplicates)
-    //   Phase 4: substring dedup for user messages (drops the line-by-line
-    //            fragments when the same content also exists as a longer blob)
-    //
-    // The result is a clean alternating user/assistant sequence at the
-    // logical conversation length, not the export's inflated count.
+    //   1. clean_message_content strips any UI label prefixes/suffixes
+    //      that might leak through ("You said\n\n", "Gemini said\n\n",
+    //      trailing "Sources" footer)
+    //   2. Drop empty messages and stray model-name labels ("Gemini",
+    //      "ChatGPT", etc.)
+    //   3. Global (role, content) dedup — drops any message whose content
+    //      has already appeared in the conversation. Cheap protection
+    //      against any source-side regression that re-introduces dupes.
 
-    // Phase 1: clean, drop empties and stray labels
-    let mut phase1: Vec<ContinuumMessage> = Vec::new();
+    // Clean each message; drop empties and stray labels
+    let mut cleaned: Vec<ContinuumMessage> = Vec::new();
     for msg in conv.messages.iter() {
         let role = match msg.role.as_str() {
             "Prompt" => "user".to_string(),
@@ -468,7 +453,7 @@ fn process_exporter_conversation(conv: &ExporterConversation, output_dir: &PathB
             continue;
         }
 
-        phase1.push(ContinuumMessage {
+        cleaned.push(ContinuumMessage {
             id: 0, // renumbered at the end
             role,
             content,
@@ -476,62 +461,23 @@ fn process_exporter_conversation(conv: &ExporterConversation, output_dir: &PathB
         });
     }
 
-    // Phase 2: merge consecutive same-role messages into one
-    // (handles the line-by-line paste quirk by reassembling fragments)
-    let mut phase2: Vec<ContinuumMessage> = Vec::new();
-    for msg in phase1.into_iter() {
-        if let Some(last) = phase2.last_mut() {
-            if last.role == msg.role {
-                last.content.push_str("\n\n");
-                last.content.push_str(&msg.content);
-                continue;
-            }
-        }
-        phase2.push(msg);
-    }
-
-    // Phase 3: global content dedup
-    // (handles the offset-duplicate quirk by dropping any message whose
-    // (role, content) pair has already appeared)
+    // Defensive global content dedup — drops any message whose (role, content)
+    // pair has already appeared. With the source-side fix in the browser
+    // extension this should never fire, but it costs almost nothing and
+    // catches regressions.
     let mut seen: HashSet<(String, String)> = HashSet::new();
-    let mut phase3: Vec<ContinuumMessage> = Vec::new();
-    for msg in phase2.into_iter() {
+    let mut continuum_messages: Vec<ContinuumMessage> = Vec::new();
+    for msg in cleaned.into_iter() {
         let key = (msg.role.clone(), msg.content.clone());
         if seen.insert(key) {
-            phase3.push(msg);
+            continuum_messages.push(msg);
         }
-    }
-
-    // Phase 4: substring dedup for user messages
-    // (when the same paste appears both as a complete blob and as line-by-line
-    // fragments, the merged-fragments version from Phase 2 is byte-identical
-    // to the blob if there are no extras — caught by Phase 3. But the export
-    // sometimes interleaves so the merged fragments are missing some lines
-    // and end up as a *substring* of the blob. Drop those.)
-    let user_contents: Vec<String> = phase3
-        .iter()
-        .filter(|m| m.role == "user")
-        .map(|m| m.content.clone())
-        .collect();
-    let mut phase4: Vec<ContinuumMessage> = Vec::new();
-    for msg in phase3.into_iter() {
-        if msg.role == "user" {
-            let is_substring_of_other = user_contents.iter().any(|other| {
-                other.len() > msg.content.len() && other.contains(&msg.content)
-            });
-            if is_substring_of_other {
-                continue;
-            }
-        }
-        phase4.push(msg);
     }
 
     // Renumber sequentially
-    for (i, msg) in phase4.iter_mut().enumerate() {
+    for (i, msg) in continuum_messages.iter_mut().enumerate() {
         msg.id = (i + 1) as u32;
     }
-
-    let continuum_messages = phase4;
 
     if continuum_messages.is_empty() {
         return Ok(());
