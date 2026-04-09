@@ -1,17 +1,14 @@
 #!/bin/bash
-# daypage-flush-wezterm
-# Runs daypage-flush then sends :reload to Helix via WezTerm CLI.
-# Solves the async :sh problem where :reload fires before flush completes.
+# daypage-flush-wezterm — DEPRECATED (2026-04-09)
+# Replaced by 3-step Helix keybinding: [":write!", ":sh daypage-flush", ":reload"]
+# The "async :sh" assumption was wrong — :sh IS synchronous in Helix.
+# This script silently failed when WEZTERM_PANE was unset, causing the
+# Space+U keybinding to flush but never reload the buffer.
+# Kept for reference; no longer referenced by any keybinding.
 
 set -euo pipefail
-
-# Run the flush
 daypage-flush
-
-# Brief pause for filesystem consistency
 sleep 0.5
-
-# Send :reload to Helix via WezTerm
 if [ -n "${WEZTERM_PANE:-}" ]; then
     printf ":reload\r" | wezterm cli send-text --pane-id "$WEZTERM_PANE" --no-paste
 fi
