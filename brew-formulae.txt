@@ -162,6 +162,8 @@ mdbtools
 mdloader
 media-info
 mingw-w64
+mlx
+mlx-c
 molten-vk
 mpdecimal
 mpfr
@@ -179,6 +181,7 @@ npth
 nspr
 nss
 nushell
+ollama
 oniguruma
 opencore-amr
 openexr
