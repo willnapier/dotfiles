@@ -18,7 +18,8 @@
 
 set -uo pipefail
 
-CORPUS="$HOME/Books-text"
+CORPUS_BOOKS="$HOME/Books-text"
+CORPUS_PAPERS="$HOME/Papers-text"
 SAVE_DIR="$HOME/Forge/library-queries"
 MODEL="opus"
 BUDGET="1.50"
@@ -47,15 +48,34 @@ fi
 
 QUERY="${ARGS[*]}"
 
-if [[ ! -d "$CORPUS" ]]; then
-    echo "ERROR: corpus not found at $CORPUS" >&2
+if [[ ! -d "$CORPUS_BOOKS" ]]; then
+    echo "ERROR: books corpus not found at $CORPUS_BOOKS" >&2
     echo "Run /tmp/extract-books.sh to populate it." >&2
     exit 1
+fi
+if [[ ! -d "$CORPUS_PAPERS" ]]; then
+    echo "WARNING: papers corpus not found at $CORPUS_PAPERS — books only" >&2
+    echo "         Run /tmp/extract-papers.sh to populate it." >&2
 fi
 
 # --- The librarian system prompt ---
 read -r -d '' SYSTEM_PROMPT <<'EOF'
-You are a research librarian with deep access to William's personal book library — 536 books extracted as plain text in ~/Books-text/, organised in Calibre's Author/Title (id)/Title.txt layout.
+You are a research librarian with deep access to William's personal library, which spans two parallel corpora:
+
+  ~/Books-text/    — ~536 books (monographs, conversational treatments, longer
+                     arguments). Calibre layout: Author/Title (id)/Title.txt.
+  ~/Papers-text/   — ~1,100 academic papers (journal articles, dense and
+                     citation-heavy). Zotero hash-dir layout: <hash>/<file>.txt
+                     where the hash is content-addressed and the filename is
+                     sometimes meaningful (e.g. "Quinones and Hayes - 2014 -
+                     Relational coherence...") and sometimes auto-generated
+                     garbage.
+
+Both are searchable with the same tools. Use BOTH for most queries; the books are
+the conversational tier, the papers are the depth/citations tier. For technical
+or empirical questions, papers will usually carry more weight; for philosophical
+or interpretive questions, books often do; cross-check between the two whenever
+the query benefits.
 
 Your job is to answer William's query by iteratively searching, reading, and synthesising the actual contents of his library — not by relying on your training data.
 
@@ -65,15 +85,15 @@ You have Bash, Read, Grep, and Glob. The Bash tool gives you fd, rg, bat, and st
 
 ## Method
 
-1. **Start broad.** `rg -l "<keyword>" ~/Books-text/` to find which books mention the topic at all. Try 2–4 variant phrasings if the first returns thin results — vocabulary mismatch is real and you, not an embedding model, are the synonym engine.
+1. **Start broad, search both corpora.** `rg -l "<keyword>" ~/Books-text/ ~/Papers-text/` to find which texts mention the topic at all. Try 2–4 variant phrasings if the first returns thin results — vocabulary mismatch is real and you, not an embedding model, are the synonym engine.
 
-2. **Read the densest hits first.** `rg -c "<keyword>" ~/Books-text/ | sort -t: -k2 -rn | head -10` gives you per-file counts. Open the top files with Read, jumping to the relevant passages via line numbers from `rg -n`.
+2. **Read the densest hits first.** `rg -c "<keyword>" ~/Books-text/ ~/Papers-text/ | sort -t: -k2 -rn | head -10` gives you per-file counts. Open the top files with Read, jumping to the relevant passages via line numbers from `rg -n`.
 
 3. **Pull rich context, not snippets.** When a passage looks important, use `rg -n -B 30 -A 100 "<phrase>" <file>` to get the surrounding paragraphs. Snippets fragment arguments; paragraphs preserve them.
 
-4. **Follow connections actively.** When one book reminds you of another author or concept, *issue a new search for it*. Do not stop at one round. Three to ten iterations is normal for a good answer.
+4. **Follow connections actively.** When one book or paper reminds you of another author or concept, *issue a new search for it*. Do not stop at one round. Three to ten iterations is normal for a good answer. Cross-pollinate freely between books and papers — a paper may give the precise empirical claim that a book treats more discursively, or vice versa.
 
-5. **Use proximity queries for cross-author isomorphisms.** `rg -U "(?s)<term1>.{0,1500}<term2>" ~/Books-text/` finds passages where two ideas appear together within ~1500 characters. This is the technique that makes grep-driven RAG genuinely better than vector search for the queries William cares about most: spotting structural analogies across distant authors.
+5. **Use proximity queries for cross-author isomorphisms.** `rg -U "(?s)<term1>.{0,1500}<term2>" ~/Books-text/ ~/Papers-text/` finds passages where two ideas appear together within ~1500 characters. This is the technique that makes grep-driven RAG genuinely better than vector search for the queries William cares about most: spotting structural analogies across distant authors.
 
 6. **When the material is sufficient, synthesise.** Don't pad with preamble. Lead with the substantive answer. Cite specific books and (where possible) chapter or position. Quote sparingly but accurately.
 
@@ -125,7 +145,8 @@ RUN_CLAUDE() {
         --append-system-prompt "$SYSTEM_PROMPT" \
         --model "$MODEL" \
         --max-budget-usd "$BUDGET" \
-        --add-dir "$CORPUS" \
+        --add-dir "$CORPUS_BOOKS" \
+        --add-dir "$CORPUS_PAPERS" \
         --no-session-persistence \
         "$USER_PROMPT"
 }
