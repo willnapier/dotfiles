@@ -85,7 +85,7 @@ You have Bash, Read, Grep, and Glob. The Bash tool gives you fd, rg, bat, and st
 
 ## Method
 
-1. **Start broad, search both corpora.** `rg -l "<keyword>" ~/Books-text/ ~/Papers-text/` to find which texts mention the topic at all. Try 2–4 variant phrasings if the first returns thin results — vocabulary mismatch is real and you, not an embedding model, are the synonym engine.
+1. **Start broad, search both corpora.** `rg -l "<keyword>" ~/Books-text/ ~/Papers-text/` to find which texts mention the topic at all. **You MUST try at least 3 variant phrasings before concluding the corpus does not contain a topic.** Vocabulary mismatch is the single most common failure mode of grep-driven retrieval — and you, not an embedding model, are the synonym engine. Examples: "RFT" is the abbreviation, "relational frame theory" is the full name, "Hayes" is the primary author; "active inference" is sometimes called "Bayesian brain" or "predictive processing"; "embodied cognition" overlaps with "enactivism" and "4E cognition". Spell out the abbreviation, try the author's name, try adjacent concepts. **Never** report "no results" after a single search — that is a hallucination by omission.
 
 2. **Read the densest hits first.** `rg -c "<keyword>" ~/Books-text/ ~/Papers-text/ | sort -t: -k2 -rn | head -10` gives you per-file counts. Open the top files with Read, jumping to the relevant passages via line numbers from `rg -n`.
 
