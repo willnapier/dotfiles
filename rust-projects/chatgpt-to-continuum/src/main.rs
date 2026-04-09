@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 
@@ -415,7 +415,7 @@ fn process_exporter_conversation(conv: &ExporterConversation, output_dir: &PathB
 
     // Convert messages.
     //
-    // The Gemini browser-extension export has two known quirks that need
+    // The Gemini browser-extension export has THREE known quirks that need
     // handling here, beyond the per-message cleanup in clean_message_content:
     //
     //   1. Stray "Gemini" label messages: each assistant turn includes an
@@ -426,14 +426,31 @@ fn process_exporter_conversation(conv: &ExporterConversation, output_dir: &PathB
     //   2. Per-turn duplication: each user message and each assistant message
     //      appears twice, once with the UI label prefix ("You said\n\n" /
     //      "Gemini said\n\n") and once without. After stripping the prefixes
-    //      in clean_message_content, the two copies become byte-identical.
-    //      Dedupe consecutive messages with the same role and content.
+    //      in clean_message_content, the two copies become byte-identical
+    //      but are not always consecutive — the export interleaves them with
+    //      messages from neighbouring turns. Need *global* dedup, not just
+    //      consecutive.
+    //
+    //   3. Multi-line user pastes: when the user pastes multi-line text into
+    //      the Gemini UI, the exporter captures EACH LINE as a separate
+    //      Prompt message AND ALSO captures the full blob as one Prompt.
+    //      So a 70-line paste shows up as 71 Prompts: one big one + 70 small
+    //      ones whose content is each a substring of the big one.
+    //
+    // The fix is a four-phase pipeline:
+    //   Phase 1: clean each message, drop empties + stray labels
+    //   Phase 2: merge consecutive same-role messages (collapses the
+    //            line-by-line tail of a multi-line paste back into one)
+    //   Phase 3: global (role, content) dedup (handles offset duplicates)
+    //   Phase 4: substring dedup for user messages (drops the line-by-line
+    //            fragments when the same content also exists as a longer blob)
     //
     // The result is a clean alternating user/assistant sequence at the
     // logical conversation length, not the export's inflated count.
-    let mut continuum_messages: Vec<ContinuumMessage> = Vec::new();
+
+    // Phase 1: clean, drop empties and stray labels
+    let mut phase1: Vec<ContinuumMessage> = Vec::new();
     for msg in conv.messages.iter() {
-        // Map roles: "Prompt" -> "user", "Response" -> "assistant"
         let role = match msg.role.as_str() {
             "Prompt" => "user".to_string(),
             "Response" => "assistant".to_string(),
@@ -442,31 +459,79 @@ fn process_exporter_conversation(conv: &ExporterConversation, output_dir: &PathB
 
         let content = clean_message_content(&msg.say);
 
-        // Skip empty messages
         if content.trim().is_empty() {
             continue;
         }
 
-        // Skip stray model-label messages from the Gemini export quirk
         let trimmed = content.trim();
         if matches!(trimmed, "Gemini" | "ChatGPT" | "Claude" | "Grok") {
             continue;
         }
 
-        // Skip duplicate-of-previous (the per-turn duplication quirk)
-        if let Some(last) = continuum_messages.last() {
-            if last.role == role && last.content == content {
-                continue;
-            }
-        }
-
-        continuum_messages.push(ContinuumMessage {
-            id: (continuum_messages.len() + 1) as u32,
+        phase1.push(ContinuumMessage {
+            id: 0, // renumbered at the end
             role,
             content,
             timestamp: created.to_rfc3339(),
         });
     }
+
+    // Phase 2: merge consecutive same-role messages into one
+    // (handles the line-by-line paste quirk by reassembling fragments)
+    let mut phase2: Vec<ContinuumMessage> = Vec::new();
+    for msg in phase1.into_iter() {
+        if let Some(last) = phase2.last_mut() {
+            if last.role == msg.role {
+                last.content.push_str("\n\n");
+                last.content.push_str(&msg.content);
+                continue;
+            }
+        }
+        phase2.push(msg);
+    }
+
+    // Phase 3: global content dedup
+    // (handles the offset-duplicate quirk by dropping any message whose
+    // (role, content) pair has already appeared)
+    let mut seen: HashSet<(String, String)> = HashSet::new();
+    let mut phase3: Vec<ContinuumMessage> = Vec::new();
+    for msg in phase2.into_iter() {
+        let key = (msg.role.clone(), msg.content.clone());
+        if seen.insert(key) {
+            phase3.push(msg);
+        }
+    }
+
+    // Phase 4: substring dedup for user messages
+    // (when the same paste appears both as a complete blob and as line-by-line
+    // fragments, the merged-fragments version from Phase 2 is byte-identical
+    // to the blob if there are no extras — caught by Phase 3. But the export
+    // sometimes interleaves so the merged fragments are missing some lines
+    // and end up as a *substring* of the blob. Drop those.)
+    let user_contents: Vec<String> = phase3
+        .iter()
+        .filter(|m| m.role == "user")
+        .map(|m| m.content.clone())
+        .collect();
+    let mut phase4: Vec<ContinuumMessage> = Vec::new();
+    for msg in phase3.into_iter() {
+        if msg.role == "user" {
+            let is_substring_of_other = user_contents.iter().any(|other| {
+                other.len() > msg.content.len() && other.contains(&msg.content)
+            });
+            if is_substring_of_other {
+                continue;
+            }
+        }
+        phase4.push(msg);
+    }
+
+    // Renumber sequentially
+    for (i, msg) in phase4.iter_mut().enumerate() {
+        msg.id = (i + 1) as u32;
+    }
+
+    let continuum_messages = phase4;
 
     if continuum_messages.is_empty() {
         return Ok(());
