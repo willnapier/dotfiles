@@ -552,6 +552,10 @@ fn clean_message_content(content: &str) -> String {
     if let Some(rest) = result.strip_prefix("You said\n\n") {
         result = rest.to_string();
     }
+    // "Show thinking" disclosure widget (Gemini's thinking indicator)
+    if let Some(rest) = result.strip_prefix("Show thinking\n") {
+        result = rest.to_string();
+    }
     if let Some(rest) = result.strip_prefix("Gemini said\n\n") {
         result = rest.to_string();
     }
