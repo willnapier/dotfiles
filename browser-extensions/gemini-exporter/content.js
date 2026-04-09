@@ -36,6 +36,8 @@
     let cleaned = text;
     // Leading "You said\n" or "You said\n\n"
     cleaned = cleaned.replace(/^You said\s*\n+/, '');
+    // Leading "Show thinking\n" (Gemini's thinking-disclosure widget)
+    cleaned = cleaned.replace(/^Show thinking\s*\n+/, '');
     // Leading "Gemini said\n" or "Gemini said\n\n"
     cleaned = cleaned.replace(/^Gemini said\s*\n+/, '');
     // Trailing "Sources" footer (with optional surrounding whitespace)
@@ -59,11 +61,15 @@
     // - model-response-text / bard-text: model responses
     // - conversation-container: main chat area
 
-    // Find user queries
+    // Find user queries and model responses separately, then merge into
+    // document order. This avoids the index-pairing bug: when the DOM groups
+    // all user messages together and all model responses together in separate
+    // containers, pairing by array index (userQueries[0] with modelResponses[0])
+    // produces the wrong conversation order. Sorting by document position
+    // gives the actual top-to-bottom reading order.
     const userQueriesRaw = document.querySelectorAll('[class*="query-text"]');
     const userQueries = filterToOutermost(userQueriesRaw);
 
-    // Find model responses - try multiple selectors
     const modelResponsesRaw = document.querySelectorAll('[class*="model-response-text"], [class*="bard-text"], .response-container-content');
     const modelResponses = filterToOutermost(modelResponsesRaw);
 
@@ -71,21 +77,20 @@
       userQueries.length, 'user queries (from', userQueriesRaw.length, 'raw matches),',
       modelResponses.length, 'model responses (from', modelResponsesRaw.length, 'raw matches)');
 
-    // Interleave messages - Gemini alternates user/model
-    const maxLen = Math.max(userQueries.length, modelResponses.length);
+    // Tag each element with its role, then sort all elements by document order.
+    // Node.DOCUMENT_POSITION_FOLLOWING (4) means `b` comes after `a` in the DOM.
+    const tagged = [];
+    for (const el of userQueries) tagged.push({ el, role: 'Prompt' });
+    for (const el of modelResponses) tagged.push({ el, role: 'Response' });
+    tagged.sort((a, b) => {
+      const pos = a.el.compareDocumentPosition(b.el);
+      return (pos & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1;
+    });
 
-    for (let i = 0; i < maxLen; i++) {
-      if (userQueries[i]) {
-        const text = cleanMarkers(userQueries[i].innerText);
-        if (text && text.length > 0 && !isStrayLabel(text)) {
-          messages.push({ role: 'Prompt', say: text });
-        }
-      }
-      if (modelResponses[i]) {
-        const text = cleanMarkers(modelResponses[i].innerText);
-        if (text && text.length > 0 && !isStrayLabel(text)) {
-          messages.push({ role: 'Response', say: text });
-        }
+    for (const { el, role } of tagged) {
+      const text = cleanMarkers(el.innerText);
+      if (text && text.length > 0 && !isStrayLabel(text)) {
+        messages.push({ role, say: text });
       }
     }
 
