@@ -403,7 +403,7 @@ fn launch_browser(headless: bool) -> Result<Browser> {
         LaunchOptions::default_builder()
             .headless(headless)
             .window_size(Some((1280, 900)))
-            .idle_browser_timeout(Duration::from_secs(120))
+            .idle_browser_timeout(Duration::from_secs(600))
             .build()
             .context("Failed to build launch options")?,
     )
