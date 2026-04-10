@@ -127,8 +127,9 @@ enum Commands {
         sessions: usize,
     },
 
-    /// Upload a built letter PDF and email a secure link to the recipient
-    Share {
+    /// Send a letter: secure link to recipient + file to TM3
+    #[command(alias = "share")]
+    Send {
         /// Client ID (defaults to last clinical-letter-build state)
         client_id: Option<String>,
 
@@ -248,7 +249,7 @@ fn main() -> Result<()> {
         Commands::NoteSave { id } => note::save(&id),
         Commands::NoteFinalise { id } => finalise::run(&id),
         Commands::NotePrepare { id, sessions } => prepare::run(&id, sessions),
-        Commands::Share {
+        Commands::Send {
             client_id,
             pdf,
             to,

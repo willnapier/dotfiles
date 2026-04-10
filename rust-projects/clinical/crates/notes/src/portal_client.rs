@@ -104,9 +104,10 @@ pub fn share(
     let result: serde_json::Value = resp.json()?;
     let link = result["link"].as_str().unwrap_or("unknown");
 
-    println!("Secure link sent to {resolved_to}");
-    println!("Link: {link}");
-    println!("Expires in {expiry_days} days");
+    println!();
+    println!("  \u{2713} Sent securely \u{2014} link emailed to {resolved_to}");
+    println!("    Link: {link}");
+    println!("    Expires in {expiry_days} days");
 
     // Best-effort TM3 upload: if the client has a tm3_id, upload the PDF to TM3
     tm3_upload(&resolved_client_id, &pdf_path);
@@ -271,34 +272,23 @@ fn tm3_upload(client_id: &str, pdf_path: &std::path::Path) {
         None => return,
     };
 
-    println!();
-    println!("TM3: uploading to client {tm3_id}...");
-
     let result = std::process::Command::new("tm3-upload")
         .args(["upload", &tm3_id, &pdf_path.display().to_string()])
         .output();
 
     match result {
         Ok(output) if output.status.success() => {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            if !stdout.trim().is_empty() {
-                println!("TM3: {}", stdout.trim());
-            }
-            println!("TM3: upload complete");
+            println!("  \u{2713} Filed to TM3 \u{2014} patient {tm3_id} documents");
         }
         Ok(output) => {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            eprintln!("TM3: upload failed (non-zero exit)");
+            eprintln!("  \u{2717} TM3 upload failed \u{2014} file manually");
             if !stderr.trim().is_empty() {
-                eprintln!("TM3: {}", stderr.trim());
-            }
-            if !stdout.trim().is_empty() {
-                eprintln!("TM3: {}", stdout.trim());
+                eprintln!("    {}", stderr.trim());
             }
         }
         Err(e) => {
-            eprintln!("TM3: could not run tm3-upload: {e}");
+            eprintln!("  \u{2717} TM3 unavailable ({e}) \u{2014} file manually");
         }
     }
 }
