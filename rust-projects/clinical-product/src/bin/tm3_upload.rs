@@ -14,7 +14,6 @@ use headless_chrome::{Browser, LaunchOptions};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::process::Command;
-use std::sync::Arc;
 use std::time::Duration;
 
 const TM3_BASE: &str = "https://changeofharleystreet.tm3app.com";
@@ -222,73 +221,21 @@ fn cmd_upload(tm3_id: &str, file_path: &str) -> Result<()> {
 
     std::thread::sleep(Duration::from_secs(1));
 
-    // Handle the file chooser dialog
-    eprintln!("[upload] Providing file to upload dialog...");
+    // Set files on the hidden file input via CDP DOM.setFileInputFiles
+    eprintln!("[upload] Setting file on input element via CDP...");
     let file_str = file.to_string_lossy().to_string();
 
-    // Find the hidden file input and set the file directly
-    let upload_result = tab.evaluate(
-        &format!(
-            r#"
-            (function() {{
-                var input = document.querySelector('input[type="file"]');
-                if (!input) return JSON.stringify({{error: "no file input found"}});
+    // Find the file input element and get its node ID
+    let file_input = tab
+        .find_element(r#"input[type="file"]"#)
+        .context("No file input found on the documents page")?;
 
-                // Create a DataTransfer to simulate file selection
-                var dt = new DataTransfer();
-                var file = new File([''], '{}', {{type: 'application/pdf'}});
-                dt.items.add(file);
-                input.files = dt.files;
-                input.dispatchEvent(new Event('change', {{bubbles: true}}));
-                return JSON.stringify({{success: true, filename: '{}'}});
-            }})()
-            "#,
-            file.file_name().unwrap_or_default().to_string_lossy(),
-            file.file_name().unwrap_or_default().to_string_lossy(),
-        ),
-        false,
-    )?;
+    let node_id = file_input
+        .get_description()?
+        .node_id;
 
-    // The JS approach above creates an empty File object — we need CDP file chooser
-    // interception for the real file content. Let's use that instead.
-    eprintln!("[upload] Using CDP file chooser interception...");
-
-    // Re-click to trigger the file dialog, with file chooser interception active
-    tab.evaluate(
-        r#"
-        (function() {
-            var input = document.querySelector('input[type="file"]');
-            if (input) input.click();
-        })()
-        "#,
-        false,
-    )?;
-
-    // Use headless_chrome's file chooser handling
-    // The handle_file_chooser API intercepts at CDP level
-    std::thread::sleep(Duration::from_secs(1));
-    match tab.call_method(headless_chrome::protocol::cdp::Page::HandleFileChooser {
-        action: headless_chrome::protocol::cdp::Page::HandleFileChooserActionOption::Accept,
-        files: Some(vec![file_str.clone()]),
-    }) {
-        Ok(_) => eprintln!("[upload] File provided to upload dialog."),
-        Err(e) => {
-            eprintln!("[upload] CDP file chooser failed: {}", e);
-            eprintln!("[upload] Trying alternative: set files via CDP DOM...");
-
-            // Alternative: use DOM.setFileInputFiles
-            let input_node = tab.evaluate(
-                r#"
-                (function() {
-                    var input = document.querySelector('input[type="file"]');
-                    return input ? true : false;
-                })()
-                "#,
-                false,
-            )?;
-            eprintln!("[upload] File input exists: {:?}", input_node.value);
-        }
-    }
+    tab.handle_file_chooser(vec![file_str.clone()], node_id)?;
+    eprintln!("[upload] File set: {}", file.display());
 
     // Wait for upload to complete
     eprintln!("[upload] Waiting for upload to complete...");
