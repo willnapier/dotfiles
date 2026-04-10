@@ -108,6 +108,9 @@ pub fn share(
     println!("Link: {link}");
     println!("Expires in {expiry_days} days");
 
+    // Best-effort TM3 upload: if the client has a tm3_id, upload the PDF to TM3
+    tm3_upload(&resolved_client_id, &pdf_path);
+
     Ok(())
 }
 
@@ -238,6 +241,66 @@ fn load_state_file() -> Result<serde_json::Value> {
     let contents = std::fs::read_to_string(path)?;
     let state: serde_json::Value = serde_json::from_str(&contents)?;
     Ok(state)
+}
+
+/// Best-effort TM3 upload. Loads the client's identity.yaml to check for a
+/// `tm3_id` field. If present, invokes `tm3-upload upload <tm3_id> <pdf_path>`.
+/// Prints success or a warning on failure — never propagates errors.
+fn tm3_upload(client_id: &str, pdf_path: &std::path::Path) {
+    let identity_path = core_client::identity_path(client_id);
+    let identity = match core_identity::load_identity(&identity_path) {
+        Ok(id) => id,
+        Err(e) => {
+            eprintln!("TM3: skipped — could not load identity: {e}");
+            return;
+        }
+    };
+
+    let tm3_id = match &identity.tm3_id {
+        Some(val) => {
+            // serde_yaml::Value can be a Number or String; render either to a string
+            match val {
+                serde_yaml::Value::Number(n) => n.to_string(),
+                serde_yaml::Value::String(s) if !s.is_empty() => s.clone(),
+                _ => {
+                    // null, empty, or unexpected type — no TM3 ID configured
+                    return;
+                }
+            }
+        }
+        None => return,
+    };
+
+    println!();
+    println!("TM3: uploading to client {tm3_id}...");
+
+    let result = std::process::Command::new("tm3-upload")
+        .args(["upload", &tm3_id, &pdf_path.display().to_string()])
+        .output();
+
+    match result {
+        Ok(output) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if !stdout.trim().is_empty() {
+                println!("TM3: {}", stdout.trim());
+            }
+            println!("TM3: upload complete");
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            eprintln!("TM3: upload failed (non-zero exit)");
+            if !stderr.trim().is_empty() {
+                eprintln!("TM3: {}", stderr.trim());
+            }
+            if !stdout.trim().is_empty() {
+                eprintln!("TM3: {}", stdout.trim());
+            }
+        }
+        Err(e) => {
+            eprintln!("TM3: could not run tm3-upload: {e}");
+        }
+    }
 }
 
 /// Read recipient email and name from identity.yaml, with CLI overrides.
