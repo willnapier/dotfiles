@@ -1,267 +1,401 @@
 //! TM3 headless browser spike — proof of concept.
 //!
-//! Launches Chrome (visible), navigates to TM3, clicks "Sign me in with Pass Key",
-//! waits for passkey auth, then navigates to a client's documents page and inspects
-//! the upload widget DOM structure.
+//! Phase A (first run): Register a virtual passkey with TM3, save credential to disk.
+//!   tm3-spike register <tm3_id>
 //!
-//! Usage: tm3-spike <tm3_id>
+//! Phase B (subsequent runs): Load credential, authenticate automatically, inspect documents page.
+//!   tm3-spike inspect <tm3_id>
+//!
+//! Credential stored at ~/.config/clinical-product/tm3-credential.json
 
 use anyhow::{bail, Context, Result};
+use headless_chrome::browser::tab::Tab;
+use headless_chrome::protocol::cdp::WebAuthn;
 use headless_chrome::{Browser, LaunchOptions};
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 const TM3_BASE: &str = "https://changeofharleystreet.tm3app.com";
 
+#[derive(Serialize, Deserialize)]
+struct SavedCredential {
+    authenticator_protocol: String,
+    credential_id: String,
+    private_key: String,
+    rp_id: String,
+    user_handle: Option<String>,
+    sign_count: u32,
+}
+
+fn credential_path() -> PathBuf {
+    let dir = dirs_or_home().join("tm3-credential.json");
+    dir
+}
+
+fn dirs_or_home() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let dir = PathBuf::from(home)
+        .join(".config")
+        .join("clinical-product");
+    std::fs::create_dir_all(&dir).ok();
+    dir
+}
+
 fn main() -> Result<()> {
-    let tm3_id = std::env::args()
-        .nth(1)
-        .context("Usage: tm3-spike <tm3_id>")?;
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() < 3 {
+        eprintln!("Usage:");
+        eprintln!("  tm3-spike register <tm3_id>   — register virtual passkey (one-time, visible)");
+        eprintln!("  tm3-spike inspect <tm3_id>     — auto-login + inspect documents page");
+        std::process::exit(1);
+    }
 
-    eprintln!("[spike] Launching Chrome...");
-    let browser = Browser::new(
-        LaunchOptions::default_builder()
-            .headless(false)
-            .window_size(Some((1280, 900)))
-            .idle_browser_timeout(Duration::from_secs(120))
-            .build()
-            .context("Failed to build launch options")?,
-    )
-    .context("Failed to launch Chrome — is it installed?")?;
+    let mode = &args[1];
+    let tm3_id = &args[2];
 
-    let tab = browser.new_tab().context("Failed to open new tab")?;
+    match mode.as_str() {
+        "register" => register_passkey(tm3_id),
+        "inspect" => inspect_documents(tm3_id),
+        other => bail!("Unknown mode '{}'. Use 'register' or 'inspect'.", other),
+    }
+}
+
+// --- Phase A: Register a virtual passkey with TM3 ---
+fn register_passkey(tm3_id: &str) -> Result<()> {
+    eprintln!("[register] Launching Chrome (visible)...");
+    let browser = launch_browser(false)?;
+    let tab = browser.new_tab().context("Failed to open tab")?;
     tab.set_default_timeout(Duration::from_secs(30));
 
-    // --- Phase 1: Navigate to TM3 ---
-    eprintln!("[spike] Navigating to TM3...");
-    tab.navigate_to(TM3_BASE)
-        .context("Failed to navigate to TM3")?;
-    tab.wait_until_navigated()
-        .context("Timed out waiting for TM3 page load")?;
+    // Enable WebAuthn and create virtual authenticator
+    let auth_id = setup_virtual_authenticator(&tab)?;
 
+    // Navigate to TM3 login
+    eprintln!("[register] Navigating to TM3...");
+    tab.navigate_to(TM3_BASE)?;
+    tab.wait_until_navigated()?;
     let url = tab.get_url();
-    eprintln!("[spike] Landed at: {}", url);
+    eprintln!("[register] Landed at: {}", url);
 
-    // Dump page structure for diagnostics
-    dump_page_structure(&tab, "Initial page")?;
+    dump_buttons(&tab, "Login page")?;
 
-    // --- Phase 2: Find and click passkey button ---
-    eprintln!("[spike] Looking for passkey login button...");
+    // We need to register a passkey. TM3's login page has "Sign In with Passkey" but
+    // that's for USING an existing passkey. To REGISTER a new one, we probably need
+    // to first log in (via the old passkey / Touch ID) and then add a new security key
+    // in account settings.
+    //
+    // Alternative approach: the virtual authenticator intercepts ALL WebAuthn calls.
+    // If we click "Sign In with Passkey", TM3 sends a navigator.credentials.get() call.
+    // The virtual authenticator has no credentials yet, so it will fail.
+    //
+    // The correct flow for registration:
+    // 1. Log in manually first (user clicks through with real Touch ID in the visible browser)
+    // 2. Navigate to account/security settings
+    // 3. Click "Add passkey" or similar
+    // 4. The virtual authenticator intercepts navigator.credentials.create()
+    // 5. Save the resulting credential
+    //
+    // BUT — there's a simpler approach. We can:
+    // 1. NOT enable WebAuthn yet (let the real platform authenticator handle login)
+    // 2. User authenticates with Touch ID normally
+    // 3. THEN enable WebAuthn + virtual authenticator
+    // 4. Navigate to security settings, add new passkey
+    // 5. Virtual authenticator handles the registration
+    // 6. Save credential
 
-    // Search by text content — the button says "Sign me in with Pass Key"
-    let passkey_clicked = tab
-        .evaluate(
-            r#"
-            (function() {
-                var buttons = document.querySelectorAll('button, a, input[type="submit"]');
-                for (var i = 0; i < buttons.length; i++) {
-                    var text = buttons[i].textContent.trim().toLowerCase();
-                    if (text.includes('pass key') || text.includes('passkey')) {
-                        buttons[i].click();
-                        return JSON.stringify({found: true, text: buttons[i].textContent.trim(), tag: buttons[i].tagName, class: buttons[i].className, id: buttons[i].id});
-                    }
-                }
-                return JSON.stringify({found: false});
-            })()
-            "#,
-            false,
-        )
-        .context("Failed to search for passkey button")?;
+    eprintln!();
+    eprintln!("[register] === STEP 1: Log in with your real passkey ===");
+    eprintln!("[register] Click 'Sign In with Passkey' and Touch ID in the browser.");
+    eprintln!("[register] The virtual authenticator is NOT active yet — your real passkey will work.");
+    eprintln!();
 
-    if let Some(val) = &passkey_clicked.value {
-        let s = val.as_str().unwrap_or("");
-        eprintln!("[spike] Passkey button search result: {}", s);
-        if s.contains("\"found\":false") || s.contains("\"found\": false") {
-            eprintln!("[spike] No passkey button found on initial page.");
-            eprintln!("[spike] The login page may look different from a fresh session.");
-            eprintln!("[spike] Dumping all clickable elements...");
-            dump_page_structure(&tab, "No passkey found")?;
-            bail!("Could not find passkey button. See page structure dump above.");
+    // Wait for user to authenticate manually
+    wait_for_auth(&tab)?;
+
+    eprintln!("[register] Authenticated. Post-login URL: {}", tab.get_url());
+
+    // Now enable the virtual authenticator (overrides the platform authenticator)
+    eprintln!("[register] Enabling virtual authenticator for registration...");
+    // We already set it up above, so it's active. Actually, we need to think about this.
+    // The WebAuthn.enable() call we made earlier already overrides the platform auth.
+    // That's why the user could still auth — let me check if enable was called.
+    //
+    // Actually, we called setup_virtual_authenticator which calls Enable. That means
+    // the platform authenticator was already overridden. But the user said Touch ID
+    // appeared in the first spike... That spike didn't call WebAuthn.enable.
+    //
+    // So the issue is: if we enable WebAuthn before login, the user can't use Touch ID.
+    // We need to enable it AFTER login.
+
+    // Hmm, we already enabled it. Let's restructure: don't enable until after login.
+    // For now, let's just try navigating to security settings.
+
+    eprintln!("[register] Looking for security/passkey settings...");
+
+    // Try common TM3 account settings paths
+    let settings_urls = [
+        format!("{}/Account/Security", TM3_BASE),
+        format!("{}/account/security", TM3_BASE),
+        format!("{}/Settings/Security", TM3_BASE),
+        format!("{}/settings/security", TM3_BASE),
+        format!("{}/Account", TM3_BASE),
+        format!("{}/settings", TM3_BASE),
+    ];
+
+    let mut found_settings = false;
+    for settings_url in &settings_urls {
+        eprintln!("[register] Trying: {}", settings_url);
+        tab.navigate_to(settings_url)?;
+        std::thread::sleep(Duration::from_secs(2));
+        let current = tab.get_url();
+        if !current.contains("login") && !current.contains("Login") {
+            eprintln!("[register] Settings page at: {}", current);
+            found_settings = true;
+            dump_buttons(&tab, "Settings page")?;
+            break;
         }
     }
 
-    // Wait for passkey authentication — user needs to Touch ID
-    eprintln!();
-    eprintln!("[spike] ========================================");
-    eprintln!("[spike]  PASSKEY TRIGGERED — authenticate now   ");
-    eprintln!("[spike]  (Touch ID / Apple Watch / system prompt)");
-    eprintln!("[spike] ========================================");
-    eprintln!();
+    if !found_settings {
+        eprintln!("[register] Could not find settings page automatically.");
+        eprintln!("[register] Please navigate to your security/passkey settings in the browser.");
+        eprintln!("[register] Press Enter when you're on the page with 'Add passkey' or similar...");
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        dump_buttons(&tab, "Manual settings page")?;
+    }
 
-    // Poll until we're past the login page
+    // Look for "Add passkey" / "Register" button
+    eprintln!("[register] Looking for passkey registration button...");
+    let reg_result = tab.evaluate(
+        r#"
+        (function() {
+            var buttons = document.querySelectorAll('button, a');
+            for (var i = 0; i < buttons.length; i++) {
+                var text = buttons[i].textContent.trim().toLowerCase();
+                if (text.includes('add passkey') || text.includes('add security key')
+                    || text.includes('register') || text.includes('add authenticator')
+                    || text.includes('add key') || text.includes('new passkey')) {
+                    return JSON.stringify({found: true, text: buttons[i].textContent.trim()});
+                }
+            }
+            return JSON.stringify({found: false});
+        })()
+        "#,
+        false,
+    )?;
+
+    if let Some(val) = &reg_result.value {
+        eprintln!("[register] Registration button search: {}", val);
+    }
+
+    eprintln!();
+    eprintln!("[register] When you see a 'Register passkey' / 'Add passkey' option,");
+    eprintln!("[register] click it in the browser. The virtual authenticator will");
+    eprintln!("[register] intercept the WebAuthn create() call automatically.");
+    eprintln!("[register] Press Enter after clicking...");
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+
+    // Wait a moment for registration to complete
+    std::thread::sleep(Duration::from_secs(3));
+
+    // Retrieve credentials from the virtual authenticator
+    eprintln!("[register] Retrieving registered credential...");
+    let creds = tab.call_method(WebAuthn::GetCredentials {
+        authenticator_id: auth_id.clone(),
+    })?;
+
+    if creds.credentials.is_empty() {
+        bail!(
+            "No credentials registered on virtual authenticator. \
+             The registration may not have triggered, or TM3 might not have \
+             a passkey management page. Check the browser for errors."
+        );
+    }
+
+    eprintln!(
+        "[register] Found {} credential(s)!",
+        creds.credentials.len()
+    );
+
+    let cred = &creds.credentials[0];
+    let saved = SavedCredential {
+        authenticator_protocol: "ctap2".to_string(),
+        credential_id: cred.credential_id.clone(),
+        private_key: cred.private_key.clone(),
+        rp_id: cred.rp_id.clone().unwrap_or_default(),
+        user_handle: cred.user_handle.clone(),
+        sign_count: cred.sign_count,
+    };
+
+    let path = credential_path();
+    let json = serde_json::to_string_pretty(&saved)?;
+    std::fs::write(&path, &json)?;
+    eprintln!("[register] Credential saved to: {}", path.display());
+    eprintln!("[register] rp_id: {}", saved.rp_id);
+    eprintln!(
+        "[register] credential_id: {}...",
+        &saved.credential_id[..saved.credential_id.len().min(20)]
+    );
+    eprintln!();
+    eprintln!("[register] Done! You can now use: tm3-spike inspect {}", tm3_id);
+
+    Ok(())
+}
+
+// --- Phase B: Auto-login + inspect documents page ---
+fn inspect_documents(tm3_id: &str) -> Result<()> {
+    let cred_path = credential_path();
+    let cred_json = std::fs::read_to_string(&cred_path)
+        .context(format!("No saved credential at {}. Run 'tm3-spike register <id>' first.", cred_path.display()))?;
+    let saved: SavedCredential = serde_json::from_str(&cred_json)?;
+    eprintln!("[inspect] Loaded credential from {}", cred_path.display());
+
+    eprintln!("[inspect] Launching Chrome (headless)...");
+    let browser = launch_browser(true)?;
+    let tab = browser.new_tab().context("Failed to open tab")?;
+    tab.set_default_timeout(Duration::from_secs(30));
+
+    // Set up virtual authenticator with saved credential
+    let auth_id = setup_virtual_authenticator(&tab)?;
+
+    // Load the saved credential into the virtual authenticator
+    eprintln!("[inspect] Loading saved credential into virtual authenticator...");
+    tab.call_method(WebAuthn::AddCredential {
+        authenticator_id: auth_id.clone(),
+        credential: WebAuthn::Credential {
+            credential_id: saved.credential_id.clone(),
+            is_resident_credential: true,
+            rp_id: Some(saved.rp_id.clone()),
+            private_key: saved.private_key.clone(),
+            user_handle: saved.user_handle.clone(),
+            sign_count: saved.sign_count,
+            large_blob: None,
+            backup_eligibility: None,
+            backup_state: None,
+            user_name: None,
+            user_display_name: None,
+        },
+    })?;
+    eprintln!("[inspect] Credential loaded.");
+
+    // Navigate to TM3
+    eprintln!("[inspect] Navigating to TM3...");
+    tab.navigate_to(TM3_BASE)?;
+    tab.wait_until_navigated()?;
+    eprintln!("[inspect] Landed at: {}", tab.get_url());
+
+    // Click the passkey button
+    eprintln!("[inspect] Clicking passkey login button...");
+    let click_result = tab.evaluate(
+        r#"
+        (function() {
+            var buttons = document.querySelectorAll('button');
+            for (var i = 0; i < buttons.length; i++) {
+                var text = buttons[i].textContent.trim().toLowerCase();
+                if (text.includes('passkey')) {
+                    buttons[i].click();
+                    return "clicked";
+                }
+            }
+            return "not_found";
+        })()
+        "#,
+        false,
+    )?;
+
+    if let Some(val) = &click_result.value {
+        eprintln!("[inspect] Passkey button: {}", val);
+    }
+
+    // Wait for auto-authentication
+    eprintln!("[inspect] Waiting for virtual authenticator to respond...");
     let mut authenticated = false;
-    for attempt in 0..30 {
+    for attempt in 0..15 {
         std::thread::sleep(Duration::from_secs(2));
         let current_url = tab.get_url();
 
-        // Check if the "Still here?" / login modal has disappeared
-        let modal_gone = tab
-            .evaluate(
-                r#"
-                (function() {
-                    // Check if we're on a real app page (no login modal visible)
-                    var buttons = document.querySelectorAll('button');
-                    for (var i = 0; i < buttons.length; i++) {
-                        var text = buttons[i].textContent.trim().toLowerCase();
-                        if (text.includes('pass key') || text.includes('passkey') || text.includes('log me in')) {
-                            return "modal_still_visible";
-                        }
-                    }
-                    return "clear";
-                })()
-                "#,
-                false,
-            )
-            .ok();
-
-        let status = modal_gone
-            .as_ref()
-            .and_then(|r| r.value.as_ref())
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown");
-
-        if status == "clear" && !current_url.contains("login") && !current_url.contains("Login") {
-            eprintln!(
-                "[spike] Authenticated! (attempt {}, url: {})",
-                attempt + 1,
-                current_url
-            );
+        if !current_url.contains("login") && !current_url.contains("Login") {
+            eprintln!("[inspect] Authenticated! URL: {}", current_url);
             authenticated = true;
             break;
         }
 
-        if attempt % 5 == 4 {
-            eprintln!(
-                "[spike] Still waiting for auth... ({}s, url: {})",
-                (attempt + 1) * 2,
-                current_url
-            );
+        if attempt % 3 == 2 {
+            eprintln!("[inspect] Still waiting... ({}s)", (attempt + 1) * 2);
         }
     }
 
     if !authenticated {
-        bail!("Timed out waiting for passkey authentication (60s). Did Touch ID appear?");
+        eprintln!("[inspect] Authentication may have failed. Current URL: {}", tab.get_url());
+        dump_buttons(&tab, "Post-auth attempt")?;
+        bail!("Auto-login failed. The saved credential may be invalid — try 'tm3-spike register' again.");
     }
 
-    // Let the app settle after auth
+    // Let app settle
     std::thread::sleep(Duration::from_secs(2));
 
-    // --- Phase 3: Discover URL structure ---
-    eprintln!("[spike] Discovering TM3 URL structure...");
-    let post_login_url = tab.get_url();
-    eprintln!("[spike] Post-login URL: {}", post_login_url);
+    // Navigate to documents page
+    let doc_url = format!("{}/Patient/{}/Documents", TM3_BASE, tm3_id);
+    eprintln!("[inspect] Navigating to: {}", doc_url);
+    tab.navigate_to(&doc_url)?;
 
-    // Scrape navigation links to understand URL patterns
-    let nav_links = tab
-        .evaluate(
-            r#"
-            (function() {
-                var links = document.querySelectorAll('a[href]');
-                var hrefs = Array.from(links).map(function(a) {
-                    return {href: a.href, text: a.textContent.trim().substring(0, 60)};
-                }).filter(function(item) {
-                    var h = item.href.toLowerCase();
-                    return h.includes('patient') || h.includes('client')
-                        || h.includes('document') || h.includes('diary');
-                });
-                return JSON.stringify(hrefs.slice(0, 30), null, 2);
-            })()
-            "#,
-            false,
-        )
-        .ok();
+    // Wait for page to fully load (title changes from "...Loading...")
+    eprintln!("[inspect] Waiting for page to load...");
+    for _ in 0..15 {
+        std::thread::sleep(Duration::from_secs(2));
+        let title = tab
+            .evaluate("document.title", false)
+            .ok()
+            .and_then(|r| r.value)
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or_default();
 
-    if let Some(info) = nav_links {
-        if let Some(val) = info.value {
-            eprintln!("[spike] Navigation links (patient/document/diary):");
-            let fallback = val.to_string();
-            let s = val.as_str().unwrap_or(&fallback);
-            println!("{}", s);
+        if !title.contains("Loading") && !title.is_empty() {
+            eprintln!("[inspect] Page loaded. Title: {}", title);
+            break;
         }
     }
 
-    // --- Phase 4: Navigate to client documents page ---
-    let doc_url_candidates = [
-        format!("{}/Patient/{}/Documents", TM3_BASE, tm3_id),
-        format!("{}/Patient/Documents/{}", TM3_BASE, tm3_id),
-        format!("{}/patients/{}/documents", TM3_BASE, tm3_id),
-        format!("{}/#/patients/{}/documents", TM3_BASE, tm3_id),
-        format!("{}/#/Patient/{}/Documents", TM3_BASE, tm3_id),
-    ];
+    // Inspect upload widget
+    inspect_upload_widget(&tab)?;
 
-    eprintln!(
-        "[spike] Navigating to client {} documents page...",
-        tm3_id
-    );
+    // Final comprehensive inspection
+    eprintln!("\n[inspect] === FINAL PAGE STATE ===");
+    let final_info = tab.evaluate(
+        r#"
+        (function() {
+            var info = {};
+            info.url = window.location.href;
+            info.title = document.title;
 
-    let mut found_docs = false;
-    for candidate_url in &doc_url_candidates {
-        eprintln!("[spike] Trying: {}", candidate_url);
-        if tab.navigate_to(candidate_url).is_ok() {
-            std::thread::sleep(Duration::from_secs(3));
-            let current = tab.get_url();
-            eprintln!("[spike] → Landed at: {}", current);
+            var fileInputs = document.querySelectorAll('input[type="file"]');
+            info.fileInputs = Array.from(fileInputs).map(function(el) {
+                return {
+                    name: el.name, id: el.id, accept: el.accept,
+                    multiple: el.multiple, class: el.className,
+                    visible: el.offsetParent !== null
+                };
+            });
 
-            if !current.contains("login") && !current.contains("Login") {
-                eprintln!("[spike] URL pattern appears to work.");
-                found_docs = true;
-                inspect_upload_widget(&tab)?;
-                break;
-            }
-        }
-    }
+            var uploadElements = document.querySelectorAll(
+                '[class*="upload" i], [id*="upload" i], [class*="drop" i]'
+            );
+            info.uploadElements = Array.from(uploadElements).map(function(el) {
+                return {
+                    tag: el.tagName, id: el.id, class: el.className,
+                    text: el.textContent.trim().substring(0, 100)
+                };
+            });
 
-    if !found_docs {
-        eprintln!("[spike] None of the guessed URL patterns worked.");
-        eprintln!("[spike] Navigate manually in the browser to the documents page,");
-        eprintln!("[spike] then press Enter and I'll inspect whatever page you're on.");
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-
-        let manual_url = tab.get_url();
-        eprintln!("[spike] Manual navigation landed at: {}", manual_url);
-        inspect_upload_widget(&tab)?;
-    }
-
-    // --- Phase 5: Final comprehensive inspection ---
-    eprintln!("\n[spike] === FINAL PAGE STATE ===");
-    let final_info = tab
-        .evaluate(
-            r#"
-            (function() {
-                var info = {};
-                info.url = window.location.href;
-                info.title = document.title;
-
-                var fileInputs = document.querySelectorAll('input[type="file"]');
-                info.fileInputs = Array.from(fileInputs).map(function(el) {
-                    return {
-                        name: el.name, id: el.id, accept: el.accept,
-                        multiple: el.multiple, class: el.className,
-                        visible: el.offsetParent !== null
-                    };
-                });
-
-                var uploadElements = document.querySelectorAll(
-                    '[class*="upload" i], [id*="upload" i], [class*="drop" i]'
-                );
-                info.uploadElements = Array.from(uploadElements).map(function(el) {
-                    return {
-                        tag: el.tagName, id: el.id, class: el.className,
-                        text: el.textContent.trim().substring(0, 100)
-                    };
-                });
-
-                var dropzones = document.querySelectorAll('[dropzone], [ondrop], [ondragover]');
-                info.dropzones = Array.from(dropzones).map(function(el) {
-                    return { tag: el.tagName, id: el.id, class: el.className };
-                });
-
-                return JSON.stringify(info, null, 2);
-            })()
-            "#,
-            false,
-        )
-        .context("Failed to inspect final page state")?;
+            return JSON.stringify(info, null, 2);
+        })()
+        "#,
+        false,
+    )?;
 
     if let Some(val) = final_info.value {
         let fallback = val.to_string();
@@ -269,54 +403,117 @@ fn main() -> Result<()> {
         println!("{}", s);
     }
 
-    eprintln!("\n[spike] Browser left open for manual inspection.");
-    eprintln!("[spike] Press Enter to close...");
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input)?;
-
+    eprintln!("\n[inspect] Done.");
     Ok(())
 }
 
-fn dump_page_structure(tab: &headless_chrome::Tab, label: &str) -> Result<()> {
-    let info = tab
-        .evaluate(
-            r#"
-            (function() {
-                var info = {};
+// --- Shared helpers ---
 
-                var inputs = document.querySelectorAll('input');
-                info.inputs = Array.from(inputs).map(function(el) {
-                    return {
-                        type: el.type, name: el.name, id: el.id,
-                        placeholder: el.placeholder, class: el.className
-                    };
-                });
+fn launch_browser(headless: bool) -> Result<Browser> {
+    Browser::new(
+        LaunchOptions::default_builder()
+            .headless(headless)
+            .window_size(Some((1280, 900)))
+            .idle_browser_timeout(Duration::from_secs(120))
+            .build()
+            .context("Failed to build launch options")?,
+    )
+    .context("Failed to launch Chrome")
+}
 
-                var forms = document.querySelectorAll('form');
-                info.forms = Array.from(forms).map(function(el) {
-                    return {
-                        action: el.action, method: el.method,
-                        id: el.id, class: el.className
-                    };
-                });
+fn setup_virtual_authenticator(tab: &Tab) -> Result<String> {
+    // Enable WebAuthn domain — this overrides the platform authenticator
+    tab.call_method(WebAuthn::Enable {
+        enable_ui: Some(false),
+    })?;
 
-                var buttons = document.querySelectorAll('button, input[type="submit"], a.btn');
-                info.buttons = Array.from(buttons).map(function(el) {
-                    return {
-                        tag: el.tagName, type: el.type,
-                        text: el.textContent.trim().substring(0, 60),
-                        id: el.id, class: el.className
-                    };
-                });
+    // Create virtual authenticator mimicking a platform passkey authenticator
+    let result = tab.call_method(WebAuthn::AddVirtualAuthenticator {
+        options: WebAuthn::VirtualAuthenticatorOptions {
+            protocol: WebAuthn::AuthenticatorProtocol::Ctap2,
+            ctap_2_version: Some(WebAuthn::Ctap2Version::Ctap21),
+            transport: WebAuthn::AuthenticatorTransport::Internal,
+            has_resident_key: Some(true),
+            has_user_verification: Some(true),
+            has_large_blob: None,
+            has_cred_blob: None,
+            has_min_pin_length: None,
+            has_prf: None,
+            automatic_presence_simulation: Some(true),
+            is_user_verified: Some(true),
+            default_backup_eligibility: None,
+            default_backup_state: None,
+        },
+    })?;
 
-                return JSON.stringify(info, null, 2);
-            })()
-            "#,
-            false,
-        )
-        .context("Failed to dump page structure")?;
+    eprintln!(
+        "[auth] Virtual authenticator created: {}",
+        result.authenticator_id
+    );
+    Ok(result.authenticator_id)
+}
 
-    eprintln!("[spike] Page structure ({}):", label);
+fn wait_for_auth(tab: &Tab) -> Result<()> {
+    for attempt in 0..60 {
+        std::thread::sleep(Duration::from_secs(2));
+        let current_url = tab.get_url();
+
+        let modal_gone = tab
+            .evaluate(
+                r#"
+                (function() {
+                    var buttons = document.querySelectorAll('button');
+                    for (var i = 0; i < buttons.length; i++) {
+                        var text = buttons[i].textContent.trim().toLowerCase();
+                        if (text.includes('passkey') || text.includes('log me in') || text.includes('sign in')) {
+                            return "login_visible";
+                        }
+                    }
+                    return "clear";
+                })()
+                "#,
+                false,
+            )
+            .ok()
+            .and_then(|r| r.value)
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or_default();
+
+        if modal_gone == "clear"
+            && !current_url.contains("login")
+            && !current_url.contains("Login")
+        {
+            return Ok(());
+        }
+
+        if attempt % 5 == 4 {
+            eprintln!(
+                "[auth] Waiting for manual login... ({}s)",
+                (attempt + 1) * 2
+            );
+        }
+    }
+    bail!("Timed out waiting for manual authentication (120s).")
+}
+
+fn dump_buttons(tab: &Tab, label: &str) -> Result<()> {
+    let info = tab.evaluate(
+        r#"
+        (function() {
+            var buttons = document.querySelectorAll('button, a.btn, input[type="submit"]');
+            return JSON.stringify(Array.from(buttons).map(function(el) {
+                return {
+                    tag: el.tagName, type: el.type,
+                    text: el.textContent.trim().substring(0, 60),
+                    id: el.id, class: el.className
+                };
+            }), null, 2);
+        })()
+        "#,
+        false,
+    )?;
+
+    eprintln!("[spike] Buttons ({}):", label);
     if let Some(val) = info.value {
         let fallback = val.to_string();
         let s = val.as_str().unwrap_or(&fallback);
@@ -325,64 +522,82 @@ fn dump_page_structure(tab: &headless_chrome::Tab, label: &str) -> Result<()> {
     Ok(())
 }
 
-fn inspect_upload_widget(tab: &headless_chrome::Tab) -> Result<()> {
-    eprintln!("[spike] Inspecting upload widget DOM...");
+fn inspect_upload_widget(tab: &Arc<Tab>) -> Result<()> {
+    eprintln!("[inspect] Inspecting upload widget DOM...");
 
-    let widget_info = tab
-        .evaluate(
-            r#"
-            (function() {
-                var info = {};
+    let widget_info = tab.evaluate(
+        r#"
+        (function() {
+            var info = {};
 
-                var iframes = document.querySelectorAll('iframe');
-                info.iframes = Array.from(iframes).map(function(el) {
-                    return { src: el.src, id: el.id, name: el.name };
-                });
+            var iframes = document.querySelectorAll('iframe');
+            info.iframes = Array.from(iframes).map(function(el) {
+                return { src: el.src, id: el.id, name: el.name };
+            });
 
-                var fileInputs = document.querySelectorAll('input[type="file"]');
-                info.fileInputs = Array.from(fileInputs).map(function(el) {
-                    var rect = el.getBoundingClientRect();
-                    return {
-                        name: el.name, id: el.id, accept: el.accept,
-                        multiple: el.multiple, class: el.className,
-                        visible: el.offsetParent !== null,
-                        width: rect.width, height: rect.height
-                    };
-                });
+            var fileInputs = document.querySelectorAll('input[type="file"]');
+            info.fileInputs = Array.from(fileInputs).map(function(el) {
+                var rect = el.getBoundingClientRect();
+                return {
+                    name: el.name, id: el.id, accept: el.accept,
+                    multiple: el.multiple, class: el.className,
+                    visible: el.offsetParent !== null,
+                    width: rect.width, height: rect.height
+                };
+            });
 
-                var uploadTriggers = document.querySelectorAll(
-                    'button[class*="upload" i], button[class*="attach" i], ' +
-                    'a[class*="upload" i], a[class*="attach" i], ' +
-                    '[role="button"][class*="upload" i], ' +
-                    '.k-upload, .k-dropzone, .kendo-upload, ' +
-                    '.dz-clickable, .dropzone, ' +
-                    '.fine-uploader, .qq-upload-button'
-                );
-                info.uploadTriggers = Array.from(uploadTriggers).map(function(el) {
+            // Broader search: any element with upload/file semantics
+            var uploadTriggers = document.querySelectorAll(
+                'button[class*="upload" i], button[class*="attach" i], ' +
+                'a[class*="upload" i], a[class*="attach" i], ' +
+                '[role="button"][class*="upload" i], ' +
+                '.k-upload, .k-dropzone, .kendo-upload, ' +
+                '.dz-clickable, .dropzone, ' +
+                '.fine-uploader, .qq-upload-button, ' +
+                '[class*="file" i][class*="select" i], ' +
+                '[class*="browse" i]'
+            );
+            info.uploadTriggers = Array.from(uploadTriggers).map(function(el) {
+                return {
+                    tag: el.tagName, id: el.id, class: el.className,
+                    text: el.textContent.trim().substring(0, 80),
+                    ariaLabel: el.getAttribute('aria-label')
+                };
+            });
+
+            // Also search by text content for upload-related buttons
+            var allButtons = document.querySelectorAll('button, a');
+            info.uploadButtons = Array.from(allButtons)
+                .filter(function(el) {
+                    var t = el.textContent.trim().toLowerCase();
+                    return t.includes('upload') || t.includes('attach') || t.includes('browse')
+                        || t.includes('choose file') || t.includes('add document')
+                        || t.includes('new document');
+                })
+                .map(function(el) {
                     return {
                         tag: el.tagName, id: el.id, class: el.className,
-                        text: el.textContent.trim().substring(0, 80),
-                        ariaLabel: el.getAttribute('aria-label')
+                        text: el.textContent.trim().substring(0, 80)
                     };
                 });
 
-                info.libraries = {
-                    kendo: typeof kendo !== 'undefined',
-                    Dropzone: typeof Dropzone !== 'undefined',
-                    qq: typeof qq !== 'undefined',
-                    jQuery: typeof jQuery !== 'undefined',
-                    angular: typeof angular !== 'undefined',
-                    React: typeof React !== 'undefined' || !!document.querySelector('[data-reactroot]')
-                };
+            info.libraries = {
+                kendo: typeof kendo !== 'undefined',
+                kendoVersion: typeof kendo !== 'undefined' ? kendo.version : null,
+                Dropzone: typeof Dropzone !== 'undefined',
+                jQuery: typeof jQuery !== 'undefined',
+                jQueryVersion: typeof jQuery !== 'undefined' ? jQuery.fn.jquery : null,
+                angular: typeof angular !== 'undefined',
+                React: typeof React !== 'undefined' || !!document.querySelector('[data-reactroot]')
+            };
 
-                return JSON.stringify(info, null, 2);
-            })()
-            "#,
-            false,
-        )
-        .context("Failed to inspect upload widget")?;
+            return JSON.stringify(info, null, 2);
+        })()
+        "#,
+        false,
+    )?;
 
-    eprintln!("[spike] Upload widget DOM:");
+    eprintln!("[inspect] Upload widget DOM:");
     if let Some(val) = widget_info.value {
         let fallback = val.to_string();
         let s = val.as_str().unwrap_or(&fallback);
