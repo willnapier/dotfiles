@@ -207,6 +207,12 @@ enum AuthCommands {
         #[arg(long)]
         dry_run: bool,
     },
+
+    /// Extract form data for insurer authorisation (JSON payload for Healthcode)
+    Form {
+        /// Client ID
+        id: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -230,6 +236,7 @@ fn main() -> Result<()> {
             AuthCommands::Status { verbose } => auth::status(verbose),
             AuthCommands::Check { append } => auth::check(append),
             AuthCommands::Letter { id, dry_run } => auth::letter(&id, dry_run),
+            AuthCommands::Form { id } => auth::form(&id),
         },
         Commands::UpdateLetter { id, dry_run } => letter::run(&id, dry_run),
         Commands::Populate { apply } => populate::run(apply),

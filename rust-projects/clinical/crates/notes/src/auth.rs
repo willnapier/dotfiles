@@ -2,6 +2,7 @@ use anyhow::{bail, Context, Result};
 use std::process::Command;
 
 use clinical_core::client;
+use clinical_core::identity;
 
 use crate::markdown;
 use crate::session;
@@ -211,5 +212,114 @@ REQUEST\n\
         draft_path.display()
     );
 
+    Ok(())
+}
+
+/// Extract all auto-fillable fields for an insurer authorisation form.
+/// Outputs JSON ready for Healthcode form filling.
+pub fn form(id: &str) -> Result<()> {
+    let client_dir = client::client_dir(id);
+    if !client_dir.exists() {
+        bail!("Client directory not found: {}", client_dir.display());
+    }
+
+    // Load identity.yaml
+    let id_path = client::identity_path(id);
+    let ident = identity::load_identity(&id_path)
+        .with_context(|| format!("Failed to load identity: {}", id_path.display()))?;
+
+    // Load client notes for session data
+    let notes_path = client::notes_path(id);
+    let content = std::fs::read_to_string(&notes_path)
+        .with_context(|| format!("Failed to read: {}", notes_path.display()))?;
+
+    // Compute auth status
+    let auth = session::compute_auth_status(id, &content);
+
+    // Extract first session date
+    let first_session = markdown::extract_field(&content, "Therapy commenced")
+        .unwrap_or_default();
+
+    // Extract diagnosis
+    let diagnosis = ident.diagnosis.as_deref().unwrap_or("");
+    let diagnostic_code = ident.diagnostic_code.as_deref().unwrap_or("");
+
+    // Extract funding details
+    let membership = ident.funding.policy.as_deref().unwrap_or("");
+    let funder = ident.funding.funding_type.as_deref().unwrap_or("");
+
+    // Extract referrer
+    let referrer_name = ident.referrer.name.as_deref().unwrap_or("");
+
+    // Client details
+    let client_name = ident.name.as_deref().unwrap_or("");
+    let client_title = ident.title.as_deref().unwrap_or("");
+    let client_dob = ident.dob.as_deref().unwrap_or("");
+    let client_address = ident.address.as_deref().unwrap_or("");
+    let client_phone = ident.phone.as_deref().unwrap_or("");
+
+    // Build the form payload
+    let payload = serde_json::json!({
+        "patient": {
+            "name": if !client_title.is_empty() && !client_name.is_empty() {
+                format!("{} {}", client_title, client_name)
+            } else {
+                client_name.to_string()
+            },
+            "date_of_birth": client_dob,
+            "address": client_address,
+            "phone": client_phone,
+            "membership_number": membership,
+            "claim_number": ""
+        },
+        "specialist": {
+            "name": "William Napier",
+            "area_of_expertise": "Counselling Psychology",
+            "telephone": "020 3774 6533",
+            "provider_number": "",
+            "company": "Change of Harley Street"
+        },
+        "referral": {
+            "referred_by": referrer_name,
+            "funder": funder
+        },
+        "clinical": {
+            "diagnosis": diagnosis,
+            "diagnostic_code": diagnostic_code,
+            "model_of_therapy": "ACT/CBS (Acceptance and Commitment Therapy / Contextual Behavioural Science)",
+            "risk_severity": "",
+            "history": "[TO COMPLETE: Full history of condition under this claim]",
+            "treatment_to_date": "[TO COMPLETE: What treatment has been provided]",
+            "progress_to_date": "[TO COMPLETE: Progress made to date]"
+        },
+        "sessions": {
+            "first_session_date": first_session,
+            "total_sessions_to_date": auth.as_ref().map_or(0, |a| a.total_sessions),
+            "sessions_authorised": auth.as_ref().map_or(0, |a| a.sessions_authorised),
+            "sessions_used_current_auth": auth.as_ref().map_or(0, |a| a.sessions_used),
+            "sessions_remaining": auth.as_ref().map_or(0, |a| a.remaining.max(0) as u32),
+            "additional_sessions_requested": "[TO COMPLETE: Number requested]",
+            "rationale_for_additional": "[TO COMPLETE: Clinical rationale]",
+            "estimated_discharge_date": "[TO COMPLETE: Estimated date]"
+        },
+        "meta": {
+            "client_id": id,
+            "form_type": "axa_extension",
+            "generated": chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string(),
+            "fields_requiring_input": [
+                "patient.claim_number",
+                "specialist.provider_number",
+                "clinical.risk_severity",
+                "clinical.history",
+                "clinical.treatment_to_date",
+                "clinical.progress_to_date",
+                "sessions.additional_sessions_requested",
+                "sessions.rationale_for_additional",
+                "sessions.estimated_discharge_date"
+            ]
+        }
+    });
+
+    println!("{}", serde_json::to_string_pretty(&payload)?);
     Ok(())
 }
