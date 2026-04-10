@@ -12,7 +12,9 @@ regex = "1"
 scraper = "0.22"
 dirs = "6"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 toml = "0.8"
+headless_chrome = "1.0"
 
 [[bin]]
 name = "tm3-diary-capture"

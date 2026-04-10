@@ -57,88 +57,72 @@ fn main() -> Result<()> {
 
     eprintln!("URL: {}", tab.get_url());
 
-    // Deep inspection of the diary/scheduler DOM
+    // Simple broad DOM scrape — find ALL elements with appointment-like content
     let result = tab.evaluate(
         r#"
         (function() {
             var info = {};
-            info.url = window.location.href;
-            info.title = document.title;
 
-            // Look for Kendo scheduler
-            if (typeof kendo !== 'undefined' && typeof jQuery !== 'undefined') {
-                var scheduler = jQuery('.k-scheduler').data('kendoScheduler');
-                if (scheduler) {
-                    info.kendoScheduler = {
-                        found: true,
-                        viewName: scheduler.viewName(),
-                        date: scheduler.date() ? scheduler.date().toISOString() : null,
-                        dataSourceLength: scheduler.dataSource.total()
-                    };
+            // Get the month/year header
+            var monthHeader = document.body.innerText.match(/(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}/);
+            info.monthYear = monthHeader ? monthHeader[0] : null;
 
-                    // Get events from the data source
-                    var events = scheduler.dataSource.data();
-                    info.events = [];
-                    for (var i = 0; i < Math.min(events.length, 50); i++) {
-                        var ev = events[i];
-                        info.events.push({
-                            title: ev.title || ev.Title || '',
-                            start: ev.start ? ev.start.toISOString() : (ev.Start || ''),
-                            end: ev.end ? ev.end.toISOString() : (ev.End || ''),
-                            description: ev.description || ev.Description || '',
-                            id: ev.id || ev.Id || '',
-                            // Dump all field names to discover the schema
-                            fields: Object.keys(ev).filter(function(k) {
-                                return typeof ev[k] !== 'function' && k !== '_events';
-                            })
-                        });
-                    }
-                } else {
-                    info.kendoScheduler = {found: false, reason: 'no kendoScheduler widget'};
+            // Get day column headers
+            var allText = document.body.innerText;
+            var dayPattern = /(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{1,2}(st|nd|rd|th)/g;
+            var days = [];
+            var m;
+            while ((m = dayPattern.exec(allText)) !== null) {
+                if (days.indexOf(m[0]) === -1) days.push(m[0]);
+            }
+            info.dayHeaders = days;
+
+            // Find elements that look like appointments (blue blocks with text)
+            // Try multiple selector strategies
+            var selectors = [
+                '[class*="event"]', '[class*="Event"]',
+                '[class*="appointment"]', '[class*="Appointment"]',
+                '[class*="booking"]', '[class*="Booking"]',
+                '[data-uid]',
+                '.schedule-event', '.calendar-event',
+                '[style*="background"]' // appointment blocks often have inline bg color
+            ];
+
+            var found = {};
+            for (var i = 0; i < selectors.length; i++) {
+                var els = document.querySelectorAll(selectors[i]);
+                if (els.length > 0 && els.length < 200) {
+                    found[selectors[i]] = Array.from(els).slice(0, 10).map(function(el) {
+                        return {
+                            tag: el.tagName,
+                            class: (el.className || '').toString().substring(0, 120),
+                            text: el.innerText ? el.innerText.trim().substring(0, 200) : '',
+                            style: (el.getAttribute('style') || '').substring(0, 100),
+                            dataAttrs: Array.from(el.attributes).filter(function(a) {
+                                return a.name.startsWith('data-');
+                            }).map(function(a) { return a.name + '=' + a.value.substring(0, 40); })
+                        };
+                    });
                 }
             }
+            info.selectorResults = found;
 
-            // Also look for appointment elements in the DOM
-            var apptElements = document.querySelectorAll(
-                '.k-event, [class*="appointment" i], [class*="booking" i], ' +
-                '[class*="schedule" i][class*="item" i], [data-uid]'
-            );
-            info.appointmentElements = Array.from(apptElements).slice(0, 30).map(function(el) {
-                return {
-                    tag: el.tagName,
-                    class: el.className.substring(0, 100),
-                    text: el.innerText.trim().substring(0, 150),
-                    dataUid: el.getAttribute('data-uid') || '',
-                    title: el.getAttribute('title') || '',
-                    ariaLabel: el.getAttribute('aria-label') || ''
-                };
-            });
-
-            // Check for the React scheduler (TM3 might use React for the diary)
-            var reactScheduler = document.querySelectorAll(
-                '[class*="calendar" i], [class*="scheduler" i], [class*="diary" i], ' +
-                '[class*="event" i][class*="card" i], [class*="appointment" i][class*="card" i]'
-            );
-            info.reactSchedulerElements = Array.from(reactScheduler).slice(0, 20).map(function(el) {
-                return {
-                    tag: el.tagName,
-                    class: el.className.substring(0, 100),
-                    text: el.innerText.trim().substring(0, 200),
-                    childCount: el.childElementCount
-                };
-            });
-
-            // Look at the column headers (day names/dates)
-            var headers = document.querySelectorAll(
-                'th, [class*="header" i][class*="day" i], [class*="column" i][class*="header" i]'
-            );
-            info.dayHeaders = Array.from(headers).slice(0, 20).map(function(el) {
-                return {
-                    tag: el.tagName,
-                    class: el.className.substring(0, 80),
-                    text: el.innerText.trim().substring(0, 60)
-                };
-            });
+            // Try to find any element containing appointment text patterns (time-time Name)
+            var allDivs = document.querySelectorAll('div, td, span');
+            var apptPattern = /\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}/;
+            var apptDivs = [];
+            for (var j = 0; j < allDivs.length && apptDivs.length < 20; j++) {
+                var txt = allDivs[j].innerText || '';
+                if (apptPattern.test(txt) && txt.length < 300 && txt.length > 10) {
+                    apptDivs.push({
+                        tag: allDivs[j].tagName,
+                        class: (allDivs[j].className || '').toString().substring(0, 120),
+                        text: txt.trim().substring(0, 200),
+                        parentClass: (allDivs[j].parentElement ? allDivs[j].parentElement.className || '' : '').toString().substring(0, 80)
+                    });
+                }
+            }
+            info.timePatternElements = apptDivs;
 
             return JSON.stringify(info, null, 2);
         })()
@@ -150,6 +134,8 @@ fn main() -> Result<()> {
         let fallback = val.to_string();
         let s = val.as_str().unwrap_or(&fallback);
         println!("{}", s);
+    } else {
+        eprintln!("evaluate returned no value");
     }
 
     // Screenshot

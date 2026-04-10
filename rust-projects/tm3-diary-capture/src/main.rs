@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use tm3_diary_capture::client_map::ClientMap;
 use tm3_diary_capture::daypage;
 use tm3_diary_capture::html::{self, Status};
+use tm3_diary_capture::live;
 
 #[derive(Parser)]
 #[command(about = "Parse TM3 clinical diary HTML snapshots into DayPage checklists")]
@@ -17,6 +18,10 @@ struct Cli {
     /// Find latest TM3 diary HTML in Downloads
     #[arg(long)]
     latest: bool,
+
+    /// Scrape TM3 diary live via headless Chrome (requires tm3-upload login)
+    #[arg(long)]
+    live: bool,
 
     /// Preview without modifying files
     #[arg(long)]
@@ -38,23 +43,33 @@ struct Cli {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let file_path = match (&cli.file, cli.latest) {
-        (Some(path), false) => path.clone(),
-        (None, true) => find_latest_tm3_html()?,
-        (Some(_), true) => bail!("Cannot specify both FILE and --latest"),
-        (None, false) => bail!("Provide a FILE or use --latest"),
+    // --- Source selection: --live, --latest, or FILE ---
+    let (schedules, file_path) = if cli.live {
+        if cli.file.is_some() || cli.latest {
+            bail!("Cannot use --live with FILE or --latest");
+        }
+        let schedules = live::scrape_diary()?;
+        (schedules, None)
+    } else {
+        let path = match (&cli.file, cli.latest) {
+            (Some(path), false) => path.clone(),
+            (None, true) => find_latest_tm3_html()?,
+            (Some(_), true) => bail!("Cannot specify both FILE and --latest"),
+            (None, false) => bail!("Provide a FILE, use --latest, or use --live"),
+        };
+
+        eprintln!("Processing: {}", path.display());
+
+        let html_content = std::fs::read_to_string(&path)
+            .with_context(|| format!("Failed to read: {}", path.display()))?;
+
+        let s = html::parse_diary(&html_content)?;
+        (s, Some(path))
     };
 
-    eprintln!("Processing: {}", file_path.display());
-
-    let html_content = std::fs::read_to_string(&file_path)
-        .with_context(|| format!("Failed to read: {}", file_path.display()))?;
-
-    let schedules = html::parse_diary(&html_content)?;
-
-    // Warn if today isn't covered by this export
+    // Warn if today isn't covered by this export (skip for --live, it's always current)
     let today = Local::now().date_naive();
-    if !schedules.is_empty() {
+    if !cli.live && !schedules.is_empty() {
         let first = schedules.first().unwrap().date;
         let last = schedules.last().unwrap().date;
         if today < first || today > last {
@@ -195,7 +210,12 @@ fn main() -> Result<()> {
             eprintln!();
             eprintln!("All clients mapped. Re-processing...");
             // Re-run ourselves on the same file to generate complete output
-            let mut rerun_args = vec!["--include-past".to_string(), file_path.display().to_string()];
+            let rerun_source = if let Some(ref fp) = file_path {
+                fp.display().to_string()
+            } else {
+                "--live".to_string()
+            };
+            let mut rerun_args = vec!["--include-past".to_string(), rerun_source];
             if let Some(d) = cli.date {
                 rerun_args.push("--date".to_string());
                 rerun_args.push(d.to_string());
@@ -209,8 +229,10 @@ fn main() -> Result<()> {
             }
             return Ok(());
         } else {
-            eprintln!();
-            eprintln!("Some clients still unmapped. HTML retained: {}", file_path.display());
+            if let Some(ref fp) = file_path {
+                eprintln!();
+                eprintln!("Some clients still unmapped. HTML retained: {}", fp.display());
+            }
         }
     } else if !unmapped.is_empty() {
         // dry-run mode: just list them
@@ -222,11 +244,13 @@ fn main() -> Result<()> {
         eprintln!("╰────────────────────────────────────────────");
     }
 
-    // Delete source file only if no unmapped clients remain
-    if !cli.dry_run && any_output && unmapped.is_empty() {
-        std::fs::remove_file(&file_path)
-            .with_context(|| format!("Failed to delete: {}", file_path.display()))?;
-        eprintln!("Deleted: {}", file_path.display());
+    // Delete source file only if no unmapped clients remain (not applicable for --live)
+    if let Some(ref fp) = file_path {
+        if !cli.dry_run && any_output && unmapped.is_empty() {
+            std::fs::remove_file(fp)
+                .with_context(|| format!("Failed to delete: {}", fp.display()))?;
+            eprintln!("Deleted: {}", fp.display());
+        }
     }
 
     Ok(())
