@@ -1,16 +1,16 @@
 //! TM3 headless browser spike — proof of concept.
 //!
-//! Phase A (first run): Register a virtual passkey with TM3, save credential to disk.
-//!   tm3-spike register <tm3_id>
+//! Phase A (first run / session expired): Log in manually, capture session cookies.
+//!   tm3-spike login
 //!
-//! Phase B (subsequent runs): Load credential, authenticate automatically, inspect documents page.
+//! Phase B (subsequent runs): Load cookies, inspect documents page headlessly.
 //!   tm3-spike inspect <tm3_id>
 //!
-//! Credential stored at ~/.config/clinical-product/tm3-credential.json
+//! Cookies stored at ~/.config/clinical-product/tm3-cookies.json
 
 use anyhow::{bail, Context, Result};
 use headless_chrome::browser::tab::Tab;
-use headless_chrome::protocol::cdp::WebAuthn;
+use headless_chrome::protocol::cdp::Network;
 use headless_chrome::{Browser, LaunchOptions};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -19,22 +19,18 @@ use std::time::Duration;
 
 const TM3_BASE: &str = "https://changeofharleystreet.tm3app.com";
 
-#[derive(Serialize, Deserialize)]
-struct SavedCredential {
-    authenticator_protocol: String,
-    credential_id: String,
-    private_key: String,
-    rp_id: String,
-    user_handle: Option<String>,
-    sign_count: u32,
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct SavedCookie {
+    name: String,
+    value: String,
+    domain: String,
+    path: String,
+    secure: bool,
+    http_only: bool,
+    expires: Option<f64>,
 }
 
-fn credential_path() -> PathBuf {
-    let dir = dirs_or_home().join("tm3-credential.json");
-    dir
-}
-
-fn dirs_or_home() -> PathBuf {
+fn config_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
     let dir = PathBuf::from(home)
         .join(".config")
@@ -43,367 +39,216 @@ fn dirs_or_home() -> PathBuf {
     dir
 }
 
+fn cookie_path() -> PathBuf {
+    config_dir().join("tm3-cookies.json")
+}
+
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() < 3 {
+    if args.len() < 2 {
         eprintln!("Usage:");
-        eprintln!("  tm3-spike register <tm3_id>   — register virtual passkey (one-time, visible)");
-        eprintln!("  tm3-spike inspect <tm3_id>     — auto-login + inspect documents page");
+        eprintln!("  tm3-spike login              — log in manually, save session cookies");
+        eprintln!("  tm3-spike inspect <tm3_id>   — auto-login via cookies, inspect documents page");
         std::process::exit(1);
     }
 
-    let mode = &args[1];
-    let tm3_id = &args[2];
-
-    match mode.as_str() {
-        "register" => register_passkey(tm3_id),
-        "inspect" => inspect_documents(tm3_id),
-        other => bail!("Unknown mode '{}'. Use 'register' or 'inspect'.", other),
+    match args[1].as_str() {
+        "login" => do_login(),
+        "inspect" => {
+            let tm3_id = args.get(2).context("Usage: tm3-spike inspect <tm3_id>")?;
+            do_inspect(tm3_id)
+        }
+        other => bail!("Unknown command '{}'. Use 'login' or 'inspect'.", other),
     }
 }
 
-// --- Phase A: Register a virtual passkey with TM3 ---
-fn register_passkey(tm3_id: &str) -> Result<()> {
-    eprintln!("[register] Launching Chrome (visible)...");
+// --- Phase A: Manual login + cookie capture ---
+fn do_login() -> Result<()> {
+    eprintln!("[login] Launching Chrome (visible)...");
     let browser = launch_browser(false)?;
-    let tab = browser.new_tab().context("Failed to open tab")?;
+    let tab = browser.new_tab()?;
     tab.set_default_timeout(Duration::from_secs(30));
 
-    // Enable WebAuthn and create virtual authenticator
-    let auth_id = setup_virtual_authenticator(&tab)?;
-
-    // Navigate to TM3 login
-    eprintln!("[register] Navigating to TM3...");
+    eprintln!("[login] Navigating to TM3...");
     tab.navigate_to(TM3_BASE)?;
     tab.wait_until_navigated()?;
-    let url = tab.get_url();
-    eprintln!("[register] Landed at: {}", url);
-
-    dump_buttons(&tab, "Login page")?;
-
-    // We need to register a passkey. TM3's login page has "Sign In with Passkey" but
-    // that's for USING an existing passkey. To REGISTER a new one, we probably need
-    // to first log in (via the old passkey / Touch ID) and then add a new security key
-    // in account settings.
-    //
-    // Alternative approach: the virtual authenticator intercepts ALL WebAuthn calls.
-    // If we click "Sign In with Passkey", TM3 sends a navigator.credentials.get() call.
-    // The virtual authenticator has no credentials yet, so it will fail.
-    //
-    // The correct flow for registration:
-    // 1. Log in manually first (user clicks through with real Touch ID in the visible browser)
-    // 2. Navigate to account/security settings
-    // 3. Click "Add passkey" or similar
-    // 4. The virtual authenticator intercepts navigator.credentials.create()
-    // 5. Save the resulting credential
-    //
-    // BUT — there's a simpler approach. We can:
-    // 1. NOT enable WebAuthn yet (let the real platform authenticator handle login)
-    // 2. User authenticates with Touch ID normally
-    // 3. THEN enable WebAuthn + virtual authenticator
-    // 4. Navigate to security settings, add new passkey
-    // 5. Virtual authenticator handles the registration
-    // 6. Save credential
+    eprintln!("[login] Landed at: {}", tab.get_url());
 
     eprintln!();
-    eprintln!("[register] === STEP 1: Log in with your real passkey ===");
-    eprintln!("[register] Click 'Sign In with Passkey' and Touch ID in the browser.");
-    eprintln!("[register] The virtual authenticator is NOT active yet — your real passkey will work.");
+    eprintln!("[login] ==========================================");
+    eprintln!("[login]  Log in with your passkey (Touch ID).    ");
+    eprintln!("[login]  I'll capture cookies once you're in.    ");
+    eprintln!("[login] ==========================================");
     eprintln!();
 
-    // Wait for user to authenticate manually
+    // Wait for authentication
     wait_for_auth(&tab)?;
+    eprintln!("[login] Authenticated! URL: {}", tab.get_url());
 
-    eprintln!("[register] Authenticated. Post-login URL: {}", tab.get_url());
+    // Let the app fully settle
+    std::thread::sleep(Duration::from_secs(2));
 
-    // Now enable the virtual authenticator (overrides the platform authenticator)
-    eprintln!("[register] Enabling virtual authenticator for registration...");
-    // We already set it up above, so it's active. Actually, we need to think about this.
-    // The WebAuthn.enable() call we made earlier already overrides the platform auth.
-    // That's why the user could still auth — let me check if enable was called.
-    //
-    // Actually, we called setup_virtual_authenticator which calls Enable. That means
-    // the platform authenticator was already overridden. But the user said Touch ID
-    // appeared in the first spike... That spike didn't call WebAuthn.enable.
-    //
-    // So the issue is: if we enable WebAuthn before login, the user can't use Touch ID.
-    // We need to enable it AFTER login.
-
-    // Hmm, we already enabled it. Let's restructure: don't enable until after login.
-    // For now, let's just try navigating to security settings.
-
-    eprintln!("[register] Looking for security/passkey settings...");
-
-    // Try common TM3 account settings paths
-    let settings_urls = [
-        format!("{}/Account/Security", TM3_BASE),
-        format!("{}/account/security", TM3_BASE),
-        format!("{}/Settings/Security", TM3_BASE),
-        format!("{}/settings/security", TM3_BASE),
-        format!("{}/Account", TM3_BASE),
-        format!("{}/settings", TM3_BASE),
-    ];
-
-    let mut found_settings = false;
-    for settings_url in &settings_urls {
-        eprintln!("[register] Trying: {}", settings_url);
-        tab.navigate_to(settings_url)?;
-        std::thread::sleep(Duration::from_secs(2));
-        let current = tab.get_url();
-        if !current.contains("login") && !current.contains("Login") {
-            eprintln!("[register] Settings page at: {}", current);
-            found_settings = true;
-            dump_buttons(&tab, "Settings page")?;
-            break;
-        }
-    }
-
-    if !found_settings {
-        eprintln!("[register] Could not find settings page automatically.");
-        eprintln!("[register] Please navigate to your security/passkey settings in the browser.");
-        eprintln!("[register] Press Enter when you're on the page with 'Add passkey' or similar...");
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-        dump_buttons(&tab, "Manual settings page")?;
-    }
-
-    // Look for "Add passkey" / "Register" button
-    eprintln!("[register] Looking for passkey registration button...");
-    let reg_result = tab.evaluate(
-        r#"
-        (function() {
-            var buttons = document.querySelectorAll('button, a');
-            for (var i = 0; i < buttons.length; i++) {
-                var text = buttons[i].textContent.trim().toLowerCase();
-                if (text.includes('add passkey') || text.includes('add security key')
-                    || text.includes('register') || text.includes('add authenticator')
-                    || text.includes('add key') || text.includes('new passkey')) {
-                    return JSON.stringify({found: true, text: buttons[i].textContent.trim()});
-                }
-            }
-            return JSON.stringify({found: false});
-        })()
-        "#,
-        false,
-    )?;
-
-    if let Some(val) = &reg_result.value {
-        eprintln!("[register] Registration button search: {}", val);
-    }
+    // Capture cookies
+    save_cookies(&tab)?;
 
     eprintln!();
-    eprintln!("[register] When you see a 'Register passkey' / 'Add passkey' option,");
-    eprintln!("[register] click it in the browser. The virtual authenticator will");
-    eprintln!("[register] intercept the WebAuthn create() call automatically.");
-    eprintln!("[register] Press Enter after clicking...");
+    eprintln!("[login] Done! You can now use: tm3-spike inspect <tm3_id>");
+
+    // Keep browser open briefly so user can see it worked
+    eprintln!("[login] Press Enter to close browser...");
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;
-
-    // Wait a moment for registration to complete
-    std::thread::sleep(Duration::from_secs(3));
-
-    // Retrieve credentials from the virtual authenticator
-    eprintln!("[register] Retrieving registered credential...");
-    let creds = tab.call_method(WebAuthn::GetCredentials {
-        authenticator_id: auth_id.clone(),
-    })?;
-
-    if creds.credentials.is_empty() {
-        bail!(
-            "No credentials registered on virtual authenticator. \
-             The registration may not have triggered, or TM3 might not have \
-             a passkey management page. Check the browser for errors."
-        );
-    }
-
-    eprintln!(
-        "[register] Found {} credential(s)!",
-        creds.credentials.len()
-    );
-
-    let cred = &creds.credentials[0];
-    let saved = SavedCredential {
-        authenticator_protocol: "ctap2".to_string(),
-        credential_id: cred.credential_id.clone(),
-        private_key: cred.private_key.clone(),
-        rp_id: cred.rp_id.clone().unwrap_or_default(),
-        user_handle: cred.user_handle.clone(),
-        sign_count: cred.sign_count,
-    };
-
-    let path = credential_path();
-    let json = serde_json::to_string_pretty(&saved)?;
-    std::fs::write(&path, &json)?;
-    eprintln!("[register] Credential saved to: {}", path.display());
-    eprintln!("[register] rp_id: {}", saved.rp_id);
-    eprintln!(
-        "[register] credential_id: {}...",
-        &saved.credential_id[..saved.credential_id.len().min(20)]
-    );
-    eprintln!();
-    eprintln!("[register] Done! You can now use: tm3-spike inspect {}", tm3_id);
 
     Ok(())
 }
 
-// --- Phase B: Auto-login + inspect documents page ---
-fn inspect_documents(tm3_id: &str) -> Result<()> {
-    let cred_path = credential_path();
-    let cred_json = std::fs::read_to_string(&cred_path)
-        .context(format!("No saved credential at {}. Run 'tm3-spike register <id>' first.", cred_path.display()))?;
-    let saved: SavedCredential = serde_json::from_str(&cred_json)?;
-    eprintln!("[inspect] Loaded credential from {}", cred_path.display());
+// --- Phase B: Cookie-based auto-login + inspect ---
+fn do_inspect(tm3_id: &str) -> Result<()> {
+    let path = cookie_path();
+    let json = std::fs::read_to_string(&path).context(format!(
+        "No saved cookies at {}. Run 'tm3-spike login' first.",
+        path.display()
+    ))?;
+    let cookies: Vec<SavedCookie> = serde_json::from_str(&json)?;
+    eprintln!("[inspect] Loaded {} cookies from {}", cookies.len(), path.display());
 
     eprintln!("[inspect] Launching Chrome (headless)...");
     let browser = launch_browser(true)?;
-    let tab = browser.new_tab().context("Failed to open tab")?;
+    let tab = browser.new_tab()?;
     tab.set_default_timeout(Duration::from_secs(30));
 
-    // Set up virtual authenticator with saved credential
-    let auth_id = setup_virtual_authenticator(&tab)?;
-
-    // Load the saved credential into the virtual authenticator
-    eprintln!("[inspect] Loading saved credential into virtual authenticator...");
-    tab.call_method(WebAuthn::AddCredential {
-        authenticator_id: auth_id.clone(),
-        credential: WebAuthn::Credential {
-            credential_id: saved.credential_id.clone(),
-            is_resident_credential: true,
-            rp_id: Some(saved.rp_id.clone()),
-            private_key: saved.private_key.clone(),
-            user_handle: saved.user_handle.clone(),
-            sign_count: saved.sign_count,
-            large_blob: None,
-            backup_eligibility: None,
-            backup_state: None,
-            user_name: None,
-            user_display_name: None,
-        },
-    })?;
-    eprintln!("[inspect] Credential loaded.");
-
-    // Navigate to TM3
-    eprintln!("[inspect] Navigating to TM3...");
+    // Navigate to TM3 first (need domain context for cookies)
+    eprintln!("[inspect] Navigating to TM3 to set cookie domain...");
     tab.navigate_to(TM3_BASE)?;
     tab.wait_until_navigated()?;
-    eprintln!("[inspect] Landed at: {}", tab.get_url());
 
-    // Click the passkey button
-    eprintln!("[inspect] Clicking passkey login button...");
-    let click_result = tab.evaluate(
-        r#"
-        (function() {
-            var buttons = document.querySelectorAll('button');
-            for (var i = 0; i < buttons.length; i++) {
-                var text = buttons[i].textContent.trim().toLowerCase();
-                if (text.includes('passkey')) {
-                    buttons[i].click();
-                    return "clicked";
-                }
-            }
-            return "not_found";
-        })()
-        "#,
-        false,
-    )?;
-
-    if let Some(val) = &click_result.value {
-        eprintln!("[inspect] Passkey button: {}", val);
+    // Inject saved cookies
+    eprintln!("[inspect] Injecting saved cookies...");
+    for cookie in &cookies {
+        let _ = tab.call_method(Network::SetCookie {
+            name: cookie.name.clone(),
+            value: cookie.value.clone(),
+            url: None,
+            domain: Some(cookie.domain.clone()),
+            path: Some(cookie.path.clone()),
+            secure: Some(cookie.secure),
+            http_only: Some(cookie.http_only),
+            same_site: None,
+            expires: cookie.expires.map(|e| e as i64),
+            priority: None,
+            same_party: None,
+            source_scheme: None,
+            source_port: None,
+            partition_key: None,
+        });
     }
 
-    // Wait for auto-authentication
-    eprintln!("[inspect] Waiting for virtual authenticator to respond...");
-    let mut authenticated = false;
-    for attempt in 0..15 {
-        std::thread::sleep(Duration::from_secs(2));
-        let current_url = tab.get_url();
+    // Reload page with cookies in place
+    eprintln!("[inspect] Reloading with cookies...");
+    tab.navigate_to(TM3_BASE)?;
+    tab.wait_until_navigated()?;
 
-        if !current_url.contains("login") && !current_url.contains("Login") {
-            eprintln!("[inspect] Authenticated! URL: {}", current_url);
-            authenticated = true;
-            break;
-        }
+    let url = tab.get_url();
+    eprintln!("[inspect] Post-cookie URL: {}", url);
 
-        if attempt % 3 == 2 {
-            eprintln!("[inspect] Still waiting... ({}s)", (attempt + 1) * 2);
-        }
+    if url.contains("login") || url.contains("Login") {
+        eprintln!("[inspect] Still on login page — cookies may have expired.");
+        eprintln!("[inspect] Run 'tm3-spike login' to refresh cookies.");
+        bail!("Session cookies expired. Re-run 'tm3-spike login'.");
     }
 
-    if !authenticated {
-        eprintln!("[inspect] Authentication may have failed. Current URL: {}", tab.get_url());
-        dump_buttons(&tab, "Post-auth attempt")?;
-        bail!("Auto-login failed. The saved credential may be invalid — try 'tm3-spike register' again.");
-    }
-
-    // Let app settle
-    std::thread::sleep(Duration::from_secs(2));
+    eprintln!("[inspect] Authenticated via cookies!");
 
     // Navigate to documents page
     let doc_url = format!("{}/Patient/{}/Documents", TM3_BASE, tm3_id);
     eprintln!("[inspect] Navigating to: {}", doc_url);
     tab.navigate_to(&doc_url)?;
 
-    // Wait for page to fully load (title changes from "...Loading...")
-    eprintln!("[inspect] Waiting for page to load...");
-    for _ in 0..15 {
-        std::thread::sleep(Duration::from_secs(2));
-        let title = tab
-            .evaluate("document.title", false)
-            .ok()
-            .and_then(|r| r.value)
-            .and_then(|v| v.as_str().map(String::from))
-            .unwrap_or_default();
-
-        if !title.contains("Loading") && !title.is_empty() {
-            eprintln!("[inspect] Page loaded. Title: {}", title);
-            break;
-        }
-    }
+    // Wait for page to fully load
+    eprintln!("[inspect] Waiting for page to render...");
+    wait_for_page_load(&tab)?;
 
     // Inspect upload widget
     inspect_upload_widget(&tab)?;
 
-    // Final comprehensive inspection
+    // Final state
     eprintln!("\n[inspect] === FINAL PAGE STATE ===");
-    let final_info = tab.evaluate(
+    dump_final_state(&tab)?;
+
+    eprintln!("\n[inspect] Done.");
+    Ok(())
+}
+
+// --- Cookie helpers ---
+
+fn save_cookies(tab: &Tab) -> Result<()> {
+    eprintln!("[login] Capturing cookies...");
+
+    let cookie_data = tab.evaluate(
         r#"
         (function() {
-            var info = {};
-            info.url = window.location.href;
-            info.title = document.title;
-
-            var fileInputs = document.querySelectorAll('input[type="file"]');
-            info.fileInputs = Array.from(fileInputs).map(function(el) {
-                return {
-                    name: el.name, id: el.id, accept: el.accept,
-                    multiple: el.multiple, class: el.className,
-                    visible: el.offsetParent !== null
-                };
-            });
-
-            var uploadElements = document.querySelectorAll(
-                '[class*="upload" i], [id*="upload" i], [class*="drop" i]'
-            );
-            info.uploadElements = Array.from(uploadElements).map(function(el) {
-                return {
-                    tag: el.tagName, id: el.id, class: el.className,
-                    text: el.textContent.trim().substring(0, 100)
-                };
-            });
-
-            return JSON.stringify(info, null, 2);
+            // document.cookie only gives us non-httpOnly cookies
+            // We'll get what we can — the CDP method below gets the full set
+            return document.cookie;
         })()
         "#,
         false,
     )?;
 
-    if let Some(val) = final_info.value {
-        let fallback = val.to_string();
-        let s = val.as_str().unwrap_or(&fallback);
-        println!("{}", s);
+    if let Some(val) = &cookie_data.value {
+        let cookie_str = val.as_str().unwrap_or("");
+        eprintln!("[login] document.cookie length: {} chars", cookie_str.len());
     }
 
-    eprintln!("\n[inspect] Done.");
+    // Use CDP to get ALL cookies (including httpOnly)
+    let cdp_cookies = tab.call_method(Network::GetCookies {
+        urls: Some(vec![
+            TM3_BASE.to_string(),
+            format!("{}/", TM3_BASE),
+        ]),
+    })?;
+
+    let saved: Vec<SavedCookie> = cdp_cookies
+        .cookies
+        .iter()
+        .map(|c| SavedCookie {
+            name: c.name.clone(),
+            value: c.value.clone(),
+            domain: c.domain.clone(),
+            path: c.path.clone(),
+            secure: c.secure,
+            http_only: c.http_only,
+            expires: if c.expires > 0.0 {
+                Some(c.expires)
+            } else {
+                None
+            },
+        })
+        .collect();
+
+    eprintln!("[login] Captured {} cookies:", saved.len());
+    for c in &saved {
+        eprintln!(
+            "  {} (domain: {}, httpOnly: {}, secure: {}, expires: {})",
+            c.name,
+            c.domain,
+            c.http_only,
+            c.secure,
+            c.expires
+                .map(|e| {
+                    let secs = e as u64;
+                    let dt = std::time::UNIX_EPOCH + Duration::from_secs(secs);
+                    format!("{:?}", dt)
+                })
+                .unwrap_or_else(|| "session".to_string())
+        );
+    }
+
+    let path = cookie_path();
+    let json = serde_json::to_string_pretty(&saved)?;
+    std::fs::write(&path, &json)?;
+    eprintln!("[login] Cookies saved to: {}", path.display());
+
     Ok(())
 }
 
@@ -421,104 +266,41 @@ fn launch_browser(headless: bool) -> Result<Browser> {
     .context("Failed to launch Chrome")
 }
 
-fn setup_virtual_authenticator(tab: &Tab) -> Result<String> {
-    // Enable WebAuthn domain — this overrides the platform authenticator
-    tab.call_method(WebAuthn::Enable {
-        enable_ui: Some(false),
-    })?;
-
-    // Create virtual authenticator mimicking a platform passkey authenticator
-    let result = tab.call_method(WebAuthn::AddVirtualAuthenticator {
-        options: WebAuthn::VirtualAuthenticatorOptions {
-            protocol: WebAuthn::AuthenticatorProtocol::Ctap2,
-            ctap_2_version: Some(WebAuthn::Ctap2Version::Ctap21),
-            transport: WebAuthn::AuthenticatorTransport::Internal,
-            has_resident_key: Some(true),
-            has_user_verification: Some(true),
-            has_large_blob: None,
-            has_cred_blob: None,
-            has_min_pin_length: None,
-            has_prf: None,
-            automatic_presence_simulation: Some(true),
-            is_user_verified: Some(true),
-            default_backup_eligibility: None,
-            default_backup_state: None,
-        },
-    })?;
-
-    eprintln!(
-        "[auth] Virtual authenticator created: {}",
-        result.authenticator_id
-    );
-    Ok(result.authenticator_id)
-}
-
 fn wait_for_auth(tab: &Tab) -> Result<()> {
     for attempt in 0..60 {
         std::thread::sleep(Duration::from_secs(2));
         let current_url = tab.get_url();
 
-        let modal_gone = tab
-            .evaluate(
-                r#"
-                (function() {
-                    var buttons = document.querySelectorAll('button');
-                    for (var i = 0; i < buttons.length; i++) {
-                        var text = buttons[i].textContent.trim().toLowerCase();
-                        if (text.includes('passkey') || text.includes('log me in') || text.includes('sign in')) {
-                            return "login_visible";
-                        }
-                    }
-                    return "clear";
-                })()
-                "#,
-                false,
-            )
-            .ok()
-            .and_then(|r| r.value)
-            .and_then(|v| v.as_str().map(String::from))
-            .unwrap_or_default();
-
-        if modal_gone == "clear"
-            && !current_url.contains("login")
-            && !current_url.contains("Login")
-        {
+        if !current_url.contains("login") && !current_url.contains("Login") {
             return Ok(());
         }
 
         if attempt % 5 == 4 {
             eprintln!(
-                "[auth] Waiting for manual login... ({}s)",
+                "[auth] Waiting for login... ({}s)",
                 (attempt + 1) * 2
             );
         }
     }
-    bail!("Timed out waiting for manual authentication (120s).")
+    bail!("Timed out waiting for authentication (120s).")
 }
 
-fn dump_buttons(tab: &Tab, label: &str) -> Result<()> {
-    let info = tab.evaluate(
-        r#"
-        (function() {
-            var buttons = document.querySelectorAll('button, a.btn, input[type="submit"]');
-            return JSON.stringify(Array.from(buttons).map(function(el) {
-                return {
-                    tag: el.tagName, type: el.type,
-                    text: el.textContent.trim().substring(0, 60),
-                    id: el.id, class: el.className
-                };
-            }), null, 2);
-        })()
-        "#,
-        false,
-    )?;
+fn wait_for_page_load(tab: &Tab) -> Result<()> {
+    for i in 0..15 {
+        std::thread::sleep(Duration::from_secs(2));
+        let title = tab
+            .evaluate("document.title", false)
+            .ok()
+            .and_then(|r| r.value)
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or_default();
 
-    eprintln!("[spike] Buttons ({}):", label);
-    if let Some(val) = info.value {
-        let fallback = val.to_string();
-        let s = val.as_str().unwrap_or(&fallback);
-        println!("{}", s);
+        if !title.contains("Loading") && !title.is_empty() {
+            eprintln!("[inspect] Page loaded ({}s). Title: {}", (i + 1) * 2, title);
+            return Ok(());
+        }
     }
+    eprintln!("[inspect] Page may still be loading after 30s — proceeding anyway.");
     Ok(())
 }
 
@@ -546,7 +328,7 @@ fn inspect_upload_widget(tab: &Arc<Tab>) -> Result<()> {
                 };
             });
 
-            // Broader search: any element with upload/file semantics
+            // CSS selector search
             var uploadTriggers = document.querySelectorAll(
                 'button[class*="upload" i], button[class*="attach" i], ' +
                 'a[class*="upload" i], a[class*="attach" i], ' +
@@ -565,14 +347,14 @@ fn inspect_upload_widget(tab: &Arc<Tab>) -> Result<()> {
                 };
             });
 
-            // Also search by text content for upload-related buttons
+            // Text-content search for upload-related buttons
             var allButtons = document.querySelectorAll('button, a');
             info.uploadButtons = Array.from(allButtons)
                 .filter(function(el) {
                     var t = el.textContent.trim().toLowerCase();
                     return t.includes('upload') || t.includes('attach') || t.includes('browse')
                         || t.includes('choose file') || t.includes('add document')
-                        || t.includes('new document');
+                        || t.includes('new document') || t.includes('add file');
                 })
                 .map(function(el) {
                     return {
@@ -599,6 +381,57 @@ fn inspect_upload_widget(tab: &Arc<Tab>) -> Result<()> {
 
     eprintln!("[inspect] Upload widget DOM:");
     if let Some(val) = widget_info.value {
+        let fallback = val.to_string();
+        let s = val.as_str().unwrap_or(&fallback);
+        println!("{}", s);
+    }
+
+    Ok(())
+}
+
+fn dump_final_state(tab: &Tab) -> Result<()> {
+    let info = tab.evaluate(
+        r#"
+        (function() {
+            var info = {};
+            info.url = window.location.href;
+            info.title = document.title;
+
+            var fileInputs = document.querySelectorAll('input[type="file"]');
+            info.fileInputs = Array.from(fileInputs).map(function(el) {
+                return {
+                    name: el.name, id: el.id, accept: el.accept,
+                    multiple: el.multiple, class: el.className,
+                    visible: el.offsetParent !== null
+                };
+            });
+
+            var uploadElements = document.querySelectorAll(
+                '[class*="upload" i], [id*="upload" i], [class*="drop" i]'
+            );
+            info.uploadElements = Array.from(uploadElements).map(function(el) {
+                return {
+                    tag: el.tagName, id: el.id, class: el.className,
+                    text: el.textContent.trim().substring(0, 100)
+                };
+            });
+
+            // Get ALL buttons on the page for full picture
+            var buttons = document.querySelectorAll('button');
+            info.allButtons = Array.from(buttons).map(function(el) {
+                return {
+                    text: el.textContent.trim().substring(0, 60),
+                    class: el.className.substring(0, 80)
+                };
+            });
+
+            return JSON.stringify(info, null, 2);
+        })()
+        "#,
+        false,
+    )?;
+
+    if let Some(val) = info.value {
         let fallback = val.to_string();
         let s = val.as_str().unwrap_or(&fallback);
         println!("{}", s);
