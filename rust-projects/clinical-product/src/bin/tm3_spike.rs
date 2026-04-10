@@ -112,8 +112,9 @@ fn do_inspect(tm3_id: &str) -> Result<()> {
     let cookies: Vec<SavedCookie> = serde_json::from_str(&json)?;
     eprintln!("[inspect] Loaded {} cookies from {}", cookies.len(), path.display());
 
-    eprintln!("[inspect] Launching Chrome (headless)...");
-    let browser = launch_browser(true)?;
+    let headless = std::env::var("TM3_VISIBLE").is_err();
+    eprintln!("[inspect] Launching Chrome ({})...", if headless { "headless" } else { "VISIBLE" });
+    let browser = launch_browser(headless)?;
     let tab = browser.new_tab()?;
     tab.set_default_timeout(Duration::from_secs(30));
 
@@ -159,120 +160,111 @@ fn do_inspect(tm3_id: &str) -> Result<()> {
 
     eprintln!("[inspect] Authenticated via cookies!");
 
-    // Direct URL navigation doesn't work — React SPA renders the shell but not the content.
-    // Navigate like a human: use TM3's Quick Search to find the patient, then click Documents.
-    eprintln!("[inspect] Using TM3 Quick Search to navigate to patient {}...", tm3_id);
-
-    // Click the Quick Search button (⌘K)
-    let search_clicked = tab.evaluate(
+    // Dump client-side storage — TM3 may need more than just cookies
+    let storage_info = tab.evaluate(
         r#"
         (function() {
-            var buttons = document.querySelectorAll('button');
-            for (var i = 0; i < buttons.length; i++) {
-                if (buttons[i].textContent.includes('Quick search')) {
-                    buttons[i].click();
-                    return "clicked";
-                }
+            var ls = {};
+            for (var i = 0; i < localStorage.length; i++) {
+                var key = localStorage.key(i);
+                ls[key] = localStorage.getItem(key).substring(0, 100);
             }
-            // Fallback: trigger Cmd+K
-            document.dispatchEvent(new KeyboardEvent('keydown', {key: 'k', metaKey: true, bubbles: true}));
-            return "dispatched_key";
-        })()
-        "#,
-        false,
-    )?;
-    if let Some(val) = &search_clicked.value {
-        eprintln!("[inspect] Search trigger: {}", val);
-    }
-    std::thread::sleep(Duration::from_secs(2));
-
-    // Type the patient ID into the search box
-    let search_js = format!(
-        r#"
-        (function() {{
-            // Find the search input that appeared
-            var inputs = document.querySelectorAll('input[type="text"], input[type="search"], input:not([type])');
-            var searchInput = null;
-            for (var i = 0; i < inputs.length; i++) {{
-                var el = inputs[i];
-                var ph = (el.placeholder || '').toLowerCase();
-                var cl = (el.className || '').toLowerCase();
-                // The search input is likely the one that's visible and focused, or has search-related attributes
-                if (ph.includes('search') || cl.includes('search') || el === document.activeElement) {{
-                    searchInput = el;
-                    break;
-                }}
-            }}
-            if (!searchInput) {{
-                // Try the last focused input
-                searchInput = document.activeElement;
-            }}
-            if (searchInput && searchInput.tagName === 'INPUT') {{
-                searchInput.value = '{}';
-                searchInput.dispatchEvent(new Event('input', {{bubbles: true}}));
-                searchInput.dispatchEvent(new Event('change', {{bubbles: true}}));
-                return JSON.stringify({{found: true, placeholder: searchInput.placeholder, class: searchInput.className}});
-            }}
-            return JSON.stringify({{found: false, activeTag: document.activeElement ? document.activeElement.tagName : 'none'}});
-        }})()
-        "#,
-        tm3_id
-    );
-    let search_result = tab.evaluate(&search_js, false)?;
-    if let Some(val) = &search_result.value {
-        eprintln!("[inspect] Search input: {}", val);
-    }
-    std::thread::sleep(Duration::from_secs(3));
-
-    // Take a screenshot to see what the search shows
-    let ss_path = config_dir().join("tm3-search.png");
-    if let Ok(bytes) = tab.capture_screenshot(
-        headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
-        None, None, true,
-    ) {
-        std::fs::write(&ss_path, &bytes)?;
-        eprintln!("[inspect] Search screenshot: {}", ss_path.display());
-    }
-
-    // Dump what's visible after search
-    let search_results = tab.evaluate(
-        r#"
-        (function() {
-            // Look for search results — could be a dropdown, list, or overlay
-            var allText = document.body.innerText;
-            var links = document.querySelectorAll('a[href*="Patient"], a[href*="patient"]');
-            var results = Array.from(links).map(function(a) {
-                return {href: a.href, text: a.textContent.trim().substring(0, 80)};
-            });
-
-            // Also check for any new overlays/modals/dropdowns
-            var overlays = document.querySelectorAll('[class*="modal" i], [class*="overlay" i], [class*="dropdown" i], [class*="popover" i], [class*="search" i][class*="result" i], [role="listbox"], [role="dialog"]');
-            var overlayInfo = Array.from(overlays).map(function(el) {
-                return {
-                    tag: el.tagName, class: el.className.substring(0, 80),
-                    text: el.innerText.trim().substring(0, 200),
-                    visible: el.offsetParent !== null || getComputedStyle(el).display !== 'none'
-                };
-            });
-
+            var ss = {};
+            for (var i = 0; i < sessionStorage.length; i++) {
+                var key = sessionStorage.key(i);
+                ss[key] = sessionStorage.getItem(key).substring(0, 100);
+            }
             return JSON.stringify({
-                patientLinks: results,
-                overlays: overlayInfo,
-                bodySnippet: allText.substring(0, 400)
+                localStorageKeys: Object.keys(ls).length,
+                localStorage: ls,
+                sessionStorageKeys: Object.keys(ss).length,
+                sessionStorage: ss
             }, null, 2);
         })()
         "#,
         false,
     )?;
-    eprintln!("[inspect] Search results:");
-    if let Some(val) = search_results.value {
+    eprintln!("[inspect] Client-side storage:");
+    if let Some(val) = storage_info.value {
         let fallback = val.to_string();
         let s = val.as_str().unwrap_or(&fallback);
         println!("{}", s);
     }
 
-    // Give user a chance to see the search screenshot and understand the state
-    eprintln!("[inspect] Check tm3-search.png for visual state.");
+    // TM3 doesn't support deep-linking — React app must boot from diary first.
+    // Navigate internally via history.pushState + popstate (triggers React Router
+    // without a full page reload).
+    let doc_path = format!("/Patient/{}/Documents", tm3_id);
+    eprintln!("[inspect] SPA-navigating to {} via pushState...", doc_path);
+
+    let nav_js = format!(
+        r#"
+        (function() {{
+            window.history.pushState({{}}, '', '{}');
+            window.dispatchEvent(new PopStateEvent('popstate', {{state: {{}}}}));
+            return window.location.pathname;
+        }})()
+        "#,
+        doc_path
+    );
+    let nav_result = tab.evaluate(&nav_js, false)?;
+    if let Some(val) = &nav_result.value {
+        eprintln!("[inspect] pushState result: {}", val);
+    }
+
+    // Wait for React Router to handle the route change and render content
+    eprintln!("[inspect] Waiting for React Router to render...");
+    for i in 0..20 {
+        std::thread::sleep(Duration::from_secs(2));
+
+        let state = tab.evaluate(
+            r#"
+            (function() {
+                var title = document.title;
+                var body = document.body ? document.body.innerText : "";
+                // Check for patient-specific content (not just the breadcrumb)
+                var hasPatientContent = body.includes('Upload') || body.includes('upload')
+                    || body.includes('Add') || body.includes('No documents')
+                    || body.includes('Document') && body.length > 600;
+                var kendoWidgets = 0;
+                if (typeof jQuery !== 'undefined') {
+                    try { kendoWidgets = jQuery('[data-role]').length; } catch(e) {}
+                }
+                return JSON.stringify({
+                    title: title,
+                    bodyLen: body.length,
+                    hasPatientContent: hasPatientContent,
+                    kendoWidgets: kendoWidgets,
+                    url: window.location.href
+                });
+            })()
+            "#,
+            false,
+        ).ok().and_then(|r| r.value).and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
+
+        eprintln!("[inspect] State ({}s): {}", (i+1)*2, state);
+
+        if state.contains("\"hasPatientContent\":true") || state.contains("\"kendoWidgets\":") && !state.contains("\"kendoWidgets\":0") {
+            break;
+        }
+    }
+
+    // If visible mode, let user navigate manually then inspect
+    if !headless {
+        eprintln!();
+        eprintln!("[inspect] ==========================================");
+        eprintln!("[inspect]  VISIBLE MODE: Navigate to the patient's  ");
+        eprintln!("[inspect]  Documents page manually in the browser.  ");
+        eprintln!("[inspect]  Press Enter when you're on the page.     ");
+        eprintln!("[inspect] ==========================================");
+        eprintln!();
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        eprintln!("[inspect] Manual nav complete. URL: {}", tab.get_url());
+    }
+
+    // Take screenshot
+    std::thread::sleep(Duration::from_secs(2));
 
     // Take a screenshot to see what we're looking at
     let screenshot_path = config_dir().join("tm3-screenshot.png");
