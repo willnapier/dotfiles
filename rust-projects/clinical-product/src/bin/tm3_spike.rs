@@ -120,7 +120,7 @@ fn do_inspect(tm3_id: &str) -> Result<()> {
     // Navigate to TM3 first (need domain context for cookies)
     eprintln!("[inspect] Navigating to TM3 to set cookie domain...");
     tab.navigate_to(TM3_BASE)?;
-    tab.wait_until_navigated()?;
+    std::thread::sleep(Duration::from_secs(3));
 
     // Inject saved cookies
     eprintln!("[inspect] Injecting saved cookies...");
@@ -134,7 +134,7 @@ fn do_inspect(tm3_id: &str) -> Result<()> {
             secure: Some(cookie.secure),
             http_only: Some(cookie.http_only),
             same_site: None,
-            expires: cookie.expires.map(|e| e as i64),
+            expires: cookie.expires,
             priority: None,
             same_party: None,
             source_scheme: None,
@@ -146,7 +146,7 @@ fn do_inspect(tm3_id: &str) -> Result<()> {
     // Reload page with cookies in place
     eprintln!("[inspect] Reloading with cookies...");
     tab.navigate_to(TM3_BASE)?;
-    tab.wait_until_navigated()?;
+    std::thread::sleep(Duration::from_secs(5));
 
     let url = tab.get_url();
     eprintln!("[inspect] Post-cookie URL: {}", url);
@@ -163,10 +163,57 @@ fn do_inspect(tm3_id: &str) -> Result<()> {
     let doc_url = format!("{}/Patient/{}/Documents", TM3_BASE, tm3_id);
     eprintln!("[inspect] Navigating to: {}", doc_url);
     tab.navigate_to(&doc_url)?;
+    std::thread::sleep(Duration::from_secs(3));
 
     // Wait for page to fully load
     eprintln!("[inspect] Waiting for page to render...");
     wait_for_page_load(&tab)?;
+
+    // Take a screenshot to see what we're looking at
+    let screenshot_path = config_dir().join("tm3-screenshot.png");
+    match tab.capture_screenshot(
+        headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
+        None, None, true,
+    ) {
+        Ok(bytes) => {
+            std::fs::write(&screenshot_path, &bytes)?;
+            eprintln!("[inspect] Screenshot saved: {}", screenshot_path.display());
+        }
+        Err(e) => eprintln!("[inspect] Screenshot failed: {}", e),
+    }
+
+    // Capture console errors
+    let errors = tab.evaluate(
+        r#"
+        (function() {
+            // Check if there's a visible error message on the page
+            var body = document.body ? document.body.innerText.trim().substring(0, 500) : "(no body)";
+            var reactRoot = document.getElementById('root') || document.getElementById('app')
+                || document.querySelector('[data-reactroot]') || document.querySelector('#__next');
+            var rootInfo = reactRoot ? {
+                tag: reactRoot.tagName, id: reactRoot.id,
+                childCount: reactRoot.childElementCount,
+                text: reactRoot.innerText.trim().substring(0, 200)
+            } : null;
+
+            return JSON.stringify({
+                bodyLength: body.length,
+                bodyPreview: body.substring(0, 300),
+                reactRoot: rootInfo,
+                readyState: document.readyState,
+                title: document.title
+            }, null, 2);
+        })()
+        "#,
+        false,
+    )?;
+
+    eprintln!("[inspect] Page content inspection:");
+    if let Some(val) = errors.value {
+        let fallback = val.to_string();
+        let s = val.as_str().unwrap_or(&fallback);
+        println!("{}", s);
+    }
 
     // Inspect upload widget
     inspect_upload_widget(&tab)?;
