@@ -159,15 +159,120 @@ fn do_inspect(tm3_id: &str) -> Result<()> {
 
     eprintln!("[inspect] Authenticated via cookies!");
 
-    // Navigate to documents page
-    let doc_url = format!("{}/Patient/{}/Documents", TM3_BASE, tm3_id);
-    eprintln!("[inspect] Navigating to: {}", doc_url);
-    tab.navigate_to(&doc_url)?;
+    // Direct URL navigation doesn't work — React SPA renders the shell but not the content.
+    // Navigate like a human: use TM3's Quick Search to find the patient, then click Documents.
+    eprintln!("[inspect] Using TM3 Quick Search to navigate to patient {}...", tm3_id);
+
+    // Click the Quick Search button (⌘K)
+    let search_clicked = tab.evaluate(
+        r#"
+        (function() {
+            var buttons = document.querySelectorAll('button');
+            for (var i = 0; i < buttons.length; i++) {
+                if (buttons[i].textContent.includes('Quick search')) {
+                    buttons[i].click();
+                    return "clicked";
+                }
+            }
+            // Fallback: trigger Cmd+K
+            document.dispatchEvent(new KeyboardEvent('keydown', {key: 'k', metaKey: true, bubbles: true}));
+            return "dispatched_key";
+        })()
+        "#,
+        false,
+    )?;
+    if let Some(val) = &search_clicked.value {
+        eprintln!("[inspect] Search trigger: {}", val);
+    }
+    std::thread::sleep(Duration::from_secs(2));
+
+    // Type the patient ID into the search box
+    let search_js = format!(
+        r#"
+        (function() {{
+            // Find the search input that appeared
+            var inputs = document.querySelectorAll('input[type="text"], input[type="search"], input:not([type])');
+            var searchInput = null;
+            for (var i = 0; i < inputs.length; i++) {{
+                var el = inputs[i];
+                var ph = (el.placeholder || '').toLowerCase();
+                var cl = (el.className || '').toLowerCase();
+                // The search input is likely the one that's visible and focused, or has search-related attributes
+                if (ph.includes('search') || cl.includes('search') || el === document.activeElement) {{
+                    searchInput = el;
+                    break;
+                }}
+            }}
+            if (!searchInput) {{
+                // Try the last focused input
+                searchInput = document.activeElement;
+            }}
+            if (searchInput && searchInput.tagName === 'INPUT') {{
+                searchInput.value = '{}';
+                searchInput.dispatchEvent(new Event('input', {{bubbles: true}}));
+                searchInput.dispatchEvent(new Event('change', {{bubbles: true}}));
+                return JSON.stringify({{found: true, placeholder: searchInput.placeholder, class: searchInput.className}});
+            }}
+            return JSON.stringify({{found: false, activeTag: document.activeElement ? document.activeElement.tagName : 'none'}});
+        }})()
+        "#,
+        tm3_id
+    );
+    let search_result = tab.evaluate(&search_js, false)?;
+    if let Some(val) = &search_result.value {
+        eprintln!("[inspect] Search input: {}", val);
+    }
     std::thread::sleep(Duration::from_secs(3));
 
-    // Wait for page to fully load
-    eprintln!("[inspect] Waiting for page to render...");
-    wait_for_page_load(&tab)?;
+    // Take a screenshot to see what the search shows
+    let ss_path = config_dir().join("tm3-search.png");
+    if let Ok(bytes) = tab.capture_screenshot(
+        headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
+        None, None, true,
+    ) {
+        std::fs::write(&ss_path, &bytes)?;
+        eprintln!("[inspect] Search screenshot: {}", ss_path.display());
+    }
+
+    // Dump what's visible after search
+    let search_results = tab.evaluate(
+        r#"
+        (function() {
+            // Look for search results — could be a dropdown, list, or overlay
+            var allText = document.body.innerText;
+            var links = document.querySelectorAll('a[href*="Patient"], a[href*="patient"]');
+            var results = Array.from(links).map(function(a) {
+                return {href: a.href, text: a.textContent.trim().substring(0, 80)};
+            });
+
+            // Also check for any new overlays/modals/dropdowns
+            var overlays = document.querySelectorAll('[class*="modal" i], [class*="overlay" i], [class*="dropdown" i], [class*="popover" i], [class*="search" i][class*="result" i], [role="listbox"], [role="dialog"]');
+            var overlayInfo = Array.from(overlays).map(function(el) {
+                return {
+                    tag: el.tagName, class: el.className.substring(0, 80),
+                    text: el.innerText.trim().substring(0, 200),
+                    visible: el.offsetParent !== null || getComputedStyle(el).display !== 'none'
+                };
+            });
+
+            return JSON.stringify({
+                patientLinks: results,
+                overlays: overlayInfo,
+                bodySnippet: allText.substring(0, 400)
+            }, null, 2);
+        })()
+        "#,
+        false,
+    )?;
+    eprintln!("[inspect] Search results:");
+    if let Some(val) = search_results.value {
+        let fallback = val.to_string();
+        let s = val.as_str().unwrap_or(&fallback);
+        println!("{}", s);
+    }
+
+    // Give user a chance to see the search screenshot and understand the state
+    eprintln!("[inspect] Check tm3-search.png for visual state.");
 
     // Take a screenshot to see what we're looking at
     let screenshot_path = config_dir().join("tm3-screenshot.png");
