@@ -345,15 +345,64 @@ pub fn mark(id: &str, date: &str, exclude: bool, include: bool) -> Result<()> {
     Ok(())
 }
 
+/// Load voice config from ~/.config/clinical-product/voice-config.toml.
+/// Returns (cmd, args) to use as the LLM subprocess.
+///
+/// Resolution order:
+/// 1. CLINICAL_LLM_CMD / CLINICAL_LLM_ARGS env vars (if both set)
+/// 2. voice-config.toml with [voice] endpoint + model (uses clinical-product raw)
+/// 3. Default to `claude -p --output-format text`
+fn resolve_llm_command() -> (String, String) {
+    // Env vars win
+    if let (Ok(cmd), Ok(args)) = (
+        std::env::var("CLINICAL_LLM_CMD"),
+        std::env::var("CLINICAL_LLM_ARGS"),
+    ) {
+        return (cmd, args);
+    }
+
+    // Try voice-config.toml
+    if let Some(home) = dirs::home_dir() {
+        let config_path = home
+            .join(".config")
+            .join("clinical-product")
+            .join("voice-config.toml");
+        if let Ok(content) = std::fs::read_to_string(&config_path) {
+            if let Ok(value) = toml::from_str::<toml::Value>(&content) {
+                let voice = value.get("voice");
+                let endpoint = voice
+                    .and_then(|v| v.get("endpoint"))
+                    .and_then(|v| v.as_str());
+                let model = voice
+                    .and_then(|v| v.get("model"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("clinical-voice");
+
+                if let Some(ep) = endpoint {
+                    let args = format!(
+                        "raw --model {} --endpoint {} --no-stream",
+                        model, ep
+                    );
+                    return ("clinical-product".to_string(), args);
+                }
+            }
+        }
+    }
+
+    // Fall back to claude
+    (
+        "claude".to_string(),
+        "-p --output-format text".to_string(),
+    )
+}
+
 /// Run `clinical note <ID> <observation>`.
 pub fn run(id: &str, observation: &str, no_train: bool, auto_confirm: bool) -> Result<()> {
     // Step 1: Build full context prompt
     eprintln!("Preparing context for {}...", id);
     let prompt = build_prompt(id, observation)?;
 
-    let llm_cmd = std::env::var("CLINICAL_LLM_CMD").unwrap_or_else(|_| "claude".to_string());
-    let llm_args = std::env::var("CLINICAL_LLM_ARGS")
-        .unwrap_or_else(|_| "-p --output-format text".to_string());
+    let (llm_cmd, llm_args) = resolve_llm_command();
 
     let args: Vec<&str> = llm_args.split_whitespace().collect();
 
