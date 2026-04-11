@@ -191,6 +191,28 @@ fn build_prompt(id: &str, observation: &str) -> Result<String> {
     Ok(out)
 }
 
+/// Marker inserted to exclude a note from future voice fine-tuning.
+pub const TRAINING_EXCLUDE_MARKER: &str = "<!-- training: exclude -->";
+
+/// Inject the training-exclude marker immediately after the session header.
+fn inject_exclude_marker(note: &str) -> String {
+    let lines: Vec<&str> = note.lines().collect();
+    let date_re = Regex::new(r"^### \d{4}-\d{2}-\d{2}").unwrap();
+
+    let mut out = String::new();
+    let mut injected = false;
+    for line in &lines {
+        out.push_str(line);
+        out.push('\n');
+        if !injected && date_re.is_match(line) {
+            out.push_str(TRAINING_EXCLUDE_MARKER);
+            out.push('\n');
+            injected = true;
+        }
+    }
+    out.trim_end().to_string()
+}
+
 /// Append a note to the end of a client file.
 pub fn append_note(id: &str, note: &str) -> Result<()> {
     let path = client::notes_path(id);
@@ -223,7 +245,7 @@ pub fn append_note_to_path(path: &std::path::Path, note: &str) -> Result<()> {
 /// Reads a pre-drafted note from stdin, validates it, appends to the
 /// client file, and runs finalise. This is the deterministic save path
 /// called after the LLM has drafted a note and the clinician has approved it.
-pub fn save(id: &str) -> Result<()> {
+pub fn save(id: &str, no_train: bool) -> Result<()> {
     let mut note = String::new();
     io::stdin()
         .read_to_string(&mut note)
@@ -250,10 +272,17 @@ pub fn save(id: &str) -> Result<()> {
         bail!("Client file not found: {}", path.display());
     }
 
-    append_note(id, &note)?;
+    let note_to_save = if no_train {
+        inject_exclude_marker(&note)
+    } else {
+        note.clone()
+    };
 
-    let line_count = note.lines().count();
-    eprintln!("Saved to {}.md ({} lines appended)", id, line_count);
+    append_note(id, &note_to_save)?;
+
+    let line_count = note_to_save.lines().count();
+    let train_status = if no_train { " [excluded from training]" } else { "" };
+    eprintln!("Saved to {}.md ({} lines appended){}", id, line_count, train_status);
 
     // Finalise (session count + alerts)
     finalise::run(id)?;
@@ -261,8 +290,63 @@ pub fn save(id: &str) -> Result<()> {
     Ok(())
 }
 
+/// Retroactively mark or unmark a session note for training exclusion.
+pub fn mark(id: &str, date: &str, exclude: bool, include: bool) -> Result<()> {
+    if !exclude && !include {
+        bail!("Must specify either --exclude or --include");
+    }
+
+    // Validate date format
+    let date_re = Regex::new(r"^\d{4}-\d{2}-\d{2}$").unwrap();
+    if !date_re.is_match(date) {
+        bail!("Date must be in YYYY-MM-DD format: {}", date);
+    }
+
+    let path = client::notes_path(id);
+    let content = std::fs::read_to_string(&path)
+        .with_context(|| format!("Could not read: {}", path.display()))?;
+
+    let lines: Vec<&str> = content.lines().collect();
+    let header = format!("### {}", date);
+
+    // Find the target session header
+    let header_idx = lines
+        .iter()
+        .position(|l| l.starts_with(&header))
+        .ok_or_else(|| anyhow::anyhow!("No session found for {} on {}", id, date))?;
+
+    // Check if marker already present on the line immediately following
+    let has_marker = header_idx + 1 < lines.len()
+        && lines[header_idx + 1].trim() == TRAINING_EXCLUDE_MARKER;
+
+    let mut new_lines: Vec<String> = lines.iter().map(|s| s.to_string()).collect();
+
+    if exclude {
+        if has_marker {
+            eprintln!("{} {}: already excluded from training", id, date);
+            return Ok(());
+        }
+        new_lines.insert(header_idx + 1, TRAINING_EXCLUDE_MARKER.to_string());
+        eprintln!("{} {}: marked as excluded from training", id, date);
+    } else {
+        // include
+        if !has_marker {
+            eprintln!("{} {}: already included in training", id, date);
+            return Ok(());
+        }
+        new_lines.remove(header_idx + 1);
+        eprintln!("{} {}: marked as included in training", id, date);
+    }
+
+    let new_content = new_lines.join("\n") + "\n";
+    std::fs::write(&path, new_content)
+        .with_context(|| format!("Failed to write: {}", path.display()))?;
+
+    Ok(())
+}
+
 /// Run `clinical note <ID> <observation>`.
-pub fn run(id: &str, observation: &str, auto_confirm: bool) -> Result<()> {
+pub fn run(id: &str, observation: &str, no_train: bool, auto_confirm: bool) -> Result<()> {
     // Step 1: Build full context prompt
     eprintln!("Preparing context for {}...", id);
     let prompt = build_prompt(id, observation)?;
@@ -328,9 +412,15 @@ pub fn run(id: &str, observation: &str, auto_confirm: bool) -> Result<()> {
         }
     }
 
-    // Step 6: Append
-    append_note(id, &note)?;
-    eprintln!("Note appended to {}.md", id);
+    // Step 6: Append (with optional training exclusion marker)
+    let note_to_save = if no_train {
+        inject_exclude_marker(&note)
+    } else {
+        note.clone()
+    };
+    append_note(id, &note_to_save)?;
+    let train_status = if no_train { " [excluded from training]" } else { "" };
+    eprintln!("Note appended to {}.md{}", id, train_status);
 
     // Step 7: Finalise
     finalise::run(id)?;

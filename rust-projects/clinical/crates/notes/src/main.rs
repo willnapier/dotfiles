@@ -10,6 +10,7 @@ mod prepare;
 mod reidentify;
 mod scaffold;
 mod session;
+mod training;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -97,6 +98,10 @@ enum Commands {
         /// William's session observation
         observation: String,
 
+        /// Exclude this note from future voice fine-tuning training data
+        #[arg(long)]
+        no_train: bool,
+
         /// Skip confirmation prompt
         #[arg(long, short)]
         yes: bool,
@@ -107,6 +112,34 @@ enum Commands {
     NoteSave {
         /// Client ID (e.g. CT71)
         id: String,
+
+        /// Exclude this note from future voice fine-tuning training data
+        #[arg(long)]
+        no_train: bool,
+    },
+
+    /// Retroactively mark a session note to exclude from (or include in) training data
+    #[command(name = "note-mark")]
+    NoteMark {
+        /// Client ID
+        id: String,
+
+        /// Session date (YYYY-MM-DD)
+        date: String,
+
+        /// Exclude this note from training data
+        #[arg(long, conflicts_with = "include")]
+        exclude: bool,
+
+        /// Include this note in training data (remove previous exclusion)
+        #[arg(long, conflicts_with = "exclude")]
+        include: bool,
+    },
+
+    /// Training data corpus commands
+    Training {
+        #[command(subcommand)]
+        command: TrainingCommands,
     },
 
     /// Update session count and print alerts after a note has been appended
@@ -184,6 +217,23 @@ enum Commands {
 }
 
 #[derive(Subcommand)]
+enum TrainingCommands {
+    /// Count notes eligible for training (default: since last fine-tune)
+    Count {
+        /// Count all eligible notes (ignore last fine-tune date)
+        #[arg(long)]
+        all: bool,
+    },
+
+    /// List all notes with their training inclusion status
+    List {
+        /// Only show excluded notes
+        #[arg(long)]
+        excluded: bool,
+    },
+}
+
+#[derive(Subcommand)]
 enum AuthCommands {
     /// Report authorisation status for all insured clients
     Status {
@@ -244,9 +294,20 @@ fn main() -> Result<()> {
         Commands::Note {
             id,
             observation,
+            no_train,
             yes,
-        } => note::run(&id, &observation, yes),
-        Commands::NoteSave { id } => note::save(&id),
+        } => note::run(&id, &observation, no_train, yes),
+        Commands::NoteSave { id, no_train } => note::save(&id, no_train),
+        Commands::NoteMark {
+            id,
+            date,
+            exclude,
+            include,
+        } => note::mark(&id, &date, exclude, include),
+        Commands::Training { command } => match command {
+            TrainingCommands::Count { all } => training::count(all),
+            TrainingCommands::List { excluded } => training::list(excluded),
+        },
         Commands::NoteFinalise { id } => finalise::run(&id),
         Commands::NotePrepare { id, sessions } => prepare::run(&id, sessions),
         Commands::Send {
