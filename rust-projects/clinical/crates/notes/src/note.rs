@@ -349,11 +349,31 @@ pub fn mark(id: &str, date: &str, exclude: bool, include: bool) -> Result<()> {
 /// Returns (cmd, args) to use as the LLM subprocess.
 ///
 /// Resolution order:
-/// 1. CLINICAL_LLM_CMD / CLINICAL_LLM_ARGS env vars (if both set)
-/// 2. voice-config.toml with [voice] endpoint + model (uses clinical-product raw)
-/// 3. Default to `claude -p --output-format text`
-fn resolve_llm_command() -> (String, String) {
-    // Env vars win
+/// 1. `model_override` argument — forces the voice route with that model name
+///    (still uses endpoint from config or env)
+/// 2. CLINICAL_LLM_CMD / CLINICAL_LLM_ARGS env vars (if both set, and no override)
+/// 3. voice-config.toml with [voice] endpoint + model (uses clinical-product raw)
+/// 4. Default to `claude -p --output-format text`
+fn resolve_llm_command(model_override: Option<&str>) -> (String, String) {
+    // If model_override is set, we force the voice route. Still need an endpoint.
+    if let Some(override_model) = model_override {
+        let endpoint = load_voice_endpoint()
+            .or_else(|| std::env::var("CLINICAL_VOICE_ENDPOINT").ok());
+        if let Some(ep) = endpoint {
+            let args = format!(
+                "raw --model {} --endpoint {} --no-stream",
+                override_model, ep
+            );
+            return ("clinical-product".to_string(), args);
+        }
+        // Fall through if no endpoint — this will use env/config/claude below
+        eprintln!(
+            "Warning: --model-override {} given but no voice endpoint configured",
+            override_model
+        );
+    }
+
+    // Env vars win (when no override)
     if let (Ok(cmd), Ok(args)) = (
         std::env::var("CLINICAL_LLM_CMD"),
         std::env::var("CLINICAL_LLM_ARGS"),
@@ -362,31 +382,12 @@ fn resolve_llm_command() -> (String, String) {
     }
 
     // Try voice-config.toml
-    if let Some(home) = dirs::home_dir() {
-        let config_path = home
-            .join(".config")
-            .join("clinical-product")
-            .join("voice-config.toml");
-        if let Ok(content) = std::fs::read_to_string(&config_path) {
-            if let Ok(value) = toml::from_str::<toml::Value>(&content) {
-                let voice = value.get("voice");
-                let endpoint = voice
-                    .and_then(|v| v.get("endpoint"))
-                    .and_then(|v| v.as_str());
-                let model = voice
-                    .and_then(|v| v.get("model"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("clinical-voice");
-
-                if let Some(ep) = endpoint {
-                    let args = format!(
-                        "raw --model {} --endpoint {} --no-stream",
-                        model, ep
-                    );
-                    return ("clinical-product".to_string(), args);
-                }
-            }
-        }
+    if let Some((ep, model)) = load_voice_config() {
+        let args = format!(
+            "raw --model {} --endpoint {} --no-stream",
+            model, ep
+        );
+        return ("clinical-product".to_string(), args);
     }
 
     // Fall back to claude
@@ -396,13 +397,50 @@ fn resolve_llm_command() -> (String, String) {
     )
 }
 
+/// Load voice-config.toml and return (endpoint, model) if [voice] is present.
+fn load_voice_config() -> Option<(String, String)> {
+    let home = dirs::home_dir()?;
+    let config_path = home
+        .join(".config")
+        .join("clinical-product")
+        .join("voice-config.toml");
+    let content = std::fs::read_to_string(&config_path).ok()?;
+    let value: toml::Value = toml::from_str(&content).ok()?;
+    let voice = value.get("voice")?;
+    let endpoint = voice.get("endpoint")?.as_str()?.to_string();
+    let model = voice
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("clinical-voice")
+        .to_string();
+    Some((endpoint, model))
+}
+
+/// Load just the endpoint from voice-config.toml.
+fn load_voice_endpoint() -> Option<String> {
+    load_voice_config().map(|(ep, _)| ep)
+}
+
 /// Run `clinical note <ID> <observation>`.
-pub fn run(id: &str, observation: &str, no_train: bool, auto_confirm: bool) -> Result<()> {
+pub fn run(
+    id: &str,
+    observation: &str,
+    no_train: bool,
+    model_override: Option<&str>,
+    no_save: bool,
+    auto_confirm: bool,
+) -> Result<()> {
     // Step 1: Build full context prompt
     eprintln!("Preparing context for {}...", id);
     let prompt = build_prompt(id, observation)?;
 
-    let (llm_cmd, llm_args) = resolve_llm_command();
+    let (llm_cmd, llm_args) = resolve_llm_command(model_override);
+    if let Some(m) = model_override {
+        eprintln!("Model override: {}", m);
+    }
+    if no_save {
+        eprintln!("No-save mode: note will NOT be appended or finalised.");
+    }
 
     let args: Vec<&str> = llm_args.split_whitespace().collect();
 
@@ -447,7 +485,13 @@ pub fn run(id: &str, observation: &str, no_train: bool, auto_confirm: bool) -> R
     // Step 4: Show note for review
     println!("\n{}", note);
 
-    // Step 5: Confirm
+    // Step 5: If no_save, stop here — caller only wanted to see the output.
+    if no_save {
+        eprintln!("\n(no-save mode — note not appended)");
+        return Ok(());
+    }
+
+    // Step 6: Confirm
     if !auto_confirm {
         eprint!("\nAppend to {}.md? [y/n] ", id);
         io::stderr().flush()?;
@@ -461,7 +505,7 @@ pub fn run(id: &str, observation: &str, no_train: bool, auto_confirm: bool) -> R
         }
     }
 
-    // Step 6: Append (with optional training exclusion marker)
+    // Step 7: Append (with optional training exclusion marker)
     let note_to_save = if no_train {
         inject_exclude_marker(&note)
     } else {
@@ -471,7 +515,7 @@ pub fn run(id: &str, observation: &str, no_train: bool, auto_confirm: bool) -> R
     let train_status = if no_train { " [excluded from training]" } else { "" };
     eprintln!("Note appended to {}.md{}", id, train_status);
 
-    // Step 7: Finalise
+    // Step 8: Finalise
     finalise::run(id)?;
 
     Ok(())

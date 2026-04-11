@@ -102,6 +102,14 @@ enum Commands {
         #[arg(long)]
         no_train: bool,
 
+        /// Override the model name for this run (e.g. clinical-voice or clinical-voice-q4)
+        #[arg(long)]
+        model_override: Option<String>,
+
+        /// Generate and display the note but do NOT append to client file or finalise
+        #[arg(long)]
+        no_save: bool,
+
         /// Skip confirmation prompt
         #[arg(long, short)]
         yes: bool,
@@ -295,8 +303,17 @@ fn main() -> Result<()> {
             id,
             observation,
             no_train,
+            model_override,
+            no_save,
             yes,
-        } => note::run(&id, &observation, no_train, yes),
+        } => note::run(
+            &id,
+            &observation,
+            no_train,
+            model_override.as_deref(),
+            no_save,
+            yes,
+        ),
         Commands::NoteSave { id, no_train } => note::save(&id, no_train),
         Commands::NoteMark {
             id,
