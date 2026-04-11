@@ -76,6 +76,10 @@ enum VoicePodAction {
     /// Stop the configured pod. Idempotent if already stopped.
     Stop,
 
+    /// Check idle timeout and stop the pod if idle. Safe to run periodically
+    /// via cron/launchd/systemd as a cross-platform background sweeper.
+    Maintain,
+
     /// List all pods on the account (for discovery / setup).
     List,
 
@@ -435,6 +439,37 @@ async fn handle_voice_pod(action: VoicePodAction) -> anyhow::Result<()> {
             } else {
                 println!("Pod was already stopped.");
             }
+        }
+        VoicePodAction::Maintain => {
+            // Idle-timeout sweeper: check if pod is running AND idle-for-long-enough.
+            // If so, stop it. Intended to be called periodically (cron, launchd, etc.)
+            // from cross-platform schedulers the user configures themselves.
+            let config = voice_pod::load_pod_config()?;
+            if !config.has_pod() {
+                println!("No managed pod — nothing to maintain.");
+                return Ok(());
+            }
+            let state = voice_pod::load_state();
+            let timeout = config.idle_timeout();
+            if !voice_pod::is_idle(&state, timeout) {
+                println!(
+                    "Pod not idle (last activity within {} min). No action.",
+                    timeout.as_secs() / 60
+                );
+                return Ok(());
+            }
+            let client = RunPodClient::new()?;
+            let pod = client.get_pod(&config.pod_id).await?;
+            if !pod.is_running() {
+                println!("Pod already stopped. No action.");
+                return Ok(());
+            }
+            println!(
+                "Pod has been idle > {} min. Stopping...",
+                timeout.as_secs() / 60
+            );
+            client.stop_pod(&config.pod_id).await?;
+            println!("Pod stopped.");
         }
     }
 
