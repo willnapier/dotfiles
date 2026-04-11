@@ -44,6 +44,7 @@ com.williamnapier.linkmanager.plist.disabled
 com.williamnapier.state-capture
 com.williamnapier.syncthing-monitor
 com.williamnapier.system-health-check
+com.williamnapier.tm3-diary-live
 com.williamnapier.tm3-watcher
 com.williamnapier.wiki-link-manager
 com.williamnapier.zellij-zombie-watcher
