@@ -4,6 +4,9 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
 
+mod runpod;
+mod voice_pod;
+
 #[derive(Parser)]
 #[command(name = "clinical-product", about = "Clinical session note generator")]
 struct Cli {
@@ -50,6 +53,34 @@ enum Command {
         #[arg(long)]
         no_stream: bool,
     },
+
+    /// Manage the voice inference pod lifecycle (status/start/stop).
+    ///
+    /// Reads the `[pod]` section of ~/.config/clinical-product/voice-config.toml
+    /// to determine which pod to manage. If `managed = false` or pod_id is
+    /// empty, all commands report the configured state without making changes.
+    VoicePod {
+        #[command(subcommand)]
+        action: VoicePodAction,
+    },
+}
+
+#[derive(Parser, Debug)]
+enum VoicePodAction {
+    /// Show current pod status (queries RunPod API).
+    Status,
+
+    /// Start (or resume) the configured pod. Idempotent if already running.
+    Start,
+
+    /// Stop the configured pod. Idempotent if already stopped.
+    Stop,
+
+    /// List all pods on the account (for discovery / setup).
+    List,
+
+    /// List all network volumes on the account.
+    Volumes,
 }
 
 #[derive(Serialize)]
@@ -81,12 +112,27 @@ fn build_system_prompt(modality: &str) -> String {
     )
 }
 
+/// Ensure the managed pod (if any) is running before a generation request.
+/// Silent no-op if pod management isn't configured.
+async fn ensure_managed_pod_ready() -> anyhow::Result<()> {
+    let config = voice_pod::load_pod_config()?;
+    if !config.has_pod() {
+        return Ok(());
+    }
+    let client = runpod::Client::new()?;
+    voice_pod::prepare_for_request(&client, &config).await?;
+    Ok(())
+}
+
 async fn raw_completion(
     prompt: String,
     endpoint: String,
     model: String,
     no_stream: bool,
 ) -> anyhow::Result<()> {
+    // Pre-flight: ensure managed pod is up (no-op if unmanaged).
+    ensure_managed_pod_ready().await?;
+
     // For raw mode, we send the entire stdin content as the prompt with
     // an empty system message — the caller (e.g. `clinical note`) has
     // already built the full context and instruction.
@@ -137,6 +183,10 @@ async fn raw_completion(
             }
         }
     }
+
+    // Record activity so the idle timer knows something just happened.
+    let _ = voice_pod::record_activity();
+
     Ok(())
 }
 
@@ -244,7 +294,157 @@ async fn main() -> anyhow::Result<()> {
                 println!();
             }
         }
+        Command::VoicePod { action } => {
+            handle_voice_pod(action).await?;
+        }
     }
 
     Ok(())
+}
+
+async fn handle_voice_pod(action: VoicePodAction) -> anyhow::Result<()> {
+    use runpod::Client as RunPodClient;
+
+    match action {
+        VoicePodAction::List => {
+            let client = RunPodClient::new()?;
+            let pods = client.list_pods().await?;
+            if pods.is_empty() {
+                println!("No pods on this account.");
+                return Ok(());
+            }
+            println!("{:<25} {:<20} {:<12} {:>8}  {}", "ID", "NAME", "STATUS", "$/hr", "GPU");
+            println!("{}", "-".repeat(80));
+            for pod in &pods {
+                println!(
+                    "{:<25} {:<20} {:<12} {:>8.4}  {}",
+                    pod.id,
+                    trunc(&pod.name, 20),
+                    pod.desired_status,
+                    pod.cost_per_hr,
+                    pod.gpu_count,
+                );
+            }
+        }
+        VoicePodAction::Volumes => {
+            let client = RunPodClient::new()?;
+            let vols = client.list_network_volumes().await?;
+            if vols.is_empty() {
+                println!("No network volumes on this account.");
+                return Ok(());
+            }
+            println!("{:<30} {:<25} {:>6} GB  {}", "ID", "NAME", "SIZE", "DC");
+            println!("{}", "-".repeat(80));
+            for vol in &vols {
+                println!(
+                    "{:<30} {:<25} {:>6}     {}",
+                    vol.id, trunc(&vol.name, 25), vol.size, vol.data_center_id
+                );
+            }
+        }
+        VoicePodAction::Status => {
+            let config = voice_pod::load_pod_config()?;
+            let state = voice_pod::load_state();
+
+            println!("Voice pod configuration:");
+            println!("  Managed by The Product: {}", config.managed);
+            println!(
+                "  Pod ID:                 {}",
+                if config.pod_id.is_empty() {
+                    "(not set)".to_string()
+                } else {
+                    config.pod_id.clone()
+                }
+            );
+            println!(
+                "  Network volume:         {}",
+                if config.network_volume_id.is_empty() {
+                    "(not set)".to_string()
+                } else {
+                    config.network_volume_id.clone()
+                }
+            );
+            println!(
+                "  Idle timeout:           {} min",
+                config.idle_timeout_minutes.unwrap_or(15)
+            );
+            println!();
+
+            if !config.has_pod() {
+                println!("No managed pod configured — nothing to query.");
+                println!("See {} to configure.", voice_pod::config_path().display());
+                return Ok(());
+            }
+
+            let client = RunPodClient::new()?;
+            match client.get_pod(&config.pod_id).await {
+                Ok(pod) => {
+                    println!("Live pod state:");
+                    println!("  Name:          {}", pod.name);
+                    println!("  Status:        {}", pod.desired_status);
+                    println!("  Cost/hour:     ${:.4}", pod.cost_per_hr);
+                    println!("  GPUs:          {}", pod.gpu_count);
+                    println!("  Image:         {}", pod.image_name);
+                    if let Some(ip) = &pod.public_ip {
+                        println!("  Public IP:     {}", ip);
+                    }
+                    if !pod.ports.is_empty() {
+                        println!("  Ports:         {}", pod.ports.join(", "));
+                    }
+                }
+                Err(e) => {
+                    println!("Error fetching pod state: {}", e);
+                }
+            }
+
+            println!();
+            println!("Local state:");
+            println!(
+                "  Last activity: {}",
+                state.last_activity.as_deref().unwrap_or("(none)")
+            );
+        }
+        VoicePodAction::Start => {
+            let config = voice_pod::load_pod_config()?;
+            if !config.has_pod() {
+                anyhow::bail!(
+                    "No managed pod configured. Set [pod] managed=true and pod_id in {}",
+                    voice_pod::config_path().display()
+                );
+            }
+            let client = RunPodClient::new()?;
+            let started = voice_pod::ensure_running(&client, &config).await?;
+            if started {
+                println!("Pod started.");
+            } else {
+                println!("Pod was already running.");
+            }
+        }
+        VoicePodAction::Stop => {
+            let config = voice_pod::load_pod_config()?;
+            if !config.has_pod() {
+                anyhow::bail!(
+                    "No managed pod configured. Set [pod] managed=true and pod_id in {}",
+                    voice_pod::config_path().display()
+                );
+            }
+            let client = RunPodClient::new()?;
+            let stopped = voice_pod::ensure_stopped(&client, &config).await?;
+            if stopped {
+                println!("Pod stopped.");
+            } else {
+                println!("Pod was already stopped.");
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn trunc(s: &str, n: usize) -> String {
+    if s.len() <= n {
+        s.to_string()
+    } else {
+        format!("{}…", &s[..n.saturating_sub(1)])
+    }
 }

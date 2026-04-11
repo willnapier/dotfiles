@@ -122,22 +122,22 @@ pub struct NetworkVolumeCreateInput {
     pub data_center_id: String,
 }
 
-/// RunPod API client.
+/// RunPod API client (async — uses reqwest's async client to coexist with tokio).
 pub struct Client {
     api_key: String,
-    http: reqwest::blocking::Client,
+    http: reqwest::Client,
 }
 
 impl Client {
     pub fn new() -> Result<Self> {
         let api_key = load_api_key()?;
-        let http = reqwest::blocking::Client::builder()
+        let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
             .build()?;
         Ok(Self { api_key, http })
     }
 
-    fn request(&self, method: reqwest::Method, path: &str) -> reqwest::blocking::RequestBuilder {
+    fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
         self.http
             .request(method, format!("{}{}", BASE_URL, path))
             .header("Authorization", format!("Bearer {}", self.api_key))
@@ -145,104 +145,112 @@ impl Client {
     }
 
     /// List all pods.
-    pub fn list_pods(&self) -> Result<Vec<Pod>> {
+    pub async fn list_pods(&self) -> Result<Vec<Pod>> {
         let resp = self
             .request(reqwest::Method::GET, "/pods")
             .send()
+            .await
             .context("Failed to call /pods")?;
         if !resp.status().is_success() {
             bail!("list_pods: HTTP {}", resp.status());
         }
-        let pods: Vec<Pod> = resp.json().context("Failed to parse pod list")?;
+        let pods: Vec<Pod> = resp.json().await.context("Failed to parse pod list")?;
         Ok(pods)
     }
 
     /// Get a single pod by ID.
-    pub fn get_pod(&self, pod_id: &str) -> Result<Pod> {
+    pub async fn get_pod(&self, pod_id: &str) -> Result<Pod> {
         let resp = self
             .request(reqwest::Method::GET, &format!("/pods/{}", pod_id))
             .send()
+            .await
             .context("Failed to call get_pod")?;
         if !resp.status().is_success() {
             bail!("get_pod: HTTP {} for pod {}", resp.status(), pod_id);
         }
-        let pod: Pod = resp.json().context("Failed to parse pod")?;
+        let pod: Pod = resp.json().await.context("Failed to parse pod")?;
         Ok(pod)
     }
 
     /// Create a new pod.
-    pub fn create_pod(&self, input: &PodCreateInput) -> Result<Pod> {
+    pub async fn create_pod(&self, input: &PodCreateInput) -> Result<Pod> {
         let resp = self
             .request(reqwest::Method::POST, "/pods")
             .json(input)
             .send()
+            .await
             .context("Failed to POST /pods")?;
         if !resp.status().is_success() {
             let status = resp.status();
-            let body = resp.text().unwrap_or_default();
+            let body = resp.text().await.unwrap_or_default();
             bail!("create_pod: HTTP {}: {}", status, body);
         }
-        let pod: Pod = resp.json().context("Failed to parse created pod")?;
+        let pod: Pod = resp.json().await.context("Failed to parse created pod")?;
         Ok(pod)
     }
 
     /// Start (resume) a stopped pod.
-    pub fn start_pod(&self, pod_id: &str) -> Result<()> {
+    pub async fn start_pod(&self, pod_id: &str) -> Result<()> {
         let resp = self
             .request(reqwest::Method::POST, &format!("/pods/{}/start", pod_id))
             .send()
+            .await
             .context("Failed to POST /pods/{id}/start")?;
         if !resp.status().is_success() {
             let status = resp.status();
-            let body = resp.text().unwrap_or_default();
+            let body = resp.text().await.unwrap_or_default();
             bail!("start_pod: HTTP {}: {}", status, body);
         }
         Ok(())
     }
 
     /// Stop a running pod. Container disk is wiped; network volume persists.
-    pub fn stop_pod(&self, pod_id: &str) -> Result<()> {
+    pub async fn stop_pod(&self, pod_id: &str) -> Result<()> {
         let resp = self
             .request(reqwest::Method::POST, &format!("/pods/{}/stop", pod_id))
             .send()
+            .await
             .context("Failed to POST /pods/{id}/stop")?;
         if !resp.status().is_success() {
             let status = resp.status();
-            let body = resp.text().unwrap_or_default();
+            let body = resp.text().await.unwrap_or_default();
             bail!("stop_pod: HTTP {}: {}", status, body);
         }
         Ok(())
     }
 
     /// Permanently delete a pod.
-    pub fn delete_pod(&self, pod_id: &str) -> Result<()> {
+    pub async fn delete_pod(&self, pod_id: &str) -> Result<()> {
         let resp = self
             .request(reqwest::Method::DELETE, &format!("/pods/{}", pod_id))
             .send()
+            .await
             .context("Failed to DELETE /pods/{id}")?;
         if !resp.status().is_success() {
             let status = resp.status();
-            let body = resp.text().unwrap_or_default();
+            let body = resp.text().await.unwrap_or_default();
             bail!("delete_pod: HTTP {}: {}", status, body);
         }
         Ok(())
     }
 
     /// List network volumes.
-    pub fn list_network_volumes(&self) -> Result<Vec<NetworkVolume>> {
+    pub async fn list_network_volumes(&self) -> Result<Vec<NetworkVolume>> {
         let resp = self
             .request(reqwest::Method::GET, "/networkvolumes")
             .send()
+            .await
             .context("Failed to call /networkvolumes")?;
         if !resp.status().is_success() {
             bail!("list_network_volumes: HTTP {}", resp.status());
         }
-        let volumes: Vec<NetworkVolume> = resp.json().context("Failed to parse volumes")?;
+        let volumes: Vec<NetworkVolume> =
+            resp.json().await.context("Failed to parse volumes")?;
         Ok(volumes)
     }
 
     /// Create a new network volume.
-    pub fn create_network_volume(
+    pub async fn create_network_volume(
         &self,
         input: &NetworkVolumeCreateInput,
     ) -> Result<NetworkVolume> {
@@ -250,28 +258,30 @@ impl Client {
             .request(reqwest::Method::POST, "/networkvolumes")
             .json(input)
             .send()
+            .await
             .context("Failed to POST /networkvolumes")?;
         if !resp.status().is_success() {
             let status = resp.status();
-            let body = resp.text().unwrap_or_default();
+            let body = resp.text().await.unwrap_or_default();
             bail!("create_network_volume: HTTP {}: {}", status, body);
         }
-        let vol: NetworkVolume = resp.json().context("Failed to parse volume")?;
+        let vol: NetworkVolume = resp.json().await.context("Failed to parse volume")?;
         Ok(vol)
     }
 
     /// Delete a network volume.
-    pub fn delete_network_volume(&self, volume_id: &str) -> Result<()> {
+    pub async fn delete_network_volume(&self, volume_id: &str) -> Result<()> {
         let resp = self
             .request(
                 reqwest::Method::DELETE,
                 &format!("/networkvolumes/{}", volume_id),
             )
             .send()
+            .await
             .context("Failed to DELETE /networkvolumes/{id}")?;
         if !resp.status().is_success() {
             let status = resp.status();
-            let body = resp.text().unwrap_or_default();
+            let body = resp.text().await.unwrap_or_default();
             bail!("delete_network_volume: HTTP {}: {}", status, body);
         }
         Ok(())
