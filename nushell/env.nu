@@ -10,6 +10,11 @@ $env.ENV_CONVERSIONS = {
     }
 }
 
+# --- SSH Agent (systemd socket-activated) ---
+if $platform != "darwin" {
+    $env.SSH_AUTH_SOCK = $"/run/user/(id -u | str trim)/ssh-agent.socket"
+}
+
 # --- Core Editor & Browser ---
 $env.EDITOR = "hx"
 $env.VISUAL = "hx"
