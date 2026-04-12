@@ -1,0 +1,21 @@
+# Cross-machine SSH aliases (dotter-managed)
+# Tailscale IPs — only reachable on the Tailnet, no public exposure.
+
+# Mac (Williams-MacBook-Air)
+Host mac Mac williams-macbook-air
+    HostName 100.92.171.14
+    User williamnapier
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+
+# Nimbini (Linux desktop)
+Host nimbini
+    HostName 100.125.205.44
+    User will
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+
+# Defaults
+Host *
+    AddKeysToAgent yes
+    IdentityFile ~/.ssh/id_ed25519

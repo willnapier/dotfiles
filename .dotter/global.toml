@@ -5,6 +5,7 @@
 depends = []
 
 [shared.files]
+"ssh/config" = "~/.ssh/config"
 "scripts/anki-push" = "~/.local/bin/anki-push"
 "scripts/prior-art" = "~/.local/bin/prior-art"
 "scripts/assistants-docs-auto-push" = "~/.local/bin/assistants-docs-auto-push"
