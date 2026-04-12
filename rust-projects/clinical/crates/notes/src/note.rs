@@ -182,6 +182,11 @@ fn build_prompt(id: &str, observation: &str) -> Result<String> {
          and the client's formulation where relevant.\n\
          Use the clinician's voice and framework from the reference material.\n\
          Include **Risk**: and **Formulation**: lines.\n\
+         For **Risk**: use a brief default (e.g. 'No immediate concerns noted') \
+         unless the observation specifically describes risk factors such as suicidal \
+         ideation, self-harm, or harm to others. Do NOT confabulate detailed risk \
+         assessments or imply that explicit screening was conducted when the \
+         observation does not mention it.\n\
          Output ONLY the session note (starting with ### {}), no preamble or explanation.\n\n\
          === OBSERVATION ===\n\
          {}\n",

@@ -111,7 +111,10 @@ fn build_system_prompt(modality: &str) -> String {
          Frame clinical reasoning using explicit {} process terminology — \
          name the relevant therapeutic processes where they apply to the session material. \
          Integrate these naturally into the prose rather than listing them. \
-         Structure: Risk assessment, narrative body, Formulation.",
+         Structure: Risk assessment, narrative body, Formulation. \
+         For the risk assessment, use a brief default (e.g. 'No immediate concerns noted') \
+         unless the observation specifically describes risk factors. Do NOT confabulate \
+         detailed risk assessments or imply that explicit screening was conducted.",
         modality
     )
 }
