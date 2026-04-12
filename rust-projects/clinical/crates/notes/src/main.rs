@@ -239,6 +239,17 @@ enum TrainingCommands {
         #[arg(long)]
         excluded: bool,
     },
+
+    /// Export eligible notes as JSONL for voice model fine-tuning
+    Export {
+        /// Output file path (default: stdout)
+        #[arg(long, short)]
+        output: Option<String>,
+
+        /// Export all eligible notes (ignore last fine-tune date)
+        #[arg(long)]
+        all: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -324,6 +335,9 @@ fn main() -> Result<()> {
         Commands::Training { command } => match command {
             TrainingCommands::Count { all } => training::count(all),
             TrainingCommands::List { excluded } => training::list(excluded),
+            TrainingCommands::Export { output, all } => {
+                training::export(output.as_deref(), all)
+            }
         },
         Commands::NoteFinalise { id } => finalise::run(&id),
         Commands::NotePrepare { id, sessions } => prepare::run(&id, sessions),

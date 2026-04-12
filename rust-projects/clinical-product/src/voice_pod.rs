@@ -19,6 +19,9 @@ use crate::runpod::{Client, Pod};
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
 const MAX_START_WAIT: Duration = Duration::from_secs(300); // 5 min
 const DEFAULT_IDLE_TIMEOUT_MIN: u32 = 15;
+const OLLAMA_HEALTH_TIMEOUT: Duration = Duration::from_secs(5);
+const RESTART_WAIT: Duration = Duration::from_secs(120);
+const RESET_WAIT: Duration = Duration::from_secs(180);
 
 /// Parsed `[pod]` section from voice-config.toml.
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -220,13 +223,92 @@ pub async fn ensure_stopped(client: &Client, config: &PodConfig) -> Result<bool>
     Ok(true)
 }
 
-/// Called before a generation request. If the pod is managed and idle beyond
-/// the configured timeout, stop it first. Then ensure it's running.
+/// Probe whether Ollama is healthy on the given pod by hitting `/api/tags`
+/// via the RunPod proxy URL. Returns `Ok(true)` if the endpoint responds
+/// within 5 seconds, `Ok(false)` on timeout or HTTP error.
+pub async fn probe_ollama_health(pod_id: &str) -> Result<bool> {
+    let url = format!(
+        "https://{}-8888.proxy.runpod.net/api/tags",
+        pod_id
+    );
+    let http = reqwest::Client::builder()
+        .timeout(OLLAMA_HEALTH_TIMEOUT)
+        .build()?;
+
+    match http.get(&url).send().await {
+        Ok(resp) if resp.status().is_success() => Ok(true),
+        Ok(resp) => {
+            eprintln!(
+                "[voice-pod] Ollama health probe returned HTTP {}",
+                resp.status()
+            );
+            Ok(false)
+        }
+        Err(e) => {
+            eprintln!("[voice-pod] Ollama health probe failed: {}", e);
+            Ok(false)
+        }
+    }
+}
+
+/// Poll for pod RUNNING status + Ollama health within a deadline.
+/// Returns `true` if both are healthy before the deadline.
+async fn wait_for_healthy(
+    client: &Client,
+    pod_id: &str,
+    deadline: Duration,
+) -> bool {
+    let start = std::time::Instant::now();
+    loop {
+        if start.elapsed() > deadline {
+            return false;
+        }
+        tokio::time::sleep(POLL_INTERVAL).await;
+
+        // First check the pod is actually RUNNING
+        match client.get_pod(pod_id).await {
+            Ok(pod) if pod.is_running() => {}
+            Ok(pod) => {
+                eprintln!(
+                    "[voice-pod] Waiting for RUNNING, currently {} ({:.0}s elapsed)",
+                    pod.desired_status,
+                    start.elapsed().as_secs_f64()
+                );
+                continue;
+            }
+            Err(e) => {
+                eprintln!("[voice-pod] Error checking pod status: {}", e);
+                continue;
+            }
+        }
+
+        // Pod is running — probe Ollama
+        match probe_ollama_health(pod_id).await {
+            Ok(true) => return true,
+            _ => {
+                eprintln!(
+                    "[voice-pod] Pod RUNNING but Ollama not yet healthy ({:.0}s elapsed)",
+                    start.elapsed().as_secs_f64()
+                );
+            }
+        }
+    }
+}
+
+/// Called before a generation request. Ensures the pod is running AND Ollama
+/// is healthy, with a multi-step recovery ladder if not:
+///
+///   Step 0: Idle check + ensure pod RUNNING (existing behaviour)
+///   Step 1: Probe Ollama health — if healthy, proceed
+///   Step 2: Restart pod via RunPod API, wait up to 120s, re-probe
+///   Step 3: Hard reset pod (stop + start cycle), wait up to 180s, re-probe
+///   Step 4: All recovery failed — return error
 pub async fn prepare_for_request(client: &Client, config: &PodConfig) -> Result<()> {
     if !config.has_pod() {
         return Ok(()); // externally managed pod — nothing to do
     }
 
+    // --- Step 0: idle check + ensure RUNNING ---
     let state = load_state();
     let timeout = config.idle_timeout();
 
@@ -239,5 +321,43 @@ pub async fn prepare_for_request(client: &Client, config: &PodConfig) -> Result<
     }
 
     ensure_running(client, config).await?;
-    Ok(())
+
+    // --- Step 1: probe Ollama health ---
+    eprintln!("[voice-pod] Probing Ollama health...");
+    if probe_ollama_health(&config.pod_id).await? {
+        eprintln!("[voice-pod] Ollama healthy — ready.");
+        return Ok(());
+    }
+
+    // --- Step 2: Ollama unhealthy — restart pod ---
+    eprintln!("[voice-pod] Ollama unresponsive — restarting pod...");
+    if let Err(e) = client.start_pod(&config.pod_id).await {
+        eprintln!("[voice-pod] Restart request failed: {} — continuing to reset", e);
+    } else if wait_for_healthy(client, &config.pod_id, RESTART_WAIT).await {
+        eprintln!("[voice-pod] Ollama recovered after restart.");
+        return Ok(());
+    }
+
+    // --- Step 3: restart failed — stop + start cycle (hard reset) ---
+    eprintln!("[voice-pod] Restart did not recover Ollama — performing hard reset (stop + start)...");
+    if let Err(e) = client.reset_pod(&config.pod_id).await {
+        eprintln!("[voice-pod] Reset API call failed: {} — trying stop+start", e);
+        // Fallback: manual stop then start
+        let _ = client.stop_pod(&config.pod_id).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        let _ = client.start_pod(&config.pod_id).await;
+    }
+
+    if wait_for_healthy(client, &config.pod_id, RESET_WAIT).await {
+        eprintln!("[voice-pod] Ollama recovered after hard reset.");
+        return Ok(());
+    }
+
+    // --- Step 4: all recovery failed ---
+    bail!(
+        "[voice-pod] All recovery attempts failed for pod {}. \
+         Ollama on the pod is not responding after restart and hard reset. \
+         Check the RunPod console for GPU/container issues.",
+        config.pod_id
+    );
 }

@@ -219,6 +219,22 @@ impl Client {
         Ok(())
     }
 
+    /// Hard-reset a pod (stronger than restart — tears down the container and
+    /// re-provisions). Calls `POST /pods/{podId}/reset`.
+    pub async fn reset_pod(&self, pod_id: &str) -> Result<()> {
+        let resp = self
+            .request(reqwest::Method::POST, &format!("/pods/{}/reset", pod_id))
+            .send()
+            .await
+            .context("Failed to POST /pods/{id}/reset")?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            bail!("reset_pod: HTTP {}: {}", status, body);
+        }
+        Ok(())
+    }
+
     /// Permanently delete a pod.
     pub async fn delete_pod(&self, pod_id: &str) -> Result<()> {
         let resp = self
