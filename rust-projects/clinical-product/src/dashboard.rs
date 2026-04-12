@@ -224,7 +224,7 @@ async fn list_clients() -> Result<Json<Vec<ClientSummary>>, (StatusCode, String)
     let summaries: Vec<ClientSummary> = list_client_dirs()
         .into_iter()
         .map(|id| {
-            let has_identity = clients_dir().join(&id).join("identity.yaml").exists();
+            let has_identity = clients_dir().join(&id).join("private").join("identity.yaml").exists();
             ClientSummary { id, has_identity }
         })
         .collect();
@@ -237,11 +237,11 @@ async fn list_clients() -> Result<Json<Vec<ClientSummary>>, (StatusCode, String)
 
 async fn client_info(Path(id): Path<String>) -> Result<Json<ClientInfo>, (StatusCode, String)> {
     // Sanitise: only allow alphanumeric + hyphen + underscore
-    if !id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+    if !id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '+') {
         return Err((StatusCode::BAD_REQUEST, "Invalid client ID".to_string()));
     }
 
-    let identity_path = clients_dir().join(&id).join("identity.yaml");
+    let identity_path = clients_dir().join(&id).join("private").join("identity.yaml");
     let mut info = ClientInfo {
         id: id.clone(),
         referrer: None,
@@ -301,7 +301,7 @@ async fn generate_note(
     if !req
         .client_id
         .chars()
-        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '+')
     {
         return Err((StatusCode::BAD_REQUEST, "Invalid client ID".to_string()));
     }
@@ -377,7 +377,7 @@ async fn save_note(
     if !req
         .client_id
         .chars()
-        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '+')
     {
         return Err((StatusCode::BAD_REQUEST, "Invalid client ID".to_string()));
     }
