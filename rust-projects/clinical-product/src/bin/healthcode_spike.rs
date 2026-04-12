@@ -772,6 +772,370 @@ fn cmd_explore() -> Result<()> {
         }
     }
 
+    // --- Step 2: Navigate to Patient List ---
+    eprintln!("[explore] Step 2: Navigating to Patient List...");
+    let expand_patients = tab.evaluate(r#"
+        (function() {
+            // Click "Patients" menu header to expand it
+            var headers = document.querySelectorAll('.ui-panelmenu-header');
+            for (var i = 0; i < headers.length; i++) {
+                if (headers[i].textContent.trim().includes('Patients')) {
+                    headers[i].querySelector('a').click();
+                    return 'Expanded Patients menu';
+                }
+            }
+            return 'Patients menu not found';
+        })()
+    "#, false)?;
+    if let Some(val) = &expand_patients.value {
+        eprintln!("[explore] {}", val.as_str().unwrap_or("(no result)"));
+    }
+    std::thread::sleep(Duration::from_secs(2));
+
+    // Click "Patient List" submenu item
+    let click_plist = tab.evaluate(r#"
+        (function() {
+            var items = document.querySelectorAll('.ui-menuitem-link');
+            for (var i = 0; i < items.length; i++) {
+                if (items[i].textContent.trim() === 'Patient List') {
+                    items[i].click();
+                    return 'Clicked Patient List';
+                }
+            }
+            return 'Patient List not found';
+        })()
+    "#, false)?;
+    if let Some(val) = &click_plist.value {
+        eprintln!("[explore] {}", val.as_str().unwrap_or("(no result)"));
+    }
+    std::thread::sleep(Duration::from_secs(5));
+
+    // Scrape the patient list page
+    let patient_list = tab.evaluate(r#"
+        (function() {
+            var info = {};
+            info.url = window.location.href;
+            info.title = document.title;
+            info.bodyPreview = document.body ? document.body.innerText.substring(0, 3000) : '';
+
+            // Find patient table/list
+            var tables = document.querySelectorAll('table');
+            info.tables = Array.from(tables).map(function(t) {
+                var headers = Array.from(t.querySelectorAll('th')).map(function(th) {
+                    return th.textContent.trim();
+                });
+                var rows = Array.from(t.querySelectorAll('tbody tr')).slice(0, 5).map(function(tr) {
+                    return Array.from(tr.querySelectorAll('td')).map(function(td) {
+                        return td.textContent.trim().substring(0, 50);
+                    });
+                });
+                return { headers: headers, sampleRows: rows, rowCount: t.querySelectorAll('tbody tr').length };
+            }).filter(function(t) { return t.headers.length > 0 || t.sampleRows.length > 0; });
+
+            // Find any search/filter inputs
+            var inputs = document.querySelectorAll('input[type="text"], input[type="search"]');
+            info.searchInputs = Array.from(inputs).map(function(inp) {
+                return { name: inp.name, id: inp.id, placeholder: inp.placeholder || '' };
+            });
+
+            // Find links that might lead to patient records
+            var links = document.querySelectorAll('a[href*="patient" i], a[href*="Patient" i], [onclick*="patient" i]');
+            info.patientLinks = Array.from(links).slice(0, 10).map(function(a) {
+                return { text: a.textContent.trim().substring(0, 60), href: a.href || '', onclick: (a.getAttribute('onclick') || '').substring(0, 100) };
+            });
+
+            return JSON.stringify(info, null, 2);
+        })()
+    "#, false)?;
+
+    eprintln!("[explore] Step 2 - Patient List:");
+    if let Some(val) = patient_list.value {
+        let fallback = val.to_string();
+        let s = val.as_str().unwrap_or(&fallback);
+        println!("=== PATIENT LIST ===");
+        println!("{}", s);
+    }
+
+    // Screenshot
+    let ss2 = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
+        .join(".config/clinical-product/healthcode-patients.png");
+    if let Ok(bytes) = tab.capture_screenshot(
+        headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
+        None, None, true,
+    ) {
+        std::fs::write(&ss2, &bytes)?;
+        eprintln!("[explore] Screenshot: {}", ss2.display());
+    }
+
+    // --- Step 3: Click first patient to see record structure ---
+    eprintln!("[explore] Step 3: Opening first patient record...");
+    let click_patient = tab.evaluate(r#"
+        (function() {
+            // Try clicking the first row in a patient table
+            var rows = document.querySelectorAll('table tbody tr');
+            if (rows.length > 0) {
+                rows[0].click();
+                // Also try double-click (some PrimeFaces tables use dblclick)
+                var evt = new MouseEvent('dblclick', { bubbles: true });
+                rows[0].dispatchEvent(evt);
+                return 'Clicked first patient row (single + double click)';
+            }
+            // Try clicking any patient link
+            var links = document.querySelectorAll('a');
+            for (var i = 0; i < links.length; i++) {
+                var text = links[i].textContent.trim();
+                // Skip navigation items, look for patient names
+                if (text.length > 3 && text.length < 50 && !text.match(/^(Status|Patients|Appointments|Accounting|Contacts|Reports|Documents|Settings|Quick|Add|Logout|Copyright)/)) {
+                    // This might be a patient name
+                    if (links[i].closest('table') || links[i].closest('[class*="list"]')) {
+                        links[i].click();
+                        return 'Clicked link: ' + text;
+                    }
+                }
+            }
+            return 'No patient to click';
+        })()
+    "#, false)?;
+
+    if let Some(val) = &click_patient.value {
+        eprintln!("[explore] {}", val.as_str().unwrap_or("(no result)"));
+    }
+
+    std::thread::sleep(Duration::from_secs(5));
+
+    // --- Step 4: Scrape patient record page ---
+    let patient_record = tab.evaluate(r#"
+        (function() {
+            var info = {};
+            info.url = window.location.href;
+            info.title = document.title;
+            info.bodyPreview = document.body ? document.body.innerText.substring(0, 4000) : '';
+
+            // Find tabs (patient records often have tabbed interfaces)
+            var tabs = document.querySelectorAll('[role="tab"], .ui-tabs-header, .ui-tabview-nav li, [class*="tab"]');
+            info.tabs = Array.from(tabs).map(function(t) {
+                return { text: t.textContent.trim().substring(0, 40), class: (t.className || '').toString().substring(0, 60) };
+            }).filter(function(t) { return t.text.length > 0 && t.text.length < 40; });
+
+            // Find all forms
+            var forms = document.querySelectorAll('form');
+            info.forms = Array.from(forms).map(function(f) {
+                var inputs = Array.from(f.querySelectorAll('input, select, textarea')).map(function(inp) {
+                    return { tag: inp.tagName, type: inp.type, name: inp.name, id: inp.id, placeholder: inp.placeholder || '', label: '' };
+                });
+                return { action: f.action, id: f.id, inputCount: inputs.length, inputs: inputs.slice(0, 20) };
+            }).filter(function(f) { return f.inputCount > 0; });
+
+            // Find buttons related to claims/auth/billing
+            var buttons = document.querySelectorAll('button, a.btn, input[type="submit"], [role="button"]');
+            info.actionButtons = Array.from(buttons).map(function(b) {
+                return { text: b.textContent.trim().substring(0, 60), class: (b.className || '').toString().substring(0, 60), id: b.id || '' };
+            }).filter(function(b) {
+                var t = b.text.toLowerCase();
+                return b.text.length > 0 && (t.includes('claim') || t.includes('auth') || t.includes('bill') || t.includes('invoice') || t.includes('submit') || t.includes('new') || t.includes('create') || t.includes('extension'));
+            });
+
+            // All navigation/action items on this page
+            var allActions = document.querySelectorAll('a, button, [role="menuitem"], [role="tab"]');
+            info.allActions = Array.from(allActions).map(function(a) {
+                return { text: a.textContent.trim().substring(0, 60), href: a.href || '' };
+            }).filter(function(a) { return a.text.length > 2 && a.text.length < 60; }).slice(0, 50);
+
+            // Search for keywords in the full page
+            var fullText = document.body ? document.body.innerText.toLowerCase() : '';
+            var keywords = ['claim', 'authorisation', 'authorization', 'auth', 'pre-auth', 'extension', 'axa', 'bupa', 'aviva', 'vitality', 'insurer', 'membership', 'policy', 'diagnosis', 'icd', 'sessions', 'treatment'];
+            info.keywordsFound = keywords.filter(function(k) { return fullText.includes(k); });
+
+            return JSON.stringify(info, null, 2);
+        })()
+    "#, false)?;
+
+    eprintln!("[explore] Step 4 - Patient Record:");
+    if let Some(val) = patient_record.value {
+        let fallback = val.to_string();
+        let s = val.as_str().unwrap_or(&fallback);
+        println!("=== PATIENT RECORD ===");
+        println!("{}", s);
+    }
+
+    // Screenshot
+    let ss3 = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
+        .join(".config/clinical-product/healthcode-patient-record.png");
+    if let Ok(bytes) = tab.capture_screenshot(
+        headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
+        None, None, true,
+    ) {
+        std::fs::write(&ss3, &bytes)?;
+        eprintln!("[explore] Screenshot: {}", ss3.display());
+    }
+
+    // --- Step 5: Look for Accounting/eBill section ---
+    eprintln!("[explore] Step 5: Checking Accounting/eBill...");
+    // Navigate back to home first
+    tab.navigate_to("https://www.veda.healthcode.co.uk/epractice/pages/HomePage/specialistviewpage.xhtml")?;
+    std::thread::sleep(Duration::from_secs(5));
+
+    // Click Accounting menu
+    let expand_acct = tab.evaluate(r#"
+        (function() {
+            var headers = document.querySelectorAll('.ui-panelmenu-header');
+            for (var i = 0; i < headers.length; i++) {
+                if (headers[i].textContent.trim().includes('Accounting')) {
+                    headers[i].querySelector('a').click();
+                    return 'Expanded Accounting menu';
+                }
+            }
+            return 'Accounting menu not found';
+        })()
+    "#, false)?;
+    if let Some(val) = &expand_acct.value {
+        eprintln!("[explore] {}", val.as_str().unwrap_or("(no result)"));
+    }
+    std::thread::sleep(Duration::from_secs(2));
+
+    // Scrape all submenu items under Accounting before clicking
+    let acct_items = tab.evaluate(r#"
+        (function() {
+            var items = document.querySelectorAll('.ui-menuitem-link');
+            return JSON.stringify(Array.from(items).map(function(a) {
+                return a.textContent.trim();
+            }).filter(function(t) { return t.length > 0; }));
+        })()
+    "#, false)?;
+    if let Some(val) = &acct_items.value {
+        let fallback = val.to_string();
+        let s = val.as_str().unwrap_or(&fallback);
+        eprintln!("[explore] All submenu items visible: {}", s);
+    }
+
+    // Click Quick eBill
+    let click_ebill = tab.evaluate(r#"
+        (function() {
+            var items = document.querySelectorAll('.ui-menuitem-link');
+            for (var i = 0; i < items.length; i++) {
+                if (items[i].textContent.trim() === 'Quick eBill') {
+                    items[i].click();
+                    return 'Clicked Quick eBill';
+                }
+            }
+            return 'Quick eBill not found';
+        })()
+    "#, false)?;
+    if let Some(val) = &click_ebill.value {
+        eprintln!("[explore] {}", val.as_str().unwrap_or("(no result)"));
+    }
+    std::thread::sleep(Duration::from_secs(5));
+
+    // Scrape eBill page
+    let ebill = tab.evaluate(r#"
+        (function() {
+            var info = {};
+            info.url = window.location.href;
+            info.bodyPreview = document.body ? document.body.innerText.substring(0, 3000) : '';
+
+            var forms = document.querySelectorAll('form');
+            info.forms = Array.from(forms).map(function(f) {
+                var inputs = Array.from(f.querySelectorAll('input, select, textarea')).map(function(inp) {
+                    return { tag: inp.tagName, type: inp.type, name: inp.name, id: inp.id, placeholder: inp.placeholder || '' };
+                });
+                return { id: f.id, inputCount: inputs.length, inputs: inputs.slice(0, 30) };
+            }).filter(function(f) { return f.inputCount > 0; });
+
+            var fullText = document.body ? document.body.innerText.toLowerCase() : '';
+            var keywords = ['claim', 'authorisation', 'authorization', 'pre-auth', 'extension', 'axa', 'insurer', 'membership', 'policy', 'diagnosis', 'sessions', 'treatment'];
+            info.keywordsFound = keywords.filter(function(k) { return fullText.includes(k); });
+
+            return JSON.stringify(info, null, 2);
+        })()
+    "#, false)?;
+
+    eprintln!("[explore] Step 5 - Quick eBill:");
+    if let Some(val) = ebill.value {
+        let fallback = val.to_string();
+        let s = val.as_str().unwrap_or(&fallback);
+        println!("=== QUICK EBILL ===");
+        println!("{}", s);
+    }
+
+    let ss4 = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
+        .join(".config/clinical-product/healthcode-ebill.png");
+    if let Ok(bytes) = tab.capture_screenshot(
+        headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
+        None, None, true,
+    ) {
+        std::fs::write(&ss4, &bytes)?;
+        eprintln!("[explore] Screenshot: {}", ss4.display());
+    }
+
+    // --- Step 6: Explore all top-level menu sections ---
+    eprintln!("[explore] Step 6: Mapping all menu sections...");
+    tab.navigate_to("https://www.veda.healthcode.co.uk/epractice/pages/HomePage/specialistviewpage.xhtml")?;
+    std::thread::sleep(Duration::from_secs(5));
+
+    let all_menus = tab.evaluate(r#"
+        (function() {
+            var result = {};
+            var headers = document.querySelectorAll('.ui-panelmenu-header');
+            result.menuSections = Array.from(headers).map(function(h) {
+                return h.textContent.trim();
+            });
+
+            // Expand all menus and capture all items
+            for (var i = 0; i < headers.length; i++) {
+                var a = headers[i].querySelector('a');
+                if (a) a.click();
+            }
+
+            return JSON.stringify(result, null, 2);
+        })()
+    "#, false)?;
+    if let Some(val) = &all_menus.value {
+        let fallback = val.to_string();
+        let s = val.as_str().unwrap_or(&fallback);
+        println!("=== ALL MENU SECTIONS ===");
+        println!("{}", s);
+    }
+
+    std::thread::sleep(Duration::from_secs(2));
+
+    // Now scrape all visible submenu items after expanding all
+    let all_items = tab.evaluate(r#"
+        (function() {
+            var items = document.querySelectorAll('.ui-menuitem-link, .ui-panelmenu-content .ui-menuitem a');
+            return JSON.stringify(Array.from(items).map(function(a) {
+                return {
+                    text: a.textContent.trim(),
+                    href: a.href || '',
+                    onclick: (a.getAttribute('onclick') || '').substring(0, 120),
+                    parentMenu: (function() {
+                        var panel = a.closest('.ui-panelmenu-panel');
+                        if (panel) {
+                            var header = panel.querySelector('.ui-panelmenu-header');
+                            return header ? header.textContent.trim() : '';
+                        }
+                        return '';
+                    })()
+                };
+            }).filter(function(i) { return i.text.length > 0; }), null, 2);
+        })()
+    "#, false)?;
+    if let Some(val) = &all_items.value {
+        let fallback = val.to_string();
+        let s = val.as_str().unwrap_or(&fallback);
+        println!("=== ALL SUBMENU ITEMS ===");
+        println!("{}", s);
+    }
+
+    let ss5 = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
+        .join(".config/clinical-product/healthcode-all-menus.png");
+    if let Ok(bytes) = tab.capture_screenshot(
+        headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
+        None, None, true,
+    ) {
+        std::fs::write(&ss5, &bytes)?;
+        eprintln!("[explore] Screenshot: {}", ss5.display());
+    }
+
     if !headless {
         eprintln!("[explore] Press Enter to close...");
         let mut input = String::new();
