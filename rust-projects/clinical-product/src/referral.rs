@@ -552,3 +552,307 @@ pub fn display_referral(r: &Referral) {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Full client setup pipeline
+// ---------------------------------------------------------------------------
+
+/// Full client setup pipeline: scaffold, populate identity, TM3 lookup, import documents.
+/// Propose-and-confirm at each step.
+pub fn setup_client(config: &ReferralConfig, uid: u32) -> Result<()> {
+    // 1. Fetch and parse the referral email
+    let mut session = connect(config)?;
+    session
+        .select(&config.inbox)
+        .with_context(|| format!("Failed to select mailbox '{}'", config.inbox))?;
+
+    let fetched = session
+        .uid_fetch(&uid.to_string(), "(UID RFC822)")
+        .context("IMAP UID FETCH failed")?;
+
+    let msg = fetched
+        .iter()
+        .next()
+        .with_context(|| format!("No message found with UID {}", uid))?;
+
+    let body = msg.body().context("Message has no body")?;
+    let referral = parse_email(body, uid)?;
+
+    // 2. Display extracted metadata
+    println!();
+    display_referral(&referral);
+    println!();
+
+    // Build client ID from the name (lowercase, hyphenated)
+    let client_id = referral
+        .client_name
+        .as_deref()
+        .unwrap_or("unknown-client")
+        .to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join("-");
+
+    println!("Proposed client ID: {}", client_id);
+
+    // 3. Prompt: scaffold client directory
+    if !prompt_yn("Scaffold client directory?")? {
+        println!("Aborted.");
+        session.logout().ok();
+        return Ok(());
+    }
+
+    // 4. Run `clinical scaffold <client_id>`
+    println!("Running: clinical scaffold {}", client_id);
+    let status = Command::new("clinical")
+        .args(["scaffold", &client_id])
+        .status()
+        .context("Failed to run `clinical scaffold`")?;
+
+    if !status.success() {
+        bail!("`clinical scaffold {}` exited with {}", client_id, status);
+    }
+    println!("  [OK] Client directory scaffolded.");
+
+    // 5. Populate identity.yaml with extracted metadata
+    let identity_path = identity_yaml_path(&client_id);
+    if identity_path.exists() {
+        println!("\nPopulating identity.yaml with extracted metadata...");
+        let mut actions: Vec<String> = Vec::new();
+
+        if let Some(ref name) = referral.client_name {
+            update_identity_field(&identity_path, "name", name)?;
+            actions.push(format!("  name: {}", name));
+        }
+        if let Some(ref referrer_name) = referral.referrer {
+            update_identity_nested_field(&identity_path, "referrer", "name", referrer_name)?;
+            actions.push(format!("  referrer.name: {}", referrer_name));
+        }
+        if let Some(ref funding) = referral.funding_source {
+            update_identity_nested_field(&identity_path, "funding", "funding_type", funding)?;
+            actions.push(format!("  funding.funding_type: {}", funding));
+        }
+
+        if actions.is_empty() {
+            println!("  (no metadata to populate)");
+        } else {
+            println!("  [OK] Updated fields:");
+            for a in &actions {
+                println!("  {}", a);
+            }
+        }
+    } else {
+        eprintln!(
+            "  [WARN] identity.yaml not found at {}; skipping populate.",
+            identity_path.display()
+        );
+    }
+
+    // 6. TM3 lookup — manual entry for now
+    println!();
+    let tm3_id = prompt_input("Enter TM3 ID (or press Enter to skip): ")?;
+    let tm3_id = tm3_id.trim().to_string();
+
+    if !tm3_id.is_empty() {
+        // Write tm3_id to identity.yaml
+        if identity_path.exists() {
+            update_identity_field(&identity_path, "tm3_id", &tm3_id)?;
+            println!("  [OK] tm3_id set to: {}", tm3_id);
+        }
+
+        // 7. Prompt: import documents from TM3
+        println!();
+        if prompt_yn("Import documents from TM3?")? {
+            println!("Running: clinical import-doc {}", client_id);
+            let import_status = Command::new("clinical")
+                .args(["import-doc", &client_id])
+                .status()
+                .context("Failed to run `clinical import-doc`")?;
+
+            if import_status.success() {
+                println!("  [OK] Documents imported.");
+            } else {
+                eprintln!(
+                    "  [WARN] `clinical import-doc {}` exited with {}",
+                    client_id, import_status
+                );
+            }
+        }
+    } else {
+        println!("  (skipping TM3 lookup)");
+    }
+
+    // 8. Move referral email to processed folder
+    println!();
+    mark_processed(&mut session, uid, &config.processed_folder)?;
+    println!(
+        "  [OK] Referral UID {} moved to '{}'.",
+        uid, config.processed_folder
+    );
+
+    // 9. Summary
+    println!("\n--- Setup complete ---");
+    println!("  Client ID:  {}", client_id);
+    println!(
+        "  Directory:  ~/Clinical/clients/{}/",
+        client_id
+    );
+    if !tm3_id.is_empty() {
+        println!("  TM3 ID:     {}", tm3_id);
+    }
+    println!("  Email:      moved to {}", config.processed_folder);
+
+    session.logout().ok();
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Identity.yaml helpers
+// ---------------------------------------------------------------------------
+
+/// Return the path to a client's identity.yaml file.
+fn identity_yaml_path(client_id: &str) -> PathBuf {
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    home.join("Clinical")
+        .join("clients")
+        .join(client_id)
+        .join("private")
+        .join("identity.yaml")
+}
+
+/// Update a top-level field in identity.yaml (e.g. `name: "..."` or `tm3_id: "..."`).
+///
+/// Reads the file line-by-line, replaces the first line starting with `field:`,
+/// or appends the field if not found.
+fn update_identity_field(path: &PathBuf, field: &str, value: &str) -> Result<()> {
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Failed to read {}", path.display()))?;
+
+    let prefix = format!("{}:", field);
+    let new_line = format!("{}: \"{}\"", field, value.replace('"', "\\\""));
+    let mut found = false;
+    let mut lines: Vec<String> = content
+        .lines()
+        .map(|line| {
+            if !found && line.trim_start().starts_with(&prefix) {
+                // Only replace if this is a top-level key (no leading whitespace)
+                if line.starts_with(&prefix) || line.starts_with(&format!("{}:", field)) {
+                    found = true;
+                    return new_line.clone();
+                }
+            }
+            line.to_string()
+        })
+        .collect();
+
+    if !found {
+        lines.push(new_line);
+    }
+
+    let output = lines.join("\n");
+    // Ensure trailing newline
+    let output = if output.ends_with('\n') {
+        output
+    } else {
+        format!("{}\n", output)
+    };
+
+    std::fs::write(path, &output)
+        .with_context(|| format!("Failed to write {}", path.display()))?;
+    Ok(())
+}
+
+/// Update a nested field in identity.yaml (e.g. `referrer:\n  name: "..."`).
+///
+/// Looks for the parent key, then searches for the child key indented below it.
+/// If the child isn't found under the parent, inserts it.
+fn update_identity_nested_field(
+    path: &PathBuf,
+    parent: &str,
+    child: &str,
+    value: &str,
+) -> Result<()> {
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Failed to read {}", path.display()))?;
+
+    let parent_prefix = format!("{}:", parent);
+    let child_key = format!("{}:", child);
+    let new_child_line = format!("  {}: \"{}\"", child, value.replace('"', "\\\""));
+
+    let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+    let mut parent_idx: Option<usize> = None;
+    let mut child_idx: Option<usize> = None;
+
+    // Find the parent key (top-level, no indentation)
+    for (i, line) in lines.iter().enumerate() {
+        if line.starts_with(&parent_prefix) {
+            parent_idx = Some(i);
+            break;
+        }
+    }
+
+    if let Some(pidx) = parent_idx {
+        // Search for the child key in the indented block below the parent
+        for i in (pidx + 1)..lines.len() {
+            let line = &lines[i];
+            // If we hit a non-indented line (next top-level key), stop searching
+            if !line.is_empty() && !line.starts_with(' ') && !line.starts_with('\t') {
+                break;
+            }
+            if line.trim_start().starts_with(&child_key) {
+                child_idx = Some(i);
+                break;
+            }
+        }
+
+        if let Some(cidx) = child_idx {
+            lines[cidx] = new_child_line;
+        } else {
+            // Insert the child right after the parent
+            lines.insert(pidx + 1, new_child_line);
+        }
+    } else {
+        // Parent not found — append parent and child
+        lines.push(format!("{}:", parent));
+        lines.push(new_child_line);
+    }
+
+    let output = lines.join("\n");
+    let output = if output.ends_with('\n') {
+        output
+    } else {
+        format!("{}\n", output)
+    };
+
+    std::fs::write(path, &output)
+        .with_context(|| format!("Failed to write {}", path.display()))?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Interactive prompt helpers
+// ---------------------------------------------------------------------------
+
+/// Prompt the user with a yes/no question. Returns true if 'y'/'Y'.
+fn prompt_yn(question: &str) -> Result<bool> {
+    print!("{} [y/N] ", question);
+    io::stdout().flush()?;
+    let mut answer = String::new();
+    io::stdin()
+        .lock()
+        .read_line(&mut answer)
+        .context("Failed to read stdin")?;
+    Ok(answer.trim().eq_ignore_ascii_case("y"))
+}
+
+/// Prompt the user for free-text input. Returns the trimmed response.
+fn prompt_input(prompt: &str) -> Result<String> {
+    print!("{}", prompt);
+    io::stdout().flush()?;
+    let mut answer = String::new();
+    io::stdin()
+        .lock()
+        .read_line(&mut answer)
+        .context("Failed to read stdin")?;
+    Ok(answer)
+}

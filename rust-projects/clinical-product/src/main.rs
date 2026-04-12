@@ -100,6 +100,8 @@ enum ReferralAction {
     },
     /// Process a specific referral by UID (extract, confirm, scaffold).
     Process { uid: u32 },
+    /// Full client setup: scaffold → populate identity → TM3 lookup → import documents.
+    Setup { uid: u32 },
 }
 
 #[derive(Parser, Debug)]
@@ -370,6 +372,9 @@ async fn main() -> anyhow::Result<()> {
                 }
                 ReferralAction::Process { uid } => {
                     referral::process_referral(&config, uid)?;
+                }
+                ReferralAction::Setup { uid } => {
+                    referral::setup_client(&config, uid)?;
                 }
             }
         }
