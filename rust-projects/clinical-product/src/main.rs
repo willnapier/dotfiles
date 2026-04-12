@@ -8,6 +8,7 @@ mod dashboard;
 mod referral;
 mod runpod;
 pub mod session_cookies;
+mod sync;
 mod voice_pod;
 
 #[derive(Parser)]
@@ -75,6 +76,12 @@ enum Command {
         #[command(subcommand)]
         action: ReferralAction,
     },
+
+    /// Compare TM3 diary against local client directories.
+    ///
+    /// Scrapes today's TM3 diary, compares against ~/Clinical/clients/,
+    /// and reports new clients that need scaffolding.
+    Sync,
 
     /// Start the clinical dashboard (local web UI).
     ///
@@ -385,6 +392,10 @@ async fn main() -> anyhow::Result<()> {
                 }
                 ReferralAction::Init => unreachable!(),
             }
+        }
+        Command::Sync => {
+            let result = sync::sync_check()?;
+            sync::display_sync_result(&result);
         }
         Command::Dashboard { port, open } => {
             dashboard::serve(port, open).await?;

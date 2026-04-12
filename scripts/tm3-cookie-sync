@@ -12,7 +12,7 @@ set -euo pipefail
 KEYCHAIN_SERVICE="tm3-session"
 KEYCHAIN_ACCOUNT="changeofharleystreet"
 SHARED_DIR="${HOME}/Assistants/shared"
-COOKIE_FILE="${SHARED_DIR}/.tm3-cookies.json"
+COOKIE_FILE="${SHARED_DIR}/.tm3-session-cookies.json"
 
 # Extract cookies from macOS keychain
 if [[ "$(uname)" == "Darwin" ]]; then
