@@ -99,6 +99,11 @@
             "type": "command",
             "command": "bash ~/.claude/hooks/diagram-gate-check.sh",
             "statusMessage": "Checking diagram impact gate..."
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/nushell-syntax-check.sh",
+            "statusMessage": "Checking nushell syntax..."
           }
         ]
       }
