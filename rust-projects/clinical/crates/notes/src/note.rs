@@ -13,7 +13,7 @@ pub struct ValidationResult {
 }
 
 impl ValidationResult {
-    fn is_ok(&self) -> bool {
+    pub fn is_ok(&self) -> bool {
         self.errors.is_empty()
     }
 }
@@ -419,6 +419,16 @@ fn load_voice_config() -> Option<(String, String)> {
 /// Load just the endpoint from voice-config.toml.
 fn load_voice_endpoint() -> Option<String> {
     load_voice_config().map(|(ep, _)| ep)
+}
+
+/// Public wrapper for `build_prompt` — used by batch processing.
+pub fn build_prompt_public(id: &str, observation: &str) -> Result<String> {
+    build_prompt(id, observation)
+}
+
+/// Public wrapper for `resolve_llm_command` — used by batch processing.
+pub fn resolve_llm_command_public(model_override: Option<&str>) -> (String, String) {
+    resolve_llm_command(model_override)
 }
 
 /// Run `clinical note <ID> <observation>`.

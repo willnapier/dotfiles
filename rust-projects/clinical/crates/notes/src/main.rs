@@ -1,4 +1,5 @@
 mod auth;
+mod batch;
 mod deidentify;
 mod finalise;
 mod letter;
@@ -166,6 +167,17 @@ enum Commands {
         /// Number of recent sessions to include for context
         #[arg(long, default_value = "3")]
         sessions: usize,
+    },
+
+    /// Batch-process multiple session notes: write observations, cook, review, save.
+    #[command(name = "notes-batch")]
+    NotesBatch {
+        /// Path to the observations file (markdown with # CLIENT_ID headings)
+        file: String,
+
+        /// Generate and display but do NOT save to client files
+        #[arg(long)]
+        no_save: bool,
     },
 
     /// Send a letter: secure link to recipient + file to TM3
@@ -341,6 +353,7 @@ fn main() -> Result<()> {
         },
         Commands::NoteFinalise { id } => finalise::run(&id),
         Commands::NotePrepare { id, sessions } => prepare::run(&id, sessions),
+        Commands::NotesBatch { file, no_save } => batch::run(&file, no_save),
         Commands::Send {
             client_id,
             pdf,
