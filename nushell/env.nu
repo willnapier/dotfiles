@@ -10,6 +10,9 @@ $env.ENV_CONVERSIONS = {
     }
 }
 
+# --- Platform Detection ---
+let platform = (uname | get operating-system | str downcase)
+
 # --- SSH Agent (systemd socket-activated) ---
 if $platform != "darwin" {
     $env.SSH_AUTH_SOCK = $"/run/user/(id -u | str trim)/ssh-agent.socket"
@@ -19,7 +22,6 @@ if $platform != "darwin" {
 $env.EDITOR = "hx"
 $env.VISUAL = "hx"
 
-let platform = (uname | get operating-system | str downcase)
 $env.BROWSER = if $platform == "darwin" { "open" } else { "xdg-open" }
 
 # --- Forge & System Paths ---
