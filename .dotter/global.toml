@@ -409,6 +409,9 @@ depends = ["shared"]
 # Bequest heartbeat - daily dead man's switch check
 "systemd/bequest-heartbeat.service" = "~/.config/systemd/user/bequest-heartbeat.service"
 "systemd/bequest-heartbeat.timer" = "~/.config/systemd/user/bequest-heartbeat.timer"
+# Voice pod idle sweep - stop RunPod pod if idle > 15 min
+"systemd/voice-pod-maintain.service" = "~/.config/systemd/user/voice-pod-maintain.service"
+"systemd/voice-pod-maintain.timer" = "~/.config/systemd/user/voice-pod-maintain.timer"
 # State capture - daily snapshot of packages, services, crates, groups
 "systemd/state-capture.service" = "~/.config/systemd/user/state-capture.service"
 "systemd/state-capture.timer" = "~/.config/systemd/user/state-capture.timer"

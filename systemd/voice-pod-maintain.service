@@ -1,0 +1,6 @@
+[Unit]
+Description=Stop idle voice inference pod
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/clinical-product voice-pod maintain
