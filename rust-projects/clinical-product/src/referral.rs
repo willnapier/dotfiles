@@ -101,22 +101,159 @@ pub struct Referral {
 // Config / auth loading
 // ---------------------------------------------------------------------------
 
+/// Interactive setup wizard: ask for IMAP details, write config, store password.
+pub fn init_config() -> Result<()> {
+    let path = config_path();
+    println!("=== Referral email setup ===\n");
+
+    // Check if config already exists with a [referral] section
+    if path.exists() {
+        let content = std::fs::read_to_string(&path).unwrap_or_default();
+        if content.contains("[referral]") {
+            println!("Config already has a [referral] section at {}", path.display());
+            print!("Overwrite? [y/N] ");
+            io::stdout().flush()?;
+            let mut answer = String::new();
+            io::stdin().lock().read_line(&mut answer)?;
+            if !answer.trim().eq_ignore_ascii_case("y") {
+                println!("Aborted.");
+                return Ok(());
+            }
+        }
+    }
+
+    // Common providers
+    println!("Common IMAP servers:");
+    println!("  1. Gmail        (imap.gmail.com)");
+    println!("  2. Outlook/365  (outlook.office365.com)");
+    println!("  3. Fastmail     (imap.fastmail.com)");
+    println!("  4. Other");
+    print!("\nYour provider [1-4]: ");
+    io::stdout().flush()?;
+    let mut choice = String::new();
+    io::stdin().lock().read_line(&mut choice)?;
+
+    let (imap_server, note) = match choice.trim() {
+        "1" => ("imap.gmail.com".to_string(), "Gmail requires an App Password (not your regular password).\nGenerate one: Google Account → Security → 2-Step Verification → App Passwords."),
+        "2" => ("outlook.office365.com".to_string(), "Use your Outlook/Microsoft 365 password. If MFA is enabled, you may need an App Password."),
+        "3" => ("imap.fastmail.com".to_string(), "Use a Fastmail app-specific password from Settings → Privacy & Security → App Passwords."),
+        _ => {
+            print!("IMAP server hostname: ");
+            io::stdout().flush()?;
+            let mut server = String::new();
+            io::stdin().lock().read_line(&mut server)?;
+            (server.trim().to_string(), "")
+        }
+    };
+
+    if !note.is_empty() {
+        println!("\nNote: {}", note);
+    }
+
+    print!("\nYour email address: ");
+    io::stdout().flush()?;
+    let mut username = String::new();
+    io::stdin().lock().read_line(&mut username)?;
+    let username = username.trim().to_string();
+    if username.is_empty() {
+        bail!("Email address is required.");
+    }
+
+    print!("Referral sender pattern (e.g., 'olly' to match Olly's emails): ");
+    io::stdout().flush()?;
+    let mut sender_pattern = String::new();
+    io::stdin().lock().read_line(&mut sender_pattern)?;
+    let sender_pattern = sender_pattern.trim().to_string();
+
+    print!("Subject pattern (e.g., 'appointment'): ");
+    io::stdout().flush()?;
+    let mut subject_pattern = String::new();
+    io::stdin().lock().read_line(&mut subject_pattern)?;
+    let subject_pattern = subject_pattern.trim().to_string();
+
+    // Write config
+    let referral_section = format!(
+        "\n[referral]\nimap_server = \"{}\"\nimap_port = 993\nusername = \"{}\"\nsender_pattern = \"{}\"\nsubject_pattern = \"{}\"\ninbox = \"INBOX\"\nprocessed_folder = \"Referrals/Processed\"\n",
+        imap_server, username,
+        if sender_pattern.is_empty() { "referral" } else { &sender_pattern },
+        if subject_pattern.is_empty() { "appointment" } else { &subject_pattern },
+    );
+
+    // Append to existing config or create new
+    if path.exists() {
+        let mut content = std::fs::read_to_string(&path)?;
+        // Remove existing [referral] section if present
+        if let Some(start) = content.find("[referral]") {
+            // Find the next section or end of file
+            let rest = &content[start + 10..];
+            let end = rest.find("\n[").map(|i| start + 10 + i).unwrap_or(content.len());
+            content = format!("{}{}", &content[..start], &content[end..]);
+        }
+        content.push_str(&referral_section);
+        std::fs::write(&path, content)?;
+    } else {
+        std::fs::create_dir_all(path.parent().unwrap())?;
+        std::fs::write(&path, referral_section)?;
+    }
+
+    println!("\nConfig written to {}", path.display());
+
+    // Store password
+    println!("\nNow store your IMAP password in the OS keychain.");
+    println!("(This is NOT saved to any file — it stays in the OS secret store.)\n");
+
+    if cfg!(target_os = "macos") {
+        println!("Run:");
+        println!("  security add-generic-password -s clinical-imap -a \"{}\" -w <your-password>", username);
+    } else {
+        println!("Run:");
+        println!("  \"<your-password>\" | secret-tool store --label \"Clinical IMAP\" service clinical-imap account \"{}\"", username);
+    }
+
+    println!("\nOnce stored, test with:");
+    println!("  clinical-product referral check");
+
+    Ok(())
+}
+
 /// Load the `[referral]` section from `~/.config/clinical-product/voice-config.toml`.
 pub fn load_referral_config() -> Result<ReferralConfig> {
     let path = config_path();
     if !path.exists() {
         bail!(
-            "Config file not found: {}. Create it with a [referral] section.",
-            path.display()
+            "Config file not found: {path}\n\n\
+             Create it with a [referral] section:\n\n\
+             [referral]\n\
+             imap_server = \"imap.gmail.com\"    # or your email provider\n\
+             imap_port = 993\n\
+             username = \"you@gmail.com\"\n\
+             # password stored in OS keychain (service: clinical-imap)\n\
+             sender_pattern = \"olly\"            # match referral sender\n\
+             subject_pattern = \"appointment\"    # match subject line\n\n\
+             Then store your IMAP password (Gmail users: generate an App Password first):\n\
+             Linux:  \"<pw>\" | secret-tool store --label \"Clinical IMAP\" service clinical-imap account <email>\n\
+             macOS:  security add-generic-password -s clinical-imap -a <email> -w <pw>",
+            path = path.display()
         );
     }
     let content = std::fs::read_to_string(&path)
         .with_context(|| format!("Failed to read {}", path.display()))?;
     let value: toml::Value = toml::from_str(&content).context("Invalid TOML in config")?;
-    let section = value
-        .get("referral")
-        .context("No [referral] section in config")?;
+    let section = value.get("referral");
+    if section.is_none() {
+        bail!(
+            "No [referral] section in {path}.\n\n\
+             Add:\n\n\
+             [referral]\n\
+             imap_server = \"imap.gmail.com\"\n\
+             username = \"you@gmail.com\"\n\
+             sender_pattern = \"olly\"\n\
+             subject_pattern = \"appointment\"",
+            path = path.display()
+        );
+    }
     let cfg: ReferralConfig = section
+        .unwrap()
         .clone()
         .try_into()
         .context("Failed to parse [referral] section")?;

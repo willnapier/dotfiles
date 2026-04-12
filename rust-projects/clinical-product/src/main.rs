@@ -102,6 +102,8 @@ enum ReferralAction {
     Process { uid: u32 },
     /// Full client setup: scaffold → populate identity → TM3 lookup → import documents.
     Setup { uid: u32 },
+    /// Interactive setup wizard for email referral monitoring.
+    Init,
 }
 
 #[derive(Parser, Debug)]
@@ -344,6 +346,10 @@ async fn main() -> anyhow::Result<()> {
             handle_voice_pod(action).await?;
         }
         Command::Referral { action } => {
+            if matches!(action, ReferralAction::Init) {
+                referral::init_config()?;
+                return Ok(());
+            }
             let config = referral::load_referral_config()?;
             match action {
                 ReferralAction::Check => {
@@ -376,6 +382,7 @@ async fn main() -> anyhow::Result<()> {
                 ReferralAction::Setup { uid } => {
                     referral::setup_client(&config, uid)?;
                 }
+                ReferralAction::Init => unreachable!(),
             }
         }
         Command::Dashboard { port, open } => {
