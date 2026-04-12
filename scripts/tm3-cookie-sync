@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Sync TM3 session cookies from macOS keychain to shared location.
+# Run on Mac after TM3 login. Nimbini picks up cookies via Syncthing.
+#
+# Usage: tm3-cookie-sync
+#
+# The cookies file is NOT the password — it's temporary session tokens
+# that expire. Stored in the Syncthing-shared Assistants directory.
+
+set -euo pipefail
+
+KEYCHAIN_SERVICE="tm3-session"
+KEYCHAIN_ACCOUNT="changeofharleystreet"
+SHARED_DIR="${HOME}/Assistants/shared"
+COOKIE_FILE="${SHARED_DIR}/.tm3-cookies.json"
+
+# Extract cookies from macOS keychain
+if [[ "$(uname)" == "Darwin" ]]; then
+    COOKIES=$(security find-generic-password -s "$KEYCHAIN_SERVICE" -a "$KEYCHAIN_ACCOUNT" -w 2>/dev/null)
+    if [[ -z "$COOKIES" ]]; then
+        echo "No TM3 session found in keychain."
+        echo "Log into TM3 first: tm3-upload login"
+        exit 1
+    fi
+    echo "$COOKIES" > "$COOKIE_FILE"
+    chmod 600 "$COOKIE_FILE"
+    echo "TM3 cookies synced to $COOKIE_FILE"
+    echo "Syncthing will push to nimbini automatically."
+else
+    echo "This script runs on Mac (reads from macOS keychain)."
+    echo "On Linux, cookies are picked up from $COOKIE_FILE via Syncthing."
+    exit 1
+fi
