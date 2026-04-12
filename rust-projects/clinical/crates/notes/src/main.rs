@@ -1,6 +1,7 @@
 mod auth;
 mod batch;
 mod deidentify;
+mod import;
 mod finalise;
 mod letter;
 mod markdown;
@@ -167,6 +168,29 @@ enum Commands {
         /// Number of recent sessions to include for context
         #[arg(long, default_value = "3")]
         sessions: usize,
+    },
+
+    /// Import referral documents from TM3 or local PDFs into the client directory.
+    #[command(name = "import-doc")]
+    ImportDoc {
+        /// Client ID
+        id: String,
+
+        /// Path to a local PDF file to import (bypasses TM3)
+        #[arg(long)]
+        pdf: Option<String>,
+
+        /// Document type override (referral, patient-info, gp-letter, assessment)
+        #[arg(long, name = "type")]
+        doc_type: Option<String>,
+
+        /// Date for the document (YYYY-MM-DD, defaults to today or filename date)
+        #[arg(long)]
+        date: Option<String>,
+
+        /// Preview without downloading or saving
+        #[arg(long)]
+        dry_run: bool,
     },
 
     /// Batch-process multiple session notes: write observations, cook, review, save.
@@ -353,6 +377,24 @@ fn main() -> Result<()> {
         },
         Commands::NoteFinalise { id } => finalise::run(&id),
         Commands::NotePrepare { id, sessions } => prepare::run(&id, sessions),
+        Commands::ImportDoc {
+            id,
+            pdf,
+            doc_type,
+            date,
+            dry_run,
+        } => {
+            if let Some(pdf_path) = pdf {
+                import::import_local_pdf(
+                    &id,
+                    &pdf_path,
+                    doc_type.as_deref(),
+                    date.as_deref(),
+                )
+            } else {
+                import::import_from_tm3(&id, dry_run)
+            }
+        }
         Commands::NotesBatch { file, no_save } => batch::run(&file, no_save),
         Commands::Send {
             client_id,
