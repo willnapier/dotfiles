@@ -30,6 +30,8 @@ enum Cmd {
     Login,
     /// Load cookies and inspect the authenticated portal
     Inspect,
+    /// Automated login using stored credentials, captures session cookies
+    AutoLogin,
     /// Fill an authorisation form from clinical data
     Fill {
         /// Client ID (used to get form data via `clinical auth form <id>`)
@@ -44,6 +46,7 @@ const HC_LOGIN: &str = "https://auth.healthcode.co.uk/login";
 const HC_BASE: &str = "https://auth.healthcode.co.uk";
 const KEYCHAIN_SERVICE: &str = "healthcode-session";
 const KEYCHAIN_ACCOUNT: &str = "healthcode";
+const CRED_SERVICE: &str = "healthcode-login";
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct StoredCookie {
@@ -62,6 +65,7 @@ fn main() -> Result<()> {
         Cmd::Recon => cmd_recon(),
         Cmd::Login => cmd_login(),
         Cmd::Inspect => cmd_inspect(),
+        Cmd::AutoLogin => cmd_auto_login(),
         Cmd::Fill { client_id, dry_run } => cmd_fill(&client_id, dry_run),
     }
 }
@@ -241,6 +245,203 @@ fn cmd_login() -> Result<()> {
     eprintln!("[login] Press Enter to close browser...");
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;
+
+    Ok(())
+}
+
+fn load_credentials() -> Result<(String, String)> {
+    // Username is the account name in the keychain entry
+    let username = "pa@willnapier.com".to_string();
+
+    let output = if cfg!(target_os = "macos") {
+        Command::new("security")
+            .args(["find-generic-password", "-s", CRED_SERVICE, "-a", &username, "-w"])
+            .output()
+            .context("Failed to read credentials from macOS keychain")?
+    } else {
+        Command::new("secret-tool")
+            .args(["lookup", "service", CRED_SERVICE, "account", &username])
+            .output()
+            .context("Failed to read credentials from secret-service")?
+    };
+
+    if !output.status.success() {
+        bail!(
+            "Healthcode credentials not found. Store them first:\n  \
+             macOS: security add-generic-password -s {} -a {} -w <password>\n  \
+             Linux: echo '<password>' | secret-tool store --label Healthcode service {} account {}",
+            CRED_SERVICE, username, CRED_SERVICE, username
+        );
+    }
+
+    let password = String::from_utf8(output.stdout)?.trim().to_string();
+    Ok((username, password))
+}
+
+fn cmd_auto_login() -> Result<()> {
+    // Delete any existing session
+    keychain_delete().ok();
+
+    let (username, password) = load_credentials()?;
+    eprintln!("[auto-login] Credentials loaded for {}", username);
+
+    eprintln!("[auto-login] Launching Chrome (visible for review)...");
+    let browser = launch_browser(false)?;
+    let tab = browser.new_tab()?;
+    tab.set_default_timeout(Duration::from_secs(30));
+
+    eprintln!("[auto-login] Navigating to Healthcode login...");
+    tab.navigate_to(HC_LOGIN)?;
+    std::thread::sleep(Duration::from_secs(5));
+
+    // Inspect login page and fill credentials
+    eprintln!("[auto-login] Filling credentials...");
+
+    let escaped_user = username.replace('\\', "\\\\").replace('"', "\\\"");
+    let escaped_pass = password.replace('\\', "\\\\").replace('"', "\\\"");
+
+    // Fill username field (name="username", id="j_username")
+    let user_filled = tab.evaluate(&format!(r#"
+        (function() {{
+            var el = document.getElementById('j_username')
+                  || document.querySelector('input[name="username"]');
+            if (el) {{
+                el.value = "{escaped_user}";
+                el.dispatchEvent(new Event('input', {{bubbles: true}}));
+                el.dispatchEvent(new Event('change', {{bubbles: true}}));
+                return el.id || el.name;
+            }}
+            return null;
+        }})()
+    "#), false)?;
+
+    if let Some(val) = &user_filled.value {
+        if val.is_null() {
+            eprintln!("[auto-login] WARNING: Could not find username field");
+        } else {
+            eprintln!("[auto-login] Username filled (field: {})", val);
+        }
+    }
+
+    // Fill BOTH password fields: visible (id="password") and hidden (id="j_password").
+    // Healthcode's JS copies visible→hidden on keypress, but programmatic .value=
+    // skips that. We fill both explicitly and fire all relevant events.
+    let pass_filled = tab.evaluate(&format!(r#"
+        (function() {{
+            var visible = document.getElementById('password');
+            var hidden = document.getElementById('j_password');
+            var filled = [];
+            if (visible) {{
+                visible.value = "{escaped_pass}";
+                visible.dispatchEvent(new Event('input', {{bubbles: true}}));
+                visible.dispatchEvent(new Event('change', {{bubbles: true}}));
+                visible.dispatchEvent(new Event('keyup', {{bubbles: true}}));
+                filled.push('password');
+            }}
+            if (hidden) {{
+                hidden.value = "{escaped_pass}";
+                hidden.dispatchEvent(new Event('input', {{bubbles: true}}));
+                hidden.dispatchEvent(new Event('change', {{bubbles: true}}));
+                filled.push('j_password');
+            }}
+            return filled.length > 0 ? filled.join('+') : null;
+        }})()
+    "#), false)?;
+
+    if let Some(val) = &pass_filled.value {
+        if val.is_null() {
+            eprintln!("[auto-login] WARNING: Could not find password field");
+        } else {
+            eprintln!("[auto-login] Password filled (field: {})", val);
+        }
+    }
+
+    // Click the Login button (id="form_submit", type="button" — JS-driven,
+    // not a standard form submit)
+    eprintln!("[auto-login] Submitting...");
+    let _ = tab.evaluate(r#"
+        (function() {
+            var el = document.getElementById('form_submit');
+            if (el) { el.click(); return 'form_submit'; }
+            // Fallback: any button with Login text
+            var buttons = document.querySelectorAll('button');
+            for (var i = 0; i < buttons.length; i++) {
+                if (buttons[i].textContent.trim().toLowerCase() === 'login') {
+                    buttons[i].click();
+                    return buttons[i].id || 'login-button';
+                }
+            }
+            return null;
+        })()
+    "#, false)?;
+
+    // Wait for authentication
+    eprintln!("[auto-login] Waiting for redirect...");
+    for attempt in 0..30 {
+        std::thread::sleep(Duration::from_secs(2));
+        let url = tab.get_url();
+        if !url.contains("login") && !url.contains("Login") && !url.contains("auth.healthcode") {
+            eprintln!("[auto-login] Authenticated! URL: {}", url);
+
+            std::thread::sleep(Duration::from_secs(2));
+            let cookies = capture_cookies(&tab)?;
+            let json = serde_json::to_string(&cookies)?;
+            keychain_store(&json)?;
+            eprintln!("[auto-login] Session stored ({} cookies).", cookies.len());
+
+            // Dump post-login structure
+            let info = tab.evaluate(r#"
+                (function() {
+                    var info = { url: window.location.href, title: document.title };
+                    var links = document.querySelectorAll('a[href]');
+                    info.navLinks = Array.from(links).map(function(a) {
+                        return {href: a.href, text: a.textContent.trim().substring(0, 80)};
+                    }).filter(function(l) { return l.text.length > 0; }).slice(0, 30);
+                    return JSON.stringify(info, null, 2);
+                })()
+            "#, false)?;
+
+            if let Some(val) = info.value {
+                let fallback = val.to_string();
+                let s = val.as_str().unwrap_or(&fallback);
+                eprintln!("[auto-login] Portal structure:");
+                println!("{}", s);
+            }
+
+            // Screenshot
+            let ss_path = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
+                .join(".config/clinical-product/healthcode-autologin.png");
+            if let Ok(bytes) = tab.capture_screenshot(
+                headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
+                None, None, true,
+            ) {
+                std::fs::write(&ss_path, &bytes)?;
+                eprintln!("[auto-login] Screenshot: {}", ss_path.display());
+            }
+
+            return Ok(());
+        }
+        if attempt % 5 == 4 {
+            eprintln!("[auto-login] Still waiting... ({}s)", (attempt + 1) * 2);
+        }
+    }
+
+    // If we get here, auto-login may have failed
+    eprintln!("[auto-login] Auto-login didn't redirect after 60s.");
+    eprintln!("[auto-login] The browser is still open — complete login manually if needed.");
+    eprintln!("[auto-login] Press Enter when done...");
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+
+    let url = tab.get_url();
+    if url.contains("login") || url.contains("Login") {
+        bail!("Login failed — still on login page.");
+    }
+
+    let cookies = capture_cookies(&tab)?;
+    let json = serde_json::to_string(&cookies)?;
+    keychain_store(&json)?;
+    eprintln!("[auto-login] Session stored ({} cookies).", cookies.len());
 
     Ok(())
 }
