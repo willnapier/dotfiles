@@ -17,18 +17,26 @@ const BASE_URL: &str = "https://rest.runpod.io/v1";
 ///
 /// On macOS, reads from the `runpod-api-key` generic password entry.
 /// On Linux, reads from libsecret under the same service name.
-/// On Windows, reads from Credential Manager.
-///
-/// For now, macOS-only via `security` CLI. Cross-platform keyring
-/// support comes from the `keyring` crate when we need it.
+/// Cross-platform: macOS Keychain (`security`) or Linux secret-service (`secret-tool`).
 pub fn load_api_key() -> Result<String> {
-    let output = Command::new("security")
-        .args(["find-generic-password", "-s", "runpod-api-key", "-w"])
-        .output()
-        .context("Failed to run `security`. Is it on macOS?")?;
+    let output = if cfg!(target_os = "macos") {
+        Command::new("security")
+            .args(["find-generic-password", "-s", "runpod-api-key", "-w"])
+            .output()
+            .context("Failed to run `security`")?
+    } else {
+        Command::new("secret-tool")
+            .args(["lookup", "service", "runpod-api-key"])
+            .output()
+            .context("Failed to run `secret-tool` — is libsecret installed?")?
+    };
 
     if !output.status.success() {
-        bail!("RunPod API key not found in keychain (service: runpod-api-key). Run `security add-generic-password -s runpod-api-key -a <account> -w <key>` to add it.");
+        if cfg!(target_os = "macos") {
+            bail!("RunPod API key not found. Run: security add-generic-password -s runpod-api-key -a clinical-product -w <key>");
+        } else {
+            bail!("RunPod API key not found. Run: echo -n '<key>' | secret-tool store --label 'RunPod API Key' service runpod-api-key account clinical-product");
+        }
     }
 
     Ok(String::from_utf8(output.stdout)?.trim().to_string())
