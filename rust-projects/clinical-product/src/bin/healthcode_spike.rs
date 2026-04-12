@@ -7,6 +7,7 @@
 //!   healthcode_spike auto-login          — automated login with TOTP support
 //!   healthcode_spike totp-test            — verify TOTP secret is correct
 //!   healthcode_spike fill <client_id>   — fill authorisation form from clinical data
+//!   healthcode_spike explore             — navigate into ePractice and map pages/forms
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
@@ -36,6 +37,8 @@ enum Cmd {
     AutoLogin,
     /// Test TOTP code generation (verify secret is correct)
     TotpTest,
+    /// Navigate into ePractice and map all available pages/forms
+    Explore,
     /// Fill an authorisation form from clinical data
     Fill {
         /// Client ID (used to get form data via `clinical auth form <id>`)
@@ -52,7 +55,7 @@ const KEYCHAIN_SERVICE: &str = "healthcode-session";
 const KEYCHAIN_ACCOUNT: &str = "healthcode";
 const CRED_SERVICE: &str = "healthcode-login";
 const TOTP_SERVICE: &str = "healthcode-totp";
-const TOTP_ACCOUNT: &str = "pa@willnapier.com";
+const TOTP_ACCOUNT: &str = "00QHY2BID";
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct StoredCookie {
@@ -73,6 +76,7 @@ fn main() -> Result<()> {
         Cmd::Inspect => cmd_inspect(),
         Cmd::AutoLogin => cmd_auto_login(),
         Cmd::TotpTest => cmd_totp_test(),
+        Cmd::Explore => cmd_explore(),
         Cmd::Fill { client_id, dry_run } => cmd_fill(&client_id, dry_run),
     }
 }
@@ -258,7 +262,7 @@ fn cmd_login() -> Result<()> {
 
 fn load_credentials() -> Result<(String, String)> {
     // Username is the account name in the keychain entry
-    let username = "pa@willnapier.com".to_string();
+    let username = "00QHY2BID".to_string();
 
     let output = if cfg!(target_os = "macos") {
         Command::new("security")
@@ -604,6 +608,172 @@ fn cmd_inspect() -> Result<()> {
 
     if !headless {
         eprintln!("[inspect] Press Enter to close...");
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+    }
+
+    Ok(())
+}
+
+fn cmd_explore() -> Result<()> {
+    let cookies = load_cookies()?;
+    eprintln!("[explore] Loaded {} cookies.", cookies.len());
+
+    let headless = std::env::var("HC_VISIBLE").is_err();
+    let browser = launch_browser(headless)?;
+    let tab = browser.new_tab()?;
+    tab.set_default_timeout(Duration::from_secs(30));
+
+    inject_cookies(&tab, &cookies)?;
+
+    // Navigate to portal
+    tab.navigate_to("https://accounts.healthcode.co.uk/index.html#/product-services")?;
+    std::thread::sleep(Duration::from_secs(5));
+
+    let url = tab.get_url();
+    if url.contains("login") {
+        bail!("Session expired. Run 'healthcode auto-login' first.");
+    }
+
+    eprintln!("[explore] On portal: {}", url);
+
+    // Click "Proceed to your product" to enter ePractice
+    eprintln!("[explore] Clicking into ePractice...");
+    let click_result = tab.evaluate(r#"
+        (function() {
+            var buttons = document.querySelectorAll('button, a');
+            for (var i = 0; i < buttons.length; i++) {
+                var text = buttons[i].textContent.toLowerCase();
+                if (text.includes('proceed')) {
+                    buttons[i].click();
+                    return 'Clicked: ' + buttons[i].textContent.trim();
+                }
+            }
+            return 'No proceed button found';
+        })()
+    "#, false)?;
+
+    if let Some(val) = &click_result.value {
+        eprintln!("[explore] {}", val.as_str().unwrap_or("(no result)"));
+    }
+
+    // Wait for ePractice to load
+    std::thread::sleep(Duration::from_secs(8));
+
+    let epractice_url = tab.get_url();
+    eprintln!("[explore] ePractice URL: {}", epractice_url);
+
+    // Deep DOM inspection of ePractice
+    let info = tab.evaluate(r#"
+        (function() {
+            var info = {};
+            info.url = window.location.href;
+            info.title = document.title;
+            info.bodyPreview = document.body ? document.body.innerText.substring(0, 3000) : '';
+
+            // All navigation links
+            var links = document.querySelectorAll('a[href], [role="menuitem"], [role="tab"]');
+            info.navigation = Array.from(links).map(function(a) {
+                return {
+                    href: a.href || '',
+                    text: a.textContent.trim().substring(0, 80),
+                    class: (a.className || '').toString().substring(0, 60),
+                    role: a.getAttribute('role') || ''
+                };
+            }).filter(function(l) { return l.text.length > 0 && l.text.length < 80; }).slice(0, 50);
+
+            // All buttons
+            var buttons = document.querySelectorAll('button, input[type="submit"], a.btn');
+            info.buttons = Array.from(buttons).map(function(el) {
+                return {
+                    text: el.textContent.trim().substring(0, 60),
+                    class: (el.className || '').toString().substring(0, 60),
+                    href: el.href || '',
+                    id: el.id || ''
+                };
+            }).filter(function(b) { return b.text.length > 0; }).slice(0, 30);
+
+            // All forms
+            var forms = document.querySelectorAll('form');
+            info.forms = Array.from(forms).map(function(f) {
+                return {
+                    action: f.action,
+                    method: f.method,
+                    id: f.id,
+                    class: f.className.substring(0, 60),
+                    inputs: Array.from(f.querySelectorAll('input, select, textarea')).map(function(inp) {
+                        return {
+                            tag: inp.tagName, type: inp.type, name: inp.name, id: inp.id,
+                            placeholder: inp.placeholder || ''
+                        };
+                    })
+                };
+            });
+
+            // Look for menu/sidebar navigation
+            var navElements = document.querySelectorAll('nav, [role="navigation"], .sidebar, .menu, [class*="nav"], [class*="menu"]');
+            info.navMenus = Array.from(navElements).map(function(nav) {
+                var items = Array.from(nav.querySelectorAll('a, button, [role="menuitem"]'));
+                return {
+                    tag: nav.tagName,
+                    class: (nav.className || '').toString().substring(0, 80),
+                    items: items.map(function(item) {
+                        return { text: item.textContent.trim().substring(0, 60), href: item.href || '' };
+                    }).filter(function(i) { return i.text.length > 0; }).slice(0, 20)
+                };
+            }).filter(function(n) { return n.items.length > 0; });
+
+            // Look specifically for claim/auth/AXA related content
+            info.claimRelated = [];
+            var allText = document.body ? document.body.innerText : '';
+            var keywords = ['claim', 'auth', 'axa', 'bupa', 'aviva', 'vitality', 'extension', 'referral', 'pre-auth'];
+            for (var i = 0; i < keywords.length; i++) {
+                if (allText.toLowerCase().includes(keywords[i])) {
+                    info.claimRelated.push(keywords[i]);
+                }
+            }
+
+            return JSON.stringify(info, null, 2);
+        })()
+    "#, false)?;
+
+    if let Some(val) = info.value {
+        let fallback = val.to_string();
+        let s = val.as_str().unwrap_or(&fallback);
+        println!("{}", s);
+    }
+
+    // Screenshot
+    let ss_path = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
+        .join(".config/clinical-product/healthcode-epractice.png");
+    if let Ok(bytes) = tab.capture_screenshot(
+        headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
+        None, None, true,
+    ) {
+        std::fs::write(&ss_path, &bytes)?;
+        eprintln!("[explore] Screenshot: {}", ss_path.display());
+    }
+
+    // If there are sub-pages, try to navigate to each and capture structure
+    // Look for iframe-based navigation (common in ePractice-style portals)
+    let iframes = tab.evaluate(r#"
+        (function() {
+            var frames = document.querySelectorAll('iframe');
+            return Array.from(frames).map(function(f) {
+                return { src: f.src || '', id: f.id || '', name: f.name || '' };
+            });
+        })()
+    "#, false)?;
+
+    if let Some(val) = &iframes.value {
+        let s = val.to_string();
+        if s != "[]" {
+            eprintln!("[explore] Iframes found: {}", s);
+        }
+    }
+
+    if !headless {
+        eprintln!("[explore] Press Enter to close...");
         let mut input = String::new();
         std::io::stdin().read_line(&mut input)?;
     }
