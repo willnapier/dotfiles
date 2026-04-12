@@ -218,17 +218,16 @@ pub fn import_from_tm3(client_id: &str, dry_run: bool) -> Result<()> {
 
     eprintln!("Importing documents for {} (TM3 ID: {})...", client_id, tm3_id);
 
-    // Call the TM3 document scraper binary
-    let output = Command::new("tm3-import-docs")
-        .args([&tm3_id])
+    // Step 1: List documents via tm3-download (headless Chrome → TM3)
+    let list_output = Command::new("tm3-download")
+        .args(["list", &tm3_id, "--json"])
         .output();
 
-    match output {
+    match list_output {
         Ok(out) if out.status.success() => {
             let stdout = String::from_utf8_lossy(&out.stdout);
-            // Parse the JSON output: list of {name, url, type} objects
             let docs: Vec<serde_json::Value> =
-                serde_json::from_str(&stdout).context("Failed to parse tm3-import-docs output")?;
+                serde_json::from_str(&stdout).context("Failed to parse tm3-download output")?;
 
             if docs.is_empty() {
                 eprintln!("No documents found in TM3 for this client.");
@@ -248,10 +247,13 @@ pub fn import_from_tm3(client_id: &str, dry_run: bool) -> Result<()> {
                 return Ok(());
             }
 
-            // Download and import each relevant document
+            // Step 2: Download each relevant document via tm3-download get
             for doc in &docs {
                 let name = doc["name"].as_str().unwrap_or("unknown");
-                let url = doc["url"].as_str().unwrap_or("");
+                let index = match doc["index"].as_u64() {
+                    Some(i) => i.to_string(),
+                    None => continue,
+                };
                 let doc_type = match classify_document(name) {
                     Some(t) => t,
                     None => continue, // skip administrative docs
@@ -259,16 +261,19 @@ pub fn import_from_tm3(client_id: &str, dry_run: bool) -> Result<()> {
 
                 eprintln!("  Downloading: {}...", name);
 
-                // Download PDF to temp file
                 let tmp_path = format!("/tmp/tm3-import-{}.pdf", uuid_short());
-                let dl_status = Command::new("curl")
-                    .args(["-s", "-o", &tmp_path, url])
+                let dl_status = Command::new("tm3-download")
+                    .args(["get", &tm3_id, &index, "--output", &tmp_path])
                     .status();
 
                 match dl_status {
                     Ok(s) if s.success() => {
-                        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-                        if let Err(e) = import_local_pdf(client_id, &tmp_path, Some(doc_type), Some(&today)) {
+                        let date = if doc["date"].as_str().map_or(true, |d| d.is_empty()) {
+                            chrono::Local::now().format("%Y-%m-%d").to_string()
+                        } else {
+                            doc["date"].as_str().unwrap().to_string()
+                        };
+                        if let Err(e) = import_local_pdf(client_id, &tmp_path, Some(doc_type), Some(&date)) {
                             eprintln!("  Warning: failed to import {}: {}", name, e);
                         }
                         std::fs::remove_file(&tmp_path).ok();
@@ -282,13 +287,13 @@ pub fn import_from_tm3(client_id: &str, dry_run: bool) -> Result<()> {
         Ok(out) => {
             let stderr = String::from_utf8_lossy(&out.stderr);
             eprintln!(
-                "tm3-import-docs not available or failed: {}",
+                "tm3-download not available or failed: {}",
                 stderr.trim()
             );
             eprintln!("Use `clinical import-doc <client_id> --pdf <path>` to import a local PDF instead.");
         }
         Err(_) => {
-            eprintln!("tm3-import-docs not found on PATH.");
+            eprintln!("tm3-download not found on PATH.");
             eprintln!("Use `clinical import-doc <client_id> --pdf <path>` to import a local PDF instead.");
         }
     }

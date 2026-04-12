@@ -37,6 +37,9 @@ enum Cmd {
     List {
         /// TM3 client ID
         tm3_id: String,
+        /// Output as JSON (for programmatic consumption by `clinical import-doc`)
+        #[arg(long)]
+        json: bool,
     },
     /// Download a single document by index (from `list` output)
     Get {
@@ -73,7 +76,7 @@ struct StoredCookie {
 
 // ── Document metadata extracted from DOM ────────────────────────────────────
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 struct DocEntry {
     index: usize,
     name: String,
@@ -92,7 +95,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Cmd::List { tm3_id } => cmd_list(&tm3_id),
+        Cmd::List { tm3_id, json } => cmd_list(&tm3_id, json),
         Cmd::Get {
             tm3_id,
             doc_index,
@@ -104,7 +107,7 @@ fn main() -> Result<()> {
 
 // ── List documents ──────────────────────────────────────────────────────────
 
-fn cmd_list(tm3_id: &str) -> Result<()> {
+fn cmd_list(tm3_id: &str, json: bool) -> Result<()> {
     let cookies = load_cookies_from_keychain()?;
     eprintln!("[list] Loaded session from keychain.");
 
@@ -115,6 +118,12 @@ fn cmd_list(tm3_id: &str) -> Result<()> {
     navigate_to_documents(&tab, &cookies, tm3_id)?;
 
     let docs = extract_document_list(&tab)?;
+
+    if json {
+        // Machine-readable output for `clinical import-doc`
+        println!("{}", serde_json::to_string(&docs)?);
+        return Ok(());
+    }
 
     if docs.is_empty() {
         println!("No documents found for client {}.", tm3_id);
