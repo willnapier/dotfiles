@@ -1,0 +1,432 @@
+/* ------------------------------------------------------------------ */
+/* Clinical Dashboard — style.css                                     */
+/* Professional, minimal. Respects prefers-color-scheme.              */
+/* ------------------------------------------------------------------ */
+
+/* --- Reset & base --- */
+
+*,
+*::before,
+*::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    --font-system: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        "Helvetica Neue", Arial, sans-serif;
+    --font-mono: "SF Mono", "Cascadia Code", "Fira Code", "JetBrains Mono",
+        "Consolas", monospace;
+
+    /* Light palette */
+    --bg: #f5f6f8;
+    --bg-card: #ffffff;
+    --bg-sidebar: #fafbfc;
+    --border: #e0e3e8;
+    --text: #1e2530;
+    --text-muted: #6b7280;
+    --accent: #2563a0;
+    --accent-hover: #1d4f80;
+    --danger: #c0392b;
+    --danger-hover: #962d22;
+    --success: #1a7a4c;
+    --success-hover: #14603b;
+    --warning: #b8860b;
+    --note-bg: #f9fafb;
+    --sidebar-active: #eef2f7;
+    --toast-bg: #1e2530;
+    --toast-text: #f5f6f8;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #0f1117;
+        --bg-card: #1a1d27;
+        --bg-sidebar: #14161e;
+        --border: #2a2d3a;
+        --text: #e2e4e9;
+        --text-muted: #8b8fa4;
+        --accent: #5b9bd5;
+        --accent-hover: #7bb3e8;
+        --danger: #e06050;
+        --danger-hover: #c94a3c;
+        --success: #4caf7a;
+        --success-hover: #3d9968;
+        --warning: #d4a020;
+        --note-bg: #12141c;
+        --sidebar-active: #1f2233;
+        --toast-bg: #e2e4e9;
+        --toast-text: #0f1117;
+    }
+}
+
+html {
+    font-size: 15px;
+}
+
+body {
+    font-family: var(--font-system);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* --- Header --- */
+
+header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-card);
+}
+
+header h1 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+
+header time {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+/* --- Layout --- */
+
+.layout {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+/* --- Sidebar --- */
+
+aside {
+    width: 250px;
+    min-width: 250px;
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.sidebar-header h2 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+}
+
+.icon-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1.1rem;
+    cursor: pointer;
+    padding: 0.2rem;
+    border-radius: 4px;
+}
+
+.icon-btn:hover {
+    color: var(--accent);
+    background: var(--sidebar-active);
+}
+
+/* --- Client list --- */
+
+.client-list {
+    list-style: none;
+    padding: 0.25rem 0;
+}
+
+.client-list li {
+    padding: 0.6rem 1rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+    border-left: 3px solid transparent;
+    transition: background 0.1s, border-color 0.1s;
+}
+
+.client-list li:hover {
+    background: var(--sidebar-active);
+}
+
+.client-list li.active {
+    background: var(--sidebar-active);
+    border-left-color: var(--accent);
+    font-weight: 500;
+}
+
+.client-list li.placeholder {
+    color: var(--text-muted);
+    cursor: default;
+    font-style: italic;
+}
+
+.client-list .client-time {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    margin-right: 0.5rem;
+    font-variant-numeric: tabular-nums;
+}
+
+/* --- Main content --- */
+
+main {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+}
+
+/* --- Cards --- */
+
+.card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem;
+    width: 100%;
+    max-width: 800px;
+}
+
+.card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.card-header h2 {
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.badge {
+    font-size: 0.75rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 9999px;
+    background: var(--sidebar-active);
+    color: var(--text-muted);
+}
+
+/* --- Details grid --- */
+
+.details-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.25rem 0.75rem;
+    font-size: 0.88rem;
+}
+
+.details-grid dt {
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.details-grid dd {
+    color: var(--text);
+}
+
+/* --- Observation textarea --- */
+
+label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-bottom: 0.4rem;
+}
+
+textarea {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.88rem;
+    line-height: 1.5;
+    resize: vertical;
+    background: var(--bg);
+    color: var(--text);
+}
+
+textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* --- Buttons --- */
+
+.form-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+.btn {
+    padding: 0.55rem 1.25rem;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.88rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-primary {
+    background: var(--accent);
+    color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+}
+
+.btn-accept {
+    background: var(--success);
+    color: #fff;
+}
+
+.btn-accept:hover:not(:disabled) {
+    background: var(--success-hover);
+}
+
+.btn-edit {
+    background: var(--warning);
+    color: #fff;
+}
+
+.btn-edit:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--warning) 80%, #000);
+}
+
+.btn-reject {
+    background: var(--danger);
+    color: #fff;
+}
+
+.btn-reject:hover:not(:disabled) {
+    background: var(--danger-hover);
+}
+
+/* --- Note output --- */
+
+.note-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+}
+
+.note-header h3 {
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+.status-indicator {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.status-indicator.streaming::after {
+    content: "";
+    display: inline-block;
+    width: 6px;
+    height: 14px;
+    margin-left: 4px;
+    background: var(--accent);
+    animation: blink 0.8s step-end infinite;
+    vertical-align: text-bottom;
+}
+
+@keyframes blink {
+    50% { opacity: 0; }
+}
+
+.note-output {
+    background: var(--note-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    min-height: 8rem;
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+/* --- Empty state --- */
+
+.empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+}
+
+/* --- Toast --- */
+
+.toast {
+    position: fixed;
+    bottom: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--toast-bg);
+    color: var(--toast-text);
+    padding: 0.6rem 1.25rem;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    z-index: 100;
+    transition: opacity 0.3s;
+}
+
+.toast.error {
+    background: var(--danger);
+    color: #fff;
+}
+
+.toast[hidden] {
+    display: none;
+}
+
+/* --- Footer --- */
+
+footer {
+    text-align: center;
+    padding: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    border-top: 1px solid var(--border);
+    background: var(--bg-card);
+}

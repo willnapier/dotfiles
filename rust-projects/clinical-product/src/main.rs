@@ -4,6 +4,8 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
 
+mod dashboard;
+mod referral;
 mod runpod;
 mod voice_pod;
 
@@ -63,6 +65,41 @@ enum Command {
         #[command(subcommand)]
         action: VoicePodAction,
     },
+
+    /// Referral intake from IMAP email.
+    ///
+    /// Watches a configured inbox for referral emails, extracts client
+    /// metadata, and proposes scaffolding a new client directory.
+    Referral {
+        #[command(subcommand)]
+        action: ReferralAction,
+    },
+
+    /// Start the clinical dashboard (local web UI).
+    ///
+    /// Serves a browser-based note-writing interface on localhost.
+    Dashboard {
+        /// Port to listen on
+        #[arg(long, default_value = "3456")]
+        port: u16,
+
+        /// Open browser automatically
+        #[arg(long)]
+        open: bool,
+    },
+}
+
+#[derive(Parser, Debug)]
+enum ReferralAction {
+    /// Check for new (unseen) referral emails.
+    Check,
+    /// List recent referrals.
+    List {
+        #[arg(long, default_value = "10")]
+        limit: usize,
+    },
+    /// Process a specific referral by UID (extract, confirm, scaffold).
+    Process { uid: u32 },
 }
 
 #[derive(Parser, Debug)]
@@ -303,6 +340,41 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::VoicePod { action } => {
             handle_voice_pod(action).await?;
+        }
+        Command::Referral { action } => {
+            let config = referral::load_referral_config()?;
+            match action {
+                ReferralAction::Check => {
+                    let referrals = referral::check_referrals(&config)?;
+                    if referrals.is_empty() {
+                        println!("No new referral emails found.");
+                    } else {
+                        println!("Found {} new referral(s):\n", referrals.len());
+                        for r in &referrals {
+                            referral::display_referral(r);
+                            println!();
+                        }
+                    }
+                }
+                ReferralAction::List { limit } => {
+                    let referrals = referral::list_referrals(&config, limit)?;
+                    if referrals.is_empty() {
+                        println!("No referral emails found.");
+                    } else {
+                        println!("Recent referrals ({}):\n", referrals.len());
+                        for r in &referrals {
+                            referral::display_referral(r);
+                            println!();
+                        }
+                    }
+                }
+                ReferralAction::Process { uid } => {
+                    referral::process_referral(&config, uid)?;
+                }
+            }
+        }
+        Command::Dashboard { port, open } => {
+            dashboard::serve(port, open).await?;
         }
     }
 

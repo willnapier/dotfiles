@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Clinical Dashboard</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <header>
+        <h1>Clinical Dashboard</h1>
+        <time id="header-date"></time>
+    </header>
+
+    <div class="layout">
+        <aside id="sidebar">
+            <div class="sidebar-header">
+                <h2>Today</h2>
+                <button id="refresh-btn" class="icon-btn" title="Refresh">&#x21bb;</button>
+            </div>
+            <ul id="client-list" class="client-list">
+                <li class="placeholder">Loading&hellip;</li>
+            </ul>
+        </aside>
+
+        <main>
+            <!-- Client info card (hidden until selection) -->
+            <section id="client-card" class="card" hidden>
+                <div class="card-header">
+                    <h2 id="card-client-id"></h2>
+                    <span id="card-badge" class="badge"></span>
+                </div>
+                <dl id="card-details" class="details-grid"></dl>
+            </section>
+
+            <!-- Observation form -->
+            <section id="observation-section" class="card" hidden>
+                <label for="observation">Session observation</label>
+                <textarea
+                    id="observation"
+                    rows="6"
+                    placeholder="Client presented with&hellip;"
+                    spellcheck="true"
+                ></textarea>
+                <div class="form-actions">
+                    <button id="generate-btn" class="btn btn-primary" disabled>
+                        Generate Note
+                    </button>
+                </div>
+            </section>
+
+            <!-- Generated note display -->
+            <section id="note-section" class="card" hidden>
+                <div class="note-header">
+                    <h3>Generated Note</h3>
+                    <span id="note-status" class="status-indicator"></span>
+                </div>
+                <pre id="note-output" class="note-output"></pre>
+                <div id="note-actions" class="form-actions" hidden>
+                    <button id="accept-btn" class="btn btn-accept">Accept &amp; Save</button>
+                    <button id="edit-btn" class="btn btn-edit">Edit</button>
+                    <button id="reject-btn" class="btn btn-reject">Reject</button>
+                </div>
+            </section>
+
+            <!-- Edit mode (replaces pre with textarea) -->
+            <section id="edit-section" class="card" hidden>
+                <h3>Edit Note</h3>
+                <textarea id="edit-area" rows="20"></textarea>
+                <div class="form-actions">
+                    <button id="save-edited-btn" class="btn btn-accept">Save Edited Note</button>
+                    <button id="cancel-edit-btn" class="btn btn-reject">Cancel</button>
+                </div>
+            </section>
+
+            <!-- Empty state -->
+            <section id="empty-state" class="card empty-state">
+                <p>Select a client from the sidebar to begin.</p>
+            </section>
+        </main>
+    </div>
+
+    <!-- Toast / error banner -->
+    <div id="toast" class="toast" hidden></div>
+
+    <footer>
+        <span>127.0.0.1 &middot; local only</span>
+    </footer>
+
+    <script src="/app.js"></script>
+</body>
+</html>

@@ -15,3 +15,13 @@ headless_chrome = "1.0"
 toml = "0.8"
 dirs = "6"
 chrono = "0.4"
+
+# Referral intake (IMAP)
+imap = "3.0.0-alpha.15"
+mail-parser = "0.9"
+regex = "1"
+
+# Dashboard (local web UI)
+axum = "0.8"
+tower-http = { version = "0.6", features = ["fs", "cors"] }
+async-stream = "0.3"
