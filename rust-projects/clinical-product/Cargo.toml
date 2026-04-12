@@ -15,6 +15,7 @@ headless_chrome = "1.0"
 toml = "0.8"
 dirs = "6"
 chrono = "0.4"
+totp-rs = { version = "5", features = ["gen_secret"] }
 
 # Referral intake (IMAP)
 imap = "3.0.0-alpha.15"

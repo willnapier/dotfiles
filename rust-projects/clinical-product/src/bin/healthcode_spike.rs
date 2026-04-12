@@ -4,6 +4,8 @@
 //!   healthcode_spike recon              — inspect login page (no credentials needed)
 //!   healthcode_spike login              — manual login + cookie capture to keychain
 //!   healthcode_spike inspect            — load cookies, inspect the portal
+//!   healthcode_spike auto-login          — automated login with TOTP support
+//!   healthcode_spike totp-test            — verify TOTP secret is correct
 //!   healthcode_spike fill <client_id>   — fill authorisation form from clinical data
 
 use anyhow::{bail, Context, Result};
@@ -32,6 +34,8 @@ enum Cmd {
     Inspect,
     /// Automated login using stored credentials, captures session cookies
     AutoLogin,
+    /// Test TOTP code generation (verify secret is correct)
+    TotpTest,
     /// Fill an authorisation form from clinical data
     Fill {
         /// Client ID (used to get form data via `clinical auth form <id>`)
@@ -47,6 +51,8 @@ const HC_BASE: &str = "https://auth.healthcode.co.uk";
 const KEYCHAIN_SERVICE: &str = "healthcode-session";
 const KEYCHAIN_ACCOUNT: &str = "healthcode";
 const CRED_SERVICE: &str = "healthcode-login";
+const TOTP_SERVICE: &str = "healthcode-totp";
+const TOTP_ACCOUNT: &str = "pa@willnapier.com";
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct StoredCookie {
@@ -66,6 +72,7 @@ fn main() -> Result<()> {
         Cmd::Login => cmd_login(),
         Cmd::Inspect => cmd_inspect(),
         Cmd::AutoLogin => cmd_auto_login(),
+        Cmd::TotpTest => cmd_totp_test(),
         Cmd::Fill { client_id, dry_run } => cmd_fill(&client_id, dry_run),
     }
 }
@@ -374,6 +381,103 @@ fn cmd_auto_login() -> Result<()> {
             return null;
         })()
     "#, false)?;
+
+    // Wait for page to respond after submit
+    std::thread::sleep(Duration::from_secs(3));
+
+    // Check if we hit an MFA/TOTP page
+    let page_text = tab
+        .evaluate(
+            "document.body.innerText.substring(0, 500)",
+            false,
+        )
+        .ok()
+        .and_then(|r| r.value)
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_default();
+
+    if page_text.to_lowercase().contains("authenticator")
+        || page_text.to_lowercase().contains("verification code")
+        || page_text.to_lowercase().contains("two-factor")
+        || page_text.to_lowercase().contains("2fa")
+        || page_text.to_lowercase().contains("one-time")
+    {
+        eprintln!("[auto-login] MFA/TOTP prompt detected. Generating code...");
+
+        match load_totp_secret() {
+            Ok(secret) => {
+                let code = generate_totp_code(&secret)?;
+                eprintln!("[auto-login] TOTP code generated ({}**)", &code[..2]);
+
+                // Fill the TOTP field
+                let escaped_code = code.replace('"', "\\\"");
+                tab.evaluate(
+                    &format!(
+                        r#"
+                    (function() {{
+                        var selectors = [
+                            'input[name*="code" i]', 'input[name*="otp" i]',
+                            'input[name*="token" i]', 'input[name*="totp" i]',
+                            'input[id*="code" i]', 'input[id*="otp" i]',
+                            'input[type="tel"]', 'input[type="number"]',
+                            'input[autocomplete="one-time-code"]',
+                            'input[maxlength="6"]', 'input[pattern*="\\d"]'
+                        ];
+                        for (var i = 0; i < selectors.length; i++) {{
+                            var el = document.querySelector(selectors[i]);
+                            if (el) {{
+                                el.value = "{escaped_code}";
+                                el.dispatchEvent(new Event('input', {{bubbles: true}}));
+                                el.dispatchEvent(new Event('change', {{bubbles: true}}));
+                                return el.id || el.name || selectors[i];
+                            }}
+                        }}
+                        return null;
+                    }})()
+                "#
+                    ),
+                    false,
+                )?;
+
+                // Click verify/submit button
+                std::thread::sleep(Duration::from_secs(1));
+                tab.evaluate(
+                    r#"
+                    (function() {
+                        var selectors = [
+                            'button[type="submit"]', 'input[type="submit"]',
+                            'button[id*="verify" i]', 'button[id*="submit" i]',
+                            'button:not([type])'
+                        ];
+                        for (var i = 0; i < selectors.length; i++) {
+                            try {
+                                var el = document.querySelector(selectors[i]);
+                                if (el) { el.click(); return el.textContent || 'clicked'; }
+                            } catch(e) {}
+                        }
+                        // Fallback: click any button with verify/submit/confirm text
+                        var buttons = document.querySelectorAll('button');
+                        for (var i = 0; i < buttons.length; i++) {
+                            var text = buttons[i].textContent.toLowerCase();
+                            if (text.includes('verify') || text.includes('submit') || text.includes('confirm')) {
+                                buttons[i].click();
+                                return buttons[i].textContent;
+                            }
+                        }
+                        return null;
+                    })()
+                "#,
+                    false,
+                )?;
+
+                eprintln!("[auto-login] TOTP submitted, waiting for redirect...");
+            }
+            Err(e) => {
+                eprintln!("[auto-login] TOTP secret not available: {}", e);
+                eprintln!("[auto-login] Enter the code manually in the browser.");
+            }
+        }
+    }
 
     // Wait for authentication
     eprintln!("[auto-login] Waiting for redirect...");
@@ -770,6 +874,58 @@ fn truncate_str(s: &str, max: usize) -> String {
     } else {
         format!("{}...", &s[..max - 3])
     }
+}
+
+fn load_totp_secret() -> Result<String> {
+    let output = if cfg!(target_os = "macos") {
+        Command::new("security")
+            .args(["find-generic-password", "-s", TOTP_SERVICE, "-a", TOTP_ACCOUNT, "-w"])
+            .output()
+            .context("Failed to read TOTP secret from macOS keychain")?
+    } else {
+        Command::new("secret-tool")
+            .args(["lookup", "service", TOTP_SERVICE, "account", TOTP_ACCOUNT])
+            .output()
+            .context("Failed to read TOTP secret from secret-service")?
+    };
+
+    if !output.status.success() {
+        bail!(
+            "TOTP secret not found. Store it first:\n  \
+             Linux: \"<secret>\" | secret-tool store --label \"Healthcode TOTP\" service {} account {}\n  \
+             macOS: security add-generic-password -s {} -a {} -w <secret>",
+            TOTP_SERVICE, TOTP_ACCOUNT, TOTP_SERVICE, TOTP_ACCOUNT
+        );
+    }
+
+    Ok(String::from_utf8(output.stdout)?.trim().to_string())
+}
+
+fn generate_totp_code(secret: &str) -> Result<String> {
+    use totp_rs::{Algorithm, Secret, TOTP};
+
+    let totp = TOTP::new(
+        Algorithm::SHA1,
+        6,  // digits
+        1,  // skew
+        30, // step (seconds)
+        Secret::Encoded(secret.to_string())
+            .to_bytes()
+            .map_err(|e| anyhow::anyhow!("Invalid TOTP secret: {}", e))?,
+    )
+    .map_err(|e| anyhow::anyhow!("Failed to create TOTP: {}", e))?;
+
+    Ok(totp
+        .generate_current()
+        .map_err(|e| anyhow::anyhow!("Failed to generate TOTP code: {}", e))?)
+}
+
+fn cmd_totp_test() -> Result<()> {
+    let secret = load_totp_secret()?;
+    let code = generate_totp_code(&secret)?;
+    println!("Current TOTP code: {}", code);
+    println!("(Compare with your authenticator app to verify the secret is correct)");
+    Ok(())
 }
 
 // --- Helpers ---
