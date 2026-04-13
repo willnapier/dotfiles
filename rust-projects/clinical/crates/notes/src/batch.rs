@@ -168,8 +168,11 @@ pub fn run(input_path: &str, no_save: bool) -> Result<()> {
 
         // Validate
         let validation = note::validate_note(&note_text);
-        let warn = if !validation.is_ok() {
-            format!(" [{}]", validation.errors.join("; "))
+        let all_issues: Vec<&String> = validation.warnings.iter()
+            .chain(validation.failures.iter())
+            .collect();
+        let warn = if !all_issues.is_empty() {
+            format!(" [{}]", all_issues.iter().map(|s| s.as_str()).collect::<Vec<_>>().join("; "))
         } else {
             String::new()
         };

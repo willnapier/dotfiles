@@ -14,7 +14,16 @@ struct Sub {
 }
 
 /// Run the re-identify command.
+/// Route A only — Route C clients do not use re-identification.
 pub fn run(id: &str, file: &str, dry_run: bool, name_form: &str) -> Result<()> {
+    if client::detect_layout(id) == client::Layout::RouteC {
+        bail!(
+            "Client {} uses Route C layout (no private/ directory). \
+             Re-identification is not needed — notes already use real names.",
+            id
+        );
+    }
+
     let client_dir = client::client_dir(id);
     let private_dir = client::private_dir(id);
 

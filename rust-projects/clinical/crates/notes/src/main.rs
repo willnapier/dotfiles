@@ -26,10 +26,13 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Create a new client directory with all required files
+    /// Create a new client directory with all required files (Route C by default)
     Scaffold {
         /// Client ID (e.g. PM84)
         id: String,
+        /// Use legacy Route A layout (private/ directory, de-identification)
+        #[arg(long)]
+        route_a: bool,
     },
 
     /// De-identify a file using identity.yaml substitutions
@@ -325,7 +328,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Scaffold { id } => scaffold::run(&id),
+        Commands::Scaffold { id, route_a } => scaffold::run(&id, route_a),
         Commands::DeIdentify {
             id,
             file,

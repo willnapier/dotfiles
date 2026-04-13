@@ -95,25 +95,39 @@ fn load_reference(filename: &str) -> String {
 
 /// Find correspondence files in the client directory (letters, reports).
 fn find_correspondence(id: &str) -> Vec<(String, String)> {
-    let dir = client::client_dir(id);
     let mut files = Vec::new();
+    let corr_re = Regex::new(r"^\d{4}-\d{2}-\d{2}-.+\.(md|txt)$").unwrap();
 
-    if let Ok(entries) = std::fs::read_dir(&dir) {
-        let corr_re = Regex::new(r"^\d{4}-\d{2}-\d{2}-.+\.(md|txt)$").unwrap();
-        let mut paths: Vec<std::path::PathBuf> = entries
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                let name = e.file_name().to_string_lossy().to_string();
-                corr_re.is_match(&name) && name != format!("{}.md", id)
-            })
-            .map(|e| e.path())
-            .collect();
-        paths.sort();
+    // Determine search directories based on layout.
+    let layout = client::detect_layout(id);
+    let search_dirs: Vec<std::path::PathBuf> = match layout {
+        client::Layout::RouteC => {
+            // Route C: correspondence lives in correspondence/ subdir
+            vec![client::correspondence_dir(id)]
+        }
+        client::Layout::RouteA => {
+            // Route A: date-prefixed files in client root
+            vec![client::client_dir(id)]
+        }
+    };
 
-        for path in paths {
-            let name = path.file_name().unwrap().to_string_lossy().to_string();
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                files.push((name, content));
+    for dir in &search_dirs {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            let mut paths: Vec<std::path::PathBuf> = entries
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    corr_re.is_match(&name) && name != format!("{}.md", id)
+                })
+                .map(|e| e.path())
+                .collect();
+            paths.sort();
+
+            for path in paths {
+                let name = path.file_name().unwrap().to_string_lossy().to_string();
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    files.push((name, content));
+                }
             }
         }
     }
@@ -295,9 +309,12 @@ pub fn save(id: &str, no_train: bool) -> Result<()> {
 
     // Validate
     let validation = validate_note(&note);
-    if !validation.is_ok() {
+    let all_issues: Vec<&String> = validation.warnings.iter()
+        .chain(validation.failures.iter())
+        .collect();
+    if !all_issues.is_empty() {
         eprintln!("Validation errors:");
-        for err in &validation.errors {
+        for err in &all_issues {
             eprintln!("  - {}", err);
         }
         bail!("Note failed validation — not saved");
@@ -608,7 +625,7 @@ Client explored workplace dynamics and values-based decision making.
 **Formulation**: Continued work on distinguishing chosen action from reactive patterns.
 ";
         let result = validate_note(note);
-        assert!(result.is_ok());
+        assert!(result.passed());
     }
 
     #[test]
@@ -621,8 +638,8 @@ Client explored workplace dynamics.
 **Formulation**: Continued work on patterns.
 ";
         let result = validate_note(note);
-        assert!(!result.is_ok());
-        assert!(result.errors.iter().any(|e| e.contains("Risk")));
+        assert!(!result.warnings.is_empty());
+        assert!(result.warnings.iter().any(|e| e.contains("Risk")));
     }
 
     #[test]
@@ -635,8 +652,8 @@ Client explored workplace dynamics.
 Client explored workplace dynamics.
 ";
         let result = validate_note(note);
-        assert!(!result.is_ok());
-        assert!(result.errors.iter().any(|e| e.contains("Formulation")));
+        assert!(!result.warnings.is_empty());
+        assert!(result.warnings.iter().any(|e| e.contains("Formulation")));
     }
 
     #[test]
@@ -649,8 +666,8 @@ Client explored workplace dynamics.
 **Formulation**: Continued work.
 ";
         let result = validate_note(note);
-        assert!(!result.is_ok());
-        assert!(result.errors.iter().any(|e| e.contains("header")));
+        assert!(!result.warnings.is_empty());
+        assert!(result.warnings.iter().any(|e| e.contains("header")));
     }
 
     #[test]
@@ -665,16 +682,16 @@ Client engaged in values clarification work around career transition.
 **Formulation**: Increasing flexibility in responding to uncertainty; moving from avoidance to approach.
 ";
         let result = validate_note(note);
-        assert!(result.is_ok());
-        assert!(result.errors.is_empty());
+        assert!(result.passed());
+        assert!(result.warnings.is_empty());
     }
 
     #[test]
     fn test_validate_note_refusal() {
         let note = "I can't generate clinical notes about this topic.";
         let result = validate_note(note);
-        assert!(!result.is_ok());
-        assert!(result.errors.iter().any(|e| e.contains("refusal")));
+        assert!(!result.warnings.is_empty());
+        assert!(result.warnings.iter().any(|e| e.contains("refusal")));
     }
 
     #[test]

@@ -15,7 +15,18 @@ struct Sub {
 }
 
 /// Run the de-identify command.
+///
+/// Route A only — Route C clients do not use de-identification.
 pub fn run(id: &str, file: Option<&str>, dry_run: bool, list: bool) -> Result<()> {
+    if client::detect_layout(id) == client::Layout::RouteC {
+        bail!(
+            "Client {} uses Route C layout (no private/ directory). \
+             De-identification is not needed — Route C uses real names \
+             on practice-controlled infrastructure.",
+            id
+        );
+    }
+
     let client_dir = client::client_dir(id);
     let private_dir = client::private_dir(id);
 

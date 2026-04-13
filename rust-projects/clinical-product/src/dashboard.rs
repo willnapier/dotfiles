@@ -226,7 +226,9 @@ async fn list_clients() -> Result<Json<Vec<ClientSummary>>, (StatusCode, String)
     let summaries: Vec<ClientSummary> = list_client_dirs()
         .into_iter()
         .map(|id| {
-            let has_identity = clients_dir().join(&id).join("private").join("identity.yaml").exists();
+            // Auto-detect layout: Route C has identity.yaml at root, Route A under private/
+            let has_identity = clients_dir().join(&id).join("identity.yaml").exists()
+                || clients_dir().join(&id).join("private").join("identity.yaml").exists();
             ClientSummary { id, has_identity }
         })
         .collect();
@@ -243,7 +245,10 @@ async fn client_info(Path(id): Path<String>) -> Result<Json<ClientInfo>, (Status
         return Err((StatusCode::BAD_REQUEST, "Invalid client ID".to_string()));
     }
 
-    let identity_path = clients_dir().join(&id).join("private").join("identity.yaml");
+    // Auto-detect layout: Route C has identity.yaml at root, Route A under private/
+    let root_identity = clients_dir().join(&id).join("identity.yaml");
+    let private_identity = clients_dir().join(&id).join("private").join("identity.yaml");
+    let identity_path = if root_identity.exists() { root_identity } else { private_identity };
     let mut info = ClientInfo {
         id: id.clone(),
         referrer: None,
@@ -279,12 +284,19 @@ async fn client_info(Path(id): Path<String>) -> Result<Json<ClientInfo>, (Status
         }
     }
 
-    // Try to count notes on disk for session_count if not set
+    // Try to count sessions from the notes file if not set from identity
     if info.session_count.is_none() {
-        let notes_dir = clients_dir().join(&id).join("notes");
-        if notes_dir.is_dir() {
-            if let Ok(entries) = std::fs::read_dir(&notes_dir) {
-                info.session_count = Some(entries.count() as u64);
+        // Route C: notes.md, Route A: <id>.md
+        let notes_file = clients_dir().join(&id).join("notes.md");
+        let notes_file = if notes_file.exists() {
+            notes_file
+        } else {
+            clients_dir().join(&id).join(format!("{}.md", id))
+        };
+        if let Ok(content) = std::fs::read_to_string(&notes_file) {
+            let count = content.lines().filter(|l| l.starts_with("### ")).count();
+            if count > 0 {
+                info.session_count = Some(count as u64);
             }
         }
     }

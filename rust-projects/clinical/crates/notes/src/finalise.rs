@@ -169,7 +169,8 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let clients_dir = tmp.path().join("clients").join(id);
         std::fs::create_dir_all(&clients_dir).unwrap();
-        let md_path = clients_dir.join(format!("{}.md", id));
+        // Route C layout: notes.md (no private/ dir)
+        let md_path = clients_dir.join("notes.md");
         let mut f = std::fs::File::create(&md_path).unwrap();
         f.write_all(content.as_bytes()).unwrap();
         tmp
@@ -199,7 +200,7 @@ New session just appended.
         run("TEST01").unwrap();
 
         let result = std::fs::read_to_string(
-            tmp.path().join("clients/TEST01/TEST01.md"),
+            tmp.path().join("clients/TEST01/notes.md"),
         )
         .unwrap();
         assert!(result.contains("**Session count**: 3"));
@@ -228,7 +229,7 @@ More notes.
         run("TEST02").unwrap();
 
         let result = std::fs::read_to_string(
-            tmp.path().join("clients/TEST02/TEST02.md"),
+            tmp.path().join("clients/TESTclients/TEST02/TEST02.md"),
         )
         .unwrap();
         assert!(result.contains("**Session count**: 2"));
@@ -257,7 +258,7 @@ More notes.
         run("TEST03").unwrap();
 
         let result = std::fs::read_to_string(
-            tmp.path().join("clients/TEST03/TEST03.md"),
+            tmp.path().join("clients/TESTclients/TEST03/TEST03.md"),
         )
         .unwrap();
         assert!(result.contains("**Session count**: 2"));
@@ -283,7 +284,7 @@ Notes.
         run("TEST04").unwrap();
 
         let result = std::fs::read_to_string(
-            tmp.path().join("clients/TEST04/TEST04.md"),
+            tmp.path().join("clients/TESTclients/TEST04/TEST04.md"),
         )
         .unwrap();
         assert!(result.contains("**Session count**: tracking from 2025-06-01"));
@@ -314,7 +315,7 @@ New session.
         run("TEST05").unwrap();
 
         let result = std::fs::read_to_string(
-            tmp.path().join("clients/TEST05/TEST05.md"),
+            tmp.path().join("clients/TESTclients/TEST05/TEST05.md"),
         )
         .unwrap();
         assert!(result.contains("**Session count**: 3 (incl 1 DNA)"));

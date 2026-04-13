@@ -192,9 +192,14 @@ pub fn find_client_md_files(clients_dir: &Path) -> Result<Vec<(String, std::path
 
     for entry in entries {
         let dir_name = entry.file_name().to_string_lossy().to_string();
-        let md_file = entry.path().join(format!("{}.md", dir_name));
-        if md_file.exists() {
-            results.push((dir_name, md_file));
+        // Route C: notes.md
+        let notes_md = entry.path().join("notes.md");
+        // Route A: <id>.md
+        let id_md = entry.path().join(format!("{}.md", dir_name));
+        if notes_md.exists() {
+            results.push((dir_name, notes_md));
+        } else if id_md.exists() {
+            results.push((dir_name, id_md));
         }
     }
 
