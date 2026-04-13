@@ -2,21 +2,12 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Clinical Dashboard",
   "version": "0.1.0",
-  "identifier": "com.tauri.dev",
+  "identifier": "com.willnapier.clinical-dashboard",
   "build": {
-    "frontendDist": "../dist",
-    "devUrl": "http://localhost:3456"
+    "frontendDist": "../frontend"
   },
   "app": {
-    "windows": [
-      {
-        "title": "Clinical Dashboard",
-        "width": 800,
-        "height": 600,
-        "resizable": true,
-        "fullscreen": false
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }

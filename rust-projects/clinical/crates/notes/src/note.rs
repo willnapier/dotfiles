@@ -181,6 +181,7 @@ fn build_prompt(id: &str, observation: &str) -> Result<String> {
          Draw on the full therapeutic arc — reference previous sessions, ongoing themes, \
          and the client's formulation where relevant.\n\
          Use the clinician's voice and framework from the reference material.\n\
+         Refer to the client by first name throughout, not 'the client' or 'Client'.\n\
          When describing in-session experiments or interventions, show that the client \
          was consulted and consented before proceeding — do not present them as imposed.\n\
          Frame interpretive links to developmental history or formulation tentatively \
