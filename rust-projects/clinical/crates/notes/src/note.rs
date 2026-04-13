@@ -51,6 +51,18 @@ pub fn validate_note(note: &str) -> ValidationResult {
         }
     }
 
+    // Redundancy lint: collaborative + agreed in the same sentence
+    let collab_agreed = Regex::new(r"(?i)collaborat\w*").unwrap();
+    let agreed = Regex::new(r"(?i)\bagree[ds]?\b").unwrap();
+    for sentence in note.split(|c| c == '.' || c == '\n') {
+        if collab_agreed.is_match(sentence) && agreed.is_match(sentence) {
+            errors.push(format!(
+                "Redundancy: 'collaborative' + 'agreed' in same sentence: \"{}\"",
+                sentence.trim()
+            ));
+        }
+    }
+
     ValidationResult { errors }
 }
 
