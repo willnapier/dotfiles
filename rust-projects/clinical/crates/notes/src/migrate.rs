@@ -98,7 +98,10 @@ pub fn run(id: &str, dry_run: bool) -> Result<()> {
         eprintln!("  Renamed: private/ → admin/");
     }
 
-    // 5. Ensure admin/drafts/ and admin/letters/ exist
+    // 5. Clean correspondence: remove de-identified copies, strip -private suffix
+    clean_correspondence(id, dry_run)?;
+
+    // 6. Ensure admin/drafts/ and admin/letters/ exist
     let admin_path = if dry_run { &private } else { &admin };
     for subdir in ["drafts", "letters"] {
         let d = admin_path.join(subdir);
@@ -137,6 +140,89 @@ pub fn run_all(dry_run: bool) -> Result<()> {
     }
 
     eprintln!("\n{} clients processed.", route_a_count);
+    Ok(())
+}
+
+/// Remove de-identified correspondence copies where a real-name (-private) version exists.
+///
+/// Pattern: `2025-11-25-AB79-referral.md` is the de-identified copy,
+/// `2025-11-25-AB79-mcguigan-referral-private.md` is the real-name original.
+/// After migration, the de-identified copy is redundant. This also strips the
+/// `-private` suffix from the real-name files since the distinction no longer applies.
+pub fn clean_correspondence(id: &str, dry_run: bool) -> Result<()> {
+    let corr_dir = client::correspondence_dir(id);
+    if !corr_dir.exists() {
+        return Ok(());
+    }
+
+    let files: Vec<String> = std::fs::read_dir(&corr_dir)?
+        .filter_map(|e| e.ok())
+        .filter_map(|e| e.file_name().into_string().ok())
+        .collect();
+
+    let private_files: Vec<&String> = files.iter()
+        .filter(|f| f.ends_with("-private.md") || f.ends_with("-private.txt"))
+        .collect();
+
+    if private_files.is_empty() {
+        return Ok(());
+    }
+
+    // For each -private file, find its de-identified counterpart
+    let date_id_re = Regex::new(r"^(\d{4}-\d{2}-\d{2}-[A-Z+]+\d*-)").unwrap();
+
+    for priv_file in &private_files {
+        // Extract the date-ID prefix and type suffix from the private file
+        if let Some(caps) = date_id_re.captures(priv_file) {
+            let prefix = &caps[1];
+            // The type is the last segment before -private.ext
+            // e.g. "2025-11-25-AB79-mcguigan-referral-private.md" → type is "referral"
+            let without_ext = priv_file.trim_end_matches(".md").trim_end_matches(".txt");
+            let without_private = without_ext.trim_end_matches("-private");
+            let type_suffix = without_private.rsplit('-').next().unwrap_or("");
+
+            // Look for de-identified counterpart: prefix + type + .ext
+            let ext = if priv_file.ends_with(".txt") { ".txt" } else { ".md" };
+            let deident_name = format!("{}{}{}", prefix, type_suffix, ext);
+
+            if files.contains(&deident_name) {
+                if dry_run {
+                    eprintln!("  Would remove de-identified copy: {}", deident_name);
+                } else {
+                    std::fs::remove_file(corr_dir.join(&deident_name))
+                        .with_context(|| format!("Failed to remove {}", deident_name))?;
+                    eprintln!("  Removed de-identified copy: {}", deident_name);
+                }
+            }
+
+            // Rename -private file to drop the suffix
+            let clean_name = priv_file
+                .replace("-private.md", ".md")
+                .replace("-private.txt", ".txt");
+            if dry_run {
+                eprintln!("  Would rename: {} → {}", priv_file, clean_name);
+            } else {
+                std::fs::rename(
+                    corr_dir.join(priv_file.as_str()),
+                    corr_dir.join(&clean_name),
+                ).with_context(|| format!("Failed to rename {}", priv_file))?;
+                eprintln!("  Renamed: {} → {}", priv_file, clean_name);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Clean correspondence for all clients.
+pub fn clean_correspondence_all(dry_run: bool) -> Result<()> {
+    let ids = client::list_client_ids()?;
+    for id in &ids {
+        let corr_dir = client::correspondence_dir(id);
+        if corr_dir.exists() {
+            clean_correspondence(id, dry_run)?;
+        }
+    }
     Ok(())
 }
 
