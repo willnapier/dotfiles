@@ -116,6 +116,7 @@ struct App {
     compares: Vec<(String, String)>,
     highlight: usize,
     client_scroll_id: ScrollId,
+    nav_mode: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -148,20 +149,20 @@ impl App {
             note: text_editor::Content::new(), note_text: String::new(),
             status: String::new(), busy: false,
             show_note: false, compares: Vec::new(), highlight: 0,
-            client_scroll_id: ScrollId::unique(),
+            client_scroll_id: ScrollId::unique(), nav_mode: true,
         }, Task::none())
     }
 
     fn update(&mut self, msg: Msg) -> Task<Msg> {
         match msg {
-            Msg::Search(q) => { self.search = q; self.filtered = filter(&self.clients, &self.search); self.highlight = 0; Task::none() }
+            Msg::Search(q) => { self.search = q; self.filtered = filter(&self.clients, &self.search); self.highlight = 0; self.nav_mode = true; Task::none() }
             Msg::Select(id) => {
                 self.selected = Some(id); self.obs = text_editor::Content::new();
                 self.note = text_editor::Content::new(); self.note_text.clear();
-                self.show_note = false; self.status.clear(); Task::none()
+                self.show_note = false; self.status.clear(); self.nav_mode = true; Task::none()
             }
-            Msg::Obs(a) => { self.obs.perform(a); Task::none() }
-            Msg::NoteEdit(a) => { self.note.perform(a); self.note_text = self.note.text(); Task::none() }
+            Msg::Obs(a) => { self.obs.perform(a); self.nav_mode = false; Task::none() }
+            Msg::NoteEdit(a) => { self.note.perform(a); self.note_text = self.note.text(); self.nav_mode = false; Task::none() }
             Msg::Model(m) => { self.model = m; Task::none() }
             Msg::Gen => {
                 let Some(ref id) = self.selected else { return Task::none() };
@@ -196,6 +197,7 @@ impl App {
             }
             Msg::ClearCmp => { self.compares.clear(); Task::none() }
             Msg::KeyDown => {
+                if !self.nav_mode { return Task::none(); }
                 if self.highlight + 1 < self.filtered.len() {
                     self.highlight += 1;
                     return self.scroll_to_highlight();
@@ -203,6 +205,7 @@ impl App {
                 Task::none()
             }
             Msg::KeyUp => {
+                if !self.nav_mode { return Task::none(); }
                 if self.highlight > 0 {
                     self.highlight -= 1;
                     return self.scroll_to_highlight();
@@ -337,17 +340,11 @@ impl App {
     }
 
     fn subscription(&self) -> Subscription<Msg> {
-        keyboard::on_key_press(|key, modifiers| {
-            // Cmd+Arrow for client navigation (avoids conflict with text editors)
-            if modifiers.command() {
-                match key {
-                    keyboard::Key::Named(keyboard::key::Named::ArrowDown) => Some(Msg::KeyDown),
-                    keyboard::Key::Named(keyboard::key::Named::ArrowUp) => Some(Msg::KeyUp),
-                    keyboard::Key::Named(keyboard::key::Named::Enter) => Some(Msg::KeyEnter),
-                    _ => None,
-                }
-            } else {
-                None
+        keyboard::on_key_press(|key, _modifiers| {
+            match key {
+                keyboard::Key::Named(keyboard::key::Named::ArrowDown) => Some(Msg::KeyDown),
+                keyboard::Key::Named(keyboard::key::Named::ArrowUp) => Some(Msg::KeyUp),
+                _ => None,
             }
         })
     }
