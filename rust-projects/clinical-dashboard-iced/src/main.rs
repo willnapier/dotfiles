@@ -13,7 +13,7 @@ use std::path::PathBuf;
 fn main() -> iced::Result {
     iced::application("Clinical Dashboard", App::update, App::view)
         .subscription(App::subscription)
-        .theme(|_| Theme::Dark)
+        .theme(|_| Theme::SolarizedDark)
         .window_size((1100.0, 750.0))
         .run_with(App::new)
 }
@@ -240,10 +240,16 @@ impl App {
 
         // Header
         let hdr = container(row![
-            text("Clinical Dashboard").size(14),
+            text("Clinical Dashboard").size(14).color(color!(0xfdf6e3)),
             iced::widget::horizontal_space(),
-            text(today).size(12).color(color!(0x8b8fa4)),
-        ].align_y(iced::Alignment::Center)).padding(8).width(Length::Fill);
+            text(today).size(12).color(color!(0x93a1a1)),
+        ].align_y(iced::Alignment::Center))
+            .padding(8)
+            .width(Length::Fill)
+            .style(|_| container::Style {
+                background: Some(iced::Background::Color(color!(0x002b36))),
+                ..Default::default()
+            });
 
         // Sidebar
         let search = text_input("Search...", &self.search)
