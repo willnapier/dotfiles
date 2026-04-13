@@ -90,6 +90,27 @@ function loadDraft(id) {
         }
     });
 
+    // Enter in search: select if exactly one match
+    clientSearch.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter") return;
+        e.preventDefault();
+        const q = clientSearch.value.trim().toUpperCase();
+        if (!q) return;
+        const matches = [...clientList.children].filter(li => {
+            if (li.classList.contains("placeholder") || !li.dataset.id) return false;
+            return li.dataset.id.toUpperCase().includes(q);
+        });
+        if (matches.length === 1) {
+            const id = matches[0].dataset.id;
+            clientSearch.value = "";
+            // Reset filter to show all
+            for (const li of clientList.children) {
+                if (!li.classList.contains("placeholder")) li.style.display = "";
+            }
+            selectClient(id);
+        }
+    });
+
     // Ctrl+Enter to generate
     obsTextarea.addEventListener("keydown", (e) => {
         if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && !generateBtn.disabled) {
