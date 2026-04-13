@@ -5,6 +5,7 @@ mod import;
 mod finalise;
 mod letter;
 mod markdown;
+mod migrate;
 mod note;
 mod populate;
 mod portal_client;
@@ -26,6 +27,18 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Migrate client(s) from Route A (private/) to Route C (flat) layout
+    Migrate {
+        /// Client ID, or omit for --all
+        id: Option<String>,
+        /// Migrate all Route A clients
+        #[arg(long)]
+        all: bool,
+        /// Preview changes without writing
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Create a new client directory with all required files (Route C by default)
     Scaffold {
         /// Client ID (e.g. PM84)
@@ -328,6 +341,15 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Migrate { id, all, dry_run } => {
+            if all {
+                migrate::run_all(dry_run)
+            } else if let Some(id) = id {
+                migrate::run(&id, dry_run)
+            } else {
+                anyhow::bail!("Provide a client ID or use --all")
+            }
+        }
         Commands::Scaffold { id, route_a } => scaffold::run(&id, route_a),
         Commands::DeIdentify {
             id,
