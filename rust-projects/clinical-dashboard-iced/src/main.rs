@@ -5,11 +5,13 @@ use iced::widget::{
     button, column, container, horizontal_rule, pick_list, row, scrollable, text,
     text_editor, text_input, Column,
 };
-use iced::{color, Element, Font, Length, Task, Theme};
+use iced::keyboard;
+use iced::{color, Element, Font, Length, Subscription, Task, Theme};
 use std::path::PathBuf;
 
 fn main() -> iced::Result {
     iced::application("Clinical Dashboard", App::update, App::view)
+        .subscription(App::subscription)
         .theme(|_| Theme::Dark)
         .window_size((1100.0, 750.0))
         .run_with(App::new)
@@ -111,6 +113,7 @@ struct App {
     busy: bool,
     show_note: bool,
     compares: Vec<(String, String)>,
+    highlight: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -128,6 +131,9 @@ enum Msg {
     Reject,
     Compare,
     ClearCmp,
+    KeyUp,
+    KeyDown,
+    KeyEnter,
 }
 
 impl App {
@@ -139,13 +145,13 @@ impl App {
             obs: text_editor::Content::new(), model: ModelChoice::Q4,
             note: text_editor::Content::new(), note_text: String::new(),
             status: String::new(), busy: false,
-            show_note: false, compares: Vec::new(),
+            show_note: false, compares: Vec::new(), highlight: 0,
         }, Task::none())
     }
 
     fn update(&mut self, msg: Msg) -> Task<Msg> {
         match msg {
-            Msg::Search(q) => { self.search = q; self.filtered = filter(&self.clients, &self.search); Task::none() }
+            Msg::Search(q) => { self.search = q; self.filtered = filter(&self.clients, &self.search); self.highlight = 0; Task::none() }
             Msg::Select(id) => {
                 self.selected = Some(id); self.obs = text_editor::Content::new();
                 self.note = text_editor::Content::new(); self.note_text.clear();
@@ -186,6 +192,25 @@ impl App {
                 Task::none()
             }
             Msg::ClearCmp => { self.compares.clear(); Task::none() }
+            Msg::KeyDown => {
+                if self.highlight + 1 < self.filtered.len() { self.highlight += 1; }
+                Task::none()
+            }
+            Msg::KeyUp => {
+                if self.highlight > 0 { self.highlight -= 1; }
+                Task::none()
+            }
+            Msg::KeyEnter => {
+                if self.highlight < self.filtered.len() {
+                    let id = self.filtered[self.highlight].id.clone();
+                    self.selected = Some(id); self.obs = text_editor::Content::new();
+                    self.note = text_editor::Content::new(); self.note_text.clear();
+                    self.show_note = false; self.status.clear();
+                    self.search.clear(); self.filtered = filter(&self.clients, &self.search);
+                    self.highlight = 0;
+                }
+                Task::none()
+            }
         }
     }
 
@@ -205,12 +230,15 @@ impl App {
             .on_submit(if self.filtered.len() == 1 { Msg::Select(self.filtered[0].id.clone()) } else { Msg::Search(self.search.clone()) })
             .size(12).padding(4);
 
-        let btns: Vec<Element<Msg>> = self.filtered.iter().map(|c| {
+        let btns: Vec<Element<Msg>> = self.filtered.iter().enumerate().map(|(i, c)| {
             let sel = self.selected.as_deref() == Some(&c.id);
+            let hl = i == self.highlight;
             let b = button(text(&c.id).size(12))
                 .on_press(Msg::Select(c.id.clone()))
                 .width(Length::Fill).padding([3, 8]);
-            if sel { b.style(button::primary).into() } else { b.style(button::text).into() }
+            if sel { b.style(button::primary).into() }
+            else if hl { b.style(button::secondary).into() }
+            else { b.style(button::text).into() }
         }).collect();
 
         let sidebar = container(column![
@@ -248,7 +276,6 @@ impl App {
                 if !self.busy {
                     col = col.push(row![
                         button(text("Accept & Save").size(12)).on_press(Msg::Accept).padding([4, 10]).style(button::success),
-                        button(text("Edit").size(12)).on_press(Msg::Edit).padding([4, 10]),
                         button(text("Reject").size(12)).on_press(Msg::Reject).padding([4, 10]).style(button::danger),
                         button(text("Compare").size(12)).on_press(Msg::Compare).padding([4, 10]).style(button::secondary),
                     ].spacing(6));
@@ -281,5 +308,19 @@ impl App {
         };
 
         column![hdr, horizontal_rule(1), row![sidebar, main]].height(Length::Fill).into()
+    }
+
+    fn subscription(&self) -> Subscription<Msg> {
+        keyboard::on_key_press(|key, modifiers| {
+            if modifiers.is_empty() {
+                match key {
+                    keyboard::Key::Named(keyboard::key::Named::ArrowDown) => Some(Msg::KeyDown),
+                    keyboard::Key::Named(keyboard::key::Named::ArrowUp) => Some(Msg::KeyUp),
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        })
     }
 }
