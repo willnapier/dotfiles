@@ -9,30 +9,36 @@ use crate::{finalise, session};
 
 /// Validation errors for LLM-generated notes.
 pub struct ValidationResult {
-    pub errors: Vec<String>,
+    /// Soft warnings — displayed but don't block.
+    pub warnings: Vec<String>,
+    /// Hard failures — block acceptance and trigger regeneration.
+    pub failures: Vec<String>,
 }
 
 impl ValidationResult {
-    pub fn is_ok(&self) -> bool {
-        self.errors.is_empty()
+    pub fn passed(&self) -> bool {
+        self.failures.is_empty()
     }
 }
 
 /// Validate that a generated note has the required structure.
 pub fn validate_note(note: &str) -> ValidationResult {
-    let mut errors = Vec::new();
+    let mut warnings = Vec::new();
+    let mut failures = Vec::new();
+
+    // --- Structural warnings (soft) ---
 
     let date_re = Regex::new(r"^### \d{4}-\d{2}-\d{2}").unwrap();
     if !note.lines().any(|l| date_re.is_match(l)) {
-        errors.push("Missing session header (### YYYY-MM-DD)".to_string());
+        warnings.push("Missing session header (### YYYY-MM-DD)".to_string());
     }
 
     if !note.contains("**Risk**:") {
-        errors.push("Missing **Risk**: line".to_string());
+        warnings.push("Missing **Risk**: line".to_string());
     }
 
     if !note.contains("**Formulation**:") {
-        errors.push("Missing **Formulation**: line".to_string());
+        warnings.push("Missing **Formulation**: line".to_string());
     }
 
     // Check for refusal patterns
@@ -46,24 +52,25 @@ pub fn validate_note(note: &str) -> ValidationResult {
     ];
     for pattern in &refusal_patterns {
         if note.contains(pattern) {
-            errors.push(format!("Possible LLM refusal detected: \"{}\"", pattern));
+            warnings.push(format!("Possible LLM refusal detected: \"{}\"", pattern));
             break;
         }
     }
 
-    // Redundancy lint: collaborative + agreed in the same sentence
-    let collab_agreed = Regex::new(r"(?i)collaborat\w*").unwrap();
-    let agreed = Regex::new(r"(?i)\bagree[ds]?\b").unwrap();
+    // --- Lint gates (hard block — triggers regeneration) ---
+
+    let collab_re = Regex::new(r"(?i)collaborat\w*").unwrap();
+    let agreed_re = Regex::new(r"(?i)\bagree[ds]?\b").unwrap();
     for sentence in note.split(|c| c == '.' || c == '\n') {
-        if collab_agreed.is_match(sentence) && agreed.is_match(sentence) {
-            errors.push(format!(
+        if collab_re.is_match(sentence) && agreed_re.is_match(sentence) {
+            failures.push(format!(
                 "Redundancy: 'collaborative' + 'agreed' in same sentence: \"{}\"",
                 sentence.trim()
             ));
         }
     }
 
-    ValidationResult { errors }
+    ValidationResult { warnings, failures }
 }
 
 /// Resolve the clinical reference directory.
@@ -484,45 +491,69 @@ pub fn run(
 
     let args: Vec<&str> = llm_args.split_whitespace().collect();
 
-    eprintln!("Generating note via {}...", llm_cmd);
-    let output = Command::new(&llm_cmd)
-        .args(&args)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .with_context(|| format!("Failed to start LLM command: {}", llm_cmd))?;
+    const MAX_LINT_RETRIES: usize = 3;
+    let mut note = String::new();
 
-    // Write prompt to stdin
-    let mut child = output;
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(prompt.as_bytes())?;
-    }
-
-    let output = child.wait_with_output()?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("LLM command failed (exit {}): {}", output.status, stderr);
-    }
-
-    let note = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-    if note.is_empty() {
-        bail!("LLM returned empty output");
-    }
-
-    // Step 3: Validate
-    let validation = validate_note(&note);
-    if !validation.is_ok() {
-        eprintln!("\n⚠️  Validation warnings:");
-        for err in &validation.errors {
-            eprintln!("  - {}", err);
+    for attempt in 0..MAX_LINT_RETRIES {
+        if attempt > 0 {
+            eprintln!("Regenerating (attempt {}/{})...", attempt + 1, MAX_LINT_RETRIES);
+        } else {
+            eprintln!("Generating note via {}...", llm_cmd);
         }
-        eprintln!();
+
+        let child = Command::new(&llm_cmd)
+            .args(&args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .with_context(|| format!("Failed to start LLM command: {}", llm_cmd))?;
+
+        let mut child = child;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(prompt.as_bytes())?;
+        }
+
+        let output = child.wait_with_output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("LLM command failed (exit {}): {}", output.status, stderr);
+        }
+
+        note = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+        if note.is_empty() {
+            bail!("LLM returned empty output");
+        }
+
+        let validation = validate_note(&note);
+
+        // Show warnings (soft)
+        if !validation.warnings.is_empty() {
+            eprintln!("\n⚠️  Validation warnings:");
+            for w in &validation.warnings {
+                eprintln!("  - {}", w);
+            }
+            eprintln!();
+        }
+
+        // Check lint gates (hard)
+        if validation.passed() {
+            break;
+        }
+
+        eprintln!("\n🚫 Lint failure (auto-regenerating):");
+        for f in &validation.failures {
+            eprintln!("  - {}", f);
+        }
+
+        if attempt == MAX_LINT_RETRIES - 1 {
+            eprintln!("\n⚠️  Max retries reached — showing note with lint failures.");
+        }
     }
 
-    // Step 4: Show note for review
+    // Show note for review
     println!("\n{}", note);
 
     // Step 5: If no_save, stop here — caller only wanted to see the output.
