@@ -81,7 +81,7 @@
 }
 
 html {
-    font-size: 7px;
+    font-size: 6px;
 }
 
 body {
@@ -127,8 +127,8 @@ header time {
 /* --- Sidebar --- */
 
 aside {
-    width: 120px;
-    min-width: 120px;
+    width: 72px;
+    min-width: 72px;
     background: var(--bg-sidebar);
     border-right: 1px solid var(--border);
     display: flex;
