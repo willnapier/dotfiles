@@ -116,6 +116,7 @@ depends = []
 "scripts/cn" = "~/.local/bin/cn"
 "scripts/inference-start" = "~/.local/bin/inference-start"
 "scripts/inference-stop" = "~/.local/bin/inference-stop"
+"scripts/clinic-session" = "~/.local/bin/clinic-session"
 "nushell/scripts/quantified-tracking.nu" = "~/.config/nushell/scripts/quantified-tracking.nu"
 "nushell/scripts/quantified-tracking-v2.nu" = "~/.config/nushell/scripts/quantified-tracking-v2.nu"
 "nushell/scripts/project-root-detection.nu" = "~/.config/nushell/scripts/project-root-detection.nu"
