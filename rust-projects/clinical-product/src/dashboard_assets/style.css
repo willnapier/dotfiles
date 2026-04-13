@@ -127,8 +127,8 @@ header time {
 /* --- Sidebar --- */
 
 aside {
-    width: 72px;
-    min-width: 72px;
+    width: 140px;
+    min-width: 140px;
     background: var(--bg-sidebar);
     border-right: 1px solid var(--border);
     display: flex;
