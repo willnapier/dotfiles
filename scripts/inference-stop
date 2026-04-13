@@ -24,10 +24,11 @@ get_server_info() {
         "https://james.trooper.ai/api/orders" | \
         python3 -c "
 import sys,json
-servers=json.load(sys.stdin)
+d=json.load(sys.stdin)
+servers=d.get('servers',[])
 if servers:
     s=servers[0]
-    print(f\"{s['id']} {s.get('status','unknown')}\")
+    print(f\"{s['serverId']} {s.get('current_status','unknown')}\")
 else:
     print('none none')
 " 2>/dev/null

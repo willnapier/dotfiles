@@ -27,14 +27,14 @@ get_server_id() {
     local api_key="$1"
     curl -s -H "Authorization: Bearer $api_key" \
         "https://james.trooper.ai/api/orders" | \
-        python3 -c "import sys,json; servers=json.load(sys.stdin); print(servers[0]['id'] if servers else '')" 2>/dev/null
+        python3 -c "import sys,json; d=json.load(sys.stdin); s=d.get('servers',[]); print(s[0]['serverId'] if s else '')" 2>/dev/null
 }
 
 get_server_status() {
     local api_key="$1"
     curl -s -H "Authorization: Bearer $api_key" \
         "https://james.trooper.ai/api/orders" | \
-        python3 -c "import sys,json; servers=json.load(sys.stdin); print(servers[0].get('status','unknown') if servers else 'none')" 2>/dev/null
+        python3 -c "import sys,json; d=json.load(sys.stdin); s=d.get('servers',[]); print(s[0].get('current_status','unknown') if s else 'none')" 2>/dev/null
 }
 
 start_server() {
