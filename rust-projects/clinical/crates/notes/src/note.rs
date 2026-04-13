@@ -183,7 +183,8 @@ fn build_prompt(id: &str, observation: &str) -> Result<String> {
          Use the clinician's voice and framework from the reference material.\n\
          Refer to the client by first name throughout, not 'the client' or 'Client'.\n\
          When describing in-session experiments or interventions, show that the client \
-         was consulted and consented before proceeding — do not present them as imposed.\n\
+         was consulted and consented before proceeding — do not present them as imposed. \
+         Do not combine 'collaborative' with 'agreed' — either word implies the other.\n\
          Frame interpretive links to developmental history or formulation tentatively \
          (e.g. 'this was explored as potentially connected to...' rather than asserting \
          causation), while still anchoring to the existing formulation.\n\

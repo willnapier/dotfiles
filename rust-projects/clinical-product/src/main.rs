@@ -163,6 +163,7 @@ fn build_system_prompt(modality: &str) -> String {
          Refer to the client by first name throughout, not 'the client' or 'Client'. \
          When describing in-session experiments or interventions, show that the client \
          was consulted and consented before proceeding — do not present them as imposed. \
+         Do not combine 'collaborative' with 'agreed' — either word implies the other. \
          Frame interpretive links to developmental history or formulation tentatively \
          (e.g. 'this was explored as potentially connected to...') while anchoring \
          to the existing formulation. \
