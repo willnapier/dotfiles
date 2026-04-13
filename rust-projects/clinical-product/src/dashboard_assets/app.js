@@ -40,6 +40,7 @@ let isGenerating     = false;
 
 // Draft observations persist per client (survives client switching + page reload)
 const draftKey = (id) => `clinic-draft-${id}`;
+const noteKey = (id) => `clinic-note-${id}`;
 function saveDraft(id, text) {
     if (id && text.trim()) {
         localStorage.setItem(draftKey(id), text);
@@ -49,6 +50,16 @@ function saveDraft(id, text) {
 }
 function loadDraft(id) {
     return localStorage.getItem(draftKey(id)) || "";
+}
+function saveGeneratedNote(id, text) {
+    if (id && text.trim()) {
+        localStorage.setItem(noteKey(id), text);
+    } else if (id) {
+        localStorage.removeItem(noteKey(id));
+    }
+}
+function loadGeneratedNote(id) {
+    return localStorage.getItem(noteKey(id)) || "";
 }
 
 // --- Init ---
@@ -181,6 +192,17 @@ async function selectClient(id) {
     obsTextarea.focus();
     generateBtn.disabled = draft.trim().length === 0;
 
+    // Restore generated note if one exists
+    const savedNote = loadGeneratedNote(id);
+    if (savedNote) {
+        generatedNote = savedNote;
+        noteSection.hidden = false;
+        noteOutput.textContent = savedNote;
+        noteStatus.textContent = "Complete";
+        noteStatus.className = "status-indicator";
+        noteActions.hidden = false;
+    }
+
     // Populate card header
     cardClientId.textContent = id;
     cardBadge.textContent = "";
@@ -271,6 +293,7 @@ async function handleGenerate() {
         noteStatus.textContent = "Complete";
         noteStatus.className = "status-indicator";
         noteActions.hidden = false;
+        saveGeneratedNote(selectedClientId, generatedNote);
     } catch (err) {
         noteStatus.textContent = "Error";
         noteStatus.className = "status-indicator";
@@ -306,7 +329,8 @@ async function handleAccept() {
             showToast("Note saved for " + selectedClientId);
             resetNoteState();
             obsTextarea.value = "";
-            saveDraft(selectedClientId, "");  // clear draft on save
+            saveDraft(selectedClientId, "");
+            saveGeneratedNote(selectedClientId, "");
             generateBtn.disabled = true;
         } else {
             throw new Error(result.error || "Save failed");
@@ -331,6 +355,7 @@ function handleSaveEdited() {
     noteOutput.textContent = generatedNote;
     editSection.hidden = true;
     noteSection.hidden = false;
+    if (selectedClientId) saveGeneratedNote(selectedClientId, generatedNote);
 }
 
 function handleCancelEdit() {
@@ -339,6 +364,7 @@ function handleCancelEdit() {
 }
 
 function handleReject() {
+    if (selectedClientId) saveGeneratedNote(selectedClientId, "");
     resetNoteState();
     obsTextarea.value = "";
     obsTextarea.focus();
