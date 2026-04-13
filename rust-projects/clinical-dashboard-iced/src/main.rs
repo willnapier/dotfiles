@@ -5,6 +5,7 @@ use iced::widget::{
     button, column, container, horizontal_rule, pick_list, row, scrollable, text,
     text_editor, text_input, Column,
 };
+use iced::widget::scrollable::Id as ScrollId;
 use iced::keyboard;
 use iced::{color, Element, Font, Length, Subscription, Task, Theme};
 use std::path::PathBuf;
@@ -114,6 +115,7 @@ struct App {
     show_note: bool,
     compares: Vec<(String, String)>,
     highlight: usize,
+    client_scroll_id: ScrollId,
 }
 
 #[derive(Debug, Clone)]
@@ -146,6 +148,7 @@ impl App {
             note: text_editor::Content::new(), note_text: String::new(),
             status: String::new(), busy: false,
             show_note: false, compares: Vec::new(), highlight: 0,
+            client_scroll_id: ScrollId::unique(),
         }, Task::none())
     }
 
@@ -193,11 +196,17 @@ impl App {
             }
             Msg::ClearCmp => { self.compares.clear(); Task::none() }
             Msg::KeyDown => {
-                if self.highlight + 1 < self.filtered.len() { self.highlight += 1; }
+                if self.highlight + 1 < self.filtered.len() {
+                    self.highlight += 1;
+                    return self.scroll_to_highlight();
+                }
                 Task::none()
             }
             Msg::KeyUp => {
-                if self.highlight > 0 { self.highlight -= 1; }
+                if self.highlight > 0 {
+                    self.highlight -= 1;
+                    return self.scroll_to_highlight();
+                }
                 Task::none()
             }
             Msg::KeyEnter => {
@@ -214,6 +223,15 @@ impl App {
         }
     }
 
+    fn scroll_to_highlight(&self) -> Task<Msg> {
+        let total = self.filtered.len().max(1) as f32;
+        let ratio = self.highlight as f32 / total;
+        scrollable::scroll_to(
+            self.client_scroll_id.clone(),
+            scrollable::AbsoluteOffset { x: 0.0, y: ratio * total * 25.0 },
+        )
+    }
+
     fn view(&self) -> Element<Msg> {
         let today = chrono::Local::now().format("%A %d %B %Y").to_string();
 
@@ -227,7 +245,13 @@ impl App {
         // Sidebar
         let search = text_input("Search...", &self.search)
             .on_input(Msg::Search)
-            .on_submit(if self.filtered.len() == 1 { Msg::Select(self.filtered[0].id.clone()) } else { Msg::Search(self.search.clone()) })
+            .on_submit(if self.filtered.len() == 1 {
+                Msg::Select(self.filtered[0].id.clone())
+            } else if self.highlight < self.filtered.len() {
+                Msg::KeyEnter
+            } else {
+                Msg::Search(self.search.clone())
+            })
             .size(12).padding(4);
 
         let btns: Vec<Element<Msg>> = self.filtered.iter().enumerate().map(|(i, c)| {
@@ -244,7 +268,9 @@ impl App {
         let sidebar = container(column![
             container(text("TODAY").size(10).color(color!(0x8b8fa4))).padding([4, 8]),
             container(search).padding([4, 6]),
-            scrollable(Column::with_children(btns).spacing(1)).height(Length::Fill),
+            scrollable(Column::with_children(btns).spacing(1))
+                .id(self.client_scroll_id.clone())
+                .height(Length::Fill),
         ]).width(130).height(Length::Fill);
 
         // Main
