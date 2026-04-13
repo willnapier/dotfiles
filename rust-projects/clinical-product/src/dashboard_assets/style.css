@@ -3,6 +3,25 @@
 /* Professional, minimal. Respects prefers-color-scheme.              */
 /* ------------------------------------------------------------------ */
 
+/* --- Scrollbar --- */
+
+::-webkit-scrollbar {
+    width: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #3a3d4a;
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #50546a;
+}
+
 /* --- Reset & base --- */
 
 *,
@@ -69,7 +88,8 @@ body {
     font-family: var(--font-system);
     background: var(--bg);
     color: var(--text);
-    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
 }
@@ -101,8 +121,7 @@ header time {
 .layout {
     display: flex;
     flex: 1;
-    overflow: hidden;
-    height: calc(100vh - 3rem);
+    min-height: 0;
 }
 
 /* --- Sidebar --- */
@@ -146,6 +165,32 @@ aside {
 .icon-btn:hover {
     color: var(--accent);
     background: var(--sidebar-active);
+}
+
+/* --- Sidebar search --- */
+
+.sidebar-search {
+    padding: 0.3rem 0.5rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.sidebar-search input {
+    width: 100%;
+    padding: 0.3rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.85rem;
+    background: var(--bg);
+    color: var(--text);
+    outline: none;
+}
+
+.sidebar-search input:focus {
+    border-color: var(--accent);
+}
+
+.sidebar-search input::placeholder {
+    color: var(--text-muted);
 }
 
 /* --- Client list --- */

@@ -29,6 +29,7 @@ const editArea       = document.getElementById("edit-area");
 const saveEditedBtn  = document.getElementById("save-edited-btn");
 const cancelEditBtn  = document.getElementById("cancel-edit-btn");
 const emptyState     = document.getElementById("empty-state");
+const clientSearch   = document.getElementById("client-search");
 const toast          = document.getElementById("toast");
 
 // --- State ---
@@ -77,6 +78,16 @@ function loadDraft(id) {
     obsTextarea.addEventListener("input", () => {
         generateBtn.disabled = obsTextarea.value.trim().length === 0 || isGenerating;
         if (selectedClientId) saveDraft(selectedClientId, obsTextarea.value);
+    });
+
+    // Client search filter
+    clientSearch.addEventListener("input", () => {
+        const q = clientSearch.value.trim().toUpperCase();
+        for (const li of clientList.children) {
+            if (li.classList.contains("placeholder")) continue;
+            const id = (li.dataset.id || "").toUpperCase();
+            li.style.display = (!q || id.includes(q)) ? "" : "none";
+        }
     });
 
     // Ctrl+Enter to generate
