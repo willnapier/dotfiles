@@ -226,6 +226,84 @@ pub fn clean_correspondence_all(dry_run: bool) -> Result<()> {
     Ok(())
 }
 
+/// Replace "Client" with the client's first name in notes.md.
+///
+/// Reverses the de-identification that replaced real names with "Client".
+/// Reads the first name from identity.yaml.
+pub fn personalize(id: &str, dry_run: bool) -> Result<()> {
+    let identity_path = client::identity_path(id);
+    if !identity_path.exists() {
+        bail!("identity.yaml not found for {}", id);
+    }
+
+    let identity = clinical_core::identity::load_identity(&identity_path)?;
+    let name = identity.name.as_deref().unwrap_or("").trim().to_string();
+    if name.is_empty() {
+        eprintln!("{}: no name in identity.yaml, skipping.", id);
+        return Ok(());
+    }
+
+    let first_name = name.split_whitespace().next().unwrap_or(&name);
+
+    let notes_path = client::notes_path(id);
+    if !notes_path.exists() {
+        eprintln!("{}: no notes file, skipping.", id);
+        return Ok(());
+    }
+
+    let content = std::fs::read_to_string(&notes_path)
+        .with_context(|| format!("Failed to read {}", notes_path.display()))?;
+
+    // Build replacements — order matters (longest first to avoid partial matches)
+    let replacements = [
+        ("the Client's", &format!("{}'s", first_name)),
+        ("The Client's", &format!("{}'s", first_name)),
+        ("the client's", &format!("{}'s", first_name)),
+        ("The client's", &format!("{}'s", first_name)),
+        ("Client's", &format!("{}'s", first_name)),
+        ("the Client", first_name),
+        ("The Client", first_name),
+        ("the client", first_name),
+        ("The client", first_name),
+        ("Client", first_name),
+    ];
+
+    let mut result = content.clone();
+    let mut total_count = 0usize;
+
+    for (find, replace) in &replacements {
+        let count = result.matches(*find).count();
+        if count > 0 {
+            result = result.replace(find, replace);
+            total_count += count;
+        }
+    }
+
+    if total_count == 0 {
+        eprintln!("{}: no 'Client' references found.", id);
+        return Ok(());
+    }
+
+    if dry_run {
+        eprintln!("{}: would replace {} occurrences of 'Client' → '{}'", id, total_count, first_name);
+    } else {
+        std::fs::write(&notes_path, &result)
+            .with_context(|| format!("Failed to write {}", notes_path.display()))?;
+        eprintln!("{}: replaced {} occurrences → '{}'", id, total_count, first_name);
+    }
+
+    Ok(())
+}
+
+/// Personalize all clients.
+pub fn personalize_all(dry_run: bool) -> Result<()> {
+    let ids = client::list_client_ids()?;
+    for id in &ids {
+        personalize(id, dry_run)?;
+    }
+    Ok(())
+}
+
 /// Strip redaction-specific fields from identity.yaml content.
 ///
 /// Removes `redactions:` block and `aliases:` list since these are

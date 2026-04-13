@@ -27,6 +27,18 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Replace 'Client' with first name in notes (reverses de-identification)
+    Personalize {
+        /// Client ID, or omit for --all
+        id: Option<String>,
+        /// Process all clients
+        #[arg(long)]
+        all: bool,
+        /// Preview changes without writing
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Migrate client(s) from Route A (private/) to Route C (flat) layout
     Migrate {
         /// Client ID, or omit for --all
@@ -341,6 +353,15 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Personalize { id, all, dry_run } => {
+            if all {
+                migrate::personalize_all(dry_run)
+            } else if let Some(id) = id {
+                migrate::personalize(&id, dry_run)
+            } else {
+                anyhow::bail!("Provide a client ID or use --all")
+            }
+        }
         Commands::Migrate { id, all, dry_run } => {
             if all {
                 migrate::run_all(dry_run)
