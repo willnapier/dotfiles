@@ -30,6 +30,11 @@ const saveEditedBtn  = document.getElementById("save-edited-btn");
 const cancelEditBtn  = document.getElementById("cancel-edit-btn");
 const emptyState     = document.getElementById("empty-state");
 const clientSearch   = document.getElementById("client-search");
+const modelSelect    = document.getElementById("model-select");
+const compareBtn     = document.getElementById("compare-btn");
+const compareSection = document.getElementById("compare-section");
+const comparePanels  = document.getElementById("compare-panels");
+const clearCompareBtn= document.getElementById("clear-compare-btn");
 const toast          = document.getElementById("toast");
 
 // --- State ---
@@ -37,6 +42,7 @@ const toast          = document.getElementById("toast");
 let selectedClientId = null;
 let generatedNote    = "";
 let isGenerating     = false;
+let compareCount     = 0;
 
 // Draft observations persist per client (survives client switching + page reload)
 const draftKey = (id) => `clinic-draft-${id}`;
@@ -84,6 +90,8 @@ function loadGeneratedNote(id) {
     rejectBtn.addEventListener("click", handleReject);
     saveEditedBtn.addEventListener("click", handleSaveEdited);
     cancelEditBtn.addEventListener("click", handleCancelEdit);
+    compareBtn.addEventListener("click", handleCompare);
+    clearCompareBtn.addEventListener("click", handleClearCompare);
 
     // Enable generate when observation has content + auto-save draft
     obsTextarea.addEventListener("input", () => {
@@ -268,6 +276,7 @@ async function handleGenerate() {
             body: JSON.stringify({
                 client_id: selectedClientId,
                 observation: observation,
+                model: modelSelect.value,
             }),
         });
 
@@ -370,6 +379,30 @@ function handleReject() {
     obsTextarea.focus();
     generateBtn.disabled = true;
     showToast("Note rejected");
+}
+
+function handleCompare() {
+    if (!generatedNote.trim()) return;
+    compareCount++;
+    const entry = document.createElement("div");
+    entry.className = "compare-entry";
+    const label = document.createElement("div");
+    label.className = "compare-label";
+    const modelName = modelSelect.options[modelSelect.selectedIndex].text;
+    label.textContent = `#${compareCount} — ${selectedClientId || "?"} — ${modelName} — ${new Date().toLocaleTimeString("en-GB", {hour:"2-digit", minute:"2-digit"})}`;
+    const pre = document.createElement("pre");
+    pre.textContent = generatedNote;
+    entry.appendChild(label);
+    entry.appendChild(pre);
+    comparePanels.appendChild(entry);
+    compareSection.hidden = false;
+    showToast("Added to comparison panel");
+}
+
+function handleClearCompare() {
+    comparePanels.innerHTML = "";
+    compareSection.hidden = true;
+    compareCount = 0;
 }
 
 function resetNoteState() {

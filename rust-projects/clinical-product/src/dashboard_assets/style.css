@@ -329,6 +329,22 @@ textarea:focus {
     margin-top: 0.75rem;
 }
 
+.model-select {
+    padding: 0.4rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    background: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+    outline: none;
+}
+
+.model-select:focus {
+    border-color: var(--accent);
+}
+
 .btn {
     padding: 0.4rem 0.9rem;
     border: none;
@@ -427,6 +443,60 @@ textarea:focus {
     min-height: 8rem;
     max-height: 60vh;
     overflow-y: auto;
+}
+
+/* --- Compare button --- */
+
+.btn-compare {
+    background: #6b5b95;
+    color: #fff;
+}
+
+.btn-compare:hover:not(:disabled) {
+    background: #7d6ba8;
+}
+
+/* --- Comparison panel --- */
+
+.compare-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+}
+
+.compare-header h3 {
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+.compare-panels {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.compare-entry {
+    background: var(--note-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+}
+
+.compare-entry .compare-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 0.3rem;
+}
+
+.compare-entry pre {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    margin: 0;
 }
 
 /* --- Empty state --- */

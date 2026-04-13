@@ -75,6 +75,8 @@ struct ClientInfo {
 struct NoteRequest {
     client_id: String,
     observation: String,
+    #[serde(default)]
+    model: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -312,13 +314,19 @@ async fn generate_note(
         ));
     }
 
-    // Spawn `clinical note <id> "<observation>" --no-save --yes`
-    let mut child = Command::new("clinical")
-        .arg("note")
+    // Spawn `clinical note <id> "<observation>" --no-save --yes [--model-override MODEL]`
+    let mut cmd = Command::new("clinical");
+    cmd.arg("note")
         .arg(&req.client_id)
         .arg(&req.observation)
         .arg("--no-save")
-        .arg("--yes")
+        .arg("--yes");
+    if let Some(ref model) = req.model {
+        if !model.is_empty() {
+            cmd.arg("--model-override").arg(model);
+        }
+    }
+    let mut child = cmd
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()

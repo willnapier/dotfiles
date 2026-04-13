@@ -46,6 +46,10 @@
                     spellcheck="true"
                 ></textarea>
                 <div class="form-actions">
+                    <select id="model-select" class="model-select">
+                        <option value="clinical-voice-q4">Q4</option>
+                        <option value="clinical-voice">Q8</option>
+                    </select>
                     <button id="generate-btn" class="btn btn-primary" disabled>
                         Generate Note
                     </button>
@@ -63,6 +67,7 @@
                     <button id="accept-btn" class="btn btn-accept">Accept &amp; Save</button>
                     <button id="edit-btn" class="btn btn-edit">Edit</button>
                     <button id="reject-btn" class="btn btn-reject">Reject</button>
+                    <button id="compare-btn" class="btn btn-compare">Compare</button>
                 </div>
             </section>
 
@@ -74,6 +79,15 @@
                     <button id="save-edited-btn" class="btn btn-accept">Save Edited Note</button>
                     <button id="cancel-edit-btn" class="btn btn-reject">Cancel</button>
                 </div>
+            </section>
+
+            <!-- Comparison panel -->
+            <section id="compare-section" class="card" hidden>
+                <div class="compare-header">
+                    <h3>Comparison</h3>
+                    <button id="clear-compare-btn" class="btn btn-reject">Clear</button>
+                </div>
+                <div id="compare-panels" class="compare-panels"></div>
             </section>
 
             <!-- Empty state -->
