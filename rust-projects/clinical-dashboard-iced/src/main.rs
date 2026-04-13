@@ -105,7 +105,8 @@ struct App {
     selected: Option<String>,
     obs: text_editor::Content,
     model: ModelChoice,
-    note: String,
+    note: text_editor::Content,
+    note_text: String,
     status: String,
     busy: bool,
     show_note: bool,
@@ -117,6 +118,7 @@ enum Msg {
     Search(String),
     Select(String),
     Obs(text_editor::Action),
+    NoteEdit(text_editor::Action),
     Model(ModelChoice),
     Gen,
     GenDone(String, f64),
@@ -135,7 +137,8 @@ impl App {
         (Self {
             clients, filtered, search: String::new(), selected: None,
             obs: text_editor::Content::new(), model: ModelChoice::Q4,
-            note: String::new(), status: String::new(), busy: false,
+            note: text_editor::Content::new(), note_text: String::new(),
+            status: String::new(), busy: false,
             show_note: false, compares: Vec::new(),
         }, Task::none())
     }
@@ -145,37 +148,40 @@ impl App {
             Msg::Search(q) => { self.search = q; self.filtered = filter(&self.clients, &self.search); Task::none() }
             Msg::Select(id) => {
                 self.selected = Some(id); self.obs = text_editor::Content::new();
-                self.note.clear(); self.show_note = false; self.status.clear(); Task::none()
+                self.note = text_editor::Content::new(); self.note_text.clear();
+                self.show_note = false; self.status.clear(); Task::none()
             }
             Msg::Obs(a) => { self.obs.perform(a); Task::none() }
+            Msg::NoteEdit(a) => { self.note.perform(a); self.note_text = self.note.text(); Task::none() }
             Msg::Model(m) => { self.model = m; Task::none() }
             Msg::Gen => {
                 let Some(ref id) = self.selected else { return Task::none() };
                 let t = self.obs.text(); if t.trim().is_empty() { return Task::none() }
-                self.busy = true; self.show_note = true; self.note.clear();
+                self.busy = true; self.show_note = true;
+                self.note = text_editor::Content::new(); self.note_text.clear();
                 self.status = "Generating...".into();
                 let id = id.clone(); let m = self.model.model_name().to_string();
                 Task::perform(gen(id, t, m), |(n, s)| Msg::GenDone(n, s))
             }
-            Msg::GenDone(n, s) => { self.note = n; self.status = format!("Complete — {s:.1}s"); self.busy = false; Task::none() }
+            Msg::GenDone(n, s) => { self.note = text_editor::Content::with_text(&n); self.note_text = n; self.status = format!("Complete — {s:.1}s"); self.busy = false; Task::none() }
             Msg::Accept => {
                 let Some(ref id) = self.selected else { return Task::none() };
-                let id = id.clone(); let n = self.note.clone();
+                let id = id.clone(); let n = self.note_text.clone();
                 Task::perform(save(id, n), Msg::Saved)
             }
             Msg::Saved(r) => {
                 match r {
-                    Ok(_) => { self.status = format!("Saved for {}", self.selected.as_deref().unwrap_or("?")); self.obs = text_editor::Content::new(); self.note.clear(); self.show_note = false; }
+                    Ok(_) => { self.status = format!("Saved for {}", self.selected.as_deref().unwrap_or("?")); self.obs = text_editor::Content::new(); self.note = text_editor::Content::new(); self.note_text.clear(); self.show_note = false; }
                     Err(e) => self.status = format!("Failed: {e}"),
                 }
                 Task::none()
             }
-            Msg::Edit => { self.obs = text_editor::Content::with_text(&self.note); self.show_note = false; self.status = "Editing".into(); Task::none() }
-            Msg::Reject => { self.note.clear(); self.show_note = false; self.obs = text_editor::Content::new(); self.status.clear(); Task::none() }
+            Msg::Edit => { self.obs = text_editor::Content::with_text(&self.note_text); self.show_note = false; self.status = "Editing".into(); Task::none() }
+            Msg::Reject => { self.note = text_editor::Content::new(); self.note_text.clear(); self.show_note = false; self.obs = text_editor::Content::new(); self.status.clear(); Task::none() }
             Msg::Compare => {
-                if !self.note.is_empty() {
+                if !self.note_text.is_empty() {
                     let l = format!("{} — {}", self.selected.as_deref().unwrap_or("?"), self.model);
-                    self.compares.push((l, self.note.clone()));
+                    self.compares.push((l, self.note_text.clone()));
                 }
                 Task::none()
             }
@@ -237,7 +243,7 @@ impl App {
                     text(&self.status).size(11).color(color!(0x8b8fa4)),
                 ]);
                 col = col.push(
-                    scrollable(text(&self.note).size(12).font(Font::MONOSPACE)).height(250)
+                    text_editor(&self.note).on_action(Msg::NoteEdit).height(250).size(12).font(Font::MONOSPACE)
                 );
                 if !self.busy {
                     col = col.push(row![
