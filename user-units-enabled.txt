@@ -26,9 +26,11 @@ pipewire-pulse.service
 pipewire-pulse.socket
 pipewire.socket
 readwise-sync.timer
+ssh-agent.socket
 ssh-import-env.service
 state-capture.timer
 syncthing.service
 system-health-check.timer
+voice-pod-maintain.timer
 web-clip-watcher.service
 wireplumber.service
