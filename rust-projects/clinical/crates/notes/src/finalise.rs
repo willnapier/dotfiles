@@ -229,7 +229,7 @@ More notes.
         run("TEST02").unwrap();
 
         let result = std::fs::read_to_string(
-            tmp.path().join("clients/TESTclients/TEST02/TEST02.md"),
+            tmp.path().join("clients/TEST02/notes.md"),
         )
         .unwrap();
         assert!(result.contains("**Session count**: 2"));
@@ -258,7 +258,7 @@ More notes.
         run("TEST03").unwrap();
 
         let result = std::fs::read_to_string(
-            tmp.path().join("clients/TESTclients/TEST03/TEST03.md"),
+            tmp.path().join("clients/TEST03/notes.md"),
         )
         .unwrap();
         assert!(result.contains("**Session count**: 2"));
@@ -284,7 +284,7 @@ Notes.
         run("TEST04").unwrap();
 
         let result = std::fs::read_to_string(
-            tmp.path().join("clients/TESTclients/TEST04/TEST04.md"),
+            tmp.path().join("clients/TEST04/notes.md"),
         )
         .unwrap();
         assert!(result.contains("**Session count**: tracking from 2025-06-01"));
@@ -315,7 +315,7 @@ New session.
         run("TEST05").unwrap();
 
         let result = std::fs::read_to_string(
-            tmp.path().join("clients/TESTclients/TEST05/TEST05.md"),
+            tmp.path().join("clients/TEST05/notes.md"),
         )
         .unwrap();
         assert!(result.contains("**Session count**: 3 (incl 1 DNA)"));

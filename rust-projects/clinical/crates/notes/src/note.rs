@@ -699,7 +699,8 @@ Client engaged in values clarification work around career transition.
         let tmp = tempfile::TempDir::new().unwrap();
         let clients_dir = tmp.path().join("clients").join("TEST01");
         std::fs::create_dir_all(&clients_dir).unwrap();
-        let md_path = clients_dir.join("TEST01.md");
+        // Route C layout: notes.md (no private/ dir in temp)
+        let md_path = clients_dir.join("notes.md");
         std::fs::write(
             &md_path,
             "# TEST01\n\n## Session Notes\n\n### 2026-01-15\nFirst note.\n",
