@@ -249,10 +249,11 @@ impl App {
         // Header
         let hdr = container(row![
             iced::widget::Space::with_width(70),
-            text(today).size(12).color(color!(0x93a1a1)),
             iced::widget::horizontal_space(),
             text("Clinical Dashboard").size(14).color(color!(0xfdf6e3)),
             iced::widget::horizontal_space(),
+            text(today).size(12).color(color!(0x93a1a1)),
+            iced::widget::Space::with_width(10),
         ].align_y(iced::Alignment::Center))
             .padding(8)
             .width(Length::Fill)
