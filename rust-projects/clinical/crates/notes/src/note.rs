@@ -189,6 +189,10 @@ fn build_prompt(id: &str, observation: &str) -> Result<String> {
          causation), while still anchoring to the existing formulation.\n\
          When documenting agreed between-session tasks, include sufficient detail \
          (duration, context, what to observe) to evidence collaborative planning.\n\
+         Every specific detail — examples, metaphors, homework tasks, contexts — must \
+         come from the observation or the client file. If the source material does not \
+         specify concrete examples, describe the task in general terms rather than \
+         inventing plausible specifics.\n\
          Include **Risk**: and **Formulation**: lines.\n\
          For **Risk**: use a brief default (e.g. 'No immediate concerns noted') \
          unless the observation specifically describes risk factors such as suicidal \

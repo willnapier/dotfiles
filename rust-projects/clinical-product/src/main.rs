@@ -168,6 +168,10 @@ fn build_system_prompt(modality: &str) -> String {
          to the existing formulation. \
          When documenting agreed between-session tasks, include sufficient detail \
          (duration, context, what to observe) to evidence collaborative planning. \
+         Every specific detail — examples, metaphors, homework tasks, contexts — must \
+         come from the observation or the client file. If the source material does not \
+         specify concrete examples, describe the task in general terms rather than \
+         inventing plausible specifics. \
          Structure: Risk assessment, narrative body, Formulation. \
          For the risk assessment, use a brief default (e.g. 'No immediate concerns noted') \
          unless the observation specifically describes risk factors. Do NOT confabulate \
