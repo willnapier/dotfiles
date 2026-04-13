@@ -340,12 +340,6 @@ impl App {
     }
 
     fn subscription(&self) -> Subscription<Msg> {
-        keyboard::on_key_press(|key, _modifiers| {
-            match key {
-                keyboard::Key::Named(keyboard::key::Named::ArrowDown) => Some(Msg::KeyDown),
-                keyboard::Key::Named(keyboard::key::Named::ArrowUp) => Some(Msg::KeyUp),
-                _ => None,
-            }
-        })
+        Subscription::none()
     }
 }
