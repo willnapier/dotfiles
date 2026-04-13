@@ -6966,3 +6966,4 @@ Incremental update completed
 2026-04-12 08:00:00 - ERROR: Could not retrieve OPENAI_API_KEY from Keychain (service=openai-api-key, account=semantic-search)
 2026-04-12 20:00:00 - ERROR: Could not retrieve OPENAI_API_KEY from Keychain (service=openai-api-key, account=semantic-search)
 2026-04-13 08:00:00 - ERROR: Could not retrieve OPENAI_API_KEY from Keychain (service=openai-api-key, account=semantic-search)
+2026-04-13 20:00:00 - ERROR: Could not retrieve OPENAI_API_KEY from Keychain (service=openai-api-key, account=semantic-search)
