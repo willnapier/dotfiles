@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+# inference-start — Start Trooper.ai GPU server, wait for boot, open SSH tunnel
+# Works on both Mac and Linux (nushell-safe: called via bash shebang)
+
+set -euo pipefail
+
+TROOPER_HOST="connect01.trooper.ai"
+TROOPER_SSH_PORT="42140"
+TROOPER_SSH_USER="trooperai"
+TROOPER_LOCAL_PORT="11434"
+SSH_KEY="$HOME/.ssh/id_ed25519"
+
+# Get API key from platform keychain
+get_api_key() {
+    if command -v secret-tool &>/dev/null; then
+        secret-tool lookup service trooper-api-key 2>/dev/null
+    elif command -v security &>/dev/null; then
+        security find-generic-password -s trooper-api-key -w 2>/dev/null
+    else
+        echo "ERROR: No keychain tool found" >&2
+        exit 1
+    fi
+}
+
+# Get server ID from API
+get_server_id() {
+    local api_key="$1"
+    curl -s -H "Authorization: Bearer $api_key" \
+        "https://james.trooper.ai/api/orders" | \
+        python3 -c "import sys,json; servers=json.load(sys.stdin); print(servers[0]['id'] if servers else '')" 2>/dev/null
+}
+
+get_server_status() {
+    local api_key="$1"
+    curl -s -H "Authorization: Bearer $api_key" \
+        "https://james.trooper.ai/api/orders" | \
+        python3 -c "import sys,json; servers=json.load(sys.stdin); print(servers[0].get('status','unknown') if servers else 'none')" 2>/dev/null
+}
+
+start_server() {
+    local api_key="$1" server_id="$2"
+    curl -s -H "Authorization: Bearer $api_key" \
+        -H "Content-Type: application/json" \
+        -d "{\"serverId\": $server_id, \"desired_status\": \"running\", \"migration_allowed\": false}" \
+        "https://james.trooper.ai/api/order-status" | \
+        python3 -c "import sys,json; r=json.load(sys.stdin); print('OK' if r.get('success') else f'FAILED: {r}')" 2>/dev/null
+}
+
+# Kill any existing tunnel on the local port
+kill_existing_tunnel() {
+    local pids
+    pids=$(lsof -ti "tcp:$TROOPER_LOCAL_PORT" 2>/dev/null || true)
+    if [ -n "$pids" ]; then
+        echo "Killing existing tunnel on port $TROOPER_LOCAL_PORT..."
+        echo "$pids" | xargs kill 2>/dev/null || true
+        sleep 1
+    fi
+}
+
+wait_for_ssh() {
+    echo "Waiting for SSH..."
+    for i in $(seq 1 30); do
+        if ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=5 \
+            "$TROOPER_SSH_USER@$TROOPER_HOST" -p "$TROOPER_SSH_PORT" "echo ok" &>/dev/null; then
+            return 0
+        fi
+        printf "."
+        sleep 5
+    done
+    echo ""
+    echo "ERROR: SSH not available after 150 seconds"
+    return 1
+}
+
+open_tunnel() {
+    kill_existing_tunnel
+    ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ServerAliveInterval=30 \
+        -N -L "$TROOPER_LOCAL_PORT:localhost:$TROOPER_LOCAL_PORT" \
+        "$TROOPER_SSH_USER@$TROOPER_HOST" -p "$TROOPER_SSH_PORT" &
+    local tunnel_pid=$!
+    sleep 2
+    if kill -0 "$tunnel_pid" 2>/dev/null; then
+        echo "Tunnel open (PID $tunnel_pid, local port $TROOPER_LOCAL_PORT)"
+        return 0
+    else
+        echo "ERROR: Tunnel failed to start"
+        return 1
+    fi
+}
+
+wait_for_ollama() {
+    echo "Waiting for Ollama..."
+    for i in $(seq 1 20); do
+        local response
+        response=$(curl -s --max-time 5 "http://localhost:$TROOPER_LOCAL_PORT/api/tags" 2>/dev/null || true)
+        if echo "$response" | python3 -c "import sys,json; json.load(sys.stdin)" &>/dev/null; then
+            return 0
+        fi
+        printf "."
+        sleep 3
+    done
+    echo ""
+    echo "ERROR: Ollama not responding after 60 seconds"
+    return 1
+}
+
+# Main
+echo "=== Inference Start ==="
+
+API_KEY=$(get_api_key)
+if [ -z "$API_KEY" ]; then
+    echo "ERROR: No Trooper API key found in keychain"
+    echo "Store it with: secret-tool store --label='Trooper API key' service trooper-api-key"
+    echo "  or on Mac: security add-generic-password -s trooper-api-key -a trooper -w 'YOUR_KEY'"
+    exit 1
+fi
+
+STATUS=$(get_server_status "$API_KEY")
+echo "Server status: $STATUS"
+
+if [ "$STATUS" = "running" ]; then
+    echo "Server already running"
+elif [ "$STATUS" = "stopped" ] || [ "$STATUS" = "frozen" ]; then
+    SERVER_ID=$(get_server_id "$API_KEY")
+    echo "Starting server (ID: $SERVER_ID)..."
+    RESULT=$(start_server "$API_KEY" "$SERVER_ID")
+    echo "API response: $RESULT"
+    echo "Waiting for boot..."
+    sleep 10
+elif [ "$STATUS" = "none" ]; then
+    echo "ERROR: No servers found on account"
+    exit 1
+else
+    echo "Server status: $STATUS — attempting to connect anyway"
+fi
+
+wait_for_ssh || exit 1
+echo " SSH ready"
+
+open_tunnel || exit 1
+
+wait_for_ollama || exit 1
+echo " Ollama ready"
+
+# Show models
+echo ""
+echo "=== Models available ==="
+curl -s "http://localhost:$TROOPER_LOCAL_PORT/api/tags" | \
+    python3 -c "
+import sys,json
+models = json.load(sys.stdin).get('models',[])
+for m in models:
+    d = m.get('details',{})
+    size_gb = m.get('size',0)/1e9
+    print(f\"  {m['name']}: {d.get('quantization_level','?')}, {size_gb:.0f}GB\")
+"
+echo ""
+echo "=== Inference ready ==="

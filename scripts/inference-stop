@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# inference-stop — Stop Trooper.ai GPU server and close SSH tunnel
+# Works on both Mac and Linux (nushell-safe: called via bash shebang)
+
+set -euo pipefail
+
+TROOPER_LOCAL_PORT="11434"
+
+# Get API key from platform keychain
+get_api_key() {
+    if command -v secret-tool &>/dev/null; then
+        secret-tool lookup service trooper-api-key 2>/dev/null
+    elif command -v security &>/dev/null; then
+        security find-generic-password -s trooper-api-key -w 2>/dev/null
+    else
+        echo "ERROR: No keychain tool found" >&2
+        exit 1
+    fi
+}
+
+get_server_info() {
+    local api_key="$1"
+    curl -s -H "Authorization: Bearer $api_key" \
+        "https://james.trooper.ai/api/orders" | \
+        python3 -c "
+import sys,json
+servers=json.load(sys.stdin)
+if servers:
+    s=servers[0]
+    print(f\"{s['id']} {s.get('status','unknown')}\")
+else:
+    print('none none')
+" 2>/dev/null
+}
+
+stop_server() {
+    local api_key="$1" server_id="$2"
+    curl -s -H "Authorization: Bearer $api_key" \
+        -H "Content-Type: application/json" \
+        -d "{\"serverId\": $server_id, \"desired_status\": \"stopped\", \"migration_allowed\": false}" \
+        "https://james.trooper.ai/api/order-status" | \
+        python3 -c "import sys,json; r=json.load(sys.stdin); print('OK' if r.get('success') else f'FAILED: {r}')" 2>/dev/null
+}
+
+# Kill SSH tunnel
+kill_tunnel() {
+    local pids
+    pids=$(lsof -ti "tcp:$TROOPER_LOCAL_PORT" 2>/dev/null || true)
+    if [ -n "$pids" ]; then
+        echo "Closing tunnel on port $TROOPER_LOCAL_PORT..."
+        echo "$pids" | xargs kill 2>/dev/null || true
+        echo "Tunnel closed"
+    else
+        echo "No tunnel running"
+    fi
+}
+
+# Main
+echo "=== Inference Stop ==="
+
+kill_tunnel
+
+API_KEY=$(get_api_key)
+if [ -z "$API_KEY" ]; then
+    echo "Tunnel closed. No API key found — stop server manually in Trooper dashboard."
+    exit 0
+fi
+
+INFO=$(get_server_info "$API_KEY")
+SERVER_ID=$(echo "$INFO" | cut -d' ' -f1)
+STATUS=$(echo "$INFO" | cut -d' ' -f2)
+
+echo "Server status: $STATUS (ID: $SERVER_ID)"
+
+if [ "$STATUS" = "running" ]; then
+    echo "Stopping server..."
+    RESULT=$(stop_server "$API_KEY" "$SERVER_ID")
+    echo "API response: $RESULT"
+    echo "Server will stop shortly (billing switches to 35% rate)"
+elif [ "$STATUS" = "stopped" ] || [ "$STATUS" = "frozen" ]; then
+    echo "Server already stopped/frozen"
+else
+    echo "Server status: $STATUS — no action taken"
+fi
+
+echo "=== Done ==="
