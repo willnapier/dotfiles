@@ -62,7 +62,7 @@
 }
 
 html {
-    font-size: 15px;
+    font-size: 13px;
 }
 
 body {
@@ -80,19 +80,19 @@ header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.75rem 1.25rem;
+    padding: 0.4rem 1rem;
     border-bottom: 1px solid var(--border);
     background: var(--bg-card);
 }
 
 header h1 {
-    font-size: 1.1rem;
+    font-size: 0.95rem;
     font-weight: 600;
     letter-spacing: -0.01em;
 }
 
 header time {
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     color: var(--text-muted);
 }
 
@@ -107,8 +107,8 @@ header time {
 /* --- Sidebar --- */
 
 aside {
-    width: 250px;
-    min-width: 250px;
+    width: 200px;
+    min-width: 200px;
     background: var(--bg-sidebar);
     border-right: 1px solid var(--border);
     display: flex;
@@ -120,12 +120,12 @@ aside {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.75rem 1rem;
+    padding: 0.4rem 0.75rem;
     border-bottom: 1px solid var(--border);
 }
 
 .sidebar-header h2 {
-    font-size: 0.9rem;
+    font-size: 0.8rem;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -155,9 +155,9 @@ aside {
 }
 
 .client-list li {
-    padding: 0.6rem 1rem;
+    padding: 0.35rem 0.75rem;
     cursor: pointer;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     border-left: 3px solid transparent;
     transition: background 0.1s, border-color 0.1s;
 }
@@ -190,11 +190,11 @@ aside {
 main {
     flex: 1;
     overflow-y: auto;
-    padding: 1.5rem;
+    padding: 0.75rem 1rem;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 1rem;
+    gap: 0.6rem;
 }
 
 /* --- Cards --- */
