@@ -15,6 +15,14 @@ fn main() -> iced::Result {
         .subscription(App::subscription)
         .theme(|_| Theme::SolarizedDark)
         .window_size((1100.0, 750.0))
+        .window(iced::window::Settings {
+            platform_specific: iced::window::settings::PlatformSpecific {
+                title_hidden: true,
+                titlebar_transparent: true,
+                fullsize_content_view: true,
+            },
+            ..Default::default()
+        })
         .run_with(App::new)
 }
 
@@ -240,9 +248,11 @@ impl App {
 
         // Header
         let hdr = container(row![
+            iced::widget::Space::with_width(70),
+            text(today).size(12).color(color!(0x93a1a1)),
+            iced::widget::horizontal_space(),
             text("Clinical Dashboard").size(14).color(color!(0xfdf6e3)),
             iced::widget::horizontal_space(),
-            text(today).size(12).color(color!(0x93a1a1)),
         ].align_y(iced::Alignment::Center))
             .padding(8)
             .width(Length::Fill)
