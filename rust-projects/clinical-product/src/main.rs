@@ -160,6 +160,13 @@ fn build_system_prompt(modality: &str) -> String {
          Frame clinical reasoning using explicit {} process terminology — \
          name the relevant therapeutic processes where they apply to the session material. \
          Integrate these naturally into the prose rather than listing them. \
+         When describing in-session experiments or interventions, note that these were \
+         collaboratively agreed with the client — do not present them as clinician-imposed. \
+         Frame interpretive links to developmental history or formulation tentatively \
+         (e.g. 'this was explored as potentially connected to...') while anchoring \
+         to the existing formulation. \
+         When documenting agreed between-session tasks, include sufficient detail \
+         (duration, context, what to observe) to evidence collaborative planning. \
          Structure: Risk assessment, narrative body, Formulation. \
          For the risk assessment, use a brief default (e.g. 'No immediate concerns noted') \
          unless the observation specifically describes risk factors. Do NOT confabulate \

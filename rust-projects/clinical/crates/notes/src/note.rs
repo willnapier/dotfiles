@@ -181,6 +181,13 @@ fn build_prompt(id: &str, observation: &str) -> Result<String> {
          Draw on the full therapeutic arc — reference previous sessions, ongoing themes, \
          and the client's formulation where relevant.\n\
          Use the clinician's voice and framework from the reference material.\n\
+         When describing in-session experiments or interventions, note that these were \
+         collaboratively agreed with the client — do not present them as clinician-imposed.\n\
+         Frame interpretive links to developmental history or formulation tentatively \
+         (e.g. 'this was explored as potentially connected to...' rather than asserting \
+         causation), while still anchoring to the existing formulation.\n\
+         When documenting agreed between-session tasks, include sufficient detail \
+         (duration, context, what to observe) to evidence collaborative planning.\n\
          Include **Risk**: and **Formulation**: lines.\n\
          For **Risk**: use a brief default (e.g. 'No immediate concerns noted') \
          unless the observation specifically describes risk factors such as suicidal \
