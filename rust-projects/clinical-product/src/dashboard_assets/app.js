@@ -268,6 +268,7 @@ async function handleGenerate() {
     noteStatus.textContent = "Generating";
     noteStatus.className = "status-indicator streaming";
     editSection.hidden = true;
+    const genStartTime = performance.now();
 
     try {
         const resp = await fetch("/api/note", {
@@ -299,7 +300,8 @@ async function handleGenerate() {
         }
 
         // Done
-        noteStatus.textContent = "Complete";
+        const genElapsed = ((performance.now() - genStartTime) / 1000).toFixed(1);
+        noteStatus.textContent = `Complete — ${genElapsed}s`;
         noteStatus.className = "status-indicator";
         noteActions.hidden = false;
         saveGeneratedNote(selectedClientId, generatedNote);
