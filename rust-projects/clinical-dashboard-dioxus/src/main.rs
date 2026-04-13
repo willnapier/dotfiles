@@ -95,16 +95,16 @@ body { font:14px var(--font); background:var(--bg); color:var(--text);
 .hdr { display:flex; justify-content:space-between; align-items:center;
        padding:6px 12px; border-bottom:1px solid var(--border); background:var(--card); }
 .hdr h1 { font-size:14px; } .hdr .dt { font-size:12px; color:var(--muted); }
-.lay { display:flex; flex:1; min-height:0; overflow:hidden; height:calc(100vh - 30px); }
+.lay { display:flex; flex:1; min-height:0; }
 .sb { width:140px; min-width:140px; background:var(--sidebar);
-      border-right:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; height:100%; }
+      border-right:1px solid var(--border); display:flex; flex-direction:column; }
 .sb-h { padding:4px 8px; border-bottom:1px solid var(--border);
         font-size:11px; font-weight:600; text-transform:uppercase; color:var(--muted); }
 .sb-s { padding:4px 6px; border-bottom:1px solid var(--border); }
 .sb-s input { width:100%; padding:4px 6px; border:1px solid var(--border);
               border-radius:4px; font-size:12px; background:var(--bg); color:var(--text); outline:none; }
 .sb-s input:focus { border-color:var(--accent); }
-.cl { list-style:none; overflow-y:scroll; flex:1; min-height:0; padding:2px 0; }
+.cl { list-style:none; overflow-y:auto; flex:1; padding:2px 0; }
 .cl li { padding:4px 8px; cursor:pointer; font-size:13px; border-left:3px solid transparent; }
 .cl li:hover { background:#1f2233; }
 .cl li.a { background:#1f2233; border-left-color:var(--accent); font-weight:500; }
@@ -141,6 +141,10 @@ select { padding:5px 6px; border:1px solid var(--border); border-radius:4px;
 ::-webkit-scrollbar-thumb { background:#3a3d4a; border-radius:3px; }
 "#;
 
+const INIT_JS: &str = r#"
+// No-op — arrow key handling is done in Dioxus
+"#;
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -172,10 +176,43 @@ fn app() -> Element {
         format!("{}", chrono::Local::now().format("%A %d %B %Y"))
     };
 
+    // Inject JS to suppress arrow-key scrolling on inputs
+    use_effect(|| { document::eval(INIT_JS); });
+
     rsx! {
         style { {CSS} }
         div { class: "hdr", h1 { "Clinical Dashboard" } span { class: "dt", "{today}" } }
         div { class: "lay",
+            onkeydown: move |e| {
+                // Global arrow key navigation for client list (unless in textarea)
+                let q = search.read().to_uppercase();
+                let filt: Vec<_> = clients.read().iter()
+                    .filter(|c| q.is_empty() || c.id.to_uppercase().contains(&q))
+                    .cloned().collect();
+                match e.key() {
+                    Key::ArrowDown => {
+                        e.prevent_default();
+                        let idx = *highlight_idx.read();
+                        if idx + 1 < filt.len() { highlight_idx.set(idx + 1); }
+                    }
+                    Key::ArrowUp => {
+                        e.prevent_default();
+                        let idx = *highlight_idx.read();
+                        if idx > 0 { highlight_idx.set(idx - 1); }
+                    }
+                    Key::Enter => {
+                        let idx = *highlight_idx.read();
+                        if idx < filt.len() && selected.read().is_none() {
+                            selected.set(Some(filt[idx].id.clone()));
+                            search.set(String::new());
+                            highlight_idx.set(0);
+                            obs.set(String::new()); note.set(String::new());
+                            show_note.set(false); show_actions.set(false); editing.set(false);
+                        }
+                    }
+                    _ => {}
+                }
+            },
             div { class: "sb",
                 div { class: "sb-h", "Today" }
                 div { class: "sb-s",
@@ -191,22 +228,15 @@ fn app() -> Element {
                             match e.key() {
                                 Key::ArrowDown => {
                                     e.prevent_default();
+                                    e.stop_propagation();
                                     let idx = *highlight_idx.read();
-                                    if idx + 1 < filt.len() {
-                                        highlight_idx.set(idx + 1);
-                                        // Scroll highlighted item into view
-                                        let new_idx = idx + 1;
-                                        document::eval(&format!("document.querySelectorAll('.cl li')[{new_idx}]?.scrollIntoView({{block:'nearest'}})"));
-                                    }
+                                    if idx + 1 < filt.len() { highlight_idx.set(idx + 1); }
                                 }
                                 Key::ArrowUp => {
                                     e.prevent_default();
+                                    e.stop_propagation();
                                     let idx = *highlight_idx.read();
-                                    if idx > 0 {
-                                        highlight_idx.set(idx - 1);
-                                        let new_idx = idx - 1;
-                                        document::eval(&format!("document.querySelectorAll('.cl li')[{new_idx}]?.scrollIntoView({{block:'nearest'}})"));
-                                    }
+                                    if idx > 0 { highlight_idx.set(idx - 1); }
                                 }
                                 Key::Enter => {
                                     e.prevent_default();
