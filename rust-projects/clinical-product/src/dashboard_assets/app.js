@@ -37,6 +37,19 @@ let selectedClientId = null;
 let generatedNote    = "";
 let isGenerating     = false;
 
+// Draft observations persist per client (survives client switching + page reload)
+const draftKey = (id) => `clinic-draft-${id}`;
+function saveDraft(id, text) {
+    if (id && text.trim()) {
+        localStorage.setItem(draftKey(id), text);
+    } else if (id) {
+        localStorage.removeItem(draftKey(id));
+    }
+}
+function loadDraft(id) {
+    return localStorage.getItem(draftKey(id)) || "";
+}
+
 // --- Init ---
 
 (function init() {
@@ -60,9 +73,10 @@ let isGenerating     = false;
     saveEditedBtn.addEventListener("click", handleSaveEdited);
     cancelEditBtn.addEventListener("click", handleCancelEdit);
 
-    // Enable generate when observation has content
+    // Enable generate when observation has content + auto-save draft
     obsTextarea.addEventListener("input", () => {
         generateBtn.disabled = obsTextarea.value.trim().length === 0 || isGenerating;
+        if (selectedClientId) saveDraft(selectedClientId, obsTextarea.value);
     });
 
     // Ctrl+Enter to generate
@@ -111,6 +125,11 @@ async function loadAppointments() {
 }
 
 async function selectClient(id) {
+    // Save current draft before switching
+    if (selectedClientId) {
+        saveDraft(selectedClientId, obsTextarea.value);
+    }
+
     selectedClientId = id;
 
     // Highlight in sidebar
@@ -123,9 +142,12 @@ async function selectClient(id) {
     emptyState.hidden = true;
     clientCard.hidden = false;
     obsSection.hidden = false;
-    obsTextarea.value = "";
+
+    // Restore draft for this client
+    const draft = loadDraft(id);
+    obsTextarea.value = draft;
     obsTextarea.focus();
-    generateBtn.disabled = true;
+    generateBtn.disabled = draft.trim().length === 0;
 
     // Populate card header
     cardClientId.textContent = id;
@@ -252,6 +274,7 @@ async function handleAccept() {
             showToast("Note saved for " + selectedClientId);
             resetNoteState();
             obsTextarea.value = "";
+            saveDraft(selectedClientId, "");  // clear draft on save
             generateBtn.disabled = true;
         } else {
             throw new Error(result.error || "Save failed");
