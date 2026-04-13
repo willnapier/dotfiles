@@ -95,16 +95,16 @@ body { font:14px var(--font); background:var(--bg); color:var(--text);
 .hdr { display:flex; justify-content:space-between; align-items:center;
        padding:6px 12px; border-bottom:1px solid var(--border); background:var(--card); }
 .hdr h1 { font-size:14px; } .hdr .dt { font-size:12px; color:var(--muted); }
-.lay { display:flex; flex:1; min-height:0; }
+.lay { display:flex; flex:1; min-height:0; overflow:hidden; height:calc(100vh - 30px); }
 .sb { width:140px; min-width:140px; background:var(--sidebar);
-      border-right:1px solid var(--border); display:flex; flex-direction:column; }
+      border-right:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; height:100%; }
 .sb-h { padding:4px 8px; border-bottom:1px solid var(--border);
         font-size:11px; font-weight:600; text-transform:uppercase; color:var(--muted); }
 .sb-s { padding:4px 6px; border-bottom:1px solid var(--border); }
 .sb-s input { width:100%; padding:4px 6px; border:1px solid var(--border);
               border-radius:4px; font-size:12px; background:var(--bg); color:var(--text); outline:none; }
 .sb-s input:focus { border-color:var(--accent); }
-.cl { list-style:none; overflow-y:auto; flex:1; padding:2px 0; }
+.cl { list-style:none; overflow-y:scroll; flex:1; min-height:0; padding:2px 0; }
 .cl li { padding:4px 8px; cursor:pointer; font-size:13px; border-left:3px solid transparent; }
 .cl li:hover { background:#1f2233; }
 .cl li.a { background:#1f2233; border-left-color:var(--accent); font-weight:500; }
@@ -192,12 +192,21 @@ fn app() -> Element {
                                 Key::ArrowDown => {
                                     e.prevent_default();
                                     let idx = *highlight_idx.read();
-                                    if idx + 1 < filt.len() { highlight_idx.set(idx + 1); }
+                                    if idx + 1 < filt.len() {
+                                        highlight_idx.set(idx + 1);
+                                        // Scroll highlighted item into view
+                                        let new_idx = idx + 1;
+                                        document::eval(&format!("document.querySelectorAll('.cl li')[{new_idx}]?.scrollIntoView({{block:'nearest'}})"));
+                                    }
                                 }
                                 Key::ArrowUp => {
                                     e.prevent_default();
                                     let idx = *highlight_idx.read();
-                                    if idx > 0 { highlight_idx.set(idx - 1); }
+                                    if idx > 0 {
+                                        highlight_idx.set(idx - 1);
+                                        let new_idx = idx - 1;
+                                        document::eval(&format!("document.querySelectorAll('.cl li')[{new_idx}]?.scrollIntoView({{block:'nearest'}})"));
+                                    }
                                 }
                                 Key::Enter => {
                                     e.prevent_default();
