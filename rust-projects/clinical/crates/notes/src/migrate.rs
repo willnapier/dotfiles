@@ -233,10 +233,17 @@ pub fn clean_correspondence_all(dry_run: bool) -> Result<()> {
 pub fn personalize(id: &str, dry_run: bool) -> Result<()> {
     let identity_path = client::identity_path(id);
     if !identity_path.exists() {
-        bail!("identity.yaml not found for {}", id);
+        eprintln!("{}: no identity.yaml, skipping.", id);
+        return Ok(());
     }
 
-    let identity = clinical_core::identity::load_identity(&identity_path)?;
+    let identity = match clinical_core::identity::load_identity(&identity_path) {
+        Ok(i) => i,
+        Err(e) => {
+            eprintln!("{}: identity.yaml parse error ({}), skipping.", id, e);
+            return Ok(());
+        }
+    };
     let name = identity.name.as_deref().unwrap_or("").trim().to_string();
     if name.is_empty() {
         eprintln!("{}: no name in identity.yaml, skipping.", id);
@@ -255,17 +262,19 @@ pub fn personalize(id: &str, dry_run: bool) -> Result<()> {
         .with_context(|| format!("Failed to read {}", notes_path.display()))?;
 
     // Build replacements — order matters (longest first to avoid partial matches)
-    let replacements = [
-        ("the Client's", &format!("{}'s", first_name)),
-        ("The Client's", &format!("{}'s", first_name)),
-        ("the client's", &format!("{}'s", first_name)),
-        ("The client's", &format!("{}'s", first_name)),
-        ("Client's", &format!("{}'s", first_name)),
-        ("the Client", first_name),
-        ("The Client", first_name),
-        ("the client", first_name),
-        ("The client", first_name),
-        ("Client", first_name),
+    let possessive = format!("{}'s", first_name);
+    let first = first_name.to_string();
+    let replacements: Vec<(&str, &str)> = vec![
+        ("the Client's", &possessive),
+        ("The Client's", &possessive),
+        ("the client's", &possessive),
+        ("The client's", &possessive),
+        ("Client's", &possessive),
+        ("the Client", &first),
+        ("The Client", &first),
+        ("the client", &first),
+        ("The client", &first),
+        ("Client", &first),
     ];
 
     let mut result = content.clone();
