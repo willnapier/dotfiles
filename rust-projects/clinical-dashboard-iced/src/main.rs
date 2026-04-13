@@ -338,10 +338,12 @@ impl App {
 
     fn subscription(&self) -> Subscription<Msg> {
         keyboard::on_key_press(|key, modifiers| {
-            if modifiers.is_empty() {
+            // Cmd+Arrow for client navigation (avoids conflict with text editors)
+            if modifiers.command() {
                 match key {
                     keyboard::Key::Named(keyboard::key::Named::ArrowDown) => Some(Msg::KeyDown),
                     keyboard::Key::Named(keyboard::key::Named::ArrowUp) => Some(Msg::KeyUp),
+                    keyboard::Key::Named(keyboard::key::Named::Enter) => Some(Msg::KeyEnter),
                     _ => None,
                 }
             } else {
