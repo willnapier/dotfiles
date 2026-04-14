@@ -258,6 +258,28 @@ async fn check_inference() -> bool {
     }
 }
 
+async fn restart_inference() -> bool {
+    eprintln!("Inference down — running inference-start...");
+    match tokio::process::Command::new("inference-start")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => match c.wait_with_output().await {
+            Ok(o) => {
+                let ok = o.status.success();
+                if !ok {
+                    let stderr = String::from_utf8_lossy(&o.stderr);
+                    eprintln!("inference-start failed: {stderr}");
+                }
+                ok
+            }
+            Err(e) => { eprintln!("inference-start error: {e}"); false }
+        },
+        Err(e) => { eprintln!("Failed to spawn inference-start: {e}"); false }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Keyboard event mapping
 // ---------------------------------------------------------------------------
