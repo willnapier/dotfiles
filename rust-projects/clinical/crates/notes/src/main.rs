@@ -1,6 +1,7 @@
 mod auth;
 mod batch;
 mod deidentify;
+mod faithfulness;
 mod import;
 mod finalise;
 mod letter;
