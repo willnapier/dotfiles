@@ -7,6 +7,7 @@ use serde::Serialize;
 #[derive(Debug, Clone, Serialize)]
 pub struct Appointment {
     pub start_time: String,
+    pub end_time: String,
     pub client_name: String,
     pub rate_tag: Option<String>,
     pub status: Status,
@@ -215,6 +216,7 @@ fn parse_title(title: &str) -> Result<Appointment> {
         .captures(time_part)
         .with_context(|| format!("Invalid time format: {}", time_part))?;
     let start_time = time_cap[1].to_string();
+    let end_time = time_cap[2].to_string();
 
     // Last segment: status
     let status_str = parts.last().unwrap().trim();
@@ -234,6 +236,7 @@ fn parse_title(title: &str) -> Result<Appointment> {
 
     Ok(Appointment {
         start_time,
+        end_time,
         client_name,
         rate_tag,
         status,
@@ -282,6 +285,7 @@ mod tests {
             "10:00-11:00 - Laurillard, Jasmina - Standard Rate_Self Paid_19 - 37 Gloucester Place  - Booked";
         let appt = parse_title(title).unwrap();
         assert_eq!(appt.start_time, "10:00");
+        assert_eq!(appt.end_time, "11:00");
         assert_eq!(appt.client_name, "Laurillard, Jasmina");
         assert_eq!(appt.rate_tag, None);
         assert_eq!(appt.status, Status::Booked);
