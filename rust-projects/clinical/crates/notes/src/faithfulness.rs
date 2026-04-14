@@ -190,18 +190,56 @@ pub fn extract_observation_sentences(observation: &str) -> Vec<String> {
     split_sentences(observation)
 }
 
-/// Split text into sentences on sentence-ending punctuation followed by
-/// whitespace and a capital letter. Handles common abbreviations.
+/// Split text into sentences. Uses a simple heuristic: split on
+/// `. ` / `! ` / `? ` followed by a capital letter, but not after
+/// common abbreviations (Dr., Mr., Ms., Mrs., e.g., i.e.).
 fn split_sentences(text: &str) -> Vec<String> {
-    let re = Regex::new(
-        r"(?<!\be\.g)(?<!\bi\.e)(?<!\bDr)(?<!\bMr)(?<!\bMs)(?<!\bMrs)(?<=[.!?])\s+(?=[A-Z])",
-    )
-    .unwrap();
+    let mut sentences = Vec::new();
+    let mut current = String::new();
+    let chars: Vec<char> = text.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
 
-    re.split(text)
-        .map(|s| s.trim().to_string())
-        .filter(|s| s.split_whitespace().count() >= 5)
-        .collect()
+    while i < len {
+        current.push(chars[i]);
+
+        // Check for sentence boundary: punctuation + space + uppercase
+        if (chars[i] == '.' || chars[i] == '!' || chars[i] == '?')
+            && i + 2 < len
+            && chars[i + 1].is_whitespace()
+            && chars[i + 2].is_uppercase()
+        {
+            // Check for abbreviations ending at this period
+            let before = current.trim_end_matches('.');
+            let last_word = before.split_whitespace().last().unwrap_or("");
+            let abbrevs = ["Dr", "Mr", "Ms", "Mrs", "e.g", "i.e", "etc", "vs"];
+            if chars[i] == '.' && abbrevs.iter().any(|a| last_word.ends_with(a)) {
+                i += 1;
+                continue;
+            }
+            // This is a real sentence boundary
+            let s = current.trim().to_string();
+            if s.split_whitespace().count() >= 5 {
+                sentences.push(s);
+            }
+            current = String::new();
+            // Skip the whitespace
+            i += 1;
+            while i < len && chars[i].is_whitespace() {
+                i += 1;
+            }
+            continue;
+        }
+        i += 1;
+    }
+
+    // Don't forget the last sentence
+    let s = current.trim().to_string();
+    if s.split_whitespace().count() >= 5 {
+        sentences.push(s);
+    }
+
+    sentences
 }
 
 // ---------------------------------------------------------------------------
@@ -317,8 +355,6 @@ pub fn layer1_string_match(
 
             // Check n-grams for significant phrases not in source
             let max_n = norm_sent.split_whitespace().count();
-            let mut has_ungrounded_phrase = false;
-            let mut worst_phrase = String::new();
 
             for n in (config.min_phrase_words..=max_n).rev() {
                 for gram in ngrams(&norm_sent, n) {
@@ -336,15 +372,11 @@ pub fn layer1_string_match(
                             score: 1.0,
                         });
                     }
-                    if !has_ungrounded_phrase {
-                        has_ungrounded_phrase = true;
-                        worst_phrase = gram;
-                    }
                 }
             }
 
-            // If we checked phrases but found none in source, pass to Layer 2
-            // (don't hard-fail — only quotes are hard failures at Layer 1)
+            // No verbatim match found — pass to Layer 2
+            // (don't hard-fail — only fabricated quotes are hard failures at Layer 1)
             None
         })
         .collect()

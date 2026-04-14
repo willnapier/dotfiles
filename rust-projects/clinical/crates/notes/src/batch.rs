@@ -29,6 +29,7 @@ struct GeneratedNote {
     pub observation: String,
     pub note: String,
     pub generation_time_secs: f64,
+    pub faithfulness_annotations: Option<String>,
 }
 
 /// Parse a batch input file into entries.
@@ -166,7 +167,7 @@ pub fn run(input_path: &str, no_save: bool) -> Result<()> {
             continue;
         }
 
-        // Validate
+        // Validate (structural)
         let validation = note::validate_note(&note_text);
         let all_issues: Vec<&String> = validation.warnings.iter()
             .chain(validation.failures.iter())
@@ -177,13 +178,28 @@ pub fn run(input_path: &str, no_save: bool) -> Result<()> {
             String::new()
         };
 
-        eprintln!("{:.0}s{}", elapsed, warn);
+        // Faithfulness check
+        let client_ctx = note::load_client_context_public(&entry.client_id).unwrap_or_default();
+        let faith = crate::faithfulness::check_faithfulness(
+            &note_text,
+            &entry.observation,
+            &client_ctx,
+        );
+        let faith_warn = if !faith.hard_failures().is_empty() || !faith.soft_flags().is_empty() {
+            let count = faith.hard_failures().len() + faith.soft_flags().len();
+            format!(" [{}  faithfulness flag{}]", count, if count == 1 { "" } else { "s" })
+        } else {
+            String::new()
+        };
+
+        eprintln!("{:.0}s{}{}", elapsed, warn, faith_warn);
 
         generated.push(GeneratedNote {
             client_id: entry.client_id.clone(),
             observation: entry.observation.clone(),
             note: note_text,
             generation_time_secs: elapsed,
+            faithfulness_annotations: crate::faithfulness::format_flags_for_review(&faith),
         });
     }
 
@@ -210,9 +226,14 @@ pub fn run(input_path: &str, no_save: bool) -> Result<()> {
 
     for gen in &generated {
         review.push_str(&format!(
-            "## {} ({:.0}s)\n\n{}\n\n---\n\n",
+            "## {} ({:.0}s)\n\n{}\n",
             gen.client_id, gen.generation_time_secs, gen.note
         ));
+        if let Some(ref annotations) = gen.faithfulness_annotations {
+            review.push_str("\n");
+            review.push_str(annotations);
+        }
+        review.push_str("\n---\n\n");
     }
 
     std::fs::write(&review_path, &review)

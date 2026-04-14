@@ -161,6 +161,41 @@ fn find_correspondence(id: &str) -> Vec<(String, String)> {
     files
 }
 
+/// Load the client context string (summary + recent sessions, or full file).
+/// Extracted from build_prompt for reuse by the faithfulness checker.
+fn load_client_context(id: &str) -> Result<String> {
+    let path = client::notes_path(id);
+    let client_file = std::fs::read_to_string(&path)
+        .with_context(|| format!("Could not read client file: {}", path.display()))?;
+
+    let mut out = String::new();
+    let summary_path = client::client_dir(id).join("summary.md");
+    if summary_path.exists() {
+        let summary = std::fs::read_to_string(&summary_path).unwrap_or_default();
+        out.push_str(&summary);
+        out.push('\n');
+        let last_sessions = extract_last_n_sessions(&client_file, 3);
+        if !last_sessions.is_empty() {
+            out.push_str(&last_sessions);
+            out.push('\n');
+        }
+    } else {
+        out.push_str(&client_file);
+        out.push('\n');
+        let correspondence = find_correspondence(id);
+        for (_, content) in &correspondence {
+            out.push_str(content);
+            out.push('\n');
+        }
+    }
+    Ok(out)
+}
+
+/// Public wrapper for load_client_context — used by batch processing.
+pub fn load_client_context_public(id: &str) -> Result<String> {
+    load_client_context(id)
+}
+
 /// Build the full prompt for the LLM, including all available context.
 fn build_prompt(id: &str, observation: &str) -> Result<String> {
     let path = client::notes_path(id);
@@ -540,9 +575,10 @@ pub fn run(
     no_save: bool,
     auto_confirm: bool,
 ) -> Result<()> {
-    // Step 1: Build full context prompt
+    // Step 1: Build full context prompt + load client context for faithfulness
     eprintln!("Preparing context for {}...", id);
     let prompt = build_prompt(id, observation)?;
+    let client_context = load_client_context(id).unwrap_or_default();
 
     let (llm_cmd, llm_args) = resolve_llm_command(model_override);
     if let Some(m) = model_override {
@@ -592,7 +628,7 @@ pub fn run(
 
         let validation = validate_note(&note);
 
-        // Show warnings (soft)
+        // Show structural warnings (soft)
         if !validation.warnings.is_empty() {
             eprintln!("\n⚠️  Validation warnings:");
             for w in &validation.warnings {
@@ -601,18 +637,56 @@ pub fn run(
             eprintln!();
         }
 
-        // Check lint gates (hard)
-        if validation.passed() {
+        // Faithfulness check
+        let faithfulness =
+            crate::faithfulness::check_faithfulness(&note, observation, &client_context);
+
+        // Show faithfulness soft flags (for human review)
+        let soft_flags = faithfulness.soft_flags();
+        if !soft_flags.is_empty() {
+            eprintln!("⚠️  Faithfulness flags (review these):");
+            for flag in &soft_flags {
+                let display = if flag.sentence.len() > 80 {
+                    format!("{}...", &flag.sentence[..80])
+                } else {
+                    flag.sentence.clone()
+                };
+                eprintln!("  - \"{}\"", display);
+                eprintln!("    {}", flag.reason);
+            }
+            eprintln!();
+        }
+
+        // Check both structural lint gates and faithfulness hard failures
+        let faith_hard = faithfulness.hard_failures();
+        if validation.passed() && faith_hard.is_empty() {
             break;
         }
 
-        eprintln!("\n🚫 Lint failure (auto-regenerating):");
-        for f in &validation.failures {
-            eprintln!("  - {}", f);
+        // Show structural failures
+        if !validation.passed() {
+            eprintln!("\n🚫 Lint failure (auto-regenerating):");
+            for f in &validation.failures {
+                eprintln!("  - {}", f);
+            }
+        }
+
+        // Show faithfulness hard failures
+        if !faith_hard.is_empty() {
+            eprintln!("\n🚫 Faithfulness failure (auto-regenerating):");
+            for f in &faith_hard {
+                let display = if f.sentence.len() > 80 {
+                    format!("{}...", &f.sentence[..80])
+                } else {
+                    f.sentence.clone()
+                };
+                eprintln!("  - \"{}\"", display);
+                eprintln!("    {}", f.reason);
+            }
         }
 
         if attempt == MAX_LINT_RETRIES - 1 {
-            eprintln!("\n⚠️  Max retries reached — showing note with lint failures.");
+            eprintln!("\n⚠️  Max retries reached — showing note with remaining issues.");
         }
     }
 
