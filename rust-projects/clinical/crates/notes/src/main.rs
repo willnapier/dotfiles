@@ -144,6 +144,10 @@ enum Commands {
         /// Skip confirmation prompt
         #[arg(long, short)]
         yes: bool,
+
+        /// Generate with both Q4 and Q8, show side-by-side, pick one. Both logged.
+        #[arg(long)]
+        compare: bool,
     },
 
     /// Save a pre-drafted note from stdin: validate, append, finalise
@@ -418,14 +422,21 @@ fn main() -> Result<()> {
             model_override,
             no_save,
             yes,
-        } => note::run(
-            &id,
-            &observation,
-            no_train,
-            model_override.as_deref(),
-            no_save,
-            yes,
-        ),
+            compare,
+        } => {
+            if compare {
+                note::compare_run(&id, &observation, no_train)
+            } else {
+                note::run(
+                    &id,
+                    &observation,
+                    no_train,
+                    model_override.as_deref(),
+                    no_save,
+                    yes,
+                )
+            }
+        }
         Commands::NoteSave { id, no_train } => note::save(&id, no_train),
         Commands::NoteMark {
             id,

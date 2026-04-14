@@ -832,6 +832,40 @@ pub fn format_flags_for_review(result: &FaithfulnessResult) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------
+// Comparison log
+// ---------------------------------------------------------------------------
+
+/// A single generation entry for the comparison log.
+#[derive(serde::Serialize)]
+pub struct ComparisonEntry {
+    pub timestamp: String,
+    pub client_id: String,
+    pub model: String,
+    pub observation: String,
+    pub note: String,
+    pub hard_failures: usize,
+    pub soft_flags: usize,
+    pub flag_details: Vec<String>,
+    pub attempts: usize,
+    pub accepted: Option<bool>,
+}
+
+/// Append a comparison entry to ~/Clinical/comparisons.jsonl.
+pub fn log_comparison(entry: &ComparisonEntry) -> Result<()> {
+    let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("No home dir"))?;
+    let path = home.join("Clinical/comparisons.jsonl");
+    let line = serde_json::to_string(entry)?;
+
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)?;
+    writeln!(file, "{}", line)?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
