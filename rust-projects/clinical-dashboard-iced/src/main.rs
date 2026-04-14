@@ -1220,13 +1220,22 @@ impl App {
 
             scrollable(container(col).padding(12).width(Length::Fill)).height(Length::Fill).into()
         } else {
-            let msg = if self.clinic_ended {
-                &self.status
+            if self.last_removed.is_some() {
+                container(
+                    row![
+                        text(&self.status).size(15).color(color!(0x8b8fa4)),
+                        button(text("Undo").size(14)).on_press(Msg::UndoRemove).padding([4, 10]).style(button::secondary),
+                    ].spacing(10).align_y(iced::Alignment::Center)
+                ).center(Length::Fill).into()
             } else {
-                "Select a client from the sidebar, or add one to today's clinic."
-            };
-            container(text(msg).size(15).color(color!(0x8b8fa4)))
-                .center(Length::Fill).into()
+                let msg = if self.clinic_ended {
+                    &self.status
+                } else {
+                    "Select a client from the sidebar, or add one to today's clinic."
+                };
+                container(text(msg).size(15).color(color!(0x8b8fa4)))
+                    .center(Length::Fill).into()
+            }
         };
 
         column![hdr, rule::horizontal(1), row![sidebar, main]].height(Length::Fill).into()
