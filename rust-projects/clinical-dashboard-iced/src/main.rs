@@ -394,6 +394,12 @@ fn highlight_style(_theme: &Theme) -> container::Style {
 // App
 // ---------------------------------------------------------------------------
 
+struct CompareEntry {
+    label: String,
+    raw_text: String,
+    content: text_editor::Content,
+}
+
 struct App {
     clients: Vec<ClientEntry>,
     filtered: Vec<ClientEntry>,
@@ -406,7 +412,7 @@ struct App {
     status: String,
     busy: bool,
     show_note: bool,
-    compares: Vec<(String, String)>,
+    compares: Vec<CompareEntry>,
     highlight: usize,
     // Focus management
     focus_zone: FocusZone,
@@ -436,6 +442,8 @@ enum Msg {
     Reject,
     Compare,
     ClearCmp,
+    CompareEdit(usize, text_editor::Action),
+    AcceptCompare(usize),
     // Clinic workflow
     MarkDna(String),
     MarkCancelled(String),
