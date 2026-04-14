@@ -40,7 +40,7 @@ impl std::fmt::Display for ModelChoice {
 }
 impl ModelChoice {
     fn model_name(&self) -> &str {
-        match self { ModelChoice::Q4 => "clinical-voice-q4", ModelChoice::Q8 => "clinical-voice" }
+        match self { ModelChoice::Q4 => "clinical-voice-q4", ModelChoice::Q8 => "clinical-voice-q8" }
     }
     const ALL: &'static [ModelChoice] = &[ModelChoice::Q4, ModelChoice::Q8];
 }

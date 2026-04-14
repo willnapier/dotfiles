@@ -500,7 +500,7 @@ fn load_voice_config() -> Option<(String, String)> {
     let model = voice
         .get("model")
         .and_then(|v| v.as_str())
-        .unwrap_or("clinical-voice")
+        .unwrap_or("clinical-voice-q8")
         .to_string();
     Some((endpoint, model))
 }

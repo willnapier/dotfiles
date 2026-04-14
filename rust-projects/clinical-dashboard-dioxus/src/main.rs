@@ -294,7 +294,7 @@ fn app() -> Element {
                         div { class: "act",
                             select { value: "{model}", onchange: move |e| model.set(e.value()),
                                 option { value: "clinical-voice-q4", "Q4" }
-                                option { value: "clinical-voice", "Q8" }
+                                option { value: "clinical-voice-q8", "Q8" }
                             }
                             button { class: "b bp",
                                 disabled: obs.read().trim().is_empty() || *generating.read(),
