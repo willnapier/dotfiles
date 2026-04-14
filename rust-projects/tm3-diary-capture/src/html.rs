@@ -142,22 +142,23 @@ fn parse_month(name: &str) -> Result<u32> {
 
 /// Extract appointment titles grouped by day column.
 ///
-/// The HTML has a 6-column grid (2880px height). Each child is a day column.
-/// Within each column, appointments have a div[title] matching the time pattern.
+/// Strategy 1 (SingleFile): Find the grid container with height:2880px +
+/// grid-template-columns inline styles. Each child div is a day column.
+///
+/// Strategy 2 (live DOM fallback): Collect all div[title] elements matching
+/// the time pattern, group them by the day header they fall under.
 fn extract_day_columns(html: &str) -> Result<Vec<Vec<String>>> {
     let doc = Html::parse_document(html);
-
-    // Find the main grid container (2880px height, 6 columns)
     let div_sel = Selector::parse("div").unwrap();
     let title_sel = Selector::parse("div[title]").unwrap();
     let time_re = Regex::new(r"^\d{2}:\d{2}-\d{2}:\d{2} - ")?;
 
+    // Strategy 1: look for the grid container with inline styles
     let mut grid_container = None;
     for el in doc.select(&div_sel) {
         if let Some(style) = el.value().attr("style") {
             if style.contains("height:2880px")
                 && style.contains("grid-template-columns")
-                && style.contains("301px")
             {
                 grid_container = Some(el);
                 break;
@@ -165,30 +166,84 @@ fn extract_day_columns(html: &str) -> Result<Vec<Vec<String>>> {
         }
     }
 
-    let grid = grid_container.context("Could not find appointment grid container")?;
-    let mut columns = Vec::new();
-
-    // Each direct child of the grid is a day column
-    for child in grid.children() {
-        if let Some(child_el) = child.value().as_element() {
-            let child_ref = scraper::ElementRef::wrap(child).unwrap();
-            let _ = child_el; // used for the is_element check
-            let mut titles = Vec::new();
-            for title_el in child_ref.select(&title_sel) {
-                if let Some(title) = title_el.value().attr("title") {
-                    if time_re.is_match(title) {
-                        titles.push(title.to_string());
+    if let Some(grid) = grid_container {
+        let mut columns = Vec::new();
+        for child in grid.children() {
+            if let Some(child_el) = child.value().as_element() {
+                let child_ref = scraper::ElementRef::wrap(child).unwrap();
+                let _ = child_el;
+                let mut titles = Vec::new();
+                for title_el in child_ref.select(&title_sel) {
+                    if let Some(title) = title_el.value().attr("title") {
+                        if time_re.is_match(title) {
+                            titles.push(title.to_string());
+                        }
                     }
                 }
+                columns.push(titles);
             }
-            columns.push(titles);
+        }
+        if !columns.is_empty() {
+            return Ok(columns);
         }
     }
 
-    if columns.is_empty() {
-        bail!("No day columns found in grid");
+    // Strategy 2 (fallback): collect all appointment titles and group by
+    // day header count. This works when the grid container doesn't have
+    // the expected inline styles (live DOM).
+    let day_re = Regex::new(
+        r#"(Mon|Tue|Wed|Thu|Fri|Sat|Sun) (\d{1,2}(?:st|nd|rd|th))"#,
+    )?;
+    let day_count = day_re.captures_iter(html).count();
+
+    if day_count == 0 {
+        bail!("No day headers found in HTML");
     }
 
+    // Collect all appointment titles from the entire document
+    let mut all_titles: Vec<String> = Vec::new();
+    for title_el in doc.select(&title_sel) {
+        if let Some(title) = title_el.value().attr("title") {
+            if time_re.is_match(title) {
+                all_titles.push(title.to_string());
+            }
+        }
+    }
+
+    if all_titles.is_empty() {
+        // No appointments found — return empty columns for each day
+        return Ok((0..day_count).map(|_| Vec::new()).collect());
+    }
+
+    // Try to find schedule-layer or similar column containers
+    let class_selectors = [
+        Selector::parse(".schedule-layer"),
+        Selector::parse(".k-scheduler-content"),
+        Selector::parse(".day-column"),
+    ];
+    for sel_result in &class_selectors {
+        if let Ok(ref sel) = sel_result {
+            let cols: Vec<Vec<String>> = doc.select(sel).map(|col| {
+                col.select(&title_sel)
+                    .filter_map(|el| {
+                        let t = el.value().attr("title")?;
+                        if time_re.is_match(t) { Some(t.to_string()) } else { None }
+                    })
+                    .collect()
+            }).collect();
+            if cols.len() == day_count {
+                return Ok(cols);
+            }
+        }
+    }
+
+    // Last resort: put all appointments in one column per day header,
+    // distributing based on the date in the title (if extractable) or
+    // just putting everything in the first column
+    let mut columns: Vec<Vec<String>> = (0..day_count).map(|_| Vec::new()).collect();
+    // Without column structure, we can't reliably assign to days.
+    // Put all in first column and let the caller deal with the mismatch.
+    columns[0] = all_titles;
     Ok(columns)
 }
 

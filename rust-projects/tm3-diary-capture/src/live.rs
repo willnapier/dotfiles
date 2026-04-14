@@ -83,26 +83,43 @@ pub fn scrape_diary() -> Result<Vec<DaySchedule>> {
 
     eprintln!("Authenticated. Waiting for diary to render...");
 
-    // Wait for the scheduler grid to appear (the appointment grid with 2880px height)
-    // Poll for up to 15 seconds
-    let mut grid_found = false;
-    for _ in 0..15 {
+    // Wait for appointment elements to appear in the DOM.
+    // We look for div[title] elements whose title matches the time pattern
+    // (e.g. "10:00-10:50 - Client Name - ..."), OR the grid container with
+    // the 2880px height. Either indicates the diary has rendered.
+    let mut diary_ready = false;
+    for _ in 0..20 {
         let check = tab.evaluate(
-            r#"document.querySelector('div[style*="height:2880px"]') !== null"#,
+            r#"(function() {
+                // Check for appointment title elements
+                var titles = document.querySelectorAll('div[title]');
+                for (var i = 0; i < titles.length; i++) {
+                    if (/^\d{2}:\d{2}-\d{2}:\d{2} - /.test(titles[i].title)) return true;
+                }
+                // Check for the grid container (SingleFile-style inline styles)
+                if (document.querySelector('div[style*="height:2880px"]')) return true;
+                // Check for day headers
+                var text = document.body.innerText;
+                if (/Mon \d{1,2}(st|nd|rd|th)/.test(text) && /(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}/.test(text)) return true;
+                return false;
+            })()"#,
             false,
         );
         if let Ok(result) = check {
             if result.value.as_ref().and_then(|v| v.as_bool()) == Some(true) {
-                grid_found = true;
+                diary_ready = true;
                 break;
             }
         }
         std::thread::sleep(Duration::from_secs(1));
     }
 
-    if !grid_found {
-        bail!("Diary grid did not render within 15 seconds. The page may have changed layout.");
+    if !diary_ready {
+        bail!("Diary did not render within 20 seconds. TM3 may have changed layout or cookies may be expired.");
     }
+
+    // Give an extra moment for any remaining async rendering
+    std::thread::sleep(Duration::from_secs(2));
 
     eprintln!("Diary rendered. Extracting HTML...");
 
