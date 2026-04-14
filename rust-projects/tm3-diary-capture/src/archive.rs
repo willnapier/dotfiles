@@ -74,3 +74,70 @@ pub fn cleanup() -> Result<usize> {
 
     Ok(removed)
 }
+
+
+/// Write a dashboard session file for the given date's appointments.
+/// Called after client ID mapping so IDs are resolved.
+pub fn write_dashboard_session(
+    date: &chrono::NaiveDate,
+    clients: &[(String, String, Option<String>)],  // (client_id, time, rate_tag)
+) -> Result<()> {
+    let session_dir = dirs::home_dir()
+        .expect("no home dir")
+        .join(".local/share/clinical-dashboard");
+    std::fs::create_dir_all(&session_dir)
+        .with_context(|| format!("create session dir: {}", session_dir.display()))?;
+
+    let date_str = date.format("%Y-%m-%d").to_string();
+    let path = session_dir.join(format!("session-{date_str}.json"));
+
+    // If session file already exists, merge — don't overwrite (preserves done/dna status)
+    let mut existing_clients: std::collections::HashMap<String, serde_json::Value> =
+        std::collections::HashMap::new();
+    if path.exists() {
+        if let Ok(data) = std::fs::read_to_string(&path) {
+            if let Ok(session) = serde_json::from_str::<serde_json::Value>(&data) {
+                if let Some(arr) = session.get("clients").and_then(|v| v.as_array()) {
+                    for c in arr {
+                        if let Some(id) = c.get("id").and_then(|v| v.as_str()) {
+                            existing_clients.insert(id.to_string(), c.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Build client list: preserve existing status, add new as pending
+    let mut session_clients = Vec::new();
+    for (id, time, rate_tag) in clients {
+        if let Some(existing) = existing_clients.remove(id) {
+            session_clients.push(existing);
+        } else {
+            let mut obj = serde_json::Map::new();
+            obj.insert("id".into(), serde_json::Value::String(id.clone()));
+            obj.insert("time".into(), serde_json::Value::String(time.clone()));
+            obj.insert("status".into(), serde_json::Value::String("pending".into()));
+            if let Some(tag) = rate_tag {
+                obj.insert("rate_tag".into(), serde_json::Value::String(tag.clone()));
+            }
+            session_clients.push(serde_json::Value::Object(obj));
+        }
+    }
+    // Keep any existing clients not in today's TM3 capture (walk-ins added manually)
+    for (_, v) in existing_clients {
+        session_clients.push(v);
+    }
+
+    let session = serde_json::json!({
+        "date": date_str,
+        "started_at": chrono::Local::now().to_rfc3339(),
+        "clients": session_clients,
+    });
+
+    let json = serde_json::to_string_pretty(&session).context("serialize session")?;
+    std::fs::write(&path, json).with_context(|| format!("write session: {}", path.display()))?;
+
+    eprintln!("Dashboard session: {}", path.display());
+    Ok(())
+}

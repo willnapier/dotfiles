@@ -164,6 +164,22 @@ fn main() -> Result<()> {
             lines.push(line);
         }
 
+        // Write dashboard session file for this date
+        if !cli.dry_run {
+            let session_clients: Vec<(String, String, Option<String>)> = sorted.iter().map(|appt| {
+                let cid = match &client_map {
+                    Some(map) => map.lookup(&appt.client_name).unwrap_or("???").to_string(),
+                    None => "???".to_string(),
+                };
+                (cid, appt.start_time.clone(), appt.rate_tag.clone())
+            }).filter(|(id, _, _)| id != "???").collect();
+            if !session_clients.is_empty() {
+                if let Err(e) = archive::write_dashboard_session(&schedule.date, &session_clients) {
+                    eprintln!("Warning: dashboard session write failed: {e}");
+                }
+            }
+        }
+
         let block = lines.join("\n");
 
         println!("{} ({}):", schedule.date, schedule.date.format("%A"));
