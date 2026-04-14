@@ -750,6 +750,209 @@ pub fn run(
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Compare mode: generate with Q4 and Q8, pick one, log both
+// ---------------------------------------------------------------------------
+
+/// Internal: generate a note with a specific model, run faithfulness, return result.
+struct GeneratedComparison {
+    model: String,
+    note: String,
+    attempts: usize,
+    hard_failures: usize,
+    soft_flags: Vec<String>,
+}
+
+fn generate_one(
+    id: &str,
+    observation: &str,
+    model: &str,
+    prompt: &str,
+    client_context: &str,
+) -> Result<GeneratedComparison> {
+    let (llm_cmd, llm_args) = resolve_llm_command(Some(model));
+    let args: Vec<&str> = llm_args.split_whitespace().collect();
+
+    const MAX_RETRIES: usize = 3;
+    let mut note = String::new();
+    let mut attempts = 0;
+
+    for attempt in 0..MAX_RETRIES {
+        attempts = attempt + 1;
+
+        let child = Command::new(&llm_cmd)
+            .args(&args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .with_context(|| format!("Failed to start: {}", llm_cmd))?;
+
+        let mut child = child;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(prompt.as_bytes())?;
+        }
+        let output = child.wait_with_output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("LLM failed (exit {}): {}", output.status, stderr);
+        }
+
+        note = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if note.is_empty() {
+            bail!("LLM returned empty output");
+        }
+
+        let validation = validate_note(&note);
+        let faithfulness =
+            crate::faithfulness::check_faithfulness(&note, observation, client_context);
+
+        if validation.passed() && faithfulness.passed_hard() {
+            let flags: Vec<String> = faithfulness
+                .soft_flags()
+                .iter()
+                .map(|f| f.reason.clone())
+                .collect();
+            return Ok(GeneratedComparison {
+                model: model.to_string(),
+                note,
+                attempts,
+                hard_failures: 0,
+                soft_flags: flags,
+            });
+        }
+    }
+
+    // After max retries, return what we have
+    let faithfulness =
+        crate::faithfulness::check_faithfulness(&note, observation, client_context);
+    let flags: Vec<String> = faithfulness
+        .soft_flags()
+        .iter()
+        .map(|f| f.reason.clone())
+        .collect();
+    Ok(GeneratedComparison {
+        model: model.to_string(),
+        note,
+        attempts,
+        hard_failures: faithfulness.hard_failures().len(),
+        soft_flags: flags,
+    })
+}
+
+/// Compare mode: generate with Q4 and Q8, show both, pick one, log both.
+pub fn compare_run(id: &str, observation: &str, no_train: bool) -> Result<()> {
+    eprintln!("Preparing context for {} (compare mode)...", id);
+    let prompt = build_prompt(id, observation)?;
+    let client_context = load_client_context(id).unwrap_or_default();
+
+    // Generate Q4
+    eprintln!("\n--- Generating Q4 ---");
+    let q4 = generate_one(id, observation, "clinical-voice-q4", &prompt, &client_context)?;
+    eprintln!("  {} attempt{}", q4.attempts, if q4.attempts == 1 { "" } else { "s" });
+
+    // Generate Q8
+    eprintln!("\n--- Generating Q8 ---");
+    let q8 = generate_one(id, observation, "clinical-voice-q8", &prompt, &client_context)?;
+    eprintln!("  {} attempt{}", q8.attempts, if q8.attempts == 1 { "" } else { "s" });
+
+    // Display both
+    eprintln!("\n========================================");
+    println!("#0 — Q4\n");
+    println!("{}", q4.note);
+
+    if !q4.soft_flags.is_empty() {
+        eprintln!("\n  Faithfulness flags (Q4):");
+        for f in &q4.soft_flags {
+            eprintln!("    - {}", f);
+        }
+    }
+
+    println!("\n----------------------------------------");
+    println!("#1 — Q8\n");
+    println!("{}", q8.note);
+
+    if !q8.soft_flags.is_empty() {
+        eprintln!("\n  Faithfulness flags (Q8):");
+        for f in &q8.soft_flags {
+            eprintln!("    - {}", f);
+        }
+    }
+
+    eprintln!("\n========================================");
+
+    // Prompt for choice
+    eprint!("\n[1] Accept Q4  [2] Accept Q8  [r] Reject both  > ");
+    io::stderr().flush()?;
+
+    let mut response = String::new();
+    io::stdin().read_line(&mut response)?;
+    let choice = response.trim().to_lowercase();
+
+    let now = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+
+    let (accepted_note, q4_accepted, q8_accepted) = match choice.as_str() {
+        "1" => (Some(&q4.note), true, false),
+        "2" => (Some(&q8.note), false, true),
+        "r" => (None, false, false),
+        _ => {
+            eprintln!("Invalid choice. Aborting (both logged as rejected).");
+            (None, false, false)
+        }
+    };
+
+    // Log both to comparisons.jsonl
+    let q4_entry = crate::faithfulness::ComparisonEntry {
+        timestamp: now.clone(),
+        client_id: id.to_string(),
+        model: q4.model.clone(),
+        observation: observation.to_string(),
+        note: q4.note.clone(),
+        hard_failures: q4.hard_failures,
+        soft_flags: q4.soft_flags.len(),
+        flag_details: q4.soft_flags.clone(),
+        attempts: q4.attempts,
+        accepted: Some(q4_accepted),
+    };
+    let q8_entry = crate::faithfulness::ComparisonEntry {
+        timestamp: now,
+        client_id: id.to_string(),
+        model: q8.model.clone(),
+        observation: observation.to_string(),
+        note: q8.note.clone(),
+        hard_failures: q8.hard_failures,
+        soft_flags: q8.soft_flags.len(),
+        flag_details: q8.soft_flags.clone(),
+        attempts: q8.attempts,
+        accepted: Some(q8_accepted),
+    };
+
+    if let Err(e) = crate::faithfulness::log_comparison(&q4_entry) {
+        eprintln!("Warning: failed to log Q4 comparison: {}", e);
+    }
+    if let Err(e) = crate::faithfulness::log_comparison(&q8_entry) {
+        eprintln!("Warning: failed to log Q8 comparison: {}", e);
+    }
+
+    // Save the accepted note
+    if let Some(accepted) = accepted_note {
+        let note_to_save = if no_train {
+            inject_exclude_marker(accepted)
+        } else {
+            accepted.to_string()
+        };
+        append_note(id, &note_to_save)?;
+        let model_name = if q4_accepted { "Q4" } else { "Q8" };
+        eprintln!("Note ({}) appended to {}.md", model_name, id);
+        finalise::run(id)?;
+    } else {
+        eprintln!("Both rejected. Nothing saved. Both logged to comparisons.jsonl.");
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
