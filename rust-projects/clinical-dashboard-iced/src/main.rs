@@ -529,6 +529,13 @@ impl App {
                     let draft = if obs_text.trim().is_empty() { None } else { Some(obs_text) };
                     if let Some(c) = self.session.clients.iter_mut().find(|c| c.id == *id) {
                         c.draft_observation = draft;
+                    } else if draft.is_some() {
+                        // Client not in session (ad-hoc via search) — add them
+                        self.session.clients.push(ClinicClient {
+                            id: id.clone(), time: None, end_time: None,
+                            status: ClinicStatus::Pending, rate_tag: None,
+                            draft_observation: draft,
+                        });
                     }
                     self.persist_session();
                 }
