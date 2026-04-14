@@ -286,6 +286,24 @@ enum Commands {
         #[arg(long, default_value = "7")]
         days: u32,
     },
+
+    /// Generate a compressed clinical summary for a client (saves to summary.md)
+    Summarise {
+        /// Client ID (e.g. CT71), or omit for --all
+        id: Option<String>,
+
+        /// Summarise all clients
+        #[arg(long)]
+        all: bool,
+
+        /// Preview without writing
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Override the model name
+        #[arg(long)]
+        model_override: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -454,5 +472,11 @@ fn main() -> Result<()> {
         Commands::Status { portal_url } => portal_client::status(portal_url),
         Commands::Revoke { token, portal_url } => portal_client::revoke(token, portal_url),
         Commands::Changes { days } => portal_client::changes(days),
+        Commands::Summarise {
+            id,
+            all,
+            dry_run,
+            model_override,
+        } => note::summarise(id.as_deref(), all, dry_run, model_override.as_deref()),
     }
 }

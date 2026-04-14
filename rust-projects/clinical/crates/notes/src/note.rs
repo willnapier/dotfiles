@@ -93,6 +93,32 @@ fn load_reference(filename: &str) -> String {
     std::fs::read_to_string(&path).unwrap_or_default()
 }
 
+/// Extract the last N session notes from the client file.
+/// Sessions are delimited by `### YYYY-MM-DD` headers.
+fn extract_last_n_sessions(client_file: &str, n: usize) -> String {
+    let date_re = Regex::new(r"^### \d{4}-\d{2}-\d{2}").unwrap();
+    let mut session_starts: Vec<usize> = Vec::new();
+    let lines: Vec<&str> = client_file.lines().collect();
+
+    for (i, line) in lines.iter().enumerate() {
+        if date_re.is_match(line) {
+            session_starts.push(i);
+        }
+    }
+
+    if session_starts.is_empty() {
+        return String::new();
+    }
+
+    let start_from = if session_starts.len() > n {
+        session_starts[session_starts.len() - n]
+    } else {
+        session_starts[0]
+    };
+
+    lines[start_from..].join("\n")
+}
+
 /// Find correspondence files in the client directory (letters, reports).
 fn find_correspondence(id: &str) -> Vec<(String, String)> {
     let mut files = Vec::new();
@@ -156,35 +182,44 @@ fn build_prompt(id: &str, observation: &str) -> Result<String> {
 
     let mut out = String::new();
 
-    // Clinical reference material
-    let philosophy = load_reference("CLINICAL-PHILOSOPHY.md");
-    let reference = load_reference("CLINICAL-REFERENCE.md");
-
-    if !philosophy.is_empty() {
-        out.push_str("=== CLINICAL PHILOSOPHY ===\n");
-        out.push_str(&philosophy);
+    // Slim prompt anchor (replaces 28KB philosophy + reference)
+    let anchor = load_reference("PROMPT-ANCHOR.md");
+    if !anchor.is_empty() {
+        out.push_str("=== FRAMEWORK ===\n");
+        out.push_str(&anchor);
         out.push_str("\n\n");
     }
 
-    if !reference.is_empty() {
-        out.push_str("=== CLINICAL REFERENCE ===\n");
-        out.push_str(&reference);
+    // Client context: prefer summary.md + last 3 sessions over full file
+    let summary_path = client::client_dir(id).join("summary.md");
+    if summary_path.exists() {
+        let summary = std::fs::read_to_string(&summary_path).unwrap_or_default();
+        out.push_str(&format!("=== CLIENT SUMMARY: {} ===\n", id));
+        out.push_str(&summary);
         out.push_str("\n\n");
-    }
 
-    // Full client file
-    out.push_str(&format!("=== CLIENT FILE: {} ===\n", id));
-    out.push_str(&client_file);
-    out.push_str("\n\n");
-
-    // Correspondence
-    let correspondence = find_correspondence(id);
-    if !correspondence.is_empty() {
-        out.push_str("=== CORRESPONDENCE ===\n");
-        for (name, content) in &correspondence {
-            out.push_str(&format!("--- {} ---\n", name));
-            out.push_str(content);
+        // Last 3 sessions verbatim for recent continuity
+        let last_sessions = extract_last_n_sessions(&client_file, 3);
+        if !last_sessions.is_empty() {
+            out.push_str("=== RECENT SESSIONS ===\n");
+            out.push_str(&last_sessions);
             out.push_str("\n\n");
+        }
+    } else {
+        // No summary yet — fall back to full client file
+        out.push_str(&format!("=== CLIENT FILE: {} ===\n", id));
+        out.push_str(&client_file);
+        out.push_str("\n\n");
+
+        // Full correspondence (only when no summary — summary captures the gist)
+        let correspondence = find_correspondence(id);
+        if !correspondence.is_empty() {
+            out.push_str("=== CORRESPONDENCE ===\n");
+            for (name, content) in &correspondence {
+                out.push_str(&format!("--- {} ---\n", name));
+                out.push_str(content);
+                out.push_str("\n\n");
+            }
         }
     }
 
