@@ -847,14 +847,15 @@ pub fn setup_client(config: &ReferralConfig, uid: u32) -> Result<()> {
 // Identity.yaml helpers
 // ---------------------------------------------------------------------------
 
-/// Return the path to a client's identity.yaml file.
+/// Return the path to a client's identity.yaml file (Route C at root, fallback to legacy private/).
 fn identity_yaml_path(client_id: &str) -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    home.join("Clinical")
-        .join("clients")
-        .join(client_id)
-        .join("private")
-        .join("identity.yaml")
+    let root = home.join("Clinical").join("clients").join(client_id).join("identity.yaml");
+    if root.exists() {
+        return root;
+    }
+    // Legacy Route A fallback
+    home.join("Clinical").join("clients").join(client_id).join("private").join("identity.yaml")
 }
 
 /// Update a top-level field in identity.yaml (e.g. `name: "..."` or `tm3_id: "..."`).

@@ -191,7 +191,7 @@ fn scaffold_route_a(id: &str) -> Result<()> {
         println!("  Exists: {}.md", id);
     }
 
-    println!("\nDone (Route A layout). Remember to update ~/Clinical/private/tm3-client-map.toml");
+    println!("\nDone (Route A layout). Remember to update ~/Clinical/tm3-client-map.toml");
 
     Ok(())
 }

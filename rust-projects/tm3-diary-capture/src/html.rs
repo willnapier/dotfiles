@@ -2,8 +2,9 @@ use anyhow::{bail, Context, Result};
 use chrono::NaiveDate;
 use regex::Regex;
 use scraper::{Html, Selector};
+use serde::Serialize;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Appointment {
     pub start_time: String,
     pub client_name: String,
@@ -11,13 +12,13 @@ pub struct Appointment {
     pub status: Status,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum Status {
     Booked,
     Cancelled,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct DaySchedule {
     pub date: NaiveDate,
     pub appointments: Vec<Appointment>,

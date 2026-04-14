@@ -461,12 +461,14 @@ fn clients_dir() -> PathBuf {
         .join("clients")
 }
 
-/// Path to a client's identity.yaml.
+/// Path to a client's identity.yaml (Route C at root, fallback to legacy private/).
 fn identity_yaml_path(client_id: &str) -> PathBuf {
-    clients_dir()
-        .join(client_id)
-        .join("private")
-        .join("identity.yaml")
+    let root = clients_dir().join(client_id).join("identity.yaml");
+    if root.exists() {
+        return root;
+    }
+    // Legacy Route A fallback
+    clients_dir().join(client_id).join("private").join("identity.yaml")
 }
 
 /// Build an index of local clients from their identity.yaml files.

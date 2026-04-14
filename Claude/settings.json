@@ -13,13 +13,7 @@
       "WebSearch",
       "Skill"
     ],
-    "deny": [
-      "Read(**/private/**)",
-      "Edit(**/private/**)",
-      "Write(**/private/**)",
-      "Read(**/*TM3*)",
-      "Read(**/*tm3*)"
-    ]
+    "deny": []
   },
   "hooks": {
     "SessionStart": [

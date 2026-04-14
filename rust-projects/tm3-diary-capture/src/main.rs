@@ -3,6 +3,7 @@ use chrono::{Local, NaiveDate};
 use clap::Parser;
 use std::path::PathBuf;
 
+use tm3_diary_capture::archive;
 use tm3_diary_capture::client_map::ClientMap;
 use tm3_diary_capture::daypage;
 use tm3_diary_capture::html::{self, Status};
@@ -38,6 +39,10 @@ struct Cli {
     /// Include past dates (by default, only today and future dates are processed)
     #[arg(long)]
     include_past: bool,
+
+    /// Skip JSON archive of captured data
+    #[arg(long)]
+    no_archive: bool,
 }
 
 fn main() -> Result<()> {
@@ -66,6 +71,19 @@ fn main() -> Result<()> {
         let s = html::parse_diary(&html_content)?;
         (s, Some(path))
     };
+
+    // Archive captured data (JSON, 7-day retention)
+    if !cli.no_archive && !schedules.is_empty() {
+        let source = if cli.live { "live" } else { "html" };
+        match archive::save(&schedules, source) {
+            Ok(path) => eprintln!("Archived: {}", path.display()),
+            Err(e) => eprintln!("Warning: archive failed: {e}"),
+        }
+        match archive::cleanup() {
+            Ok(n) if n > 0 => eprintln!("Cleaned up {n} archive(s) older than 7 days"),
+            _ => {}
+        }
+    }
 
     // Warn if today isn't covered by this export (skip for --live, it's always current)
     let today = Local::now().date_naive();
