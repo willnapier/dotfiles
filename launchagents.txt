@@ -48,6 +48,5 @@ com.williamnapier.tm3-diary-live
 com.williamnapier.tm3-watcher
 com.williamnapier.wiki-link-manager
 com.williamnapier.zellij-zombie-watcher
-homebrew.mxcl.ollama
 homebrew.mxcl.syncthing
 homebrew.mxcl.tailscale
