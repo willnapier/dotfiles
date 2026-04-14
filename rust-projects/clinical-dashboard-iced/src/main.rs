@@ -438,19 +438,22 @@ impl App {
             && self.session.clients.iter().all(|c| c.status != ClinicStatus::Pending)
     }
 
-    /// The items currently visible in the client list (session clients + filtered).
+    /// The items currently visible in the sidebar list.
+    /// If search is active, shows search results; otherwise shows clinic list.
     fn visible_list_len(&self) -> usize {
-        self.session.clients.len() + self.filtered.len()
+        if !self.search.is_empty() {
+            self.filtered.len()
+        } else {
+            self.session.clients.len()
+        }
     }
 
     /// Get the client ID at the given highlight index.
     fn client_at_highlight(&self) -> Option<String> {
-        let session_len = self.session.clients.len();
-        if self.highlight < session_len {
-            Some(self.session.clients[self.highlight].id.clone())
+        if !self.search.is_empty() {
+            self.filtered.get(self.highlight).map(|c| c.id.clone())
         } else {
-            let idx = self.highlight - session_len;
-            self.filtered.get(idx).map(|c| c.id.clone())
+            self.session.clients.get(self.highlight).map(|c| c.id.clone())
         }
     }
 
@@ -908,39 +911,42 @@ impl App {
                 list_idx += 1;
             }
 
-            sidebar_items.push(rule::horizontal(1).into());
         }
 
-        // All clients (filtered by search)
-        for c in &self.filtered {
-            let sel = self.selected.as_deref() == Some(&c.id);
-            let is_highlighted = self.focus_zone == FocusZone::ClientList
-                && self.highlight == list_idx;
+        // Search results (shown only when search is active, replaces clinic list)
+        if !self.search.is_empty() {
+            sidebar_items.clear();
+            list_idx = 0;
+            for c in &self.filtered {
+                let sel = self.selected.as_deref() == Some(&c.id);
+                let is_highlighted = self.focus_zone == FocusZone::ClientList
+                    && self.highlight == list_idx;
 
-            let status = self.session_client_status(&c.id);
-            let label_text = match status {
-                Some(ClinicStatus::Done) => format!("✓ {}", c.id),
-                Some(ClinicStatus::Dna) => format!("✗ {}", c.id),
-                _ => c.id.clone(),
-            };
-            let b = button(text(label_text).size(12))
-                .on_press(Msg::Select(c.id.clone()))
-                .width(Length::Fill).padding([3, 8]);
+                let status = self.session_client_status(&c.id);
+                let label_text = match status {
+                    Some(ClinicStatus::Done) => format!("✓ {}", c.id),
+                    Some(ClinicStatus::Dna) => format!("✗ {}", c.id),
+                    _ => c.id.clone(),
+                };
+                let b = button(text(label_text).size(12))
+                    .on_press(Msg::Select(c.id.clone()))
+                    .width(Length::Fill).padding([3, 8]);
 
-            let item: Element<Msg> = if sel {
-                b.style(button::primary).into()
-            } else {
-                b.style(button::text).into()
-            };
+                let item: Element<Msg> = if sel {
+                    b.style(button::primary).into()
+                } else {
+                    b.style(button::text).into()
+                };
 
-            if is_highlighted {
-                sidebar_items.push(
-                    container(item).style(highlight_style).into()
-                );
-            } else {
-                sidebar_items.push(item);
+                if is_highlighted {
+                    sidebar_items.push(
+                        container(item).style(highlight_style).into()
+                    );
+                } else {
+                    sidebar_items.push(item);
+                }
+                list_idx += 1;
             }
-            list_idx += 1;
         }
 
         // Add client input
@@ -975,7 +981,7 @@ impl App {
         ];
 
         let sidebar: Element<Msg> = container(sidebar_content)
-            .width(240).height(Length::Fill)
+            .width(300).height(Length::Fill)
             .style(sidebar_style).into();
 
         // Main content
