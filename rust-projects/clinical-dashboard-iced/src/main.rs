@@ -1,13 +1,14 @@
-//! Clinical Dashboard — Iced spike
+//! Clinical Dashboard — The Product prototype
 //! Pure Rust, GPU-rendered via wgpu. No WebView, no browser.
+//! Owns its own clinic state (session file, attendance tracking).
 
 use iced::widget::{
     button, column, container, horizontal_rule, pick_list, row, scrollable, text,
     text_editor, text_input, Column,
 };
 use iced::widget::scrollable::Id as ScrollId;
-use iced::keyboard;
 use iced::{color, Element, Font, Length, Subscription, Task, Theme};
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 fn main() -> iced::Result {
@@ -27,7 +28,7 @@ fn main() -> iced::Result {
 }
 
 // ---------------------------------------------------------------------------
-// Data
+// Data types
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,9 +49,58 @@ impl ModelChoice {
 #[derive(Debug, Clone)]
 struct ClientEntry { id: String }
 
-fn clients_dir() -> PathBuf {
-    PathBuf::from(std::env::var("HOME").unwrap_or("/tmp".into()))
-        .join("Clinical").join("clients")
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum ClinicStatus { Pending, Done, Dna, Cancelled }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ClinicClient {
+    id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    time: Option<String>,
+    status: ClinicStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rate_tag: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ClinicSession {
+    date: String,
+    started_at: String,
+    clients: Vec<ClinicClient>,
+}
+
+// ---------------------------------------------------------------------------
+// Paths + persistence
+// ---------------------------------------------------------------------------
+
+fn home() -> PathBuf {
+    dirs::home_dir().expect("no home dir")
+}
+
+fn clients_dir() -> PathBuf { home().join("Clinical").join("clients") }
+fn attendance_dir() -> PathBuf { home().join("Clinical").join("attendance") }
+
+fn session_dir() -> PathBuf {
+    home().join(".local/share/clinical-dashboard")
+}
+
+fn session_path(date: &str) -> PathBuf {
+    session_dir().join(format!("session-{date}.json"))
+}
+
+fn load_session(date: &str) -> Option<ClinicSession> {
+    let path = session_path(date);
+    let data = std::fs::read_to_string(&path).ok()?;
+    serde_json::from_str(&data).ok()
+}
+
+fn save_session(session: &ClinicSession) {
+    let _ = std::fs::create_dir_all(session_dir());
+    let path = session_path(&session.date);
+    if let Ok(json) = serde_json::to_string_pretty(session) {
+        let _ = std::fs::write(path, json);
+    }
 }
 
 fn load_clients() -> Vec<ClientEntry> {
@@ -73,6 +123,42 @@ fn filter(clients: &[ClientEntry], q: &str) -> Vec<ClientEntry> {
     clients.iter().filter(|c| q.is_empty() || c.id.to_uppercase().contains(&q)).cloned().collect()
 }
 
+fn generate_attendance_report(session: &ClinicSession) -> String {
+    let date = chrono::NaiveDate::parse_from_str(&session.date, "%Y-%m-%d")
+        .map(|d| d.format("%a %-d %b").to_string())
+        .unwrap_or_else(|_| session.date.clone());
+
+    let mut lines = vec![format!("{date} — Attendance"), String::new()];
+    let mut attended = 0u32;
+    let mut dna = 0u32;
+    let mut insurer = 0u32;
+
+    for c in &session.clients {
+        if c.status == ClinicStatus::Cancelled { continue; }
+        let marker = match c.status {
+            ClinicStatus::Done => { attended += 1; "✓" }
+            ClinicStatus::Dna => { dna += 1; "✗" }
+            _ => "?"
+        };
+        if c.rate_tag.as_deref() == Some("insurer") { insurer += 1; }
+        let time = c.time.as_deref().unwrap_or("");
+        let tag = c.rate_tag.as_deref().unwrap_or("");
+        lines.push(format!("{marker} {} {time} {tag}", c.id).trim_end().to_string());
+    }
+
+    let total = attended + dna;
+    lines.push(String::new());
+    let mut summary = format!("{attended}/{total} attended");
+    if dna > 0 { summary.push_str(&format!(" · {dna} DNA/LC")); }
+    if insurer > 0 { summary.push_str(&format!(" · {insurer} insurer")); }
+    lines.push(summary);
+    lines.join("\n")
+}
+
+// ---------------------------------------------------------------------------
+// Async commands
+// ---------------------------------------------------------------------------
+
 async fn gen(id: String, obs: String, model: String) -> (String, f64) {
     let t = std::time::Instant::now();
     let mut cmd = tokio::process::Command::new("clinical");
@@ -89,7 +175,7 @@ async fn gen(id: String, obs: String, model: String) -> (String, f64) {
     (r, t.elapsed().as_secs_f64())
 }
 
-async fn save(id: String, note: String) -> Result<String, String> {
+async fn do_save(id: String, note: String) -> Result<String, String> {
     let mut c = tokio::process::Command::new("clinical")
         .arg("note-save").arg(&id)
         .stdin(std::process::Stdio::piped())
@@ -103,6 +189,20 @@ async fn save(id: String, note: String) -> Result<String, String> {
     let o = c.wait_with_output().await.map_err(|e| e.to_string())?;
     if o.status.success() { Ok(String::from_utf8_lossy(&o.stdout).to_string()) }
     else { Err(String::from_utf8_lossy(&o.stderr).to_string()) }
+}
+
+async fn check_inference() -> bool {
+    match tokio::process::Command::new("curl")
+        .args(["-s", "--max-time", "3", "http://localhost:11434/api/tags"])
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => match c.wait_with_output().await {
+            Ok(o) => o.status.success() && !o.stdout.is_empty(),
+            Err(_) => false,
+        },
+        Err(_) => false,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -124,7 +224,12 @@ struct App {
     compares: Vec<(String, String)>,
     highlight: usize,
     client_scroll_id: ScrollId,
-    nav_mode: bool,
+    // Clinic session state
+    session: ClinicSession,
+    session_start: std::time::Instant,
+    inference_ok: bool,
+    add_client_input: String,
+    clinic_ended: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -138,41 +243,71 @@ enum Msg {
     GenDone(String, f64),
     Accept,
     Saved(Result<String, String>),
-    Edit,
     Reject,
     Compare,
     ClearCmp,
-    KeyUp,
-    KeyDown,
-    KeyEnter,
+    // Clinic workflow
+    MarkDna(String),
+    MarkCancelled(String),
+    AddClientInput(String),
+    AddClient,
+    EndClinic,
+    InferenceChecked(bool),
 }
 
 impl App {
     fn new() -> (Self, Task<Msg>) {
         let clients = load_clients();
         let filtered = clients.clone();
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+
+        // Load or create today's session
+        let session = load_session(&today).unwrap_or_else(|| ClinicSession {
+            date: today.clone(),
+            started_at: chrono::Local::now().to_rfc3339(),
+            clients: Vec::new(),
+        });
+
         (Self {
             clients, filtered, search: String::new(), selected: None,
             obs: text_editor::Content::new(), model: ModelChoice::Q4,
             note: text_editor::Content::new(), note_text: String::new(),
             status: String::new(), busy: false,
             show_note: false, compares: Vec::new(), highlight: 0,
-            client_scroll_id: ScrollId::unique(), nav_mode: true,
-        }, Task::none())
+            client_scroll_id: ScrollId::unique(),
+            session, session_start: std::time::Instant::now(),
+            inference_ok: false, add_client_input: String::new(),
+            clinic_ended: false,
+        }, Task::perform(check_inference(), Msg::InferenceChecked))
+    }
+
+    fn persist_session(&self) {
+        save_session(&self.session);
+    }
+
+    fn session_client_status(&self, id: &str) -> Option<&ClinicStatus> {
+        self.session.clients.iter().find(|c| c.id == id).map(|c| &c.status)
+    }
+
+    fn all_resolved(&self) -> bool {
+        !self.session.clients.is_empty()
+            && self.session.clients.iter().all(|c| c.status != ClinicStatus::Pending)
     }
 
     fn update(&mut self, msg: Msg) -> Task<Msg> {
         match msg {
-            Msg::Search(q) => { self.search = q; self.filtered = filter(&self.clients, &self.search); self.highlight = 0; self.nav_mode = true; Task::none() }
+            Msg::InferenceChecked(ok) => { self.inference_ok = ok; Task::none() }
+            Msg::Search(q) => { self.search = q; self.filtered = filter(&self.clients, &self.search); self.highlight = 0; Task::none() }
             Msg::Select(id) => {
                 self.selected = Some(id); self.obs = text_editor::Content::new();
                 self.note = text_editor::Content::new(); self.note_text.clear();
-                self.show_note = false; self.status.clear(); self.nav_mode = true; Task::none()
+                self.show_note = false; self.status.clear(); Task::none()
             }
-            Msg::Obs(a) => { self.obs.perform(a); self.nav_mode = false; Task::none() }
-            Msg::NoteEdit(a) => { self.note.perform(a); self.note_text = self.note.text(); self.nav_mode = false; Task::none() }
+            Msg::Obs(a) => { self.obs.perform(a); Task::none() }
+            Msg::NoteEdit(a) => { self.note.perform(a); self.note_text = self.note.text(); Task::none() }
             Msg::Model(m) => { self.model = m; Task::none() }
             Msg::Gen => {
+                if !self.inference_ok { self.status = "Inference not connected — run inference-start".into(); return Task::none(); }
                 let Some(ref id) = self.selected else { return Task::none() };
                 let t = self.obs.text(); if t.trim().is_empty() { return Task::none() }
                 self.busy = true; self.show_note = true;
@@ -185,16 +320,31 @@ impl App {
             Msg::Accept => {
                 let Some(ref id) = self.selected else { return Task::none() };
                 let id = id.clone(); let n = self.note_text.clone();
-                Task::perform(save(id, n), Msg::Saved)
+                Task::perform(do_save(id, n), Msg::Saved)
             }
             Msg::Saved(r) => {
                 match r {
-                    Ok(_) => { self.status = format!("Saved for {}", self.selected.as_deref().unwrap_or("?")); self.obs = text_editor::Content::new(); self.note = text_editor::Content::new(); self.note_text.clear(); self.show_note = false; }
+                    Ok(_) => {
+                        let id = self.selected.clone().unwrap_or_default();
+                        self.status = format!("Saved for {id}");
+                        self.obs = text_editor::Content::new();
+                        self.note = text_editor::Content::new(); self.note_text.clear();
+                        self.show_note = false;
+                        // Auto-mark done in session
+                        if let Some(c) = self.session.clients.iter_mut().find(|c| c.id == id) {
+                            c.status = ClinicStatus::Done;
+                        } else {
+                            // Client wasn't in session — add them
+                            self.session.clients.push(ClinicClient {
+                                id: id.clone(), time: None, status: ClinicStatus::Done, rate_tag: None,
+                            });
+                        }
+                        self.persist_session();
+                    }
                     Err(e) => self.status = format!("Failed: {e}"),
                 }
                 Task::none()
             }
-            Msg::Edit => { self.obs = text_editor::Content::with_text(&self.note_text); self.show_note = false; self.status = "Editing".into(); Task::none() }
             Msg::Reject => { self.note = text_editor::Content::new(); self.note_text.clear(); self.show_note = false; self.obs = text_editor::Content::new(); self.status.clear(); Task::none() }
             Msg::Compare => {
                 if !self.note_text.is_empty() {
@@ -204,59 +354,76 @@ impl App {
                 Task::none()
             }
             Msg::ClearCmp => { self.compares.clear(); Task::none() }
-            Msg::KeyDown => {
-                if !self.nav_mode { return Task::none(); }
-                if self.highlight + 1 < self.filtered.len() {
-                    self.highlight += 1;
-                    return self.scroll_to_highlight();
+            Msg::MarkDna(id) => {
+                if let Some(c) = self.session.clients.iter_mut().find(|c| c.id == id) {
+                    c.status = ClinicStatus::Dna;
                 }
+                self.persist_session();
                 Task::none()
             }
-            Msg::KeyUp => {
-                if !self.nav_mode { return Task::none(); }
-                if self.highlight > 0 {
-                    self.highlight -= 1;
-                    return self.scroll_to_highlight();
+            Msg::MarkCancelled(id) => {
+                if let Some(c) = self.session.clients.iter_mut().find(|c| c.id == id) {
+                    c.status = ClinicStatus::Cancelled;
                 }
+                self.persist_session();
                 Task::none()
             }
-            Msg::KeyEnter => {
-                if self.highlight < self.filtered.len() {
-                    let id = self.filtered[self.highlight].id.clone();
-                    self.selected = Some(id); self.obs = text_editor::Content::new();
-                    self.note = text_editor::Content::new(); self.note_text.clear();
-                    self.show_note = false; self.status.clear();
-                    self.search.clear(); self.filtered = filter(&self.clients, &self.search);
-                    self.highlight = 0;
+            Msg::AddClientInput(s) => { self.add_client_input = s; Task::none() }
+            Msg::AddClient => {
+                let id = self.add_client_input.trim().to_uppercase();
+                if !id.is_empty() && !self.session.clients.iter().any(|c| c.id == id) {
+                    self.session.clients.push(ClinicClient {
+                        id, time: None, status: ClinicStatus::Pending, rate_tag: None,
+                    });
+                    self.persist_session();
                 }
+                self.add_client_input.clear();
+                Task::none()
+            }
+            Msg::EndClinic => {
+                let report = generate_attendance_report(&self.session);
+                // Save attendance report
+                let _ = std::fs::create_dir_all(attendance_dir());
+                let report_path = attendance_dir().join(format!("{}.txt", self.session.date));
+                let _ = std::fs::write(&report_path, &report);
+
+                // Queue DayPage summary
+                let elapsed = self.session_start.elapsed().as_secs() / 60;
+                let done: Vec<_> = self.session.clients.iter()
+                    .filter(|c| c.status == ClinicStatus::Done)
+                    .map(|c| c.id.clone())
+                    .collect();
+                let entry = format!("clinic:: {} clients {}min - {}", done.len(), elapsed, done.join(", "));
+                let _ = std::process::Command::new("daypage-append").arg(&entry).spawn();
+
+                self.status = format!("Clinic ended. Report saved. {} clients documented.", done.len());
+                self.clinic_ended = true;
                 Task::none()
             }
         }
     }
 
-    fn scroll_to_highlight(&self) -> Task<Msg> {
-        let total = self.filtered.len().max(1) as f32;
-        let ratio = self.highlight as f32 / total;
-        scrollable::scroll_to(
-            self.client_scroll_id.clone(),
-            scrollable::AbsoluteOffset { x: 0.0, y: ratio * total * 25.0 },
-        )
-    }
-
-    fn view(&self) -> Element<Msg> {
+    fn view(&self) -> Element<'_, Msg> {
         let today = chrono::Local::now().format("%A %d %B %Y").to_string();
 
         // Header
-        let hdr = container(row![
+        let mut hdr_row = row![
             iced::widget::Space::with_width(70),
             iced::widget::horizontal_space(),
             text("Clinical Dashboard").size(14).color(color!(0xfdf6e3)),
             iced::widget::horizontal_space(),
-            text(today).size(12).color(color!(0x93a1a1)),
-            iced::widget::Space::with_width(10),
-        ].align_y(iced::Alignment::Center))
-            .padding(8)
-            .width(Length::Fill)
+        ].align_y(iced::Alignment::Center);
+
+        if !self.inference_ok {
+            hdr_row = hdr_row.push(text("⚠ No inference").size(11).color(color!(0xe06050)));
+            hdr_row = hdr_row.push(iced::widget::Space::with_width(10));
+        }
+
+        hdr_row = hdr_row.push(text(today).size(12).color(color!(0x93a1a1)));
+        hdr_row = hdr_row.push(iced::widget::Space::with_width(10));
+
+        let hdr = container(hdr_row)
+            .padding(8).width(Length::Fill)
             .style(|_| container::Style {
                 background: Some(iced::Background::Color(color!(0x002b36))),
                 ..Default::default()
@@ -267,42 +434,110 @@ impl App {
             .on_input(Msg::Search)
             .on_submit(if self.filtered.len() == 1 {
                 Msg::Select(self.filtered[0].id.clone())
-            } else if self.highlight < self.filtered.len() {
-                Msg::KeyEnter
             } else {
                 Msg::Search(self.search.clone())
             })
             .size(12).padding(4);
 
-        let btns: Vec<Element<Msg>> = self.filtered.iter().enumerate().map(|(i, c)| {
+        // Clinic clients section (if any in session)
+        let mut sidebar_items: Vec<Element<Msg>> = Vec::new();
+
+        if !self.session.clients.is_empty() {
+            for c in &self.session.clients {
+                let status_icon = match c.status {
+                    ClinicStatus::Done => "✓ ",
+                    ClinicStatus::Pending => "○ ",
+                    ClinicStatus::Dna => "✗ ",
+                    ClinicStatus::Cancelled => "– ",
+                };
+                let status_color = match c.status {
+                    ClinicStatus::Done => color!(0x4caf7a),
+                    ClinicStatus::Pending => color!(0x8b8fa4),
+                    ClinicStatus::Dna => color!(0xe06050),
+                    ClinicStatus::Cancelled => color!(0x586e75),
+                };
+                let time_str = c.time.as_deref().unwrap_or("");
+                let label = format!("{status_icon}{} {time_str}", c.id);
+
+                let sel = self.selected.as_deref() == Some(&c.id);
+                let b = button(text(label).size(12).color(status_color))
+                    .on_press(Msg::Select(c.id.clone()))
+                    .width(Length::Fill).padding([3, 8]);
+                sidebar_items.push(
+                    if sel { b.style(button::primary).into() }
+                    else { b.style(button::text).into() }
+                );
+            }
+
+            // Separator before all-clients list
+            sidebar_items.push(horizontal_rule(1).into());
+        }
+
+        // All clients (filtered by search)
+        for c in &self.filtered {
             let sel = self.selected.as_deref() == Some(&c.id);
-            let hl = i == self.highlight;
-            let b = button(text(&c.id).size(12))
+            // Show session status if client is in today's session
+            let status = self.session_client_status(&c.id);
+            let label_text = match status {
+                Some(ClinicStatus::Done) => format!("✓ {}", c.id),
+                Some(ClinicStatus::Dna) => format!("✗ {}", c.id),
+                _ => c.id.clone(),
+            };
+            let b = button(text(label_text).size(12))
                 .on_press(Msg::Select(c.id.clone()))
                 .width(Length::Fill).padding([3, 8]);
-            if sel { b.style(button::primary).into() }
-            else if hl { b.style(button::secondary).into() }
-            else { b.style(button::text).into() }
-        }).collect();
+            sidebar_items.push(
+                if sel { b.style(button::primary).into() }
+                else { b.style(button::text).into() }
+            );
+        }
+
+        // Add client input
+        let add_input = text_input("+ Add client...", &self.add_client_input)
+            .on_input(Msg::AddClientInput)
+            .on_submit(Msg::AddClient)
+            .size(11).padding(3);
 
         let sidebar = container(column![
-            container(text("TODAY").size(10).color(color!(0x8b8fa4))).padding([4, 8]),
+            container(text("CLINIC").size(10).color(color!(0x8b8fa4))).padding([4, 8]),
             container(search).padding([4, 6]),
-            scrollable(Column::with_children(btns).spacing(1))
+            scrollable(Column::with_children(sidebar_items).spacing(1))
                 .id(self.client_scroll_id.clone())
                 .height(Length::Fill),
-        ]).width(130).height(Length::Fill);
+            container(add_input).padding([4, 6]),
+            if self.all_resolved() && !self.clinic_ended {
+                container(
+                    button(text("End Clinic").size(11)).on_press(Msg::EndClinic).padding([4, 8]).style(button::success).width(Length::Fill)
+                ).padding([4, 6])
+            } else {
+                container(iced::widget::Space::with_height(0))
+            },
+        ]).width(140).height(Length::Fill);
 
-        // Main
+        // Main content
         let main: Element<Msg> = if let Some(ref id) = self.selected {
             let mut col = column![
-                text(id).size(14),
+                row![
+                    text(id).size(14),
+                    iced::widget::horizontal_space(),
+                    // DNA / Cancel buttons for session clients
+                    if self.session.clients.iter().any(|c| c.id == *id && c.status == ClinicStatus::Pending) {
+                        row![
+                            button(text("DNA").size(10)).on_press(Msg::MarkDna(id.clone())).padding([2, 6]).style(button::danger),
+                            button(text("Cancel").size(10)).on_press(Msg::MarkCancelled(id.clone())).padding([2, 6]).style(button::secondary),
+                        ].spacing(4)
+                    } else {
+                        row![]
+                    },
+                ].align_y(iced::Alignment::Center),
                 text("Session observation").size(11).color(color!(0x8b8fa4)),
                 text_editor(&self.obs).on_action(Msg::Obs).height(150).size(13).font(Font::MONOSPACE),
                 row![
                     pick_list(ModelChoice::ALL, Some(&self.model), Msg::Model).text_size(12).padding([3, 6]),
                     if self.busy {
                         button(text("Generating...").size(12)).padding([4, 10])
+                    } else if !self.inference_ok {
+                        button(text("No inference").size(12)).padding([4, 10])
                     } else {
                         button(text("Generate Note").size(12)).on_press(Msg::Gen).padding([4, 10]).style(button::primary)
                     },
@@ -349,7 +584,12 @@ impl App {
 
             scrollable(container(col).padding(10).width(Length::Fill)).height(Length::Fill).into()
         } else {
-            container(text("Select a client from the sidebar.").size(13).color(color!(0x8b8fa4)))
+            let msg = if self.clinic_ended {
+                &self.status
+            } else {
+                "Select a client from the sidebar, or add one to today's clinic."
+            };
+            container(text(msg).size(13).color(color!(0x8b8fa4)))
                 .center(Length::Fill).into()
         };
 
