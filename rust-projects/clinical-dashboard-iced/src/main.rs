@@ -24,7 +24,15 @@ fn main() -> iced::Result {
         .subscription(App::subscription)
         .title("Clinical Dashboard")
         .theme(app_theme)
-        .window_size((1100.0, 750.0))
+        .window(iced::window::Settings {
+            size: iced::Size::new(1100.0, 750.0),
+            platform_specific: iced::window::settings::PlatformSpecific {
+                title_hidden: true,
+                titlebar_transparent: true,
+                fullsize_content_view: true,
+            },
+            ..Default::default()
+        })
         .run()
 }
 
