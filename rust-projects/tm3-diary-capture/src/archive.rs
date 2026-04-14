@@ -29,7 +29,11 @@ pub fn save(schedules: &[DaySchedule], source: &str) -> Result<PathBuf> {
         .with_context(|| format!("create archive dir: {}", dir.display()))?;
 
     let now = Local::now();
-    let filename = format!("capture-{}.json", now.format("%Y-%m-%dT%H%M%S"));
+    // One file per date — re-capture overwrites previous
+    let date_str = schedules.first()
+        .map(|s| s.date.format("%Y-%m-%d").to_string())
+        .unwrap_or_else(|| now.format("%Y-%m-%d").to_string());
+    let filename = format!("capture-{date_str}.json");
     let path = dir.join(&filename);
 
     let archive = CaptureArchive {

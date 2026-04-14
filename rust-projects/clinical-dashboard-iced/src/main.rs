@@ -1,30 +1,68 @@
 //! Clinical Dashboard — The Product prototype
 //! Pure Rust, GPU-rendered via wgpu. No WebView, no browser.
 //! Owns its own clinic state (session file, attendance tracking).
+//!
+//! Keyboard navigation:
+//! - Tab / Shift+Tab: cycle focus zones (Search → Client List → Observation → Note)
+//! - Arrow Up/Down: navigate client list when list zone is active
+//! - Enter: select highlighted client (list zone) or submit search (search zone)
+//! - Escape: return to client list zone
+//! - Ctrl+K: jump to search
 
+use iced::keyboard::{self, key};
 use iced::widget::{
-    button, column, container, horizontal_rule, pick_list, row, scrollable, text,
+    button, column, container, pick_list, row, rule, scrollable, text,
     text_editor, text_input, Column,
 };
-use iced::widget::scrollable::Id as ScrollId;
+use iced::widget::operation;
 use iced::{color, Element, Font, Length, Subscription, Task, Theme};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 fn main() -> iced::Result {
-    iced::application("Clinical Dashboard", App::update, App::view)
+    iced::application(App::boot, App::update, App::view)
         .subscription(App::subscription)
+        .title("Clinical Dashboard")
         .theme(|_| Theme::SolarizedDark)
         .window_size((1100.0, 750.0))
-        .window(iced::window::Settings {
-            platform_specific: iced::window::settings::PlatformSpecific {
-                title_hidden: true,
-                titlebar_transparent: true,
-                fullsize_content_view: true,
-            },
-            ..Default::default()
-        })
-        .run_with(App::new)
+        .run()
+}
+
+// ---------------------------------------------------------------------------
+// Focus zone system
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FocusZone {
+    SearchBox,
+    ClientList,
+    ObservationEditor,
+    NoteEditor,
+}
+
+const SEARCH_ID: &str = "search-input";
+const OBS_EDITOR_ID: &str = "obs-editor";
+const NOTE_EDITOR_ID: &str = "note-editor";
+const CLIENT_SCROLL_ID: &str = "client-scroll";
+
+fn focus_zone_task(zone: FocusZone) -> Task<Msg> {
+    match zone {
+        FocusZone::SearchBox => {
+            operation::focus(SEARCH_ID)
+        }
+        FocusZone::ClientList => {
+            // Focus a non-existent widget ID to unfocus everything.
+            // The focus operation traverses all Focusable widgets and
+            // unfocuses any that don't match the target.
+            operation::focus("__unfocus_sentinel__")
+        }
+        FocusZone::ObservationEditor => {
+            operation::focus(OBS_EDITOR_ID)
+        }
+        FocusZone::NoteEditor => {
+            operation::focus(NOTE_EDITOR_ID)
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -206,6 +244,76 @@ async fn check_inference() -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// Keyboard event mapping
+// ---------------------------------------------------------------------------
+
+fn map_keyboard_event(event: keyboard::Event) -> Option<Msg> {
+    match event {
+        keyboard::Event::KeyPressed { key, modifiers, .. } => {
+            match key {
+                keyboard::Key::Named(key::Named::Tab) => {
+                    Some(Msg::TabPressed(modifiers.shift()))
+                }
+                keyboard::Key::Named(key::Named::ArrowUp) => Some(Msg::ArrowUp),
+                keyboard::Key::Named(key::Named::ArrowDown) => Some(Msg::ArrowDown),
+                keyboard::Key::Named(key::Named::Enter) => Some(Msg::EnterPressed),
+                keyboard::Key::Named(key::Named::Escape) => Some(Msg::EscapePressed),
+                keyboard::Key::Character(ref c) if c.as_str() == "k" && modifiers.command() => {
+                    Some(Msg::FocusSearch)
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Styling
+// ---------------------------------------------------------------------------
+
+/// Container style for the active focus zone ring.
+fn focus_ring_style(_theme: &Theme) -> container::Style {
+    container::Style {
+        border: iced::Border {
+            color: color!(0x2aa198),  // solarized cyan
+            width: 2.0,
+            radius: 4.0.into(),
+        },
+        ..Default::default()
+    }
+}
+
+/// Sidebar background
+fn sidebar_style(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(iced::Background::Color(color!(0x002b36))),
+        ..Default::default()
+    }
+}
+
+/// Header bar background
+fn header_style(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(iced::Background::Color(color!(0x002b36))),
+        ..Default::default()
+    }
+}
+
+/// Highlighted client item (keyboard selection) background
+fn highlight_style(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(iced::Background::Color(color!(0x073642))),
+        border: iced::Border {
+            color: color!(0x2aa198),
+            width: 1.0,
+            radius: 2.0.into(),
+        },
+        ..Default::default()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------------
 
@@ -223,7 +331,8 @@ struct App {
     show_note: bool,
     compares: Vec<(String, String)>,
     highlight: usize,
-    client_scroll_id: ScrollId,
+    // Focus management
+    focus_zone: FocusZone,
     // Clinic session state
     session: ClinicSession,
     session_start: std::time::Instant,
@@ -253,15 +362,22 @@ enum Msg {
     AddClient,
     EndClinic,
     InferenceChecked(bool),
+    // Keyboard navigation
+    TabPressed(bool),  // shift held?
+    ArrowUp,
+    ArrowDown,
+    EnterPressed,
+    EscapePressed,
+    FocusSearch,
+    NoOp,
 }
 
 impl App {
-    fn new() -> (Self, Task<Msg>) {
+    fn boot() -> (Self, Task<Msg>) {
         let clients = load_clients();
         let filtered = clients.clone();
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
 
-        // Load or create today's session
         let session = load_session(&today).unwrap_or_else(|| ClinicSession {
             date: today.clone(),
             started_at: chrono::Local::now().to_rfc3339(),
@@ -274,7 +390,7 @@ impl App {
             note: text_editor::Content::new(), note_text: String::new(),
             status: String::new(), busy: false,
             show_note: false, compares: Vec::new(), highlight: 0,
-            client_scroll_id: ScrollId::unique(),
+            focus_zone: FocusZone::ClientList,
             session, session_start: std::time::Instant::now(),
             inference_ok: false, add_client_input: String::new(),
             clinic_ended: false,
@@ -294,58 +410,139 @@ impl App {
             && self.session.clients.iter().all(|c| c.status != ClinicStatus::Pending)
     }
 
+    /// The items currently visible in the client list (session clients + filtered).
+    fn visible_list_len(&self) -> usize {
+        self.session.clients.len() + self.filtered.len()
+    }
+
+    /// Get the client ID at the given highlight index.
+    fn client_at_highlight(&self) -> Option<String> {
+        let session_len = self.session.clients.len();
+        if self.highlight < session_len {
+            Some(self.session.clients[self.highlight].id.clone())
+        } else {
+            let idx = self.highlight - session_len;
+            self.filtered.get(idx).map(|c| c.id.clone())
+        }
+    }
+
+    /// Available focus zones given current UI state.
+    fn available_zones(&self) -> Vec<FocusZone> {
+        let mut zones = vec![FocusZone::SearchBox, FocusZone::ClientList];
+        if self.selected.is_some() {
+            zones.push(FocusZone::ObservationEditor);
+        }
+        if self.show_note {
+            zones.push(FocusZone::NoteEditor);
+        }
+        zones
+    }
+
     fn update(&mut self, msg: Msg) -> Task<Msg> {
         match msg {
             Msg::InferenceChecked(ok) => { self.inference_ok = ok; Task::none() }
-            Msg::Search(q) => { self.search = q; self.filtered = filter(&self.clients, &self.search); self.highlight = 0; Task::none() }
-            Msg::Select(id) => {
-                self.selected = Some(id); self.obs = text_editor::Content::new();
-                self.note = text_editor::Content::new(); self.note_text.clear();
-                self.show_note = false; self.status.clear(); Task::none()
+
+            Msg::Search(q) => {
+                self.search = q;
+                self.filtered = filter(&self.clients, &self.search);
+                self.highlight = 0;
+                Task::none()
             }
-            Msg::Obs(a) => { self.obs.perform(a); Task::none() }
-            Msg::NoteEdit(a) => { self.note.perform(a); self.note_text = self.note.text(); Task::none() }
+
+            Msg::Select(id) => {
+                self.selected = Some(id);
+                self.obs = text_editor::Content::new();
+                self.note = text_editor::Content::new();
+                self.note_text.clear();
+                self.show_note = false;
+                self.status.clear();
+                // Auto-switch to observation editor after selecting a client
+                self.focus_zone = FocusZone::ObservationEditor;
+                focus_zone_task(FocusZone::ObservationEditor)
+            }
+
+            Msg::Obs(a) => {
+                self.obs.perform(a);
+                Task::none()
+            }
+            Msg::NoteEdit(a) => {
+                self.note.perform(a);
+                self.note_text = self.note.text();
+                Task::none()
+            }
             Msg::Model(m) => { self.model = m; Task::none() }
+
             Msg::Gen => {
-                if !self.inference_ok { self.status = "Inference not connected — run inference-start".into(); return Task::none(); }
+                if !self.inference_ok {
+                    self.status = "Inference not connected — run inference-start".into();
+                    return Task::none();
+                }
                 let Some(ref id) = self.selected else { return Task::none() };
-                let t = self.obs.text(); if t.trim().is_empty() { return Task::none() }
-                self.busy = true; self.show_note = true;
-                self.note = text_editor::Content::new(); self.note_text.clear();
+                let t = self.obs.text();
+                if t.trim().is_empty() { return Task::none() }
+                self.busy = true;
+                self.show_note = true;
+                self.note = text_editor::Content::new();
+                self.note_text.clear();
                 self.status = "Generating...".into();
-                let id = id.clone(); let m = self.model.model_name().to_string();
+                let id = id.clone();
+                let m = self.model.model_name().to_string();
                 Task::perform(gen(id, t, m), |(n, s)| Msg::GenDone(n, s))
             }
-            Msg::GenDone(n, s) => { self.note = text_editor::Content::with_text(&n); self.note_text = n; self.status = format!("Complete — {s:.1}s"); self.busy = false; Task::none() }
+
+            Msg::GenDone(n, s) => {
+                self.note = text_editor::Content::with_text(&n);
+                self.note_text = n;
+                self.status = format!("Complete — {s:.1}s");
+                self.busy = false;
+                // Focus the generated note for review
+                self.focus_zone = FocusZone::NoteEditor;
+                focus_zone_task(FocusZone::NoteEditor)
+            }
+
             Msg::Accept => {
                 let Some(ref id) = self.selected else { return Task::none() };
-                let id = id.clone(); let n = self.note_text.clone();
+                let id = id.clone();
+                let n = self.note_text.clone();
                 Task::perform(do_save(id, n), Msg::Saved)
             }
+
             Msg::Saved(r) => {
                 match r {
                     Ok(_) => {
                         let id = self.selected.clone().unwrap_or_default();
                         self.status = format!("Saved for {id}");
                         self.obs = text_editor::Content::new();
-                        self.note = text_editor::Content::new(); self.note_text.clear();
+                        self.note = text_editor::Content::new();
+                        self.note_text.clear();
                         self.show_note = false;
                         // Auto-mark done in session
                         if let Some(c) = self.session.clients.iter_mut().find(|c| c.id == id) {
                             c.status = ClinicStatus::Done;
                         } else {
-                            // Client wasn't in session — add them
                             self.session.clients.push(ClinicClient {
                                 id: id.clone(), time: None, status: ClinicStatus::Done, rate_tag: None,
                             });
                         }
                         self.persist_session();
+                        // Return to client list
+                        self.focus_zone = FocusZone::ClientList;
+                        focus_zone_task(FocusZone::ClientList)
                     }
-                    Err(e) => self.status = format!("Failed: {e}"),
+                    Err(e) => { self.status = format!("Failed: {e}"); Task::none() }
                 }
-                Task::none()
             }
-            Msg::Reject => { self.note = text_editor::Content::new(); self.note_text.clear(); self.show_note = false; self.obs = text_editor::Content::new(); self.status.clear(); Task::none() }
+
+            Msg::Reject => {
+                self.note = text_editor::Content::new();
+                self.note_text.clear();
+                self.show_note = false;
+                self.obs = text_editor::Content::new();
+                self.status.clear();
+                self.focus_zone = FocusZone::ClientList;
+                focus_zone_task(FocusZone::ClientList)
+            }
+
             Msg::Compare => {
                 if !self.note_text.is_empty() {
                     let l = format!("{} — {}", self.selected.as_deref().unwrap_or("?"), self.model);
@@ -354,6 +551,7 @@ impl App {
                 Task::none()
             }
             Msg::ClearCmp => { self.compares.clear(); Task::none() }
+
             Msg::MarkDna(id) => {
                 if let Some(c) = self.session.clients.iter_mut().find(|c| c.id == id) {
                     c.status = ClinicStatus::Dna;
@@ -368,6 +566,7 @@ impl App {
                 self.persist_session();
                 Task::none()
             }
+
             Msg::AddClientInput(s) => { self.add_client_input = s; Task::none() }
             Msg::AddClient => {
                 let id = self.add_client_input.trim().to_uppercase();
@@ -380,14 +579,13 @@ impl App {
                 self.add_client_input.clear();
                 Task::none()
             }
+
             Msg::EndClinic => {
                 let report = generate_attendance_report(&self.session);
-                // Save attendance report
                 let _ = std::fs::create_dir_all(attendance_dir());
                 let report_path = attendance_dir().join(format!("{}.txt", self.session.date));
                 let _ = std::fs::write(&report_path, &report);
 
-                // Queue DayPage summary
                 let elapsed = self.session_start.elapsed().as_secs() / 60;
                 let done: Vec<_> = self.session.clients.iter()
                     .filter(|c| c.status == ClinicStatus::Done)
@@ -400,7 +598,94 @@ impl App {
                 self.clinic_ended = true;
                 Task::none()
             }
+
+            // ---------------------------------------------------------------
+            // Keyboard navigation
+            // ---------------------------------------------------------------
+
+            Msg::TabPressed(shift) => {
+                let zones = self.available_zones();
+                let current_idx = zones.iter().position(|z| *z == self.focus_zone).unwrap_or(0);
+                let next_idx = if shift {
+                    if current_idx == 0 { zones.len() - 1 } else { current_idx - 1 }
+                } else {
+                    (current_idx + 1) % zones.len()
+                };
+                self.focus_zone = zones[next_idx];
+                focus_zone_task(self.focus_zone)
+            }
+
+            Msg::ArrowUp => {
+                // Only reaches subscription when no text widget has focus
+                // (text editors capture arrow keys internally)
+                if self.focus_zone == FocusZone::ClientList {
+                    let len = self.visible_list_len();
+                    if len > 0 && self.highlight > 0 {
+                        self.highlight -= 1;
+                    }
+                    self.scroll_to_highlight()
+                } else {
+                    Task::none()
+                }
+            }
+
+            Msg::ArrowDown => {
+                if self.focus_zone == FocusZone::ClientList {
+                    let len = self.visible_list_len();
+                    if len > 0 && self.highlight < len - 1 {
+                        self.highlight += 1;
+                    }
+                    self.scroll_to_highlight()
+                } else {
+                    Task::none()
+                }
+            }
+
+            Msg::EnterPressed => {
+                // Only reaches subscription when no text widget has focus
+                match self.focus_zone {
+                    FocusZone::ClientList => {
+                        if let Some(id) = self.client_at_highlight() {
+                            self.update(Msg::Select(id))
+                        } else {
+                            Task::none()
+                        }
+                    }
+                    FocusZone::SearchBox => {
+                        // Select the first filtered result
+                        if self.filtered.len() == 1 {
+                            let id = self.filtered[0].id.clone();
+                            self.update(Msg::Select(id))
+                        } else {
+                            Task::none()
+                        }
+                    }
+                    _ => Task::none(),
+                }
+            }
+
+            Msg::EscapePressed => {
+                // Return to client list from anywhere
+                self.focus_zone = FocusZone::ClientList;
+                focus_zone_task(FocusZone::ClientList)
+            }
+
+            Msg::FocusSearch => {
+                self.focus_zone = FocusZone::SearchBox;
+                focus_zone_task(FocusZone::SearchBox)
+            }
         }
+    }
+
+    /// Scroll the client list to keep the highlighted item visible.
+    fn scroll_to_highlight(&self) -> Task<Msg> {
+        let len = self.visible_list_len();
+        if len == 0 { return Task::none(); }
+        let ratio = self.highlight as f32 / len.max(1) as f32;
+        operation::snap_to(
+            CLIENT_SCROLL_ID,
+            operation::RelativeOffset { y: Some(ratio), ..Default::default() },
+        )
     }
 
     fn view(&self) -> Element<'_, Msg> {
@@ -408,29 +693,27 @@ impl App {
 
         // Header
         let mut hdr_row = row![
-            iced::widget::Space::with_width(70),
-            iced::widget::horizontal_space(),
+            Space::with_width(70),
+            Space::with_width(Length::Fill),
             text("Clinical Dashboard").size(14).color(color!(0xfdf6e3)),
-            iced::widget::horizontal_space(),
+            Space::with_width(Length::Fill),
         ].align_y(iced::Alignment::Center);
 
         if !self.inference_ok {
             hdr_row = hdr_row.push(text("⚠ No inference").size(11).color(color!(0xe06050)));
-            hdr_row = hdr_row.push(iced::widget::Space::with_width(10));
+            hdr_row = hdr_row.push(Space::with_width(10));
         }
 
         hdr_row = hdr_row.push(text(today).size(12).color(color!(0x93a1a1)));
-        hdr_row = hdr_row.push(iced::widget::Space::with_width(10));
+        hdr_row = hdr_row.push(Space::with_width(10));
 
         let hdr = container(hdr_row)
             .padding(8).width(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(iced::Background::Color(color!(0x002b36))),
-                ..Default::default()
-            });
+            .style(header_style);
 
         // Sidebar
         let search = text_input("Search...", &self.search)
+            .id(SEARCH_ID)
             .on_input(Msg::Search)
             .on_submit(if self.filtered.len() == 1 {
                 Msg::Select(self.filtered[0].id.clone())
@@ -441,6 +724,7 @@ impl App {
 
         // Clinic clients section (if any in session)
         let mut sidebar_items: Vec<Element<Msg>> = Vec::new();
+        let mut list_idx: usize = 0;
 
         if !self.session.clients.is_empty() {
             for c in &self.session.clients {
@@ -460,23 +744,39 @@ impl App {
                 let label = format!("{status_icon}{} {time_str}", c.id);
 
                 let sel = self.selected.as_deref() == Some(&c.id);
+                let is_highlighted = self.focus_zone == FocusZone::ClientList
+                    && self.highlight == list_idx;
+
                 let b = button(text(label).size(12).color(status_color))
                     .on_press(Msg::Select(c.id.clone()))
                     .width(Length::Fill).padding([3, 8]);
-                sidebar_items.push(
-                    if sel { b.style(button::primary).into() }
-                    else { b.style(button::text).into() }
-                );
+
+                let item: Element<Msg> = if sel {
+                    b.style(button::primary).into()
+                } else {
+                    b.style(button::text).into()
+                };
+
+                // Wrap highlighted item with a visual indicator
+                if is_highlighted {
+                    sidebar_items.push(
+                        container(item).style(highlight_style).into()
+                    );
+                } else {
+                    sidebar_items.push(item);
+                }
+                list_idx += 1;
             }
 
-            // Separator before all-clients list
-            sidebar_items.push(horizontal_rule(1).into());
+            sidebar_items.push(rule::horizontal(1).into());
         }
 
         // All clients (filtered by search)
         for c in &self.filtered {
             let sel = self.selected.as_deref() == Some(&c.id);
-            // Show session status if client is in today's session
+            let is_highlighted = self.focus_zone == FocusZone::ClientList
+                && self.highlight == list_idx;
+
             let status = self.session_client_status(&c.id);
             let label_text = match status {
                 Some(ClinicStatus::Done) => format!("✓ {}", c.id),
@@ -486,10 +786,21 @@ impl App {
             let b = button(text(label_text).size(12))
                 .on_press(Msg::Select(c.id.clone()))
                 .width(Length::Fill).padding([3, 8]);
-            sidebar_items.push(
-                if sel { b.style(button::primary).into() }
-                else { b.style(button::text).into() }
-            );
+
+            let item: Element<Msg> = if sel {
+                b.style(button::primary).into()
+            } else {
+                b.style(button::text).into()
+            };
+
+            if is_highlighted {
+                sidebar_items.push(
+                    container(item).style(highlight_style).into()
+                );
+            } else {
+                sidebar_items.push(item);
+            }
+            list_idx += 1;
         }
 
         // Add client input
@@ -498,11 +809,11 @@ impl App {
             .on_submit(Msg::AddClient)
             .size(11).padding(3);
 
-        let sidebar = container(column![
+        let sidebar_content = column![
             container(text("CLINIC").size(10).color(color!(0x8b8fa4))).padding([4, 8]),
             container(search).padding([4, 6]),
             scrollable(Column::with_children(sidebar_items).spacing(1))
-                .id(self.client_scroll_id.clone())
+                .id(CLIENT_SCROLL_ID)
                 .height(Length::Fill),
             container(add_input).padding([4, 6]),
             if self.all_resolved() && !self.clinic_ended {
@@ -510,17 +821,35 @@ impl App {
                     button(text("End Clinic").size(11)).on_press(Msg::EndClinic).padding([4, 8]).style(button::success).width(Length::Fill)
                 ).padding([4, 6])
             } else {
-                container(iced::widget::Space::with_height(0))
+                container(Space::with_height(0))
             },
-        ]).width(140).height(Length::Fill);
+        ];
+
+        // Apply focus ring to sidebar when ClientList zone is active
+        let sidebar: Element<Msg> = if self.focus_zone == FocusZone::ClientList {
+            container(sidebar_content)
+                .width(140).height(Length::Fill)
+                .style(|theme: &Theme| {
+                    let mut s = sidebar_style(theme);
+                    s.border = iced::Border {
+                        color: color!(0x2aa198),
+                        width: 2.0,
+                        radius: 0.0.into(),
+                    };
+                    s
+                }).into()
+        } else {
+            container(sidebar_content)
+                .width(140).height(Length::Fill)
+                .style(sidebar_style).into()
+        };
 
         // Main content
         let main: Element<Msg> = if let Some(ref id) = self.selected {
             let mut col = column![
                 row![
                     text(id).size(14),
-                    iced::widget::horizontal_space(),
-                    // DNA / Cancel buttons for session clients
+                    Space::with_width(Length::Fill),
                     if self.session.clients.iter().any(|c| c.id == *id && c.status == ClinicStatus::Pending) {
                         row![
                             button(text("DNA").size(10)).on_press(Msg::MarkDna(id.clone())).padding([2, 6]).style(button::danger),
@@ -531,7 +860,22 @@ impl App {
                     },
                 ].align_y(iced::Alignment::Center),
                 text("Session observation").size(11).color(color!(0x8b8fa4)),
-                text_editor(&self.obs).on_action(Msg::Obs).height(150).size(13).font(Font::MONOSPACE),
+            ].spacing(6);
+
+            // Observation editor — with focus ring when active
+            let obs_editor = text_editor(&self.obs)
+                .on_action(Msg::Obs)
+                .height(150).size(13)
+                .font(Font::MONOSPACE);
+            if self.focus_zone == FocusZone::ObservationEditor {
+                col = col.push(
+                    container(obs_editor).style(focus_ring_style)
+                );
+            } else {
+                col = col.push(obs_editor);
+            }
+
+            col = col.push(
                 row![
                     pick_list(ModelChoice::ALL, Some(&self.model), Msg::Model).text_size(12).padding([3, 6]),
                     if self.busy {
@@ -542,18 +886,28 @@ impl App {
                         button(text("Generate Note").size(12)).on_press(Msg::Gen).padding([4, 10]).style(button::primary)
                     },
                 ].spacing(6).align_y(iced::Alignment::Center),
-            ].spacing(6);
+            );
 
             if self.show_note {
-                col = col.push(horizontal_rule(1));
+                col = col.push(rule::horizontal(1));
                 col = col.push(row![
                     text("Generated Note").size(13),
-                    iced::widget::horizontal_space(),
+                    Space::with_width(Length::Fill),
                     text(&self.status).size(11).color(color!(0x8b8fa4)),
                 ]);
-                col = col.push(
-                    text_editor(&self.note).on_action(Msg::NoteEdit).height(250).size(12).font(Font::MONOSPACE)
-                );
+
+                let note_editor = text_editor(&self.note)
+                    .on_action(Msg::NoteEdit)
+                    .height(250).size(12)
+                    .font(Font::MONOSPACE);
+                if self.focus_zone == FocusZone::NoteEditor {
+                    col = col.push(
+                        container(note_editor).style(focus_ring_style)
+                    );
+                } else {
+                    col = col.push(note_editor);
+                }
+
                 if !self.busy {
                     col = col.push(row![
                         button(text("Accept & Save").size(12)).on_press(Msg::Accept).padding([4, 10]).style(button::success),
@@ -568,10 +922,10 @@ impl App {
             }
 
             if !self.compares.is_empty() {
-                col = col.push(horizontal_rule(1));
+                col = col.push(rule::horizontal(1));
                 col = col.push(row![
                     text("Comparison").size(13),
-                    iced::widget::horizontal_space(),
+                    Space::with_width(Length::Fill),
                     button(text("Clear").size(11)).on_press(Msg::ClearCmp).padding([2, 6]).style(button::danger),
                 ].align_y(iced::Alignment::Center));
                 for (i, (l, t)) in self.compares.iter().enumerate() {
@@ -593,10 +947,12 @@ impl App {
                 .center(Length::Fill).into()
         };
 
-        column![hdr, horizontal_rule(1), row![sidebar, main]].height(Length::Fill).into()
+        column![hdr, rule::horizontal(1), row![sidebar, main]].height(Length::Fill).into()
     }
 
     fn subscription(&self) -> Subscription<Msg> {
-        Subscription::none()
+        keyboard::listen().map(|event| {
+            map_keyboard_event(event).unwrap_or(Msg::NoOp)
+        })
     }
 }
