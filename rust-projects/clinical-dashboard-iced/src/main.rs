@@ -132,8 +132,34 @@ fn home() -> PathBuf {
     dirs::home_dir().expect("no home dir")
 }
 
-fn clients_dir() -> PathBuf { home().join("Clinical").join("clients") }
-fn attendance_dir() -> PathBuf { home().join("Clinical").join("attendance") }
+/// Clinical data root. Reads `[paths] clinical_root` from
+/// `~/.config/clinical-product/config.toml` (or `voice-config.toml`).
+/// Falls back to `~/Clinical`.
+fn clinical_root() -> PathBuf {
+    let config_dir = home().join(".config").join("clinical-product");
+    let config_path = if config_dir.join("config.toml").exists() {
+        config_dir.join("config.toml")
+    } else {
+        config_dir.join("voice-config.toml")
+    };
+    if let Ok(data) = std::fs::read_to_string(&config_path) {
+        if let Ok(val) = data.parse::<toml::Value>() {
+            if let Some(root) = val.get("paths")
+                .and_then(|p| p.get("clinical_root"))
+                .and_then(|v| v.as_str())
+            {
+                if root.starts_with("~/") {
+                    return home().join(&root[2..]);
+                }
+                return PathBuf::from(root);
+            }
+        }
+    }
+    home().join("Clinical")
+}
+
+fn clients_dir() -> PathBuf { clinical_root().join("clients") }
+fn attendance_dir() -> PathBuf { clinical_root().join("attendance") }
 
 fn session_dir() -> PathBuf {
     home().join(".local/share/clinical-dashboard")
