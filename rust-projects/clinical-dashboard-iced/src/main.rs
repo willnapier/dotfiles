@@ -954,12 +954,12 @@ impl App {
 
                 if !time_range.is_empty() {
                     item_row = item_row.push(
-                        text(time_range).size(13).color(time_color)
+                        text(time_range).size(13).color(time_color).width(90)
                     );
                 }
 
                 item_row = item_row.push(
-                    text(c.id.clone()).size(14).color(status_color)
+                    text(c.id.clone()).size(14).color(status_color).width(65)
                 );
 
                 if let Some(ref tag) = c.rate_tag {
