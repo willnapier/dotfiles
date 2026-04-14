@@ -741,14 +741,22 @@ impl App {
     }
 
     /// Scroll the client list to keep the highlighted item visible.
+    /// Each item is roughly 22px (12px text + 6px padding + spacing).
     fn scroll_to_highlight(&self) -> Task<Msg> {
         let len = self.visible_list_len();
         if len == 0 { return Task::none(); }
-        let ratio = self.highlight as f32 / len.max(1) as f32;
+        // Approximate pixel offset: item_height * highlight_index,
+        // clamped so the item appears near the top of the visible area.
+        let item_height: f32 = 22.0;
+        let y = (self.highlight as f32) * item_height;
         operation::snap_to(
             CLIENT_SCROLL_ID,
-            operation::RelativeOffset { y: Some(ratio), ..Default::default() },
+            operation::RelativeOffset::START,
         )
+        .chain(operation::scroll_to(
+            CLIENT_SCROLL_ID,
+            operation::AbsoluteOffset { x: 0.0, y },
+        ))
     }
 
     fn view(&self) -> Element<'_, Msg> {
@@ -944,6 +952,7 @@ impl App {
 
             // Observation editor — with focus ring when active
             let obs_editor = text_editor(&self.obs)
+                .id(OBS_EDITOR_ID)
                 .on_action(Msg::Obs)
                 .height(150).size(13)
                 .font(Font::MONOSPACE);
@@ -977,6 +986,7 @@ impl App {
                 ]);
 
                 let note_editor = text_editor(&self.note)
+                    .id(NOTE_EDITOR_ID)
                     .on_action(Msg::NoteEdit)
                     .height(250).size(12)
                     .font(Font::MONOSPACE);
