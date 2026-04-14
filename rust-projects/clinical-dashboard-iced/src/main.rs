@@ -1067,7 +1067,7 @@ impl App {
         ];
 
         let sidebar: Element<Msg> = container(sidebar_content)
-            .width(300).height(Length::Fill)
+            .width(260).height(Length::Fill)
             .style(sidebar_style).into();
 
         // Main content
