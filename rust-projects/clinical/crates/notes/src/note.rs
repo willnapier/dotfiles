@@ -376,6 +376,17 @@ pub fn save(id: &str, no_train: bool) -> Result<()> {
     // Finalise (session count + alerts)
     finalise::run(id)?;
 
+    // Regenerate client summary in background (async, non-blocking)
+    let summary_id = id.to_string();
+    std::thread::spawn(move || {
+        let _ = Command::new("clinical")
+            .arg("summarise")
+            .arg(&summary_id)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn();
+    });
+
     Ok(())
 }
 
