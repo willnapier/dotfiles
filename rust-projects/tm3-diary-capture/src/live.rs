@@ -32,7 +32,10 @@ struct Cookie {
 /// Strategy: navigate to the diary page, wait for the scheduler grid to render,
 /// grab the full outerHTML, and pass it to html::parse_diary(). This ensures
 /// both live and file paths use identical parsing logic.
-pub fn scrape_diary() -> Result<Vec<DaySchedule>> {
+///
+/// `weeks_back`: 0 = current week, 1 = previous week, etc. Clicks the
+/// left-arrow navigation button N times before extracting.
+pub fn scrape_diary(weeks_back: u32) -> Result<Vec<DaySchedule>> {
     let cookies = load_cookies()?;
 
     eprintln!("Launching headless Chrome...");
@@ -121,7 +124,37 @@ pub fn scrape_diary() -> Result<Vec<DaySchedule>> {
     // Give an extra moment for any remaining async rendering
     std::thread::sleep(Duration::from_secs(2));
 
-    eprintln!("Diary rendered. Extracting HTML...");
+    // Navigate to previous weeks if requested
+    if weeks_back > 0 {
+        eprintln!("Navigating back {} week(s)...", weeks_back);
+        for i in 0..weeks_back {
+            // Click the left-arrow button (previous week)
+            // The button contains an SVG with data-icon="arrow-left"
+            let clicked = tab.evaluate(
+                r#"(function() {
+                    var arrows = document.querySelectorAll('svg[data-icon="arrow-left"]');
+                    for (var i = 0; i < arrows.length; i++) {
+                        var btn = arrows[i].closest('button');
+                        if (btn) { btn.click(); return true; }
+                    }
+                    return false;
+                })()"#,
+                false,
+            );
+            match clicked {
+                Ok(r) if r.value.as_ref().and_then(|v| v.as_bool()) == Some(true) => {
+                    eprintln!("  Week {} of {}...", i + 1, weeks_back);
+                    // Wait for the diary to re-render with new data
+                    std::thread::sleep(Duration::from_secs(3));
+                }
+                _ => bail!("Could not find the previous-week navigation button"),
+            }
+        }
+        // Wait for final render to settle
+        std::thread::sleep(Duration::from_secs(2));
+    }
+
+    eprintln!("Extracting HTML...");
 
     // Get the full page HTML
     let html_result = tab.evaluate(

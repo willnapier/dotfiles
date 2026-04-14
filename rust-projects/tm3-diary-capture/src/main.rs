@@ -40,6 +40,11 @@ struct Cli {
     #[arg(long)]
     include_past: bool,
 
+    /// Navigate back N weeks in TM3 diary before capturing (--live only).
+    /// 0 = current week (default), 1 = last week, 2 = two weeks ago, etc.
+    #[arg(long, default_value = "0")]
+    weeks_back: u32,
+
     /// Skip JSON archive of captured data
     #[arg(long)]
     no_archive: bool,
@@ -64,7 +69,7 @@ fn main() -> Result<()> {
         if cli.file.is_some() || cli.latest {
             bail!("Cannot use --live with FILE or --latest");
         }
-        let schedules = live::scrape_diary()?;
+        let schedules = live::scrape_diary(cli.weeks_back)?;
         (schedules, None)
     } else {
         let path = match (&cli.file, cli.latest) {
