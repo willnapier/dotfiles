@@ -10,7 +10,7 @@ mod referral;
 mod runpod;
 pub mod session_cookies;
 mod sync;
-mod voice_pod;
+mod inference;
 
 #[derive(Parser)]
 #[command(name = "clinical-product", about = "Clinical session note generator")]
@@ -185,12 +185,12 @@ fn build_system_prompt(modality: &str) -> String {
 /// Ensure the managed pod (if any) is running before a generation request.
 /// Silent no-op if pod management isn't configured.
 async fn ensure_managed_pod_ready() -> anyhow::Result<()> {
-    let config = voice_pod::load_pod_config()?;
+    let config = inference::load_pod_config()?;
     if !config.has_pod() {
         return Ok(());
     }
     let client = runpod::Client::new()?;
-    voice_pod::prepare_for_request(&client, &config).await?;
+    inference::prepare_for_request(&client, &config).await?;
     Ok(())
 }
 
@@ -255,7 +255,7 @@ async fn raw_completion(
     }
 
     // Record activity so the idle timer knows something just happened.
-    let _ = voice_pod::record_activity();
+    let _ = inference::record_activity();
 
     Ok(())
 }
@@ -365,7 +365,7 @@ async fn main() -> anyhow::Result<()> {
             }
         }
         Command::VoicePod { action } => {
-            handle_voice_pod(action).await?;
+            handle_inference(action).await?;
         }
         Command::Referral { action } => {
             if matches!(action, ReferralAction::Init) {
@@ -419,7 +419,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn handle_voice_pod(action: VoicePodAction) -> anyhow::Result<()> {
+async fn handle_inference(action: VoicePodAction) -> anyhow::Result<()> {
     use runpod::Client as RunPodClient;
 
     match action {
@@ -460,8 +460,8 @@ async fn handle_voice_pod(action: VoicePodAction) -> anyhow::Result<()> {
             }
         }
         VoicePodAction::Status => {
-            let config = voice_pod::load_pod_config()?;
-            let state = voice_pod::load_state();
+            let config = inference::load_pod_config()?;
+            let state = inference::load_state();
 
             println!("Voice pod configuration:");
             println!("  Managed by The Product: {}", config.managed);
@@ -489,7 +489,7 @@ async fn handle_voice_pod(action: VoicePodAction) -> anyhow::Result<()> {
 
             if !config.has_pod() {
                 println!("No managed pod configured — nothing to query.");
-                println!("See {} to configure.", voice_pod::config_path().display());
+                println!("See {} to configure.", inference::config_path().display());
                 return Ok(());
             }
 
@@ -522,15 +522,15 @@ async fn handle_voice_pod(action: VoicePodAction) -> anyhow::Result<()> {
             );
         }
         VoicePodAction::Start => {
-            let config = voice_pod::load_pod_config()?;
+            let config = inference::load_pod_config()?;
             if !config.has_pod() {
                 anyhow::bail!(
                     "No managed pod configured. Set [pod] managed=true and pod_id in {}",
-                    voice_pod::config_path().display()
+                    inference::config_path().display()
                 );
             }
             let client = RunPodClient::new()?;
-            let started = voice_pod::ensure_running(&client, &config).await?;
+            let started = inference::ensure_running(&client, &config).await?;
             if started {
                 println!("Pod started.");
             } else {
@@ -538,15 +538,15 @@ async fn handle_voice_pod(action: VoicePodAction) -> anyhow::Result<()> {
             }
         }
         VoicePodAction::Stop => {
-            let config = voice_pod::load_pod_config()?;
+            let config = inference::load_pod_config()?;
             if !config.has_pod() {
                 anyhow::bail!(
                     "No managed pod configured. Set [pod] managed=true and pod_id in {}",
-                    voice_pod::config_path().display()
+                    inference::config_path().display()
                 );
             }
             let client = RunPodClient::new()?;
-            let stopped = voice_pod::ensure_stopped(&client, &config).await?;
+            let stopped = inference::ensure_stopped(&client, &config).await?;
             if stopped {
                 println!("Pod stopped.");
             } else {
@@ -557,14 +557,14 @@ async fn handle_voice_pod(action: VoicePodAction) -> anyhow::Result<()> {
             // Idle-timeout sweeper: check if pod is running AND idle-for-long-enough.
             // If so, stop it. Intended to be called periodically (cron, launchd, etc.)
             // from cross-platform schedulers the user configures themselves.
-            let config = voice_pod::load_pod_config()?;
+            let config = inference::load_pod_config()?;
             if !config.has_pod() {
                 println!("No managed pod — nothing to maintain.");
                 return Ok(());
             }
-            let state = voice_pod::load_state();
+            let state = inference::load_state();
             let timeout = config.idle_timeout();
-            if !voice_pod::is_idle(&state, timeout) {
+            if !inference::is_idle(&state, timeout) {
                 println!(
                     "Pod not idle (last activity within {} min). No action.",
                     timeout.as_secs() / 60
