@@ -382,7 +382,7 @@ fn highlight_style(_theme: &Theme) -> container::Style {
     container::Style {
         background: Some(iced::Background::Color(color!(0x073642))),
         border: iced::Border {
-            color: color!(0x2aa198),
+            color: color!(0x586e75),
             width: 1.0,
             radius: 2.0.into(),
         },
@@ -603,6 +603,7 @@ impl App {
                 self.note = text_editor::Content::new();
                 self.note_text.clear();
                 self.show_note = false;
+                self.compares.clear();
                 self.status = match draft {
                     Some(ref d) if !d.is_empty() => "Draft restored".into(),
                     _ => String::new(),
