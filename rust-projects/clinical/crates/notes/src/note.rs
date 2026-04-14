@@ -761,10 +761,12 @@ struct GeneratedComparison {
     attempts: usize,
     hard_failures: usize,
     soft_flags: Vec<String>,
+    regen_reasons: Vec<String>,
+    generation_secs: f64,
 }
 
 fn generate_one(
-    id: &str,
+    _id: &str,
     observation: &str,
     model: &str,
     prompt: &str,
@@ -776,6 +778,8 @@ fn generate_one(
     const MAX_RETRIES: usize = 3;
     let mut note = String::new();
     let mut attempts = 0;
+    let mut regen_reasons: Vec<String> = Vec::new();
+    let start = std::time::Instant::now();
 
     for attempt in 0..MAX_RETRIES {
         attempts = attempt + 1;
@@ -820,7 +824,17 @@ fn generate_one(
                 attempts,
                 hard_failures: 0,
                 soft_flags: flags,
+                regen_reasons,
+                generation_secs: start.elapsed().as_secs_f64(),
             });
+        }
+
+        // Collect reasons for this regeneration
+        for f in &validation.failures {
+            regen_reasons.push(format!("lint: {}", f));
+        }
+        for f in faithfulness.hard_failures() {
+            regen_reasons.push(format!("faithfulness: {}", f.reason));
         }
     }
 
@@ -838,6 +852,8 @@ fn generate_one(
         attempts,
         hard_failures: faithfulness.hard_failures().len(),
         soft_flags: flags,
+        regen_reasons,
+        generation_secs: start.elapsed().as_secs_f64(),
     })
 }
 
@@ -850,12 +866,22 @@ pub fn compare_run(id: &str, observation: &str, no_train: bool) -> Result<()> {
     // Generate Q4
     eprintln!("\n--- Generating Q4 ---");
     let q4 = generate_one(id, observation, "clinical-voice-q4", &prompt, &client_context)?;
-    eprintln!("  {} attempt{}", q4.attempts, if q4.attempts == 1 { "" } else { "s" });
+    eprintln!("  {} attempt{} ({:.0}s)", q4.attempts, if q4.attempts == 1 { "" } else { "s" }, q4.generation_secs);
+    if !q4.regen_reasons.is_empty() {
+        for r in &q4.regen_reasons {
+            eprintln!("    regen: {}", r);
+        }
+    }
 
     // Generate Q8
     eprintln!("\n--- Generating Q8 ---");
     let q8 = generate_one(id, observation, "clinical-voice-q8", &prompt, &client_context)?;
-    eprintln!("  {} attempt{}", q8.attempts, if q8.attempts == 1 { "" } else { "s" });
+    eprintln!("  {} attempt{} ({:.0}s)", q8.attempts, if q8.attempts == 1 { "" } else { "s" }, q8.generation_secs);
+    if !q8.regen_reasons.is_empty() {
+        for r in &q8.regen_reasons {
+            eprintln!("    regen: {}", r);
+        }
+    }
 
     // Display both
     eprintln!("\n========================================");
@@ -913,6 +939,8 @@ pub fn compare_run(id: &str, observation: &str, no_train: bool) -> Result<()> {
         soft_flags: q4.soft_flags.len(),
         flag_details: q4.soft_flags.clone(),
         attempts: q4.attempts,
+        regen_reasons: q4.regen_reasons.clone(),
+        generation_secs: q4.generation_secs,
         accepted: Some(q4_accepted),
     };
     let q8_entry = crate::faithfulness::ComparisonEntry {
@@ -925,6 +953,8 @@ pub fn compare_run(id: &str, observation: &str, no_train: bool) -> Result<()> {
         soft_flags: q8.soft_flags.len(),
         flag_details: q8.soft_flags.clone(),
         attempts: q8.attempts,
+        regen_reasons: q8.regen_reasons.clone(),
+        generation_secs: q8.generation_secs,
         accepted: Some(q8_accepted),
     };
 

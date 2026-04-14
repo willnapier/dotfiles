@@ -847,6 +847,8 @@ pub struct ComparisonEntry {
     pub soft_flags: usize,
     pub flag_details: Vec<String>,
     pub attempts: usize,
+    pub regen_reasons: Vec<String>,
+    pub generation_secs: f64,
     pub accepted: Option<bool>,
 }
 
