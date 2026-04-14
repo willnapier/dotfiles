@@ -772,3 +772,119 @@ Client engaged in values clarification work around career transition.
         assert!(result.contains("First note.\n\n### 2026-01-22"));
     }
 }
+
+// ---------------------------------------------------------------------------
+// Summarise
+// ---------------------------------------------------------------------------
+
+/// Generate a compressed clinical summary for a client, saved as summary.md.
+pub fn summarise(
+    id: Option<&str>,
+    all: bool,
+    dry_run: bool,
+    model_override: Option<&str>,
+) -> Result<()> {
+    if all {
+        let ids = client::list_client_ids()?;
+        eprintln!("Summarising {} clients...", ids.len());
+        for client_id in &ids {
+            if let Err(e) = summarise_one(client_id, dry_run, model_override) {
+                eprintln!("  {} — error: {}", client_id, e);
+            }
+        }
+        Ok(())
+    } else if let Some(id) = id {
+        summarise_one(id, dry_run, model_override)
+    } else {
+        bail!("Provide a client ID or use --all")
+    }
+}
+
+fn summarise_one(id: &str, dry_run: bool, model_override: Option<&str>) -> Result<()> {
+    let notes_path = client::notes_path(id);
+    let notes = std::fs::read_to_string(&notes_path)
+        .with_context(|| format!("Could not read: {}", notes_path.display()))?;
+
+    if notes.trim().is_empty() {
+        eprintln!("  {} — no notes, skipping", id);
+        return Ok(());
+    }
+
+    // Count sessions
+    let session_count = notes.lines().filter(|l| l.starts_with("### ")).count();
+    if session_count == 0 {
+        eprintln!("  {} — no session headers, skipping", id);
+        return Ok(());
+    }
+
+    // Build correspondence context
+    let correspondence = find_correspondence(id);
+    let corr_summary: String = correspondence
+        .iter()
+        .map(|(name, _)| format!("  - {}", name))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Build the summarisation prompt
+    let prompt = format!(
+        "You are a clinical documentation assistant. Summarise the following client file \
+         into a compressed clinical summary (~400-600 words). Preserve:\n\
+         - Key history and referral context\n\
+         - Ongoing therapeutic themes and patterns\n\
+         - Current formulation and treatment trajectory\n\
+         - Significant events or turning points\n\
+         - Auth/funding status if present\n\n\
+         Use clinical language (ACT/CBS) consistent with the notes.\n\
+         Refer to the client by first name.\n\
+         Output ONLY the summary, no preamble.\n\n\
+         === CLIENT FILE ({}, {} sessions) ===\n{}\n\n\
+         === CORRESPONDENCE FILES ===\n{}\n",
+        id,
+        session_count,
+        notes,
+        if corr_summary.is_empty() { "  (none)".to_string() } else { corr_summary },
+    );
+
+    // Include correspondence content for context
+    let mut full_prompt = prompt;
+    for (name, content) in &correspondence {
+        full_prompt.push_str(&format!("\n--- {} ---\n{}\n", name, content));
+    }
+
+    eprintln!("  {} — generating summary ({} sessions)...", id, session_count);
+
+    // Resolve LLM command (same as note generation)
+    let (cmd_name, cmd_args) = resolve_llm_command(model_override);
+    let args: Vec<&str> = cmd_args.split_whitespace().collect();
+
+    let mut child = Command::new(&cmd_name)
+        .args(&args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .with_context(|| format!("Failed to spawn {}", cmd_name))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(full_prompt.as_bytes())?;
+    }
+
+    let output = child.wait_with_output()?;
+    let summary = String::from_utf8_lossy(&output.stdout).to_string();
+
+    if summary.trim().is_empty() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("{} — LLM returned empty summary. stderr: {}", id, stderr);
+    }
+
+    if dry_run {
+        println!("=== SUMMARY: {} ===\n{}", id, summary);
+    } else {
+        let summary_path = client::client_dir(id).join("summary.md");
+        std::fs::write(&summary_path, &summary)
+            .with_context(|| format!("write: {}", summary_path.display()))?;
+        eprintln!("  {} — saved to {}", id, summary_path.display());
+    }
+
+    Ok(())
+}
