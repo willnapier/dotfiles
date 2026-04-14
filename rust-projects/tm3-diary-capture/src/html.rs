@@ -69,8 +69,10 @@ fn extract_month_year(html: &str) -> Result<String> {
 
 /// Extract day headers like ["Mon 26th", "Tue 27th", ...].
 fn extract_day_headers(html: &str) -> Result<Vec<String>> {
+    // Match both SingleFile format (no spaces: "grid-column:span 1">)
+    // and live DOM format (with spaces/semicolon: "grid-column: span 1;")
     let re = Regex::new(
-        r#"grid-column:span 1">(Mon|Tue|Wed|Thu|Fri|Sat|Sun) (\d{1,2}(?:st|nd|rd|th))</div>"#,
+        r#"grid-column:\s*span 1[;"]?[^>]*>(Mon|Tue|Wed|Thu|Fri|Sat|Sun) (\d{1,2}(?:st|nd|rd|th))</div>"#,
     )?;
     let headers: Vec<String> = re
         .captures_iter(html)
@@ -154,10 +156,12 @@ fn extract_day_columns(html: &str) -> Result<Vec<Vec<String>>> {
     let time_re = Regex::new(r"^\d{2}:\d{2}-\d{2}:\d{2} - ")?;
 
     // Strategy 1: look for the grid container with inline styles
+    // Handles both SingleFile ("height:2880px") and live DOM ("height: 2880px")
+    let height_re = Regex::new(r"height:\s*2880px")?;
     let mut grid_container = None;
     for el in doc.select(&div_sel) {
         if let Some(style) = el.value().attr("style") {
-            if style.contains("height:2880px")
+            if height_re.is_match(style)
                 && style.contains("grid-template-columns")
             {
                 grid_container = Some(el);

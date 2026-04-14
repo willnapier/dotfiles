@@ -135,6 +135,13 @@ pub fn scrape_diary() -> Result<Vec<DaySchedule>> {
         .and_then(|v| v.as_str())
         .context("Page HTML was empty")?;
 
+    // Save HTML for debugging if DUMP_HTML env var is set
+    if std::env::var("DUMP_HTML").is_ok() {
+        let dump_path = "/tmp/tm3-live-dump.html";
+        let _ = std::fs::write(dump_path, page_html);
+        eprintln!("HTML dumped to {dump_path}");
+    }
+
     // Parse using the same parser as the file path
     html::parse_diary(page_html)
 }
