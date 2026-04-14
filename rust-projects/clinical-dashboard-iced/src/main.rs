@@ -522,22 +522,24 @@ impl App {
             }
 
             Msg::Obs(a) => {
+                let old_text = self.obs.text();
                 self.obs.perform(a);
-                // Auto-save draft to session file
-                if let Some(ref id) = self.selected {
-                    let obs_text = self.obs.text();
-                    let draft = if obs_text.trim().is_empty() { None } else { Some(obs_text) };
-                    if let Some(c) = self.session.clients.iter_mut().find(|c| c.id == *id) {
-                        c.draft_observation = draft;
-                    } else if draft.is_some() {
-                        // Client not in session (ad-hoc via search) — add them
-                        self.session.clients.push(ClinicClient {
-                            id: id.clone(), time: None, end_time: None,
-                            status: ClinicStatus::Pending, rate_tag: None,
-                            draft_observation: draft,
-                        });
+                let new_text = self.obs.text();
+                // Only persist when text actually changed (not on cursor/selection moves)
+                if old_text != new_text {
+                    if let Some(ref id) = self.selected {
+                        let draft = if new_text.trim().is_empty() { None } else { Some(new_text) };
+                        if let Some(c) = self.session.clients.iter_mut().find(|c| c.id == *id) {
+                            c.draft_observation = draft;
+                        } else if draft.is_some() {
+                            self.session.clients.push(ClinicClient {
+                                id: id.clone(), time: None, end_time: None,
+                                status: ClinicStatus::Pending, rate_tag: None,
+                                draft_observation: draft,
+                            });
+                        }
+                        self.persist_session();
                     }
-                    self.persist_session();
                 }
                 Task::none()
             }
