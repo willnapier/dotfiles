@@ -592,6 +592,7 @@ pub fn run(
 
     const MAX_LINT_RETRIES: usize = 3;
     let mut note = String::new();
+    let mut regen_reasons: Vec<String> = Vec::new();
 
     for attempt in 0..MAX_LINT_RETRIES {
         if attempt > 0 {
@@ -668,6 +669,7 @@ pub fn run(
             eprintln!("\n🚫 Lint failure (auto-regenerating):");
             for f in &validation.failures {
                 eprintln!("  - {}", f);
+                regen_reasons.push(format!("lint: {}", f));
             }
         }
 
@@ -682,11 +684,30 @@ pub fn run(
                 };
                 eprintln!("  - \"{}\"", display);
                 eprintln!("    {}", f.reason);
+                regen_reasons.push(format!("faithfulness: {}", f.reason));
             }
         }
 
         if attempt == MAX_LINT_RETRIES - 1 {
             eprintln!("\n⚠️  Max retries reached — showing note with remaining issues.");
+        }
+    }
+
+    // Generation summary
+    if regen_reasons.is_empty() {
+        eprintln!("\n✓ Note generated on first attempt.");
+    } else {
+        let attempts = regen_reasons.len() + 1; // reasons = failed attempts, +1 for final
+        eprintln!(
+            "\n✓ Note generated after {} attempt{} ({} regeneration{}).",
+            attempts,
+            if attempts == 1 { "" } else { "s" },
+            regen_reasons.len(),
+            if regen_reasons.len() == 1 { "" } else { "s" },
+        );
+        eprintln!("  Regeneration triggers:");
+        for reason in &regen_reasons {
+            eprintln!("    - {}", reason);
         }
     }
 
