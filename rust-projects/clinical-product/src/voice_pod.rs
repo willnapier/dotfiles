@@ -4,7 +4,7 @@
 //! status, start, stop, and auto-start-on-demand with idle timeout.
 //!
 //! Safety: this module will ONLY touch the pod whose ID is configured in
-//! `voice-config.toml` under `[pod] pod_id`. If that is empty or
+//! `config.toml` under `[pod] pod_id`. If that is empty or
 //! `managed = false`, all management operations are no-ops and `clinical
 //! note` assumes the pod is managed externally.
 
@@ -13,6 +13,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Duration;
+
+use crate::config::config_file_path;
 
 use crate::runpod::{Client, Pod};
 
@@ -95,19 +97,11 @@ pub fn load_pod_config() -> Result<PodConfig> {
 }
 
 pub fn config_path() -> PathBuf {
-    home_config_dir().join("voice-config.toml")
+    config_file_path()
 }
 
 pub fn state_path() -> PathBuf {
-    home_config_dir().join("voice-state.toml")
-}
-
-fn home_config_dir() -> PathBuf {
-    if let Some(home) = dirs::home_dir() {
-        home.join(".config").join("clinical-product")
-    } else {
-        PathBuf::from(".")
-    }
+    crate::config::config_dir().join("voice-state.toml")
 }
 
 pub fn load_state() -> PodState {

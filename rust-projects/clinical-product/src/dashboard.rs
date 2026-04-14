@@ -31,18 +31,12 @@ const APP_JS: &str = include_str!("dashboard_assets/app.js");
 // Paths
 // ---------------------------------------------------------------------------
 
-fn clinical_root() -> PathBuf {
-    dirs::home_dir()
-        .expect("cannot resolve home directory")
-        .join("Clinical")
-}
-
 fn clients_dir() -> PathBuf {
-    clinical_root().join("clients")
+    crate::config::clients_dir()
 }
 
 fn attendance_dir() -> PathBuf {
-    clinical_root().join("attendance")
+    crate::config::attendance_dir()
 }
 
 // ---------------------------------------------------------------------------

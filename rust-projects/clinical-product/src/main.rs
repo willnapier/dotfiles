@@ -4,6 +4,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
 
+pub mod config;
 mod dashboard;
 mod referral;
 mod runpod;
@@ -60,7 +61,7 @@ enum Command {
 
     /// Manage the voice inference pod lifecycle (status/start/stop).
     ///
-    /// Reads the `[pod]` section of ~/.config/clinical-product/voice-config.toml
+    /// Reads the `[pod]` section of ~/.config/clinical-product/config.toml
     /// to determine which pod to manage. If `managed = false` or pod_id is
     /// empty, all commands report the configured state without making changes.
     VoicePod {

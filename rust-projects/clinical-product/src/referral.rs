@@ -5,7 +5,7 @@
 //! client directory. Auth via keychain (`secret-tool lookup service
 //! "clinical-imap"` on Linux).
 //!
-//! Config lives in `~/.config/clinical-product/voice-config.toml` under the
+//! Config lives in `~/.config/clinical-product/config.toml` under the
 //! `[referral]` section.
 
 use anyhow::{bail, Context, Result};
@@ -33,7 +33,7 @@ pub enum ReferralCommand {
 }
 
 /// IMAP connection and filtering configuration from `[referral]` in
-/// `voice-config.toml`.
+/// `config.toml`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ReferralConfig {
     /// IMAP server hostname (e.g. "imap.gmail.com").
@@ -216,7 +216,7 @@ pub fn init_config() -> Result<()> {
     Ok(())
 }
 
-/// Load the `[referral]` section from `~/.config/clinical-product/voice-config.toml`.
+/// Load the `[referral]` section from `~/.config/clinical-product/config.toml`.
 pub fn load_referral_config() -> Result<ReferralConfig> {
     let path = config_path();
     if !path.exists() {
@@ -291,13 +291,7 @@ pub fn load_imap_password() -> Result<String> {
 }
 
 fn config_path() -> PathBuf {
-    if let Some(home) = dirs::home_dir() {
-        home.join(".config")
-            .join("clinical-product")
-            .join("voice-config.toml")
-    } else {
-        PathBuf::from("voice-config.toml")
-    }
+    crate::config::config_file_path()
 }
 
 // ---------------------------------------------------------------------------
