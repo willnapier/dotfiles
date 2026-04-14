@@ -88,12 +88,12 @@ impl Default for FaithfulnessConfig {
     }
 }
 
-/// Load faithfulness config from voice-config.toml, falling back to defaults.
+/// Load faithfulness config from config.toml, falling back to defaults.
 pub fn load_config() -> FaithfulnessConfig {
     let mut config = FaithfulnessConfig::default();
 
     let config_path = dirs::config_dir()
-        .map(|d| d.join("clinical-product/voice-config.toml"))
+        .map(|d| d.join("clinical-product/config.toml"))
         .unwrap_or_default();
 
     if let Ok(content) = std::fs::read_to_string(&config_path) {
