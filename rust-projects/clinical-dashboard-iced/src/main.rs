@@ -861,15 +861,15 @@ impl App {
 
         // Date navigation bar
         let date_nav = row![
-            button(text("◀").size(12)).on_press(Msg::PrevDay).padding([2, 8]).style(button::text),
+            button(text("◀").size(14)).on_press(Msg::PrevDay).padding([3, 10]).style(button::text),
             if is_today {
-                text(date_display.clone()).size(12).color(color!(0xfdf6e3))
+                text(date_display.clone()).size(14).color(color!(0xfdf6e3))
             } else {
-                text(date_display.clone()).size(12).color(color!(0xd4a020))
+                text(date_display.clone()).size(14).color(color!(0xd4a020))
             },
-            button(text("▶").size(12)).on_press(Msg::NextDay).padding([2, 8]).style(button::text),
+            button(text("▶").size(14)).on_press(Msg::NextDay).padding([3, 10]).style(button::text),
             if !is_today {
-                Element::from(button(text("Today").size(10)).on_press(Msg::GoToday).padding([2, 6]).style(button::secondary))
+                Element::from(button(text("Today").size(12)).on_press(Msg::GoToday).padding([3, 8]).style(button::secondary))
             } else {
                 Element::from(iced::widget::Space::new().width(0))
             },
@@ -879,7 +879,7 @@ impl App {
         let mut hdr_row = row![
             iced::widget::Space::new().width(70),
             iced::widget::Space::new().width(Length::Fill),
-            text("Clinical Dashboard").size(14).color(color!(0xfdf6e3)),
+            text("Clinical Dashboard").size(16).color(color!(0xfdf6e3)),
             iced::widget::Space::new().width(Length::Fill),
         ].align_y(iced::Alignment::Center);
 
@@ -907,7 +907,7 @@ impl App {
             } else {
                 Msg::Search(self.search.clone())
             })
-            .size(12).padding(4);
+            .size(14).padding(6);
 
         // Clinic clients section (if any in session)
         let mut sidebar_items: Vec<Element<Msg>> = Vec::new();
@@ -1031,7 +1031,7 @@ impl App {
         let add_input = text_input("+ Add client...", &self.add_client_input)
             .on_input(Msg::AddClientInput)
             .on_submit(Msg::AddClient)
-            .size(11).padding(3);
+            .size(13).padding(5);
 
         // Wrap just the scrollable list with a focus ring when ClientList is active
         let client_list_widget = scrollable(Column::with_children(sidebar_items).spacing(1))
@@ -1045,13 +1045,13 @@ impl App {
         };
 
         let sidebar_content = column![
-            container(text("CLINIC").size(10).color(color!(0x8b8fa4))).padding([4, 8]),
+            container(text("CLINIC").size(12).color(color!(0x8b8fa4))).padding([6, 8]),
             container(search).padding([4, 6]),
             client_list_element,
             container(add_input).padding([4, 6]),
             if self.all_resolved() && !self.clinic_ended {
                 container(
-                    button(text("End Clinic").size(11)).on_press(Msg::EndClinic).padding([4, 8]).style(button::success).width(Length::Fill)
+                    button(text("End Clinic").size(13)).on_press(Msg::EndClinic).padding([5, 10]).style(button::success).width(Length::Fill)
                 ).padding([4, 6])
             } else {
                 container(iced::widget::Space::new().height(0))
@@ -1066,25 +1066,25 @@ impl App {
         let main: Element<Msg> = if let Some(ref id) = self.selected {
             let mut col = column![
                 row![
-                    text(id).size(14),
+                    text(id).size(16),
                     iced::widget::Space::new().width(Length::Fill),
                     if self.session.clients.iter().any(|c| c.id == *id && c.status == ClinicStatus::Pending) {
                         row![
-                            button(text("DNA").size(10)).on_press(Msg::MarkDna(id.clone())).padding([2, 6]).style(button::danger),
-                            button(text("Cancel").size(10)).on_press(Msg::MarkCancelled(id.clone())).padding([2, 6]).style(button::secondary),
+                            button(text("DNA").size(13)).on_press(Msg::MarkDna(id.clone())).padding([3, 8]).style(button::danger),
+                            button(text("Cancel").size(13)).on_press(Msg::MarkCancelled(id.clone())).padding([3, 8]).style(button::secondary),
                         ].spacing(4)
                     } else {
                         row![]
                     },
                 ].align_y(iced::Alignment::Center),
-                text("Session observation").size(11).color(color!(0x8b8fa4)),
-            ].spacing(6);
+                text("Session observation").size(13).color(color!(0x8b8fa4)),
+            ].spacing(8);
 
             // Observation editor — with focus ring when active
             let obs_editor = text_editor(&self.obs)
                 .id(OBS_EDITOR_ID)
                 .on_action(Msg::Obs)
-                .height(150).size(13)
+                .height(150).size(14)
                 .font(Font::MONOSPACE);
             if self.focus_zone == FocusZone::ObservationEditor {
                 col = col.push(
@@ -1096,29 +1096,29 @@ impl App {
 
             col = col.push(
                 row![
-                    pick_list(ModelChoice::ALL, Some(&self.model), Msg::Model).text_size(12).padding([3, 6]),
+                    pick_list(ModelChoice::ALL, Some(&self.model), Msg::Model).text_size(14).padding([4, 8]),
                     if self.busy {
-                        button(text("Generating...").size(12)).padding([4, 10])
+                        button(text("Generating...").size(14)).padding([5, 12])
                     } else if !self.inference_ok {
-                        button(text("No inference").size(12)).padding([4, 10])
+                        button(text("No inference").size(14)).padding([5, 12])
                     } else {
-                        button(text("Generate Note").size(12)).on_press(Msg::Gen).padding([4, 10]).style(button::primary)
+                        button(text("Generate Note").size(14)).on_press(Msg::Gen).padding([5, 12]).style(button::primary)
                     },
-                ].spacing(6).align_y(iced::Alignment::Center),
+                ].spacing(8).align_y(iced::Alignment::Center),
             );
 
             if self.show_note {
                 col = col.push(rule::horizontal(1));
                 col = col.push(row![
-                    text("Generated Note").size(13),
+                    text("Generated Note").size(15),
                     iced::widget::Space::new().width(Length::Fill),
-                    text(&self.status).size(11).color(color!(0x8b8fa4)),
+                    text(&self.status).size(13).color(color!(0x8b8fa4)),
                 ]);
 
                 let note_editor = text_editor(&self.note)
                     .id(NOTE_EDITOR_ID)
                     .on_action(Msg::NoteEdit)
-                    .height(250).size(12)
+                    .height(250).size(14)
                     .font(Font::MONOSPACE);
                 if self.focus_zone == FocusZone::NoteEditor {
                     col = col.push(
@@ -1130,40 +1130,40 @@ impl App {
 
                 if !self.busy {
                     col = col.push(row![
-                        button(text("Accept & Save").size(12)).on_press(Msg::Accept).padding([4, 10]).style(button::success),
-                        button(text("Reject").size(12)).on_press(Msg::Reject).padding([4, 10]).style(button::danger),
-                        button(text("Compare").size(12)).on_press(Msg::Compare).padding([4, 10]).style(button::secondary),
-                    ].spacing(6));
+                        button(text("Accept & Save").size(14)).on_press(Msg::Accept).padding([5, 12]).style(button::success),
+                        button(text("Reject").size(14)).on_press(Msg::Reject).padding([5, 12]).style(button::danger),
+                        button(text("Compare").size(14)).on_press(Msg::Compare).padding([5, 12]).style(button::secondary),
+                    ].spacing(8));
                 }
             }
 
             if !self.status.is_empty() && !self.show_note {
-                col = col.push(text(&self.status).size(11).color(color!(0x8b8fa4)));
+                col = col.push(text(&self.status).size(13).color(color!(0x8b8fa4)));
             }
 
             if !self.compares.is_empty() {
                 col = col.push(rule::horizontal(1));
                 col = col.push(row![
-                    text("Comparison").size(13),
+                    text("Comparison").size(15),
                     iced::widget::Space::new().width(Length::Fill),
-                    button(text("Clear").size(11)).on_press(Msg::ClearCmp).padding([2, 6]).style(button::danger),
+                    button(text("Clear").size(13)).on_press(Msg::ClearCmp).padding([3, 8]).style(button::danger),
                 ].align_y(iced::Alignment::Center));
                 for (i, (l, t)) in self.compares.iter().enumerate() {
                     col = col.push(column![
-                        text(format!("#{i} — {l}")).size(10).color(color!(0x5b9bd5)),
-                        text(t).size(11).font(Font::MONOSPACE),
+                        text(format!("#{i} — {l}")).size(12).color(color!(0x5b9bd5)),
+                        text(t).size(13).font(Font::MONOSPACE),
                     ].spacing(2));
                 }
             }
 
-            scrollable(container(col).padding(10).width(Length::Fill)).height(Length::Fill).into()
+            scrollable(container(col).padding(12).width(Length::Fill)).height(Length::Fill).into()
         } else {
             let msg = if self.clinic_ended {
                 &self.status
             } else {
                 "Select a client from the sidebar, or add one to today's clinic."
             };
-            container(text(msg).size(13).color(color!(0x8b8fa4)))
+            container(text(msg).size(15).color(color!(0x8b8fa4)))
                 .center(Length::Fill).into()
         };
 
