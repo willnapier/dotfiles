@@ -105,6 +105,8 @@ struct ClinicClient {
     status: ClinicStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     rate_tag: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    draft_observation: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -498,12 +500,22 @@ impl App {
             }
 
             Msg::Select(id) => {
+                // Load draft observation if one exists for this client
+                let draft = self.session.clients.iter()
+                    .find(|c| c.id == id)
+                    .and_then(|c| c.draft_observation.clone());
                 self.selected = Some(id);
-                self.obs = text_editor::Content::new();
+                self.obs = match draft {
+                    Some(ref d) if !d.is_empty() => text_editor::Content::with_text(d),
+                    _ => text_editor::Content::new(),
+                };
                 self.note = text_editor::Content::new();
                 self.note_text.clear();
                 self.show_note = false;
-                self.status.clear();
+                self.status = match draft {
+                    Some(ref d) if !d.is_empty() => "Draft restored".into(),
+                    _ => String::new(),
+                };
                 // Auto-switch to observation editor after selecting a client
                 self.focus_zone = FocusZone::ObservationEditor;
                 focus_zone_task(FocusZone::ObservationEditor)
@@ -511,6 +523,15 @@ impl App {
 
             Msg::Obs(a) => {
                 self.obs.perform(a);
+                // Auto-save draft to session file
+                if let Some(ref id) = self.selected {
+                    let obs_text = self.obs.text();
+                    let draft = if obs_text.trim().is_empty() { None } else { Some(obs_text) };
+                    if let Some(c) = self.session.clients.iter_mut().find(|c| c.id == *id) {
+                        c.draft_observation = draft;
+                    }
+                    self.persist_session();
+                }
                 Task::none()
             }
             Msg::NoteEdit(a) => {
@@ -564,12 +585,13 @@ impl App {
                         self.note = text_editor::Content::new();
                         self.note_text.clear();
                         self.show_note = false;
-                        // Auto-mark done in session
+                        // Auto-mark done in session and clear draft
                         if let Some(c) = self.session.clients.iter_mut().find(|c| c.id == id) {
                             c.status = ClinicStatus::Done;
+                            c.draft_observation = None;
                         } else {
                             self.session.clients.push(ClinicClient {
-                                id: id.clone(), time: None, end_time: None, status: ClinicStatus::Done, rate_tag: None,
+                                id: id.clone(), time: None, end_time: None, status: ClinicStatus::Done, rate_tag: None, draft_observation: None,
                             });
                         }
                         self.persist_session();
@@ -620,7 +642,7 @@ impl App {
                 let id = self.add_client_input.trim().to_uppercase();
                 if !id.is_empty() && !self.session.clients.iter().any(|c| c.id == id) {
                     self.session.clients.push(ClinicClient {
-                        id, time: None, end_time: None, status: ClinicStatus::Pending, rate_tag: None,
+                        id, time: None, end_time: None, status: ClinicStatus::Pending, rate_tag: None, draft_observation: None,
                     });
                     self.persist_session();
                 }
