@@ -412,6 +412,7 @@ enum Msg {
     // Clinic workflow
     MarkDna(String),
     MarkCancelled(String),
+    RemoveFromClinic(String),
     AddClientInput(String),
     AddClient,
     EndClinic,
@@ -697,6 +698,21 @@ impl App {
                 }
                 self.persist_session();
                 Task::none()
+            }
+
+            Msg::RemoveFromClinic(id) => {
+                self.session.clients.retain(|c| c.id != id);
+                self.persist_session();
+                if self.selected.as_deref() == Some(&id) {
+                    self.selected = None;
+                    self.obs = text_editor::Content::new();
+                    self.note = text_editor::Content::new();
+                    self.note_text.clear();
+                    self.show_note = false;
+                    self.status.clear();
+                }
+                self.focus_zone = FocusZone::ClientList;
+                focus_zone_task(FocusZone::ClientList)
             }
 
             Msg::AddClientInput(s) => { self.add_client_input = s; Task::none() }
@@ -1080,7 +1096,12 @@ impl App {
                         row![
                             button(text("DNA").size(13)).on_press(Msg::MarkDna(id.clone())).padding([3, 8]).style(button::danger),
                             button(text("Cancel").size(13)).on_press(Msg::MarkCancelled(id.clone())).padding([3, 8]).style(button::secondary),
+                            button(text("Remove").size(13)).on_press(Msg::RemoveFromClinic(id.clone())).padding([3, 8]).style(button::text),
                         ].spacing(4)
+                    } else if self.session.clients.iter().any(|c| c.id == *id) {
+                        row![
+                            button(text("Remove").size(13)).on_press(Msg::RemoveFromClinic(id.clone())).padding([3, 8]).style(button::text),
+                        ]
                     } else {
                         row![]
                     },
