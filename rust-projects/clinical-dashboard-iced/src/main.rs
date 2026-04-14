@@ -457,6 +457,23 @@ impl App {
         zones
     }
 
+    fn switch_date(&mut self, date: chrono::NaiveDate) {
+        self.viewing_date = date;
+        let date_str = date.format("%Y-%m-%d").to_string();
+        self.session = load_session(&date_str).unwrap_or_else(|| ClinicSession {
+            date: date_str,
+            started_at: chrono::Local::now().to_rfc3339(),
+            clients: Vec::new(),
+        });
+        self.selected = None;
+        self.obs = text_editor::Content::new();
+        self.note = text_editor::Content::new();
+        self.note_text.clear();
+        self.show_note = false;
+        self.status.clear();
+        self.clinic_ended = false;
+    }
+
     fn update(&mut self, msg: Msg) -> Task<Msg> {
         match msg {
             Msg::InferenceChecked(ok) => { self.inference_ok = ok; Task::none() }
@@ -619,6 +636,25 @@ impl App {
             }
 
             // ---------------------------------------------------------------
+            // Date navigation
+            // ---------------------------------------------------------------
+
+            Msg::PrevDay => {
+                let prev = self.viewing_date - chrono::Duration::days(1);
+                self.switch_date(prev);
+                Task::none()
+            }
+            Msg::NextDay => {
+                let next = self.viewing_date + chrono::Duration::days(1);
+                self.switch_date(next);
+                Task::none()
+            }
+            Msg::GoToday => {
+                self.switch_date(chrono::Local::now().date_naive());
+                Task::none()
+            }
+
+            // ---------------------------------------------------------------
             // Keyboard navigation
             // ---------------------------------------------------------------
 
@@ -716,7 +752,24 @@ impl App {
     }
 
     fn view(&self) -> Element<'_, Msg> {
-        let today = chrono::Local::now().format("%A %d %B %Y").to_string();
+        let is_today = self.viewing_date == chrono::Local::now().date_naive();
+        let date_display = self.viewing_date.format("%A %d %B %Y").to_string();
+
+        // Date navigation bar
+        let date_nav = row![
+            button(text("◀").size(12)).on_press(Msg::PrevDay).padding([2, 8]).style(button::text),
+            if is_today {
+                text(date_display.clone()).size(12).color(color!(0xfdf6e3))
+            } else {
+                text(date_display.clone()).size(12).color(color!(0xd4a020))
+            },
+            button(text("▶").size(12)).on_press(Msg::NextDay).padding([2, 8]).style(button::text),
+            if !is_today {
+                Element::from(button(text("Today").size(10)).on_press(Msg::GoToday).padding([2, 6]).style(button::secondary))
+            } else {
+                Element::from(iced::widget::Space::new().width(0))
+            },
+        ].spacing(4).align_y(iced::Alignment::Center);
 
         // Header
         let mut hdr_row = row![
@@ -731,7 +784,7 @@ impl App {
             hdr_row = hdr_row.push(iced::widget::Space::new().width(10));
         }
 
-        hdr_row = hdr_row.push(text(today).size(12).color(color!(0x93a1a1)));
+        hdr_row = hdr_row.push(date_nav);
         hdr_row = hdr_row.push(iced::widget::Space::new().width(10));
 
         let hdr = container(hdr_row)
