@@ -986,6 +986,15 @@ impl App {
                     }
                 }
 
+                // Push × dismiss to the right edge
+                item_row = item_row.push(iced::widget::Space::new().width(Length::Fill));
+                item_row = item_row.push(
+                    button(text("×").size(12).color(color!(0x586e75)))
+                        .on_press(Msg::RemoveFromClinic(c.id.clone()))
+                        .padding([0, 4])
+                        .style(button::text)
+                );
+
                 let sel = self.selected.as_deref() == Some(&c.id);
                 let is_highlighted = self.focus_zone == FocusZone::ClientList
                     && self.highlight == list_idx;
@@ -1096,12 +1105,7 @@ impl App {
                         row![
                             button(text("DNA").size(13)).on_press(Msg::MarkDna(id.clone())).padding([3, 8]).style(button::danger),
                             button(text("Cancel").size(13)).on_press(Msg::MarkCancelled(id.clone())).padding([3, 8]).style(button::secondary),
-                            button(text("Remove").size(13)).on_press(Msg::RemoveFromClinic(id.clone())).padding([3, 8]).style(button::text),
                         ].spacing(4)
-                    } else if self.session.clients.iter().any(|c| c.id == *id) {
-                        row![
-                            button(text("Remove").size(13)).on_press(Msg::RemoveFromClinic(id.clone())).padding([3, 8]).style(button::text),
-                        ]
                     } else {
                         row![]
                     },
