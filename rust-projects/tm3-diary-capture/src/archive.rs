@@ -82,9 +82,18 @@ pub fn cleanup() -> Result<usize> {
 
 /// Write a dashboard session file for the given date's appointments.
 /// Called after client ID mapping so IDs are resolved.
+/// A client entry for the dashboard session file.
+pub struct SessionClient {
+    pub id: String,
+    pub start_time: String,
+    pub end_time: String,
+    pub rate_tag: Option<String>,
+    pub status: String,  // "pending", "cancelled", etc.
+}
+
 pub fn write_dashboard_session(
     date: &chrono::NaiveDate,
-    clients: &[(String, String, Option<String>)],  // (client_id, time, rate_tag)
+    clients: &[SessionClient],
 ) -> Result<()> {
     let session_dir = dirs::home_dir()
         .expect("no home dir")
@@ -112,21 +121,26 @@ pub fn write_dashboard_session(
         }
     }
 
-    // Build client list: preserve existing status, add new as pending
+    // Build client list: preserve existing done/dna status, add new with captured status
     let mut session_clients = Vec::new();
-    for (id, time, rate_tag) in clients {
-        if let Some(existing) = existing_clients.remove(id) {
-            session_clients.push(existing);
-        } else {
-            let mut obj = serde_json::Map::new();
-            obj.insert("id".into(), serde_json::Value::String(id.clone()));
-            obj.insert("time".into(), serde_json::Value::String(time.clone()));
-            obj.insert("status".into(), serde_json::Value::String("pending".into()));
-            if let Some(tag) = rate_tag {
-                obj.insert("rate_tag".into(), serde_json::Value::String(tag.clone()));
+    for c in clients {
+        if let Some(existing) = existing_clients.remove(&c.id) {
+            // Keep existing entry if user already marked it done/dna
+            let existing_status = existing.get("status").and_then(|v| v.as_str()).unwrap_or("");
+            if existing_status == "done" || existing_status == "dna" {
+                session_clients.push(existing);
+                continue;
             }
-            session_clients.push(serde_json::Value::Object(obj));
         }
+        let mut obj = serde_json::Map::new();
+        obj.insert("id".into(), serde_json::Value::String(c.id.clone()));
+        obj.insert("time".into(), serde_json::Value::String(c.start_time.clone()));
+        obj.insert("end_time".into(), serde_json::Value::String(c.end_time.clone()));
+        obj.insert("status".into(), serde_json::Value::String(c.status.clone()));
+        if let Some(ref tag) = c.rate_tag {
+            obj.insert("rate_tag".into(), serde_json::Value::String(tag.clone()));
+        }
+        session_clients.push(serde_json::Value::Object(obj));
     }
     // Keep any existing clients not in today's TM3 capture (walk-ins added manually)
     for (_, v) in existing_clients {

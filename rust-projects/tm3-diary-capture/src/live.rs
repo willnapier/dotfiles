@@ -1,14 +1,17 @@
 //! Live diary scraping via headless Chrome + TM3 cookie auth.
+//!
+//! Navigates to the TM3 diary, extracts the rendered HTML, and passes
+//! it to the same html::parse_diary() parser used for SingleFile exports.
+//! Single parsing path — no JS DOM evaluation.
 
 use anyhow::{bail, Context, Result};
-use chrono::NaiveDate;
 use headless_chrome::protocol::cdp::Network;
 use headless_chrome::{Browser, LaunchOptions};
 use serde::Deserialize;
 use std::process::Command;
 use std::time::Duration;
 
-use crate::html::{Appointment, DaySchedule, Status};
+use crate::html::{self, DaySchedule};
 
 const TM3_BASE: &str = "https://changeofharleystreet.tm3app.com";
 
@@ -25,6 +28,10 @@ struct Cookie {
 
 /// Scrape the TM3 diary via headless Chrome, returning the same DaySchedule
 /// format as the HTML parser.
+///
+/// Strategy: navigate to the diary page, wait for the scheduler grid to render,
+/// grab the full outerHTML, and pass it to html::parse_diary(). This ensures
+/// both live and file paths use identical parsing logic.
 pub fn scrape_diary() -> Result<Vec<DaySchedule>> {
     let cookies = load_cookies()?;
 
@@ -65,7 +72,7 @@ pub fn scrape_diary() -> Result<Vec<DaySchedule>> {
         });
     }
 
-    // Navigate to diary
+    // Navigate to diary (cookies now set)
     tab.navigate_to(TM3_BASE)?;
     std::thread::sleep(Duration::from_secs(5));
 
@@ -74,145 +81,45 @@ pub fn scrape_diary() -> Result<Vec<DaySchedule>> {
         bail!("Session expired. Run 'tm3-upload login' to re-authenticate.");
     }
 
-    eprintln!("Authenticated. Scraping diary...");
+    eprintln!("Authenticated. Waiting for diary to render...");
 
-    // Extract appointments from the DOM
-    let json = tab
-        .evaluate(
-            r#"
-            (function() {
-                // Get month and year
-                var bodyText = document.body.innerText;
-                var monthMatch = bodyText.match(/(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})/);
-                if (!monthMatch) return JSON.stringify({error: "Could not find month/year"});
-                var monthName = monthMatch[1];
-                var year = parseInt(monthMatch[2]);
-
-                var months = {January:1,February:2,March:3,April:4,May:5,June:6,
-                              July:7,August:8,September:9,October:10,November:11,December:12};
-                var monthNum = months[monthName];
-
-                // Get day headers
-                var dayPattern = /(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(\d{1,2})(?:st|nd|rd|th)/g;
-                var dayHeaders = [];
-                var m;
-                while ((m = dayPattern.exec(bodyText)) !== null) {
-                    var dayNum = parseInt(m[2]);
-                    var dateStr = year + '-' + String(monthNum).padStart(2,'0') + '-' + String(dayNum).padStart(2,'0');
-                    if (dayHeaders.findIndex(function(d) { return d.date === dateStr; }) === -1) {
-                        dayHeaders.push({dayName: m[1], dayNum: dayNum, date: dateStr});
-                    }
-                }
-
-                // Get all schedule columns
-                var columns = document.querySelectorAll('.schedule-layer');
-
-                // Build per-day appointments
-                var days = [];
-                for (var c = 0; c < columns.length; c++) {
-                    var header = c < dayHeaders.length ? dayHeaders[c] : null;
-                    if (!header) continue;
-
-                    var apptDivs = columns[c].querySelectorAll(
-                        'div[style*="background"].cursor-pointer'
-                    );
-
-                    var appointments = [];
-                    for (var a = 0; a < apptDivs.length; a++) {
-                        var text = apptDivs[a].innerText.trim();
-                        if (!text) continue;
-
-                        var lines = text.split('\n');
-                        var firstLine = lines[0].trim();
-
-                        // Parse "HH:MM-HH:MM Name" pattern
-                        var timeMatch = firstLine.match(/^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\s+(.*)/);
-                        if (!timeMatch) continue;
-
-                        var startTime = timeMatch[1];
-                        var clientName = timeMatch[3].trim();
-                        var rateTag = lines.length > 1 ? lines[1].trim() : null;
-
-                        // Skip administration blocks
-                        if (clientName.toLowerCase() === 'administration') continue;
-
-                        // Check for cancelled status (red/strikethrough styling)
-                        var isCancelled = apptDivs[a].classList.contains('line-through') ||
-                            apptDivs[a].querySelector('.line-through') !== null ||
-                            apptDivs[a].style.textDecoration === 'line-through';
-
-                        appointments.push({
-                            start_time: startTime,
-                            client_name: clientName,
-                            rate_tag: rateTag,
-                            status: isCancelled ? 'cancelled' : 'booked'
-                        });
-                    }
-
-                    days.push({
-                        date: header.date,
-                        appointments: appointments
-                    });
-                }
-
-                return JSON.stringify({days: days});
-            })()
-            "#,
+    // Wait for the scheduler grid to appear (the appointment grid with 2880px height)
+    // Poll for up to 15 seconds
+    let mut grid_found = false;
+    for _ in 0..15 {
+        let check = tab.evaluate(
+            r#"document.querySelector('div[style*="height:2880px"]') !== null"#,
             false,
-        )
-        .context("Failed to evaluate diary scraper")?;
+        );
+        if let Ok(result) = check {
+            if result.value.as_ref().and_then(|v| v.as_bool()) == Some(true) {
+                grid_found = true;
+                break;
+            }
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    }
 
-    let json_str = json
+    if !grid_found {
+        bail!("Diary grid did not render within 15 seconds. The page may have changed layout.");
+    }
+
+    eprintln!("Diary rendered. Extracting HTML...");
+
+    // Get the full page HTML
+    let html_result = tab.evaluate(
+        "document.documentElement.outerHTML",
+        false,
+    ).context("Failed to extract page HTML")?;
+
+    let page_html = html_result
         .value
         .as_ref()
         .and_then(|v| v.as_str())
-        .context("Diary scraper returned no data")?;
+        .context("Page HTML was empty")?;
 
-    // Parse the JSON into DaySchedules
-    let parsed: serde_json::Value =
-        serde_json::from_str(json_str).context("Failed to parse diary JSON")?;
-
-    if let Some(err) = parsed.get("error") {
-        bail!("Diary scraper error: {}", err);
-    }
-
-    let days = parsed["days"]
-        .as_array()
-        .context("Expected 'days' array")?;
-
-    let mut schedules = Vec::new();
-    for day in days {
-        let date_str = day["date"].as_str().unwrap_or("");
-        let date = NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
-            .with_context(|| format!("Invalid date: {}", date_str))?;
-
-        let appts = day["appointments"]
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|a| {
-                        Some(Appointment {
-                            start_time: a["start_time"].as_str()?.to_string(),
-                            client_name: a["client_name"].as_str()?.to_string(),
-                            rate_tag: a["rate_tag"].as_str().map(|s| s.to_string()),
-                            status: if a["status"].as_str() == Some("cancelled") {
-                                Status::Cancelled
-                            } else {
-                                Status::Booked
-                            },
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        schedules.push(DaySchedule {
-            date,
-            appointments: appts,
-        });
-    }
-
-    Ok(schedules)
+    // Parse using the same parser as the file path
+    html::parse_diary(page_html)
 }
 
 fn load_cookies() -> Result<Vec<Cookie>> {

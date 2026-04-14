@@ -100,6 +100,8 @@ struct ClinicClient {
     id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    end_time: Option<String>,
     status: ClinicStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     rate_tag: Option<String>,
@@ -557,7 +559,7 @@ impl App {
                             c.status = ClinicStatus::Done;
                         } else {
                             self.session.clients.push(ClinicClient {
-                                id: id.clone(), time: None, status: ClinicStatus::Done, rate_tag: None,
+                                id: id.clone(), time: None, end_time: None, status: ClinicStatus::Done, rate_tag: None,
                             });
                         }
                         self.persist_session();
@@ -608,7 +610,7 @@ impl App {
                 let id = self.add_client_input.trim().to_uppercase();
                 if !id.is_empty() && !self.session.clients.iter().any(|c| c.id == id) {
                     self.session.clients.push(ClinicClient {
-                        id, time: None, status: ClinicStatus::Pending, rate_tag: None,
+                        id, time: None, end_time: None, status: ClinicStatus::Pending, rate_tag: None,
                     });
                     self.persist_session();
                 }
@@ -825,35 +827,70 @@ impl App {
         if !self.session.clients.is_empty() {
             for c in &self.session.clients {
                 let status_icon = match c.status {
-                    ClinicStatus::Done => "✓ ",
-                    ClinicStatus::Pending => "○ ",
-                    ClinicStatus::Dna => "✗ ",
-                    ClinicStatus::Cancelled => "– ",
+                    ClinicStatus::Done => "✓",
+                    ClinicStatus::Pending => "○",
+                    ClinicStatus::Dna => "✗",
+                    ClinicStatus::Cancelled => "–",
                 };
                 let status_color = match c.status {
                     ClinicStatus::Done => color!(0x4caf7a),
-                    ClinicStatus::Pending => color!(0x8b8fa4),
+                    ClinicStatus::Pending => color!(0xfdf6e3),
                     ClinicStatus::Dna => color!(0xe06050),
                     ClinicStatus::Cancelled => color!(0x586e75),
                 };
-                let time_str = c.time.as_deref().unwrap_or("");
-                let label = format!("{status_icon}{} {time_str}", c.id);
+                let time_color = match c.status {
+                    ClinicStatus::Cancelled => color!(0x586e75),
+                    _ => color!(0x8b8fa4),
+                };
+
+                // Build time range string
+                let time_range = match (c.time.as_deref(), c.end_time.as_deref()) {
+                    (Some(s), Some(e)) => format!("{s}-{e}"),
+                    (Some(s), None) => s.to_string(),
+                    _ => String::new(),
+                };
+
+                // Build the row: icon  time_range  ID  [tag]
+                let mut item_row = row![
+                    text(status_icon).size(11).color(status_color).width(14),
+                ].spacing(4).align_y(iced::Alignment::Center);
+
+                if !time_range.is_empty() {
+                    item_row = item_row.push(
+                        text(time_range).size(10).color(time_color).width(80)
+                    );
+                }
+
+                item_row = item_row.push(
+                    text(c.id.clone()).size(12).color(status_color)
+                );
+
+                if let Some(ref tag) = c.rate_tag {
+                    if !tag.is_empty() {
+                        item_row = item_row.push(iced::widget::Space::new().width(Length::Fill));
+                        item_row = item_row.push(
+                            text(tag.clone()).size(9).color(color!(0x6c71c4))
+                        );
+                    }
+                }
 
                 let sel = self.selected.as_deref() == Some(&c.id);
                 let is_highlighted = self.focus_zone == FocusZone::ClientList
                     && self.highlight == list_idx;
 
-                let b = button(text(label).size(12).color(status_color))
-                    .on_press(Msg::Select(c.id.clone()))
-                    .width(Length::Fill).padding([3, 8]);
-
-                let item: Element<Msg> = if sel {
-                    b.style(button::primary).into()
+                // Cancelled clients are visible but not selectable
+                let b = if c.status == ClinicStatus::Cancelled {
+                    button(item_row).width(Length::Fill).padding([3, 6])
+                        .style(button::text)
                 } else {
-                    b.style(button::text).into()
+                    let b = button(item_row)
+                        .on_press(Msg::Select(c.id.clone()))
+                        .width(Length::Fill).padding([3, 6]);
+                    if sel { b.style(button::primary) } else { b.style(button::text) }
                 };
 
-                // Wrap highlighted item with a visual indicator
+                let item: Element<Msg> = b.into();
+
                 if is_highlighted {
                     sidebar_items.push(
                         container(item).style(highlight_style).into()

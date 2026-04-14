@@ -45,6 +45,17 @@ struct Cli {
     no_archive: bool,
 }
 
+/// Classify a raw rate string into a clean tag for the dashboard.
+fn classify_rate_tag(raw: &str) -> Option<String> {
+    let r = raw.to_uppercase();
+    if r.contains("COUPLES") { return Some("couples".to_string()); }
+    if r.starts_with("AXA") || r.starts_with("BUPA") || r.contains("INSURANCE")
+        || r.starts_with("PWC") || r.contains("TAYLOR WESSING") {
+        return Some("insurer".to_string());
+    }
+    None
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -164,15 +175,24 @@ fn main() -> Result<()> {
             lines.push(line);
         }
 
-        // Write dashboard session file for this date
+        // Write dashboard session file for this date (include all appointments incl. cancelled)
         if !cli.dry_run {
-            let session_clients: Vec<(String, String, Option<String>)> = sorted.iter().map(|appt| {
+            let session_clients: Vec<archive::SessionClient> = schedule.appointments.iter().filter_map(|appt| {
                 let cid = match &client_map {
-                    Some(map) => map.lookup(&appt.client_name).unwrap_or("???").to_string(),
-                    None => "???".to_string(),
+                    Some(map) => map.lookup(&appt.client_name)?.to_string(),
+                    None => return None,
                 };
-                (cid, appt.start_time.clone(), appt.rate_tag.clone())
-            }).filter(|(id, _, _)| id != "???").collect();
+                Some(archive::SessionClient {
+                    id: cid,
+                    start_time: appt.start_time.clone(),
+                    end_time: appt.end_time.clone(),
+                    rate_tag: appt.rate_tag.clone(),
+                    status: match appt.status {
+                        Status::Cancelled => "cancelled".to_string(),
+                        Status::Booked => "pending".to_string(),
+                    },
+                })
+            }).collect();
             if !session_clients.is_empty() {
                 if let Err(e) = archive::write_dashboard_session(&schedule.date, &session_clients) {
                     eprintln!("Warning: dashboard session write failed: {e}");
