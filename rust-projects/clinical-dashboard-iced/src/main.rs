@@ -959,7 +959,7 @@ impl App {
                 }
 
                 item_row = item_row.push(
-                    text(c.id.clone()).size(14).color(status_color).width(65)
+                    text(c.id.clone()).size(14).color(status_color).width(50)
                 );
 
                 if let Some(ref tag) = c.rate_tag {
