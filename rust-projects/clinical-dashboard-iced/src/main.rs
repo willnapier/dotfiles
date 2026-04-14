@@ -941,24 +941,23 @@ impl App {
 
                 // Build the row: icon  time_range  ID  [tag]
                 let mut item_row = row![
-                    text(status_icon).size(11).color(status_color).width(14),
-                ].spacing(4).align_y(iced::Alignment::Center);
+                    text(status_icon).size(14).color(status_color).width(18),
+                ].spacing(6).align_y(iced::Alignment::Center);
 
                 if !time_range.is_empty() {
                     item_row = item_row.push(
-                        text(time_range).size(10).color(time_color).width(80)
+                        text(time_range).size(13).color(time_color)
                     );
                 }
 
                 item_row = item_row.push(
-                    text(c.id.clone()).size(12).color(status_color).width(70)
+                    text(c.id.clone()).size(14).color(status_color)
                 );
 
                 if let Some(ref tag) = c.rate_tag {
                     if !tag.is_empty() {
-                        item_row = item_row.push(iced::widget::Space::new().width(Length::Fill));
                         item_row = item_row.push(
-                            text(tag.clone()).size(11).color(color!(0x6c71c4))
+                            text(tag.clone()).size(12).color(color!(0x6c71c4))
                         );
                     }
                 }
