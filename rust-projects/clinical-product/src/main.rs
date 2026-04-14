@@ -44,7 +44,7 @@ enum Command {
     },
 
     /// Raw completion: reads a full prompt from stdin, streams completion to stdout.
-    /// Used by `clinical note` as CLINICAL_LLM_CMD to integrate the voice model.
+    /// Used by `clinical note` as CLINICAL_LLM_CMD to integrate the inference model.
     Raw {
         /// Ollama API endpoint URL
         #[arg(short, long, default_value = "http://localhost:11434")]
@@ -59,14 +59,14 @@ enum Command {
         no_stream: bool,
     },
 
-    /// Manage the voice inference pod lifecycle (status/start/stop).
+    /// Manage the inference pod lifecycle (status/start/stop).
     ///
     /// Reads the `[pod]` section of ~/.config/clinical-product/config.toml
     /// to determine which pod to manage. If `managed = false` or pod_id is
     /// empty, all commands report the configured state without making changes.
-    VoicePod {
+    Inference {
         #[command(subcommand)]
-        action: VoicePodAction,
+        action: InferencePodAction,
     },
 
     /// Referral intake from IMAP email.
@@ -116,7 +116,7 @@ enum ReferralAction {
 }
 
 #[derive(Parser, Debug)]
-enum VoicePodAction {
+enum InferencePodAction {
     /// Show current pod status (queries RunPod API).
     Status,
 
@@ -364,7 +364,7 @@ async fn main() -> anyhow::Result<()> {
                 println!();
             }
         }
-        Command::VoicePod { action } => {
+        Command::Inference { action } => {
             handle_inference(action).await?;
         }
         Command::Referral { action } => {
@@ -419,11 +419,11 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn handle_inference(action: VoicePodAction) -> anyhow::Result<()> {
+async fn handle_inference(action: InferencePodAction) -> anyhow::Result<()> {
     use runpod::Client as RunPodClient;
 
     match action {
-        VoicePodAction::List => {
+        InferencePodAction::List => {
             let client = RunPodClient::new()?;
             let pods = client.list_pods().await?;
             if pods.is_empty() {
@@ -443,7 +443,7 @@ async fn handle_inference(action: VoicePodAction) -> anyhow::Result<()> {
                 );
             }
         }
-        VoicePodAction::Volumes => {
+        InferencePodAction::Volumes => {
             let client = RunPodClient::new()?;
             let vols = client.list_network_volumes().await?;
             if vols.is_empty() {
@@ -459,11 +459,11 @@ async fn handle_inference(action: VoicePodAction) -> anyhow::Result<()> {
                 );
             }
         }
-        VoicePodAction::Status => {
+        InferencePodAction::Status => {
             let config = inference::load_pod_config()?;
             let state = inference::load_state();
 
-            println!("Voice pod configuration:");
+            println!("Inference pod configuration:");
             println!("  Managed by The Product: {}", config.managed);
             println!(
                 "  Pod ID:                 {}",
@@ -521,7 +521,7 @@ async fn handle_inference(action: VoicePodAction) -> anyhow::Result<()> {
                 state.last_activity.as_deref().unwrap_or("(none)")
             );
         }
-        VoicePodAction::Start => {
+        InferencePodAction::Start => {
             let config = inference::load_pod_config()?;
             if !config.has_pod() {
                 anyhow::bail!(
@@ -537,7 +537,7 @@ async fn handle_inference(action: VoicePodAction) -> anyhow::Result<()> {
                 println!("Pod was already running.");
             }
         }
-        VoicePodAction::Stop => {
+        InferencePodAction::Stop => {
             let config = inference::load_pod_config()?;
             if !config.has_pod() {
                 anyhow::bail!(
@@ -553,7 +553,7 @@ async fn handle_inference(action: VoicePodAction) -> anyhow::Result<()> {
                 println!("Pod was already stopped.");
             }
         }
-        VoicePodAction::Maintain => {
+        InferencePodAction::Maintain => {
             // Idle-timeout sweeper: check if pod is running AND idle-for-long-enough.
             // If so, stop it. Intended to be called periodically (cron, launchd, etc.)
             // from cross-platform schedulers the user configures themselves.

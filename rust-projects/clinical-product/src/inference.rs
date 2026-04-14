@@ -1,6 +1,6 @@
-//! Voice pod lifecycle management.
+//! Inference pod lifecycle management.
 //!
-//! High-level API for managing a practitioner's voice inference pod:
+//! High-level API for managing a practitioner's inference pod:
 //! status, start, stop, and auto-start-on-demand with idle timeout.
 //!
 //! Safety: this module will ONLY touch the pod whose ID is configured in
@@ -25,7 +25,7 @@ const OLLAMA_HEALTH_TIMEOUT: Duration = Duration::from_secs(5);
 const RESTART_WAIT: Duration = Duration::from_secs(120);
 const RESET_WAIT: Duration = Duration::from_secs(180);
 
-/// Parsed `[pod]` section from voice-config.toml.
+/// Parsed `[pod]` section from config.toml.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct PodConfig {
     #[serde(default)]
@@ -49,7 +49,7 @@ pub struct PodConfig {
 /// Runtime state persisted between invocations.
 ///
 /// Kept in a separate file from the config because it mutates on every
-/// `clinical note` invocation. Stored at `~/.config/clinical-product/voice-state.toml`.
+/// `clinical note` invocation. Stored at `~/.config/clinical-product/inference-state.toml`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PodState {
     /// ISO-8601 timestamp of the last successful generation.
@@ -75,7 +75,7 @@ impl PodConfig {
     }
 }
 
-/// Load `[pod]` section from `~/.config/clinical-product/voice-config.toml`.
+/// Load `[pod]` section from `~/.config/clinical-product/config.toml`.
 pub fn load_pod_config() -> Result<PodConfig> {
     let path = config_path();
     if !path.exists() {
@@ -101,7 +101,7 @@ pub fn config_path() -> PathBuf {
 }
 
 pub fn state_path() -> PathBuf {
-    crate::config::config_dir().join("voice-state.toml")
+    crate::config::config_dir().join("inference-state.toml")
 }
 
 pub fn load_state() -> PodState {
@@ -171,7 +171,7 @@ pub async fn ensure_running(client: &Client, config: &PodConfig) -> Result<bool>
         return Ok(false);
     }
 
-    eprintln!("[voice-pod] Starting pod {}...", config.pod_id);
+    eprintln!("[inference] Starting pod {}...", config.pod_id);
     client.start_pod(&config.pod_id).await?;
 
     // Poll until running or timeout
@@ -181,7 +181,7 @@ pub async fn ensure_running(client: &Client, config: &PodConfig) -> Result<bool>
         let pod = client.get_pod(&config.pod_id).await?;
         if pod.is_running() {
             eprintln!(
-                "[voice-pod] Pod running (took {:.0}s).",
+                "[inference] Pod running (took {:.0}s).",
                 start.elapsed().as_secs_f64()
             );
             return Ok(true);
@@ -194,7 +194,7 @@ pub async fn ensure_running(client: &Client, config: &PodConfig) -> Result<bool>
             );
         }
         eprintln!(
-            "[voice-pod] Status: {} ({:.0}s elapsed)",
+            "[inference] Status: {} ({:.0}s elapsed)",
             pod.desired_status,
             start.elapsed().as_secs_f64()
         );
@@ -212,7 +212,7 @@ pub async fn ensure_stopped(client: &Client, config: &PodConfig) -> Result<bool>
         return Ok(false);
     }
 
-    eprintln!("[voice-pod] Stopping pod {}...", config.pod_id);
+    eprintln!("[inference] Stopping pod {}...", config.pod_id);
     client.stop_pod(&config.pod_id).await?;
     Ok(true)
 }
@@ -233,13 +233,13 @@ pub async fn probe_ollama_health(pod_id: &str) -> Result<bool> {
         Ok(resp) if resp.status().is_success() => Ok(true),
         Ok(resp) => {
             eprintln!(
-                "[voice-pod] Ollama health probe returned HTTP {}",
+                "[inference] Ollama health probe returned HTTP {}",
                 resp.status()
             );
             Ok(false)
         }
         Err(e) => {
-            eprintln!("[voice-pod] Ollama health probe failed: {}", e);
+            eprintln!("[inference] Ollama health probe failed: {}", e);
             Ok(false)
         }
     }
@@ -264,14 +264,14 @@ async fn wait_for_healthy(
             Ok(pod) if pod.is_running() => {}
             Ok(pod) => {
                 eprintln!(
-                    "[voice-pod] Waiting for RUNNING, currently {} ({:.0}s elapsed)",
+                    "[inference] Waiting for RUNNING, currently {} ({:.0}s elapsed)",
                     pod.desired_status,
                     start.elapsed().as_secs_f64()
                 );
                 continue;
             }
             Err(e) => {
-                eprintln!("[voice-pod] Error checking pod status: {}", e);
+                eprintln!("[inference] Error checking pod status: {}", e);
                 continue;
             }
         }
@@ -281,7 +281,7 @@ async fn wait_for_healthy(
             Ok(true) => return true,
             _ => {
                 eprintln!(
-                    "[voice-pod] Pod RUNNING but Ollama not yet healthy ({:.0}s elapsed)",
+                    "[inference] Pod RUNNING but Ollama not yet healthy ({:.0}s elapsed)",
                     start.elapsed().as_secs_f64()
                 );
             }
@@ -308,7 +308,7 @@ pub async fn prepare_for_request(client: &Client, config: &PodConfig) -> Result<
 
     if is_idle(&state, timeout) {
         eprintln!(
-            "[voice-pod] Pod idle > {} min; stopping before fresh start.",
+            "[inference] Pod idle > {} min; stopping before fresh start.",
             timeout.as_secs() / 60
         );
         let _ = ensure_stopped(client, config).await;
@@ -317,25 +317,25 @@ pub async fn prepare_for_request(client: &Client, config: &PodConfig) -> Result<
     ensure_running(client, config).await?;
 
     // --- Step 1: probe Ollama health ---
-    eprintln!("[voice-pod] Probing Ollama health...");
+    eprintln!("[inference] Probing Ollama health...");
     if probe_ollama_health(&config.pod_id).await? {
-        eprintln!("[voice-pod] Ollama healthy — ready.");
+        eprintln!("[inference] Ollama healthy — ready.");
         return Ok(());
     }
 
     // --- Step 2: Ollama unhealthy — restart pod ---
-    eprintln!("[voice-pod] Ollama unresponsive — restarting pod...");
+    eprintln!("[inference] Ollama unresponsive — restarting pod...");
     if let Err(e) = client.start_pod(&config.pod_id).await {
-        eprintln!("[voice-pod] Restart request failed: {} — continuing to reset", e);
+        eprintln!("[inference] Restart request failed: {} — continuing to reset", e);
     } else if wait_for_healthy(client, &config.pod_id, RESTART_WAIT).await {
-        eprintln!("[voice-pod] Ollama recovered after restart.");
+        eprintln!("[inference] Ollama recovered after restart.");
         return Ok(());
     }
 
     // --- Step 3: restart failed — stop + start cycle (hard reset) ---
-    eprintln!("[voice-pod] Restart did not recover Ollama — performing hard reset (stop + start)...");
+    eprintln!("[inference] Restart did not recover Ollama — performing hard reset (stop + start)...");
     if let Err(e) = client.reset_pod(&config.pod_id).await {
-        eprintln!("[voice-pod] Reset API call failed: {} — trying stop+start", e);
+        eprintln!("[inference] Reset API call failed: {} — trying stop+start", e);
         // Fallback: manual stop then start
         let _ = client.stop_pod(&config.pod_id).await;
         tokio::time::sleep(Duration::from_secs(5)).await;
@@ -343,13 +343,13 @@ pub async fn prepare_for_request(client: &Client, config: &PodConfig) -> Result<
     }
 
     if wait_for_healthy(client, &config.pod_id, RESET_WAIT).await {
-        eprintln!("[voice-pod] Ollama recovered after hard reset.");
+        eprintln!("[inference] Ollama recovered after hard reset.");
         return Ok(());
     }
 
     // --- Step 4: all recovery failed ---
     bail!(
-        "[voice-pod] All recovery attempts failed for pod {}. \
+        "[inference] All recovery attempts failed for pod {}. \
          Ollama on the pod is not responding after restart and hard reset. \
          Check the RunPod console for GPU/container issues.",
         config.pod_id
