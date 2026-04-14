@@ -136,7 +136,14 @@ fn session_path(date: &str) -> PathBuf {
 fn load_session(date: &str) -> Option<ClinicSession> {
     let path = session_path(date);
     let data = std::fs::read_to_string(&path).ok()?;
-    serde_json::from_str(&data).ok()
+    let mut session: ClinicSession = serde_json::from_str(&data).ok()?;
+    // Sort clients by start time (empty time sorts last)
+    session.clients.sort_by(|a, b| {
+        let ta = a.time.as_deref().unwrap_or("99:99");
+        let tb = b.time.as_deref().unwrap_or("99:99");
+        ta.cmp(tb)
+    });
+    Some(session)
 }
 
 fn save_session(session: &ClinicSession) {
@@ -968,7 +975,7 @@ impl App {
         ];
 
         let sidebar: Element<Msg> = container(sidebar_content)
-            .width(140).height(Length::Fill)
+            .width(240).height(Length::Fill)
             .style(sidebar_style).into();
 
         // Main content
