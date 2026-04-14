@@ -720,7 +720,15 @@ impl App {
             }
 
             Msg::EscapePressed => {
-                // Return to client list from anywhere
+                // "Go back" — deselect client and return to client list
+                if self.selected.is_some() {
+                    self.selected = None;
+                    self.obs = text_editor::Content::new();
+                    self.note = text_editor::Content::new();
+                    self.note_text.clear();
+                    self.show_note = false;
+                    self.status.clear();
+                }
                 self.focus_zone = FocusZone::ClientList;
                 focus_zone_task(FocusZone::ClientList)
             }
@@ -897,12 +905,21 @@ impl App {
             .on_submit(Msg::AddClient)
             .size(11).padding(3);
 
+        // Wrap just the scrollable list with a focus ring when ClientList is active
+        let client_list_widget = scrollable(Column::with_children(sidebar_items).spacing(1))
+            .id(CLIENT_SCROLL_ID)
+            .height(Length::Fill);
+
+        let client_list_element: Element<Msg> = if self.focus_zone == FocusZone::ClientList {
+            container(client_list_widget).style(focus_ring_style).into()
+        } else {
+            client_list_widget.into()
+        };
+
         let sidebar_content = column![
             container(text("CLINIC").size(10).color(color!(0x8b8fa4))).padding([4, 8]),
             container(search).padding([4, 6]),
-            scrollable(Column::with_children(sidebar_items).spacing(1))
-                .id(CLIENT_SCROLL_ID)
-                .height(Length::Fill),
+            client_list_element,
             container(add_input).padding([4, 6]),
             if self.all_resolved() && !self.clinic_ended {
                 container(
@@ -913,24 +930,9 @@ impl App {
             },
         ];
 
-        // Apply focus ring to sidebar when ClientList zone is active
-        let sidebar: Element<Msg> = if self.focus_zone == FocusZone::ClientList {
-            container(sidebar_content)
-                .width(140).height(Length::Fill)
-                .style(|theme: &Theme| {
-                    let mut s = sidebar_style(theme);
-                    s.border = iced::Border {
-                        color: color!(0x2aa198),
-                        width: 2.0,
-                        radius: 0.0.into(),
-                    };
-                    s
-                }).into()
-        } else {
-            container(sidebar_content)
-                .width(140).height(Length::Fill)
-                .style(sidebar_style).into()
-        };
+        let sidebar: Element<Msg> = container(sidebar_content)
+            .width(140).height(Length::Fill)
+            .style(sidebar_style).into();
 
         // Main content
         let main: Element<Msg> = if let Some(ref id) = self.selected {
