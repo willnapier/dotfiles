@@ -716,11 +716,33 @@ impl App {
             Msg::Compare => {
                 if !self.note_text.is_empty() {
                     let l = format!("{} — {}", self.selected.as_deref().unwrap_or("?"), self.model);
-                    self.compares.push((l, self.note_text.clone()));
+                    self.compares.push(CompareEntry {
+                        label: l,
+                        raw_text: self.note_text.clone(),
+                        content: text_editor::Content::with_text(&self.note_text),
+                    });
                 }
                 Task::none()
             }
             Msg::ClearCmp => { self.compares.clear(); Task::none() }
+
+            Msg::CompareEdit(idx, action) => {
+                if let Some(entry) = self.compares.get_mut(idx) {
+                    entry.content.perform(action);
+                    entry.raw_text = entry.content.text();
+                }
+                Task::none()
+            }
+
+            Msg::AcceptCompare(idx) => {
+                if let Some(entry) = self.compares.get(idx) {
+                    let Some(ref id) = self.selected else { return Task::none() };
+                    let id = id.clone();
+                    let n = entry.raw_text.clone();
+                    return Task::perform(do_save(id, n), Msg::Saved);
+                }
+                Task::none()
+            }
 
             Msg::MarkDna(id) => {
                 if let Some(c) = self.session.clients.iter_mut().find(|c| c.id == id) {
@@ -1244,11 +1266,20 @@ impl App {
                     iced::widget::Space::new().width(Length::Fill),
                     button(text("Clear").size(13)).on_press(Msg::ClearCmp).padding([3, 8]).style(button::danger),
                 ].align_y(iced::Alignment::Center));
-                for (i, (l, t)) in self.compares.iter().enumerate() {
+                for (i, entry) in self.compares.iter().enumerate() {
+                    let idx = i;
                     col = col.push(column![
-                        text(format!("#{i} — {l}")).size(12).color(color!(0x5b9bd5)),
-                        text(t).size(13).font(Font::MONOSPACE),
-                    ].spacing(2));
+                        row![
+                            text(format!("#{i} — {}", entry.label)).size(12).color(color!(0x5b9bd5)),
+                            iced::widget::Space::new().width(Length::Fill),
+                            button(text("Accept & Save").size(12))
+                                .on_press(Msg::AcceptCompare(idx))
+                                .padding([3, 8]).style(button::success),
+                        ].align_y(iced::Alignment::Center),
+                        text_editor(&entry.content)
+                            .on_action(move |a| Msg::CompareEdit(idx, a))
+                            .height(200).size(13).font(Font::MONOSPACE),
+                    ].spacing(4));
                 }
             }
 
