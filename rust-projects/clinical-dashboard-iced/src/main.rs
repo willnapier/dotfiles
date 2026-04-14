@@ -380,6 +380,7 @@ struct App {
     session: ClinicSession,
     session_start: std::time::Instant,
     inference_ok: bool,
+    inference_reconnecting: bool,
     add_client_input: String,
     clinic_ended: bool,
     // Date navigation
@@ -407,6 +408,8 @@ enum Msg {
     AddClient,
     EndClinic,
     InferenceChecked(bool),
+    InferenceHeartbeat,
+    InferenceRestarted(bool),
     // Date navigation
     PrevDay,
     NextDay,
@@ -444,7 +447,7 @@ impl App {
             show_note: false, compares: Vec::new(), highlight: 0,
             focus_zone: FocusZone::ClientList,
             session, session_start: std::time::Instant::now(),
-            inference_ok: false, add_client_input: String::new(),
+            inference_ok: false, inference_reconnecting: false, add_client_input: String::new(),
             clinic_ended: false, viewing_date,
         }, Task::perform(check_inference(), Msg::InferenceChecked))
     }
@@ -512,7 +515,27 @@ impl App {
 
     fn update(&mut self, msg: Msg) -> Task<Msg> {
         match msg {
-            Msg::InferenceChecked(ok) => { self.inference_ok = ok; Task::none() }
+            Msg::InferenceChecked(ok) => {
+                self.inference_ok = ok;
+                if !ok && !self.inference_reconnecting {
+                    // Auto-reconnect
+                    self.inference_reconnecting = true;
+                    Task::perform(restart_inference(), Msg::InferenceRestarted)
+                } else {
+                    if ok { self.inference_reconnecting = false; }
+                    Task::none()
+                }
+            }
+
+            Msg::InferenceHeartbeat => {
+                Task::perform(check_inference(), Msg::InferenceChecked)
+            }
+
+            Msg::InferenceRestarted(ok) => {
+                self.inference_reconnecting = false;
+                self.inference_ok = ok;
+                Task::none()
+            }
 
             Msg::Search(q) => {
                 self.search = q;
@@ -860,8 +883,11 @@ impl App {
             iced::widget::Space::new().width(Length::Fill),
         ].align_y(iced::Alignment::Center);
 
-        if !self.inference_ok {
-            hdr_row = hdr_row.push(text("⚠ No inference").size(11).color(color!(0xe06050)));
+        if self.inference_reconnecting {
+            hdr_row = hdr_row.push(text("⟳ Connecting...").size(11).color(color!(0xd4a020)));
+            hdr_row = hdr_row.push(iced::widget::Space::new().width(10));
+        } else if !self.inference_ok {
+            hdr_row = hdr_row.push(text("⚠ Starting inference...").size(11).color(color!(0xe06050)));
             hdr_row = hdr_row.push(iced::widget::Space::new().width(10));
         }
 
@@ -1146,8 +1172,12 @@ impl App {
     }
 
     fn subscription(&self) -> Subscription<Msg> {
-        keyboard::listen().map(|event| {
-            map_keyboard_event(event).unwrap_or(Msg::NoOp)
-        })
+        Subscription::batch([
+            keyboard::listen().map(|event| {
+                map_keyboard_event(event).unwrap_or(Msg::NoOp)
+            }),
+            iced::time::every(std::time::Duration::from_secs(30))
+                .map(|_| Msg::InferenceHeartbeat),
+        ])
     }
 }
