@@ -265,6 +265,12 @@ fn map_keyboard_event(event: keyboard::Event) -> Option<Msg> {
                 keyboard::Key::Character(ref c) if c.as_str() == "k" && modifiers.command() => {
                     Some(Msg::FocusSearch)
                 }
+                // Window close: Cmd+W / Cmd+Q (macOS), Ctrl+W / Ctrl+Q (Linux/Windows)
+                keyboard::Key::Character(ref c)
+                    if (c.as_str() == "w" || c.as_str() == "q") && modifiers.command() =>
+                {
+                    Some(Msg::CloseWindow)
+                }
                 _ => None,
             }
         }
@@ -373,6 +379,8 @@ enum Msg {
     EnterPressed,
     EscapePressed,
     FocusSearch,
+    CloseWindow,
+    WindowId(Option<iced::window::Id>),
     NoOp,
 }
 
@@ -678,6 +686,12 @@ impl App {
                 self.focus_zone = FocusZone::SearchBox;
                 focus_zone_task(FocusZone::SearchBox)
             }
+
+            Msg::CloseWindow => {
+                iced::window::oldest().map(Msg::WindowId)
+            }
+            Msg::WindowId(Some(id)) => iced::window::close(id),
+            Msg::WindowId(None) => Task::none(),
 
             Msg::NoOp => Task::none(),
         }
