@@ -23,9 +23,13 @@ fn main() -> iced::Result {
     iced::application(App::boot, App::update, App::view)
         .subscription(App::subscription)
         .title("Clinical Dashboard")
-        .theme(|_| Theme::SolarizedDark)
+        .theme(app_theme)
         .window_size((1100.0, 750.0))
         .run()
+}
+
+fn app_theme(_state: &App) -> Theme {
+    Theme::SolarizedDark
 }
 
 // ---------------------------------------------------------------------------
@@ -674,6 +678,8 @@ impl App {
                 self.focus_zone = FocusZone::SearchBox;
                 focus_zone_task(FocusZone::SearchBox)
             }
+
+            Msg::NoOp => Task::none(),
         }
     }
 
@@ -693,19 +699,19 @@ impl App {
 
         // Header
         let mut hdr_row = row![
-            Space::with_width(70),
-            Space::with_width(Length::Fill),
+            iced::widget::Space::new().width(70),
+            iced::widget::Space::new().width(Length::Fill),
             text("Clinical Dashboard").size(14).color(color!(0xfdf6e3)),
-            Space::with_width(Length::Fill),
+            iced::widget::Space::new().width(Length::Fill),
         ].align_y(iced::Alignment::Center);
 
         if !self.inference_ok {
             hdr_row = hdr_row.push(text("⚠ No inference").size(11).color(color!(0xe06050)));
-            hdr_row = hdr_row.push(Space::with_width(10));
+            hdr_row = hdr_row.push(iced::widget::Space::new().width(10));
         }
 
         hdr_row = hdr_row.push(text(today).size(12).color(color!(0x93a1a1)));
-        hdr_row = hdr_row.push(Space::with_width(10));
+        hdr_row = hdr_row.push(iced::widget::Space::new().width(10));
 
         let hdr = container(hdr_row)
             .padding(8).width(Length::Fill)
@@ -821,7 +827,7 @@ impl App {
                     button(text("End Clinic").size(11)).on_press(Msg::EndClinic).padding([4, 8]).style(button::success).width(Length::Fill)
                 ).padding([4, 6])
             } else {
-                container(Space::with_height(0))
+                container(iced::widget::Space::new().height(0))
             },
         ];
 
@@ -849,7 +855,7 @@ impl App {
             let mut col = column![
                 row![
                     text(id).size(14),
-                    Space::with_width(Length::Fill),
+                    iced::widget::Space::new().width(Length::Fill),
                     if self.session.clients.iter().any(|c| c.id == *id && c.status == ClinicStatus::Pending) {
                         row![
                             button(text("DNA").size(10)).on_press(Msg::MarkDna(id.clone())).padding([2, 6]).style(button::danger),
@@ -892,7 +898,7 @@ impl App {
                 col = col.push(rule::horizontal(1));
                 col = col.push(row![
                     text("Generated Note").size(13),
-                    Space::with_width(Length::Fill),
+                    iced::widget::Space::new().width(Length::Fill),
                     text(&self.status).size(11).color(color!(0x8b8fa4)),
                 ]);
 
@@ -925,7 +931,7 @@ impl App {
                 col = col.push(rule::horizontal(1));
                 col = col.push(row![
                     text("Comparison").size(13),
-                    Space::with_width(Length::Fill),
+                    iced::widget::Space::new().width(Length::Fill),
                     button(text("Clear").size(11)).on_press(Msg::ClearCmp).padding([2, 6]).style(button::danger),
                 ].align_y(iced::Alignment::Center));
                 for (i, (l, t)) in self.compares.iter().enumerate() {
