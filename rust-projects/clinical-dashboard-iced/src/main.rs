@@ -872,14 +872,14 @@ impl App {
                 }
 
                 item_row = item_row.push(
-                    text(c.id.clone()).size(12).color(status_color)
+                    text(c.id.clone()).size(12).color(status_color).width(70)
                 );
 
                 if let Some(ref tag) = c.rate_tag {
                     if !tag.is_empty() {
                         item_row = item_row.push(iced::widget::Space::new().width(Length::Fill));
                         item_row = item_row.push(
-                            text(tag.clone()).size(9).color(color!(0x6c71c4))
+                            text(tag.clone()).size(11).color(color!(0x6c71c4))
                         );
                     }
                 }
