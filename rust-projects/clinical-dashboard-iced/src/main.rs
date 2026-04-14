@@ -349,6 +349,8 @@ struct App {
     inference_ok: bool,
     add_client_input: String,
     clinic_ended: bool,
+    // Date navigation
+    viewing_date: chrono::NaiveDate,
 }
 
 #[derive(Debug, Clone)]
@@ -372,6 +374,10 @@ enum Msg {
     AddClient,
     EndClinic,
     InferenceChecked(bool),
+    // Date navigation
+    PrevDay,
+    NextDay,
+    GoToday,
     // Keyboard navigation
     TabPressed(bool),  // shift held?
     ArrowUp,
@@ -388,7 +394,8 @@ impl App {
     fn boot() -> (Self, Task<Msg>) {
         let clients = load_clients();
         let filtered = clients.clone();
-        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let viewing_date = chrono::Local::now().date_naive();
+        let today = viewing_date.format("%Y-%m-%d").to_string();
 
         let session = load_session(&today).unwrap_or_else(|| ClinicSession {
             date: today.clone(),
@@ -405,7 +412,7 @@ impl App {
             focus_zone: FocusZone::ClientList,
             session, session_start: std::time::Instant::now(),
             inference_ok: false, add_client_input: String::new(),
-            clinic_ended: false,
+            clinic_ended: false, viewing_date,
         }, Task::perform(check_inference(), Msg::InferenceChecked))
     }
 
