@@ -385,6 +385,7 @@ struct App {
     // Focus management
     focus_zone: FocusZone,
     // Clinic session state
+    last_removed: Option<ClinicClient>,
     session: ClinicSession,
     session_start: std::time::Instant,
     inference_ok: bool,
@@ -413,6 +414,7 @@ enum Msg {
     MarkDna(String),
     MarkCancelled(String),
     RemoveFromClinic(String),
+    UndoRemove,
     AddClientInput(String),
     AddClient,
     EndClinic,
@@ -455,6 +457,7 @@ impl App {
             status: String::new(), busy: false,
             show_note: false, compares: Vec::new(), highlight: 0,
             focus_zone: FocusZone::ClientList,
+            last_removed: None,
             session, session_start: std::time::Instant::now(),
             inference_ok: false, inference_reconnecting: false, add_client_input: String::new(),
             clinic_ended: false, viewing_date,
@@ -701,6 +704,9 @@ impl App {
             }
 
             Msg::RemoveFromClinic(id) => {
+                // Stash for undo
+                self.last_removed = self.session.clients.iter()
+                    .find(|c| c.id == id).cloned();
                 self.session.clients.retain(|c| c.id != id);
                 self.persist_session();
                 if self.selected.as_deref() == Some(&id) {
@@ -709,10 +715,26 @@ impl App {
                     self.note = text_editor::Content::new();
                     self.note_text.clear();
                     self.show_note = false;
-                    self.status.clear();
                 }
+                self.status = format!("{id} removed — click Undo to restore");
                 self.focus_zone = FocusZone::ClientList;
                 focus_zone_task(FocusZone::ClientList)
+            }
+
+            Msg::UndoRemove => {
+                if let Some(client) = self.last_removed.take() {
+                    let id = client.id.clone();
+                    self.session.clients.push(client);
+                    // Re-sort by time
+                    self.session.clients.sort_by(|a, b| {
+                        let ta = a.time.as_deref().unwrap_or("99:99");
+                        let tb = b.time.as_deref().unwrap_or("99:99");
+                        ta.cmp(tb)
+                    });
+                    self.persist_session();
+                    self.status = format!("{id} restored");
+                }
+                Task::none()
             }
 
             Msg::AddClientInput(s) => { self.add_client_input = s; Task::none() }
@@ -1171,7 +1193,14 @@ impl App {
             }
 
             if !self.status.is_empty() && !self.show_note {
-                col = col.push(text(&self.status).size(13).color(color!(0x8b8fa4)));
+                if self.last_removed.is_some() {
+                    col = col.push(row![
+                        text(&self.status).size(13).color(color!(0x8b8fa4)),
+                        button(text("Undo").size(13)).on_press(Msg::UndoRemove).padding([3, 8]).style(button::secondary),
+                    ].spacing(8).align_y(iced::Alignment::Center));
+                } else {
+                    col = col.push(text(&self.status).size(13).color(color!(0x8b8fa4)));
+                }
             }
 
             if !self.compares.is_empty() {
