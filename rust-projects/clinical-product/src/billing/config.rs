@@ -1,6 +1,10 @@
 //! Billing configuration — reads [billing] section from config.toml.
+//!
+//! Also provides the setup wizard (`init_billing`) and settings
+//! viewer/editor (`show_config`, `update_config`).
 
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
+use std::io::{self, Write};
 
 /// Billing configuration from config.toml [billing] section.
 #[derive(Debug, Clone)]

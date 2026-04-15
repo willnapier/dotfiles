@@ -234,6 +234,18 @@ enum BillingAction {
     /// Periodic maintenance: check overdue, report status.
     /// Safe to run from any scheduler (launchd, systemd, cron).
     Maintain,
+    /// Interactive setup wizard — enable billing, set payment terms, currency.
+    Init,
+    /// View or edit billing settings.
+    ///
+    /// With no arguments: show current settings.
+    /// With key=value: update a setting.
+    Config {
+        /// Setting to update (e.g. "payment_terms_days=21", "currency=GBP").
+        /// Omit to show all current settings.
+        #[arg(name = "KEY=VALUE")]
+        setting: Option<String>,
+    },
 }
 
 #[derive(Parser, Debug)]
