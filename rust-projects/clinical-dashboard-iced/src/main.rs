@@ -554,6 +554,8 @@ struct App {
     search: String,
     selected: Option<String>,
     obs: text_editor::Content,
+    client_notes: Option<text_editor::Content>,
+    show_client_notes: bool,
     model: ModelChoice,
     note: text_editor::Content,
     note_text: String,
@@ -619,6 +621,8 @@ enum Msg {
     EnterPressed,
     EscapePressed,
     FocusSearch,
+    ToggleClientNotes,
+    ClientNotesAction(text_editor::Action),
     CloseWindow,
     WindowId(Option<iced::window::Id>),
     NoOp,
@@ -639,7 +643,7 @@ impl App {
 
         (Self {
             clients, filtered, search: String::new(), selected: None,
-            obs: text_editor::Content::new(), model: ModelChoice::Q4,
+            obs: text_editor::Content::new(), client_notes: None, show_client_notes: false, model: ModelChoice::Q4,
             note: text_editor::Content::new(), note_text: String::new(),
             status: String::new(), busy: false,
             show_note: false, compares: Vec::new(), highlight: 0,
@@ -767,6 +771,12 @@ impl App {
                 let draft = self.session.clients.iter()
                     .find(|c| c.id == id)
                     .and_then(|c| c.draft_observation.clone());
+                // Load client notes.md
+                let notes_path = clients_dir().join(&id).join("notes.md");
+                self.client_notes = std::fs::read_to_string(&notes_path).ok()
+                    .map(|content| text_editor::Content::with_text(&content));
+                self.show_client_notes = false;
+
                 self.selected = Some(id);
                 self.obs = match draft {
                     Some(ref d) if !d.is_empty() => text_editor::Content::with_text(d),
