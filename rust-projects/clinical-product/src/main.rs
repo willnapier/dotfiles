@@ -11,6 +11,7 @@ pub mod email;
 pub mod onboard;
 mod referral;
 mod runpod;
+pub mod scheduling;
 pub mod session_cookies;
 mod sync;
 mod inference;
@@ -137,6 +138,15 @@ enum Command {
         /// Open browser automatically
         #[arg(long)]
         open: bool,
+    },
+
+    /// PracticeForge scheduling — appointments, recurrence, self-booking.
+    ///
+    /// Infinite recurring sessions, block expiry warnings, ICS export.
+    /// Enable via [scheduling] section in config.toml.
+    Schedule {
+        #[command(subcommand)]
+        action: ScheduleAction,
     },
 }
 
@@ -268,6 +278,55 @@ enum InferencePodAction {
 
     /// List all network volumes on the account.
     Volumes,
+}
+
+#[derive(Parser, Debug)]
+enum ScheduleAction {
+    /// List upcoming appointments.
+    List {
+        /// Show appointments for a specific date (YYYY-MM-DD). Default: today.
+        #[arg(long)]
+        date: Option<String>,
+        /// Show a full week instead of a single day.
+        #[arg(long)]
+        week: bool,
+        /// Filter by practitioner slug.
+        #[arg(long)]
+        practitioner: Option<String>,
+    },
+    /// Create an appointment (one-off or start a recurring series).
+    Create {
+        /// Client ID (e.g. "EB76")
+        client_id: String,
+        /// Date and time (YYYY-MM-DD HH:MM)
+        datetime: String,
+        /// Duration in minutes
+        #[arg(long, default_value = "50")]
+        duration: u32,
+        /// Make this a recurring series
+        #[arg(long, value_parser = ["weekly", "fortnightly", "every3w", "monthly"])]
+        recur: Option<String>,
+        /// Number of sessions (omit for infinite)
+        #[arg(long)]
+        count: Option<u32>,
+        /// Infinite recurrence (no end date, no count)
+        #[arg(long)]
+        infinite: bool,
+    },
+    /// Show authorisation block status and expiry warnings.
+    Blocks {
+        /// Client ID (omit to show all)
+        client_id: Option<String>,
+    },
+    /// Export appointments as ICS (iCalendar) format.
+    Export {
+        /// Filter by practitioner
+        #[arg(long)]
+        practitioner: Option<String>,
+    },
+    /// Periodic maintenance: check block expiry, send reminders.
+    /// Safe to run from any scheduler (launchd, systemd, cron).
+    Maintain,
 }
 
 #[derive(Serialize)]
@@ -620,6 +679,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Dashboard { port, open } => {
             dashboard::serve(port, open).await?;
+        }
+        Command::Schedule { action } => {
+            handle_schedule(action)?;
         }
     }
 
@@ -1151,4 +1213,295 @@ fn trunc(s: &str, n: usize) -> String {
     } else {
         format!("{}…", &s[..n.saturating_sub(1)])
     }
+}
+
+fn handle_schedule(action: ScheduleAction) -> anyhow::Result<()> {
+    use chrono::{Datelike, Local, NaiveDate};
+    use scheduling::{
+        ics, models::*, recurrence,
+    };
+
+    // Resolve schedules directory from config (expand ~)
+    let config = scheduling::config::SchedulingConfig::default();
+    let schedules_dir = shellexpand::tilde(&config.schedules_dir).to_string();
+    let practitioner = &config.default_practitioner;
+
+    match action {
+        ScheduleAction::List { date, week, practitioner: prac_filter } => {
+            let prac = prac_filter.as_deref().unwrap_or(practitioner);
+            let base_date = match date {
+                Some(ref d) => NaiveDate::parse_from_str(d, "%Y-%m-%d")
+                    .map_err(|e| anyhow::anyhow!("Invalid date '{}': {}", d, e))?,
+                None => Local::now().date_naive(),
+            };
+
+            let (from, to) = if week {
+                let weekday = base_date.weekday().num_days_from_monday();
+                let monday = base_date - chrono::Duration::days(weekday as i64);
+                let friday = monday + chrono::Duration::days(4);
+                (monday, friday)
+            } else {
+                (base_date, base_date)
+            };
+
+            // Load series for this practitioner
+            let series_dir = std::path::PathBuf::from(&schedules_dir)
+                .join(prac)
+                .join("series");
+            let series_list = ics::load_series_dir(&series_dir)?;
+
+            // Load holidays
+            let holidays_path = std::path::PathBuf::from(&schedules_dir)
+                .join(prac)
+                .join("holidays.yaml");
+            let holidays = if holidays_path.exists() {
+                let yaml = std::fs::read_to_string(&holidays_path)?;
+                ics::load_holidays(&yaml)?
+            } else {
+                vec![]
+            };
+
+            if series_list.is_empty() {
+                println!("No recurring series found for '{}'.", prac);
+                println!("  Series dir: {}", series_dir.display());
+                return Ok(());
+            }
+
+            // Materialise and display
+            let mut all_appointments: Vec<(NaiveDate, &RecurringSeries)> = Vec::new();
+            for s in &series_list {
+                if s.status != SeriesStatus::Active {
+                    continue;
+                }
+                let dates = recurrence::materialise(s, from, to, &holidays)?;
+                for d in dates {
+                    all_appointments.push((d, s));
+                }
+            }
+
+            all_appointments.sort_by_key(|(d, s)| (*d, s.start_time));
+
+            if all_appointments.is_empty() {
+                println!("No appointments for {} ({}–{}).", prac, from, to);
+            } else {
+                let mut current_date = None;
+                for (date, series) in &all_appointments {
+                    if current_date != Some(*date) {
+                        println!("\n{}  {}", date, date.format("%A"));
+                        current_date = Some(*date);
+                    }
+                    let tag = series.rate_tag.as_deref().unwrap_or("");
+                    let tag_str = if tag.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" [{}]", tag)
+                    };
+                    println!(
+                        "  {} – {}  {} ({}){} — {}",
+                        series.start_time.format("%H:%M"),
+                        series.end_time.format("%H:%M"),
+                        series.client_name,
+                        series.client_id,
+                        tag_str,
+                        series.recurrence.freq,
+                    );
+                }
+            }
+        }
+
+        ScheduleAction::Create {
+            client_id,
+            datetime,
+            duration,
+            recur,
+            count,
+            infinite,
+        } => {
+            // Parse datetime
+            let dt = chrono::NaiveDateTime::parse_from_str(&datetime, "%Y-%m-%d %H:%M")
+                .map_err(|e| anyhow::anyhow!("Invalid datetime '{}': {}", datetime, e))?;
+
+            let start_time = dt.time();
+            let end_time = start_time + chrono::Duration::minutes(duration as i64);
+            let date = dt.date();
+
+            let (freq, interval) = match recur.as_deref() {
+                Some("weekly") => (Some(Frequency::Weekly), 1),
+                Some("fortnightly") => (Some(Frequency::Weekly), 2),
+                Some("every3w") => (Some(Frequency::Weekly), 3),
+                Some("monthly") => (Some(Frequency::Monthly), 1),
+                _ => (None, 1),
+            };
+
+            if let Some(freq) = freq {
+                // Create a recurring series
+                let series_count = if infinite { None } else { count };
+                let series = RecurringSeries {
+                    id: uuid::Uuid::new_v4(),
+                    practitioner: practitioner.to_string(),
+                    client_id: client_id.clone(),
+                    client_name: client_id.clone(), // TODO: look up from identity.yaml
+                    start_time,
+                    end_time,
+                    location: config.location.clone(),
+                    rate_tag: None,
+                    recurrence: RecurrenceRule {
+                        freq: freq.clone(),
+                        interval,
+                        by_day: None,
+                        dtstart: date,
+                        until: None,
+                        count: series_count,
+                    },
+                    exdates: vec![],
+                    status: SeriesStatus::Active,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                    notes: None,
+                };
+
+                // Save to series directory
+                let series_dir = std::path::PathBuf::from(&schedules_dir)
+                    .join(practitioner)
+                    .join("series");
+                std::fs::create_dir_all(&series_dir)?;
+                let path = series_dir.join(format!("{}.yaml", series.id));
+                let yaml = serde_yaml::to_string(&series)?;
+                std::fs::write(&path, &yaml)?;
+
+                let recur_desc = if infinite || (count.is_none() && !infinite) {
+                    format!("every {} {} (infinite)", interval,
+                        if interval == 1 { format!("{}", freq) } else { "weeks".to_string() })
+                } else {
+                    format!("every {} {} ({} sessions)", interval,
+                        if interval == 1 { format!("{}", freq) } else { "weeks".to_string() },
+                        series_count.unwrap())
+                };
+
+                println!("Created recurring series: {} {} at {} — {}",
+                    client_id, date.format("%A"), start_time.format("%H:%M"), recur_desc);
+                println!("  Series ID: {}", series.id);
+                println!("  Saved to: {}", path.display());
+            } else {
+                println!("One-off appointment creation not yet implemented.");
+                println!("  Use --recur weekly|fortnightly|every3w|monthly to create a series.");
+            }
+        }
+
+        ScheduleAction::Blocks { client_id } => {
+            // For now, scan blocks.yaml files under ~/Clinical/clients/
+            let clinical_root = shellexpand::tilde("~/Clinical").to_string();
+            let clients_dir = std::path::PathBuf::from(&clinical_root).join("clients");
+
+            if !clients_dir.exists() {
+                println!("No clients directory found at {}", clients_dir.display());
+                return Ok(());
+            }
+
+            let mut found_any = false;
+            for entry in std::fs::read_dir(&clients_dir)? {
+                let entry = entry?;
+                let blocks_path = entry.path().join("blocks.yaml");
+                if !blocks_path.exists() {
+                    continue;
+                }
+
+                let id = entry.file_name().to_string_lossy().to_string();
+                if let Some(ref filter) = client_id {
+                    if &id != filter {
+                        continue;
+                    }
+                }
+
+                let yaml = std::fs::read_to_string(&blocks_path)?;
+                let blocks: Vec<AuthorisationBlock> = serde_yaml::from_str(&yaml)?;
+
+                for block in &blocks {
+                    found_any = true;
+                    let remaining = block.remaining();
+                    let warning = recurrence::check_block_expiry(block, config.blocks.warning_threshold);
+
+                    let status_marker = if let Some(ref w) = warning {
+                        if w.remaining == 0 { "⚠ EXHAUSTED" } else { "⚠ EXPIRING" }
+                    } else {
+                        "✓"
+                    };
+
+                    println!(
+                        "  {} {} — {} {}/{} sessions ({} remaining) {}",
+                        status_marker,
+                        block.client_id,
+                        block.insurer,
+                        block.used_sessions,
+                        block.authorised_sessions,
+                        remaining,
+                        block.status,
+                    );
+
+                    if let Some(w) = warning {
+                        println!("    → {}", w.message);
+                    }
+                }
+            }
+
+            if !found_any {
+                if let Some(ref id) = client_id {
+                    println!("No authorisation blocks found for {}.", id);
+                } else {
+                    println!("No authorisation blocks found.");
+                }
+            }
+        }
+
+        ScheduleAction::Export { practitioner: prac_filter } => {
+            let prac = prac_filter.as_deref().unwrap_or(practitioner);
+            let series_dir = std::path::PathBuf::from(&schedules_dir)
+                .join(prac)
+                .join("series");
+            let series_list = ics::load_series_dir(&series_dir)?;
+
+            let cal_name = format!("PracticeForge — {}", prac);
+            let ics_output = ics::full_calendar_to_ics(&series_list, &[], &cal_name);
+            println!("{}", ics_output);
+        }
+
+        ScheduleAction::Maintain => {
+            println!("Schedule maintenance:");
+
+            // Check all blocks for expiry
+            let clinical_root = shellexpand::tilde("~/Clinical").to_string();
+            let clients_dir = std::path::PathBuf::from(&clinical_root).join("clients");
+
+            if clients_dir.exists() {
+                let mut warnings = Vec::new();
+                for entry in std::fs::read_dir(&clients_dir)? {
+                    let entry = entry?;
+                    let blocks_path = entry.path().join("blocks.yaml");
+                    if !blocks_path.exists() {
+                        continue;
+                    }
+                    let yaml = std::fs::read_to_string(&blocks_path)?;
+                    let blocks: Vec<AuthorisationBlock> = serde_yaml::from_str(&yaml)?;
+                    for block in &blocks {
+                        if let Some(w) = recurrence::check_block_expiry(block, config.blocks.warning_threshold) {
+                            warnings.push(w);
+                        }
+                    }
+                }
+
+                if warnings.is_empty() {
+                    println!("  ✓ No block expiry warnings.");
+                } else {
+                    println!("  ⚠ {} block expiry warning(s):", warnings.len());
+                    for w in &warnings {
+                        println!("    → {}", w.message);
+                    }
+                }
+            }
+
+            // TODO: SMS reminders (Phase 4)
+            println!("  ✓ SMS reminders: not yet configured.");
+        }
+    }
+
+    Ok(())
 }
