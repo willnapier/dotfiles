@@ -12,6 +12,7 @@ mod runpod;
 pub mod session_cookies;
 mod sync;
 mod inference;
+pub mod tm3_clients;
 
 #[derive(Parser)]
 #[command(name = "clinical-product", about = "Clinical session note generator")]

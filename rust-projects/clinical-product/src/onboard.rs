@@ -473,11 +473,11 @@ fn download_and_import_docs(client_id: &str, tm3_id: &str) -> Result<usize> {
 // Orchestrator
 // ---------------------------------------------------------------------------
 
-/// Look up a TM3 client ID by intercepting the TM3 REST API.
+/// Look up a TM3 client by name from the cached client data.
 ///
-/// Installs fetch/XHR interceptors, navigates to the contacts page,
-/// types the surname into the search box, and extracts the client ID
-/// and DOB from the `CustomerAdvancedSearchRequest` API response.
+/// Reads from `~/.local/share/clinical-product/tm3-clients.json`.
+/// If cache is missing or stale, refreshes it first (headless Chrome).
+/// Returns (tm3_id, dob) if found.
 fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
     let surname = if let Some((s, _)) = name.split_once(',') {
         s.trim()
