@@ -1363,7 +1363,7 @@ impl App {
                         if data.session_count > 0 {
                             let (_into, until) = self.letter_cadence.status(data.session_count);
                             let letter_str = if until == 0 {
-                                "L!".to_string() // letter due now
+                                "L!".to_string()
                             } else {
                                 format!("L:{}", until)
                             };
@@ -1372,9 +1372,19 @@ impl App {
                             } else {
                                 color!(0x586e75) // dim grey
                             };
-                            item_row = item_row.push(
-                                text(letter_str).size(10).color(letter_color)
-                            );
+                            if until == 0 {
+                                // Clickable when due
+                                item_row = item_row.push(
+                                    button(text(letter_str).size(10).color(letter_color))
+                                        .on_press(Msg::LetterInfo(c.id.clone()))
+                                        .padding([1, 4])
+                                        .style(button::text)
+                                );
+                            } else {
+                                item_row = item_row.push(
+                                    text(letter_str).size(10).color(letter_color)
+                                );
+                            }
                         }
                     }
 
