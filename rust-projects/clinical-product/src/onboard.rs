@@ -473,40 +473,99 @@ fn download_and_import_docs(client_id: &str, tm3_id: &str) -> Result<usize> {
 // Orchestrator
 // ---------------------------------------------------------------------------
 
-/// Look up a TM3 client ID by scraping the diary and matching by name.
-fn lookup_tm3_id_from_diary(name: &str) -> Option<String> {
-    eprintln!("[onboard] Looking up TM3 ID for \"{}\" from diary...", name);
-    let clients = match crate::sync::scrape_tm3_diary() {
-        Ok(c) => c,
+/// Look up a TM3 client ID by searching the TM3 contacts page.
+///
+/// Navigates to the contacts search, enters the client surname, and
+/// extracts the client ID from the search results.
+fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
+    // Extract surname for the search query
+    let surname = if let Some((s, _)) = name.split_once(',') {
+        s.trim()
+    } else {
+        name.split_whitespace().last().unwrap_or(name)
+    };
+
+    eprintln!("[onboard] Searching TM3 contacts for \"{}\"...", surname);
+
+    let (_browser, tab) = match launch_tm3_browser() {
+        Ok(b) => b,
         Err(e) => {
-            eprintln!("[onboard] Warning: diary scrape failed: {}", e);
+            eprintln!("[onboard] Failed to launch browser: {}", e);
             return None;
         }
     };
 
+    // Navigate to contacts search
+    let search_url = format!("{}/contacts/clients?search={}", TM3_BASE, surname);
+    if tab.navigate_to(&search_url).is_err() {
+        eprintln!("[onboard] Failed to navigate to contacts search");
+        return None;
+    }
+    std::thread::sleep(Duration::from_secs(5));
+
+    // Extract client links from search results
+    let js = r#"
+        (function() {
+            var links = document.querySelectorAll('a[href*="/contacts/clients/"]');
+            var results = [];
+            for (var i = 0; i < links.length; i++) {
+                var href = links[i].getAttribute('href') || '';
+                var match = href.match(/\/contacts\/clients\/(\d+)/);
+                if (match) {
+                    var text = (links[i].innerText || '').trim();
+                    results.push({id: match[1], name: text});
+                }
+            }
+            return JSON.stringify(results);
+        })()
+    "#;
+
+    let result = match tab.evaluate(js, false) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("[onboard] Search extraction failed: {}", e);
+            return None;
+        }
+    };
+
+    let json_str = result.value.as_ref().and_then(|v| v.as_str()).unwrap_or("[]");
+    let entries: Vec<serde_json::Value> = serde_json::from_str(json_str).unwrap_or_default();
+
+    // Match by name (case-insensitive, handle "Surname, Firstname" vs search results format)
     let name_lower = name.to_lowercase();
-    for client in &clients {
-        if client.name.to_lowercase() == name_lower {
-            if let Some(ref id) = client.tm3_id {
-                eprintln!("[onboard] Found TM3 ID: {} for \"{}\"", id, client.name);
-                return Some(id.clone());
+    let surname_lower = surname.to_lowercase();
+
+    for entry in &entries {
+        let entry_name = entry["name"].as_str().unwrap_or("").to_lowercase();
+        let entry_id = entry["id"].as_str().unwrap_or("");
+
+        if entry_id.is_empty() { continue; }
+
+        // Exact match
+        if entry_name == name_lower {
+            eprintln!("[onboard] Found TM3 ID: {} (exact match)", entry_id);
+            return Some(entry_id.to_string());
+        }
+        // Surname + first initial match
+        if entry_name.contains(&surname_lower) {
+            let (first, _) = parse_name(name);
+            let first_lower = first.to_lowercase();
+            if entry_name.contains(&first_lower) {
+                eprintln!("[onboard] Found TM3 ID: {} (name match: \"{}\")", entry_id, entry["name"].as_str().unwrap_or(""));
+                return Some(entry_id.to_string());
             }
         }
     }
 
-    // Fuzzy: try partial match (surname match)
-    let surname = name.split(',').next().unwrap_or(name).trim().to_lowercase();
-    for client in &clients {
-        let client_surname = client.name.split(',').next().unwrap_or(&client.name).trim().to_lowercase();
-        if client_surname == surname {
-            if let Some(ref id) = client.tm3_id {
-                eprintln!("[onboard] Found TM3 ID: {} via surname match (\"{}\")", id, client.name);
-                return Some(id.clone());
-            }
+    // If only one result, use it regardless
+    if entries.len() == 1 {
+        if let Some(id) = entries[0]["id"].as_str() {
+            eprintln!("[onboard] Found TM3 ID: {} (single search result)", id);
+            return Some(id.to_string());
         }
     }
 
-    eprintln!("[onboard] No TM3 ID found for \"{}\" in today's diary.", name);
+    eprintln!("[onboard] No TM3 ID found for \"{}\" in contacts search ({} results)", name, entries.len());
     None
 }
 
@@ -516,49 +575,45 @@ pub fn onboard(tm3_name: &str, tm3_id: Option<&str>) -> Result<OnboardResult> {
 
     // Step 1: Resolve TM3 ID (from argument, or scrape from diary)
     let tm3_id = match tm3_id {
-        Some(id) => id.to_string(),
+        Some(id) => Some(id.to_string()),
         None => {
-            match lookup_tm3_id_from_diary(tm3_name) {
-                Some(id) => id,
-                None => {
-                    bail!(
-                        "TM3 ID not found in today's diary for \"{}\".\n\
-                         Either the client isn't booked today, or the diary \
-                         didn't contain a client profile link.\n\
-                         You can provide it manually: clinical-product onboard \"{}\" --tm3-id <ID>",
-                        tm3_name, tm3_name
-                    );
-                }
+            let found = lookup_tm3_id_by_search(tm3_name);
+            if found.is_none() {
+                eprintln!("[onboard] No TM3 ID found — proceeding with name only.");
             }
+            found
         }
     };
 
-    // Step 2: Scrape TM3 profile
-    eprintln!("[onboard] Scraping TM3 profile (ID: {})...", tm3_id);
-    let profile = match scrape_client_profile(&tm3_id) {
-        Ok(p) => {
-            eprintln!("[onboard] Profile: {} (DOB: {})",
-                p.full_name,
-                p.dob.as_deref().unwrap_or("unknown")
-            );
-            p
-        }
-        Err(e) => {
-            eprintln!("[onboard] Warning: profile scrape failed: {}", e);
-            eprintln!("[onboard] Continuing with name only...");
-            TM3Profile {
-                tm3_id: tm3_id.clone(),
-                full_name: tm3_name.to_string(),
-                dob: None,
-                referrer_name: None,
-                referrer_practice: None,
-                referrer_email: None,
-                funding_source: None,
-                policy_number: None,
-                address: None,
-                phone: None,
-                email: None,
+    // Step 2: Scrape TM3 profile (if we have an ID)
+    let profile = if let Some(ref id) = tm3_id {
+        eprintln!("[onboard] Scraping TM3 profile (ID: {})...", id);
+        match scrape_client_profile(id) {
+            Ok(p) => {
+                eprintln!("[onboard] Profile: {} (DOB: {})",
+                    p.full_name,
+                    p.dob.as_deref().unwrap_or("unknown")
+                );
+                p
             }
+            Err(e) => {
+                eprintln!("[onboard] Warning: profile scrape failed: {}", e);
+                TM3Profile {
+                    tm3_id: id.clone(),
+                    full_name: tm3_name.to_string(),
+                    dob: None, referrer_name: None, referrer_practice: None,
+                    referrer_email: None, funding_source: None, policy_number: None,
+                    address: None, phone: None, email: None,
+                }
+            }
+        }
+    } else {
+        TM3Profile {
+            tm3_id: String::new(),
+            full_name: tm3_name.to_string(),
+            dob: None, referrer_name: None, referrer_practice: None,
+            referrer_email: None, funding_source: None, policy_number: None,
+            address: None, phone: None, email: None,
         }
     };
 

@@ -86,6 +86,7 @@ pub fn cleanup() -> Result<usize> {
 pub struct SessionClient {
     pub id: String,
     pub client_name: Option<String>,
+    pub tm3_id: Option<String>,
     pub start_time: String,
     pub end_time: String,
     pub rate_tag: Option<String>,
@@ -137,6 +138,9 @@ pub fn write_dashboard_session(
         obj.insert("id".into(), serde_json::Value::String(c.id.clone()));
         if let Some(ref name) = c.client_name {
             obj.insert("client_name".into(), serde_json::Value::String(name.clone()));
+        }
+        if let Some(ref tm3_id) = c.tm3_id {
+            obj.insert("tm3_id".into(), serde_json::Value::String(tm3_id.clone()));
         }
         obj.insert("time".into(), serde_json::Value::String(c.start_time.clone()));
         obj.insert("end_time".into(), serde_json::Value::String(c.end_time.clone()));

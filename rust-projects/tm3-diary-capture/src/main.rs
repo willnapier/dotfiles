@@ -130,7 +130,7 @@ fn main() -> Result<()> {
     let filter_date = cli.date;
 
     let mut any_output = false;
-    let mut unmapped: Vec<(String, NaiveDate, String)> = Vec::new(); // (name, date, time)
+    let mut unmapped: Vec<(String, NaiveDate, String, Option<String>)> = Vec::new(); // (name, date, time, tm3_id)
 
     for schedule in &schedules {
         if let Some(filter_date) = filter_date {
@@ -165,6 +165,7 @@ fn main() -> Result<()> {
                             appt.client_name.clone(),
                             schedule.date,
                             appt.start_time.clone(),
+                            appt.tm3_id.clone(),
                         ));
                         "???".to_string()
                     }
@@ -193,6 +194,7 @@ fn main() -> Result<()> {
                 archive::SessionClient {
                     id: cid,
                     client_name: name,
+                    tm3_id: appt.tm3_id.clone(),
                     start_time: appt.start_time.clone(),
                     end_time: appt.end_time.clone(),
                     rate_tag: appt.rate_tag.clone(),
@@ -233,19 +235,24 @@ fn main() -> Result<()> {
     if !unmapped.is_empty() {
         eprintln!();
         eprintln!("╭─ {} unmapped client(s) ─────────────────────", unmapped.len());
-        for (name, date, time) in &unmapped {
-            eprintln!("│  \"{}\"  ({} {})", name, date.format("%a %b %d"), time);
+        for (name, date, time, tm3_id) in &unmapped {
+            let id_tag = tm3_id.as_deref().map(|id| format!(" [TM3#{}]", id)).unwrap_or_default();
+            eprintln!("│  \"{}\"  ({} {}){}", name, date.format("%a %b %d"), time, id_tag);
         }
         eprintln!("╰────────────────────────────────────────────");
 
         if !cli.dry_run {
             // Auto-onboard each unmapped client
             let mut any_onboarded = false;
-            for (name, _date, _time) in &unmapped {
+            for (name, _date, _time, tm3_id) in &unmapped {
                 eprintln!();
                 eprintln!("Auto-onboarding \"{}\"...", name);
-                let result = std::process::Command::new("clinical-product")
-                    .args(["onboard", name.as_str()])
+                let mut cmd = std::process::Command::new("clinical-product");
+                cmd.arg("onboard").arg(name.as_str());
+                if let Some(ref id) = tm3_id {
+                    cmd.args(["--tm3-id", id]);
+                }
+                let result = cmd
                     .stdout(std::process::Stdio::inherit())
                     .stderr(std::process::Stdio::inherit())
                     .status();

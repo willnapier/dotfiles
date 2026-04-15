@@ -43,12 +43,21 @@ pub fn parse_diary(html: &str) -> Result<Vec<DaySchedule>> {
         );
     }
 
+    // Extract TM3 client IDs from profile links in the DOM
+    let client_id_map = extract_client_ids(html);
+
     let mut schedules = Vec::new();
     for (date, titles) in dates.into_iter().zip(columns) {
         let mut appointments = Vec::new();
         for t in &titles {
             match parse_title(t) {
-                Ok(appt) => appointments.push(appt),
+                Ok(mut appt) => {
+                    // Try to match this appointment's client name to a TM3 ID
+                    if let Some(id) = client_id_map.get(&appt.client_name.to_lowercase()) {
+                        appt.tm3_id = Some(id.clone());
+                    }
+                    appointments.push(appt);
+                }
                 Err(_) => {} // Non-client entries (Administration, etc.) silently skipped
             }
         }
@@ -143,6 +152,31 @@ fn parse_month(name: &str) -> Result<u32> {
         "December" => Ok(12),
         _ => bail!("Unknown month: {}", name),
     }
+}
+
+/// Extract TM3 client IDs from profile links in the HTML.
+///
+/// Looks for `<a href="/contacts/clients/12345">Client Name</a>` patterns
+/// and builds a map of lowercase client name → TM3 ID.
+fn extract_client_ids(html: &str) -> std::collections::HashMap<String, String> {
+    let mut map = std::collections::HashMap::new();
+
+    // Match href="/contacts/clients/12345" with the link text as the client name
+    let re = Regex::new(
+        r#"href="[^"]*contacts/clients/(\d+)"[^>]*>([^<]+)<"#
+    ).unwrap();
+
+    for cap in re.captures_iter(html) {
+        let tm3_id = cap[1].to_string();
+        let link_text = cap[2].trim().to_string();
+        if !link_text.is_empty() && link_text.len() > 1 {
+            // The link text is typically "Surname, Firstname" — match against
+            // the client_name from parse_title which has the same format
+            map.insert(link_text.to_lowercase(), tm3_id);
+        }
+    }
+
+    map
 }
 
 /// Extract appointment titles grouped by day column.
