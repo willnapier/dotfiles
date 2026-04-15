@@ -11,6 +11,9 @@ pub struct Appointment {
     pub client_name: String,
     pub rate_tag: Option<String>,
     pub status: Status,
+    /// TM3 contact ID, extracted from client profile links in the DOM.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tm3_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -299,6 +302,7 @@ fn parse_title(title: &str) -> Result<Appointment> {
         client_name,
         rate_tag,
         status,
+        tm3_id: None, // Populated later from DOM links
     })
 }
 
