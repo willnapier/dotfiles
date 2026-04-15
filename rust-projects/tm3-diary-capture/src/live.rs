@@ -176,7 +176,59 @@ pub fn scrape_diary(weeks_back: u32) -> Result<Vec<DaySchedule>> {
     }
 
     // Parse using the same parser as the file path
-    html::parse_diary(page_html)
+    let mut schedules = html::parse_diary(page_html)?;
+
+    // Resolve TM3 IDs for appointments missing them.
+    // Click the appointment block in the diary to navigate to the client profile,
+    // extract the TM3 ID from the URL, then navigate back.
+    let mut resolved = 0;
+    for schedule in &mut schedules {
+        for appt in &mut schedule.appointments {
+            if appt.tm3_id.is_some() { continue; }
+
+            let name_escaped = appt.client_name.replace('\'', "\\'").replace('"', "\\\"");
+            let click_js = format!(
+                r#"(function() {{
+                    var titles = document.querySelectorAll('div[title]');
+                    for (var i = 0; i < titles.length; i++) {{
+                        var t = titles[i].getAttribute('title') || '';
+                        if (t.includes('{}')) {{
+                            titles[i].click();
+                            return true;
+                        }}
+                    }}
+                    return false;
+                }})()"#,
+                name_escaped
+            );
+
+            match tab.evaluate(&click_js, false) {
+                Ok(r) if r.value.as_ref().and_then(|v| v.as_bool()) == Some(true) => {
+                    std::thread::sleep(Duration::from_secs(3));
+                    let url = tab.get_url();
+                    // Extract TM3 ID from URL like /contacts/clients/12345
+                    if let Some(id) = url.split("/contacts/clients/").nth(1) {
+                        let id = id.split(&['/', '?', '#'][..]).next().unwrap_or(id);
+                        if !id.is_empty() && id.chars().all(|c| c.is_ascii_digit()) {
+                            eprintln!("  Resolved TM3 ID {} for \"{}\"", id, appt.client_name);
+                            appt.tm3_id = Some(id.to_string());
+                            resolved += 1;
+                        }
+                    }
+                    // Navigate back to diary
+                    let _ = tab.evaluate("window.history.back()", false);
+                    std::thread::sleep(Duration::from_secs(3));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    if resolved > 0 {
+        eprintln!("Resolved {} TM3 ID(s) via appointment click.", resolved);
+    }
+
+    Ok(schedules)
 }
 
 fn load_cookies() -> Result<Vec<Cookie>> {
