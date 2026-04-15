@@ -431,3 +431,223 @@ function showToast(message, isError) {
         toast.hidden = true;
     }, isError ? 5000 : 3000);
 }
+
+// ================================================================== //
+// Billing Module — conditionally loaded, invisible when disabled      //
+// ================================================================== //
+
+const billingTab        = document.getElementById("billing-tab");
+const billingView       = document.getElementById("billing-view");
+const billingTbody      = document.getElementById("billing-tbody");
+const billingRefreshBtn = document.getElementById("billing-refresh-btn");
+const billingBatchBtn   = document.getElementById("billing-batch-btn");
+const billingRemindCard = document.getElementById("billing-reminders-card");
+const billingRemindList = document.getElementById("billing-reminders-list");
+const clinicLayout      = document.querySelector(".layout");
+const navTabs           = document.querySelectorAll(".nav-tab");
+
+let billingEnabled = false;
+let currentView = "clinic";
+
+// Check billing config on load
+(async function checkBilling() {
+    try {
+        const resp = await fetch("/api/billing/config");
+        if (!resp.ok) return;
+        const config = await resp.json();
+        billingEnabled = config.enabled;
+        if (billingEnabled) {
+            billingTab.hidden = false;
+            // Wire tab switching
+            for (const tab of navTabs) {
+                tab.addEventListener("click", () => switchView(tab.dataset.view));
+            }
+            if (billingRefreshBtn) billingRefreshBtn.addEventListener("click", loadBillingData);
+            if (billingBatchBtn) billingBatchBtn.addEventListener("click", handleBillingBatch);
+        }
+    } catch (_) {
+        // Billing not available — stay hidden
+    }
+})();
+
+function switchView(view) {
+    currentView = view;
+    for (const tab of navTabs) {
+        tab.classList.toggle("active", tab.dataset.view === view);
+    }
+    if (view === "billing") {
+        clinicLayout.hidden = true;
+        billingView.hidden = false;
+        loadBillingData();
+    } else {
+        clinicLayout.hidden = false;
+        billingView.hidden = true;
+    }
+}
+
+async function loadBillingData() {
+    billingTbody.innerHTML = '<tr><td colspan="7" class="placeholder">Loading&hellip;</td></tr>';
+    try {
+        const [invResp, remResp] = await Promise.all([
+            fetch("/api/billing/invoices"),
+            fetch("/api/billing/reminders"),
+        ]);
+        if (!invResp.ok) throw new Error("Failed to load invoices");
+        const invoices = await invResp.json();
+        const reminders = remResp.ok ? await remResp.json() : [];
+
+        renderInvoiceTable(invoices);
+        renderReminders(reminders);
+    } catch (err) {
+        billingTbody.innerHTML = '<tr><td colspan="7" class="placeholder">Failed to load</td></tr>';
+        showToast("Billing data: " + err.message, true);
+    }
+}
+
+function renderInvoiceTable(invoices) {
+    if (invoices.length === 0) {
+        billingTbody.innerHTML = '<tr><td colspan="7" class="placeholder">No outstanding invoices</td></tr>';
+        return;
+    }
+
+    billingTbody.innerHTML = "";
+    for (const inv of invoices) {
+        const tr = document.createElement("tr");
+
+        const stateClass = inv.state === "overdue" ? "state-overdue"
+            : inv.state === "sent" ? "state-sent" : "state-draft";
+
+        tr.innerHTML = `
+            <td><code>${esc(inv.reference)}</code></td>
+            <td>${esc(inv.client_id)}</td>
+            <td>${esc(inv.bill_to)}</td>
+            <td class="amount">${esc(inv.currency)} ${inv.total.toFixed(0)}</td>
+            <td>${esc(inv.due_date)}${inv.days_overdue > 0 ? ` <small>(${inv.days_overdue}d)</small>` : ""}</td>
+            <td class="${stateClass}">${esc(inv.state)}</td>
+            <td class="actions-cell"></td>
+        `;
+
+        const actionsCell = tr.querySelector(".actions-cell");
+
+        const paidBtn = document.createElement("button");
+        paidBtn.className = "btn btn-accept";
+        paidBtn.textContent = "Paid";
+        paidBtn.addEventListener("click", () => markPaid(inv.reference));
+        actionsCell.appendChild(paidBtn);
+
+        const cancelBtn = document.createElement("button");
+        cancelBtn.className = "btn btn-reject";
+        cancelBtn.textContent = "Cancel";
+        cancelBtn.addEventListener("click", () => cancelInvoice(inv.reference));
+        actionsCell.appendChild(cancelBtn);
+
+        billingTbody.appendChild(tr);
+    }
+}
+
+function renderReminders(reminders) {
+    if (reminders.length === 0) {
+        billingRemindCard.hidden = true;
+        return;
+    }
+
+    billingRemindCard.hidden = false;
+    billingRemindList.innerHTML = "";
+
+    for (const rem of reminders) {
+        const entry = document.createElement("div");
+        entry.className = "reminder-entry";
+
+        const header = document.createElement("div");
+        header.className = "reminder-header";
+
+        const badge = document.createElement("span");
+        badge.className = `tone-badge tone-${rem.tone}`;
+        badge.textContent = rem.tone;
+
+        const subj = document.createElement("span");
+        subj.className = "reminder-subject";
+        subj.textContent = rem.subject;
+
+        header.appendChild(badge);
+        header.appendChild(subj);
+
+        const body = document.createElement("div");
+        body.className = "reminder-body";
+        body.textContent = rem.body;
+
+        entry.appendChild(header);
+        entry.appendChild(body);
+        billingRemindList.appendChild(entry);
+    }
+}
+
+async function markPaid(reference) {
+    try {
+        const resp = await fetch("/api/billing/paid", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reference }),
+        });
+        if (!resp.ok) throw new Error("Failed");
+        showToast(`${reference} marked as paid`);
+        loadBillingData();
+    } catch (err) {
+        showToast("Mark paid failed: " + err.message, true);
+    }
+}
+
+async function cancelInvoice(reference) {
+    try {
+        const resp = await fetch("/api/billing/cancel", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reference }),
+        });
+        if (!resp.ok) throw new Error("Failed");
+        showToast(`${reference} cancelled`);
+        loadBillingData();
+    } catch (err) {
+        showToast("Cancel failed: " + err.message, true);
+    }
+}
+
+async function handleBillingBatch() {
+    billingBatchBtn.disabled = true;
+    billingBatchBtn.textContent = "Creating\u2026";
+    try {
+        // Get all clients and try to invoice each
+        const resp = await fetch("/api/clients");
+        if (!resp.ok) throw new Error("Failed to list clients");
+        const clients = await resp.json();
+
+        let created = 0;
+        for (const client of clients) {
+            const invResp = await fetch(`/api/billing/invoice/${encodeURIComponent(client.id)}`, {
+                method: "POST",
+            });
+            if (invResp.ok) {
+                const result = await invResp.json();
+                if (result.created) created++;
+            }
+        }
+
+        if (created > 0) {
+            showToast(`${created} invoice(s) created`);
+        } else {
+            showToast("No uninvoiced sessions found");
+        }
+        loadBillingData();
+    } catch (err) {
+        showToast("Batch invoice failed: " + err.message, true);
+    } finally {
+        billingBatchBtn.disabled = false;
+        billingBatchBtn.textContent = "Invoice All Uninvoiced";
+    }
+}
+
+function esc(str) {
+    const div = document.createElement("div");
+    div.textContent = str || "";
+    return div.innerHTML;
+}
