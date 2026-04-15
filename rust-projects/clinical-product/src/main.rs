@@ -147,6 +147,35 @@ enum ReferralAction {
 }
 
 #[derive(Parser, Debug)]
+enum EmailAction {
+    /// Interactive setup wizard — configure SMTP server and store password.
+    Init,
+    /// Send a test email to yourself to verify configuration.
+    Test,
+    /// Send an email with optional PDF attachment.
+    Send {
+        /// Recipient email address
+        #[arg(long)]
+        to: String,
+        /// Recipient name
+        #[arg(long, default_value = "")]
+        to_name: String,
+        /// Email subject
+        #[arg(long)]
+        subject: String,
+        /// Email body text
+        #[arg(long)]
+        body: String,
+        /// Path to PDF attachment
+        #[arg(long)]
+        attachment: Option<String>,
+        /// CC recipients (comma-separated)
+        #[arg(long)]
+        cc: Option<String>,
+    },
+}
+
+#[derive(Parser, Debug)]
 enum InferencePodAction {
     /// Show current pod status (queries RunPod API).
     Status,
@@ -477,6 +506,40 @@ async fn main() -> anyhow::Result<()> {
                     result.docs_imported,
                     if result.docs_imported == 1 { "" } else { "s" }
                 );
+            }
+        }
+        Command::Email { action } => {
+            match action {
+                EmailAction::Init => {
+                    email::init_config()?;
+                }
+                EmailAction::Test => {
+                    let config = email::load_email_config()?;
+                    email::send_test(&config)?;
+                }
+                EmailAction::Send {
+                    to,
+                    to_name,
+                    subject,
+                    body,
+                    attachment,
+                    cc,
+                } => {
+                    let config = email::load_email_config()?;
+                    let cc_list: Option<Vec<String>> = cc.map(|c| {
+                        c.split(',').map(|s| s.trim().to_string()).collect()
+                    });
+                    email::send_email(
+                        &config,
+                        &to,
+                        &to_name,
+                        &subject,
+                        &body,
+                        attachment.as_ref().map(|p| std::path::Path::new(p.as_str())),
+                        cc_list.as_deref(),
+                    )?;
+                    println!("✓ Email sent to {}", to);
+                }
             }
         }
         Command::Dashboard { port, open } => {
