@@ -163,6 +163,110 @@ fn clinical_root() -> PathBuf {
 fn clients_dir() -> PathBuf { clinical_root().join("clients") }
 fn attendance_dir() -> PathBuf { clinical_root().join("attendance") }
 
+/// Clinical data for a client, loaded from identity.yaml and notes.md.
+#[derive(Debug, Clone, Default)]
+struct ClientClinicalData {
+    session_count: u32,
+    sessions_authorised: Option<u32>,
+    sessions_used: Option<u32>,
+    funding_type: Option<String>,
+}
+
+/// Load clinical data for a client from their directory.
+fn load_client_data(client_id: &str) -> ClientClinicalData {
+    let dir = clients_dir().join(client_id);
+    let mut data = ClientClinicalData::default();
+
+    // Count sessions from notes.md (### date headers)
+    let notes_path = dir.join("notes.md");
+    if let Ok(content) = std::fs::read_to_string(&notes_path) {
+        data.session_count = content.lines()
+            .filter(|l| l.starts_with("### "))
+            .count() as u32;
+    }
+
+    // Read funding and authorisation from identity.yaml
+    let identity_path = dir.join("identity.yaml");
+    if let Ok(content) = std::fs::read_to_string(&identity_path) {
+        for line in content.lines() {
+            let line = line.trim();
+            if let Some((key, val)) = line.split_once(':') {
+                let key = key.trim().to_lowercase();
+                let val = val.trim().trim_matches('"').trim();
+                if val.is_empty() || val == "null" { continue; }
+                match key.as_str() {
+                    "sessions_authorised" => data.sessions_authorised = val.parse().ok(),
+                    "sessions_used" => data.sessions_used = val.parse().ok(),
+                    "type" if data.funding_type.is_none() => {
+                        data.funding_type = Some(val.to_string());
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    // Use notes count if sessions_used not set
+    if data.sessions_used.is_none() && data.session_count > 0 {
+        data.sessions_used = Some(data.session_count);
+    }
+
+    data
+}
+
+/// Letter cadence configuration.
+#[derive(Debug, Clone)]
+struct LetterCadence {
+    first_after: u32,    // first letter due after this session (1 or 2)
+    cycle_length: u32,   // letter due every N sessions after that
+}
+
+impl Default for LetterCadence {
+    fn default() -> Self {
+        Self { first_after: 2, cycle_length: 6 }
+    }
+}
+
+impl LetterCadence {
+    fn load() -> Self {
+        let config_dir = home().join(".config").join("clinical-product");
+        let config_path = if config_dir.join("config.toml").exists() {
+            config_dir.join("config.toml")
+        } else {
+            config_dir.join("voice-config.toml")
+        };
+        if let Ok(data) = std::fs::read_to_string(&config_path) {
+            if let Ok(val) = data.parse::<toml::Value>() {
+                if let Some(letters) = val.get("letters") {
+                    let first = letters.get("first_letter_after")
+                        .and_then(|v| v.as_integer())
+                        .unwrap_or(2) as u32;
+                    let cycle = letters.get("cycle_length")
+                        .and_then(|v| v.as_integer())
+                        .unwrap_or(6) as u32;
+                    return Self { first_after: first, cycle_length: cycle };
+                }
+            }
+        }
+        Self::default()
+    }
+
+    /// Returns (sessions_since_last_letter, sessions_until_next_letter)
+    fn status(&self, session_count: u32) -> (u32, u32) {
+        if session_count < self.first_after {
+            return (session_count, self.first_after - session_count);
+        }
+        let sessions_after_first = session_count - self.first_after;
+        let into_cycle = sessions_after_first % self.cycle_length;
+        let until_next = if into_cycle == 0 && session_count >= self.first_after {
+            0 // letter due now
+        } else {
+            self.cycle_length - into_cycle
+        };
+        (into_cycle, until_next)
+    }
+}
+
 fn session_dir() -> PathBuf {
     home().join(".local/share/clinical-dashboard")
 }
@@ -460,6 +564,9 @@ struct App {
     highlight: usize,
     // Focus management
     focus_zone: FocusZone,
+    // Clinical data
+    letter_cadence: LetterCadence,
+    client_data_cache: std::collections::HashMap<String, ClientClinicalData>,
     // Clinic session state
     last_removed: Option<ClinicClient>,
     session: ClinicSession,
