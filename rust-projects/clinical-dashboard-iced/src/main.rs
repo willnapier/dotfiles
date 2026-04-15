@@ -406,6 +406,21 @@ fn header_style(_theme: &Theme) -> container::Style {
     }
 }
 
+/// Selected client button style — subtle background, not bright cyan
+fn selected_button_style(_theme: &Theme, status: button::Status) -> button::Style {
+    let _ = status;
+    button::Style {
+        background: Some(iced::Background::Color(color!(0x073642))),
+        text_color: color!(0x93a1a1),
+        border: iced::Border {
+            color: color!(0x2aa198),
+            width: 1.0,
+            radius: 3.0.into(),
+        },
+        ..Default::default()
+    }
+}
+
 /// Highlighted client item (keyboard selection) background
 fn highlight_style(_theme: &Theme) -> container::Style {
     container::Style {
@@ -1165,7 +1180,7 @@ impl App {
                     let b = button(item_row)
                         .on_press(Msg::Select(c.id.clone()))
                         .width(Length::Fill).padding([3, 6]);
-                    if sel { b.style(button::primary) } else { b.style(button::text) }
+                    if sel { b.style(selected_button_style) } else { b.style(button::text) }
                 };
 
                 let item: Element<Msg> = b.into();
@@ -1202,7 +1217,7 @@ impl App {
                     .width(Length::Fill).padding([3, 8]);
 
                 let item: Element<Msg> = if sel {
-                    b.style(button::primary).into()
+                    b.style(selected_button_style).into()
                 } else {
                     b.style(button::text).into()
                 };
