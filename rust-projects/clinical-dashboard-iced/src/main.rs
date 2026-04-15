@@ -644,11 +644,29 @@ impl App {
             status: String::new(), busy: false,
             show_note: false, compares: Vec::new(), highlight: 0,
             focus_zone: FocusZone::ClientList,
+            letter_cadence: LetterCadence::load(),
+            client_data_cache: {
+                let mut cache = std::collections::HashMap::new();
+                for c in &session.clients {
+                    if c.id != "???" { cache.insert(c.id.clone(), load_client_data(&c.id)); }
+                }
+                cache
+            },
             last_removed: None,
             session, session_start: std::time::Instant::now(),
             inference_ok: false, inference_reconnecting: false, add_client_input: String::new(),
             clinic_ended: false, viewing_date,
         }, Task::perform(check_inference(), Msg::InferenceChecked))
+    }
+
+    fn reload_client_data(&mut self) {
+        self.client_data_cache.clear();
+        for c in &self.session.clients {
+            if c.id != "???" {
+                let data = load_client_data(&c.id);
+                self.client_data_cache.insert(c.id.clone(), data);
+            }
+        }
     }
 
     fn persist_session(&self) {
@@ -710,6 +728,7 @@ impl App {
         self.show_note = false;
         self.status.clear();
         self.clinic_ended = false;
+        self.reload_client_data();
     }
 
     fn update(&mut self, msg: Msg) -> Task<Msg> {
@@ -1260,7 +1279,42 @@ impl App {
                     if let Some(ref tag) = c.rate_tag {
                         if !tag.is_empty() {
                             item_row = item_row.push(
-                                text(tag.clone()).size(12).color(color!(0x6c71c4))
+                                text(tag.clone()).size(11).color(color!(0x6c71c4))
+                            );
+                        }
+                    }
+
+                    // Funding status + letter cadence from client data
+                    if let Some(data) = self.client_data_cache.get(&c.id) {
+                        // Funding: sessions_used/sessions_authorised (e.g. "3/10")
+                        if let Some(auth) = data.sessions_authorised {
+                            let used = data.sessions_used.unwrap_or(data.session_count);
+                            let funding_str = format!("{}/{}", used, auth);
+                            let funding_color = if auth > 0 && used >= auth.saturating_sub(1) {
+                                color!(0xe06050) // red when near limit
+                            } else {
+                                color!(0x8b8fa4) // grey normally
+                            };
+                            item_row = item_row.push(
+                                text(funding_str).size(11).color(funding_color)
+                            );
+                        }
+
+                        // Letter cadence: "L:2" = letter due in 2 sessions
+                        if data.session_count > 0 {
+                            let (_into, until) = self.letter_cadence.status(data.session_count);
+                            let letter_str = if until == 0 {
+                                "L!".to_string() // letter due now
+                            } else {
+                                format!("L:{}", until)
+                            };
+                            let letter_color = if until == 0 {
+                                color!(0xd4a020) // amber when due
+                            } else {
+                                color!(0x586e75) // dim grey
+                            };
+                            item_row = item_row.push(
+                                text(letter_str).size(10).color(letter_color)
                             );
                         }
                     }
