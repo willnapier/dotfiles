@@ -623,6 +623,7 @@ enum Msg {
     FocusSearch,
     ToggleClientNotes,
     ClientNotesAction(text_editor::Action),
+    LetterInfo(String),  // client ID — show letter context
     CloseWindow,
     WindowId(Option<iced::window::Id>),
     NoOp,
@@ -1137,6 +1138,44 @@ impl App {
             Msg::ClientNotesAction(_) => {
                 // Read-only — ignore edits
                 Task::none()
+            }
+
+            Msg::LetterInfo(id) => {
+                // Load referrer info and session count for letter context
+                let identity_path = clients_dir().join(&id).join("identity.yaml");
+                let mut referrer = String::new();
+                let mut practice = String::new();
+                let mut referrer_email = String::new();
+                if let Ok(content) = std::fs::read_to_string(&identity_path) {
+                    for line in content.lines() {
+                        let line = line.trim();
+                        if let Some((key, val)) = line.split_once(':') {
+                            let key = key.trim().to_lowercase();
+                            let val = val.trim().trim_matches('"').trim();
+                            if val.is_empty() || val == "null" { continue; }
+                            match key.as_str() {
+                                "name" if referrer.is_empty() => {} // skip client name
+                                "name" => referrer = val.to_string(),
+                                "practice" => practice = val.to_string(),
+                                "email" if !referrer.is_empty() => referrer_email = val.to_string(),
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+                let data = self.client_data_cache.get(&id);
+                let sessions = data.map(|d| d.session_count).unwrap_or(0);
+                let (_, until) = self.letter_cadence.status(sessions);
+
+                self.status = if referrer.is_empty() {
+                    format!("Letter due for {} — {} sessions, no referrer on file", id, sessions)
+                } else {
+                    let practice_str = if practice.is_empty() { String::new() } else { format!(" ({})", practice) };
+                    let email_str = if referrer_email.is_empty() { String::new() } else { format!(" — {}", referrer_email) };
+                    format!("Letter due for {} — {} sessions — to: {}{}{}", id, sessions, referrer, practice_str, email_str)
+                };
+                // Select the client so the user can start working
+                self.update(Msg::Select(id))
             }
 
             Msg::FocusSearch => {
