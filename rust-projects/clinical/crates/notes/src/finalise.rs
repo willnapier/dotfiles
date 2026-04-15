@@ -85,6 +85,23 @@ pub fn run(id: &str) -> Result<()> {
         println!("Session count: {} (unchanged)", display);
     }
 
+    // Update sessions_used in identity.yaml to stay in sync
+    let identity_path = client::identity_path(id);
+    if identity_path.exists() {
+        if let Ok(identity) = std::fs::read_to_string(&identity_path) {
+            let re = Regex::new(r"(?m)^(\s*sessions_used:\s*)(\d+|null)").unwrap();
+            if re.is_match(&identity) {
+                let updated = re.replace(&identity, |caps: &regex::Captures| {
+                    format!("{}{}", &caps[1], total)
+                }).to_string();
+                if updated != identity {
+                    let _ = std::fs::write(&identity_path, &updated);
+                    eprintln!("Updated sessions_used → {} in identity.yaml", total);
+                }
+            }
+        }
+    }
+
     // Re-check alerts now that the note is written
     let auth_status = session::compute_auth_status(id, &content);
 
