@@ -217,11 +217,19 @@ fn build_prompt(id: &str, observation: &str) -> Result<String> {
 
     let mut out = String::new();
 
-    // Slim prompt anchor (replaces 28KB philosophy + reference)
-    let anchor = load_reference("PROMPT-ANCHOR.md");
-    if !anchor.is_empty() {
-        out.push_str("=== FRAMEWORK ===\n");
-        out.push_str(&anchor);
+    // Modality prompt (practitioner-owned, therapeutic model specific)
+    let modality = load_reference("modality-act.md");
+    if !modality.is_empty() {
+        out.push_str("=== THERAPEUTIC FRAMEWORK ===\n");
+        out.push_str(&modality);
+        out.push_str("\n\n");
+    }
+
+    // Faithfulness prompt (universal, Karpathy-loop optimised)
+    let faithfulness = load_reference("faithfulness-prompt.md");
+    if !faithfulness.is_empty() {
+        out.push_str("=== FAITHFULNESS RULES ===\n");
+        out.push_str(&faithfulness);
         out.push_str("\n\n");
     }
 
@@ -278,31 +286,10 @@ fn build_prompt(id: &str, observation: &str) -> Result<String> {
     out.push_str(&format!(
         "\n=== INSTRUCTION ===\n\
          You are a clinical documentation assistant for a Chartered Psychologist (BPS).\n\
-         You have the clinician's full therapeutic framework and the complete client file above.\n\
-         Write a session note for session {} on {} translating the observation below \
-         into ACT/CBS process language.\n\
-         Draw on the full therapeutic arc — reference previous sessions, ongoing themes, \
-         and the client's formulation where relevant.\n\
+         You have the clinician's therapeutic framework and faithfulness rules above.\n\
+         Write a session note for session {} on {} using the therapeutic framework provided.\n\
+         Follow all faithfulness rules exactly — they are non-negotiable.\n\
          Use the clinician's voice and framework from the reference material.\n\
-         Refer to the client by first name throughout, not 'the client' or 'Client'.\n\
-         When describing in-session experiments or interventions, show that the client \
-         was consulted and consented before proceeding — do not present them as imposed. \
-         Do not combine 'collaborative' with 'agreed' — either word implies the other.\n\
-         Frame interpretive links to developmental history or formulation tentatively \
-         (e.g. 'this was explored as potentially connected to...' rather than asserting \
-         causation), while still anchoring to the existing formulation.\n\
-         When documenting agreed between-session tasks, include sufficient detail \
-         (duration, context, what to observe) to evidence collaborative planning.\n\
-         Every specific detail — examples, metaphors, homework tasks, contexts — must \
-         come from the observation or the client file. If the source material does not \
-         specify concrete examples, describe the task in general terms rather than \
-         inventing plausible specifics.\n\
-         Include **Risk**: and **Formulation**: lines.\n\
-         For **Risk**: use a brief default (e.g. 'No immediate concerns noted') \
-         unless the observation specifically describes risk factors such as suicidal \
-         ideation, self-harm, or harm to others. Do NOT confabulate detailed risk \
-         assessments or imply that explicit screening was conducted when the \
-         observation does not mention it.\n\
          Output ONLY the session note (starting with ### {}), no preamble or explanation.\n\n\
          === OBSERVATION ===\n\
          {}\n",
