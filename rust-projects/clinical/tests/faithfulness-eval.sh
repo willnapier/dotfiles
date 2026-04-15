@@ -46,8 +46,9 @@ for i in "${!SCENARIO_NAMES[@]}"; do
   outfile="${RESULTS_DIR}/${name}.txt"
   errfile="${RESULTS_DIR}/${name}.stderr"
 
+  TIMEOUT_SECS=120
   start_epoch=$(gdate +%s%N)
-  clinical note "$CLIENT_ID" "$observation" --no-save --yes \
+  timeout "${TIMEOUT_SECS}" clinical note "$CLIENT_ID" "$observation" --no-save --yes \
       > "$outfile" 2> "$errfile" || true
   end_epoch=$(gdate +%s%N)
 
