@@ -6,6 +6,7 @@ use std::io::{self, Read, Write};
 
 pub mod config;
 mod dashboard;
+pub mod onboard;
 mod referral;
 mod runpod;
 pub mod session_cookies;
@@ -83,6 +84,20 @@ enum Command {
     /// Scrapes today's TM3 diary, compares against ~/Clinical/clients/,
     /// and reports new clients that need scaffolding.
     Sync,
+
+    /// Auto-onboard a new TM3 client: scrape profile, scaffold, import docs.
+    ///
+    /// Zero-shot: scrapes the TM3 client profile for metadata (DOB, referrer,
+    /// funding), derives a client ID, scaffolds the directory, populates
+    /// identity.yaml, updates tm3-client-map, downloads and imports documents.
+    Onboard {
+        /// Client name as it appears in TM3 (e.g. "Briscoe, Elizabeth")
+        name: String,
+
+        /// TM3 numeric client ID (found via sync or diary links)
+        #[arg(long)]
+        tm3_id: Option<String>,
+    },
 
     /// Start the clinical dashboard (local web UI).
     ///
@@ -410,6 +425,20 @@ async fn main() -> anyhow::Result<()> {
         Command::Sync => {
             let result = sync::sync_check()?;
             sync::display_sync_result(&result);
+        }
+        Command::Onboard { name, tm3_id } => {
+            let result = onboard::onboard(&name, tm3_id.as_deref())?;
+            if result.skipped {
+                println!("{} already onboarded as {}.", result.name, result.client_id);
+            } else {
+                println!(
+                    "✓ {} onboarded as {} ({} doc{} imported).",
+                    result.name,
+                    result.client_id,
+                    result.docs_imported,
+                    if result.docs_imported == 1 { "" } else { "s" }
+                );
+            }
         }
         Command::Dashboard { port, open } => {
             dashboard::serve(port, open).await?;
