@@ -588,7 +588,8 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
         if !url.contains("Customer") && !url.contains("Patient") {
             continue;
         }
-        eprintln!("[onboard] Checking {} ({} bytes)", url, body.len());
+        eprintln!("[onboard] Checking {} ({} bytes): {}", url, body.len(),
+            if body.len() < 200 { body } else { &body[..200] });
 
         if let Ok(data) = serde_json::from_str::<serde_json::Value>(body) {
             if let Some(id) = find_client_in_json(&data, &surname_lower) {
