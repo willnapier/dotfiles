@@ -495,103 +495,146 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
         }
     };
 
-    // Navigate to contacts page, find search input, type surname via CDP keyboard
-    let contacts_url = format!("{}/contacts/clients", TM3_BASE);
-    let _ = tab.navigate_to(&contacts_url);
-    eprintln!("[onboard] Waiting for contacts page...");
-    std::thread::sleep(Duration::from_secs(5));
+    // Intercept TM3 API responses to extract client data.
+    // Navigate to contacts page — the SPA fetches client data via XHR/fetch.
+    // We capture the response JSON which contains client IDs, names, and DOBs.
+    eprintln!("[onboard] Intercepting TM3 API for client data...");
 
-    // Focus the search input (click it first)
-    let focus_js = r#"
+    // Set up response capture via JS — intercept fetch/XHR responses
+    let capture_js = r#"
         (function() {
-            var inputs = document.querySelectorAll('input');
-            for (var i = 0; i < inputs.length; i++) {
-                var ph = (inputs[i].placeholder || '').toLowerCase();
-                if (ph.includes('search') || ph.includes('filter') || ph.includes('find')) {
-                    inputs[i].focus();
-                    inputs[i].click();
-                    return JSON.stringify({found: true, placeholder: inputs[i].placeholder});
-                }
-            }
-            // Fallback: focus the first visible input
-            for (var j = 0; j < inputs.length; j++) {
-                var rect = inputs[j].getBoundingClientRect();
-                if (rect.width > 50 && rect.height > 10) {
-                    inputs[j].focus();
-                    inputs[j].click();
-                    return JSON.stringify({found: true, fallback: true});
-                }
-            }
-            return JSON.stringify({found: false, inputCount: inputs.length});
+            window.__tm3_api_responses = [];
+            var origFetch = window.fetch;
+            window.fetch = function() {
+                return origFetch.apply(this, arguments).then(function(response) {
+                    var url = response.url || '';
+                    if (url.includes('contact') || url.includes('client') || url.includes('api')) {
+                        response.clone().text().then(function(body) {
+                            try {
+                                window.__tm3_api_responses.push({url: url, body: body.substring(0, 10000)});
+                            } catch(e) {}
+                        });
+                    }
+                    return response;
+                });
+            };
+            // Also patch XMLHttpRequest
+            var origOpen = XMLHttpRequest.prototype.open;
+            var origSend = XMLHttpRequest.prototype.send;
+            XMLHttpRequest.prototype.open = function(method, url) {
+                this.__url = url;
+                return origOpen.apply(this, arguments);
+            };
+            XMLHttpRequest.prototype.send = function() {
+                var self = this;
+                this.addEventListener('load', function() {
+                    var url = self.__url || '';
+                    if (url.includes('contact') || url.includes('client') || url.includes('api')) {
+                        try {
+                            window.__tm3_api_responses.push({url: url, body: self.responseText.substring(0, 10000)});
+                        } catch(e) {}
+                    }
+                });
+                return origSend.apply(this, arguments);
+            };
+            return 'interceptors installed';
         })()
     "#;
+    let _ = tab.evaluate(capture_js, false);
 
-    match tab.evaluate(focus_js, false) {
-        Ok(r) => {
-            let val = r.value.as_ref().and_then(|v| v.as_str()).unwrap_or("{}");
-            eprintln!("[onboard] Focus result: {}", val);
+    // Force a FULL page reload (not SPA route change) to trigger fresh API calls
+    // after interceptors are installed
+    let contacts_url = format!("{}/contacts/clients", TM3_BASE);
+    let _ = tab.evaluate(
+        &format!("window.location.href = '{}'", contacts_url),
+        false,
+    );
+    eprintln!("[onboard] Waiting for contacts page API responses...");
+    std::thread::sleep(Duration::from_secs(10));
+
+    // Collect captured API responses
+    let collect_js = "JSON.stringify(window.__tm3_api_responses || [])";
+    let responses = match tab.evaluate(collect_js, false) {
+        Ok(r) => r.value.as_ref().and_then(|v| v.as_str()).unwrap_or("[]").to_string(),
+        Err(_) => "[]".to_string(),
+    };
+
+    eprintln!("[onboard] Captured {} API response(s)", {
+        let v: Vec<serde_json::Value> = serde_json::from_str(&responses).unwrap_or_default();
+        v.len()
+    });
+
+    // Parse responses looking for client data with our surname
+    let api_entries: Vec<serde_json::Value> = serde_json::from_str(&responses).unwrap_or_default();
+    let surname_lower = surname.to_lowercase();
+
+    for entry in &api_entries {
+        let body = entry["body"].as_str().unwrap_or("");
+        let url = entry["url"].as_str().unwrap_or("");
+        eprintln!("[onboard] API: {} ({} bytes)", url, body.len());
+
+        // Try to parse as JSON and search for our client
+        if let Ok(data) = serde_json::from_str::<serde_json::Value>(body) {
+            // Search recursively for client-like objects with our surname
+            if let Some(id) = find_client_in_json(&data, &surname_lower) {
+                eprintln!("[onboard] Found TM3 ID: {} from API response", id);
+                return Some(id);
+            }
         }
-        Err(_) => {}
     }
 
-    std::thread::sleep(Duration::from_millis(500));
+    eprintln!("[onboard] No TM3 ID found for \"{}\" in API responses", name);
+    None
+}
 
-    // Type the surname using CDP keyboard simulation (works with React)
-    let _ = tab.type_str(surname);
-    eprintln!("[onboard] Typed \"{}\" via CDP keyboard", surname);
-
-    // Wait for search results to filter
-    std::thread::sleep(Duration::from_secs(3));
-
-    // Extract client links from search results
-    let find_js = format!(
-        r#"(function() {{
-            var surname = '{}';
-            var links = document.querySelectorAll('a[href*="/contacts/clients/"]');
-            var results = [];
-            for (var i = 0; i < links.length; i++) {{
-                var href = links[i].getAttribute('href') || '';
-                var match = href.match(/\/contacts\/clients\/(\d+)/);
-                if (match) {{
-                    var text = (links[i].innerText || '').trim();
-                    if (text.length > 1) results.push({{id: match[1], name: text}});
-                }}
-            }}
-            return JSON.stringify({{results: results, links_total: links.length}});
-        }})()"#,
-        surname.replace('\'', "\\'").replace('"', "\\\"")
-    );
-
-    if let Ok(r) = tab.evaluate(&find_js, false) {
-        let val = r.value.as_ref().and_then(|v| v.as_str()).unwrap_or("{}");
-        eprintln!("[onboard] Contacts search results: {}", val);
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(val) {
-            let results = parsed["results"].as_array();
-            if let Some(results) = results {
-                let surname_lower = surname.to_lowercase();
-                // Try exact surname match first
-                for entry in results {
-                    let entry_name = entry["name"].as_str().unwrap_or("").to_lowercase();
-                    let entry_id = entry["id"].as_str().unwrap_or("");
-                    if !entry_id.is_empty() && entry_name.contains(&surname_lower) {
-                        eprintln!("[onboard] Found TM3 ID: {} for \"{}\"", entry_id, entry["name"].as_str().unwrap_or(""));
-                        return Some(entry_id.to_string());
-                    }
-                }
-                // Single result — use it
-                if results.len() == 1 {
-                    if let Some(id) = results[0]["id"].as_str() {
-                        if !id.is_empty() {
-                            eprintln!("[onboard] Found TM3 ID: {} (single result)", id);
-                            return Some(id.to_string());
+/// Recursively search a JSON value for a client object matching the surname.
+/// Returns the TM3 ID if found.
+fn find_client_in_json(value: &serde_json::Value, surname_lower: &str) -> Option<String> {
+    match value {
+        serde_json::Value::Object(map) => {
+            // Check if this object looks like a client record
+            let has_name = map.keys().any(|k| {
+                let kl = k.to_lowercase();
+                kl.contains("name") || kl.contains("surname") || kl == "lastname" || kl == "last_name"
+            });
+            if has_name {
+                // Check all string values for surname match
+                let name_match = map.values().any(|v| {
+                    v.as_str().map(|s| s.to_lowercase().contains(surname_lower)).unwrap_or(false)
+                });
+                if name_match {
+                    // Look for an ID field
+                    for (k, v) in map {
+                        let kl = k.to_lowercase();
+                        if kl == "id" || kl == "clientid" || kl == "client_id" || kl == "contactid" || kl == "contact_id" {
+                            if let Some(id) = v.as_u64() {
+                                return Some(id.to_string());
+                            }
+                            if let Some(id) = v.as_str() {
+                                if !id.is_empty() {
+                                    return Some(id.to_string());
+                                }
+                            }
                         }
                     }
                 }
             }
+            // Recurse into values
+            for v in map.values() {
+                if let Some(id) = find_client_in_json(v, surname_lower) {
+                    return Some(id);
+                }
+            }
         }
+        serde_json::Value::Array(arr) => {
+            for item in arr {
+                if let Some(id) = find_client_in_json(item, surname_lower) {
+                    return Some(id);
+                }
+            }
+        }
+        _ => {}
     }
-
-    eprintln!("[onboard] No TM3 ID found for \"{}\" via contacts search", name);
     None
 }
 
