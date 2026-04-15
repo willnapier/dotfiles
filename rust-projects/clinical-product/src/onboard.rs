@@ -475,10 +475,16 @@ fn download_and_import_docs(client_id: &str, tm3_id: &str) -> Result<usize> {
 
 /// Look up a TM3 client ID by clicking their appointment in the diary.
 ///
-/// Navigates to the diary, waits for render, finds the appointment block
-/// containing the client's name, clicks it, and extracts the TM3 ID
-/// from the resulting URL (/contacts/clients/12345).
+/// Navigates to the diary, finds the appointment div[title] containing
+/// the client's surname, clicks it, and extracts the TM3 ID from the
+/// resulting URL (/contacts/clients/12345).
 fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
+    let surname = if let Some((s, _)) = name.split_once(',') {
+        s.trim()
+    } else {
+        name.split_whitespace().last().unwrap_or(name)
+    };
+
     eprintln!("[onboard] Looking up TM3 ID for \"{}\" via diary click...", name);
 
     let (_browser, tab) = match launch_tm3_browser() {
@@ -490,152 +496,103 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
     };
 
     // Wait for diary to render
-    std::thread::sleep(Duration::from_secs(3));
-
-    // Extract surname for matching (title has "Surname, Firstname")
-    let surname = if let Some((s, _)) = name.split_once(',') {
-        s.trim()
-    } else {
-        name.split_whitespace().last().unwrap_or(name)
-    };
+    eprintln!("[onboard] Waiting for diary...");
+    std::thread::sleep(Duration::from_secs(5));
 
     // Click the appointment block containing this client's surname
-    // This is a global search that shows client results with profile links
-    let search_js = format!(
+    let click_js = format!(
         r#"(function() {{
-            // Trigger Command Bar via keyboard shortcut
-            document.dispatchEvent(new KeyboardEvent('keydown', {{
-                key: 'k', code: 'KeyK', metaKey: true, bubbles: true
-            }}));
-            return JSON.stringify({{ok: true}});
-        }})()"#
-    );
-
-    match tab.evaluate(&search_js, false) {
-        Ok(_) => {}
-        Err(e) => {
-            eprintln!("[onboard] Failed to open Command Bar: {}", e);
-            return None;
-        }
-    }
-
-    std::thread::sleep(Duration::from_secs(2));
-
-    // Type the surname into the Command Bar search input
-    let type_js = format!(
-        r#"(function() {{
-            // Find the Command Bar search input (likely a modal/overlay input)
-            var inputs = document.querySelectorAll('input[type="text"], input[type="search"], input:not([type])');
-            var cmdInput = null;
-            for (var i = 0; i < inputs.length; i++) {{
-                var rect = inputs[i].getBoundingClientRect();
-                // Command Bar is usually a centered modal
-                if (rect.width > 200 && rect.top > 50 && rect.top < 400) {{
-                    cmdInput = inputs[i];
-                    break;
+            var surname = '{}';
+            var titles = document.querySelectorAll('div[title]');
+            for (var i = 0; i < titles.length; i++) {{
+                var t = titles[i].getAttribute('title') || '';
+                if (t.includes(surname) && /^\d{{2}}:\d{{2}}-\d{{2}}:\d{{2}}/.test(t)) {{
+                    titles[i].click();
+                    return JSON.stringify({{clicked: true, title: t.substring(0, 60)}});
                 }}
             }}
-            if (!cmdInput) {{
-                // Fallback: find the focused input
-                cmdInput = document.activeElement;
-                if (!cmdInput || cmdInput.tagName !== 'INPUT') {{
-                    return JSON.stringify({{error: "no command bar input found"}});
+            var els = document.querySelectorAll('div[style*="background"].cursor-pointer');
+            for (var j = 0; j < els.length; j++) {{
+                var text = (els[j].innerText || '').trim();
+                if (text.includes(surname) && text.length < 200) {{
+                    els[j].click();
+                    return JSON.stringify({{clicked: true, text: text.substring(0, 60)}});
                 }}
             }}
-
-            cmdInput.focus();
-            var nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-                window.HTMLInputElement.prototype, 'value').set;
-            nativeInputValueSetter.call(cmdInput, '{}');
-            cmdInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-            cmdInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
-            // Also try keyup for React
-            cmdInput.dispatchEvent(new KeyboardEvent('keyup', {{ bubbles: true }}));
-
-            return JSON.stringify({{ok: true}});
+            return JSON.stringify({{clicked: false, count: titles.length}});
         }})()"#,
         surname.replace('\'', "\\'").replace('"', "\\\"")
     );
 
-    match tab.evaluate(&type_js, false) {
+    match tab.evaluate(&click_js, false) {
         Ok(r) => {
             let val = r.value.as_ref().and_then(|v| v.as_str()).unwrap_or("{}");
-            if val.contains("error") {
-                eprintln!("[onboard] {}", val);
+            eprintln!("[onboard] Click result: {}", val);
+            if !val.contains("true") {
+                eprintln!("[onboard] Could not find appointment for \"{}\"", name);
                 return None;
             }
         }
         Err(e) => {
-            eprintln!("[onboard] Command Bar typing failed: {}", e);
+            eprintln!("[onboard] Click failed: {}", e);
             return None;
         }
     }
 
+    // Wait for popup/drawer to appear
     std::thread::sleep(Duration::from_secs(3));
 
-    // Extract client links from Command Bar results
-    let js = r#"
-        (function() {
-            var links = document.querySelectorAll('a[href*="/contacts/clients/"]');
-            var results = [];
-            for (var i = 0; i < links.length; i++) {
-                var href = links[i].getAttribute('href') || '';
-                var match = href.match(/\/contacts\/clients\/(\d+)/);
-                if (match) {
-                    var text = (links[i].innerText || '').trim();
-                    if (text.length > 1) results.push({id: match[1], name: text});
-                }
-            }
-            return JSON.stringify(results);
-        })()
-    "#;
-
-    let result = match tab.evaluate(js, false) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("[onboard] Search extraction failed: {}", e);
-            return None;
-        }
-    };
-
-    let json_str = result.value.as_ref().and_then(|v| v.as_str()).unwrap_or("[]");
-    let entries: Vec<serde_json::Value> = serde_json::from_str(json_str).unwrap_or_default();
-
-    // Match by name (case-insensitive, handle "Surname, Firstname" vs search results format)
-    let name_lower = name.to_lowercase();
-    let surname_lower = surname.to_lowercase();
-
-    for entry in &entries {
-        let entry_name = entry["name"].as_str().unwrap_or("").to_lowercase();
-        let entry_id = entry["id"].as_str().unwrap_or("");
-
-        if entry_id.is_empty() { continue; }
-
-        // Exact match
-        if entry_name == name_lower {
-            eprintln!("[onboard] Found TM3 ID: {} (exact match)", entry_id);
-            return Some(entry_id.to_string());
-        }
-        // Surname + first initial match
-        if entry_name.contains(&surname_lower) {
-            let (first, _) = parse_name(name);
-            let first_lower = first.to_lowercase();
-            if entry_name.contains(&first_lower) {
-                eprintln!("[onboard] Found TM3 ID: {} (name match: \"{}\")", entry_id, entry["name"].as_str().unwrap_or(""));
-                return Some(entry_id.to_string());
-            }
-        }
-    }
-
-    // If only one result, use it regardless
-    if entries.len() == 1 {
-        if let Some(id) = entries[0]["id"].as_str() {
-            eprintln!("[onboard] Found TM3 ID: {} (single search result)", id);
+    // Check if we navigated to a client profile URL
+    let url = tab.get_url();
+    if let Some(rest) = url.split("/contacts/clients/").nth(1) {
+        let id = rest.split(&['/', '?', '#'][..]).next().unwrap_or(rest);
+        if !id.is_empty() && id.chars().all(|c| c.is_ascii_digit()) {
+            eprintln!("[onboard] Found TM3 ID: {} (from URL)", id);
             return Some(id.to_string());
         }
     }
 
-    eprintln!("[onboard] No TM3 ID found for \"{}\" in contacts search ({} results)", name, entries.len());
+    // Clicking opened a popup/drawer — look for client profile links inside it
+    let popup_js = r#"
+        (function() {
+            // Look for client profile links anywhere on the page (popup, drawer, modal)
+            var links = document.querySelectorAll('a[href*="/contacts/clients/"]');
+            for (var i = 0; i < links.length; i++) {
+                var href = links[i].getAttribute('href') || '';
+                var match = href.match(/\/contacts\/clients\/(\d+)/);
+                if (match) {
+                    return JSON.stringify({id: match[1], href: href});
+                }
+            }
+            // Also check for data attributes or hidden elements
+            var els = document.querySelectorAll('[data-client-id], [data-contact-id]');
+            for (var j = 0; j < els.length; j++) {
+                var cid = els[j].getAttribute('data-client-id') || els[j].getAttribute('data-contact-id');
+                if (cid) return JSON.stringify({id: cid, source: 'data-attr'});
+            }
+            return JSON.stringify({id: null});
+        })()
+    "#;
+
+    match tab.evaluate(popup_js, false) {
+        Ok(r) => {
+            let val = r.value.as_ref().and_then(|v| v.as_str()).unwrap_or("{}");
+            eprintln!("[onboard] Popup scan: {}", val);
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(val) {
+                if let Some(id) = parsed["id"].as_str() {
+                    if !id.is_empty() && id != "null" {
+                        eprintln!("[onboard] Found TM3 ID: {} (from popup)", id);
+                        return Some(id.to_string());
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("[onboard] Popup scan failed: {}", e);
+        }
+    }
+
+    eprintln!("[onboard] No TM3 ID found for \"{}\" in diary popup", name);
     None
 }
 
