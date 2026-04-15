@@ -285,7 +285,28 @@ pub fn derive_client_id(name: &str, dob: Option<&str>) -> String {
         return base;
     }
 
-    // Try appending a letter
+    // Check if the existing client is the same person (matching DOB)
+    if let Some(dob_str) = dob {
+        let existing_identity = clients_dir.join(&base).join("identity.yaml");
+        if let Ok(content) = std::fs::read_to_string(&existing_identity) {
+            // Extract DOB from existing identity.yaml
+            for line in content.lines() {
+                let line = line.trim();
+                if let Some((key, val)) = line.split_once(':') {
+                    if key.trim().to_lowercase() == "dob" {
+                        let existing_dob = val.trim().trim_matches('"').replace('/', "-");
+                        let new_dob = dob_str.split('T').next().unwrap_or(dob_str).replace('/', "-");
+                        if existing_dob == new_dob {
+                            eprintln!("[onboard] {} already exists with same DOB — same person", base);
+                            return base;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Different person with same initials+year — append suffix
     for suffix in 'b'..='z' {
         let candidate = format!("{}{}", base, suffix);
         if !clients_dir.join(&candidate).exists() {
@@ -774,7 +795,11 @@ pub fn onboard(tm3_name: &str, tm3_id: Option<&str>) -> Result<OnboardResult> {
         .unwrap_or_default()
         .join("Clinical/clients");
     if clients_dir.join(&client_id).exists() {
-        eprintln!("[onboard] {} already exists — skipping.", client_id);
+        eprintln!("[onboard] {} already exists — adding name mapping only.", client_id);
+        // Still add the TM3 name format to the client map
+        let _ = Command::new("tm3-client-add")
+            .args([tm3_name, &client_id])
+            .output();
         return Ok(OnboardResult {
             client_id: client_id.clone(),
             tm3_id: tm3_id.unwrap_or_default(),
