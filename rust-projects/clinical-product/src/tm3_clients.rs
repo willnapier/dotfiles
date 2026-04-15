@@ -66,6 +66,10 @@ pub fn refresh_cache() -> Result<usize> {
             .headless(true)
             .window_size(Some((1280, 900)))
             .idle_browser_timeout(Duration::from_secs(60))
+            .args(vec![
+                std::ffi::OsStr::new("--password-store=basic"),
+                std::ffi::OsStr::new("--use-mock-keychain"),
+            ])
             .build()?,
     )?;
 

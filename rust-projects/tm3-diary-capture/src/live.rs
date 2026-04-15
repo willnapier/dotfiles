@@ -44,6 +44,10 @@ pub fn scrape_diary(weeks_back: u32) -> Result<Vec<DaySchedule>> {
             .headless(true)
             .window_size(Some((1280, 900)))
             .idle_browser_timeout(Duration::from_secs(120))
+            .args(vec![
+                std::ffi::OsStr::new("--password-store=basic"),
+                std::ffi::OsStr::new("--use-mock-keychain"),
+            ])
             .build()
             .context("Failed to build launch options")?,
     )

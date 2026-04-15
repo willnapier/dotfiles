@@ -62,6 +62,10 @@ fn launch_tm3_browser() -> Result<(Browser, std::sync::Arc<headless_chrome::Tab>
             .headless(headless)
             .window_size(Some((1280, 900)))
             .idle_browser_timeout(Duration::from_secs(120))
+            .args(vec![
+                std::ffi::OsStr::new("--password-store=basic"),
+                std::ffi::OsStr::new("--use-mock-keychain"),
+            ])
             .build()?,
     )
     .context("Failed to launch Chrome")?;
