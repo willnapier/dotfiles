@@ -8,7 +8,13 @@
 </head>
 <body>
     <header>
-        <h1>Clinical Dashboard</h1>
+        <div class="header-left">
+            <h1>Clinical Dashboard</h1>
+            <nav id="header-nav" class="header-nav">
+                <button class="nav-tab active" data-view="clinic">Clinic</button>
+                <button class="nav-tab" data-view="billing" id="billing-tab" hidden>Billing</button>
+            </nav>
+        </div>
         <time id="header-date"></time>
     </header>
 
@@ -95,6 +101,46 @@
                 <p>Select a client from the sidebar to begin.</p>
             </section>
         </main>
+    </div>
+
+    <!-- Billing view (replaces main content when tab is active) -->
+    <div id="billing-view" class="billing-view" hidden>
+        <div class="billing-content">
+            <section class="card billing-summary-card">
+                <div class="card-header">
+                    <h2>Outstanding Invoices</h2>
+                    <button id="billing-refresh-btn" class="icon-btn" title="Refresh">&#x21bb;</button>
+                </div>
+                <div id="billing-table-wrap">
+                    <table class="billing-table" id="billing-table">
+                        <thead>
+                            <tr>
+                                <th>Reference</th>
+                                <th>Client</th>
+                                <th>Bill To</th>
+                                <th>Amount</th>
+                                <th>Due</th>
+                                <th>Status</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="billing-tbody">
+                            <tr><td colspan="7" class="placeholder">Loading&hellip;</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="billing-actions">
+                    <button id="billing-batch-btn" class="btn btn-primary">Invoice All Uninvoiced</button>
+                </div>
+            </section>
+
+            <section class="card" id="billing-reminders-card" hidden>
+                <div class="card-header">
+                    <h2>Pending Reminders</h2>
+                </div>
+                <div id="billing-reminders-list"></div>
+            </section>
+        </div>
     </div>
 
     <!-- Toast / error banner -->

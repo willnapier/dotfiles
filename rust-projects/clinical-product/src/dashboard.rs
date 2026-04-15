@@ -101,6 +101,13 @@ pub async fn serve(port: u16, open_browser: bool) -> anyhow::Result<()> {
         .route("/api/client/{id}", get(client_info))
         .route("/api/note", post(generate_note))
         .route("/api/note/save", post(save_note))
+        // Billing API — all routes return 404 if billing is disabled
+        .route("/api/billing/config", get(billing_config))
+        .route("/api/billing/invoices", get(billing_invoices))
+        .route("/api/billing/invoice/{id}", post(billing_create_invoice))
+        .route("/api/billing/paid", post(billing_mark_paid))
+        .route("/api/billing/cancel", post(billing_cancel))
+        .route("/api/billing/reminders", get(billing_reminders))
         .route("/style.css", get(serve_css))
         .route("/app.js", get(serve_js));
 
@@ -444,6 +451,272 @@ async fn save_note(
             }),
         }))
     }
+}
+
+// ---------------------------------------------------------------------------
+// Billing API
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize)]
+struct BillingConfigResponse {
+    enabled: bool,
+    currency: String,
+    payment_terms_days: i64,
+    provider: String,
+    payment_provider: String,
+}
+
+#[derive(Serialize)]
+struct InvoiceSummaryResponse {
+    reference: String,
+    client_id: String,
+    client_name: String,
+    bill_to: String,
+    total: f64,
+    currency: String,
+    issue_date: String,
+    due_date: String,
+    state: String,
+    days_overdue: i64,
+}
+
+#[derive(Serialize)]
+struct ReminderResponse {
+    invoice_reference: String,
+    client_name: String,
+    tone: String,
+    subject: String,
+    body: String,
+    to_name: String,
+}
+
+#[derive(Deserialize)]
+struct PaidRequest {
+    reference: String,
+    date: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct CancelRequest {
+    reference: String,
+    reason: Option<String>,
+}
+
+async fn billing_config() -> Result<Json<BillingConfigResponse>, (StatusCode, String)> {
+    let config = crate::billing::config::BillingConfig::load()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(BillingConfigResponse {
+        enabled: config.enabled,
+        currency: config.currency,
+        payment_terms_days: config.payment_terms_days,
+        provider: config.provider,
+        payment_provider: config.payment_provider,
+    }))
+}
+
+async fn billing_invoices() -> Result<Json<Vec<InvoiceSummaryResponse>>, (StatusCode, String)> {
+    let config = crate::billing::config::BillingConfig::load()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if !config.enabled {
+        return Ok(Json(Vec::new()));
+    }
+
+    let provider = crate::billing::ManualProvider::new(&config)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    use crate::billing::traits::{AccountingProvider, InvoiceFilter};
+    let invoices = provider
+        .list_invoices(InvoiceFilter::default())
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let response: Vec<InvoiceSummaryResponse> = invoices
+        .into_iter()
+        .filter(|i| {
+            i.state != crate::billing::invoice::InvoiceState::Cancelled
+                && i.state != crate::billing::invoice::InvoiceState::Paid
+        })
+        .map(|i| InvoiceSummaryResponse {
+            reference: i.reference,
+            client_id: i.client_id,
+            client_name: i.client_name,
+            bill_to: i.bill_to_name,
+            total: i.total,
+            currency: i.currency,
+            issue_date: i.issue_date,
+            due_date: i.due_date,
+            state: i.state.to_string(),
+            days_overdue: i.days_overdue,
+        })
+        .collect();
+
+    Ok(Json(response))
+}
+
+async fn billing_create_invoice(
+    Path(client_id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let config = crate::billing::config::BillingConfig::load()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if !config.enabled {
+        return Err((StatusCode::BAD_REQUEST, "Billing not enabled".to_string()));
+    }
+
+    let provider = crate::billing::ManualProvider::new(&config)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let clients_dir = crate::config::clients_dir();
+    let client_dir = clients_dir.join(&client_id);
+    let identity_path = client_dir.join("identity.yaml");
+    let notes_path = client_dir.join("notes.md");
+
+    if !identity_path.exists() {
+        return Err((StatusCode::NOT_FOUND, format!("No identity.yaml for {}", client_id)));
+    }
+    if !notes_path.exists() {
+        return Err((StatusCode::NOT_FOUND, format!("No notes.md for {}", client_id)));
+    }
+
+    let notes = std::fs::read_to_string(&notes_path)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let all_sessions = crate::billing::invoice::extract_session_dates(&notes);
+    let already_invoiced = provider
+        .invoiced_dates_for_client(&client_id)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let uninvoiced =
+        crate::billing::invoice::uninvoiced_sessions(&all_sessions, &already_invoiced);
+
+    if uninvoiced.is_empty() {
+        return Ok(Json(serde_json::json!({
+            "ok": true,
+            "created": false,
+            "message": "No uninvoiced sessions"
+        })));
+    }
+
+    use crate::billing::traits::AccountingProvider;
+    let reference = provider
+        .next_invoice_number()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let invoice = crate::billing::invoice::build_invoice(
+        reference,
+        &client_id,
+        &identity_path,
+        &uninvoiced,
+        config.payment_terms_days,
+        &config.currency,
+    )
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let result = provider
+        .create_invoice(&invoice)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "created": true,
+        "reference": result.reference,
+        "total": invoice.total(),
+        "sessions": uninvoiced.len(),
+    })))
+}
+
+async fn billing_mark_paid(
+    Json(req): Json<PaidRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let config = crate::billing::config::BillingConfig::load()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if !config.enabled {
+        return Err((StatusCode::BAD_REQUEST, "Billing not enabled".to_string()));
+    }
+
+    let provider = crate::billing::ManualProvider::new(&config)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let date = req
+        .date
+        .unwrap_or_else(|| chrono::Local::now().format("%Y-%m-%d").to_string());
+
+    use crate::billing::traits::AccountingProvider;
+    provider
+        .mark_paid(&req.reference, &date, None)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(serde_json::json!({"ok": true})))
+}
+
+async fn billing_cancel(
+    Json(req): Json<CancelRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let config = crate::billing::config::BillingConfig::load()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if !config.enabled {
+        return Err((StatusCode::BAD_REQUEST, "Billing not enabled".to_string()));
+    }
+
+    let provider = crate::billing::ManualProvider::new(&config)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    use crate::billing::traits::AccountingProvider;
+    provider
+        .cancel_invoice(&req.reference, req.reason.as_deref().unwrap_or("Cancelled"))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(serde_json::json!({"ok": true})))
+}
+
+async fn billing_reminders() -> Result<Json<Vec<ReminderResponse>>, (StatusCode, String)> {
+    let config = crate::billing::config::BillingConfig::load()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if !config.enabled {
+        return Ok(Json(Vec::new()));
+    }
+
+    let provider = crate::billing::ManualProvider::new(&config)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    use crate::billing::traits::{AccountingProvider, InvoiceFilter};
+    let overdue = provider
+        .list_invoices(InvoiceFilter {
+            overdue_only: true,
+            ..Default::default()
+        })
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let practitioner = crate::email::load_email_config()
+        .map(|c| c.from_name)
+        .unwrap_or_else(|_| "The Practitioner".to_string());
+
+    let due = crate::billing::remind::due_reminders(&config, &overdue);
+
+    let reminders: Vec<ReminderResponse> = due
+        .into_iter()
+        .map(|(inv, tone)| {
+            let is_insurer = !inv.bill_to_name.is_empty() && inv.bill_to_name != inv.client_name;
+            let reminder = if is_insurer {
+                crate::billing::remind::render_insurer_reminder(&inv, &practitioner)
+            } else {
+                crate::billing::remind::render_client_reminder(&inv, &tone, &practitioner, "")
+            };
+            ReminderResponse {
+                invoice_reference: inv.reference,
+                client_name: inv.client_name,
+                tone,
+                subject: reminder.subject,
+                body: reminder.body,
+                to_name: reminder.to_name,
+            }
+        })
+        .collect();
+
+    Ok(Json(reminders))
 }
 
 // ---------------------------------------------------------------------------

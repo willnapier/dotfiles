@@ -272,7 +272,41 @@ pub fn send_email(
     Ok(())
 }
 
-/// Send a test email to the configured from address.
+/// Generate a random 6-digit verification code.
+fn generate_otp() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_nanos();
+    format!("{:06}", seed % 1_000_000)
+}
+
+/// Send a verification code to the given email address.
+/// Returns the code that was sent.
+pub fn send_verification_code(config: &EmailConfig) -> Result<String> {
+    let code = generate_otp();
+
+    send_email(
+        config,
+        &config.from_email,
+        &config.from_name,
+        "Clinical Product — Email Verification",
+        &format!(
+            "Your verification code is: {}\n\n\
+             Enter this code in the setup wizard to confirm your email configuration.\n\n\
+             This code was sent from {} via {}:{}.\n\
+             If you didn't request this, you can ignore it.",
+            code, config.from_email, config.smtp_server, config.smtp_port
+        ),
+        None,
+        None,
+    )?;
+
+    Ok(code)
+}
+
+/// Send a test email to the configured from address (non-interactive).
 pub fn send_test(config: &EmailConfig) -> Result<()> {
     eprintln!("Sending test email to {}...", config.from_email);
 
@@ -293,7 +327,6 @@ pub fn send_test(config: &EmailConfig) -> Result<()> {
     )?;
 
     println!("✓ Test email sent to {}", config.from_email);
-    println!("Check your inbox to confirm delivery.");
     Ok(())
 }
 
@@ -396,23 +429,62 @@ pub fn init_config() -> Result<()> {
         )),
     )?;
 
-    // Store password in keychain
-    eprintln!("\nStoring password in keychain...");
+    // Store password temporarily in keychain (needed for verification send)
     store_password(&email, &password)?;
-    eprintln!("✓ Password stored (service: clinical-email)");
 
-    // Write config
+    // Build a temporary config for verification
+    let temp_config = EmailConfig {
+        smtp_server: smtp_server.clone(),
+        smtp_port,
+        username: email.clone(),
+        from_name: from_name.clone(),
+        from_email: email.clone(),
+        signature: signature.clone(),
+    };
+
+    // --- OTP Verification ---
+    eprintln!("\nSending verification code to {}...", email);
+    let code = match send_verification_code(&temp_config) {
+        Ok(c) => {
+            eprintln!("✓ Code sent. Check your inbox.");
+            c
+        }
+        Err(e) => {
+            eprintln!("\n✗ Failed to send verification code: {}", e);
+            eprintln!("Check your SMTP server, port, and password, then try again.");
+            bail!("Email verification failed — config not saved.");
+        }
+    };
+
+    // Prompt for code (up to 3 attempts)
+    let mut verified = false;
+    for attempt in 1..=3 {
+        let entered = prompt(
+            &format!("Enter the 6-digit code (attempt {}/3)", attempt),
+            None,
+        )?;
+        if entered.trim() == code {
+            verified = true;
+            break;
+        }
+        eprintln!("Incorrect code.");
+    }
+
+    if !verified {
+        bail!("Verification failed after 3 attempts — config not saved.");
+    }
+
+    eprintln!("\n✓ Email verified.");
+
+    // --- Save config (only after verification) ---
     let config_path = dirs::config_dir()
         .map(|d| d.join("clinical-product/config.toml"))
         .unwrap_or_default();
 
     let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
 
-    // Check if [email] section already exists
+    // Remove existing [email] section if present
     if existing.contains("[email]") {
-        eprintln!("\n[email] section already exists in config.toml.");
-        eprintln!("Replacing it with new settings...");
-        // Remove existing [email] section and everything until the next section or EOF
         let mut new_content = String::new();
         let mut in_email_section = false;
         for line in existing.lines() {
@@ -443,19 +515,11 @@ pub fn init_config() -> Result<()> {
         .open(&config_path)?;
     file.write_all(email_section.as_bytes())?;
 
-    eprintln!("\n✓ Email config written to {}", config_path.display());
-
-    // Test sending
-    eprintln!("\nSending test email to {}...", email);
-    let config = load_email_config()?;
-    match send_test(&config) {
-        Ok(()) => println!("\n✓ Setup complete. Check your inbox for the test email."),
-        Err(e) => {
-            eprintln!("\n✗ Test email failed: {}", e);
-            eprintln!("Config saved but email sending isn't working yet.");
-            eprintln!("Check your SMTP server, port, and password.");
-        }
-    }
+    println!("\n✓ Email setup complete.");
+    println!("  From: {} <{}>", from_name, email);
+    println!("  Server: {}:{}", smtp_server, smtp_port);
+    println!("  Config: {}", config_path.display());
+    println!("  Password: stored in keychain (service: clinical-email)");
 
     Ok(())
 }
