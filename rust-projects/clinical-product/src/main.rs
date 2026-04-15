@@ -82,8 +82,13 @@ enum Command {
     /// Compare TM3 diary against local client directories.
     ///
     /// Scrapes today's TM3 diary, compares against ~/Clinical/clients/,
-    /// and reports new clients that need scaffolding.
-    Sync,
+    /// and reports new clients that need scaffolding. Auto-onboards
+    /// unmapped clients by default (use --dry-run to just report).
+    Sync {
+        /// Report unmapped clients without onboarding them
+        #[arg(long)]
+        dry_run: bool,
+    },
 
     /// Auto-onboard a new TM3 client: scrape profile, scaffold, import docs.
     ///
@@ -422,9 +427,32 @@ async fn main() -> anyhow::Result<()> {
                 ReferralAction::Init => unreachable!(),
             }
         }
-        Command::Sync => {
+        Command::Sync { dry_run } => {
             let result = sync::sync_check()?;
             sync::display_sync_result(&result);
+
+            // Auto-onboard unmapped clients
+            if !dry_run && !result.unmatched_tm3.is_empty() {
+                println!("\n--- Auto-onboarding {} new client(s) ---\n", result.unmatched_tm3.len());
+                for client in &result.unmatched_tm3 {
+                    let tm3_id = client.tm3_id.as_deref();
+                    match onboard::onboard(&client.name, tm3_id) {
+                        Ok(r) if r.skipped => {
+                            println!("  {} — already onboarded as {}", r.name, r.client_id);
+                        }
+                        Ok(r) => {
+                            println!(
+                                "  ✓ {} → {} ({} doc{} imported)",
+                                r.name, r.client_id, r.docs_imported,
+                                if r.docs_imported == 1 { "" } else { "s" }
+                            );
+                        }
+                        Err(e) => {
+                            eprintln!("  ✗ {} — onboard failed: {}", client.name, e);
+                        }
+                    }
+                }
+            }
         }
         Command::Onboard { name, tm3_id } => {
             let result = onboard::onboard(&name, tm3_id.as_deref())?;
