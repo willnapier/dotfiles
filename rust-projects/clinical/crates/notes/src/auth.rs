@@ -122,17 +122,17 @@ pub fn check(append: bool) -> Result<()> {
         // Try daypage-append; graceful fallback if not found (e.g. on Windows)
         match Command::new("daypage-append").arg(&line).status() {
             Ok(s) if s.success() => {
-                println!("Appended to DayPage: {}", line);
+                println!("Appended to session log: {}", line);
             }
             _ => {
-                eprintln!("Warning: daypage-append not found or failed. Printing instead:");
+                eprintln!("Warning: session log append not available. Printing instead:");
                 println!("{}", line);
             }
         }
     } else {
         println!("{}", line);
         println!();
-        println!("Run with --append to add to today's DayPage.");
+        println!("Run with --append to add to today's session log.");
     }
 
     Ok(())

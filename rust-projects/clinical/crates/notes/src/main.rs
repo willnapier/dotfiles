@@ -350,7 +350,7 @@ enum AuthCommands {
 
     /// Check for expiring authorisations
     Check {
-        /// Append warnings to today's DayPage
+        /// Append warnings to today's session log
         #[arg(long)]
         append: bool,
     },
