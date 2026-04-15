@@ -1129,6 +1129,16 @@ impl App {
                 focus_zone_task(FocusZone::ClientList)
             }
 
+            Msg::ToggleClientNotes => {
+                self.show_client_notes = !self.show_client_notes;
+                Task::none()
+            }
+
+            Msg::ClientNotesAction(_) => {
+                // Read-only — ignore edits
+                Task::none()
+            }
+
             Msg::FocusSearch => {
                 self.focus_zone = FocusZone::SearchBox;
                 focus_zone_task(FocusZone::SearchBox)
@@ -1444,6 +1454,9 @@ impl App {
             let mut col = column![
                 row![
                     text(id).size(16),
+                    button(
+                        text(if self.show_client_notes { "Hide Notes" } else { "Notes" }).size(12)
+                    ).on_press(Msg::ToggleClientNotes).padding([3, 8]).style(button::secondary),
                     iced::widget::Space::new().width(Length::Fill),
                     if self.session.clients.iter().any(|c| c.id == *id && c.status == ClinicStatus::Pending) {
                         row![
@@ -1456,6 +1469,33 @@ impl App {
                 ].align_y(iced::Alignment::Center),
                 text("Session observation").size(13).color(color!(0x8b8fa4)),
             ].spacing(8);
+
+            // Client notes pane (togglable)
+            if self.show_client_notes {
+                if let Some(ref notes) = self.client_notes {
+                    col = col.push(
+                        container(
+                            text_editor(notes)
+                                .on_action(Msg::ClientNotesAction)
+                                .height(250).size(12)
+                                .font(Font::MONOSPACE)
+                        ).style(|_: &Theme| container::Style {
+                            background: Some(iced::Background::Color(color!(0x002b36))),
+                            border: iced::Border {
+                                color: color!(0x073642),
+                                width: 1.0,
+                                radius: 4.0.into(),
+                            },
+                            ..Default::default()
+                        })
+                    );
+                    col = col.push(rule::horizontal(1));
+                } else {
+                    col = col.push(
+                        text("No notes file found").size(12).color(color!(0x586e75))
+                    );
+                }
+            }
 
             // Observation editor — with focus ring when active
             let obs_editor = text_editor(&self.obs)
