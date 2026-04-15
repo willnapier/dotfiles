@@ -280,6 +280,33 @@ async fn do_save(id: String, note: String) -> Result<String, String> {
     else { Err(String::from_utf8_lossy(&o.stderr).to_string()) }
 }
 
+async fn run_onboard(client_name: String) -> Result<String, String> {
+    let output = tokio::process::Command::new("clinical-product")
+        .args(["onboard", &client_name])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn onboard: {e}"))?
+        .wait_with_output()
+        .await
+        .map_err(|e| format!("Onboard error: {e}"))?;
+
+    if output.status.success() {
+        // Extract client ID from output (last line typically has "→ XX99")
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        // Look for the derived ID in stderr (onboard logs to stderr)
+        let id = stderr.lines()
+            .find(|l| l.contains("Derived client ID:"))
+            .and_then(|l| l.split(':').last())
+            .map(|s| s.trim().to_string())
+            .unwrap_or_else(|| stdout.trim().to_string());
+        Ok(id)
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
+}
+
 async fn check_inference() -> bool {
     match tokio::process::Command::new("curl")
         .args(["-s", "--max-time", "3", "http://localhost:11434/api/tags"])
@@ -451,6 +478,8 @@ enum Msg {
     MarkCancelled(String),
     RemoveFromClinic(String),
     UndoRemove,
+    OnboardClient(String),  // client_name to onboard
+    OnboardDone(Result<String, String>),  // Ok(new_id) or Err(msg)
     AddClientInput(String),
     AddClient,
     EndClinic,
@@ -780,6 +809,29 @@ impl App {
                 focus_zone_task(FocusZone::ClientList)
             }
 
+            Msg::OnboardClient(name) => {
+                self.status = format!("Onboarding {}...", name);
+                Task::perform(run_onboard(name), |r| Msg::OnboardDone(r))
+            }
+
+            Msg::OnboardDone(result) => {
+                match result {
+                    Ok(new_id) => {
+                        self.status = format!("Onboarded as {new_id}. Re-capture to update list.");
+                        // Update the ??? entry in the session to use the new ID
+                        if let Some(c) = self.session.clients.iter_mut().find(|c| c.id == "???") {
+                            c.id = new_id;
+                            c.client_name = None;
+                        }
+                        self.persist_session();
+                    }
+                    Err(e) => {
+                        self.status = format!("Onboard failed: {e}");
+                    }
+                }
+                Task::none()
+            }
+
             Msg::UndoRemove => {
                 if let Some(client) = self.last_removed.take() {
                     let id = client.id.clone();
@@ -1044,7 +1096,9 @@ impl App {
                     _ => String::new(),
                 };
 
-                // Build the row: icon  time_range  ID  [tag]
+                // Build the row: icon  time_range  ID  [tag]  [×]
+                let is_unmapped = c.id == "???";
+
                 let mut item_row = row![
                     text(status_icon).size(14).color(status_color).width(18),
                 ].spacing(6).align_y(iced::Alignment::Center);
@@ -1055,33 +1109,56 @@ impl App {
                     );
                 }
 
-                item_row = item_row.push(
-                    text(c.id.clone()).size(14).color(status_color).width(50)
-                );
-
-                if let Some(ref tag) = c.rate_tag {
-                    if !tag.is_empty() {
+                if is_unmapped {
+                    // Show client name + Onboard button for unmapped clients
+                    let display_name = c.client_name.as_deref().unwrap_or("Unknown");
+                    // Shorten "Surname, Firstname (Nick)" to "Surname, F."
+                    let short_name = if let Some((surname, rest)) = display_name.split_once(',') {
+                        let first_initial = rest.trim().chars().next().unwrap_or('?');
+                        format!("{}, {}.", surname.trim(), first_initial)
+                    } else {
+                        display_name.to_string()
+                    };
+                    item_row = item_row.push(
+                        text(short_name).size(13).color(color!(0xd4a020))
+                    );
+                    item_row = item_row.push(iced::widget::Space::new().width(Length::Fill));
+                    if let Some(ref name) = c.client_name {
                         item_row = item_row.push(
-                            text(tag.clone()).size(12).color(color!(0x6c71c4))
+                            button(text("Onboard").size(11))
+                                .on_press(Msg::OnboardClient(name.clone()))
+                                .padding([2, 6]).style(button::secondary)
                         );
                     }
-                }
+                } else {
+                    item_row = item_row.push(
+                        text(c.id.clone()).size(14).color(status_color).width(50)
+                    );
 
-                // Push × dismiss to the right edge
-                item_row = item_row.push(iced::widget::Space::new().width(Length::Fill));
-                item_row = item_row.push(
-                    button(text("×").size(12).color(color!(0x586e75)))
-                        .on_press(Msg::RemoveFromClinic(c.id.clone()))
-                        .padding([0, 4])
-                        .style(button::text)
-                );
+                    if let Some(ref tag) = c.rate_tag {
+                        if !tag.is_empty() {
+                            item_row = item_row.push(
+                                text(tag.clone()).size(12).color(color!(0x6c71c4))
+                            );
+                        }
+                    }
+
+                    // Push × dismiss to the right edge
+                    item_row = item_row.push(iced::widget::Space::new().width(Length::Fill));
+                    item_row = item_row.push(
+                        button(text("×").size(12).color(color!(0x586e75)))
+                            .on_press(Msg::RemoveFromClinic(c.id.clone()))
+                            .padding([0, 4])
+                            .style(button::text)
+                    );
+                }
 
                 let sel = self.selected.as_deref() == Some(&c.id);
                 let is_highlighted = self.focus_zone == FocusZone::ClientList
                     && self.highlight == list_idx;
 
-                // Cancelled clients are visible but not selectable
-                let b = if c.status == ClinicStatus::Cancelled {
+                // Cancelled and unmapped clients are visible but not selectable
+                let b = if is_unmapped || c.status == ClinicStatus::Cancelled {
                     button(item_row).width(Length::Fill).padding([3, 6])
                         .style(button::text)
                 } else {

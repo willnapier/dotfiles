@@ -180,15 +180,19 @@ fn main() -> Result<()> {
             lines.push(line);
         }
 
-        // Write dashboard session file for this date (include all appointments incl. cancelled)
+        // Write dashboard session file for this date (include all appointments incl. unmapped)
         if !cli.dry_run {
-            let session_clients: Vec<archive::SessionClient> = schedule.appointments.iter().filter_map(|appt| {
-                let cid = match &client_map {
-                    Some(map) => map.lookup(&appt.client_name)?.to_string(),
-                    None => return None,
+            let session_clients: Vec<archive::SessionClient> = schedule.appointments.iter().map(|appt| {
+                let (cid, name) = match &client_map {
+                    Some(map) => match map.lookup(&appt.client_name) {
+                        Some(id) => (id.to_string(), None),
+                        None => ("???".to_string(), Some(appt.client_name.clone())),
+                    },
+                    None => ("???".to_string(), Some(appt.client_name.clone())),
                 };
-                Some(archive::SessionClient {
+                archive::SessionClient {
                     id: cid,
+                    client_name: name,
                     start_time: appt.start_time.clone(),
                     end_time: appt.end_time.clone(),
                     rate_tag: appt.rate_tag.clone(),
@@ -196,7 +200,7 @@ fn main() -> Result<()> {
                         Status::Cancelled => "cancelled".to_string(),
                         Status::Booked => "pending".to_string(),
                     },
-                })
+                }
             }).collect();
             if !session_clients.is_empty() {
                 if let Err(e) = archive::write_dashboard_session(&schedule.date, &session_clients) {
