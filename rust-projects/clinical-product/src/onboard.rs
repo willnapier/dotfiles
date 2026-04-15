@@ -495,13 +495,63 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
         }
     };
 
-    // Navigate to contacts search
-    let search_url = format!("{}/contacts/clients?search={}", TM3_BASE, surname);
-    if tab.navigate_to(&search_url).is_err() {
-        eprintln!("[onboard] Failed to navigate to contacts search");
+    // Navigate to contacts page
+    let contacts_url = format!("{}/contacts/clients", TM3_BASE);
+    if tab.navigate_to(&contacts_url).is_err() {
+        eprintln!("[onboard] Failed to navigate to contacts page");
         return None;
     }
     std::thread::sleep(Duration::from_secs(5));
+
+    // Type the surname into the search input and wait for results
+    let search_js = format!(
+        r#"(function() {{
+            // Find the search input — try common selectors
+            var input = document.querySelector('input[type="search"]')
+                || document.querySelector('input[placeholder*="earch"]')
+                || document.querySelector('input[placeholder*="ilter"]')
+                || document.querySelector('input[name*="search"]')
+                || document.querySelector('input[name*="filter"]');
+            if (!input) {{
+                // Try any text input in the header/toolbar area
+                var inputs = document.querySelectorAll('input[type="text"], input:not([type])');
+                for (var i = 0; i < inputs.length; i++) {{
+                    var rect = inputs[i].getBoundingClientRect();
+                    if (rect.top < 200) {{ input = inputs[i]; break; }}
+                }}
+            }}
+            if (!input) return JSON.stringify({{error: "no search input found"}});
+
+            // Clear and type the search term
+            input.focus();
+            input.value = '';
+            var nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                window.HTMLInputElement.prototype, 'value').set;
+            nativeInputValueSetter.call(input, '{}');
+            input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+            input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+
+            return JSON.stringify({{ok: true}});
+        }})()"#,
+        surname.replace('\'', "\\'").replace('"', "\\\"")
+    );
+
+    match tab.evaluate(&search_js, false) {
+        Ok(r) => {
+            let val = r.value.as_ref().and_then(|v| v.as_str()).unwrap_or("{}");
+            if val.contains("error") {
+                eprintln!("[onboard] {}", val);
+                return None;
+            }
+        }
+        Err(e) => {
+            eprintln!("[onboard] Search input failed: {}", e);
+            return None;
+        }
+    }
+
+    // Wait for search results to filter
+    std::thread::sleep(Duration::from_secs(3));
 
     // Extract client links from search results
     let js = r#"
@@ -513,7 +563,7 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
                 var match = href.match(/\/contacts\/clients\/(\d+)/);
                 if (match) {
                     var text = (links[i].innerText || '').trim();
-                    results.push({id: match[1], name: text});
+                    if (text.length > 1) results.push({id: match[1], name: text});
                 }
             }
             return JSON.stringify(results);
