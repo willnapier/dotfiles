@@ -473,16 +473,40 @@ fn download_and_import_docs(client_id: &str, tm3_id: &str) -> Result<usize> {
 // Orchestrator
 // ---------------------------------------------------------------------------
 
-/// Look up a TM3 client ID from the most recent capture archive.
-fn lookup_tm3_id_from_archive(name: &str) -> Option<String> {
-    // The diary capture archive doesn't store TM3 IDs reliably.
-    // The sync module scrapes them from DOM links. For onboarding,
-    // we need to scrape the diary page to find the client link.
-    // This is handled by the caller passing --tm3-id, or by
-    // the sync module's extraction.
-    //
-    // TODO: extract TM3 ID from diary if not provided
-    let _ = name;
+/// Look up a TM3 client ID by scraping the diary and matching by name.
+fn lookup_tm3_id_from_diary(name: &str) -> Option<String> {
+    eprintln!("[onboard] Looking up TM3 ID for \"{}\" from diary...", name);
+    let clients = match crate::sync::scrape_tm3_diary() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[onboard] Warning: diary scrape failed: {}", e);
+            return None;
+        }
+    };
+
+    let name_lower = name.to_lowercase();
+    for client in &clients {
+        if client.name.to_lowercase() == name_lower {
+            if let Some(ref id) = client.tm3_id {
+                eprintln!("[onboard] Found TM3 ID: {} for \"{}\"", id, client.name);
+                return Some(id.clone());
+            }
+        }
+    }
+
+    // Fuzzy: try partial match (surname match)
+    let surname = name.split(',').next().unwrap_or(name).trim().to_lowercase();
+    for client in &clients {
+        let client_surname = client.name.split(',').next().unwrap_or(&client.name).trim().to_lowercase();
+        if client_surname == surname {
+            if let Some(ref id) = client.tm3_id {
+                eprintln!("[onboard] Found TM3 ID: {} via surname match (\"{}\")", id, client.name);
+                return Some(id.clone());
+            }
+        }
+    }
+
+    eprintln!("[onboard] No TM3 ID found for \"{}\" in today's diary.", name);
     None
 }
 
@@ -490,19 +514,19 @@ fn lookup_tm3_id_from_archive(name: &str) -> Option<String> {
 pub fn onboard(tm3_name: &str, tm3_id: Option<&str>) -> Result<OnboardResult> {
     eprintln!("[onboard] Starting onboarding for: {}", tm3_name);
 
-    // Step 1: Resolve TM3 ID
+    // Step 1: Resolve TM3 ID (from argument, or scrape from diary)
     let tm3_id = match tm3_id {
         Some(id) => id.to_string(),
         None => {
-            // Try to find from archive
-            match lookup_tm3_id_from_archive(tm3_name) {
+            match lookup_tm3_id_from_diary(tm3_name) {
                 Some(id) => id,
                 None => {
                     bail!(
-                        "TM3 ID not provided and couldn't be found in archives.\n\
-                         Use: clinical-product onboard \"{}\" --tm3-id <ID>\n\
-                         Find the ID via: clinical-product sync",
-                        tm3_name
+                        "TM3 ID not found in today's diary for \"{}\".\n\
+                         Either the client isn't booked today, or the diary \
+                         didn't contain a client profile link.\n\
+                         You can provide it manually: clinical-product onboard \"{}\" --tm3-id <ID>",
+                        tm3_name, tm3_name
                     );
                 }
             }
