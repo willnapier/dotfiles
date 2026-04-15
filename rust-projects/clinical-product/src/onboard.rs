@@ -473,11 +473,11 @@ fn download_and_import_docs(client_id: &str, tm3_id: &str) -> Result<usize> {
 // Orchestrator
 // ---------------------------------------------------------------------------
 
-/// Look up a TM3 client ID by clicking their appointment in the diary.
+/// Look up a TM3 client ID by intercepting the TM3 REST API.
 ///
-/// Navigates to the diary, finds the appointment div[title] containing
-/// the client's surname, clicks it, and extracts the TM3 ID from the
-/// resulting URL (/contacts/clients/12345).
+/// Installs fetch/XHR interceptors, navigates to the contacts page,
+/// types the surname into the search box, and extracts the client ID
+/// and DOB from the `CustomerAdvancedSearchRequest` API response.
 fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
     let surname = if let Some((s, _)) = name.split_once(',') {
         s.trim()
