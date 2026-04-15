@@ -6,6 +6,7 @@ use std::io::{self, Read, Write};
 
 pub mod config;
 mod dashboard;
+pub mod email;
 pub mod onboard;
 mod referral;
 mod runpod;
@@ -103,6 +104,15 @@ enum Command {
         /// TM3 numeric client ID (found via sync or diary links)
         #[arg(long)]
         tm3_id: Option<String>,
+    },
+
+    /// Email configuration and sending.
+    ///
+    /// Setup wizard for SMTP credentials, test delivery, and direct
+    /// email sending with PDF attachments for clinical letters.
+    Email {
+        #[command(subcommand)]
+        action: EmailAction,
     },
 
     /// Start the clinical dashboard (local web UI).

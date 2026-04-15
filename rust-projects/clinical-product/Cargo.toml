@@ -17,6 +17,9 @@ dirs = "6"
 chrono = "0.4"
 totp-rs = { version = "5", features = ["gen_secret"] }
 
+# Email sending (SMTP)
+lettre = { version = "0.11", features = ["tokio1-native-tls", "builder"] }
+
 # Referral intake (IMAP)
 imap = "3.0.0-alpha.15"
 mail-parser = "0.9"
