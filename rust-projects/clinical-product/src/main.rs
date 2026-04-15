@@ -4,6 +4,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
 
+pub mod billing;
 pub mod config;
 mod dashboard;
 pub mod email;
@@ -115,6 +116,16 @@ enum Command {
         action: EmailAction,
     },
 
+    /// Billing automation — invoice, track, and remind.
+    ///
+    /// Vendor-neutral, per-practitioner billing. Uses pluggable backends:
+    /// Manual (file-based, no API keys) or Xero/Stripe (future).
+    /// Enable via [billing] section in config.toml.
+    Billing {
+        #[command(subcommand)]
+        action: BillingAction,
+    },
+
     /// Start the clinical dashboard (local web UI).
     ///
     /// Serves a browser-based note-writing interface on localhost.
@@ -173,6 +184,56 @@ enum EmailAction {
         #[arg(long)]
         cc: Option<String>,
     },
+}
+
+#[derive(Parser, Debug)]
+enum BillingAction {
+    /// Show billing status (outstanding and overdue invoices).
+    Status {
+        /// Show only overdue invoices.
+        #[arg(long)]
+        overdue: bool,
+    },
+    /// Create an invoice for a client's uninvoiced sessions.
+    Invoice {
+        /// Client ID (e.g. "JB92")
+        client_id: String,
+        /// Specific session dates to invoice (YYYY-MM-DD, comma-separated).
+        /// If omitted, invoices all uninvoiced sessions.
+        #[arg(long)]
+        dates: Option<String>,
+    },
+    /// Create invoices for all clients with uninvoiced sessions.
+    InvoiceBatch {
+        /// Preview only — show what would be invoiced without creating.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Mark an invoice as paid.
+    Paid {
+        /// Invoice reference (e.g. "INV-2026-0001")
+        reference: String,
+        /// Payment date (YYYY-MM-DD). Defaults to today.
+        #[arg(long)]
+        date: Option<String>,
+    },
+    /// Cancel an invoice.
+    Cancel {
+        /// Invoice reference
+        reference: String,
+        /// Reason for cancellation
+        #[arg(long, default_value = "Cancelled")]
+        reason: String,
+    },
+    /// Show reminders due for overdue invoices (dry-run by default).
+    Remind {
+        /// Actually send the reminder emails.
+        #[arg(long)]
+        send: bool,
+    },
+    /// Periodic maintenance: check overdue, report status.
+    /// Safe to run from any scheduler (launchd, systemd, cron).
+    Maintain,
 }
 
 #[derive(Parser, Debug)]
@@ -542,6 +603,9 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
+        Command::Billing { action } => {
+            handle_billing(action)?;
+        }
         Command::Dashboard { port, open } => {
             dashboard::serve(port, open).await?;
         }
@@ -714,6 +778,337 @@ async fn handle_inference(action: InferencePodAction) -> anyhow::Result<()> {
             );
             client.stop_pod(&config.pod_id).await?;
             println!("Pod stopped.");
+        }
+    }
+
+    Ok(())
+}
+
+fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
+    use billing::{
+        config::BillingConfig,
+        invoice::{self, build_invoice, extract_session_dates, uninvoiced_sessions},
+        manual::ManualProvider,
+        remind,
+        status,
+        traits::{AccountingProvider, InvoiceFilter},
+    };
+
+    let config = BillingConfig::load()?;
+
+    if !config.enabled {
+        match action {
+            BillingAction::Status { .. } => {
+                println!("Billing is not enabled.");
+                println!("Add [billing] enabled = true to config.toml to activate.");
+                println!(
+                    "Config file: {}",
+                    crate::config::config_file_path().display()
+                );
+                return Ok(());
+            }
+            _ => {
+                anyhow::bail!(
+                    "Billing is not enabled. Add [billing] enabled = true to {}",
+                    crate::config::config_file_path().display()
+                );
+            }
+        }
+    }
+
+    // For now, only the Manual provider is implemented.
+    // Future: match on config.provider to select Xero, etc.
+    let provider = ManualProvider::new(&config)?;
+
+    match action {
+        BillingAction::Status { overdue } => {
+            status::show_status(&provider, overdue)?;
+        }
+
+        BillingAction::Invoice { client_id, dates } => {
+            let clients_dir = crate::config::clients_dir();
+            let client_dir = clients_dir.join(&client_id);
+
+            if !client_dir.exists() {
+                anyhow::bail!("Client directory not found: {}", client_dir.display());
+            }
+
+            let identity_path = client_dir.join("identity.yaml");
+            if !identity_path.exists() {
+                anyhow::bail!(
+                    "No identity.yaml for client {}",
+                    client_id
+                );
+            }
+
+            let session_dates = if let Some(dates_str) = dates {
+                dates_str
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .collect()
+            } else {
+                // Find uninvoiced sessions
+                let notes_path = client_dir.join("notes.md");
+                if !notes_path.exists() {
+                    anyhow::bail!("No notes.md for client {}", client_id);
+                }
+                let notes = std::fs::read_to_string(&notes_path)?;
+                let all_sessions = extract_session_dates(&notes);
+                let already_invoiced = provider.invoiced_dates_for_client(&client_id)?;
+                let uninvoiced = uninvoiced_sessions(&all_sessions, &already_invoiced);
+
+                if uninvoiced.is_empty() {
+                    println!("No uninvoiced sessions for {}.", client_id);
+                    return Ok(());
+                }
+                uninvoiced
+            };
+
+            let reference = provider.next_invoice_number()?;
+            let inv = build_invoice(
+                reference,
+                &client_id,
+                &identity_path,
+                &session_dates,
+                config.payment_terms_days,
+                &config.currency,
+            )?;
+
+            println!(
+                "Creating invoice {} for {} ({} session{}, {} {:.2})...",
+                inv.reference,
+                inv.client_name,
+                inv.line_items.len(),
+                if inv.line_items.len() == 1 { "" } else { "s" },
+                inv.currency,
+                inv.total()
+            );
+
+            let result = provider.create_invoice(&inv)?;
+            println!("✓ Invoice {} created.", result.reference);
+            if let Some(path) = &result.file_path {
+                println!("  File: {}", path);
+            }
+        }
+
+        BillingAction::InvoiceBatch { dry_run } => {
+            let clients_dir = crate::config::clients_dir();
+            if !clients_dir.exists() {
+                anyhow::bail!("Clients directory not found: {}", clients_dir.display());
+            }
+
+            let mut total_created = 0u32;
+            let mut entries: Vec<std::fs::DirEntry> = std::fs::read_dir(&clients_dir)?
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().is_dir())
+                .collect();
+            entries.sort_by_key(|e| e.file_name());
+
+            for entry in entries {
+                let client_id = entry.file_name().to_string_lossy().to_string();
+                let client_dir = entry.path();
+                let identity_path = client_dir.join("identity.yaml");
+                let notes_path = client_dir.join("notes.md");
+
+                if !identity_path.exists() || !notes_path.exists() {
+                    continue;
+                }
+
+                // Check if client has a rate configured
+                let id_content = std::fs::read_to_string(&identity_path).unwrap_or_default();
+                let identity: serde_yaml::Value =
+                    match serde_yaml::from_str(&id_content) {
+                        Ok(v) => v,
+                        Err(_) => continue,
+                    };
+
+                let has_rate = identity
+                    .get("funding")
+                    .and_then(|f| f.get("rate"))
+                    .and_then(|r| invoice::parse_rate(r))
+                    .map(|r| r > 0.0)
+                    .unwrap_or(false);
+
+                if !has_rate {
+                    continue;
+                }
+
+                let notes = std::fs::read_to_string(&notes_path).unwrap_or_default();
+                let all_sessions = extract_session_dates(&notes);
+                let already_invoiced =
+                    provider.invoiced_dates_for_client(&client_id).unwrap_or_default();
+                let uninvoiced = uninvoiced_sessions(&all_sessions, &already_invoiced);
+
+                if uninvoiced.is_empty() {
+                    continue;
+                }
+
+                if dry_run {
+                    let name = identity
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(&client_id);
+                    println!(
+                        "  {} ({}) — {} uninvoiced session{}",
+                        client_id,
+                        name,
+                        uninvoiced.len(),
+                        if uninvoiced.len() == 1 { "" } else { "s" }
+                    );
+                } else {
+                    let reference = provider.next_invoice_number()?;
+                    match build_invoice(
+                        reference,
+                        &client_id,
+                        &identity_path,
+                        &uninvoiced,
+                        config.payment_terms_days,
+                        &config.currency,
+                    ) {
+                        Ok(inv) => {
+                            let result = provider.create_invoice(&inv)?;
+                            println!(
+                                "  ✓ {} — {} ({} session{}, {} {:.2})",
+                                result.reference,
+                                inv.client_name,
+                                inv.line_items.len(),
+                                if inv.line_items.len() == 1 { "" } else { "s" },
+                                inv.currency,
+                                inv.total()
+                            );
+                            total_created += 1;
+                        }
+                        Err(e) => {
+                            eprintln!("  ✗ {} — {}", client_id, e);
+                        }
+                    }
+                }
+            }
+
+            if dry_run {
+                println!("\nDry run — no invoices created. Remove --dry-run to create.");
+            } else {
+                println!("\n{} invoice(s) created.", total_created);
+            }
+        }
+
+        BillingAction::Paid { reference, date } => {
+            let date = date.unwrap_or_else(|| {
+                chrono::Local::now().format("%Y-%m-%d").to_string()
+            });
+            provider.mark_paid(&reference, &date, None)?;
+            println!("✓ {} marked as paid ({})", reference, date);
+        }
+
+        BillingAction::Cancel { reference, reason } => {
+            provider.cancel_invoice(&reference, &reason)?;
+            println!("✓ {} cancelled: {}", reference, reason);
+        }
+
+        BillingAction::Remind { send } => {
+            let overdue = provider.list_invoices(InvoiceFilter {
+                overdue_only: true,
+                ..Default::default()
+            })?;
+
+            if overdue.is_empty() {
+                println!("No overdue invoices — no reminders needed.");
+                return Ok(());
+            }
+
+            let due = remind::due_reminders(&config, &overdue);
+
+            if due.is_empty() {
+                println!(
+                    "{} overdue invoice(s), but all reminders already sent.",
+                    overdue.len()
+                );
+                return Ok(());
+            }
+
+            // Load practitioner name from email config if available
+            let practitioner = crate::email::load_email_config()
+                .map(|c| c.from_name)
+                .unwrap_or_else(|_| "The Practitioner".to_string());
+
+            for (inv, tone) in &due {
+                let is_insurer = !inv.bill_to_name.is_empty()
+                    && inv.bill_to_name != inv.client_name;
+
+                let reminder = if is_insurer {
+                    remind::render_insurer_reminder(inv, &practitioner)
+                } else {
+                    remind::render_client_reminder(inv, tone, &practitioner, "")
+                };
+
+                if send {
+                    if let Some(ref to_email) = inv.payment_link {
+                        // This is a placeholder — real email comes from BillTo
+                        println!("  Would send to {} — email integration pending", to_email);
+                    }
+                    println!(
+                        "  ✓ {} → {} [{}] (send not yet wired to email)",
+                        inv.reference, reminder.to_name, tone
+                    );
+                } else {
+                    println!("--- {} ({}) ---", inv.reference, tone);
+                    println!("To: {}", reminder.to_name);
+                    println!("Subject: {}", reminder.subject);
+                    println!();
+                    println!("{}", reminder.body);
+                    println!();
+                }
+            }
+
+            if !send {
+                println!(
+                    "{} reminder(s) ready. Use --send to deliver via email.",
+                    due.len()
+                );
+            }
+        }
+
+        BillingAction::Maintain => {
+            let summary = status::compact_summary(&provider)?;
+            println!("Billing: {}", summary);
+
+            let overdue = provider.list_invoices(InvoiceFilter {
+                overdue_only: true,
+                ..Default::default()
+            })?;
+
+            if !overdue.is_empty() {
+                let due = remind::due_reminders(&config, &overdue);
+                if !due.is_empty() {
+                    println!(
+                        "  {} reminder(s) pending. Run: clinical-product billing remind",
+                        due.len()
+                    );
+                }
+
+                // Flag seriously overdue (>28 days) for DayPage alert
+                let serious: Vec<_> = overdue
+                    .iter()
+                    .filter(|i| i.days_overdue > 28)
+                    .collect();
+
+                if !serious.is_empty() {
+                    let alert = serious
+                        .iter()
+                        .map(|i| {
+                            format!(
+                                "{} ({}, {}d overdue)",
+                                i.reference, i.client_name, i.days_overdue
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("; ");
+                    eprintln!(
+                        "  ⚠ Seriously overdue: {}",
+                        alert
+                    );
+                }
+            }
         }
     }
 

@@ -3,7 +3,6 @@
 //! Generates invoices from session data + identity.yaml metadata.
 
 use anyhow::{bail, Context, Result};
-use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
