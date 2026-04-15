@@ -485,7 +485,7 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
         name.split_whitespace().last().unwrap_or(name)
     };
 
-    eprintln!("[onboard] Looking up TM3 ID for \"{}\" via diary click...", name);
+    eprintln!("[onboard] Looking up TM3 ID for \"{}\" via API interception...", name);
 
     let (_browser, tab) = match launch_tm3_browser() {
         Ok(b) => b,
@@ -495,12 +495,8 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
         }
     };
 
-    // Intercept TM3 API responses to extract client data.
-    // Navigate to contacts page — the SPA fetches client data via XHR/fetch.
-    // We capture the response JSON which contains client IDs, names, and DOBs.
-    eprintln!("[onboard] Intercepting TM3 API for client data...");
-
-    // Install API interceptors BEFORE page load using addScriptToEvaluateOnNewDocument
+    // Install API interceptors BEFORE the contacts page loads.
+    // Uses addScriptToEvaluateOnNewDocument so interceptors survive page navigation.
     use headless_chrome::protocol::cdp::Page;
     let _ = tab.call_method(Page::AddScriptToEvaluateOnNewDocument {
         source: r#"
@@ -510,17 +506,14 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
             window.fetch = function() {
                 return origFetch.apply(this, arguments).then(function(response) {
                     var url = response.url || '';
-                    if (url.includes('contact') || url.includes('client') || url.includes('api')) {
+                    if (url.includes('Customer') || url.includes('contact') || url.includes('client') || url.includes('Patient')) {
                         response.clone().text().then(function(body) {
-                            try {
-                                window.__tm3_api_responses.push({url: url, body: body.substring(0, 50000)});
-                            } catch(e) {}
+                            try { window.__tm3_api_responses.push({url: url, body: body}); } catch(e) {}
                         });
                     }
                     return response;
                 });
             };
-            // Also patch XMLHttpRequest
             var origOpen = XMLHttpRequest.prototype.open;
             var origSend = XMLHttpRequest.prototype.send;
             XMLHttpRequest.prototype.open = function(method, url) {
@@ -531,72 +524,81 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
                 var self = this;
                 this.addEventListener('load', function() {
                     var url = self.__url || '';
-                    if (url.includes('contact') || url.includes('client') || url.includes('api')) {
-                        try {
-                            window.__tm3_api_responses.push({url: url, body: self.responseText.substring(0, 10000)});
-                        } catch(e) {}
+                    if (url.includes('Customer') || url.includes('contact') || url.includes('client') || url.includes('Patient')) {
+                        try { window.__tm3_api_responses.push({url: url, body: self.responseText}); } catch(e) {}
                     }
                 });
                 return origSend.apply(this, arguments);
             };
-            return 'interceptors installed';
         })()
-    "#.to_string(),
+        "#.to_string(),
         world_name: None,
         include_command_line_api: None,
         run_immediately: None,
     });
 
-    // Force a FULL page reload (not SPA route change) to trigger fresh API calls
-    // after interceptors are installed
+    // Navigate to contacts page (full reload so interceptors fire)
     let contacts_url = format!("{}/contacts/clients", TM3_BASE);
+    let _ = tab.navigate_to(&contacts_url);
+    eprintln!("[onboard] Waiting for contacts page...");
+    std::thread::sleep(Duration::from_secs(8));
+
+    // Focus the search input and type the surname via CDP keyboard
     let _ = tab.evaluate(
-        &format!("window.location.href = '{}'", contacts_url),
+        r#"(function() {
+            var inputs = document.querySelectorAll('input');
+            for (var i = 0; i < inputs.length; i++) {
+                var ph = (inputs[i].placeholder || '').toLowerCase();
+                if (ph.includes('search') || ph.includes('filter') || ph.includes('find')) {
+                    inputs[i].focus();
+                    inputs[i].click();
+                    return true;
+                }
+            }
+            return false;
+        })()"#,
         false,
     );
-    eprintln!("[onboard] Waiting for contacts page API responses...");
-    std::thread::sleep(Duration::from_secs(10));
+    std::thread::sleep(Duration::from_millis(500));
 
-    // Collect captured API responses
+    // Type surname via CDP (actual key events — React handles these)
+    let _ = tab.type_str(surname);
+    eprintln!("[onboard] Typed \"{}\" into search", surname);
+
+    // Wait for filtered API response
+    std::thread::sleep(Duration::from_secs(5));
+
+    // Collect all captured API responses
     let collect_js = "JSON.stringify(window.__tm3_api_responses || [])";
     let responses = match tab.evaluate(collect_js, false) {
         Ok(r) => r.value.as_ref().and_then(|v| v.as_str()).unwrap_or("[]").to_string(),
         Err(_) => "[]".to_string(),
     };
 
-    eprintln!("[onboard] Captured {} API response(s)", {
-        let v: Vec<serde_json::Value> = serde_json::from_str(&responses).unwrap_or_default();
-        v.len()
-    });
-
-    // Parse responses looking for client data with our surname
     let api_entries: Vec<serde_json::Value> = serde_json::from_str(&responses).unwrap_or_default();
+    eprintln!("[onboard] Captured {} API response(s)", api_entries.len());
+
     let surname_lower = surname.to_lowercase();
 
-    for entry in &api_entries {
+    // Search API responses (latest first — the filtered response comes after the initial load)
+    for entry in api_entries.iter().rev() {
         let body = entry["body"].as_str().unwrap_or("");
         let url = entry["url"].as_str().unwrap_or("");
-        eprintln!("[onboard] API: {} ({} bytes)", url, body.len());
 
-        // Dump customer/diary responses for debugging
-        if url.contains("Customer") || url.contains("Diary") {
-            let dump_name = url.split('/').last().unwrap_or("unknown").split('?').next().unwrap_or("unknown");
-            let dump_path = format!("/tmp/tm3-api-{}.json", dump_name);
-            let _ = std::fs::write(&dump_path, body);
-            eprintln!("[onboard]   → dumped to {}", dump_path);
+        if !url.contains("Customer") && !url.contains("Patient") {
+            continue;
         }
+        eprintln!("[onboard] Checking {} ({} bytes)", url, body.len());
 
-        // Try to parse as JSON and search for our client
         if let Ok(data) = serde_json::from_str::<serde_json::Value>(body) {
-            // Search recursively for client-like objects with our surname
             if let Some(id) = find_client_in_json(&data, &surname_lower) {
-                eprintln!("[onboard] Found TM3 ID: {} from API response", id);
+                eprintln!("[onboard] Found TM3 ID: {}", id);
                 return Some(id);
             }
         }
     }
 
-    eprintln!("[onboard] No TM3 ID found for \"{}\" in API responses", name);
+    eprintln!("[onboard] No TM3 ID found for \"{}\"", name);
     None
 }
 
