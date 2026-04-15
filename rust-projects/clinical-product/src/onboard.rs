@@ -562,51 +562,98 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
     }
     std::thread::sleep(Duration::from_secs(2));
 
-    // Click the appointment block containing this client's surname
-    let click_js = format!(
+    // Find the appointment element and click it via CDP mouse events
+    // (JS .click() doesn't trigger React's event handlers in headless mode)
+    let find_js = format!(
         r#"(function() {{
             var surname = '{}';
             var titles = document.querySelectorAll('div[title]');
             for (var i = 0; i < titles.length; i++) {{
                 var t = titles[i].getAttribute('title') || '';
                 if (t.includes(surname) && /^\d{{2}}:\d{{2}}-\d{{2}}:\d{{2}}/.test(t)) {{
-                    titles[i].click();
-                    return JSON.stringify({{clicked: true}});
+                    var rect = titles[i].getBoundingClientRect();
+                    return JSON.stringify({{
+                        found: true,
+                        x: rect.x + rect.width / 2,
+                        y: rect.y + rect.height / 2
+                    }});
                 }}
             }}
-            return JSON.stringify({{clicked: false, count: titles.length}});
+            return JSON.stringify({{found: false, count: titles.length}});
         }})()"#,
         surname.replace('\'', "\\'").replace('"', "\\\"")
     );
 
-    match tab.evaluate(&click_js, false) {
+    let coords = match tab.evaluate(&find_js, false) {
         Ok(r) => {
             let val = r.value.as_ref().and_then(|v| v.as_str()).unwrap_or("{}");
             if !val.contains("true") {
-                eprintln!("[onboard] Could not find appointment for \"{}\"", name);
+                eprintln!("[onboard] Could not find appointment for \"{}\" ({})", name, val);
                 return None;
             }
-            eprintln!("[onboard] Clicked appointment");
+            serde_json::from_str::<serde_json::Value>(val).ok()
         }
         Err(e) => {
-            eprintln!("[onboard] Click failed: {}", e);
+            eprintln!("[onboard] Find failed: {}", e);
             return None;
         }
+    };
+
+    if let Some(ref coords) = coords {
+        let x = coords["x"].as_f64().unwrap_or(0.0);
+        let y = coords["y"].as_f64().unwrap_or(0.0);
+        eprintln!("[onboard] Clicking at ({:.0}, {:.0})...", x, y);
+        use headless_chrome::browser::tab::point::Point;
+        let _ = tab.click_point(Point { x, y });
+        eprintln!("[onboard] CDP click sent");
+    } else {
+        return None;
     }
 
-    // Wait for the appointment popup to render
-    std::thread::sleep(Duration::from_secs(3));
+    // Wait for the appointment popup/drawer to render.
+    // TM3 opens a side panel with client details — poll for "Ref:" text
+    for wait in 0..10 {
+        std::thread::sleep(Duration::from_secs(1));
+        let check = tab.evaluate(
+            "document.body.innerText.includes('Ref:')",
+            false,
+        );
+        if let Ok(r) = check {
+            if r.value.as_ref().and_then(|v| v.as_bool()) == Some(true) {
+                eprintln!("[onboard] Popup rendered ({}s)", wait + 1);
+                break;
+            }
+        }
+        if wait == 4 {
+            // Try another CDP click
+            eprintln!("[onboard] Retrying click...");
+            if let Some(ref coords) = coords {
+                let x = coords["x"].as_f64().unwrap_or(0.0);
+                let y = coords["y"].as_f64().unwrap_or(0.0);
+                use headless_chrome::browser::tab::point::Point;
+                let _ = tab.click_point(Point { x, y });
+            }
+        }
+    }
 
     // Extract Ref ID and DOB from the popup text content
     // The popup shows: "[Ref: 5372]" and "22/12/1976 (Age: 49)"
     let extract_js = r#"
         (function() {
             var body = document.body.innerText || '';
-            var refMatch = body.match(/\[Ref:\s*(\d+)\]/);
-            var dobMatch = body.match(/(\d{1,2}\/\d{1,2}\/\d{4})\s*\(Age/);
+            var refMatch = body.match(/Ref:\s*(\d+)/);
+            var dobMatch = body.match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
+            // Also dump a snippet around "Ref" or "Briscoe" for debugging
+            var refIdx = body.indexOf('Ref');
+            var snippet = refIdx >= 0 ? body.substring(Math.max(0, refIdx - 20), refIdx + 40) : null;
+            var brisIdx = body.indexOf('Briscoe');
+            var bSnippet = brisIdx >= 0 ? body.substring(Math.max(0, brisIdx - 10), brisIdx + 60) : null;
             return JSON.stringify({
                 ref_id: refMatch ? refMatch[1] : null,
-                dob: dobMatch ? dobMatch[1] : null
+                dob: dobMatch ? dobMatch[1] : null,
+                ref_snippet: snippet,
+                name_snippet: bSnippet,
+                body_length: body.length
             });
         })()
     "#;
