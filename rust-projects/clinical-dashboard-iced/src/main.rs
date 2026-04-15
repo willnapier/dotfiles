@@ -107,6 +107,8 @@ enum ClinicStatus { Pending, Done, Dna, Cancelled }
 struct ClinicClient {
     id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    client_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     time: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     end_time: Option<String>,
@@ -625,7 +627,7 @@ impl App {
                             c.draft_observation = draft;
                         } else if draft.is_some() {
                             self.session.clients.push(ClinicClient {
-                                id: id.clone(), time: None, end_time: None,
+                                id: id.clone(), client_name: None, time: None, end_time: None,
                                 status: ClinicStatus::Pending, rate_tag: None,
                                 draft_observation: draft,
                             });
@@ -692,7 +694,7 @@ impl App {
                             c.draft_observation = None;
                         } else {
                             self.session.clients.push(ClinicClient {
-                                id: id.clone(), time: None, end_time: None, status: ClinicStatus::Done, rate_tag: None, draft_observation: None,
+                                id: id.clone(), client_name: None, time: None, end_time: None, status: ClinicStatus::Done, rate_tag: None, draft_observation: None,
                             });
                         }
                         self.persist_session();
@@ -799,7 +801,7 @@ impl App {
                 let id = self.add_client_input.trim().to_uppercase();
                 if !id.is_empty() && !self.session.clients.iter().any(|c| c.id == id) {
                     self.session.clients.push(ClinicClient {
-                        id, time: None, end_time: None, status: ClinicStatus::Pending, rate_tag: None, draft_observation: None,
+                        id, client_name: None, time: None, end_time: None, status: ClinicStatus::Pending, rate_tag: None, draft_observation: None,
                     });
                     self.persist_session();
                 }
