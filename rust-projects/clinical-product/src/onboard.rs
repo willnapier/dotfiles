@@ -629,7 +629,7 @@ pub fn onboard(tm3_name: &str, tm3_id: Option<&str>) -> Result<OnboardResult> {
         eprintln!("[onboard] {} already exists — skipping.", client_id);
         return Ok(OnboardResult {
             client_id: client_id.clone(),
-            tm3_id,
+            tm3_id: tm3_id.unwrap_or_default(),
             name: profile.full_name,
             docs_imported: 0,
             skipped: true,
@@ -668,8 +668,12 @@ pub fn onboard(tm3_name: &str, tm3_id: Option<&str>) -> Result<OnboardResult> {
         }
     }
 
-    // Step 8: Download and import documents
-    let docs_imported = download_and_import_docs(&client_id, &tm3_id)?;
+    // Step 8: Download and import documents (only if we have a TM3 ID)
+    let docs_imported = if let Some(ref id) = tm3_id {
+        download_and_import_docs(&client_id, id)?
+    } else {
+        0
+    };
     eprintln!("[onboard] {} document(s) imported.", docs_imported);
 
     // Step 9: Notify via DayPage
@@ -686,7 +690,7 @@ pub fn onboard(tm3_name: &str, tm3_id: Option<&str>) -> Result<OnboardResult> {
 
     Ok(OnboardResult {
         client_id,
-        tm3_id,
+        tm3_id: tm3_id.unwrap_or_default(),
         name: profile.full_name,
         docs_imported,
         skipped: false,
