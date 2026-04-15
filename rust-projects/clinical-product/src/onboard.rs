@@ -478,129 +478,30 @@ fn download_and_import_docs(client_id: &str, tm3_id: &str) -> Result<usize> {
 /// Reads from `~/.local/share/clinical-product/tm3-clients.json`.
 /// If cache is missing or stale, refreshes it first (headless Chrome).
 /// Returns (tm3_id, dob) if found.
-fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
-    let surname = if let Some((s, _)) = name.split_once(',') {
-        s.trim()
-    } else {
-        name.split_whitespace().last().unwrap_or(name)
-    };
+fn lookup_tm3_client(name: &str) -> Option<(String, Option<String>)> {
+    eprintln!("[onboard] Looking up \"{}\" in TM3 client cache...", name);
 
-    eprintln!("[onboard] Looking up TM3 ID for \"{}\" via API interception...", name);
-
-    let (_browser, tab) = match launch_tm3_browser() {
-        Ok(b) => b,
-        Err(e) => {
-            eprintln!("[onboard] Failed to launch browser: {}", e);
-            return None;
-        }
-    };
-
-    // Install API interceptors BEFORE the contacts page loads.
-    // Uses addScriptToEvaluateOnNewDocument so interceptors survive page navigation.
-    use headless_chrome::protocol::cdp::Page;
-    let _ = tab.call_method(Page::AddScriptToEvaluateOnNewDocument {
-        source: r#"
-        (function() {
-            window.__tm3_api_responses = [];
-            var origFetch = window.fetch;
-            window.fetch = function() {
-                return origFetch.apply(this, arguments).then(function(response) {
-                    var url = response.url || '';
-                    if (url.includes('Customer') || url.includes('contact') || url.includes('client') || url.includes('Patient')) {
-                        response.clone().text().then(function(body) {
-                            try { window.__tm3_api_responses.push({url: url, body: body}); } catch(e) {}
-                        });
-                    }
-                    return response;
-                });
-            };
-            var origOpen = XMLHttpRequest.prototype.open;
-            var origSend = XMLHttpRequest.prototype.send;
-            XMLHttpRequest.prototype.open = function(method, url) {
-                this.__url = url;
-                return origOpen.apply(this, arguments);
-            };
-            XMLHttpRequest.prototype.send = function() {
-                var self = this;
-                this.addEventListener('load', function() {
-                    var url = self.__url || '';
-                    if (url.includes('Customer') || url.includes('contact') || url.includes('client') || url.includes('Patient')) {
-                        try { window.__tm3_api_responses.push({url: url, body: self.responseText}); } catch(e) {}
-                    }
-                });
-                return origSend.apply(this, arguments);
-            };
-        })()
-        "#.to_string(),
-        world_name: None,
-        include_command_line_api: None,
-        run_immediately: None,
-    });
-
-    // Navigate to contacts page (full reload so interceptors fire)
-    let contacts_url = format!("{}/contacts/clients", TM3_BASE);
-    let _ = tab.navigate_to(&contacts_url);
-    eprintln!("[onboard] Waiting for contacts page...");
-    std::thread::sleep(Duration::from_secs(8));
-
-    // Call TM3's API directly from within the browser context.
-    // The browser has Cloudflare clearance, so fetch() works.
-    let api_js = r#"(async function() {
-            try {
-                var resp = await fetch('/api/json/reply/CustomerAdvancedSearchRequest', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({Take: 5000, Skip: 0})
-                });
-                var data = await resp.json();
-                return JSON.stringify(data);
-            } catch(e) {
-                return JSON.stringify({error: e.message});
-            }
-        })()"#;
-
-    // Wait for SPA to load first
-    std::thread::sleep(Duration::from_secs(3));
-
-    match tab.evaluate(&api_js, true) {
-        Ok(r) => {
-            let val = r.value.as_ref().and_then(|v| v.as_str()).unwrap_or("{}");
-            eprintln!("[onboard] API result: {} bytes", val.len());
-            let surname_lower = surname.to_lowercase();
-            if let Ok(data) = serde_json::from_str::<serde_json::Value>(val) {
-                if let Some(results) = data["results"].as_array() {
-                    eprintln!("[onboard] {} search results", results.len());
-                    // Debug: show first 3 surnames
-                    for (i, c) in results.iter().enumerate().take(3) {
-                        eprintln!("[onboard]   #{}: {} {} (id={})",
-                            i, c["surname"].as_str().unwrap_or("?"), c["forename"].as_str().unwrap_or("?"),
-                            c["id"].as_u64().unwrap_or(0));
-                    }
-                    for client in results {
-                        let s = client["surname"].as_str().unwrap_or("");
-                        if s.to_lowercase() == surname_lower {
-                            if let Some(id) = client["id"].as_u64() {
-                                let dob = client["dateOfBirth"].as_str().unwrap_or("");
-                                eprintln!("[onboard] Found TM3 ID: {} ({}) DOB: {}", id, client["name"].as_str().unwrap_or(""), dob);
-                                // Save DOB to a temp file for the onboard pipeline to pick up
-                                let _ = std::fs::write("/tmp/tm3-onboard-dob.txt", dob);
-                                return Some(id.to_string());
-                            }
-                        }
-                    }
-                }
-                if let Some(err) = data["error"].as_str() {
-                    eprintln!("[onboard] API error: {}", err);
-                }
-            }
-        }
-        Err(e) => {
-            eprintln!("[onboard] API call failed: {}", e);
+    // Ensure cache exists and is fresh (< 2 hours)
+    if !crate::tm3_clients::is_cache_fresh(Duration::from_secs(2 * 3600)) {
+        eprintln!("[onboard] Cache stale or missing — refreshing...");
+        match crate::tm3_clients::refresh_cache() {
+            Ok(n) => eprintln!("[onboard] Cache refreshed: {} clients", n),
+            Err(e) => eprintln!("[onboard] Cache refresh failed: {}", e),
         }
     }
 
-    eprintln!("[onboard] No TM3 ID found for \"{}\"", name);
-    None
+    let clients = crate::tm3_clients::load_cache()?;
+    let client = crate::tm3_clients::find_by_name(&clients, name)?;
+
+    let tm3_id = client.id.to_string();
+    let dob = client.date_of_birth.as_deref()
+        .map(crate::tm3_clients::clean_dob);
+
+    eprintln!("[onboard] Found: {} {} (TM3 ID: {}, DOB: {})",
+        client.forename, client.surname, tm3_id,
+        dob.as_deref().unwrap_or("unknown"));
+
+    Some((tm3_id, dob))
 }
 
 /* BLOCK COMMENT START — dead code from diary click approach
@@ -818,44 +719,47 @@ BLOCK COMMENT END */
 pub fn onboard(tm3_name: &str, tm3_id: Option<&str>) -> Result<OnboardResult> {
     eprintln!("[onboard] Starting onboarding for: {}", tm3_name);
 
-    // Step 1: Resolve TM3 ID (from argument, or scrape from diary)
-    let tm3_id = match tm3_id {
-        Some(id) => Some(id.to_string()),
+    // Step 1: Resolve TM3 ID + DOB from cache (or argument)
+    let (tm3_id, api_dob) = match tm3_id {
+        Some(id) => (Some(id.to_string()), None),
         None => {
-            let found = lookup_tm3_id_by_search(tm3_name);
-            if found.is_none() {
-                eprintln!("[onboard] No TM3 ID found — proceeding with name only.");
+            match lookup_tm3_client(tm3_name) {
+                Some((id, dob)) => (Some(id), dob),
+                None => {
+                    eprintln!("[onboard] Not found in TM3 — proceeding with name only.");
+                    (None, None)
+                }
             }
-            found
         }
     };
 
-    // Step 2: Build profile from API data (DOB saved by lookup) or fallback to name only
-    let api_dob = std::fs::read_to_string("/tmp/tm3-onboard-dob.txt").ok()
-        .and_then(|s| {
-            let s = s.trim().to_string();
-            if s.is_empty() { None } else {
-                // Convert "1976-12-22T00:00:00.0000000" to "1976-12-22"
-                Some(s.split('T').next().unwrap_or(&s).to_string())
-            }
-        });
-    let _ = std::fs::remove_file("/tmp/tm3-onboard-dob.txt");
+    // Step 2: Build profile from cached TM3 client data
+    let tm3_client = crate::tm3_clients::load_cache()
+        .and_then(|clients| crate::tm3_clients::find_by_name(&clients, tm3_name).cloned());
 
-    let profile = if api_dob.is_some() || tm3_id.is_some() {
-        eprintln!("[onboard] Using API data (DOB: {})", api_dob.as_deref().unwrap_or("unknown"));
+    let profile = if let Some(ref c) = tm3_client {
+        eprintln!("[onboard] Full profile from cache: {} {} (DOB: {})",
+            c.forename, c.surname,
+            c.date_of_birth.as_deref().unwrap_or("unknown"));
+        TM3Profile {
+            tm3_id: tm3_id.as_deref().unwrap_or("").to_string(),
+            full_name: tm3_name.to_string(),
+            dob: api_dob,
+            referrer_name: None,
+            referrer_practice: None,
+            referrer_email: None,
+            funding_source: c.patient_group.clone(),
+            policy_number: None,
+            address: c.address.clone(),
+            phone: c.number.clone(),
+            email: c.email.clone(),
+        }
+    } else {
         TM3Profile {
             tm3_id: tm3_id.as_deref().unwrap_or("").to_string(),
             full_name: tm3_name.to_string(),
             dob: api_dob,
             referrer_name: None, referrer_practice: None,
-            referrer_email: None, funding_source: None, policy_number: None,
-            address: None, phone: None, email: None,
-        }
-    } else {
-        TM3Profile {
-            tm3_id: String::new(),
-            full_name: tm3_name.to_string(),
-            dob: None, referrer_name: None, referrer_practice: None,
             referrer_email: None, funding_source: None, policy_number: None,
             address: None, phone: None, email: None,
         }

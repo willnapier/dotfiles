@@ -181,13 +181,13 @@ pub fn is_cache_fresh(max_age: Duration) -> bool {
 }
 
 /// Look up a client by surname (case-insensitive). Returns the first match.
-pub fn find_by_surname(clients: &[TM3Client], surname: &str) -> Option<&TM3Client> {
+pub fn find_by_surname<'a>(clients: &'a [TM3Client], surname: &str) -> Option<&'a TM3Client> {
     let surname_lower = surname.to_lowercase();
     clients.iter().find(|c| c.surname.to_lowercase() == surname_lower)
 }
 
 /// Look up a client by full name "Surname, Forename" or "Surname, Forename (Nickname)".
-pub fn find_by_name(clients: &[TM3Client], name: &str) -> Option<&TM3Client> {
+pub fn find_by_name<'a>(clients: &'a [TM3Client], name: &str) -> Option<&'a TM3Client> {
     let name_lower = name.to_lowercase();
 
     // Extract surname from "Surname, Forename (Nickname)" format
