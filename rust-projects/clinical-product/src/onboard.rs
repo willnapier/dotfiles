@@ -543,8 +543,67 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
     eprintln!("[onboard] Waiting for contacts page...");
     std::thread::sleep(Duration::from_secs(8));
 
-    // Navigate to diary and wait for it to render
-    let diary_url = format!("{}/diary/practitioner", TM3_BASE);
+    // Call TM3's API directly from within the browser context.
+    // The browser has Cloudflare clearance, so fetch() works.
+    let api_js = format!(
+        r#"(async function() {{
+            try {{
+                var resp = await fetch('/api/json/reply/CustomerAdvancedSearchRequest', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{surname: '{}', take: 50, skip: 0}})
+                }});
+                var data = await resp.json();
+                return JSON.stringify(data);
+            }} catch(e) {{
+                return JSON.stringify({{error: e.message}});
+            }}
+        }})()"#,
+        surname.replace('\'', "\\'").replace('"', "\\\"")
+    );
+
+    // Wait for SPA to load first
+    std::thread::sleep(Duration::from_secs(3));
+
+    match tab.evaluate(&api_js, true) {
+        Ok(r) => {
+            let val = r.value.as_ref().and_then(|v| v.as_str()).unwrap_or("{}");
+            eprintln!("[onboard] API result: {} bytes", val.len());
+            if let Ok(data) = serde_json::from_str::<serde_json::Value>(val) {
+                if let Some(results) = data["results"].as_array() {
+                    eprintln!("[onboard] {} search results", results.len());
+                    for client in results {
+                        let s = client["surname"].as_str().unwrap_or("");
+                        if s.to_lowercase() == surname_lower {
+                            if let Some(id) = client["id"].as_u64() {
+                                eprintln!("[onboard] Found TM3 ID: {} ({})", id, client["name"].as_str().unwrap_or(""));
+                                // Also extract DOB if available
+                                if let Some(dob) = client["dateOfBirth"].as_str() {
+                                    eprintln!("[onboard] DOB: {}", dob);
+                                }
+                                return Some(id.to_string());
+                            }
+                        }
+                    }
+                }
+                if let Some(err) = data["error"].as_str() {
+                    eprintln!("[onboard] API error: {}", err);
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("[onboard] API call failed: {}", e);
+        }
+    }
+
+    eprintln!("[onboard] No TM3 ID found for \"{}\"", name);
+    None
+}
+
+/// Run the full onboarding pipeline for a new TM3 client.
+// DELETE_MARKER_START — remove everything from here to the real onboard fn
+    // Kept for reference — diary click approach that didn't work in headless Chrome
+    let diary_url = format!("{}/diary/practitioner", "TM3_BASE");
     let _ = tab.navigate_to(&diary_url);
     eprintln!("[onboard] Waiting for diary...");
     // Poll for appointment elements
@@ -636,24 +695,44 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
         }
     }
 
-    // Extract Ref ID and DOB from the popup text content
+    // Extract Ref ID and DOB from the popup.
     // The popup shows: "[Ref: 5372]" and "22/12/1976 (Age: 49)"
+    // Search the ENTIRE rendered DOM — React may use portals.
     let extract_js = r#"
         (function() {
-            var body = document.body.innerText || '';
-            var refMatch = body.match(/Ref:\s*(\d+)/);
-            var dobMatch = body.match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
-            // Also dump a snippet around "Ref" or "Briscoe" for debugging
-            var refIdx = body.indexOf('Ref');
-            var snippet = refIdx >= 0 ? body.substring(Math.max(0, refIdx - 20), refIdx + 40) : null;
-            var brisIdx = body.indexOf('Briscoe');
-            var bSnippet = brisIdx >= 0 ? body.substring(Math.max(0, brisIdx - 10), brisIdx + 60) : null;
+            // Get ALL text from the page including portals
+            var html = document.documentElement.outerHTML || '';
+            var refMatch = html.match(/Ref:\s*(\d+)/);
+            var dobMatch = html.match(/(\d{1,2}\/\d{1,2}\/\d{4})\s*\(Age/);
+
+            // Also check for the popup's API data in intercepted responses
+            var apiRef = null;
+            var apiDob = null;
+            if (window.__tm3_api_responses) {
+                for (var i = window.__tm3_api_responses.length - 1; i >= 0; i--) {
+                    var r = window.__tm3_api_responses[i];
+                    if (r.body && r.body.includes('dateOfBirth')) {
+                        var data = JSON.parse(r.body);
+                        if (data.id) { apiRef = String(data.id); }
+                        if (data.dateOfBirth) { apiDob = data.dateOfBirth; }
+                        break;
+                    }
+                }
+            }
+
+            // Debug: list all elements containing "Ref:"
+            var refEls = [];
+            document.querySelectorAll('*').forEach(function(el) {
+                if (el.children.length === 0 && (el.textContent || '').includes('Ref:')) {
+                    refEls.push(el.textContent.trim().substring(0, 50));
+                }
+            });
+
             return JSON.stringify({
-                ref_id: refMatch ? refMatch[1] : null,
-                dob: dobMatch ? dobMatch[1] : null,
-                ref_snippet: snippet,
-                name_snippet: bSnippet,
-                body_length: body.length
+                ref_id: refMatch ? refMatch[1] : apiRef,
+                dob: dobMatch ? dobMatch[1] : apiDob,
+                ref_elements: refEls,
+                html_length: html.length
             });
         })()
     "#;
