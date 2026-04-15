@@ -1286,9 +1286,9 @@ impl App {
 
                     // Funding status + letter cadence from client data
                     if let Some(data) = self.client_data_cache.get(&c.id) {
-                        // Funding: sessions_used/sessions_authorised (e.g. "3/10")
+                        // Funding: session_count/sessions_authorised (e.g. "3/10")
                         if let Some(auth) = data.sessions_authorised {
-                            let used = data.sessions_used.unwrap_or(data.session_count);
+                            let used = data.session_count;
                             let funding_str = format!("{}/{}", used, auth);
                             let funding_color = if auth > 0 && used >= auth.saturating_sub(1) {
                                 color!(0xe06050) // red when near limit
