@@ -495,27 +495,109 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
         }
     };
 
-    // Navigate explicitly to the diary page and wait for it to render
-    let diary_url = format!("{}/diary/practitioner", TM3_BASE);
-    let _ = tab.navigate_to(&diary_url);
-    eprintln!("[onboard] Waiting for diary to render...");
-    // Poll for div[title] elements (appointment blocks)
-    for _ in 0..15 {
-        let check = tab.evaluate(
-            "document.querySelectorAll('div[title]').length",
-            false,
-        );
-        if let Ok(r) = check {
-            if let Some(n) = r.value.as_ref().and_then(|v| v.as_f64()) {
-                if n > 0.0 {
-                    eprintln!("[onboard] Diary rendered ({} title elements)", n as u32);
-                    break;
+    // Navigate to contacts page, find search input, type surname via CDP keyboard
+    let contacts_url = format!("{}/contacts/clients", TM3_BASE);
+    let _ = tab.navigate_to(&contacts_url);
+    eprintln!("[onboard] Waiting for contacts page...");
+    std::thread::sleep(Duration::from_secs(5));
+
+    // Focus the search input (click it first)
+    let focus_js = r#"
+        (function() {
+            var inputs = document.querySelectorAll('input');
+            for (var i = 0; i < inputs.length; i++) {
+                var ph = (inputs[i].placeholder || '').toLowerCase();
+                if (ph.includes('search') || ph.includes('filter') || ph.includes('find')) {
+                    inputs[i].focus();
+                    inputs[i].click();
+                    return JSON.stringify({found: true, placeholder: inputs[i].placeholder});
+                }
+            }
+            // Fallback: focus the first visible input
+            for (var j = 0; j < inputs.length; j++) {
+                var rect = inputs[j].getBoundingClientRect();
+                if (rect.width > 50 && rect.height > 10) {
+                    inputs[j].focus();
+                    inputs[j].click();
+                    return JSON.stringify({found: true, fallback: true});
+                }
+            }
+            return JSON.stringify({found: false, inputCount: inputs.length});
+        })()
+    "#;
+
+    match tab.evaluate(focus_js, false) {
+        Ok(r) => {
+            let val = r.value.as_ref().and_then(|v| v.as_str()).unwrap_or("{}");
+            eprintln!("[onboard] Focus result: {}", val);
+        }
+        Err(_) => {}
+    }
+
+    std::thread::sleep(Duration::from_millis(500));
+
+    // Type the surname using CDP keyboard simulation (works with React)
+    let _ = tab.type_str(surname);
+    eprintln!("[onboard] Typed \"{}\" via CDP keyboard", surname);
+
+    // Wait for search results to filter
+    std::thread::sleep(Duration::from_secs(3));
+
+    // Extract client links from search results
+    let find_js = format!(
+        r#"(function() {{
+            var surname = '{}';
+            var links = document.querySelectorAll('a[href*="/contacts/clients/"]');
+            var results = [];
+            for (var i = 0; i < links.length; i++) {{
+                var href = links[i].getAttribute('href') || '';
+                var match = href.match(/\/contacts\/clients\/(\d+)/);
+                if (match) {{
+                    var text = (links[i].innerText || '').trim();
+                    if (text.length > 1) results.push({{id: match[1], name: text}});
+                }}
+            }}
+            return JSON.stringify({{results: results, links_total: links.length}});
+        }})()"#,
+        surname.replace('\'', "\\'").replace('"', "\\\"")
+    );
+
+    if let Ok(r) = tab.evaluate(&find_js, false) {
+        let val = r.value.as_ref().and_then(|v| v.as_str()).unwrap_or("{}");
+        eprintln!("[onboard] Contacts search results: {}", val);
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(val) {
+            let results = parsed["results"].as_array();
+            if let Some(results) = results {
+                let surname_lower = surname.to_lowercase();
+                // Try exact surname match first
+                for entry in results {
+                    let entry_name = entry["name"].as_str().unwrap_or("").to_lowercase();
+                    let entry_id = entry["id"].as_str().unwrap_or("");
+                    if !entry_id.is_empty() && entry_name.contains(&surname_lower) {
+                        eprintln!("[onboard] Found TM3 ID: {} for \"{}\"", entry_id, entry["name"].as_str().unwrap_or(""));
+                        return Some(entry_id.to_string());
+                    }
+                }
+                // Single result — use it
+                if results.len() == 1 {
+                    if let Some(id) = results[0]["id"].as_str() {
+                        if !id.is_empty() {
+                            eprintln!("[onboard] Found TM3 ID: {} (single result)", id);
+                            return Some(id.to_string());
+                        }
+                    }
                 }
             }
         }
-        std::thread::sleep(Duration::from_secs(1));
     }
 
+    eprintln!("[onboard] No TM3 ID found for \"{}\" via contacts search", name);
+    None
+}
+
+// Dead code — kept for reference but contacts search above is the primary path
+#[allow(dead_code)]
+fn _diary_click_lookup(_name: &str) -> Option<String> {
     // Click the appointment block containing this client's surname
     let click_js = format!(
         r#"(function() {{
@@ -628,14 +710,54 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
 
                 // If we clicked a button, wait for navigation
                 if parsed["action"].as_str() == Some("button-click") || parsed["action"].as_str() == Some("link-click") {
-                    std::thread::sleep(Duration::from_secs(4));
+                    std::thread::sleep(Duration::from_secs(5));
                     let new_url = tab.get_url();
                     eprintln!("[onboard] Post-navigate URL: {}", new_url);
+
+                    // Check URL for client ID
                     if let Some(rest) = new_url.split("/contacts/clients/").nth(1) {
                         let id = rest.split(&['/', '?', '#'][..]).next().unwrap_or(rest);
                         if !id.is_empty() && id.chars().all(|c| c.is_ascii_digit()) {
                             eprintln!("[onboard] Found TM3 ID: {}", id);
                             return Some(id.to_string());
+                        }
+                    }
+
+                    // We're on /contacts/clients — look for our client's link
+                    let find_js = format!(
+                        r#"(function() {{
+                            var surname = '{}';
+                            var links = document.querySelectorAll('a[href*="/contacts/clients/"]');
+                            for (var i = 0; i < links.length; i++) {{
+                                var text = (links[i].innerText || '').trim();
+                                if (text.includes(surname)) {{
+                                    var href = links[i].getAttribute('href') || '';
+                                    var match = href.match(/\/contacts\/clients\/(\d+)/);
+                                    if (match) return JSON.stringify({{id: match[1], name: text}});
+                                }}
+                            }}
+                            // List all client links for debugging
+                            var all = [];
+                            for (var j = 0; j < Math.min(links.length, 5); j++) {{
+                                var h = links[j].getAttribute('href') || '';
+                                var t = (links[j].innerText || '').trim().substring(0, 30);
+                                all.push(h + ' -> ' + t);
+                            }}
+                            return JSON.stringify({{id: null, links_found: links.length, sample: all}});
+                        }})()"#,
+                        surname.replace('\'', "\\'").replace('"', "\\\"")
+                    );
+
+                    if let Ok(r2) = tab.evaluate(&find_js, false) {
+                        let val2 = r2.value.as_ref().and_then(|v| v.as_str()).unwrap_or("{}");
+                        eprintln!("[onboard] Contacts page scan: {}", val2);
+                        if let Ok(p2) = serde_json::from_str::<serde_json::Value>(val2) {
+                            if let Some(id) = p2["id"].as_str() {
+                                if !id.is_empty() && id != "null" {
+                                    eprintln!("[onboard] Found TM3 ID: {}", id);
+                                    return Some(id.to_string());
+                                }
+                            }
                         }
                     }
                 }
