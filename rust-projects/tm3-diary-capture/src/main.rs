@@ -230,7 +230,7 @@ fn main() -> Result<()> {
     unmapped.sort_by(|a, b| a.0.cmp(&b.0));
     unmapped.dedup_by(|a, b| a.0 == b.0);
 
-    if !unmapped.is_empty() && !cli.dry_run {
+    if !unmapped.is_empty() {
         eprintln!();
         eprintln!("╭─ {} unmapped client(s) ─────────────────────", unmapped.len());
         for (name, date, time) in &unmapped {
@@ -238,73 +238,52 @@ fn main() -> Result<()> {
         }
         eprintln!("╰────────────────────────────────────────────");
 
-        for (name, _date, _time) in &unmapped {
-            eprintln!();
-            eprint!("Client ID for \"{}\" (initials + birth year, or 's' to skip): ", name);
-            let mut input = String::new();
-            std::io::stdin().read_line(&mut input).context("Failed to read input")?;
-            let id = input.trim();
-
-            if id.is_empty() || id.eq_ignore_ascii_case("s") {
-                eprintln!("Skipped \"{}\"", name);
-                continue;
-            }
-
-            eprintln!("Adding: \"{}\" = \"{}\"", name, id);
-            let status = std::process::Command::new("tm3-client-add")
-                .args([name.as_str(), id, "--no-recapture"])
-                .status()
-                .context("Failed to run tm3-client-add")?;
-
-            if !status.success() {
-                eprintln!("Warning: tm3-client-add failed for \"{}\"", name);
-            }
-        }
-
-        // Check if all unmapped clients were resolved
-        let map_path = map_path.clone();
-        let resolved = if let Ok(map) = ClientMap::load(&map_path) {
-            unmapped.iter().all(|(name, _, _)| map.lookup(name).is_some())
-        } else {
-            false
-        };
-
-        if resolved {
-            eprintln!();
-            eprintln!("All clients mapped. Re-processing...");
-            // Re-run ourselves on the same file to generate complete output
-            let rerun_source = if let Some(ref fp) = file_path {
-                fp.display().to_string()
-            } else {
-                "--live".to_string()
-            };
-            let mut rerun_args = vec!["--include-past".to_string(), rerun_source];
-            if let Some(d) = cli.date {
-                rerun_args.push("--date".to_string());
-                rerun_args.push(d.to_string());
-            }
-            let status = std::process::Command::new("tm3-diary-capture")
-                .args(&rerun_args)
-                .status()
-                .context("Failed to re-run tm3-diary-capture")?;
-            if !status.success() {
-                eprintln!("Warning: re-run exited with error");
-            }
-            return Ok(());
-        } else {
-            if let Some(ref fp) = file_path {
+        if !cli.dry_run {
+            // Auto-onboard each unmapped client
+            let mut any_onboarded = false;
+            for (name, _date, _time) in &unmapped {
                 eprintln!();
-                eprintln!("Some clients still unmapped. HTML retained: {}", fp.display());
+                eprintln!("Auto-onboarding \"{}\"...", name);
+                let result = std::process::Command::new("clinical-product")
+                    .args(["onboard", name.as_str()])
+                    .stdout(std::process::Stdio::inherit())
+                    .stderr(std::process::Stdio::inherit())
+                    .status();
+
+                match result {
+                    Ok(s) if s.success() => {
+                        eprintln!("✓ Onboarded \"{}\"", name);
+                        any_onboarded = true;
+                    }
+                    Ok(s) => eprintln!("⚠ Onboard failed for \"{}\" (exit {})", name, s),
+                    Err(e) => eprintln!("⚠ Could not run clinical-product onboard: {}", e),
+                }
+            }
+
+            if any_onboarded {
+                eprintln!();
+                eprintln!("Re-processing with updated client map...");
+                // Re-run to pick up newly mapped clients
+                let rerun_source = if let Some(ref fp) = file_path {
+                    fp.display().to_string()
+                } else {
+                    "--live".to_string()
+                };
+                let mut rerun_args = vec!["--include-past".to_string(), rerun_source];
+                if let Some(d) = cli.date {
+                    rerun_args.push("--date".to_string());
+                    rerun_args.push(d.to_string());
+                }
+                let status = std::process::Command::new("tm3-diary-capture")
+                    .args(&rerun_args)
+                    .status()
+                    .context("Failed to re-run tm3-diary-capture")?;
+                if !status.success() {
+                    eprintln!("Warning: re-run exited with error");
+                }
+                return Ok(());
             }
         }
-    } else if !unmapped.is_empty() {
-        // dry-run mode: just list them
-        eprintln!();
-        eprintln!("╭─ {} unmapped client(s) ─────────────────────", unmapped.len());
-        for (name, date, time) in &unmapped {
-            eprintln!("│  \"{}\"  ({} {})", name, date.format("%a %b %d"), time);
-        }
-        eprintln!("╰────────────────────────────────────────────");
     }
 
     // Delete source file only if no unmapped clients remain (not applicable for --live)
