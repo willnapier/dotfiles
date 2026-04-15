@@ -545,22 +545,19 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
 
     // Call TM3's API directly from within the browser context.
     // The browser has Cloudflare clearance, so fetch() works.
-    let api_js = format!(
-        r#"(async function() {{
-            try {{
-                var resp = await fetch('/api/json/reply/CustomerAdvancedSearchRequest', {{
+    let api_js = r#"(async function() {
+            try {
+                var resp = await fetch('/api/json/reply/CustomerAdvancedSearchRequest', {
                     method: 'POST',
-                    headers: {{'Content-Type': 'application/json'}},
-                    body: JSON.stringify({{SearchTerm: '{}', Take: 50, Skip: 0}})
-                }});
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({Take: 5000, Skip: 0})
+                });
                 var data = await resp.json();
                 return JSON.stringify(data);
-            }} catch(e) {{
-                return JSON.stringify({{error: e.message}});
-            }}
-        }})()"#,
-        surname.replace('\'', "\\'").replace('"', "\\\"")
-    );
+            } catch(e) {
+                return JSON.stringify({error: e.message});
+            }
+        })()"#;
 
     // Wait for SPA to load first
     std::thread::sleep(Duration::from_secs(3));
@@ -583,11 +580,10 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
                         let s = client["surname"].as_str().unwrap_or("");
                         if s.to_lowercase() == surname_lower {
                             if let Some(id) = client["id"].as_u64() {
-                                eprintln!("[onboard] Found TM3 ID: {} ({})", id, client["name"].as_str().unwrap_or(""));
-                                // Also extract DOB if available
-                                if let Some(dob) = client["dateOfBirth"].as_str() {
-                                    eprintln!("[onboard] DOB: {}", dob);
-                                }
+                                let dob = client["dateOfBirth"].as_str().unwrap_or("");
+                                eprintln!("[onboard] Found TM3 ID: {} ({}) DOB: {}", id, client["name"].as_str().unwrap_or(""), dob);
+                                // Save DOB to a temp file for the onboard pipeline to pick up
+                                let _ = std::fs::write("/tmp/tm3-onboard-dob.txt", dob);
                                 return Some(id.to_string());
                             }
                         }
@@ -834,27 +830,26 @@ pub fn onboard(tm3_name: &str, tm3_id: Option<&str>) -> Result<OnboardResult> {
         }
     };
 
-    // Step 2: Scrape TM3 profile (if we have an ID)
-    let profile = if let Some(ref id) = tm3_id {
-        eprintln!("[onboard] Scraping TM3 profile (ID: {})...", id);
-        match scrape_client_profile(id) {
-            Ok(p) => {
-                eprintln!("[onboard] Profile: {} (DOB: {})",
-                    p.full_name,
-                    p.dob.as_deref().unwrap_or("unknown")
-                );
-                p
+    // Step 2: Build profile from API data (DOB saved by lookup) or fallback to name only
+    let api_dob = std::fs::read_to_string("/tmp/tm3-onboard-dob.txt").ok()
+        .and_then(|s| {
+            let s = s.trim().to_string();
+            if s.is_empty() { None } else {
+                // Convert "1976-12-22T00:00:00.0000000" to "1976-12-22"
+                Some(s.split('T').next().unwrap_or(&s).to_string())
             }
-            Err(e) => {
-                eprintln!("[onboard] Warning: profile scrape failed: {}", e);
-                TM3Profile {
-                    tm3_id: id.clone(),
-                    full_name: tm3_name.to_string(),
-                    dob: None, referrer_name: None, referrer_practice: None,
-                    referrer_email: None, funding_source: None, policy_number: None,
-                    address: None, phone: None, email: None,
-                }
-            }
+        });
+    let _ = std::fs::remove_file("/tmp/tm3-onboard-dob.txt");
+
+    let profile = if api_dob.is_some() || tm3_id.is_some() {
+        eprintln!("[onboard] Using API data (DOB: {})", api_dob.as_deref().unwrap_or("unknown"));
+        TM3Profile {
+            tm3_id: tm3_id.as_deref().unwrap_or("").to_string(),
+            full_name: tm3_name.to_string(),
+            dob: api_dob,
+            referrer_name: None, referrer_practice: None,
+            referrer_email: None, funding_source: None, policy_number: None,
+            address: None, phone: None, email: None,
         }
     } else {
         TM3Profile {
