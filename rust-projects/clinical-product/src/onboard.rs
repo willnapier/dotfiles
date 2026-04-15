@@ -500,8 +500,10 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
     // We capture the response JSON which contains client IDs, names, and DOBs.
     eprintln!("[onboard] Intercepting TM3 API for client data...");
 
-    // Set up response capture via JS — intercept fetch/XHR responses
-    let capture_js = r#"
+    // Install API interceptors BEFORE page load using addScriptToEvaluateOnNewDocument
+    use headless_chrome::protocol::cdp::Page;
+    let _ = tab.call_method(Page::AddScriptToEvaluateOnNewDocument {
+        source: r#"
         (function() {
             window.__tm3_api_responses = [];
             var origFetch = window.fetch;
@@ -511,7 +513,7 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
                     if (url.includes('contact') || url.includes('client') || url.includes('api')) {
                         response.clone().text().then(function(body) {
                             try {
-                                window.__tm3_api_responses.push({url: url, body: body.substring(0, 10000)});
+                                window.__tm3_api_responses.push({url: url, body: body.substring(0, 50000)});
                             } catch(e) {}
                         });
                     }
@@ -539,8 +541,11 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
             };
             return 'interceptors installed';
         })()
-    "#;
-    let _ = tab.evaluate(capture_js, false);
+    "#.to_string(),
+        world_name: None,
+        include_command_line_api: None,
+        run_immediately: None,
+    });
 
     // Force a FULL page reload (not SPA route change) to trigger fresh API calls
     // after interceptors are installed
@@ -572,6 +577,14 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
         let body = entry["body"].as_str().unwrap_or("");
         let url = entry["url"].as_str().unwrap_or("");
         eprintln!("[onboard] API: {} ({} bytes)", url, body.len());
+
+        // Dump customer/diary responses for debugging
+        if url.contains("Customer") || url.contains("Diary") {
+            let dump_name = url.split('/').last().unwrap_or("unknown").split('?').next().unwrap_or("unknown");
+            let dump_path = format!("/tmp/tm3-api-{}.json", dump_name);
+            let _ = std::fs::write(&dump_path, body);
+            eprintln!("[onboard]   → dumped to {}", dump_path);
+        }
 
         // Try to parse as JSON and search for our client
         if let Ok(data) = serde_json::from_str::<serde_json::Value>(body) {
