@@ -473,19 +473,13 @@ fn download_and_import_docs(client_id: &str, tm3_id: &str) -> Result<usize> {
 // Orchestrator
 // ---------------------------------------------------------------------------
 
-/// Look up a TM3 client ID by searching the TM3 contacts page.
+/// Look up a TM3 client ID by clicking their appointment in the diary.
 ///
-/// Navigates to the contacts search, enters the client surname, and
-/// extracts the client ID from the search results.
+/// Navigates to the diary, waits for render, finds the appointment block
+/// containing the client's name, clicks it, and extracts the TM3 ID
+/// from the resulting URL (/contacts/clients/12345).
 fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
-    // Extract surname for the search query
-    let surname = if let Some((s, _)) = name.split_once(',') {
-        s.trim()
-    } else {
-        name.split_whitespace().last().unwrap_or(name)
-    };
-
-    eprintln!("[onboard] Searching TM3 contacts for \"{}\"...", surname);
+    eprintln!("[onboard] Looking up TM3 ID for \"{}\" via diary click...", name);
 
     let (_browser, tab) = match launch_tm3_browser() {
         Ok(b) => b,
@@ -495,48 +489,75 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
         }
     };
 
-    // Navigate to contacts page
-    let contacts_url = format!("{}/contacts/clients", TM3_BASE);
-    if tab.navigate_to(&contacts_url).is_err() {
-        eprintln!("[onboard] Failed to navigate to contacts page");
-        return None;
-    }
-    std::thread::sleep(Duration::from_secs(5));
+    // Wait for diary to render
+    std::thread::sleep(Duration::from_secs(3));
 
-    // Type the surname into the search input and wait for results
+    // Extract surname for matching (title has "Surname, Firstname")
+    let surname = if let Some((s, _)) = name.split_once(',') {
+        s.trim()
+    } else {
+        name.split_whitespace().last().unwrap_or(name)
+    };
+
+    // Click the appointment block containing this client's surname
+    // This is a global search that shows client results with profile links
     let search_js = format!(
         r#"(function() {{
-            // Find the search input — try common selectors
-            var input = document.querySelector('input[type="search"]')
-                || document.querySelector('input[placeholder*="earch"]')
-                || document.querySelector('input[placeholder*="ilter"]')
-                || document.querySelector('input[name*="search"]')
-                || document.querySelector('input[name*="filter"]');
-            if (!input) {{
-                // Try any text input in the header/toolbar area
-                var inputs = document.querySelectorAll('input[type="text"], input:not([type])');
-                for (var i = 0; i < inputs.length; i++) {{
-                    var rect = inputs[i].getBoundingClientRect();
-                    if (rect.top < 200) {{ input = inputs[i]; break; }}
+            // Trigger Command Bar via keyboard shortcut
+            document.dispatchEvent(new KeyboardEvent('keydown', {{
+                key: 'k', code: 'KeyK', metaKey: true, bubbles: true
+            }}));
+            return JSON.stringify({{ok: true}});
+        }})()"#
+    );
+
+    match tab.evaluate(&search_js, false) {
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("[onboard] Failed to open Command Bar: {}", e);
+            return None;
+        }
+    }
+
+    std::thread::sleep(Duration::from_secs(2));
+
+    // Type the surname into the Command Bar search input
+    let type_js = format!(
+        r#"(function() {{
+            // Find the Command Bar search input (likely a modal/overlay input)
+            var inputs = document.querySelectorAll('input[type="text"], input[type="search"], input:not([type])');
+            var cmdInput = null;
+            for (var i = 0; i < inputs.length; i++) {{
+                var rect = inputs[i].getBoundingClientRect();
+                // Command Bar is usually a centered modal
+                if (rect.width > 200 && rect.top > 50 && rect.top < 400) {{
+                    cmdInput = inputs[i];
+                    break;
                 }}
             }}
-            if (!input) return JSON.stringify({{error: "no search input found"}});
+            if (!cmdInput) {{
+                // Fallback: find the focused input
+                cmdInput = document.activeElement;
+                if (!cmdInput || cmdInput.tagName !== 'INPUT') {{
+                    return JSON.stringify({{error: "no command bar input found"}});
+                }}
+            }}
 
-            // Clear and type the search term
-            input.focus();
-            input.value = '';
+            cmdInput.focus();
             var nativeInputValueSetter = Object.getOwnPropertyDescriptor(
                 window.HTMLInputElement.prototype, 'value').set;
-            nativeInputValueSetter.call(input, '{}');
-            input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-            input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+            nativeInputValueSetter.call(cmdInput, '{}');
+            cmdInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+            cmdInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
+            // Also try keyup for React
+            cmdInput.dispatchEvent(new KeyboardEvent('keyup', {{ bubbles: true }}));
 
             return JSON.stringify({{ok: true}});
         }})()"#,
         surname.replace('\'', "\\'").replace('"', "\\\"")
     );
 
-    match tab.evaluate(&search_js, false) {
+    match tab.evaluate(&type_js, false) {
         Ok(r) => {
             let val = r.value.as_ref().and_then(|v| v.as_str()).unwrap_or("{}");
             if val.contains("error") {
@@ -545,15 +566,14 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
             }
         }
         Err(e) => {
-            eprintln!("[onboard] Search input failed: {}", e);
+            eprintln!("[onboard] Command Bar typing failed: {}", e);
             return None;
         }
     }
 
-    // Wait for search results to filter
     std::thread::sleep(Duration::from_secs(3));
 
-    // Extract client links from search results
+    // Extract client links from Command Bar results
     let js = r#"
         (function() {
             var links = document.querySelectorAll('a[href*="/contacts/clients/"]');
