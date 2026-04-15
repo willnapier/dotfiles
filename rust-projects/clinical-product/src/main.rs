@@ -806,13 +806,28 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
         traits::{AccountingProvider, InvoiceFilter},
     };
 
+    // Init and Config work without billing being enabled
+    match &action {
+        BillingAction::Init => {
+            return billing::config::init_billing();
+        }
+        BillingAction::Config { setting } => {
+            return if let Some(s) = setting {
+                billing::config::update_config(s)
+            } else {
+                billing::config::show_config()
+            };
+        }
+        _ => {}
+    }
+
     let config = BillingConfig::load()?;
 
     if !config.enabled {
         match action {
             BillingAction::Status { .. } => {
                 println!("Billing is not enabled.");
-                println!("Add [billing] enabled = true to config.toml to activate.");
+                println!("Run 'clinical-product billing init' to set up, or add [billing] enabled = true to config.toml.");
                 println!(
                     "Config file: {}",
                     crate::config::config_file_path().display()
@@ -821,7 +836,7 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
             }
             _ => {
                 anyhow::bail!(
-                    "Billing is not enabled. Add [billing] enabled = true to {}",
+                    "Billing is not enabled. Run 'clinical-product billing init' or add [billing] enabled = true to {}",
                     crate::config::config_file_path().display()
                 );
             }
@@ -1122,6 +1137,9 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
                 }
             }
         }
+
+        // Already handled above, before the enabled check
+        BillingAction::Init | BillingAction::Config { .. } => unreachable!(),
     }
 
     Ok(())
