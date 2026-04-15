@@ -543,59 +543,89 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
     eprintln!("[onboard] Waiting for contacts page...");
     std::thread::sleep(Duration::from_secs(8));
 
-    // Focus the search input and type the surname via CDP keyboard
-    let _ = tab.evaluate(
-        r#"(function() {
-            var inputs = document.querySelectorAll('input');
-            for (var i = 0; i < inputs.length; i++) {
-                var ph = (inputs[i].placeholder || '').toLowerCase();
-                if (ph.includes('search') || ph.includes('filter') || ph.includes('find')) {
-                    inputs[i].focus();
-                    inputs[i].click();
-                    return true;
+    // Navigate to diary and wait for it to render
+    let diary_url = format!("{}/diary/practitioner", TM3_BASE);
+    let _ = tab.navigate_to(&diary_url);
+    eprintln!("[onboard] Waiting for diary...");
+    // Poll for appointment elements
+    for _ in 0..15 {
+        let check = tab.evaluate(
+            "document.querySelectorAll('div[title]').length",
+            false,
+        );
+        if let Ok(r) = check {
+            if r.value.as_ref().and_then(|v| v.as_f64()).unwrap_or(0.0) > 0.0 {
+                break;
+            }
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    }
+    std::thread::sleep(Duration::from_secs(2));
+
+    // Click the appointment block containing this client's surname
+    let click_js = format!(
+        r#"(function() {{
+            var surname = '{}';
+            var titles = document.querySelectorAll('div[title]');
+            for (var i = 0; i < titles.length; i++) {{
+                var t = titles[i].getAttribute('title') || '';
+                if (t.includes(surname) && /^\d{{2}}:\d{{2}}-\d{{2}}:\d{{2}}/.test(t)) {{
+                    titles[i].click();
+                    return JSON.stringify({{clicked: true}});
+                }}
+            }}
+            return JSON.stringify({{clicked: false, count: titles.length}});
+        }})()"#,
+        surname.replace('\'', "\\'").replace('"', "\\\"")
+    );
+
+    match tab.evaluate(&click_js, false) {
+        Ok(r) => {
+            let val = r.value.as_ref().and_then(|v| v.as_str()).unwrap_or("{}");
+            if !val.contains("true") {
+                eprintln!("[onboard] Could not find appointment for \"{}\"", name);
+                return None;
+            }
+            eprintln!("[onboard] Clicked appointment");
+        }
+        Err(e) => {
+            eprintln!("[onboard] Click failed: {}", e);
+            return None;
+        }
+    }
+
+    // Wait for the appointment popup to render
+    std::thread::sleep(Duration::from_secs(3));
+
+    // Extract Ref ID and DOB from the popup text content
+    // The popup shows: "[Ref: 5372]" and "22/12/1976 (Age: 49)"
+    let extract_js = r#"
+        (function() {
+            var body = document.body.innerText || '';
+            var refMatch = body.match(/\[Ref:\s*(\d+)\]/);
+            var dobMatch = body.match(/(\d{1,2}\/\d{1,2}\/\d{4})\s*\(Age/);
+            return JSON.stringify({
+                ref_id: refMatch ? refMatch[1] : null,
+                dob: dobMatch ? dobMatch[1] : null
+            });
+        })()
+    "#;
+
+    match tab.evaluate(extract_js, false) {
+        Ok(r) => {
+            let val = r.value.as_ref().and_then(|v| v.as_str()).unwrap_or("{}");
+            eprintln!("[onboard] Popup data: {}", val);
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(val) {
+                if let Some(ref_id) = parsed["ref_id"].as_str() {
+                    if !ref_id.is_empty() {
+                        eprintln!("[onboard] Found TM3 ID: {}", ref_id);
+                        return Some(ref_id.to_string());
+                    }
                 }
             }
-            return false;
-        })()"#,
-        false,
-    );
-    std::thread::sleep(Duration::from_millis(500));
-
-    // Type surname via CDP (actual key events — React handles these)
-    let _ = tab.type_str(surname);
-    eprintln!("[onboard] Typed \"{}\" into search", surname);
-
-    // Wait for filtered API response
-    std::thread::sleep(Duration::from_secs(5));
-
-    // Collect all captured API responses
-    let collect_js = "JSON.stringify(window.__tm3_api_responses || [])";
-    let responses = match tab.evaluate(collect_js, false) {
-        Ok(r) => r.value.as_ref().and_then(|v| v.as_str()).unwrap_or("[]").to_string(),
-        Err(_) => "[]".to_string(),
-    };
-
-    let api_entries: Vec<serde_json::Value> = serde_json::from_str(&responses).unwrap_or_default();
-    eprintln!("[onboard] Captured {} API response(s)", api_entries.len());
-
-    let surname_lower = surname.to_lowercase();
-
-    // Search API responses (latest first — the filtered response comes after the initial load)
-    for entry in api_entries.iter().rev() {
-        let body = entry["body"].as_str().unwrap_or("");
-        let url = entry["url"].as_str().unwrap_or("");
-
-        if !url.contains("Customer") && !url.contains("Patient") {
-            continue;
         }
-        eprintln!("[onboard] Checking {} ({} bytes): {}", url, body.len(),
-            if body.len() < 200 { body } else { &body[..200] });
-
-        if let Ok(data) = serde_json::from_str::<serde_json::Value>(body) {
-            if let Some(id) = find_client_in_json(&data, &surname_lower) {
-                eprintln!("[onboard] Found TM3 ID: {}", id);
-                return Some(id);
-            }
+        Err(e) => {
+            eprintln!("[onboard] Popup extraction failed: {}", e);
         }
     }
 
