@@ -551,7 +551,7 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
                 var resp = await fetch('/api/json/reply/CustomerAdvancedSearchRequest', {{
                     method: 'POST',
                     headers: {{'Content-Type': 'application/json'}},
-                    body: JSON.stringify({{surname: '{}', take: 50, skip: 0}})
+                    body: JSON.stringify({{SearchTerm: '{}', Take: 50, Skip: 0}})
                 }});
                 var data = await resp.json();
                 return JSON.stringify(data);
@@ -569,9 +569,16 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
         Ok(r) => {
             let val = r.value.as_ref().and_then(|v| v.as_str()).unwrap_or("{}");
             eprintln!("[onboard] API result: {} bytes", val.len());
+            let surname_lower = surname.to_lowercase();
             if let Ok(data) = serde_json::from_str::<serde_json::Value>(val) {
                 if let Some(results) = data["results"].as_array() {
                     eprintln!("[onboard] {} search results", results.len());
+                    // Debug: show first 3 surnames
+                    for (i, c) in results.iter().enumerate().take(3) {
+                        eprintln!("[onboard]   #{}: {} {} (id={})",
+                            i, c["surname"].as_str().unwrap_or("?"), c["forename"].as_str().unwrap_or("?"),
+                            c["id"].as_u64().unwrap_or(0));
+                    }
                     for client in results {
                         let s = client["surname"].as_str().unwrap_or("");
                         if s.to_lowercase() == surname_lower {
@@ -600,8 +607,7 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
     None
 }
 
-/// Run the full onboarding pipeline for a new TM3 client.
-// DELETE_MARKER_START — remove everything from here to the real onboard fn
+/* BLOCK COMMENT START — dead code from diary click approach
     // Kept for reference — diary click approach that didn't work in headless Chrome
     let diary_url = format!("{}/diary/practitioner", "TM3_BASE");
     let _ = tab.navigate_to(&diary_url);
@@ -809,6 +815,8 @@ fn find_client_in_json(value: &serde_json::Value, surname_lower: &str) -> Option
     }
     None
 }
+
+BLOCK COMMENT END */
 
 /// Run the full onboarding pipeline for a new TM3 client.
 pub fn onboard(tm3_name: &str, tm3_id: Option<&str>) -> Result<OnboardResult> {
