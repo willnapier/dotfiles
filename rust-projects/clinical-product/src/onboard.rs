@@ -495,9 +495,26 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
         }
     };
 
-    // Wait for diary to render
-    eprintln!("[onboard] Waiting for diary...");
-    std::thread::sleep(Duration::from_secs(5));
+    // Navigate explicitly to the diary page and wait for it to render
+    let diary_url = format!("{}/diary/practitioner", TM3_BASE);
+    let _ = tab.navigate_to(&diary_url);
+    eprintln!("[onboard] Waiting for diary to render...");
+    // Poll for div[title] elements (appointment blocks)
+    for _ in 0..15 {
+        let check = tab.evaluate(
+            "document.querySelectorAll('div[title]').length",
+            false,
+        );
+        if let Ok(r) = check {
+            if let Some(n) = r.value.as_ref().and_then(|v| v.as_f64()) {
+                if n > 0.0 {
+                    eprintln!("[onboard] Diary rendered ({} title elements)", n as u32);
+                    break;
+                }
+            }
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    }
 
     // Click the appointment block containing this client's surname
     let click_js = format!(
@@ -542,7 +559,7 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
     // Wait for popup/drawer to appear
     std::thread::sleep(Duration::from_secs(3));
 
-    // Check if we navigated to a client profile URL
+    // Check if we navigated directly to a client profile
     let url = tab.get_url();
     if let Some(rest) = url.split("/contacts/clients/").nth(1) {
         let id = rest.split(&['/', '?', '#'][..]).next().unwrap_or(rest);
@@ -552,47 +569,84 @@ fn lookup_tm3_id_by_search(name: &str) -> Option<String> {
         }
     }
 
-    // Clicking opened a popup/drawer — look for client profile links inside it
-    let popup_js = r#"
+    // Clicking opened a popup — look for any clickable element that leads to the client
+    // Dump what we can see in the popup for debugging, then try to click through
+    let navigate_js = r#"
         (function() {
-            // Look for client profile links anywhere on the page (popup, drawer, modal)
+            // Strategy 1: Find a link to the client profile
             var links = document.querySelectorAll('a[href*="/contacts/clients/"]');
-            for (var i = 0; i < links.length; i++) {
-                var href = links[i].getAttribute('href') || '';
+            if (links.length > 0) {
+                var href = links[0].getAttribute('href') || '';
                 var match = href.match(/\/contacts\/clients\/(\d+)/);
                 if (match) {
-                    return JSON.stringify({id: match[1], href: href});
+                    links[0].click();
+                    return JSON.stringify({action: "link-click", id: match[1]});
                 }
             }
-            // Also check for data attributes or hidden elements
-            var els = document.querySelectorAll('[data-client-id], [data-contact-id]');
-            for (var j = 0; j < els.length; j++) {
-                var cid = els[j].getAttribute('data-client-id') || els[j].getAttribute('data-contact-id');
-                if (cid) return JSON.stringify({id: cid, source: 'data-attr'});
+
+            // Strategy 2: Find a "View" or client name button/link in the popup
+            var clickables = document.querySelectorAll('a, button');
+            for (var i = 0; i < clickables.length; i++) {
+                var text = (clickables[i].innerText || '').trim().toLowerCase();
+                var href = (clickables[i].getAttribute('href') || '');
+                // Look for "view client", "client details", "view", or the client name
+                if (text === 'view' || text === 'view client' || text === 'client details'
+                    || text.includes('view contact') || text.includes('open client')
+                    || href.includes('/contacts/')) {
+                    clickables[i].click();
+                    return JSON.stringify({action: "button-click", text: text.substring(0, 40)});
+                }
             }
-            return JSON.stringify({id: null});
+
+            // Strategy 3: Describe what's visible for debugging
+            var popup = document.querySelector('[class*="modal"], [class*="popup"], [class*="drawer"], [class*="overlay"], [class*="dialog"], [role="dialog"]');
+            var content = popup ? popup.innerText.substring(0, 300) : 'no popup found';
+            var allLinks = [];
+            document.querySelectorAll('a').forEach(function(a) {
+                var h = a.getAttribute('href') || '';
+                var t = (a.innerText || '').trim();
+                if (h && t && h.includes('/contacts')) allLinks.push(h + ' -> ' + t);
+            });
+
+            return JSON.stringify({action: "none", popup_text: content, contact_links: allLinks});
         })()
     "#;
 
-    match tab.evaluate(popup_js, false) {
+    match tab.evaluate(navigate_js, false) {
         Ok(r) => {
             let val = r.value.as_ref().and_then(|v| v.as_str()).unwrap_or("{}");
-            eprintln!("[onboard] Popup scan: {}", val);
+            eprintln!("[onboard] Popup navigate: {}", val);
+
             if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(val) {
+                // If we found and clicked a link with a TM3 ID
                 if let Some(id) = parsed["id"].as_str() {
-                    if !id.is_empty() && id != "null" {
-                        eprintln!("[onboard] Found TM3 ID: {} (from popup)", id);
+                    if !id.is_empty() {
+                        eprintln!("[onboard] Found TM3 ID: {}", id);
                         return Some(id.to_string());
+                    }
+                }
+
+                // If we clicked a button, wait for navigation
+                if parsed["action"].as_str() == Some("button-click") || parsed["action"].as_str() == Some("link-click") {
+                    std::thread::sleep(Duration::from_secs(4));
+                    let new_url = tab.get_url();
+                    eprintln!("[onboard] Post-navigate URL: {}", new_url);
+                    if let Some(rest) = new_url.split("/contacts/clients/").nth(1) {
+                        let id = rest.split(&['/', '?', '#'][..]).next().unwrap_or(rest);
+                        if !id.is_empty() && id.chars().all(|c| c.is_ascii_digit()) {
+                            eprintln!("[onboard] Found TM3 ID: {}", id);
+                            return Some(id.to_string());
+                        }
                     }
                 }
             }
         }
         Err(e) => {
-            eprintln!("[onboard] Popup scan failed: {}", e);
+            eprintln!("[onboard] Popup navigate failed: {}", e);
         }
     }
 
-    eprintln!("[onboard] No TM3 ID found for \"{}\" in diary popup", name);
+    eprintln!("[onboard] No TM3 ID found for \"{}\"", name);
     None
 }
 
