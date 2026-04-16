@@ -6,6 +6,7 @@
 //! Key feature: infinite recurring sessions with block expiry warnings.
 //! TM3 cannot do this — blocks expire silently causing human errors.
 
+pub mod availability;
 pub mod config;
 pub mod ics;
 pub mod models;
