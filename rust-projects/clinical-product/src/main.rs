@@ -10,6 +10,7 @@ mod dashboard;
 pub mod email;
 pub mod onboard;
 mod referral;
+pub mod registry;
 mod runpod;
 pub mod scheduling;
 pub mod session_cookies;
@@ -147,6 +148,15 @@ enum Command {
     Schedule {
         #[command(subcommand)]
         action: ScheduleAction,
+    },
+
+    /// PracticeForge central client registry.
+    ///
+    /// Git-backed shared client database for multi-practitioner practices.
+    /// Enable via [registry] section in config.toml.
+    Registry {
+        #[command(subcommand)]
+        action: RegistryAction,
     },
 }
 
@@ -327,6 +337,48 @@ enum ScheduleAction {
     /// Periodic maintenance: check block expiry, send reminders.
     /// Safe to run from any scheduler (launchd, systemd, cron).
     Maintain,
+}
+
+#[derive(Parser, Debug)]
+enum RegistryAction {
+    /// Interactive setup wizard — configure registry path and remote.
+    Init,
+    /// Create the registry repository (or clone from remote).
+    Create {
+        /// Remote git URL to clone from (omit for local-only).
+        #[arg(long)]
+        remote: Option<String>,
+    },
+    /// Sync with remote: pull, commit local changes, push.
+    Sync,
+    /// List all clients in the registry.
+    List {
+        /// Filter by status (active, discharged, all).
+        #[arg(long, default_value = "active")]
+        status: String,
+    },
+    /// Show details for a specific client.
+    Get {
+        /// Client ID (e.g. "EB76")
+        client_id: String,
+    },
+    /// Import clients from ~/Clinical/clients/ into the registry.
+    Import {
+        /// Import a single client by ID (omit for --all).
+        client_id: Option<String>,
+        /// Import all clients not already in the registry.
+        #[arg(long)]
+        all: bool,
+    },
+    /// Show registry status (sync state, client count, remote info).
+    Status,
+    /// Push a letter PDF to the registry for a client.
+    PushLetter {
+        /// Client ID
+        client_id: String,
+        /// Path to the letter PDF
+        path: String,
+    },
 }
 
 #[derive(Serialize)]
@@ -682,6 +734,157 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Schedule { action } => {
             handle_schedule(action)?;
+        }
+        Command::Registry { action } => {
+            handle_registry(action)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn handle_registry(action: RegistryAction) -> anyhow::Result<()> {
+    use registry::config::RegistryConfig;
+
+    match action {
+        RegistryAction::Init => {
+            registry::config::init_registry()?;
+        }
+        RegistryAction::Create { remote } => {
+            let config = RegistryConfig::load();
+            let repo_path = &config.local_path;
+
+            if repo_path.join(".git").exists() {
+                println!("Registry already exists at {}", repo_path.display());
+                return Ok(());
+            }
+
+            if let Some(url) = &remote {
+                println!("Cloning registry from {}...", url);
+                registry::repo::clone_repo(url, repo_path)?;
+                println!("Cloned to {}", repo_path.display());
+            } else {
+                println!("Creating new registry at {}...", repo_path.display());
+                registry::repo::init_repo(repo_path)?;
+                println!("Registry created.");
+            }
+
+            // Add remote if configured but not yet set
+            if remote.is_none() && !config.remote_url.is_empty() {
+                registry::repo::add_remote(repo_path, &config.remote_url)?;
+                println!("Remote added: {}", config.remote_url);
+            }
+        }
+        RegistryAction::Sync => {
+            let config = RegistryConfig::load();
+            if !config.enabled {
+                println!("Registry is not enabled. Run `clinical-product registry init` first.");
+                return Ok(());
+            }
+            let summary = registry::sync::sync(&config)?;
+            println!("{}", summary);
+            registry::sync::mark_synced(&config)?;
+        }
+        RegistryAction::List { status } => {
+            let config = RegistryConfig::load();
+            let clients = registry::list_clients(&config)?;
+
+            let filtered: Vec<_> = if status == "all" {
+                clients.iter().collect()
+            } else {
+                clients.iter().filter(|c| c.status == status).collect()
+            };
+
+            if filtered.is_empty() {
+                println!("No {} clients in registry.", status);
+                return Ok(());
+            }
+
+            println!("{} client(s) ({}):\n", filtered.len(), status);
+            for client in &filtered {
+                println!("{:<6} {:<35} {:<12} {}",
+                    client.client_id,
+                    client.name,
+                    client.funding.funding_type.as_deref().unwrap_or("-"),
+                    client.status,
+                );
+            }
+        }
+        RegistryAction::Get { client_id } => {
+            let config = RegistryConfig::load();
+            let client = registry::get_client(&config, &client_id)?;
+            println!("{}", registry::client::format_client(&client));
+
+            let assignments = registry::client::get_assignments(&config, &client_id)?;
+            if !assignments.is_empty() {
+                println!("\n  Practitioners:");
+                for a in &assignments {
+                    println!("    {} (since {}){}",
+                        a.practitioner_id,
+                        a.since,
+                        if a.primary { " [primary]" } else { "" },
+                    );
+                }
+            }
+        }
+        RegistryAction::Import { client_id, all } => {
+            let config = RegistryConfig::load();
+            let clinical_root = crate::config::clinical_root();
+
+            if !config.local_path.join(".git").exists() {
+                println!("Registry not initialised. Run `clinical-product registry create` first.");
+                return Ok(());
+            }
+
+            if let Some(id) = client_id {
+                println!("Importing {}...", id);
+                registry::import::import_client(&config, &id, &clinical_root)?;
+                registry::repo::add_and_commit(
+                    &config.local_path,
+                    &[&format!("clients/{}/", id)],
+                    &format!("Import client {}", id),
+                )?;
+                println!("Imported {}", id);
+            } else if all {
+                println!("Importing all clients from {}...", clinical_root.display());
+                let (imported, skipped, errors) =
+                    registry::import::import_all(&config, &clinical_root)?;
+                println!(
+                    "\nDone: {} imported, {} skipped (already exist), {} errors",
+                    imported, skipped, errors
+                );
+            } else {
+                println!("Specify a client ID or use --all");
+            }
+        }
+        RegistryAction::Status => {
+            let config = RegistryConfig::load();
+            registry::sync::show_status(&config)?;
+        }
+        RegistryAction::PushLetter { client_id, path } => {
+            let config = RegistryConfig::load();
+            let src = std::path::PathBuf::from(&path);
+            if !src.exists() {
+                anyhow::bail!("File not found: {}", path);
+            }
+
+            let filename = src.file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_else(|| "letter.pdf".to_string());
+
+            let dst_dir = config.client_dir(&client_id).join("letters");
+            std::fs::create_dir_all(&dst_dir)?;
+            let dst = dst_dir.join(&filename);
+            std::fs::copy(&src, &dst)?;
+
+            let relative = format!("clients/{}/letters/{}", client_id, filename);
+            registry::sync::commit_file(
+                &config,
+                &relative,
+                &format!("Add letter {} for {}", filename, client_id),
+            )?;
+
+            println!("Letter pushed to registry: {}", relative);
         }
     }
 
