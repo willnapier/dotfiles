@@ -360,6 +360,10 @@
           <div class="letter-panel" id="clinic-letter-panel" style="display:none">
             <div class="section-head">Letter Draft</div>
             <div class="letter-info" id="clinic-letter-info"></div>
+            <div style="margin-bottom:8px;display:flex;align-items:center;gap:8px">
+              <label style="font-size:11px;color:var(--fg-dim);white-space:nowrap">Send as:</label>
+              <select id="clinic-letter-identity" style="padding:4px 8px;background:var(--bg-hl);border:1px solid var(--border);border-radius:3px;color:var(--fg);font:inherit;font-size:12px;flex:1;max-width:320px"></select>
+            </div>
             <textarea class="letter-textarea" id="clinic-letter-content"></textarea>
             <div class="letter-actions">
               <button class="clinic-action-btn btn-accept" onclick="clinicLetterBuild()">Build PDF</button>
@@ -1723,6 +1727,51 @@ function setupBody() {
 // Letter workflow
 // ============================================================================
 let letterPdfPath = null;
+let emailIdentities = null;
+
+function loadEmailIdentities() {
+  const sel = document.getElementById('clinic-letter-identity');
+  if (emailIdentities) {
+    renderIdentityPicker(sel, emailIdentities);
+    return;
+  }
+  fetch('/api/email/status').then(r => r.json()).then(data => {
+    if (!data.configured) {
+      sel.innerHTML = '<option value="">Email not configured</option>';
+      return;
+    }
+    emailIdentities = [{
+      label: data.from_email.split('@')[1] || 'Primary',
+      from_email: data.from_email,
+      from_name: data.from_name,
+    }];
+    if (data.identities) {
+      data.identities.forEach(id => emailIdentities.push(id));
+    }
+    renderIdentityPicker(sel, emailIdentities);
+
+    // Auto-select based on client funding — insurer clients likely COHS
+    if (S.clinicSelectedId) {
+      const clients = S.clinicSession ? S.clinicSession.clients : [];
+      const client = clients.find(c => c.id === S.clinicSelectedId);
+      if (client && client._meta && client._meta.funding_type &&
+          client._meta.funding_type !== 'self-pay' && client._meta.funding_type !== 'Private' &&
+          emailIdentities.length > 0) {
+        sel.value = emailIdentities[0].from_email; // COHS primary for insurer clients
+      }
+    }
+  }).catch(() => {
+    sel.innerHTML = '<option value="">Email not configured</option>';
+  });
+}
+
+function renderIdentityPicker(sel, identities) {
+  sel.innerHTML = identities.map(id =>
+    '<option value="' + esc(id.from_email) + '">' +
+    esc(id.label || id.from_email) + ' — ' + esc(id.from_email) +
+    '</option>'
+  ).join('');
+}
 
 function clinicShowLetterPanel() {
   if (!S.clinicSelectedId) return;
@@ -1730,6 +1779,9 @@ function clinicShowLetterPanel() {
   panel.style.display = '';
   document.getElementById('clinic-letter-status').textContent = 'Loading draft...';
   letterPdfPath = null;
+
+  // Populate identity picker
+  loadEmailIdentities();
 
   fetch('/api/letter/draft', {
     method: 'POST',
@@ -1782,10 +1834,11 @@ function clinicLetterSend() {
   }
 
   document.getElementById('clinic-letter-status').textContent = 'Sending...';
+  const identity = document.getElementById('clinic-letter-identity').value;
   fetch('/api/letter/send', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ client_id: S.clinicSelectedId, pdf_path: letterPdfPath })
+    body: JSON.stringify({ client_id: S.clinicSelectedId, pdf_path: letterPdfPath, from_email: identity })
   })
     .then(r => r.json())
     .then(data => {

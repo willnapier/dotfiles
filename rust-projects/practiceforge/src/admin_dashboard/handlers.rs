@@ -1685,16 +1685,25 @@ pub async fn letter_build(
 pub struct LetterSendRequest {
     pub client_id: String,
     pub pdf_path: String,
+    /// Override "from" email address (identity picker)
+    #[serde(default)]
+    pub from_email: Option<String>,
 }
 
 /// POST /api/letter/send — send a letter via email and upload to TM3.
 pub async fn letter_send(
     Json(req): Json<LetterSendRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let output = tokio::process::Command::new("clinical-letter-send")
-        .arg(&req.client_id)
+    let mut cmd = tokio::process::Command::new("clinical-letter-send");
+    cmd.arg(&req.client_id)
         .arg("--pdf")
-        .arg(&req.pdf_path)
+        .arg(&req.pdf_path);
+
+    if let Some(ref from) = req.from_email {
+        cmd.arg("--from").arg(from);
+    }
+
+    let output = cmd
         .output()
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to run clinical-letter-send: {}", e)))?;
