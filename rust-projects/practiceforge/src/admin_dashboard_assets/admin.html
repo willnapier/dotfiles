@@ -745,7 +745,7 @@ function renderClinicList() {
     }
     // Letter badge — L! is clickable to show referrer info
     if (c._meta && c._meta.letter_due) {
-      badges += '<span class="ccr-letter ccr-letter-due" onclick="event.stopPropagation();showReferrerPopup(' + i + ')" style="cursor:pointer" title="Click for referrer info">L!</span>';
+      badges += '<span class="ccr-letter ccr-letter-due" onclick="event.stopPropagation();clinicRowClick(' + i + ');clinicShowLetterPanel()" style="cursor:pointer" title="Click to draft letter">L!</span>';
     } else if (c._meta && c._meta.letter_cadence_until !== undefined && c._meta.letter_cadence_until !== null) {
       badges += '<span class="ccr-letter ccr-letter-dim">L:' + c._meta.letter_cadence_until + '</span>';
     }
@@ -1517,6 +1517,168 @@ function loadBilling() {
 }
 
 // ============================================================================
+// Email setup wizard
+// ============================================================================
+function checkEmailSetup() {
+  fetch('/api/email/status').then(r => r.json()).then(data => {
+    if (!data.configured) {
+      document.getElementById('setup-overlay').style.display = '';
+    }
+  }).catch(() => {});
+}
+
+function setupAutoDetect() {
+  const email = document.getElementById('setup-email').value;
+  const domain = email.split('@')[1];
+  if (!domain) return;
+  const smtp = document.getElementById('setup-smtp');
+  const username = document.getElementById('setup-username');
+  if (!smtp.value || smtp.dataset.auto) {
+    smtp.value = 'mail.' + domain;
+    smtp.dataset.auto = '1';
+  }
+  if (!username.value) {
+    username.placeholder = email;
+  }
+}
+
+function setupTest() {
+  document.getElementById('setup-msg').textContent = 'Sending test email...';
+  document.getElementById('setup-msg').style.color = 'var(--cyan)';
+
+  const body = setupBody();
+  fetch('/api/email/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    .then(() => fetch('/api/email/test', { method: 'POST' }))
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        document.getElementById('setup-msg').textContent = 'Test email sent to ' + d.sent_to;
+        document.getElementById('setup-msg').style.color = 'var(--green)';
+      }
+    })
+    .catch(e => {
+      document.getElementById('setup-msg').textContent = 'Failed: ' + e;
+      document.getElementById('setup-msg').style.color = 'var(--red)';
+    });
+}
+
+function setupSave() {
+  const body = setupBody();
+  fetch('/api/email/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) { document.getElementById('setup-overlay').style.display = 'none'; }
+    })
+    .catch(e => {
+      document.getElementById('setup-msg').textContent = 'Save failed: ' + e;
+      document.getElementById('setup-msg').style.color = 'var(--red)';
+    });
+}
+
+function setupSkip() { document.getElementById('setup-overlay').style.display = 'none'; }
+
+function setupBody() {
+  const email = document.getElementById('setup-email').value;
+  return {
+    from_email: email,
+    from_name: document.getElementById('setup-name').value || email.split('@')[0],
+    smtp_server: document.getElementById('setup-smtp').value,
+    smtp_port: parseInt(document.getElementById('setup-port').value) || 465,
+    username: document.getElementById('setup-username').value || email,
+    password: document.getElementById('setup-password').value,
+    signature: '',
+  };
+}
+
+// ============================================================================
+// Letter workflow
+// ============================================================================
+let letterPdfPath = null;
+
+function clinicShowLetterPanel() {
+  if (!S.clinicSelectedId) return;
+  const panel = document.getElementById('clinic-letter-panel');
+  panel.style.display = '';
+  document.getElementById('clinic-letter-status').textContent = 'Loading draft...';
+  letterPdfPath = null;
+
+  fetch('/api/letter/draft', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: S.clinicSelectedId })
+  })
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('clinic-letter-content').value = data.draft || '';
+      const info = [];
+      if (data.referrer_name) info.push('To: ' + data.referrer_name);
+      if (data.referrer_email) info.push(data.referrer_email);
+      document.getElementById('clinic-letter-info').textContent = info.join(' · ') || 'No referrer on file';
+      document.getElementById('clinic-letter-status').textContent = '';
+    })
+    .catch(e => {
+      document.getElementById('clinic-letter-status').textContent = 'Failed to load draft: ' + e;
+    });
+}
+
+function clinicLetterBuild() {
+  if (!S.clinicSelectedId) return;
+  const content = document.getElementById('clinic-letter-content').value.trim();
+  if (!content) return;
+
+  document.getElementById('clinic-letter-status').textContent = 'Building PDF...';
+  fetch('/api/letter/build', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: S.clinicSelectedId, content: content })
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        letterPdfPath = data.pdf_path;
+        document.getElementById('clinic-letter-status').textContent = 'PDF built: ' + data.pdf_path;
+        document.getElementById('clinic-letter-status').style.color = 'var(--green)';
+      }
+    })
+    .catch(e => {
+      document.getElementById('clinic-letter-status').textContent = 'Build failed: ' + e;
+      document.getElementById('clinic-letter-status').style.color = 'var(--red)';
+    });
+}
+
+function clinicLetterSend() {
+  if (!S.clinicSelectedId || !letterPdfPath) {
+    document.getElementById('clinic-letter-status').textContent = 'Build the PDF first';
+    return;
+  }
+
+  document.getElementById('clinic-letter-status').textContent = 'Sending...';
+  fetch('/api/letter/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: S.clinicSelectedId, pdf_path: letterPdfPath })
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        document.getElementById('clinic-letter-status').textContent = 'Sent successfully';
+        document.getElementById('clinic-letter-status').style.color = 'var(--green)';
+        // Refresh metadata to update letter badge
+        clinicLoadMetadata(S.clinicSelectedId);
+      }
+    })
+    .catch(e => {
+      document.getElementById('clinic-letter-status').textContent = 'Send failed: ' + e;
+      document.getElementById('clinic-letter-status').style.color = 'var(--red)';
+    });
+}
+
+function clinicLetterSkip() {
+  document.getElementById('clinic-letter-panel').style.display = 'none';
+  letterPdfPath = null;
+}
+
+// ============================================================================
 // Billing actions
 // ============================================================================
 function billingMarkPaid(reference) {
@@ -1591,6 +1753,7 @@ initCalDate();
 loadClinicSession();
 pollInferenceStatus();
 setInterval(pollInferenceStatus, 30000);
+checkEmailSetup();
 updateHints();
 </script>
 </body>
