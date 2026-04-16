@@ -151,6 +151,7 @@ fn weekday_to_nweekday(day: &Weekday) -> NWeekday {
 mod tests {
     use super::*;
     use crate::scheduling::models::*;
+    use uuid::Uuid;
 
     fn test_series(freq: Frequency, interval: u32, dtstart: NaiveDate) -> RecurringSeries {
         RecurringSeries {
@@ -186,11 +187,13 @@ mod tests {
         let to = NaiveDate::from_ymd_opt(2026, 5, 14).unwrap();
 
         let dates = materialise(&series, from, to, &[]).unwrap();
-        assert_eq!(dates.len(), 4); // 4 Thursdays: Apr 16, 23, 30, May 7
+        // 5 Thursdays: Apr 16, 23, 30, May 7, 14 (inclusive bounds)
+        assert_eq!(dates.len(), 5);
         assert_eq!(dates[0], NaiveDate::from_ymd_opt(2026, 4, 16).unwrap());
         assert_eq!(dates[1], NaiveDate::from_ymd_opt(2026, 4, 23).unwrap());
         assert_eq!(dates[2], NaiveDate::from_ymd_opt(2026, 4, 30).unwrap());
         assert_eq!(dates[3], NaiveDate::from_ymd_opt(2026, 5, 7).unwrap());
+        assert_eq!(dates[4], NaiveDate::from_ymd_opt(2026, 5, 14).unwrap());
     }
 
     #[test]
@@ -202,11 +205,13 @@ mod tests {
         let to = NaiveDate::from_ymd_opt(2026, 6, 11).unwrap(); // ~8 weeks
 
         let dates = materialise(&series, from, to, &[]).unwrap();
-        assert_eq!(dates.len(), 4); // Apr 16, 30, May 14, 28
+        // Fortnightly from Apr 16: Apr 16, 30, May 14, 28, Jun 11
+        assert_eq!(dates.len(), 5);
         assert_eq!(dates[0], NaiveDate::from_ymd_opt(2026, 4, 16).unwrap());
         assert_eq!(dates[1], NaiveDate::from_ymd_opt(2026, 4, 30).unwrap());
         assert_eq!(dates[2], NaiveDate::from_ymd_opt(2026, 5, 14).unwrap());
         assert_eq!(dates[3], NaiveDate::from_ymd_opt(2026, 5, 28).unwrap());
+        assert_eq!(dates[4], NaiveDate::from_ymd_opt(2026, 6, 11).unwrap());
     }
 
     #[test]
@@ -218,11 +223,13 @@ mod tests {
         let to = NaiveDate::from_ymd_opt(2026, 7, 10).unwrap(); // ~12 weeks
 
         let dates = materialise(&series, from, to, &[]).unwrap();
-        assert_eq!(dates.len(), 4); // Apr 16, May 7, May 28, Jun 18
+        // Every 3 weeks from Apr 16: Apr 16, May 7, May 28, Jun 18, Jul 9
+        assert_eq!(dates.len(), 5);
         assert_eq!(dates[0], NaiveDate::from_ymd_opt(2026, 4, 16).unwrap());
         assert_eq!(dates[1], NaiveDate::from_ymd_opt(2026, 5, 7).unwrap());
         assert_eq!(dates[2], NaiveDate::from_ymd_opt(2026, 5, 28).unwrap());
         assert_eq!(dates[3], NaiveDate::from_ymd_opt(2026, 6, 18).unwrap());
+        assert_eq!(dates[4], NaiveDate::from_ymd_opt(2026, 7, 9).unwrap());
     }
 
     #[test]
@@ -256,7 +263,8 @@ mod tests {
         let to = NaiveDate::from_ymd_opt(2026, 5, 14).unwrap();
 
         let dates = materialise(&series, from, to, &[]).unwrap();
-        assert_eq!(dates.len(), 3); // Apr 16, 30, May 7 (Apr 23 skipped)
+        // 5 Thursdays minus 1 EXDATE = 4
+        assert_eq!(dates.len(), 4);
         assert!(!dates.contains(&NaiveDate::from_ymd_opt(2026, 4, 23).unwrap()));
     }
 
@@ -271,7 +279,8 @@ mod tests {
         let to = NaiveDate::from_ymd_opt(2026, 5, 14).unwrap();
 
         let dates = materialise(&series, from, to, &holidays).unwrap();
-        assert_eq!(dates.len(), 3); // Apr 16, 23, May 7 (Apr 30 = holiday)
+        // 5 Thursdays minus 1 holiday = 4
+        assert_eq!(dates.len(), 4);
         assert!(!dates.contains(&NaiveDate::from_ymd_opt(2026, 4, 30).unwrap()));
     }
 
