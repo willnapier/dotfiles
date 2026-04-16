@@ -9,6 +9,7 @@
 set -euo pipefail
 
 STRATEGY="${1:-unnamed}"
+MODEL_OVERRIDE="${2:-}"  # optional: clinical-voice-q4, clinical-voice-q8
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 RESULTS_DIR="$HOME/Clinical/faithfulness-eval/${STRATEGY}-${TIMESTAMP}"
 mkdir -p "$RESULTS_DIR"
@@ -48,7 +49,10 @@ for i in "${!SCENARIO_NAMES[@]}"; do
 
   TIMEOUT_SECS=120
   start_epoch=$(date +%s%N)
-  timeout "${TIMEOUT_SECS}" clinical note "$CLIENT_ID" "$observation" --no-save --yes \
+  MODEL_FLAG=""
+  if [[ -n "$MODEL_OVERRIDE" ]]; then MODEL_FLAG="--model-override $MODEL_OVERRIDE"; fi
+  # shellcheck disable=SC2086
+  timeout "${TIMEOUT_SECS}" clinical note "$CLIENT_ID" "$observation" --no-save --yes $MODEL_FLAG \
       > "$outfile" 2> "$errfile" || true
   end_epoch=$(date +%s%N)
 
