@@ -1468,14 +1468,46 @@ fn lookup_client_name(client_id: &str) -> String {
 /// GET /api/email/status — check if email is configured.
 pub async fn email_status() -> Json<serde_json::Value> {
     match crate::email::load_email_config() {
-        Ok(config) => Json(serde_json::json!({
-            "configured": true,
-            "from_email": config.from_email,
-            "from_name": config.from_name,
-            "smtp_server": config.smtp_server,
-        })),
+        Ok(config) => {
+            // Check for additional identities in config
+            let identities = load_email_identities();
+            Json(serde_json::json!({
+                "configured": true,
+                "from_email": config.from_email,
+                "from_name": config.from_name,
+                "smtp_server": config.smtp_server,
+                "identities": identities,
+            }))
+        },
         Err(_) => Json(serde_json::json!({"configured": false})),
     }
+}
+
+fn load_email_identities() -> Vec<serde_json::Value> {
+    let config_path = dirs::config_dir()
+        .map(|d| d.join("practiceforge/config.toml"))
+        .unwrap_or_default();
+    let content = std::fs::read_to_string(&config_path).unwrap_or_default();
+    let table: toml::Table = content.parse().unwrap_or_default();
+
+    let email = match table.get("email").and_then(|v| v.as_table()) {
+        Some(e) => e,
+        None => return vec![],
+    };
+
+    let mut identities = vec![];
+    if let Some(arr) = email.get("identities").and_then(|v| v.as_array()) {
+        for item in arr {
+            if let Some(t) = item.as_table() {
+                identities.push(serde_json::json!({
+                    "label": t.get("label").and_then(|v| v.as_str()).unwrap_or(""),
+                    "from_email": t.get("from_email").and_then(|v| v.as_str()).unwrap_or(""),
+                    "from_name": t.get("from_name").and_then(|v| v.as_str()).unwrap_or(""),
+                }));
+            }
+        }
+    }
+    identities
 }
 
 #[derive(Deserialize)]
@@ -1488,6 +1520,11 @@ pub struct EmailSetupRequest {
     pub password: String,
     #[serde(default)]
     pub signature: String,
+    /// Secondary "send as" email (optional — for clients not via main practice)
+    #[serde(default)]
+    pub alt_email: Option<String>,
+    #[serde(default)]
+    pub alt_label: Option<String>,
 }
 
 /// POST /api/email/setup — save email configuration.
@@ -1523,6 +1560,15 @@ pub async fn email_setup(
         req.from_email, req.from_name, req.smtp_server, req.smtp_port, req.username,
         req.signature.replace('"', "\\\"")
     ));
+
+    // Add secondary identity if provided
+    if let Some(ref alt_email) = req.alt_email {
+        let alt_label = req.alt_label.as_deref().unwrap_or("secondary");
+        config_str.push_str(&format!(
+            "\n[[email.identities]]\nlabel = \"{}\"\nfrom_email = \"{}\"\nfrom_name = \"{}\"\n",
+            alt_label, alt_email, req.from_name
+        ));
+    }
 
     std::fs::write(&config_path, &config_str)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
