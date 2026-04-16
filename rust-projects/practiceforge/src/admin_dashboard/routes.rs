@@ -10,6 +10,9 @@ use super::handlers;
 
 const ADMIN_HTML: &str = include_str!("../admin_dashboard_assets/admin.html");
 
+/// Path to the admin HTML file for dev mode (live reload without recompile).
+const DEV_HTML_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/admin_dashboard_assets/admin.html");
+
 /// Build the complete router for the admin dashboard.
 pub fn build_router() -> Router {
     Router::new()
@@ -31,6 +34,14 @@ pub fn build_router() -> Router {
         .route("/api/practitioners", get(handlers::practitioners))
 }
 
-async fn index_page() -> Html<&'static str> {
-    Html(ADMIN_HTML)
+/// Serves admin.html. In dev mode (PF_DEV=1), reads from disk on every
+/// request — edit the HTML, refresh the browser, no recompile needed.
+/// In production, serves the compile-time embedded copy.
+async fn index_page() -> Html<String> {
+    if std::env::var("PF_DEV").is_ok() {
+        if let Ok(content) = std::fs::read_to_string(DEV_HTML_PATH) {
+            return Html(content);
+        }
+    }
+    Html(ADMIN_HTML.to_string())
 }
