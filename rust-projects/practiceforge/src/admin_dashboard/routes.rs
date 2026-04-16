@@ -34,6 +34,7 @@ pub fn build_router() -> Router {
         .route("/api/clients/{id}/assignments", get(handlers::get_assignments))
         // Calendar
         .route("/api/calendar", get(handlers::calendar))
+        .route("/api/calendar/ics", get(handlers::calendar_ics))
         // Search
         .route("/api/search", get(handlers::search))
         // Billing

@@ -331,6 +331,77 @@ pub async fn calendar(
 }
 
 // ---------------------------------------------------------------------------
+// ICS calendar export
+// ---------------------------------------------------------------------------
+
+/// GET /api/calendar/ics — export full calendar as an ICS file.
+///
+/// Returns text/calendar content suitable for import into any calendar app.
+/// Query params: ?practitioner=name (optional, filter to one practitioner)
+pub async fn calendar_ics(
+    Query(params): Query<CalendarIcsQuery>,
+) -> Result<(StatusCode, [(axum::http::HeaderName, &'static str); 2], String), (StatusCode, String)> {
+    let sched_config = scheduling::SchedulingConfig::default();
+    let schedules_dir = shellexpand::tilde(&sched_config.schedules_dir).to_string();
+    let schedules_path = std::path::PathBuf::from(&schedules_dir);
+
+    let mut all_series: Vec<scheduling::models::RecurringSeries> = Vec::new();
+    let mut all_one_offs: Vec<scheduling::models::Appointment> = Vec::new();
+
+    if schedules_path.exists() {
+        for entry in std::fs::read_dir(&schedules_path)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        {
+            let entry = entry.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') {
+                continue;
+            }
+
+            // Filter by practitioner if requested
+            if let Some(ref filter) = params.practitioner {
+                if &name != filter {
+                    continue;
+                }
+            }
+
+            let prac_path = entry.path();
+            let series = scheduling::ics::load_series_dir(&prac_path.join("series"))
+                .unwrap_or_default();
+            let appts = scheduling::ics::load_appointments_dir(&prac_path.join("appointments"))
+                .unwrap_or_default();
+
+            all_series.extend(series);
+            all_one_offs.extend(appts);
+        }
+    }
+
+    let cal_name = params
+        .practitioner
+        .as_deref()
+        .unwrap_or("PracticeForge Calendar");
+
+    let ics = scheduling::ics::full_calendar_to_ics(&all_series, &all_one_offs, cal_name);
+
+    Ok((
+        StatusCode::OK,
+        [
+            (axum::http::header::CONTENT_TYPE, "text/calendar; charset=utf-8"),
+            (axum::http::header::CONTENT_DISPOSITION, "attachment; filename=\"calendar.ics\""),
+        ],
+        ics,
+    ))
+}
+
+#[derive(Deserialize)]
+pub struct CalendarIcsQuery {
+    pub practitioner: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
 // Search handler
 // ---------------------------------------------------------------------------
 
