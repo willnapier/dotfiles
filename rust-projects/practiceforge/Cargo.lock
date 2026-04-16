@@ -1811,6 +1811,7 @@ dependencies = [
  "headless_chrome",
  "icalendar",
  "imap",
+ "lazy_static",
  "lettre",
  "mail-parser",
  "regex",
