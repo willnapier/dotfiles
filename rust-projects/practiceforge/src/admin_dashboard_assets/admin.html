@@ -32,9 +32,10 @@
   nav button .kbd { font-size: 10px; color: var(--fg-dim); margin-left: 4px; opacity: 0.6; }
 
   /* Main layout */
-  main { flex: 1; overflow: auto; padding: 12px 16px; }
-  .view { display: none; }
+  main { flex: 1; overflow: auto; padding: 0; }
+  .view { display: none; height: 100%; }
   .view.active { display: block; }
+  .view-padded { padding: 12px 16px; }
 
   /* Tables */
   table { width: 100%; border-collapse: collapse; }
@@ -53,6 +54,10 @@
   .badge-sent { background: rgba(38,139,210,0.15); color: var(--blue); }
   .badge-draft { background: rgba(88,110,117,0.15); color: var(--fg-dim); }
   .badge-recurring { background: rgba(42,161,152,0.15); color: var(--cyan); }
+  .badge-pending { background: rgba(88,110,117,0.15); color: var(--fg-dim); }
+  .badge-done { background: rgba(133,153,0,0.15); color: var(--green); }
+  .badge-dna { background: rgba(220,50,47,0.15); color: var(--red); }
+  .badge-cancelled { background: rgba(88,110,117,0.15); color: var(--fg-dim); }
 
   /* Search bar */
   .search-bar { margin-bottom: 12px; }
@@ -101,12 +106,108 @@
   /* Empty / loading states */
   .empty { padding: 20px; color: var(--fg-dim); text-align: center; }
 
+  /* ========== Clinic tab styles ========== */
+  .clinic-layout { display: flex; height: 100%; overflow: hidden; }
+  .clinic-sidebar { width: 280px; min-width: 280px; border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; background: var(--bg); }
+  .clinic-main { flex: 1; overflow-y: auto; padding: 12px 16px; }
+
+  .clinic-sidebar-header { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  .clinic-date-nav { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+  .clinic-date-nav button { background: var(--bg-hl); border: 1px solid var(--border); border-radius: 3px; color: var(--fg); cursor: pointer; font: inherit; font-size: 12px; padding: 3px 8px; }
+  .clinic-date-nav button:hover { border-color: var(--cyan); color: var(--cyan); }
+  .clinic-date-display { font-size: 12px; color: var(--fg-em); font-weight: 600; flex: 1; text-align: center; }
+  .clinic-inference { font-size: 11px; color: var(--fg-dim); display: flex; align-items: center; gap: 5px; }
+  .clinic-inference .dot { font-size: 14px; line-height: 1; }
+  .dot-green { color: var(--green); }
+  .dot-red { color: var(--red); }
+
+  .clinic-client-list { flex: 1; overflow-y: auto; }
+  .clinic-client-row { display: flex; align-items: center; padding: 5px 12px; border-bottom: 1px solid rgba(255,255,255,0.03); cursor: default; gap: 6px; font-size: 12px; position: relative; }
+  .clinic-client-row:hover { background: rgba(255,255,255,0.02); }
+  .clinic-client-row.selected { background: var(--bg-hl); outline: 1px solid var(--cyan); outline-offset: -1px; }
+  .clinic-client-row .ccr-status { width: 16px; text-align: center; flex-shrink: 0; }
+  .clinic-client-row .ccr-time { color: var(--fg-dim); white-space: nowrap; flex-shrink: 0; }
+  .clinic-client-row .ccr-id { font-weight: 600; flex-shrink: 0; }
+  .clinic-client-row.selected .ccr-id { color: var(--cyan); }
+  .clinic-client-row .ccr-rate { font-size: 10px; color: var(--violet); background: rgba(108,113,196,0.12); padding: 0 4px; border-radius: 2px; flex-shrink: 0; }
+  .clinic-client-row .ccr-funding { font-size: 10px; padding: 0 4px; border-radius: 2px; flex-shrink: 0; }
+  .ccr-funding-ok { color: var(--fg-dim); background: rgba(88,110,117,0.15); }
+  .ccr-funding-warn { color: var(--red); background: rgba(220,50,47,0.15); }
+  .clinic-client-row .ccr-letter { font-size: 10px; padding: 0 4px; border-radius: 2px; flex-shrink: 0; }
+  .ccr-letter-dim { color: var(--fg-dim); background: rgba(88,110,117,0.1); }
+  .ccr-letter-due { color: var(--orange); background: rgba(203,75,22,0.15); }
+  .clinic-client-row .ccr-dismiss { display: none; background: none; border: none; color: var(--fg-dim); cursor: pointer; font: inherit; font-size: 12px; padding: 0 2px; flex-shrink: 0; margin-left: auto; }
+  .clinic-client-row:hover .ccr-dismiss { display: inline; }
+  .ccr-dismiss:hover { color: var(--red); }
+  .ccr-spacer { flex: 1; }
+
+  .clinic-sidebar-footer { padding: 8px 12px; border-top: 1px solid var(--border); }
+  .clinic-add-input { width: 100%; padding: 5px 8px; background: var(--bg-hl); border: 1px solid var(--border); border-radius: 3px; color: var(--fg); font: inherit; font-size: 12px; outline: none; }
+  .clinic-add-input:focus { border-color: var(--cyan); }
+  .clinic-add-input::placeholder { color: var(--fg-dim); }
+  .clinic-end-btn { display: none; width: 100%; margin-top: 6px; padding: 6px 0; background: rgba(133,153,0,0.15); border: 1px solid var(--green); border-radius: 3px; color: var(--green); cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; text-align: center; }
+  .clinic-end-btn:hover { background: rgba(133,153,0,0.25); }
+
+  /* Clinic main content */
+  .clinic-empty { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--fg-dim); font-size: 13px; }
+  .clinic-client-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .clinic-client-header .cch-name { font-size: 15px; font-weight: 600; color: var(--fg-em); }
+  .clinic-client-header .cch-id { font-size: 12px; color: var(--fg-dim); }
+
+  .clinic-notes-viewer { background: var(--bg-hl); border: 1px solid var(--border); border-radius: 4px; padding: 10px 12px; margin-bottom: 12px; max-height: 200px; overflow-y: auto; font-size: 12px; color: var(--fg); white-space: pre-wrap; word-wrap: break-word; font-family: inherit; display: none; }
+  .clinic-notes-viewer.visible { display: block; }
+  .clinic-notes-toggle { font-size: 11px; color: var(--fg-dim); margin-bottom: 8px; cursor: pointer; }
+  .clinic-notes-toggle:hover { color: var(--cyan); }
+
+  .clinic-textarea { width: 100%; padding: 8px 10px; background: var(--bg-hl); border: 1px solid var(--border); border-radius: 4px; color: var(--fg); font: inherit; font-size: 13px; resize: vertical; outline: none; }
+  .clinic-textarea:focus { border-color: var(--cyan); }
+  .clinic-textarea::placeholder { color: var(--fg-dim); }
+
+  .clinic-generate-bar { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
+  .clinic-generate-bar select { padding: 5px 8px; background: var(--bg-hl); border: 1px solid var(--border); border-radius: 3px; color: var(--fg); font: inherit; font-size: 12px; outline: none; cursor: pointer; }
+  .clinic-generate-bar select:focus { border-color: var(--cyan); }
+  .clinic-generate-btn { padding: 5px 14px; background: rgba(42,161,152,0.15); border: 1px solid var(--cyan); border-radius: 3px; color: var(--cyan); cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; }
+  .clinic-generate-btn:hover { background: rgba(42,161,152,0.25); }
+  .clinic-generate-btn:disabled { opacity: 0.5; cursor: default; }
+  .clinic-spinner { display: none; color: var(--cyan); font-size: 12px; }
+  .clinic-spinner.visible { display: inline; }
+
+  .clinic-generated-note { width: 100%; height: 300px; padding: 8px 10px; background: var(--bg-hl); border: 1px solid var(--border); border-radius: 4px; color: var(--fg); font: inherit; font-size: 13px; resize: vertical; outline: none; margin-top: 10px; }
+  .clinic-generated-note:focus { border-color: var(--cyan); }
+
+  .clinic-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .clinic-action-btn { padding: 6px 14px; border-radius: 3px; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; border: 1px solid; }
+  .btn-accept { background: rgba(133,153,0,0.15); border-color: var(--green); color: var(--green); }
+  .btn-accept:hover { background: rgba(133,153,0,0.25); }
+  .btn-reject { background: rgba(220,50,47,0.15); border-color: var(--red); color: var(--red); }
+  .btn-reject:hover { background: rgba(220,50,47,0.25); }
+  .btn-compare { background: rgba(42,161,152,0.15); border-color: var(--cyan); color: var(--cyan); }
+  .btn-compare:hover { background: rgba(42,161,152,0.25); }
+
+  .clinic-comparisons { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
+  .clinic-comparisons .comp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .clinic-comparisons .comp-head span { font-size: 12px; font-weight: 600; color: var(--fg-em); text-transform: uppercase; letter-spacing: 0.5px; }
+  .clinic-comp-item { margin-bottom: 10px; }
+  .clinic-comp-item .comp-label { font-size: 11px; color: var(--fg-dim); margin-bottom: 3px; }
+  .clinic-comp-item textarea { width: 100%; height: 120px; padding: 6px 8px; background: var(--bg-hl); border: 1px solid var(--border); border-radius: 3px; color: var(--fg); font: inherit; font-size: 12px; resize: vertical; outline: none; }
+  .clinic-comp-item textarea:focus { border-color: var(--cyan); }
+  .clinic-comp-item .comp-actions { display: flex; gap: 6px; margin-top: 4px; }
+  .comp-accept-btn { padding: 3px 10px; background: rgba(133,153,0,0.15); border: 1px solid var(--green); border-radius: 3px; color: var(--green); cursor: pointer; font: inherit; font-size: 11px; }
+  .comp-accept-btn:hover { background: rgba(133,153,0,0.25); }
+  .comp-clear-btn { padding: 3px 10px; background: rgba(220,50,47,0.1); border: 1px solid var(--border); border-radius: 3px; color: var(--fg-dim); cursor: pointer; font: inherit; font-size: 11px; }
+  .comp-clear-btn:hover { border-color: var(--red); color: var(--red); }
+
+  .clinic-status-msg { font-size: 11px; color: var(--fg-dim); margin-top: 8px; min-height: 18px; }
+
   @media (max-width: 768px) {
-    main { padding: 8px; }
+    main { padding: 0; }
     nav button { padding: 8px 12px; }
     .detail-grid { grid-template-columns: 100px 1fr; }
     .summary-row { flex-wrap: wrap; }
     .summary-card { min-width: 120px; }
+    .clinic-layout { flex-direction: column; }
+    .clinic-sidebar { width: 100%; min-width: 0; border-right: none; border-bottom: 1px solid var(--border); max-height: 40vh; }
+    .clinic-main { overflow-y: auto; }
   }
 </style>
 </head>
@@ -120,66 +221,142 @@
 </header>
 
 <nav id="nav">
-  <button class="active" data-view="clients" data-key="1">Clients <span class="kbd">1</span></button>
-  <button data-view="calendar" data-key="2">Calendar <span class="kbd">2</span></button>
-  <button data-view="search" data-key="3">Search <span class="kbd">3</span></button>
-  <button data-view="billing" data-key="4">Billing <span class="kbd">4</span></button>
+  <button class="active" data-view="clinic" data-key="1">Clinic <span class="kbd">1</span></button>
+  <button data-view="clients" data-key="2">Clients <span class="kbd">2</span></button>
+  <button data-view="calendar" data-key="3">Calendar <span class="kbd">3</span></button>
+  <button data-view="search" data-key="4">Search <span class="kbd">4</span></button>
+  <button data-view="billing" data-key="5">Billing <span class="kbd">5</span></button>
 </nav>
 
 <main>
-  <!-- Clients -->
-  <div id="view-clients" class="view active">
-    <div id="client-list">
-      <table>
-        <thead><tr><th>ID</th><th>Name</th><th>Funding</th><th>Status</th><th>Referrer</th></tr></thead>
-        <tbody id="clients-tbody"></tbody>
-      </table>
-      <div id="clients-empty" class="empty" style="display:none">No clients in registry. Run: pf registry import --all</div>
+  <!-- Clinic -->
+  <div id="view-clinic" class="view active">
+    <div class="clinic-layout">
+      <div class="clinic-sidebar">
+        <div class="clinic-sidebar-header">
+          <div class="clinic-date-nav">
+            <button onclick="clinicPrevDay()" title="Previous day">&#9664;</button>
+            <button onclick="clinicToday()">Today</button>
+            <button onclick="clinicNextDay()" title="Next day">&#9654;</button>
+          </div>
+          <div class="clinic-date-display" id="clinic-date-display"></div>
+          <div class="clinic-inference" id="clinic-inference">
+            <span class="dot dot-red" id="clinic-inference-dot">&#9679;</span>
+            <span>Inference</span>
+            <span id="clinic-inference-label" style="margin-left:auto;font-size:10px;">checking...</span>
+          </div>
+        </div>
+        <div class="clinic-client-list" id="clinic-client-list">
+          <div class="empty" id="clinic-list-empty">No clients for this date.</div>
+        </div>
+        <div class="clinic-sidebar-footer">
+          <input type="text" class="clinic-add-input" id="clinic-add-input" placeholder="Add client...">
+          <button class="clinic-end-btn" id="clinic-end-btn" onclick="endClinic()">End Clinic</button>
+        </div>
+      </div>
+      <div class="clinic-main" id="clinic-main">
+        <div class="clinic-empty" id="clinic-empty-msg">Select a client from the list</div>
+        <div id="clinic-client-content" style="display:none">
+          <div class="clinic-client-header">
+            <span class="cch-name" id="clinic-cch-name"></span>
+            <span class="cch-id" id="clinic-cch-id"></span>
+            <span id="clinic-cch-badge"></span>
+          </div>
+          <div class="clinic-notes-toggle" id="clinic-notes-toggle" onclick="toggleClinicNotes()">&#9654; Notes <kbd>n</kbd></div>
+          <div class="clinic-notes-viewer" id="clinic-notes-viewer"></div>
+          <div class="section-head">Observation</div>
+          <textarea class="clinic-textarea" id="clinic-observation" rows="5" placeholder="Session observation..."></textarea>
+          <div class="clinic-generate-bar">
+            <select id="clinic-model-picker">
+              <option value="Q4">Q4</option>
+              <option value="Q8">Q8</option>
+            </select>
+            <button class="clinic-generate-btn" id="clinic-generate-btn" onclick="clinicGenerate()">Generate</button>
+            <span class="clinic-spinner" id="clinic-spinner">Generating...</span>
+          </div>
+          <div id="clinic-generated-wrap" style="display:none">
+            <div class="section-head">Generated Note</div>
+            <textarea class="clinic-generated-note" id="clinic-generated-note"></textarea>
+            <div class="clinic-actions">
+              <button class="clinic-action-btn btn-accept" onclick="clinicAcceptNote()">Accept &amp; Save</button>
+              <button class="clinic-action-btn btn-reject" onclick="clinicRejectNote()">Reject</button>
+              <button class="clinic-action-btn btn-compare" onclick="clinicCompareNote()">Compare</button>
+            </div>
+          </div>
+          <div class="clinic-comparisons" id="clinic-comparisons" style="display:none">
+            <div class="comp-head">
+              <span>Previous Variants</span>
+              <button class="comp-clear-btn" onclick="clinicClearComparisons()">Clear</button>
+            </div>
+            <div id="clinic-comp-list"></div>
+          </div>
+          <div class="clinic-status-msg" id="clinic-status-msg"></div>
+        </div>
+      </div>
     </div>
-    <div id="client-detail" style="display:none">
-      <div class="back-hint"><kbd>Esc</kbd> back to list</div>
-      <div id="client-detail-content"></div>
-      <div class="section-head">Assignments</div>
-      <div id="client-assignments"></div>
+  </div>
+
+  <!-- Clients -->
+  <div id="view-clients" class="view">
+    <div class="view-padded">
+      <div id="client-list">
+        <table>
+          <thead><tr><th>ID</th><th>Name</th><th>Funding</th><th>Status</th><th>Referrer</th></tr></thead>
+          <tbody id="clients-tbody"></tbody>
+        </table>
+        <div id="clients-empty" class="empty" style="display:none">No clients in registry. Run: pf registry import --all</div>
+      </div>
+      <div id="client-detail" style="display:none">
+        <div class="back-hint"><kbd>Esc</kbd> back to list</div>
+        <div id="client-detail-content"></div>
+        <div class="section-head">Assignments</div>
+        <div id="client-assignments"></div>
+      </div>
     </div>
   </div>
 
   <!-- Calendar -->
   <div id="view-calendar" class="view">
-    <div class="cal-controls">
-      <button class="cal-btn" onclick="calPrev()" title="Previous"><kbd>h</kbd> &larr;</button>
-      <button class="cal-btn" onclick="calToday()">Today <kbd>t</kbd></button>
-      <button class="cal-btn" onclick="calNext()" title="Next">&rarr; <kbd>l</kbd></button>
-      <input type="date" id="cal-date" onchange="loadCalendar()">
-      <label><input type="checkbox" id="cal-week" onchange="loadCalendar()"> Week <kbd>w</kbd></label>
+    <div class="view-padded">
+      <div class="cal-controls">
+        <button class="cal-btn" onclick="calPrev()" title="Previous"><kbd>h</kbd> &larr;</button>
+        <button class="cal-btn" onclick="calToday()">Today <kbd>t</kbd></button>
+        <button class="cal-btn" onclick="calNext()" title="Next">&rarr; <kbd>l</kbd></button>
+        <input type="date" id="cal-date" onchange="loadCalendar()">
+        <label><input type="checkbox" id="cal-week" onchange="loadCalendar()"> Week <kbd>w</kbd></label>
+      </div>
+      <div id="calendar-content"></div>
     </div>
-    <div id="calendar-content"></div>
   </div>
 
   <!-- Search -->
   <div id="view-search" class="view">
-    <div class="search-bar">
-      <input type="text" id="search-input" placeholder="Search notes, correspondence, clients...  (/ to focus)">
+    <div class="view-padded">
+      <div class="search-bar">
+        <input type="text" id="search-input" placeholder="Search notes, correspondence, clients...  (/ to focus)">
+      </div>
+      <div id="search-results"></div>
     </div>
-    <div id="search-results"></div>
   </div>
 
   <!-- Billing -->
   <div id="view-billing" class="view">
-    <div class="summary-row" id="billing-summary"></div>
-    <table id="billing-table" style="display:none">
-      <thead><tr><th>Ref</th><th>Client</th><th>Bill To</th><th>Amount</th><th>Due</th><th>Status</th><th>Overdue</th></tr></thead>
-      <tbody id="billing-tbody"></tbody>
-    </table>
-    <div id="billing-empty" class="empty" style="display:none">No outstanding invoices.</div>
+    <div class="view-padded">
+      <div class="summary-row" id="billing-summary"></div>
+      <table id="billing-table" style="display:none">
+        <thead><tr><th>Ref</th><th>Client</th><th>Bill To</th><th>Amount</th><th>Due</th><th>Status</th><th>Overdue</th></tr></thead>
+        <tbody id="billing-tbody"></tbody>
+      </table>
+      <div id="billing-empty" class="empty" style="display:none">No outstanding invoices.</div>
+    </div>
   </div>
 </main>
 
 <div id="statusbar">
   <span class="hint" id="status-hint">
-    <kbd>1</kbd>-<kbd>4</kbd> views &middot; <kbd>/</kbd> search &middot; <kbd>j</kbd>/<kbd>k</kbd> navigate &middot; <kbd>Enter</kbd> open &middot; <kbd>Esc</kbd> back
+    <kbd>1</kbd>-<kbd>5</kbd> views &middot; <kbd>j</kbd>/<kbd>k</kbd> navigate &middot; <kbd>Enter</kbd> select &middot; <kbd>Esc</kbd> back
   </span>
-  <span class="mode" id="status-mode">CLIENTS</span>
+  <span class="mode" id="status-mode">CLINIC</span>
 </div>
 
 <script>
@@ -187,15 +364,46 @@
 // State
 // ============================================================================
 const S = {
-  view: 'clients',
+  view: 'clinic',
+  // Clients tab
   clientIdx: 0,
   clients: [],
+  inDetail: false,
+  // Search tab
   searchIdx: 0,
   searchResults: [],
+  // Calendar tab
   calDate: new Date(),
-  inDetail: false,
-  loaded: { clients: false, calendar: false, billing: false },
+  // Clinic tab
+  clinicDate: new Date(),
+  clinicSession: null,
+  clinicClientIdx: -1,
+  clinicSelectedId: null,
+  clinicNotesVisible: false,
+  clinicComparisons: [],
+  clinicInferenceAvailable: false,
+  clinicGenerating: false,
+  // Loading flags
+  loaded: { clients: false, calendar: false, billing: false, clinic: false },
 };
+
+let clinicSaveTimer = null;
+
+// ============================================================================
+// Utils
+// ============================================================================
+function esc(s) {
+  if (s == null) return '';
+  const d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
+function fmtDate(d) { return d.toISOString().split('T')[0]; }
+
+function fmtDateDisplay(d) {
+  return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
+}
 
 // ============================================================================
 // Navigation
@@ -209,6 +417,7 @@ function switchView(name) {
   views.forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
   document.getElementById('status-mode').textContent = name.toUpperCase();
 
+  if (name === 'clinic' && !S.loaded.clinic) loadClinicSession();
   if (name === 'clients' && !S.loaded.clients) loadClients();
   if (name === 'calendar' && !S.loaded.calendar) loadCalendar();
   if (name === 'billing' && !S.loaded.billing) loadBilling();
@@ -219,7 +428,21 @@ function switchView(name) {
 
 function updateHints() {
   const el = document.getElementById('status-hint');
-  if (S.view === 'clients' && S.inDetail) {
+  if (S.view === 'clinic') {
+    if (S.clinicSelectedId !== null) {
+      const obs = document.getElementById('clinic-observation');
+      const gen = document.getElementById('clinic-generated-note');
+      if (document.activeElement === obs) {
+        el.innerHTML = '<kbd>Ctrl+Enter</kbd> generate &middot; <kbd>Esc</kbd> deselect';
+      } else if (document.activeElement === gen) {
+        el.innerHTML = '<kbd>Esc</kbd> back &middot; editing generated note';
+      } else {
+        el.innerHTML = '<kbd>j</kbd>/<kbd>k</kbd> clients &middot; <kbd>n</kbd> notes &middot; <kbd>d</kbd> DNA &middot; <kbd>Enter</kbd> edit &middot; <kbd>Esc</kbd> deselect';
+      }
+    } else {
+      el.innerHTML = '<kbd>j</kbd>/<kbd>k</kbd> navigate &middot; <kbd>Enter</kbd> select &middot; <kbd>a</kbd> add &middot; <kbd>g</kbd>/<kbd>G</kbd> top/bottom';
+    }
+  } else if (S.view === 'clients' && S.inDetail) {
     el.innerHTML = '<kbd>Esc</kbd> back to list';
   } else if (S.view === 'clients') {
     el.innerHTML = '<kbd>j</kbd>/<kbd>k</kbd> navigate &middot; <kbd>Enter</kbd> open &middot; <kbd>/</kbd> search';
@@ -238,18 +461,31 @@ navBtns.forEach(b => b.addEventListener('click', () => switchView(b.dataset.view
 // Keyboard
 // ============================================================================
 document.addEventListener('keydown', (e) => {
-  // Don't intercept when typing in input fields
   const tag = document.activeElement.tagName;
   const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+  const activeId = document.activeElement.id;
 
-  // Escape always works
-  if (e.key === 'Escape') {
-    if (inInput) { document.activeElement.blur(); return; }
-    if (S.view === 'clients' && S.inDetail) { showClientList(); return; }
+  // Ctrl+Enter for generate while in observation editor
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && activeId === 'clinic-observation') {
+    e.preventDefault();
+    clinicGenerate();
     return;
   }
 
-  // / focuses search from anywhere
+  // Escape always works
+  if (e.key === 'Escape') {
+    if (inInput) { document.activeElement.blur(); }
+    if (S.view === 'clinic') {
+      if (S.clinicSelectedId !== null) { clinicDeselectClient(); }
+      updateHints();
+      return;
+    }
+    if (S.view === 'clients' && S.inDetail) { showClientList(); return; }
+    updateHints();
+    return;
+  }
+
+  // / focuses search from anywhere (unless in input)
   if (e.key === '/' && !inInput) {
     e.preventDefault();
     switchView('search');
@@ -257,20 +493,57 @@ document.addEventListener('keydown', (e) => {
   }
 
   // Enter in search input triggers search
-  if (e.key === 'Enter' && document.activeElement.id === 'search-input') {
+  if (e.key === 'Enter' && activeId === 'search-input') {
     doSearch();
+    return;
+  }
+
+  // Enter in clinic add input
+  if (e.key === 'Enter' && activeId === 'clinic-add-input') {
+    clinicAddClient();
     return;
   }
 
   if (inInput) return;
 
-  // View switching: 1-4
-  if (e.key === '1') { switchView('clients'); return; }
-  if (e.key === '2') { switchView('calendar'); return; }
-  if (e.key === '3') { switchView('search'); return; }
-  if (e.key === '4') { switchView('billing'); return; }
+  // View switching: 1-5
+  if (e.key === '1') { switchView('clinic'); return; }
+  if (e.key === '2') { switchView('clients'); return; }
+  if (e.key === '3') { switchView('calendar'); return; }
+  if (e.key === '4') { switchView('search'); return; }
+  if (e.key === '5') { switchView('billing'); return; }
 
-  // j/k navigation
+  // Clinic tab shortcuts
+  if (S.view === 'clinic') {
+    const clients = S.clinicSession ? S.clinicSession.clients : [];
+    if (S.clinicSelectedId !== null) {
+      // Client selected — context-specific shortcuts
+      if (e.key === 'n') { e.preventDefault(); toggleClinicNotes(); return; }
+      if (e.key === 'd') { e.preventDefault(); clinicMarkDNA(); return; }
+      if (e.key === 'Enter') { e.preventDefault(); document.getElementById('clinic-observation').focus(); updateHints(); return; }
+      // j/k still navigate even with selection
+      if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); moveClinicClient(1); return; }
+      if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); moveClinicClient(-1); return; }
+    } else {
+      // No client selected
+      if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); moveClinicClient(1); return; }
+      if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); moveClinicClient(-1); return; }
+      if (e.key === 'Enter') { e.preventDefault(); clinicSelectCurrentClient(); return; }
+      if (e.key === 'g' || e.key === 'Home') { e.preventDefault(); if (clients.length > 0) { S.clinicClientIdx = 0; highlightClinicClient(); } return; }
+      if (e.key === 'G' || e.key === 'End') { e.preventDefault(); if (clients.length > 0) { S.clinicClientIdx = clients.length - 1; highlightClinicClient(); } return; }
+      if (e.key === 'a') { e.preventDefault(); document.getElementById('clinic-add-input').focus(); return; }
+      if (e.key === 'd') {
+        e.preventDefault();
+        if (S.clinicClientIdx >= 0 && S.clinicClientIdx < clients.length) {
+          clinicSetStatus(clients[S.clinicClientIdx].id, 'dna');
+        }
+        return;
+      }
+    }
+    return;
+  }
+
+  // Clients tab j/k navigation
   if (S.view === 'clients' && !S.inDetail) {
     if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); moveClient(1); }
     if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); moveClient(-1); }
@@ -279,6 +552,7 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'G' || e.key === 'End') { S.clientIdx = S.clients.length - 1; highlightClient(); }
   }
 
+  // Search tab j/k navigation
   if (S.view === 'search') {
     if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); moveSearch(1); }
     if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); moveSearch(-1); }
@@ -299,7 +573,567 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ============================================================================
-// Client list
+// Clinic tab
+// ============================================================================
+
+// --- Date navigation ---
+function clinicPrevDay() {
+  S.clinicDate.setDate(S.clinicDate.getDate() - 1);
+  clinicDeselectClient();
+  loadClinicSession();
+}
+
+function clinicNextDay() {
+  S.clinicDate.setDate(S.clinicDate.getDate() + 1);
+  clinicDeselectClient();
+  loadClinicSession();
+}
+
+function clinicToday() {
+  S.clinicDate = new Date();
+  clinicDeselectClient();
+  loadClinicSession();
+}
+
+// --- Load session ---
+function loadClinicSession() {
+  S.loaded.clinic = true;
+  const dateStr = fmtDate(S.clinicDate);
+  document.getElementById('clinic-date-display').textContent = fmtDateDisplay(S.clinicDate);
+
+  fetch('/api/session?date=' + encodeURIComponent(dateStr))
+    .then(r => r.json())
+    .then(session => {
+      S.clinicSession = session;
+      if (!session.clients) S.clinicSession.clients = [];
+      S.clinicClientIdx = session.clients.length > 0 ? 0 : -1;
+      renderClinicList();
+      checkEndClinicVisibility();
+      // If we had a selected client, try to re-select
+      if (S.clinicSelectedId) {
+        const idx = session.clients.findIndex(c => c.id === S.clinicSelectedId);
+        if (idx >= 0) {
+          S.clinicClientIdx = idx;
+          clinicSelectClient(S.clinicSelectedId);
+        } else {
+          clinicDeselectClient();
+        }
+      }
+    })
+    .catch(e => {
+      S.clinicSession = { date: dateStr, clients: [], clinic_ended: false };
+      S.clinicClientIdx = -1;
+      renderClinicList();
+      setClinicStatus('Failed to load session: ' + String(e));
+    });
+}
+
+// --- Render client list ---
+function renderClinicList() {
+  const el = document.getElementById('clinic-client-list');
+  const emptyEl = document.getElementById('clinic-list-empty');
+  const clients = S.clinicSession ? S.clinicSession.clients : [];
+
+  if (clients.length === 0) {
+    el.innerHTML = '';
+    el.appendChild(emptyEl);
+    emptyEl.style.display = '';
+    return;
+  }
+
+  emptyEl.style.display = 'none';
+  let html = '';
+  clients.forEach((c, i) => {
+    const sel = i === S.clinicClientIdx ? ' selected' : '';
+    const statusIcon = clinicStatusIcon(c.status);
+    const timeRange = esc(c.time || '') + (c.end_time ? '-' + esc(c.end_time) : '');
+
+    let badges = '';
+    if (c.rate_tag) {
+      badges += '<span class="ccr-rate">' + esc(c.rate_tag) + '</span>';
+    }
+    // Funding badge — loaded async via metadata, stored on c._meta
+    if (c._meta && c._meta.sessions_authorised) {
+      const used = c._meta.sessions_used || 0;
+      const auth = c._meta.sessions_authorised;
+      const nearLimit = (auth - used) <= 2;
+      const cls = nearLimit ? 'ccr-funding-warn' : 'ccr-funding-ok';
+      badges += '<span class="ccr-funding ' + cls + '">' + used + '/' + auth + '</span>';
+    }
+    // Letter badge
+    if (c._meta && c._meta.letter_due) {
+      badges += '<span class="ccr-letter ccr-letter-due">L!</span>';
+    } else if (c._meta && c._meta.sessions_count !== undefined) {
+      const lCount = c._meta.letter_count || 0;
+      if (lCount > 0) {
+        badges += '<span class="ccr-letter ccr-letter-dim">L:' + lCount + '</span>';
+      }
+    }
+
+    html += '<div class="clinic-client-row' + sel + '" data-idx="' + i + '" data-id="' + esc(c.id) + '" onclick="clinicRowClick(' + i + ')">';
+    html += '<span class="ccr-status">' + statusIcon + '</span>';
+    html += '<span class="ccr-time">' + timeRange + '</span>';
+    html += '<span class="ccr-id">' + esc(c.id) + '</span>';
+    html += badges;
+    html += '<span class="ccr-spacer"></span>';
+    html += '<button class="ccr-dismiss" onclick="event.stopPropagation();clinicDismissClient(' + i + ')" title="Remove">&times;</button>';
+    html += '</div>';
+  });
+  // Preserve the empty element in DOM but hidden
+  el.innerHTML = html;
+  el.appendChild(emptyEl);
+}
+
+function clinicStatusIcon(status) {
+  switch (status) {
+    case 'done': return '<span style="color:var(--green)">&#10003;</span>';
+    case 'dna': return '<span style="color:var(--red)">&#10007;</span>';
+    case 'cancelled': return '<span style="color:var(--fg-dim)">&ndash;</span>';
+    default: return '<span style="color:var(--fg-dim)">&#9675;</span>';
+  }
+}
+
+// --- Client list navigation ---
+function moveClinicClient(d) {
+  const clients = S.clinicSession ? S.clinicSession.clients : [];
+  if (clients.length === 0) return;
+  if (S.clinicClientIdx < 0) S.clinicClientIdx = 0;
+  else S.clinicClientIdx = Math.max(0, Math.min(clients.length - 1, S.clinicClientIdx + d));
+  highlightClinicClient();
+  // If a client is selected, also select the new one
+  if (S.clinicSelectedId !== null) {
+    clinicSelectClient(clients[S.clinicClientIdx].id);
+  }
+}
+
+function highlightClinicClient() {
+  const rows = document.querySelectorAll('.clinic-client-row');
+  rows.forEach((row, i) => {
+    row.classList.toggle('selected', i === S.clinicClientIdx);
+  });
+  const sel = document.querySelector('.clinic-client-row.selected');
+  if (sel) sel.scrollIntoView({ block: 'nearest' });
+}
+
+function clinicRowClick(idx) {
+  S.clinicClientIdx = idx;
+  highlightClinicClient();
+  const clients = S.clinicSession ? S.clinicSession.clients : [];
+  if (idx >= 0 && idx < clients.length) {
+    clinicSelectClient(clients[idx].id);
+  }
+}
+
+function clinicSelectCurrentClient() {
+  const clients = S.clinicSession ? S.clinicSession.clients : [];
+  if (S.clinicClientIdx >= 0 && S.clinicClientIdx < clients.length) {
+    clinicSelectClient(clients[S.clinicClientIdx].id);
+  }
+}
+
+// --- Client selection ---
+function clinicSelectClient(clientId) {
+  S.clinicSelectedId = clientId;
+  const clients = S.clinicSession ? S.clinicSession.clients : [];
+  const client = clients.find(c => c.id === clientId);
+  if (!client) return;
+
+  document.getElementById('clinic-empty-msg').style.display = 'none';
+  document.getElementById('clinic-client-content').style.display = '';
+
+  // Header
+  document.getElementById('clinic-cch-name').textContent = client.client_name || client.id;
+  document.getElementById('clinic-cch-id').textContent = client.id;
+  const badgeCls = 'badge-' + (client.status || 'pending');
+  document.getElementById('clinic-cch-badge').innerHTML = '<span class="badge ' + badgeCls + '">' + esc(client.status || 'pending') + '</span>';
+
+  // Observation
+  document.getElementById('clinic-observation').value = client.draft_observation || '';
+
+  // Reset generated note area
+  document.getElementById('clinic-generated-wrap').style.display = 'none';
+  document.getElementById('clinic-generated-note').value = '';
+
+  // Reset notes viewer
+  S.clinicNotesVisible = false;
+  document.getElementById('clinic-notes-viewer').classList.remove('visible');
+  document.getElementById('clinic-notes-toggle').innerHTML = '&#9654; Notes <kbd>n</kbd>';
+  document.getElementById('clinic-notes-viewer').textContent = '';
+
+  // Reset comparisons
+  S.clinicComparisons = [];
+  document.getElementById('clinic-comparisons').style.display = 'none';
+  document.getElementById('clinic-comp-list').innerHTML = '';
+
+  // Reset status
+  if (client.draft_observation) {
+    setClinicStatus('Draft restored');
+  } else {
+    setClinicStatus('');
+  }
+
+  // Load metadata for badges
+  clinicLoadMetadata(clientId);
+
+  updateHints();
+  highlightClinicClient();
+}
+
+function clinicDeselectClient() {
+  S.clinicSelectedId = null;
+  document.getElementById('clinic-empty-msg').style.display = '';
+  document.getElementById('clinic-client-content').style.display = 'none';
+  updateHints();
+}
+
+// --- Load metadata ---
+function clinicLoadMetadata(clientId) {
+  fetch('/api/client/' + encodeURIComponent(clientId) + '/metadata')
+    .then(r => r.json())
+    .then(meta => {
+      const clients = S.clinicSession ? S.clinicSession.clients : [];
+      const client = clients.find(c => c.id === clientId);
+      if (client) {
+        client._meta = meta;
+        renderClinicList();
+        highlightClinicClient();
+      }
+    })
+    .catch(() => {});
+}
+
+// --- Notes viewer ---
+function toggleClinicNotes() {
+  if (!S.clinicSelectedId) return;
+  S.clinicNotesVisible = !S.clinicNotesVisible;
+  const viewer = document.getElementById('clinic-notes-viewer');
+  const toggle = document.getElementById('clinic-notes-toggle');
+
+  if (S.clinicNotesVisible) {
+    viewer.classList.add('visible');
+    toggle.innerHTML = '&#9660; Notes <kbd>n</kbd>';
+    viewer.textContent = 'Loading...';
+    fetch('/api/client/' + encodeURIComponent(S.clinicSelectedId) + '/notes')
+      .then(r => r.json())
+      .then(data => {
+        if (data.exists && data.content) {
+          viewer.textContent = data.content;
+        } else {
+          viewer.textContent = 'No notes found.';
+        }
+      })
+      .catch(e => { viewer.textContent = 'Error loading notes: ' + String(e); });
+  } else {
+    viewer.classList.remove('visible');
+    toggle.innerHTML = '&#9654; Notes <kbd>n</kbd>';
+  }
+}
+
+// --- Auto-save observation ---
+document.getElementById('clinic-observation').addEventListener('input', function() {
+  if (!S.clinicSelectedId || !S.clinicSession) return;
+  const client = S.clinicSession.clients.find(c => c.id === S.clinicSelectedId);
+  if (client) {
+    client.draft_observation = this.value;
+  }
+  if (clinicSaveTimer) clearTimeout(clinicSaveTimer);
+  clinicSaveTimer = setTimeout(clinicSaveSession, 500);
+  updateHints();
+});
+
+// Focus/blur on observation updates hints
+document.getElementById('clinic-observation').addEventListener('focus', updateHints);
+document.getElementById('clinic-observation').addEventListener('blur', updateHints);
+document.getElementById('clinic-generated-note').addEventListener('focus', updateHints);
+document.getElementById('clinic-generated-note').addEventListener('blur', updateHints);
+
+// --- Save session ---
+function clinicSaveSession() {
+  if (!S.clinicSession) return;
+  // Strip _meta from clients before saving
+  const payload = JSON.parse(JSON.stringify(S.clinicSession));
+  if (payload.clients) {
+    payload.clients.forEach(c => { delete c._meta; });
+  }
+  fetch('/api/session', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).catch(e => { setClinicStatus('Save failed: ' + String(e)); });
+}
+
+// --- Generate note ---
+function clinicGenerate() {
+  if (!S.clinicSelectedId || S.clinicGenerating) return;
+  const obs = document.getElementById('clinic-observation').value.trim();
+  if (!obs) { setClinicStatus('Write an observation first'); return; }
+
+  S.clinicGenerating = true;
+  document.getElementById('clinic-generate-btn').disabled = true;
+  document.getElementById('clinic-spinner').classList.add('visible');
+  setClinicStatus('Generating...');
+
+  const model = document.getElementById('clinic-model-picker').value;
+  const startTime = performance.now();
+
+  fetch('/api/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: S.clinicSelectedId, observation: obs, model: model })
+  })
+    .then(r => r.json())
+    .then(data => {
+      S.clinicGenerating = false;
+      document.getElementById('clinic-generate-btn').disabled = false;
+      document.getElementById('clinic-spinner').classList.remove('visible');
+
+      if (data.note_text) {
+        document.getElementById('clinic-generated-wrap').style.display = '';
+        document.getElementById('clinic-generated-note').value = data.note_text;
+        const elapsed = data.elapsed_seconds != null ? data.elapsed_seconds.toFixed(1) : ((performance.now() - startTime) / 1000).toFixed(1);
+        setClinicStatus('Complete — ' + elapsed + 's');
+      } else {
+        setClinicStatus('Generation returned empty result');
+      }
+    })
+    .catch(e => {
+      S.clinicGenerating = false;
+      document.getElementById('clinic-generate-btn').disabled = false;
+      document.getElementById('clinic-spinner').classList.remove('visible');
+      setClinicStatus('Generate failed: ' + String(e));
+    });
+}
+
+// --- Accept note ---
+function clinicAcceptNote() {
+  if (!S.clinicSelectedId) return;
+  const noteText = document.getElementById('clinic-generated-note').value.trim();
+  if (!noteText) return;
+
+  setClinicStatus('Saving...');
+  fetch('/api/save-note', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: S.clinicSelectedId, note_text: noteText })
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        setClinicStatus('Saved');
+        clinicSetStatus(S.clinicSelectedId, 'done');
+      } else {
+        setClinicStatus('Save failed');
+      }
+    })
+    .catch(e => { setClinicStatus('Save failed: ' + String(e)); });
+}
+
+// --- Reject note ---
+function clinicRejectNote() {
+  document.getElementById('clinic-generated-wrap').style.display = 'none';
+  document.getElementById('clinic-generated-note').value = '';
+  setClinicStatus('Note rejected');
+}
+
+// --- Compare note ---
+function clinicCompareNote() {
+  const noteText = document.getElementById('clinic-generated-note').value.trim();
+  if (!noteText) return;
+
+  const label = 'Variant ' + (S.clinicComparisons.length + 1);
+  S.clinicComparisons.push({ label: label, text: noteText });
+  renderClinicComparisons();
+  // Clear the generated note so user can re-generate
+  document.getElementById('clinic-generated-wrap').style.display = 'none';
+  document.getElementById('clinic-generated-note').value = '';
+  setClinicStatus('Added to comparisons — generate again for another variant');
+}
+
+function renderClinicComparisons() {
+  if (S.clinicComparisons.length === 0) {
+    document.getElementById('clinic-comparisons').style.display = 'none';
+    return;
+  }
+  document.getElementById('clinic-comparisons').style.display = '';
+  const listEl = document.getElementById('clinic-comp-list');
+  listEl.innerHTML = S.clinicComparisons.map((comp, i) => {
+    return '<div class="clinic-comp-item">' +
+      '<div class="comp-label">' + esc(comp.label) + '</div>' +
+      '<textarea id="clinic-comp-text-' + i + '" onfocus="updateHints()">' + esc(comp.text) + '</textarea>' +
+      '<div class="comp-actions">' +
+      '<button class="comp-accept-btn" onclick="clinicAcceptComparison(' + i + ')">Accept</button>' +
+      '</div></div>';
+  }).join('');
+}
+
+function clinicAcceptComparison(idx) {
+  const textarea = document.getElementById('clinic-comp-text-' + idx);
+  if (!textarea) return;
+  const noteText = textarea.value.trim();
+  if (!noteText || !S.clinicSelectedId) return;
+
+  setClinicStatus('Saving...');
+  fetch('/api/save-note', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: S.clinicSelectedId, note_text: noteText })
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        setClinicStatus('Saved');
+        clinicSetStatus(S.clinicSelectedId, 'done');
+        clinicClearComparisons();
+      } else {
+        setClinicStatus('Save failed');
+      }
+    })
+    .catch(e => { setClinicStatus('Save failed: ' + String(e)); });
+}
+
+function clinicClearComparisons() {
+  S.clinicComparisons = [];
+  renderClinicComparisons();
+}
+
+// --- Client status management ---
+function clinicSetStatus(clientId, newStatus) {
+  if (!S.clinicSession) return;
+  const client = S.clinicSession.clients.find(c => c.id === clientId);
+  if (!client) return;
+  client.status = newStatus;
+  renderClinicList();
+  highlightClinicClient();
+  // Update badge if this is the selected client
+  if (S.clinicSelectedId === clientId) {
+    const badgeCls = 'badge-' + newStatus;
+    document.getElementById('clinic-cch-badge').innerHTML = '<span class="badge ' + badgeCls + '">' + esc(newStatus) + '</span>';
+  }
+  checkEndClinicVisibility();
+  clinicSaveSession();
+}
+
+function clinicMarkDNA() {
+  if (!S.clinicSelectedId) return;
+  clinicSetStatus(S.clinicSelectedId, 'dna');
+}
+
+// --- Dismiss client ---
+function clinicDismissClient(idx) {
+  if (!S.clinicSession) return;
+  const client = S.clinicSession.clients[idx];
+  if (!client) return;
+  if (S.clinicSelectedId === client.id) {
+    clinicDeselectClient();
+  }
+  S.clinicSession.clients.splice(idx, 1);
+  if (S.clinicClientIdx >= S.clinicSession.clients.length) {
+    S.clinicClientIdx = S.clinicSession.clients.length - 1;
+  }
+  renderClinicList();
+  highlightClinicClient();
+  checkEndClinicVisibility();
+  clinicSaveSession();
+}
+
+// --- Add client ---
+function clinicAddClient() {
+  const input = document.getElementById('clinic-add-input');
+  const val = input.value.trim();
+  if (!val || !S.clinicSession) return;
+
+  // Add with minimal info — server can enrich
+  S.clinicSession.clients.push({
+    id: val,
+    client_name: val,
+    time: '',
+    end_time: '',
+    status: 'pending',
+    rate_tag: null,
+    draft_observation: ''
+  });
+
+  input.value = '';
+  S.clinicClientIdx = S.clinicSession.clients.length - 1;
+  renderClinicList();
+  highlightClinicClient();
+  checkEndClinicVisibility();
+  clinicSaveSession();
+  clinicLoadMetadata(val);
+}
+
+// --- End clinic ---
+function checkEndClinicVisibility() {
+  if (!S.clinicSession) return;
+  const btn = document.getElementById('clinic-end-btn');
+  const clients = S.clinicSession.clients;
+  if (clients.length === 0) { btn.style.display = 'none'; return; }
+  const allResolved = clients.every(c => c.status === 'done' || c.status === 'dna' || c.status === 'cancelled');
+  btn.style.display = allResolved ? '' : 'none';
+}
+
+function endClinic() {
+  if (!S.clinicSession) return;
+  setClinicStatus('Ending clinic...');
+
+  // Strip _meta before sending
+  const payload = JSON.parse(JSON.stringify(S.clinicSession));
+  if (payload.clients) {
+    payload.clients.forEach(c => { delete c._meta; });
+  }
+
+  fetch('/api/end-clinic', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session: payload })
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        S.clinicSession.clinic_ended = true;
+        setClinicStatus('Clinic ended. ' + (data.report || ''));
+      } else {
+        setClinicStatus('End clinic failed');
+      }
+    })
+    .catch(e => { setClinicStatus('End clinic failed: ' + String(e)); });
+}
+
+// --- Inference status polling ---
+function pollInferenceStatus() {
+  fetch('/api/inference/status')
+    .then(r => r.json())
+    .then(data => {
+      S.clinicInferenceAvailable = !!data.available;
+      const dot = document.getElementById('clinic-inference-dot');
+      const label = document.getElementById('clinic-inference-label');
+      if (S.clinicInferenceAvailable) {
+        dot.className = 'dot dot-green';
+        label.textContent = 'connected';
+        label.style.color = 'var(--green)';
+      } else {
+        dot.className = 'dot dot-red';
+        label.textContent = 'disconnected';
+        label.style.color = 'var(--red)';
+      }
+    })
+    .catch(() => {
+      S.clinicInferenceAvailable = false;
+      const dot = document.getElementById('clinic-inference-dot');
+      const label = document.getElementById('clinic-inference-label');
+      dot.className = 'dot dot-red';
+      label.textContent = 'disconnected';
+      label.style.color = 'var(--red)';
+    });
+}
+
+// --- Status message ---
+function setClinicStatus(msg) {
+  document.getElementById('clinic-status-msg').textContent = msg || '';
+}
+
+// ============================================================================
+// Client list (tab 2)
 // ============================================================================
 function loadClients() {
   fetch('/api/clients')
@@ -312,7 +1146,7 @@ function loadClients() {
     })
     .catch(e => {
       document.getElementById('clients-tbody').innerHTML =
-        `<tr><td colspan="5" class="empty">Failed to load: ${esc(String(e))}</td></tr>`;
+        '<tr><td colspan="5" class="empty">Failed to load: ' + esc(String(e)) + '</td></tr>';
     });
 }
 
@@ -327,13 +1161,13 @@ function renderClients() {
   tbody.innerHTML = S.clients.map((c, i) => {
     const cls = c.status === 'active' ? 'badge-active' : 'badge-discharged';
     const sel = i === S.clientIdx ? ' selected' : '';
-    return `<tr class="row${sel}" data-idx="${i}" onclick="S.clientIdx=${i};highlightClient();openSelectedClient()">
-      <td>${esc(c.client_id)}</td>
-      <td>${esc(c.name)}</td>
-      <td>${esc(c.funding_type || '-')}</td>
-      <td><span class="badge ${cls}">${esc(c.status)}</span></td>
-      <td>${esc(c.referrer_name || '-')}</td>
-    </tr>`;
+    return '<tr class="row' + sel + '" data-idx="' + i + '" onclick="S.clientIdx=' + i + ';highlightClient();openSelectedClient()">' +
+      '<td>' + esc(c.client_id) + '</td>' +
+      '<td>' + esc(c.name) + '</td>' +
+      '<td>' + esc(c.funding_type || '-') + '</td>' +
+      '<td><span class="badge ' + cls + '">' + esc(c.status) + '</span></td>' +
+      '<td>' + esc(c.referrer_name || '-') + '</td>' +
+    '</tr>';
   }).join('');
 }
 
@@ -346,7 +1180,6 @@ function highlightClient() {
   document.querySelectorAll('#clients-tbody tr.row').forEach((tr, i) => {
     tr.classList.toggle('selected', i === S.clientIdx);
   });
-  // Scroll into view
   const sel = document.querySelector('#clients-tbody tr.selected');
   if (sel) sel.scrollIntoView({ block: 'nearest' });
 }
@@ -377,18 +1210,18 @@ function showClientDetail(id) {
     .then(r => r.json())
     .then(c => {
       const cls = c.status === 'active' ? 'badge-active' : 'badge-discharged';
-      content.innerHTML = `
-        <div style="margin-bottom:8px"><span style="font-size:15px;font-weight:600;color:var(--fg-em)">${esc(c.name)}</span>
-        <span class="badge ${cls}" style="margin-left:8px">${esc(c.status)}</span>
-        <span style="color:var(--fg-dim);margin-left:8px;font-size:12px">${esc(c.client_id)}</span></div>
-        <dl class="detail-grid">
-          <dt>DOB</dt><dd>${esc(c.dob || '-')}</dd>
-          <dt>Phone</dt><dd>${esc(c.phone || '-')}</dd>
-          <dt>Email</dt><dd>${esc(c.email || '-')}</dd>
-          <dt>Funding</dt><dd>${esc(c.funding_type || '-')}${c.funding_rate ? ' (' + c.funding_rate + '/session)' : ''}</dd>
-          <dt>Referrer</dt><dd>${esc(c.referrer_name || '-')}</dd>
-          <dt>Diagnosis</dt><dd>${esc(c.diagnosis || '-')}</dd>
-        </dl>`;
+      content.innerHTML =
+        '<div style="margin-bottom:8px"><span style="font-size:15px;font-weight:600;color:var(--fg-em)">' + esc(c.name) + '</span>' +
+        '<span class="badge ' + cls + '" style="margin-left:8px">' + esc(c.status) + '</span>' +
+        '<span style="color:var(--fg-dim);margin-left:8px;font-size:12px">' + esc(c.client_id) + '</span></div>' +
+        '<dl class="detail-grid">' +
+          '<dt>DOB</dt><dd>' + esc(c.dob || '-') + '</dd>' +
+          '<dt>Phone</dt><dd>' + esc(c.phone || '-') + '</dd>' +
+          '<dt>Email</dt><dd>' + esc(c.email || '-') + '</dd>' +
+          '<dt>Funding</dt><dd>' + esc(c.funding_type || '-') + (c.funding_rate ? ' (' + c.funding_rate + '/session)' : '') + '</dd>' +
+          '<dt>Referrer</dt><dd>' + esc(c.referrer_name || '-') + '</dd>' +
+          '<dt>Diagnosis</dt><dd>' + esc(c.diagnosis || '-') + '</dd>' +
+        '</dl>';
     })
     .catch(e => { content.innerHTML = '<div class="empty">Error: ' + esc(String(e)) + '</div>'; });
 
@@ -399,20 +1232,18 @@ function showClientDetail(id) {
     .then(list => {
       if (list.length === 0) { asgn.innerHTML = '<div style="color:var(--fg-dim);font-size:12px">No assignments.</div>'; return; }
       asgn.innerHTML = '<table><thead><tr><th>Practitioner</th><th>Since</th><th>Primary</th></tr></thead><tbody>' +
-        list.map(a => `<tr><td>${esc(a.practitioner_id)}</td><td>${esc(a.since)}</td><td>${a.primary ? '<span style="color:var(--green)">yes</span>' : ''}</td></tr>`).join('') +
+        list.map(a => '<tr><td>' + esc(a.practitioner_id) + '</td><td>' + esc(a.since) + '</td><td>' + (a.primary ? '<span style="color:var(--green)">yes</span>' : '') + '</td></tr>').join('') +
         '</tbody></table>';
     })
     .catch(e => { asgn.innerHTML = 'Error: ' + esc(String(e)); });
 }
 
 // ============================================================================
-// Calendar
+// Calendar (tab 3)
 // ============================================================================
 function initCalDate() {
   document.getElementById('cal-date').value = fmtDate(S.calDate);
 }
-
-function fmtDate(d) { return d.toISOString().split('T')[0]; }
 
 function calPrev() {
   const w = document.getElementById('cal-week').checked;
@@ -451,10 +1282,10 @@ function loadCalendar() {
         curDate = e.date;
         const d = new Date(e.date + 'T12:00:00');
         const day = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
-        html += `<div class="day-header">${esc(day)}</div><table><thead><tr><th>Time</th><th>Client</th><th>ID</th><th>Practitioner</th><th>Status</th></tr></thead><tbody>`;
+        html += '<div class="day-header">' + esc(day) + '</div><table><thead><tr><th>Time</th><th>Client</th><th>ID</th><th>Practitioner</th><th>Status</th></tr></thead><tbody>';
       }
       const statusCls = e.status === 'recurring' ? 'badge-recurring' : 'badge-active';
-      html += `<tr class="row"><td>${esc(e.start_time)}-${esc(e.end_time)}</td><td>${esc(e.client_name)}</td><td style="color:var(--fg-dim)">${esc(e.client_id)}</td><td>${esc(e.practitioner)}</td><td><span class="badge ${statusCls}">${esc(e.status)}</span></td></tr>`;
+      html += '<tr class="row"><td>' + esc(e.start_time) + '-' + esc(e.end_time) + '</td><td>' + esc(e.client_name) + '</td><td style="color:var(--fg-dim)">' + esc(e.client_id) + '</td><td>' + esc(e.practitioner) + '</td><td><span class="badge ' + statusCls + '">' + esc(e.status) + '</span></td></tr>';
     });
     html += '</tbody></table>';
     el.innerHTML = html;
@@ -462,7 +1293,7 @@ function loadCalendar() {
 }
 
 // ============================================================================
-// Search
+// Search (tab 4)
 // ============================================================================
 function doSearch() {
   const q = document.getElementById('search-input').value.trim();
@@ -476,7 +1307,6 @@ function doSearch() {
     S.searchIdx = 0;
     if (list.length === 0) { el.innerHTML = '<div class="empty">No results.</div>'; return; }
     renderSearch();
-    // Blur input so j/k work
     document.getElementById('search-input').blur();
   }).catch(e => { el.innerHTML = '<div class="empty">Error: ' + esc(String(e)) + '</div>'; });
 }
@@ -485,10 +1315,10 @@ function renderSearch() {
   const el = document.getElementById('search-results');
   el.innerHTML = S.searchResults.map((r, i) => {
     const sel = i === S.searchIdx ? ' selected' : '';
-    return `<div class="search-result${sel}" data-idx="${i}" onclick="S.searchIdx=${i};renderSearch()">
-      <div class="result-header">${esc(r.name)} <span class="result-id">${esc(r.client_id)}</span> <span class="result-score">${r.score.toFixed(2)}</span></div>
-      <div class="result-snippet">${r.snippet}</div>
-    </div>`;
+    return '<div class="search-result' + sel + '" data-idx="' + i + '" onclick="S.searchIdx=' + i + ';renderSearch()">' +
+      '<div class="result-header">' + esc(r.name) + ' <span class="result-id">' + esc(r.client_id) + '</span> <span class="result-score">' + r.score.toFixed(2) + '</span></div>' +
+      '<div class="result-snippet">' + r.snippet + '</div>' +
+    '</div>';
   }).join('');
 }
 
@@ -503,24 +1333,23 @@ function openSelectedSearch() {
   if (S.searchResults.length === 0) return;
   const r = S.searchResults[S.searchIdx];
   switchView('clients');
-  // Find client in list and open
   const idx = S.clients.findIndex(c => c.client_id === r.client_id);
   if (idx >= 0) { S.clientIdx = idx; highlightClient(); }
   showClientDetail(r.client_id);
 }
 
 // ============================================================================
-// Billing
+// Billing (tab 5)
 // ============================================================================
 function loadBilling() {
   S.loaded.billing = true;
 
   fetch('/api/billing/summary').then(r => r.json()).then(s => {
-    document.getElementById('billing-summary').innerHTML = `
-      <div class="summary-card"><div class="number">${s.outstanding_count}</div><div class="label">Outstanding</div></div>
-      <div class="summary-card"><div class="number" style="color:${s.overdue_count > 0 ? 'var(--red)' : 'var(--fg-em)'}">${s.overdue_count}</div><div class="label">Overdue</div></div>
-      <div class="summary-card"><div class="number">&pound;${s.total_outstanding.toFixed(0)}</div><div class="label">Total Outstanding</div></div>
-      <div class="summary-card"><div class="number" style="color:${s.total_overdue > 0 ? 'var(--red)' : 'var(--fg-em)'}">&pound;${s.total_overdue.toFixed(0)}</div><div class="label">Total Overdue</div></div>`;
+    document.getElementById('billing-summary').innerHTML =
+      '<div class="summary-card"><div class="number">' + s.outstanding_count + '</div><div class="label">Outstanding</div></div>' +
+      '<div class="summary-card"><div class="number" style="color:' + (s.overdue_count > 0 ? 'var(--red)' : 'var(--fg-em)') + '">' + s.overdue_count + '</div><div class="label">Overdue</div></div>' +
+      '<div class="summary-card"><div class="number">&pound;' + s.total_outstanding.toFixed(0) + '</div><div class="label">Total Outstanding</div></div>' +
+      '<div class="summary-card"><div class="number" style="color:' + (s.total_overdue > 0 ? 'var(--red)' : 'var(--fg-em)') + '">&pound;' + s.total_overdue.toFixed(0) + '</div><div class="label">Total Overdue</div></div>';
   }).catch(() => {});
 
   fetch('/api/billing/status').then(r => r.json()).then(invoices => {
@@ -530,22 +1359,12 @@ function loadBilling() {
     document.getElementById('billing-tbody').innerHTML = invoices.map(i => {
       const cls = i.state === 'overdue' ? 'badge-overdue' : i.state === 'sent' ? 'badge-sent' : 'badge-draft';
       const od = i.days_overdue > 0 ? i.days_overdue + 'd' : '';
-      return `<tr class="row"><td>${esc(i.reference)}</td><td>${esc(i.client_name)} <span style="color:var(--fg-dim)">${esc(i.client_id)}</span></td><td>${esc(i.bill_to || '-')}</td><td>&pound;${i.total.toFixed(0)}</td><td>${esc(i.due_date)}</td><td><span class="badge ${cls}">${esc(i.state)}</span></td><td style="color:${od ? 'var(--red)' : ''}">${od}</td></tr>`;
+      return '<tr class="row"><td>' + esc(i.reference) + '</td><td>' + esc(i.client_name) + ' <span style="color:var(--fg-dim)">' + esc(i.client_id) + '</span></td><td>' + esc(i.bill_to || '-') + '</td><td>&pound;' + i.total.toFixed(0) + '</td><td>' + esc(i.due_date) + '</td><td><span class="badge ' + cls + '">' + esc(i.state) + '</span></td><td style="color:' + (od ? 'var(--red)' : '') + '">' + od + '</td></tr>';
     }).join('');
   }).catch(e => {
     document.getElementById('billing-empty').textContent = 'Failed to load: ' + e;
     document.getElementById('billing-empty').style.display = '';
   });
-}
-
-// ============================================================================
-// Utils
-// ============================================================================
-function esc(s) {
-  if (s == null) return '';
-  const d = document.createElement('div');
-  d.textContent = String(s);
-  return d.innerHTML;
 }
 
 // ============================================================================
@@ -556,7 +1375,9 @@ fetch('/api/practice').then(r => r.json()).then(p => {
 }).catch(() => {});
 
 initCalDate();
-loadClients();
+loadClinicSession();
+pollInferenceStatus();
+setInterval(pollInferenceStatus, 30000);
 updateHints();
 </script>
 </body>
