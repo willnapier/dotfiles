@@ -161,9 +161,9 @@ fn config_resolve_auth_token() {
 }
 
 #[test]
-fn config_log_dir_is_under_clinical_product() {
+fn config_log_dir_is_under_practiceforge() {
     let config = SmsConfig::default();
     let log_dir = config.log_dir();
-    assert!(log_dir.to_string_lossy().contains("clinical-product"));
+    assert!(log_dir.to_string_lossy().contains("practiceforge"));
     assert!(log_dir.to_string_lossy().contains("sms-log"));
 }

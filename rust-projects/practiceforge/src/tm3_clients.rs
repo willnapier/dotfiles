@@ -1,7 +1,7 @@
 //! TM3 client cache — fetches all client records from the TM3 API
 //! via headless Chrome and caches locally.
 //!
-//! The cache is a JSON file at `~/.local/share/clinical-product/tm3-clients.json`.
+//! The cache is a JSON file at `~/.local/share/practiceforge/tm3-clients.json`.
 //! Refreshed hourly during diary capture. Onboarding reads from cache
 //! without launching a browser.
 
@@ -51,7 +51,7 @@ struct ClientCache {
 fn cache_path() -> PathBuf {
     dirs::home_dir()
         .expect("no home dir")
-        .join(".local/share/clinical-product/tm3-clients.json")
+        .join(".local/share/practiceforge/tm3-clients.json")
 }
 
 /// Refresh the client cache by fetching all clients from TM3's API

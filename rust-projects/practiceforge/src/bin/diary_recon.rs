@@ -140,7 +140,7 @@ fn main() -> Result<()> {
 
     // Screenshot
     let ss_path = std::path::PathBuf::from(std::env::var("HOME").unwrap())
-        .join(".config/clinical-product/diary-recon.png");
+        .join(".config/practiceforge/diary-recon.png");
     if let Ok(bytes) = tab.capture_screenshot(
         headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
         None, None, true,

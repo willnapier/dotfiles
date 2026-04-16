@@ -10,7 +10,7 @@ pub fn sync(config: &RegistryConfig) -> Result<String> {
 
     if !repo_path.join(".git").exists() {
         anyhow::bail!(
-            "Registry not initialised at {}. Run `clinical-product registry init` first.",
+            "Registry not initialised at {}. Run `practiceforge registry init` first.",
             repo_path.display()
         );
     }
@@ -110,7 +110,7 @@ pub fn show_status(config: &RegistryConfig) -> Result<()> {
     if !repo_path.join(".git").exists() {
         println!("Registry: not initialised");
         println!("  Path: {}", repo_path.display());
-        println!("  Run `clinical-product registry init` to create.");
+        println!("  Run `practiceforge registry init` to create.");
         return Ok(());
     }
 

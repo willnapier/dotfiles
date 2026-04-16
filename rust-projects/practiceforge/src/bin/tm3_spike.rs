@@ -6,7 +6,7 @@
 //! Phase B (subsequent runs): Load cookies, inspect documents page headlessly.
 //!   tm3-spike inspect <tm3_id>
 //!
-//! Cookies stored at ~/.config/clinical-product/tm3-cookies.json
+//! Cookies stored at ~/.config/practiceforge/tm3-cookies.json
 
 use anyhow::{bail, Context, Result};
 use headless_chrome::browser::tab::Tab;
@@ -34,7 +34,7 @@ fn config_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
     let dir = PathBuf::from(home)
         .join(".config")
-        .join("clinical-product");
+        .join("practiceforge");
     std::fs::create_dir_all(&dir).ok();
     dir
 }

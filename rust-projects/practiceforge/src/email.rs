@@ -26,10 +26,10 @@ pub struct EmailConfig {
     pub signature: String,
 }
 
-/// Load email config from ~/.config/clinical-product/config.toml [email] section.
+/// Load email config from ~/.config/practiceforge/config.toml [email] section.
 pub fn load_email_config() -> Result<EmailConfig> {
     let config_path = dirs::config_dir()
-        .map(|d| d.join("clinical-product/config.toml"))
+        .map(|d| d.join("practiceforge/config.toml"))
         .unwrap_or_default();
 
     let content = std::fs::read_to_string(&config_path)
@@ -43,7 +43,7 @@ pub fn load_email_config() -> Result<EmailConfig> {
         .get("email")
         .and_then(|v| v.as_table())
         .ok_or_else(|| anyhow::anyhow!(
-            "No [email] section in config.toml.\nRun: clinical-product email init"
+            "No [email] section in config.toml.\nRun: practiceforge email init"
         ))?;
 
     Ok(EmailConfig {
@@ -316,7 +316,7 @@ pub fn send_test(config: &EmailConfig) -> Result<()> {
         &config.from_name,
         "Clinical Product — Email Test",
         &format!(
-            "This is a test email from clinical-product.\n\n\
+            "This is a test email from practiceforge.\n\n\
              If you received this, your email configuration is working correctly.\n\n\
              Server: {}:{}\n\
              From: {} <{}>\n",
@@ -478,7 +478,7 @@ pub fn init_config() -> Result<()> {
 
     // --- Save config (only after verification) ---
     let config_path = dirs::config_dir()
-        .map(|d| d.join("clinical-product/config.toml"))
+        .map(|d| d.join("practiceforge/config.toml"))
         .unwrap_or_default();
 
     let existing = std::fs::read_to_string(&config_path).unwrap_or_default();

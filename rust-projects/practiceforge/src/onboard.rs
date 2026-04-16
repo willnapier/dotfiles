@@ -500,7 +500,7 @@ fn download_and_import_docs(client_id: &str, tm3_id: &str) -> Result<usize> {
 
 /// Look up a TM3 client by name from the cached client data.
 ///
-/// Reads from `~/.local/share/clinical-product/tm3-clients.json`.
+/// Reads from `~/.local/share/practiceforge/tm3-clients.json`.
 /// If cache is missing or stale, refreshes it first (headless Chrome).
 /// Returns (tm3_id, dob) if found.
 fn lookup_tm3_client(name: &str) -> Option<(String, Option<String>)> {

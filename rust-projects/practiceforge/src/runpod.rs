@@ -33,9 +33,9 @@ pub fn load_api_key() -> Result<String> {
 
     if !output.status.success() {
         if cfg!(target_os = "macos") {
-            bail!("RunPod API key not found. Run: security add-generic-password -s runpod-api-key -a clinical-product -w <key>");
+            bail!("RunPod API key not found. Run: security add-generic-password -s runpod-api-key -a practiceforge -w <key>");
         } else {
-            bail!("RunPod API key not found. Run: echo -n '<key>' | secret-tool store --label 'RunPod API Key' service runpod-api-key account clinical-product");
+            bail!("RunPod API key not found. Run: echo -n '<key>' | secret-tool store --label 'RunPod API Key' service runpod-api-key account practiceforge");
         }
     }
 

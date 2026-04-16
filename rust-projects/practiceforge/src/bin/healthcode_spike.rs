@@ -160,7 +160,7 @@ fn cmd_recon() -> Result<()> {
 
     // Take screenshot
     let ss_path = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
-        .join(".config/clinical-product/healthcode-login.png");
+        .join(".config/practiceforge/healthcode-login.png");
     std::fs::create_dir_all(ss_path.parent().unwrap()).ok();
     if let Ok(bytes) = tab.capture_screenshot(
         headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
@@ -518,7 +518,7 @@ fn cmd_auto_login() -> Result<()> {
 
             // Screenshot
             let ss_path = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
-                .join(".config/clinical-product/healthcode-autologin.png");
+                .join(".config/practiceforge/healthcode-autologin.png");
             if let Ok(bytes) = tab.capture_screenshot(
                 headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
                 None, None, true,
@@ -745,7 +745,7 @@ fn cmd_explore() -> Result<()> {
 
     // Screenshot
     let ss_path = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
-        .join(".config/clinical-product/healthcode-epractice.png");
+        .join(".config/practiceforge/healthcode-epractice.png");
     if let Ok(bytes) = tab.capture_screenshot(
         headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
         None, None, true,
@@ -858,7 +858,7 @@ fn cmd_explore() -> Result<()> {
 
     // Screenshot
     let ss2 = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
-        .join(".config/clinical-product/healthcode-patients.png");
+        .join(".config/practiceforge/healthcode-patients.png");
     if let Ok(bytes) = tab.capture_screenshot(
         headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
         None, None, true,
@@ -960,7 +960,7 @@ fn cmd_explore() -> Result<()> {
 
     // Screenshot
     let ss3 = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
-        .join(".config/clinical-product/healthcode-patient-record.png");
+        .join(".config/practiceforge/healthcode-patient-record.png");
     if let Ok(bytes) = tab.capture_screenshot(
         headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
         None, None, true,
@@ -1058,7 +1058,7 @@ fn cmd_explore() -> Result<()> {
     }
 
     let ss4 = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
-        .join(".config/clinical-product/healthcode-ebill.png");
+        .join(".config/practiceforge/healthcode-ebill.png");
     if let Ok(bytes) = tab.capture_screenshot(
         headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
         None, None, true,
@@ -1127,7 +1127,7 @@ fn cmd_explore() -> Result<()> {
     }
 
     let ss5 = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
-        .join(".config/clinical-product/healthcode-all-menus.png");
+        .join(".config/practiceforge/healthcode-all-menus.png");
     if let Ok(bytes) = tab.capture_screenshot(
         headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
         None, None, true,
@@ -1367,7 +1367,7 @@ fn cmd_fill(client_id: &str, dry_run: bool) -> Result<()> {
 
     // 8. Screenshot the populated form
     let ss_path = std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
-        .join(".config/clinical-product")
+        .join(".config/practiceforge")
         .join(format!("healthcode-fill-{}.png", client_id));
     std::fs::create_dir_all(ss_path.parent().unwrap()).ok();
     if let Ok(bytes) = tab.capture_screenshot(

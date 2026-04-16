@@ -1,7 +1,7 @@
 //! SMS delivery logging — JSONL files per date.
 //!
 //! Log format: one JSON object per line at
-//! `~/.local/share/clinical-product/sms-log/YYYY-MM-DD.jsonl`
+//! `~/.local/share/practiceforge/sms-log/YYYY-MM-DD.jsonl`
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};

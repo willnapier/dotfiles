@@ -49,7 +49,7 @@ pub struct PodConfig {
 /// Runtime state persisted between invocations.
 ///
 /// Kept in a separate file from the config because it mutates on every
-/// `clinical note` invocation. Stored at `~/.config/clinical-product/inference-state.toml`.
+/// `clinical note` invocation. Stored at `~/.config/practiceforge/inference-state.toml`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PodState {
     /// ISO-8601 timestamp of the last successful generation.
@@ -75,7 +75,7 @@ impl PodConfig {
     }
 }
 
-/// Load `[pod]` section from `~/.config/clinical-product/config.toml`.
+/// Load `[pod]` section from `~/.config/practiceforge/config.toml`.
 pub fn load_pod_config() -> Result<PodConfig> {
     let path = config_path();
     if !path.exists() {

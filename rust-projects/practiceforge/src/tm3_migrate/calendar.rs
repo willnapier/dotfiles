@@ -150,7 +150,7 @@ pub fn export_calendar(
 
     let diary_dir = dirs::home_dir()
         .expect("no home dir")
-        .join(".local/share/clinical-product/tm3-diary-capture");
+        .join(".local/share/practiceforge/tm3-diary-capture");
 
     let appointments = match load_diary_archives(&diary_dir) {
         Ok(appts) => appts,

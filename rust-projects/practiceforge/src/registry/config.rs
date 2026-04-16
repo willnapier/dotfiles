@@ -139,7 +139,7 @@ pub fn init_registry() -> Result<()> {
         .context("Failed to write config.toml")?;
 
     println!("\nRegistry config saved to {}", config_path.display());
-    println!("Run `clinical-product registry init` to create the repository.");
+    println!("Run `practiceforge registry init` to create the repository.");
 
     Ok(())
 }

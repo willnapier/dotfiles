@@ -5,7 +5,7 @@
 //! client directory. Auth via keychain (`secret-tool lookup service
 //! "clinical-imap"` on Linux).
 //!
-//! Config lives in `~/.config/clinical-product/config.toml` under the
+//! Config lives in `~/.config/practiceforge/config.toml` under the
 //! `[referral]` section.
 
 use anyhow::{bail, Context, Result};
@@ -211,12 +211,12 @@ pub fn init_config() -> Result<()> {
     }
 
     println!("\nOnce stored, test with:");
-    println!("  clinical-product referral check");
+    println!("  practiceforge referral check");
 
     Ok(())
 }
 
-/// Load the `[referral]` section from `~/.config/clinical-product/config.toml`.
+/// Load the `[referral]` section from `~/.config/practiceforge/config.toml`.
 pub fn load_referral_config() -> Result<ReferralConfig> {
     let path = config_path();
     if !path.exists() {

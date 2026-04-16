@@ -23,7 +23,7 @@ pub mod tm3_clients;
 pub mod tm3_migrate;
 
 #[derive(Parser)]
-#[command(name = "clinical-product", about = "Clinical session note generator")]
+#[command(name = "practiceforge", about = "Clinical session note generator")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -71,7 +71,7 @@ enum Command {
 
     /// Manage the inference pod lifecycle (status/start/stop).
     ///
-    /// Reads the `[pod]` section of ~/.config/clinical-product/config.toml
+    /// Reads the `[pod]` section of ~/.config/practiceforge/config.toml
     /// to determine which pod to manage. If `managed = false` or pod_id is
     /// empty, all commands report the configured state without making changes.
     Inference {
@@ -942,7 +942,7 @@ fn handle_registry(action: RegistryAction) -> anyhow::Result<()> {
         RegistryAction::Sync => {
             let config = RegistryConfig::load();
             if !config.enabled {
-                println!("Registry is not enabled. Run `clinical-product registry init` first.");
+                println!("Registry is not enabled. Run `practiceforge registry init` first.");
                 return Ok(());
             }
             let summary = registry::sync::sync(&config)?;
@@ -996,7 +996,7 @@ fn handle_registry(action: RegistryAction) -> anyhow::Result<()> {
             let clinical_root = crate::config::clinical_root();
 
             if !config.local_path.join(".git").exists() {
-                println!("Registry not initialised. Run `clinical-product registry create` first.");
+                println!("Registry not initialised. Run `practiceforge registry create` first.");
                 return Ok(());
             }
 
@@ -1390,7 +1390,7 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
         match action {
             BillingAction::Status { .. } => {
                 println!("Billing is not enabled.");
-                println!("Run 'clinical-product billing init' to set up, or add [billing] enabled = true to config.toml.");
+                println!("Run 'practiceforge billing init' to set up, or add [billing] enabled = true to config.toml.");
                 println!(
                     "Config file: {}",
                     crate::config::config_file_path().display()
@@ -1399,7 +1399,7 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
             }
             _ => {
                 anyhow::bail!(
-                    "Billing is not enabled. Run 'clinical-product billing init' or add [billing] enabled = true to {}",
+                    "Billing is not enabled. Run 'practiceforge billing init' or add [billing] enabled = true to {}",
                     crate::config::config_file_path().display()
                 );
             }
@@ -1671,7 +1671,7 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
                 let due = remind::due_reminders(&config, &overdue);
                 if !due.is_empty() {
                     println!(
-                        "  {} reminder(s) pending. Run: clinical-product billing remind",
+                        "  {} reminder(s) pending. Run: practiceforge billing remind",
                         due.len()
                     );
                 }

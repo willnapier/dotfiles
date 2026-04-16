@@ -27,7 +27,7 @@ pub struct BillingConfig {
     /// Currency code (ISO 4217).
     pub currency: String,
     /// Directory for invoice storage (Manual backend).
-    /// Defaults to ~/.local/share/clinical-product/billing/
+    /// Defaults to ~/.local/share/practiceforge/billing/
     pub storage_dir: Option<String>,
 }
 
@@ -136,7 +136,7 @@ impl BillingConfig {
     }
 
     /// Resolve the storage directory for invoice files.
-    /// Uses configured path or defaults to ~/.local/share/clinical-product/billing/
+    /// Uses configured path or defaults to ~/.local/share/practiceforge/billing/
     pub fn resolve_storage_dir(&self) -> std::path::PathBuf {
         if let Some(dir) = &self.storage_dir {
             let expanded = if dir.starts_with("~/") {
@@ -153,7 +153,7 @@ impl BillingConfig {
 
         dirs::data_local_dir()
             .unwrap_or_else(|| dirs::home_dir().unwrap().join(".local/share"))
-            .join("clinical-product")
+            .join("practiceforge")
             .join("billing")
     }
 }
@@ -387,9 +387,9 @@ pub fn init_billing() -> Result<()> {
 
     println!("\n✓ Billing enabled in {}", config_path.display());
     println!("\nYou can now:");
-    println!("  clinical-product billing status        — check invoice status");
-    println!("  clinical-product billing invoice <ID>  — create an invoice");
-    println!("  clinical-product billing config        — view/edit settings");
+    println!("  practiceforge billing status        — check invoice status");
+    println!("  practiceforge billing invoice <ID>  — create an invoice");
+    println!("  practiceforge billing config        — view/edit settings");
 
     Ok(())
 }

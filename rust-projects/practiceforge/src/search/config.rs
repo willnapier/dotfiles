@@ -21,7 +21,7 @@ impl Default for SearchConfig {
             .unwrap_or_default()
             .join(".local")
             .join("share")
-            .join("clinical-product")
+            .join("practiceforge")
             .join("search-index");
         Self {
             enabled: true,

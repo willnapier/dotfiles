@@ -141,7 +141,7 @@ impl SmsConfig {
     pub fn log_dir(&self) -> std::path::PathBuf {
         dirs::data_local_dir()
             .unwrap_or_else(|| dirs::home_dir().unwrap().join(".local/share"))
-            .join("clinical-product")
+            .join("practiceforge")
             .join("sms-log")
     }
 }

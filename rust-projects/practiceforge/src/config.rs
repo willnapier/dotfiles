@@ -1,16 +1,16 @@
-//! Shared configuration for clinical-product.
+//! Shared configuration for practiceforge.
 //!
-//! Config file: `~/.config/clinical-product/config.toml`
+//! Config file: `~/.config/practiceforge/config.toml`
 //! Falls back to `voice-config.toml` for backward compatibility.
 
 use std::path::PathBuf;
 
-/// The config directory: `~/.config/clinical-product/`
+/// The config directory: `~/.config/practiceforge/`
 pub fn config_dir() -> PathBuf {
     dirs::home_dir()
         .expect("no home dir")
         .join(".config")
-        .join("clinical-product")
+        .join("practiceforge")
 }
 
 /// Path to the config file. Prefers `config.toml`, falls back to
