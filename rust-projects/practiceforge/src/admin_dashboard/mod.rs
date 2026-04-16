@@ -21,7 +21,9 @@ pub async fn serve(port: u16, open_browser: bool) -> Result<()> {
 
     // Dev mode uses port+1 so it can run alongside the production service
     let actual_port = if std::env::var("PF_DEV").is_ok() { port + 1 } else { port };
-    let addr = format!("0.0.0.0:{actual_port}");
+    // Bind to localhost only — PHI is served on this port.
+    // Use 0.0.0.0 only behind a reverse proxy with auth.
+    let addr = format!("127.0.0.1:{actual_port}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     if std::env::var("PF_DEV").is_ok() {
         eprintln!("DEV dashboard at http://127.0.0.1:{actual_port} (live-reload from disk)");
