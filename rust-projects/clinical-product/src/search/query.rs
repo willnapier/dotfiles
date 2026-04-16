@@ -206,8 +206,8 @@ fn try_snippet_from_field(
     field: tantivy::schema::Field,
     doc: &tantivy::TantivyDocument,
 ) -> Option<String> {
-    let gen = SnippetGenerator::create(searcher, query, field).ok()?;
-    let snippet = gen.snippet_from_doc(doc);
+    let generator = SnippetGenerator::create(searcher, query, field).ok()?;
+    let snippet = generator.snippet_from_doc(doc);
     let html = snippet.to_html();
     if html.trim().is_empty() {
         None

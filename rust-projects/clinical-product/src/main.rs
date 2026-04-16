@@ -952,6 +952,71 @@ fn handle_registry(action: RegistryAction) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn handle_search(
+    query: String,
+    client: Option<String>,
+    field: Option<String>,
+    limit: usize,
+    reindex: bool,
+) -> anyhow::Result<()> {
+    use search::config::SearchConfig;
+    use search::index;
+    use search::query as sq;
+
+    let config = SearchConfig::load();
+    let clinical_root = index::resolve_clinical_root();
+
+    if reindex {
+        eprintln!("Rebuilding search index...");
+        index::build_index(&config, &clinical_root)?;
+        if query.is_empty() {
+            return Ok(());
+        }
+    } else {
+        // Auto-rebuild if stale (> 1 hour)
+        let max_age = std::time::Duration::from_secs(3600);
+        if index::is_index_stale(&config, max_age) {
+            eprintln!("Search index is stale — rebuilding...");
+            index::build_index(&config, &clinical_root)?;
+        }
+    }
+
+    let results = if let Some(ref client_id) = client {
+        sq::search_within_client(&config, client_id, &query)?
+    } else if let Some(ref field_name) = field {
+        sq::search_field(&config, &query, field_name, limit)?
+    } else {
+        sq::search(&config, &query, limit)?
+    };
+
+    if results.is_empty() {
+        println!("No results for '{}'.", query);
+        return Ok(());
+    }
+
+    println!("{} result(s) for '{}':\n", results.len(), query);
+    for (i, result) in results.iter().enumerate() {
+        println!(
+            "  {}. {} ({}) — score {:.2}",
+            i + 1,
+            result.name,
+            result.client_id,
+            result.score,
+        );
+        if !result.snippet.is_empty() {
+            // Strip HTML tags from snippet for terminal display
+            let plain = result
+                .snippet
+                .replace("<b>", "\x1b[1m")
+                .replace("</b>", "\x1b[0m");
+            println!("     {}", plain);
+        }
+        println!();
+    }
+
+    Ok(())
+}
+
 async fn handle_inference(action: InferencePodAction) -> anyhow::Result<()> {
     use runpod::Client as RunPodClient;
 
@@ -1803,6 +1868,277 @@ fn handle_schedule(action: ScheduleAction) -> anyhow::Result<()> {
             }
         }
 
+        ScheduleAction::Cancel { client_id, date, series } => {
+            let series_dir = std::path::PathBuf::from(&schedules_dir)
+                .join(practitioner)
+                .join("series");
+            let appts_dir = std::path::PathBuf::from(&schedules_dir)
+                .join(practitioner)
+                .join("appointments");
+
+            if series {
+                // Cancel the entire recurring series
+                let all_series = ics::load_series_dir(&series_dir)?;
+                let matching: Vec<_> = all_series.iter()
+                    .filter(|s| s.client_id == client_id && s.status == SeriesStatus::Active)
+                    .collect();
+
+                if matching.is_empty() {
+                    anyhow::bail!("No active recurring series found for client {}", client_id);
+                }
+
+                for s in &matching {
+                    let mut updated = (*s).clone();
+                    updated.status = SeriesStatus::Ended;
+                    let path = series_dir.join(format!("{}.yaml", s.id));
+                    let yaml = serde_yaml::to_string(&updated)?;
+                    std::fs::write(&path, &yaml)?;
+                    println!("Ended recurring series {} for {} ({})", s.id, s.client_name, s.client_id);
+                }
+            } else if let Some(date_str) = date {
+                let cancel_date = NaiveDate::parse_from_str(&date_str, "%Y-%m-%d")
+                    .map_err(|e| anyhow::anyhow!("Invalid date '{}': {}", date_str, e))?;
+
+                // First check one-off appointments for this client on this date
+                let one_offs = ics::load_appointments_dir(&appts_dir)?;
+                let matching_appt: Vec<_> = one_offs.iter()
+                    .filter(|a| a.client_id == client_id && a.date == cancel_date && a.status != AppointmentStatus::Cancelled)
+                    .collect();
+
+                if !matching_appt.is_empty() {
+                    for appt in &matching_appt {
+                        let mut updated = (*appt).clone();
+                        updated.status = AppointmentStatus::Cancelled;
+                        let path = appts_dir.join(format!("{}.yaml", appt.id));
+                        let yaml = serde_yaml::to_string(&updated)?;
+                        std::fs::write(&path, &yaml)?;
+                        println!("Cancelled one-off appointment {} on {} for {} ({})",
+                            appt.id, cancel_date, appt.client_name, appt.client_id);
+                    }
+                } else {
+                    // Add EXDATE to the matching recurring series
+                    let all_series = ics::load_series_dir(&series_dir)?;
+                    let matching: Vec<_> = all_series.iter()
+                        .filter(|s| s.client_id == client_id && s.status == SeriesStatus::Active)
+                        .collect();
+
+                    if matching.is_empty() {
+                        anyhow::bail!("No active series or one-off appointment found for {} on {}", client_id, cancel_date);
+                    }
+
+                    for s in &matching {
+                        let mut updated = (*s).clone();
+                        if !updated.exdates.contains(&cancel_date) {
+                            updated.exdates.push(cancel_date);
+                            updated.exdates.sort();
+                        }
+                        let path = series_dir.join(format!("{}.yaml", s.id));
+                        let yaml = serde_yaml::to_string(&updated)?;
+                        std::fs::write(&path, &yaml)?;
+                        println!("Added EXDATE {} to series {} for {} ({})",
+                            cancel_date, s.id, s.client_name, s.client_id);
+                    }
+                }
+            } else {
+                anyhow::bail!("Specify --date YYYY-MM-DD to cancel a single instance, or --series to end the recurring series");
+            }
+        }
+
+        ScheduleAction::Move { client_id, from, to } => {
+            let from_date = NaiveDate::parse_from_str(&from, "%Y-%m-%d")
+                .map_err(|e| anyhow::anyhow!("Invalid from date '{}': {}", from, e))?;
+            let to_dt = chrono::NaiveDateTime::parse_from_str(&to, "%Y-%m-%d %H:%M")
+                .map_err(|e| anyhow::anyhow!("Invalid to datetime '{}': {}", to, e))?;
+
+            let series_dir = std::path::PathBuf::from(&schedules_dir)
+                .join(practitioner)
+                .join("series");
+            let appts_dir = std::path::PathBuf::from(&schedules_dir)
+                .join(practitioner)
+                .join("appointments");
+
+            // Check if moving a one-off appointment
+            let one_offs = ics::load_appointments_dir(&appts_dir)?;
+            let matching_appt: Vec<_> = one_offs.iter()
+                .filter(|a| a.client_id == client_id && a.date == from_date && a.status != AppointmentStatus::Cancelled)
+                .collect();
+
+            if !matching_appt.is_empty() {
+                // Move the one-off: cancel the old, create a new one
+                for appt in &matching_appt {
+                    let mut cancelled = (*appt).clone();
+                    cancelled.status = AppointmentStatus::Cancelled;
+                    let old_path = appts_dir.join(format!("{}.yaml", appt.id));
+                    let yaml = serde_yaml::to_string(&cancelled)?;
+                    std::fs::write(&old_path, &yaml)?;
+                }
+            } else {
+                // Add EXDATE to the recurring series for the from date
+                let all_series = ics::load_series_dir(&series_dir)?;
+                let matching: Vec<_> = all_series.iter()
+                    .filter(|s| s.client_id == client_id && s.status == SeriesStatus::Active)
+                    .collect();
+
+                if matching.is_empty() {
+                    anyhow::bail!("No active series or one-off appointment found for {} on {}", client_id, from_date);
+                }
+
+                for s in &matching {
+                    let mut updated = (*s).clone();
+                    if !updated.exdates.contains(&from_date) {
+                        updated.exdates.push(from_date);
+                        updated.exdates.sort();
+                    }
+                    let path = series_dir.join(format!("{}.yaml", s.id));
+                    let yaml = serde_yaml::to_string(&updated)?;
+                    std::fs::write(&path, &yaml)?;
+                }
+            }
+
+            // Determine duration from the original appointment or series
+            let duration_mins = {
+                if let Some(appt) = matching_appt.first() {
+                    let d = appt.end_time.signed_duration_since(appt.start_time);
+                    d.num_minutes() as u32
+                } else {
+                    let all_series = ics::load_series_dir(&series_dir)?;
+                    all_series.iter()
+                        .find(|s| s.client_id == client_id)
+                        .map(|s| {
+                            let d = s.end_time.signed_duration_since(s.start_time);
+                            d.num_minutes() as u32
+                        })
+                        .unwrap_or(config.availability.slot_duration_minutes)
+                }
+            };
+
+            let client_name = lookup_client_name(&client_id);
+            let new_start = to_dt.time();
+            let new_end = new_start + chrono::Duration::minutes(duration_mins as i64);
+
+            // Create the new one-off at the target datetime
+            let new_appt = Appointment {
+                id: uuid::Uuid::new_v4(),
+                series_id: None,
+                practitioner: practitioner.to_string(),
+                client_id: client_id.clone(),
+                client_name: client_name.clone(),
+                date: to_dt.date(),
+                start_time: new_start,
+                end_time: new_end,
+                status: AppointmentStatus::Confirmed,
+                source: AppointmentSource::Practitioner,
+                rate_tag: None,
+                location: config.location.clone(),
+                sms_confirmation: None,
+                notes: Some(format!("Moved from {}", from_date)),
+                created_at: chrono::Utc::now().to_rfc3339(),
+            };
+
+            std::fs::create_dir_all(&appts_dir)?;
+            let new_path = appts_dir.join(format!("{}.yaml", new_appt.id));
+            let yaml = serde_yaml::to_string(&new_appt)?;
+            std::fs::write(&new_path, &yaml)?;
+
+            println!("Moved {} ({}) from {} to {} at {}",
+                client_name, client_id, from_date, to_dt.date(), new_start.format("%H:%M"));
+            println!("  New appointment ID: {}", new_appt.id);
+        }
+
+        ScheduleAction::Update { client_id, date, status } => {
+            let target_date = NaiveDate::parse_from_str(&date, "%Y-%m-%d")
+                .map_err(|e| anyhow::anyhow!("Invalid date '{}': {}", date, e))?;
+
+            let new_status = match status.as_str() {
+                "arrived" => AppointmentStatus::Arrived,
+                "completed" => AppointmentStatus::Completed,
+                "noshow" => AppointmentStatus::NoShow,
+                "late-cancel" => AppointmentStatus::LateCancellation,
+                other => anyhow::bail!("Unknown status '{}'. Use: arrived, completed, noshow, late-cancel", other),
+            };
+
+            let appts_dir = std::path::PathBuf::from(&schedules_dir)
+                .join(practitioner)
+                .join("appointments");
+
+            // First check if there is an existing one-off appointment
+            let one_offs = ics::load_appointments_dir(&appts_dir)?;
+            let existing: Vec<_> = one_offs.iter()
+                .filter(|a| a.client_id == client_id && a.date == target_date)
+                .collect();
+
+            if !existing.is_empty() {
+                // Update existing one-off appointment
+                for appt in &existing {
+                    let mut updated = (*appt).clone();
+                    updated.status = new_status.clone();
+                    let path = appts_dir.join(format!("{}.yaml", appt.id));
+                    let yaml = serde_yaml::to_string(&updated)?;
+                    std::fs::write(&path, &yaml)?;
+                    println!("Updated {} ({}) on {} to status: {}",
+                        appt.client_name, appt.client_id, target_date, new_status);
+                }
+            } else {
+                // Materialise from recurring series and create a one-off with the new status
+                let series_dir = std::path::PathBuf::from(&schedules_dir)
+                    .join(practitioner)
+                    .join("series");
+                let all_series = ics::load_series_dir(&series_dir)?;
+
+                let holidays_path = std::path::PathBuf::from(&schedules_dir)
+                    .join(practitioner)
+                    .join("holidays.yaml");
+                let holidays = if holidays_path.exists() {
+                    let yaml = std::fs::read_to_string(&holidays_path)?;
+                    ics::load_holidays(&yaml)?
+                } else {
+                    vec![]
+                };
+
+                let mut found = false;
+                for s in &all_series {
+                    if s.client_id != client_id || s.status != SeriesStatus::Active {
+                        continue;
+                    }
+                    let dates = recurrence::materialise(s, target_date, target_date, &holidays)?;
+                    if dates.contains(&target_date) {
+                        // Create a one-off appointment to record this status
+                        let appt = Appointment {
+                            id: uuid::Uuid::new_v4(),
+                            series_id: Some(s.id),
+                            practitioner: practitioner.to_string(),
+                            client_id: client_id.clone(),
+                            client_name: s.client_name.clone(),
+                            date: target_date,
+                            start_time: s.start_time,
+                            end_time: s.end_time,
+                            status: new_status.clone(),
+                            source: AppointmentSource::Practitioner,
+                            rate_tag: s.rate_tag.clone(),
+                            location: s.location.clone(),
+                            sms_confirmation: None,
+                            notes: None,
+                            created_at: chrono::Utc::now().to_rfc3339(),
+                        };
+
+                        std::fs::create_dir_all(&appts_dir)?;
+                        let path = appts_dir.join(format!("{}.yaml", appt.id));
+                        let yaml = serde_yaml::to_string(&appt)?;
+                        std::fs::write(&path, &yaml)?;
+                        println!("Updated {} ({}) on {} to status: {}",
+                            s.client_name, client_id, target_date, new_status);
+                        println!("  Appointment ID: {}", appt.id);
+                        found = true;
+                        break;
+                    }
+                }
+
+                if !found {
+                    anyhow::bail!("No appointment found for {} on {}", client_id, target_date);
+                }
+            }
+        }
+
         ScheduleAction::Export { practitioner: prac_filter } => {
             let prac = prac_filter.as_deref().unwrap_or(practitioner);
             let series_dir = std::path::PathBuf::from(&schedules_dir)
@@ -1857,6 +2193,7 @@ fn handle_schedule(action: ScheduleAction) -> anyhow::Result<()> {
             // TODO: SMS reminders (Phase 4)
             println!("  ✓ SMS reminders: not yet configured.");
         }
+
     }
 
     Ok(())
