@@ -460,6 +460,244 @@ pub async fn billing_summary() -> Result<Json<BillingSummaryResponse>, (StatusCo
 }
 
 // ---------------------------------------------------------------------------
+// Billing action handlers
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct CreateInvoiceRequest {
+    pub client_id: String,
+    #[serde(default)]
+    pub dates: Option<Vec<String>>,
+}
+
+/// POST /api/billing/invoice — create an invoice for a client's uninvoiced sessions.
+pub async fn create_invoice(
+    Json(req): Json<CreateInvoiceRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let config = crate::billing::config::BillingConfig::load()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if !config.enabled {
+        return Err((StatusCode::BAD_REQUEST, "Billing not enabled".to_string()));
+    }
+
+    let provider = crate::billing::ManualProvider::new(&config)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let clinical_root = crate::config::clinical_root();
+    let client_dir = clinical_root.join("clients").join(&req.client_id);
+    let identity_path = if client_dir.join("identity.yaml").exists() {
+        client_dir.join("identity.yaml")
+    } else {
+        client_dir.join("private").join("identity.yaml")
+    };
+
+    if !identity_path.exists() {
+        return Err((StatusCode::NOT_FOUND, format!("No identity.yaml for {}", req.client_id)));
+    }
+
+    // Get session dates
+    let session_dates = if let Some(dates) = req.dates {
+        dates
+    } else {
+        let notes_path = client_dir.join("notes.md");
+        if !notes_path.exists() {
+            return Err((StatusCode::NOT_FOUND, "No notes.md found".to_string()));
+        }
+        let content = std::fs::read_to_string(&notes_path)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        let all_dates = crate::billing::invoice::extract_session_dates(&content);
+
+        use crate::billing::traits::AccountingProvider;
+        let invoiced_summaries = provider.list_invoices(crate::billing::traits::InvoiceFilter {
+            client_id: Some(req.client_id.clone()),
+            ..Default::default()
+        }).unwrap_or_default();
+
+        // Extract the issue dates from invoiced summaries as the "already invoiced" dates
+        let invoiced_dates: Vec<String> = invoiced_summaries.iter()
+            .map(|s| s.issue_date.clone())
+            .collect();
+
+        crate::billing::invoice::uninvoiced_sessions(&all_dates, &invoiced_dates)
+    };
+
+    if session_dates.is_empty() {
+        return Ok(Json(serde_json::json!({"ok": false, "error": "No uninvoiced sessions"})));
+    }
+
+    use crate::billing::traits::AccountingProvider;
+    let reference = provider.next_invoice_number()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let invoice = crate::billing::invoice::build_invoice(
+        reference,
+        &req.client_id,
+        &identity_path,
+        &session_dates,
+        config.payment_terms_days,
+        &config.currency,
+    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let inv_ref = provider.create_invoice(&invoice)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "reference": inv_ref.reference,
+        "total": invoice.total(),
+        "sessions": session_dates.len()
+    })))
+}
+
+/// POST /api/billing/invoice-batch — create invoices for all clients with uninvoiced sessions.
+pub async fn create_invoice_batch() -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let config = crate::billing::config::BillingConfig::load()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if !config.enabled {
+        return Err((StatusCode::BAD_REQUEST, "Billing not enabled".to_string()));
+    }
+
+    let provider = crate::billing::ManualProvider::new(&config)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let clinical_root = crate::config::clinical_root();
+    let clients_dir = clinical_root.join("clients");
+    let mut created = 0;
+    let mut errors = Vec::new();
+
+    if clients_dir.exists() {
+        use crate::billing::traits::AccountingProvider;
+        for entry in std::fs::read_dir(&clients_dir).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))? {
+            let entry = entry.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            let client_id = entry.file_name().to_string_lossy().to_string();
+            let client_dir = entry.path();
+            let notes_path = client_dir.join("notes.md");
+            let identity_path = if client_dir.join("identity.yaml").exists() {
+                client_dir.join("identity.yaml")
+            } else {
+                client_dir.join("private").join("identity.yaml")
+            };
+
+            if !notes_path.exists() || !identity_path.exists() { continue; }
+
+            let content = std::fs::read_to_string(&notes_path).unwrap_or_default();
+            let all_dates = crate::billing::invoice::extract_session_dates(&content);
+            let invoiced_summaries = provider.list_invoices(crate::billing::traits::InvoiceFilter {
+                client_id: Some(client_id.clone()),
+                ..Default::default()
+            }).unwrap_or_default();
+            let invoiced_dates: Vec<String> = invoiced_summaries.iter()
+                .map(|s| s.issue_date.clone())
+                .collect();
+            let uninvoiced = crate::billing::invoice::uninvoiced_sessions(&all_dates, &invoiced_dates);
+
+            if uninvoiced.is_empty() { continue; }
+
+            let reference = match provider.next_invoice_number() {
+                Ok(r) => r,
+                Err(e) => { errors.push(format!("{}: {}", client_id, e)); continue; }
+            };
+
+            match crate::billing::invoice::build_invoice(reference, &client_id, &identity_path, &uninvoiced, config.payment_terms_days, &config.currency) {
+                Ok(invoice) => {
+                    match provider.create_invoice(&invoice) {
+                        Ok(_) => { created += 1; }
+                        Err(e) => { errors.push(format!("{}: {}", client_id, e)); }
+                    }
+                }
+                Err(e) => { errors.push(format!("{}: {}", client_id, e)); }
+            }
+        }
+    }
+
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "created": created,
+        "errors": errors
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct MarkPaidRequest {
+    pub reference: String,
+    #[serde(default)]
+    pub date: Option<String>,
+}
+
+/// POST /api/billing/paid — mark an invoice as paid.
+pub async fn mark_paid(
+    Json(req): Json<MarkPaidRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let config = crate::billing::config::BillingConfig::load()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let provider = crate::billing::ManualProvider::new(&config)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    use crate::billing::traits::AccountingProvider;
+    let date = req.date.unwrap_or_else(|| chrono::Local::now().format("%Y-%m-%d").to_string());
+    provider.mark_paid(&req.reference, &date, None)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(serde_json::json!({"ok": true})))
+}
+
+#[derive(Deserialize)]
+pub struct CancelInvoiceRequest {
+    pub reference: String,
+    #[serde(default = "default_cancel_reason")]
+    pub reason: String,
+}
+
+fn default_cancel_reason() -> String { "Cancelled".to_string() }
+
+/// POST /api/billing/cancel — cancel an invoice.
+pub async fn cancel_invoice(
+    Json(req): Json<CancelInvoiceRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let config = crate::billing::config::BillingConfig::load()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let provider = crate::billing::ManualProvider::new(&config)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    use crate::billing::traits::AccountingProvider;
+    provider.cancel_invoice(&req.reference, &req.reason)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(serde_json::json!({"ok": true})))
+}
+
+/// GET /api/billing/reminders — list reminders due.
+pub async fn list_reminders() -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let config = crate::billing::config::BillingConfig::load()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if !config.enabled {
+        return Ok(Json(serde_json::json!({"reminders": []})));
+    }
+
+    let provider = crate::billing::ManualProvider::new(&config)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    use crate::billing::traits::{AccountingProvider, InvoiceFilter};
+    let all = provider.list_invoices(InvoiceFilter { overdue_only: true, ..Default::default() })
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let reminders = crate::billing::remind::due_reminders(&config, &all);
+
+    let reminder_list: Vec<serde_json::Value> = reminders.iter().map(|(inv, tone)| {
+        serde_json::json!({
+            "reference": inv.reference,
+            "client_id": inv.client_id,
+            "client_name": inv.client_name,
+            "days_overdue": inv.days_overdue,
+            "tone": tone,
+            "total": inv.total,
+        })
+    }).collect();
+
+    Ok(Json(serde_json::json!({"reminders": reminder_list})))
+}
+
+// ---------------------------------------------------------------------------
 // Practice info handlers
 // ---------------------------------------------------------------------------
 
@@ -922,4 +1160,204 @@ pub async fn end_clinic(
         .output();
 
     Ok(Json(EndClinicResponse { report, ok: true }))
+}
+
+// ---------------------------------------------------------------------------
+// Email setup handlers
+// ---------------------------------------------------------------------------
+
+/// GET /api/email/status — check if email is configured.
+pub async fn email_status() -> Json<serde_json::Value> {
+    match crate::email::load_email_config() {
+        Ok(config) => Json(serde_json::json!({
+            "configured": true,
+            "from_email": config.from_email,
+            "from_name": config.from_name,
+            "smtp_server": config.smtp_server,
+        })),
+        Err(_) => Json(serde_json::json!({"configured": false})),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct EmailSetupRequest {
+    pub from_email: String,
+    pub from_name: String,
+    pub smtp_server: String,
+    pub smtp_port: u16,
+    pub username: String,
+    pub password: String,
+    #[serde(default)]
+    pub signature: String,
+}
+
+/// POST /api/email/setup — save email configuration.
+pub async fn email_setup(
+    Json(req): Json<EmailSetupRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let config_dir = dirs::config_dir()
+        .map(|d| d.join("practiceforge"))
+        .ok_or_else(|| (StatusCode::INTERNAL_SERVER_ERROR, "No config dir".to_string()))?;
+    std::fs::create_dir_all(&config_dir)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let config_path = config_dir.join("config.toml");
+    let mut config_str = if config_path.exists() {
+        std::fs::read_to_string(&config_path).unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    // Remove existing [email] section if present
+    if let Some(start) = config_str.find("\n[email]") {
+        let rest = &config_str[start + 1..];
+        let end = rest.find("\n[").map(|p| start + 1 + p).unwrap_or(config_str.len());
+        config_str.replace_range(start..end, "");
+    } else if config_str.starts_with("[email]") {
+        let end = config_str.find("\n[").unwrap_or(config_str.len());
+        config_str.replace_range(0..end, "");
+    }
+
+    // Append new [email] section
+    config_str.push_str(&format!(
+        "\n[email]\nfrom_email = \"{}\"\nfrom_name = \"{}\"\nsmtp_server = \"{}\"\nsmtp_port = {}\nusername = \"{}\"\nsignature = \"{}\"\n",
+        req.from_email, req.from_name, req.smtp_server, req.smtp_port, req.username,
+        req.signature.replace('"', "\\\"")
+    ));
+
+    std::fs::write(&config_path, &config_str)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Store password in keychain
+    let _ = std::process::Command::new("security")
+        .args(["add-generic-password", "-a", "clinical-email", "-s", "clinical-email",
+               "-w", &req.password, "-U"])
+        .output();
+
+    Ok(Json(serde_json::json!({"ok": true})))
+}
+
+/// POST /api/email/test — send a test email to self.
+pub async fn email_test() -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let config = crate::email::load_email_config()
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Email not configured: {}", e)))?;
+
+    crate::email::send_test(&config)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Test email failed: {}", e)))?;
+
+    Ok(Json(serde_json::json!({"ok": true, "sent_to": config.from_email})))
+}
+
+// ---------------------------------------------------------------------------
+// Letter workflow handlers
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct LetterDraftRequest {
+    pub client_id: String,
+}
+
+/// POST /api/letter/draft — generate a letter draft for a client.
+pub async fn letter_draft(
+    Json(req): Json<LetterDraftRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    // Run clinical update-letter to get the draft
+    let output = tokio::process::Command::new("clinical")
+        .arg("update-letter")
+        .arg(&req.client_id)
+        .arg("--dry-run")
+        .output()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to run clinical update-letter: {}", e)))?;
+
+    let draft = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+    // Get referrer info from identity
+    let clinical_root = crate::config::clinical_root();
+    let client_dir = clinical_root.join("clients").join(&req.client_id);
+    let identity_path = if client_dir.join("identity.yaml").exists() {
+        client_dir.join("identity.yaml")
+    } else {
+        client_dir.join("private").join("identity.yaml")
+    };
+
+    let (referrer_name, referrer_email) = if identity_path.exists() {
+        let content = std::fs::read_to_string(&identity_path).unwrap_or_default();
+        let val: serde_yaml::Value = serde_yaml::from_str(&content).unwrap_or_default();
+        let rn = val.get("referrer").and_then(|r| r.get("name")).and_then(|v| v.as_str()).map(|s| s.to_string());
+        let re = val.get("referrer").and_then(|r| r.get("email")).and_then(|v| v.as_str()).map(|s| s.to_string());
+        (rn, re)
+    } else {
+        (None, None)
+    };
+
+    Ok(Json(serde_json::json!({
+        "draft": draft,
+        "referrer_name": referrer_name,
+        "referrer_email": referrer_email,
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct LetterBuildRequest {
+    pub client_id: String,
+    pub content: String,
+}
+
+/// POST /api/letter/build — build a PDF from letter content.
+pub async fn letter_build(
+    Json(req): Json<LetterBuildRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    use tokio::io::AsyncWriteExt;
+
+    let mut child = tokio::process::Command::new("clinical-letter-build")
+        .arg(&req.client_id)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to run clinical-letter-build: {}", e)))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(req.content.as_bytes()).await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
+
+    let output = child.wait_with_output().await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Build failed: {}", stderr)));
+    }
+
+    let pdf_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+    Ok(Json(serde_json::json!({"ok": true, "pdf_path": pdf_path})))
+}
+
+#[derive(Deserialize)]
+pub struct LetterSendRequest {
+    pub client_id: String,
+    pub pdf_path: String,
+}
+
+/// POST /api/letter/send — send a letter via email and upload to TM3.
+pub async fn letter_send(
+    Json(req): Json<LetterSendRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let output = tokio::process::Command::new("clinical-letter-send")
+        .arg(&req.client_id)
+        .arg("--pdf")
+        .arg(&req.pdf_path)
+        .output()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to run clinical-letter-send: {}", e)))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Send failed: {}", stderr)));
+    }
+
+    Ok(Json(serde_json::json!({"ok": true})))
 }

@@ -149,6 +149,26 @@
   .referrer-popup .rp-email a { color: var(--cyan); text-decoration: none; }
   .referrer-popup .rp-email a:hover { text-decoration: underline; }
 
+  /* Setup wizard overlay */
+  .setup-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 300; display: flex; align-items: center; justify-content: center; }
+  .setup-panel { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 20px 24px; width: 420px; max-width: 90vw; }
+  .setup-panel h2 { font-size: 15px; color: var(--cyan); margin-bottom: 12px; font-weight: 600; }
+  .setup-panel label { display: block; font-size: 11px; color: var(--fg-dim); margin-top: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .setup-panel input { width: 100%; padding: 6px 8px; background: var(--bg-hl); border: 1px solid var(--border); border-radius: 3px; color: var(--fg); font: inherit; font-size: 13px; margin-top: 3px; outline: none; }
+  .setup-panel input:focus { border-color: var(--cyan); }
+  .setup-panel .setup-row { display: grid; grid-template-columns: 3fr 1fr; gap: 8px; }
+  .setup-actions { margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end; }
+  .setup-actions button { padding: 6px 14px; border-radius: 3px; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; border: 1px solid; }
+  .setup-msg { font-size: 11px; margin-top: 8px; min-height: 16px; }
+
+  /* Letter panel */
+  .letter-panel { border-top: 1px solid var(--border); margin-top: 14px; padding-top: 12px; }
+  .letter-panel .section-head { margin-top: 0; }
+  .letter-textarea { width: 100%; height: 250px; padding: 8px 10px; background: var(--bg-hl); border: 1px solid var(--border); border-radius: 4px; color: var(--fg); font: inherit; font-size: 13px; resize: vertical; outline: none; }
+  .letter-textarea:focus { border-color: var(--cyan); }
+  .letter-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .letter-info { font-size: 11px; color: var(--fg-dim); margin-bottom: 8px; }
+
   /* Undo bar */
   .undo-bar { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: var(--bg-hl); border: 1px solid var(--border); border-radius: 4px; padding: 6px 16px; font-size: 12px; color: var(--fg); display: none; z-index: 200; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
   .undo-bar.visible { display: flex; align-items: center; gap: 10px; }
@@ -227,6 +247,31 @@
 </head>
 <body>
 
+<div class="setup-overlay" id="setup-overlay" style="display:none">
+  <div class="setup-panel">
+    <h2>Email Setup</h2>
+    <p style="font-size:12px;color:var(--fg-dim);margin-bottom:8px">Configure SMTP for sending letters and reminders.</p>
+    <label>Email Address</label>
+    <input type="email" id="setup-email" placeholder="will@willnapier.com" oninput="setupAutoDetect()">
+    <div class="setup-row">
+      <div><label>SMTP Server</label><input type="text" id="setup-smtp" placeholder="mail.example.com"></div>
+      <div><label>Port</label><input type="number" id="setup-port" value="465"></div>
+    </div>
+    <label>Username (if different from email)</label>
+    <input type="text" id="setup-username" placeholder="Same as email">
+    <label>Password</label>
+    <input type="password" id="setup-password">
+    <label>Display Name</label>
+    <input type="text" id="setup-name" placeholder="Dr Will Napier">
+    <div class="setup-msg" id="setup-msg"></div>
+    <div class="setup-actions">
+      <button class="clinic-action-btn btn-compare" onclick="setupTest()">Test</button>
+      <button class="clinic-action-btn btn-accept" onclick="setupSave()">Save</button>
+      <button class="clinic-action-btn btn-reject" onclick="setupSkip()">Skip</button>
+    </div>
+  </div>
+</div>
+
 <header>
   <div>
     <h1>PracticeForge</h1>
@@ -304,6 +349,17 @@
             </div>
             <div id="clinic-comp-list"></div>
           </div>
+          <div class="letter-panel" id="clinic-letter-panel" style="display:none">
+            <div class="section-head">Letter Draft</div>
+            <div class="letter-info" id="clinic-letter-info"></div>
+            <textarea class="letter-textarea" id="clinic-letter-content"></textarea>
+            <div class="letter-actions">
+              <button class="clinic-action-btn btn-accept" onclick="clinicLetterBuild()">Build PDF</button>
+              <button class="clinic-action-btn btn-compare" onclick="clinicLetterSend()">Send</button>
+              <button class="clinic-action-btn btn-reject" onclick="clinicLetterSkip()">Skip</button>
+            </div>
+            <div class="clinic-status-msg" id="clinic-letter-status"></div>
+          </div>
           <div class="clinic-status-msg" id="clinic-status-msg"></div>
         </div>
       </div>
@@ -357,11 +413,19 @@
   <div id="view-billing" class="view">
     <div class="view-padded">
       <div class="summary-row" id="billing-summary"></div>
+      <div style="display:flex;gap:8px;margin-bottom:12px" id="billing-actions">
+        <button class="cal-btn" onclick="billingInvoiceBatch()">Invoice All</button>
+        <button class="cal-btn" onclick="billingShowReminders()">Review Reminders</button>
+      </div>
       <table id="billing-table" style="display:none">
-        <thead><tr><th>Ref</th><th>Client</th><th>Bill To</th><th>Amount</th><th>Due</th><th>Status</th><th>Overdue</th></tr></thead>
+        <thead><tr><th>Ref</th><th>Client</th><th>Bill To</th><th>Amount</th><th>Due</th><th>Status</th><th>Overdue</th><th>Actions</th></tr></thead>
         <tbody id="billing-tbody"></tbody>
       </table>
       <div id="billing-empty" class="empty" style="display:none">No outstanding invoices.</div>
+      <div id="billing-reminders" style="display:none">
+        <div class="section-head">Reminders Due</div>
+        <div id="billing-reminders-list"></div>
+      </div>
     </div>
   </div>
 </main>
@@ -1442,12 +1506,78 @@ function loadBilling() {
     document.getElementById('billing-tbody').innerHTML = invoices.map(i => {
       const cls = i.state === 'overdue' ? 'badge-overdue' : i.state === 'sent' ? 'badge-sent' : 'badge-draft';
       const od = i.days_overdue > 0 ? i.days_overdue + 'd' : '';
-      return '<tr class="row"><td>' + esc(i.reference) + '</td><td>' + esc(i.client_name) + ' <span style="color:var(--fg-dim)">' + esc(i.client_id) + '</span></td><td>' + esc(i.bill_to || '-') + '</td><td>&pound;' + i.total.toFixed(0) + '</td><td>' + esc(i.due_date) + '</td><td><span class="badge ' + cls + '">' + esc(i.state) + '</span></td><td style="color:' + (od ? 'var(--red)' : '') + '">' + od + '</td></tr>';
+      const actions = '<button class="cal-btn" style="font-size:10px;padding:2px 6px" onclick="billingMarkPaid(\'' + esc(i.reference) + '\')">Paid</button> ' +
+        '<button class="cal-btn" style="font-size:10px;padding:2px 6px" onclick="billingCancel(\'' + esc(i.reference) + '\')">Cancel</button>';
+      return '<tr class="row"><td>' + esc(i.reference) + '</td><td>' + esc(i.client_name) + ' <span style="color:var(--fg-dim)">' + esc(i.client_id) + '</span></td><td>' + esc(i.bill_to || '-') + '</td><td>&pound;' + i.total.toFixed(0) + '</td><td>' + esc(i.due_date) + '</td><td><span class="badge ' + cls + '">' + esc(i.state) + '</span></td><td style="color:' + (od ? 'var(--red)' : '') + '">' + od + '</td><td>' + actions + '</td></tr>';
     }).join('');
   }).catch(e => {
     document.getElementById('billing-empty').textContent = 'Failed to load: ' + e;
     document.getElementById('billing-empty').style.display = '';
   });
+}
+
+// ============================================================================
+// Billing actions
+// ============================================================================
+function billingMarkPaid(reference) {
+  if (!confirm('Mark ' + reference + ' as paid?')) return;
+  fetch('/api/billing/paid', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reference: reference })
+  })
+    .then(r => r.json())
+    .then(d => { if (d.ok) { S.loaded.billing = false; loadBilling(); } })
+    .catch(e => alert('Error: ' + e));
+}
+
+function billingCancel(reference) {
+  const reason = prompt('Reason for cancelling ' + reference + ':', 'Cancelled');
+  if (reason === null) return;
+  fetch('/api/billing/cancel', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reference: reference, reason: reason })
+  })
+    .then(r => r.json())
+    .then(d => { if (d.ok) { S.loaded.billing = false; loadBilling(); } })
+    .catch(e => alert('Error: ' + e));
+}
+
+function billingInvoiceBatch() {
+  if (!confirm('Create invoices for all clients with uninvoiced sessions?')) return;
+  fetch('/api/billing/invoice-batch', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        alert('Created ' + d.created + ' invoice(s)' + (d.errors.length > 0 ? '. Errors: ' + d.errors.join('; ') : ''));
+        S.loaded.billing = false;
+        loadBilling();
+      }
+    })
+    .catch(e => alert('Error: ' + e));
+}
+
+function billingShowReminders() {
+  fetch('/api/billing/reminders')
+    .then(r => r.json())
+    .then(data => {
+      const list = data.reminders || [];
+      const el = document.getElementById('billing-reminders');
+      const listEl = document.getElementById('billing-reminders-list');
+      if (list.length === 0) {
+        el.style.display = '';
+        listEl.innerHTML = '<div class="empty">No reminders due.</div>';
+        return;
+      }
+      el.style.display = '';
+      listEl.innerHTML = list.map(r => {
+        const toneCls = r.tone === 'assertive' ? 'badge-overdue' : r.tone === 'businesslike' ? 'badge-sent' : 'badge-pending';
+        return '<div class="search-result"><div class="result-header">' + esc(r.client_name) + ' <span class="result-id">' + esc(r.reference) + '</span> <span class="badge ' + toneCls + '">' + esc(r.tone) + '</span></div>' +
+          '<div class="result-snippet">&pound;' + r.total.toFixed(0) + ' · ' + r.days_overdue + ' days overdue</div></div>';
+      }).join('');
+    })
+    .catch(e => alert('Error: ' + e));
 }
 
 // ============================================================================

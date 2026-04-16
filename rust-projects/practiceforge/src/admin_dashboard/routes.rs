@@ -29,9 +29,22 @@ pub fn build_router() -> Router {
         // Billing
         .route("/api/billing/status", get(handlers::billing_status))
         .route("/api/billing/summary", get(handlers::billing_summary))
+        .route("/api/billing/invoice", post(handlers::create_invoice))
+        .route("/api/billing/invoice-batch", post(handlers::create_invoice_batch))
+        .route("/api/billing/paid", post(handlers::mark_paid))
+        .route("/api/billing/cancel", post(handlers::cancel_invoice))
+        .route("/api/billing/reminders", get(handlers::list_reminders))
         // Practice info
         .route("/api/practice", get(handlers::practice_info))
         .route("/api/practitioners", get(handlers::practitioners))
+        // Email setup
+        .route("/api/email/status", get(handlers::email_status))
+        .route("/api/email/setup", post(handlers::email_setup))
+        .route("/api/email/test", post(handlers::email_test))
+        // Letter workflow
+        .route("/api/letter/draft", post(handlers::letter_draft))
+        .route("/api/letter/build", post(handlers::letter_build))
+        .route("/api/letter/send", post(handlers::letter_send))
         // Clinic workflow
         .route("/api/session", get(handlers::get_session).put(handlers::save_session))
         .route("/api/generate", post(handlers::generate_note))
