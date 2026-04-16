@@ -1185,12 +1185,15 @@ pub async fn generate_note_stream(
     let system_prompt = load_system_prompt();
 
     // Call Ollama streaming API
+    // keep_alive: -1 keeps the model loaded in VRAM indefinitely (no cold start penalty).
+    // Without this, Ollama unloads after 5min idle → 5-8s reload on next request.
     let ollama_url = format!("{}/api/generate", endpoint);
     let body = serde_json::json!({
         "model": model,
         "prompt": prompt,
         "system": system_prompt,
         "stream": true,
+        "keep_alive": -1,
     });
 
     let client = reqwest::Client::new();
@@ -1487,13 +1490,64 @@ pub async fn get_client_metadata(
 
 /// GET /api/inference/status — check if inference server is reachable.
 pub async fn inference_status() -> Json<InferenceStatus> {
-    let available = reqwest::Client::new()
+    let client = reqwest::Client::new();
+
+    let available = client
         .get("http://localhost:11434/api/tags")
         .timeout(std::time::Duration::from_secs(3))
         .send()
         .await
         .map(|r| r.status().is_success())
         .unwrap_or(false);
+
+    if available {
+        // Check if clinical model is loaded; if cold, warm it up in background.
+        // Prevents the 5-8s cold-start penalty on the first generation.
+        let needs_warmup = match client
+            .get("http://localhost:11434/api/ps")
+            .timeout(std::time::Duration::from_secs(3))
+            .send()
+            .await
+        {
+            Ok(resp) => match resp.json::<serde_json::Value>().await {
+                Ok(val) => {
+                    val.get("models")
+                        .and_then(|m| m.as_array())
+                        .map(|a| a.is_empty())
+                        .unwrap_or(true)
+                }
+                Err(_) => true,
+            },
+            Err(_) => false,
+        };
+
+        if needs_warmup {
+            let config = crate::config::load_config();
+            let model = config.as_ref()
+                .and_then(|c| c.get("voice"))
+                .and_then(|v| v.get("model"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("clinical-voice-q4")
+                .to_string();
+
+            // Fire-and-forget: load model into VRAM with a 1-token generation.
+            // keep_alive: -1 pins it indefinitely (no 5-min idle unload).
+            tokio::spawn(async move {
+                let _ = reqwest::Client::new()
+                    .post("http://localhost:11434/api/generate")
+                    .json(&serde_json::json!({
+                        "model": model,
+                        "prompt": "warmup",
+                        "keep_alive": -1,
+                        "stream": false,
+                        "options": {"num_predict": 1},
+                    }))
+                    .timeout(std::time::Duration::from_secs(30))
+                    .send()
+                    .await;
+            });
+        }
+    }
 
     Json(InferenceStatus { available })
 }
