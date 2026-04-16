@@ -1152,12 +1152,8 @@ pub async fn end_clinic(
         .unwrap_or_else(|_| Local::now());
     let minutes = (Local::now() - started).num_minutes();
 
-    // Daypage entry
-    let ids_str = client_ids.join(", ");
-    let entry = format!("clinic:: {} clients {}min - {}", attended, minutes, ids_str);
-    let _ = std::process::Command::new("daypage-append")
-        .arg(&entry)
-        .output();
+    // Clinic data lives in PracticeForge session files — no DayPage entry needed.
+    // The attendance report at ~/Clinical/attendance/{date}.txt is the permanent record.
 
     Ok(Json(EndClinicResponse { report, ok: true }))
 }

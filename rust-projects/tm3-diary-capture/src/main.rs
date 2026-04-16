@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use tm3_diary_capture::archive;
 use tm3_diary_capture::client_map::ClientMap;
-use tm3_diary_capture::daypage;
+// daypage module no longer used — PracticeForge session files are the source of truth
 use tm3_diary_capture::html::{self, Status};
 use tm3_diary_capture::live;
 
@@ -155,33 +155,21 @@ fn main() -> Result<()> {
         let mut sorted = booked;
         sorted.sort_by(|a, b| a.start_time.cmp(&b.start_time));
 
-        let mut lines = vec!["clinic::".to_string()];
+        // Track unmapped clients for reporting
         for appt in &sorted {
-            let client_id = match &client_map {
-                Some(map) => match map.lookup(&appt.client_name) {
-                    Some(id) => id.to_string(),
-                    None => {
-                        unmapped.push((
-                            appt.client_name.clone(),
-                            schedule.date,
-                            appt.start_time.clone(),
-                            appt.tm3_id.clone(),
-                        ));
-                        "???".to_string()
-                    }
-                },
-                None => "???".to_string(),
-            };
-
-            let mut line = format!("- [ ] {} {}", client_id, appt.start_time);
-            if let Some(tag) = &appt.rate_tag {
-                line.push(' ');
-                line.push_str(tag);
+            if let Some(ref map) = client_map {
+                if map.lookup(&appt.client_name).is_none() {
+                    unmapped.push((
+                        appt.client_name.clone(),
+                        schedule.date,
+                        appt.start_time.clone(),
+                        appt.tm3_id.clone(),
+                    ));
+                }
             }
-            lines.push(line);
         }
 
-        // Write dashboard session file for this date (include all appointments incl. unmapped)
+        // Write PracticeForge session file for this date (source of truth for clinic schedule)
         if !cli.dry_run {
             let session_clients: Vec<archive::SessionClient> = schedule.appointments.iter().map(|appt| {
                 let (cid, name) = match &client_map {
@@ -211,15 +199,22 @@ fn main() -> Result<()> {
             }
         }
 
-        let block = lines.join("\n");
-
+        // Print summary to console
         println!("{} ({}):", schedule.date, schedule.date.format("%A"));
-        println!("{}", block);
+        for appt in &sorted {
+            let client_id = match &client_map {
+                Some(map) => map.lookup(&appt.client_name)
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "???".to_string()),
+                None => "???".to_string(),
+            };
+            let tag = appt.rate_tag.as_deref().unwrap_or("");
+            println!("  {} {} {}", appt.start_time, client_id, tag);
+        }
         println!();
 
-        if !cli.dry_run {
-            daypage::append_entry(&schedule.date, &block)?;
-        }
+        // DayPage clinic:: blocks are deprecated — PracticeForge session files
+        // are now the source of truth for clinic scheduling.
 
         any_output = true;
     }

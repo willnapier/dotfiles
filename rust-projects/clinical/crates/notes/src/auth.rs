@@ -116,21 +116,12 @@ pub fn check(append: bool) -> Result<()> {
     }
 
     let warning_text = warnings.join(", ");
-    let line = format!("clinic:: auth check: {}", warning_text);
 
-    if append {
-        // Try daypage-append; graceful fallback if not found (e.g. on Windows)
-        match Command::new("daypage-append").arg(&line).status() {
-            Ok(s) if s.success() => {
-                println!("Appended to session log: {}", line);
-            }
-            _ => {
-                eprintln!("Warning: session log append not available. Printing instead:");
-                println!("{}", line);
-            }
-        }
-    } else {
-        println!("{}", line);
+    // Auth warnings are printed to stdout — PracticeForge dashboard
+    // shows block expiry via the scheduling module's maintain command.
+    // No DayPage entry needed.
+    println!("Auth check: {}", warning_text);
+    if !append {
         println!();
         println!("Run with --append to add to today's session log.");
     }
