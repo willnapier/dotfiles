@@ -141,6 +141,20 @@
   .ccr-dismiss:hover { color: var(--red); }
   .ccr-spacer { flex: 1; }
 
+  /* Referrer popup */
+  .referrer-popup { position: absolute; right: 4px; top: 100%; z-index: 100; background: var(--bg-hl); border: 1px solid var(--cyan); border-radius: 4px; padding: 8px 12px; min-width: 220px; font-size: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+  .referrer-popup .rp-name { font-weight: 600; color: var(--fg-em); margin-bottom: 2px; }
+  .referrer-popup .rp-practice { color: var(--fg-dim); margin-bottom: 4px; }
+  .referrer-popup .rp-email { color: var(--cyan); }
+  .referrer-popup .rp-email a { color: var(--cyan); text-decoration: none; }
+  .referrer-popup .rp-email a:hover { text-decoration: underline; }
+
+  /* Undo bar */
+  .undo-bar { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: var(--bg-hl); border: 1px solid var(--border); border-radius: 4px; padding: 6px 16px; font-size: 12px; color: var(--fg); display: none; z-index: 200; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+  .undo-bar.visible { display: flex; align-items: center; gap: 10px; }
+  .undo-bar button { background: none; border: 1px solid var(--cyan); border-radius: 3px; color: var(--cyan); padding: 2px 10px; cursor: pointer; font: inherit; font-size: 12px; }
+  .undo-bar button:hover { background: rgba(42,161,152,0.15); }
+
   .clinic-sidebar-footer { padding: 8px 12px; border-top: 1px solid var(--border); }
   .clinic-add-input { width: 100%; padding: 5px 8px; background: var(--bg-hl); border: 1px solid var(--border); border-radius: 3px; color: var(--fg); font: inherit; font-size: 12px; outline: none; }
   .clinic-add-input:focus { border-color: var(--cyan); }
@@ -351,6 +365,11 @@
     </div>
   </div>
 </main>
+
+<div class="undo-bar" id="undo-bar">
+  <span id="undo-msg"></span>
+  <button onclick="undoDismiss()">Undo</button>
+</div>
 
 <div id="statusbar">
   <span class="hint" id="status-hint">
@@ -660,14 +679,11 @@ function renderClinicList() {
       const cls = nearLimit ? 'ccr-funding-warn' : 'ccr-funding-ok';
       badges += '<span class="ccr-funding ' + cls + '">' + used + '/' + auth + '</span>';
     }
-    // Letter badge
+    // Letter badge — L! is clickable to show referrer info
     if (c._meta && c._meta.letter_due) {
-      badges += '<span class="ccr-letter ccr-letter-due">L!</span>';
-    } else if (c._meta && c._meta.sessions_count !== undefined) {
-      const lCount = c._meta.letter_count || 0;
-      if (lCount > 0) {
-        badges += '<span class="ccr-letter ccr-letter-dim">L:' + lCount + '</span>';
-      }
+      badges += '<span class="ccr-letter ccr-letter-due" onclick="event.stopPropagation();showReferrerPopup(' + i + ')" style="cursor:pointer" title="Click for referrer info">L!</span>';
+    } else if (c._meta && c._meta.letter_cadence_until !== undefined && c._meta.letter_cadence_until !== null) {
+      badges += '<span class="ccr-letter ccr-letter-dim">L:' + c._meta.letter_cadence_until + '</span>';
     }
 
     html += '<div class="clinic-client-row' + sel + '" data-idx="' + i + '" data-id="' + esc(c.id) + '" onclick="clinicRowClick(' + i + ')">';
@@ -1018,7 +1034,7 @@ function clinicMarkDNA() {
   clinicSetStatus(S.clinicSelectedId, 'dna');
 }
 
-// --- Dismiss client ---
+// --- Dismiss client (with undo) ---
 function clinicDismissClient(idx) {
   if (!S.clinicSession) return;
   const client = S.clinicSession.clients[idx];
@@ -1026,6 +1042,11 @@ function clinicDismissClient(idx) {
   if (S.clinicSelectedId === client.id) {
     clinicDeselectClient();
   }
+
+  // Store for undo
+  dismissedClient = JSON.parse(JSON.stringify(client));
+  dismissedIdx = idx;
+
   S.clinicSession.clients.splice(idx, 1);
   if (S.clinicClientIdx >= S.clinicSession.clients.length) {
     S.clinicClientIdx = S.clinicSession.clients.length - 1;
@@ -1034,7 +1055,69 @@ function clinicDismissClient(idx) {
   highlightClinicClient();
   checkEndClinicVisibility();
   clinicSaveSession();
+
+  // Show undo bar
+  const bar = document.getElementById('undo-bar');
+  document.getElementById('undo-msg').textContent = 'Dismissed ' + (client.client_name || client.id);
+  bar.classList.add('visible');
+  if (undoTimer) clearTimeout(undoTimer);
+  undoTimer = setTimeout(() => {
+    bar.classList.remove('visible');
+    dismissedClient = null;
+  }, 8000);
 }
+
+function undoDismiss() {
+  if (!dismissedClient || !S.clinicSession) return;
+  const insertIdx = Math.min(dismissedIdx, S.clinicSession.clients.length);
+  S.clinicSession.clients.splice(insertIdx, 0, dismissedClient);
+  S.clinicClientIdx = insertIdx;
+  dismissedClient = null;
+  if (undoTimer) clearTimeout(undoTimer);
+  document.getElementById('undo-bar').classList.remove('visible');
+  renderClinicList();
+  highlightClinicClient();
+  checkEndClinicVisibility();
+  clinicSaveSession();
+}
+
+// --- Referrer popup ---
+function showReferrerPopup(idx) {
+  // Close any existing popup
+  closeReferrerPopup();
+  const clients = S.clinicSession ? S.clinicSession.clients : [];
+  const client = clients[idx];
+  if (!client || !client._meta) return;
+  const m = client._meta;
+  if (!m.referrer_name) return;
+
+  const row = document.querySelector('.clinic-client-row[data-idx="' + idx + '"]');
+  if (!row) return;
+
+  const popup = document.createElement('div');
+  popup.className = 'referrer-popup';
+  popup.id = 'referrer-popup';
+  popup.innerHTML =
+    '<div class="rp-name">' + esc(m.referrer_name) + '</div>' +
+    (m.referrer_practice ? '<div class="rp-practice">' + esc(m.referrer_practice) + '</div>' : '') +
+    (m.referrer_email ? '<div class="rp-email"><a href="mailto:' + esc(m.referrer_email) + '">' + esc(m.referrer_email) + '</a></div>' : '');
+  row.appendChild(popup);
+
+  // Close on click outside
+  setTimeout(() => {
+    document.addEventListener('click', closeReferrerPopup, { once: true });
+  }, 0);
+}
+
+function closeReferrerPopup() {
+  const existing = document.getElementById('referrer-popup');
+  if (existing) existing.remove();
+}
+
+// --- Dismiss with undo ---
+let dismissedClient = null;
+let dismissedIdx = -1;
+let undoTimer = null;
 
 // --- Add client ---
 function clinicAddClient() {
