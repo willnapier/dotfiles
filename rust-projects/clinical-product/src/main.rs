@@ -12,6 +12,7 @@ pub mod onboard;
 mod referral;
 pub mod registry;
 mod runpod;
+pub mod search;
 pub mod scheduling;
 pub mod session_cookies;
 mod sync;
@@ -157,6 +158,27 @@ enum Command {
     Registry {
         #[command(subcommand)]
         action: RegistryAction,
+    },
+
+    /// Full-text search across all client files.
+    ///
+    /// Tantivy-powered search across notes, correspondence, identity,
+    /// and diagnosis. Auto-rebuilds stale indexes (> 1 hour old).
+    Search {
+        /// Search query
+        query: String,
+        /// Restrict search to a specific client
+        #[arg(long)]
+        client: Option<String>,
+        /// Restrict to a field (notes, correspondence, identity, diagnosis)
+        #[arg(long)]
+        field: Option<String>,
+        /// Maximum results
+        #[arg(long, default_value = "20")]
+        limit: usize,
+        /// Rebuild the search index
+        #[arg(long)]
+        reindex: bool,
     },
 }
 
@@ -327,6 +349,36 @@ enum ScheduleAction {
     Blocks {
         /// Client ID (omit to show all)
         client_id: Option<String>,
+    },
+    /// Cancel an appointment or stop a recurring series.
+    Cancel {
+        /// Client ID
+        client_id: String,
+        /// Specific date to cancel (YYYY-MM-DD) — cancels one instance
+        #[arg(long)]
+        date: Option<String>,
+        /// Cancel the entire recurring series
+        #[arg(long)]
+        series: bool,
+    },
+    /// Reschedule an appointment to a new date/time.
+    Move {
+        /// Client ID
+        client_id: String,
+        /// Original date (YYYY-MM-DD)
+        from: String,
+        /// New date and time (YYYY-MM-DD HH:MM)
+        to: String,
+    },
+    /// Update appointment status (arrived, completed, noshow, late-cancel).
+    Update {
+        /// Client ID
+        client_id: String,
+        /// Date of appointment (YYYY-MM-DD)
+        date: String,
+        /// New status
+        #[arg(long, value_parser = ["arrived", "completed", "noshow", "late-cancel"])]
+        status: String,
     },
     /// Export appointments as ICS (iCalendar) format.
     Export {
@@ -737,6 +789,15 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Registry { action } => {
             handle_registry(action)?;
+        }
+        Command::Search {
+            query,
+            client,
+            field,
+            limit,
+            reindex,
+        } => {
+            handle_search(query, client, field, limit, reindex)?;
         }
     }
 
@@ -1418,6 +1479,31 @@ fn trunc(s: &str, n: usize) -> String {
     }
 }
 
+/// Look up a client's name. Tries registry first, then identity.yaml, then falls
+/// back to using the client_id itself.
+fn lookup_client_name(client_id: &str) -> String {
+    // Try registry
+    let reg_config = registry::config::RegistryConfig::load();
+    if let Ok(client) = registry::get_client(&reg_config, client_id) {
+        return client.name;
+    }
+
+    // Fall back to ~/Clinical/clients/{id}/identity.yaml
+    let identity_path = crate::config::clients_dir().join(client_id).join("identity.yaml");
+    if identity_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&identity_path) {
+            if let Ok(val) = serde_yaml::from_str::<serde_yaml::Value>(&content) {
+                if let Some(name) = val.get("name").and_then(|v| v.as_str()) {
+                    return name.to_string();
+                }
+            }
+        }
+    }
+
+    // Last resort
+    client_id.to_string()
+}
+
 fn handle_schedule(action: ScheduleAction) -> anyhow::Result<()> {
     use chrono::{Datelike, Local, NaiveDate};
     use scheduling::{
@@ -1464,49 +1550,80 @@ fn handle_schedule(action: ScheduleAction) -> anyhow::Result<()> {
                 vec![]
             };
 
-            if series_list.is_empty() {
-                println!("No recurring series found for '{}'.", prac);
+            // Load one-off appointments
+            let appts_dir = std::path::PathBuf::from(&schedules_dir)
+                .join(prac)
+                .join("appointments");
+            let one_offs = ics::load_appointments_dir(&appts_dir)?;
+
+            if series_list.is_empty() && one_offs.is_empty() {
+                println!("No appointments found for '{}'.", prac);
                 println!("  Series dir: {}", series_dir.display());
                 return Ok(());
             }
 
-            // Materialise and display
-            let mut all_appointments: Vec<(NaiveDate, &RecurringSeries)> = Vec::new();
+            // Materialise recurring series into date entries
+            // Each entry: (date, start_time, end_time, client_name, client_id, rate_tag, description)
+            let mut all_entries: Vec<(NaiveDate, chrono::NaiveTime, chrono::NaiveTime, String, String, Option<String>, String)> = Vec::new();
+
             for s in &series_list {
                 if s.status != SeriesStatus::Active {
                     continue;
                 }
                 let dates = recurrence::materialise(s, from, to, &holidays)?;
                 for d in dates {
-                    all_appointments.push((d, s));
+                    all_entries.push((
+                        d,
+                        s.start_time,
+                        s.end_time,
+                        s.client_name.clone(),
+                        s.client_id.clone(),
+                        s.rate_tag.clone(),
+                        format!("{}", s.recurrence.freq),
+                    ));
                 }
             }
 
-            all_appointments.sort_by_key(|(d, s)| (*d, s.start_time));
+            // Add one-off appointments within the date range
+            for appt in &one_offs {
+                if appt.date >= from && appt.date <= to && appt.status != AppointmentStatus::Cancelled {
+                    all_entries.push((
+                        appt.date,
+                        appt.start_time,
+                        appt.end_time,
+                        appt.client_name.clone(),
+                        appt.client_id.clone(),
+                        appt.rate_tag.clone(),
+                        format!("one-off [{}]", appt.status),
+                    ));
+                }
+            }
 
-            if all_appointments.is_empty() {
-                println!("No appointments for {} ({}–{}).", prac, from, to);
+            all_entries.sort_by_key(|(d, st, _, _, _, _, _)| (*d, *st));
+
+            if all_entries.is_empty() {
+                println!("No appointments for {} ({}--{}).", prac, from, to);
             } else {
                 let mut current_date = None;
-                for (date, series) in &all_appointments {
+                for (date, start_time, end_time, client_name, client_id, rate_tag, desc) in &all_entries {
                     if current_date != Some(*date) {
                         println!("\n{}  {}", date, date.format("%A"));
                         current_date = Some(*date);
                     }
-                    let tag = series.rate_tag.as_deref().unwrap_or("");
+                    let tag = rate_tag.as_deref().unwrap_or("");
                     let tag_str = if tag.is_empty() {
                         String::new()
                     } else {
                         format!(" [{}]", tag)
                     };
                     println!(
-                        "  {} – {}  {} ({}){} — {}",
-                        series.start_time.format("%H:%M"),
-                        series.end_time.format("%H:%M"),
-                        series.client_name,
-                        series.client_id,
+                        "  {} -- {}  {} ({}){} -- {}",
+                        start_time.format("%H:%M"),
+                        end_time.format("%H:%M"),
+                        client_name,
+                        client_id,
                         tag_str,
-                        series.recurrence.freq,
+                        desc,
                     );
                 }
             }
@@ -1536,6 +1653,8 @@ fn handle_schedule(action: ScheduleAction) -> anyhow::Result<()> {
                 _ => (None, 1),
             };
 
+            let client_name = lookup_client_name(&client_id);
+
             if let Some(freq) = freq {
                 // Create a recurring series
                 let series_count = if infinite { None } else { count };
@@ -1543,7 +1662,7 @@ fn handle_schedule(action: ScheduleAction) -> anyhow::Result<()> {
                     id: uuid::Uuid::new_v4(),
                     practitioner: practitioner.to_string(),
                     client_id: client_id.clone(),
-                    client_name: client_id.clone(), // TODO: look up from identity.yaml
+                    client_name: client_name.clone(),
                     start_time,
                     end_time,
                     location: config.location.clone(),
@@ -1580,13 +1699,42 @@ fn handle_schedule(action: ScheduleAction) -> anyhow::Result<()> {
                         series_count.unwrap())
                 };
 
-                println!("Created recurring series: {} {} at {} — {}",
-                    client_id, date.format("%A"), start_time.format("%H:%M"), recur_desc);
+                println!("Created recurring series: {} ({}) {} at {} -- {}",
+                    client_name, client_id, date.format("%A"), start_time.format("%H:%M"), recur_desc);
                 println!("  Series ID: {}", series.id);
                 println!("  Saved to: {}", path.display());
             } else {
-                println!("One-off appointment creation not yet implemented.");
-                println!("  Use --recur weekly|fortnightly|every3w|monthly to create a series.");
+                // Create a one-off appointment
+                let appt = Appointment {
+                    id: uuid::Uuid::new_v4(),
+                    series_id: None,
+                    practitioner: practitioner.to_string(),
+                    client_id: client_id.clone(),
+                    client_name: client_name.clone(),
+                    date,
+                    start_time,
+                    end_time,
+                    status: AppointmentStatus::Confirmed,
+                    source: AppointmentSource::Practitioner,
+                    rate_tag: None,
+                    location: config.location.clone(),
+                    sms_confirmation: None,
+                    notes: None,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                };
+
+                let appts_dir = std::path::PathBuf::from(&schedules_dir)
+                    .join(practitioner)
+                    .join("appointments");
+                std::fs::create_dir_all(&appts_dir)?;
+                let path = appts_dir.join(format!("{}.yaml", appt.id));
+                let yaml = serde_yaml::to_string(&appt)?;
+                std::fs::write(&path, &yaml)?;
+
+                println!("Created one-off appointment: {} ({}) on {} at {}",
+                    client_name, client_id, date.format("%Y-%m-%d %A"), start_time.format("%H:%M"));
+                println!("  Appointment ID: {}", appt.id);
+                println!("  Saved to: {}", path.display());
             }
         }
 
@@ -1662,8 +1810,13 @@ fn handle_schedule(action: ScheduleAction) -> anyhow::Result<()> {
                 .join("series");
             let series_list = ics::load_series_dir(&series_dir)?;
 
-            let cal_name = format!("PracticeForge — {}", prac);
-            let ics_output = ics::full_calendar_to_ics(&series_list, &[], &cal_name);
+            let appts_dir = std::path::PathBuf::from(&schedules_dir)
+                .join(prac)
+                .join("appointments");
+            let one_offs = ics::load_appointments_dir(&appts_dir)?;
+
+            let cal_name = format!("PracticeForge -- {}", prac);
+            let ics_output = ics::full_calendar_to_ics(&series_list, &one_offs, &cal_name);
             println!("{}", ics_output);
         }
 

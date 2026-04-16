@@ -175,6 +175,24 @@ pub fn load_holidays(yaml_str: &str) -> Result<Vec<NaiveDate>> {
         .collect()
 }
 
+/// Load one-off appointment definitions from a directory of YAML files.
+pub fn load_appointments_dir(dir: &std::path::Path) -> Result<Vec<Appointment>> {
+    let mut appointments = Vec::new();
+    if !dir.exists() {
+        return Ok(appointments);
+    }
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().is_some_and(|e| e == "yaml" || e == "yml") {
+            let content = std::fs::read_to_string(&path)?;
+            let a: Appointment = serde_yaml::from_str(&content)?;
+            appointments.push(a);
+        }
+    }
+    Ok(appointments)
+}
+
 /// Load series definitions from a directory of YAML files.
 pub fn load_series_dir(dir: &std::path::Path) -> Result<Vec<RecurringSeries>> {
     let mut series = Vec::new();
