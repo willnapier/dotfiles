@@ -1542,7 +1542,7 @@ pub async fn inference_status() -> Json<InferenceStatus> {
                         "stream": false,
                         "options": {"num_predict": 1},
                     }))
-                    .timeout(std::time::Duration::from_secs(30))
+                    .timeout(std::time::Duration::from_secs(120))
                     .send()
                     .await;
             });
