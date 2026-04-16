@@ -47,10 +47,10 @@ for i in "${!SCENARIO_NAMES[@]}"; do
   errfile="${RESULTS_DIR}/${name}.stderr"
 
   TIMEOUT_SECS=120
-  start_epoch=$(gdate +%s%N)
+  start_epoch=$(date +%s%N)
   timeout "${TIMEOUT_SECS}" clinical note "$CLIENT_ID" "$observation" --no-save --yes \
       > "$outfile" 2> "$errfile" || true
-  end_epoch=$(gdate +%s%N)
+  end_epoch=$(date +%s%N)
 
   elapsed_ms=$(( (end_epoch - start_epoch) / 1000000 ))
   elapsed_s=$(echo "scale=1; $elapsed_ms / 1000" | bc)
@@ -108,7 +108,7 @@ for i in "${!SCENARIO_NAMES[@]}"; do
     done <<< "$novel"
   fi
   results+="${f1}\t"
-  if [[ "$f1" == "PASS" ]]; then ((pass++)); else ((fail++)); fi
+  if [[ "$f1" == "PASS" ]]; then pass=$((pass + 1)); else fail=$((fail + 1)); fi
 
   # F2: Fabricated quotes — quoted text (10+ chars) not in observation
   f2="PASS"
@@ -123,7 +123,7 @@ for i in "${!SCENARIO_NAMES[@]}"; do
     done <<< "$quotes"
   fi
   results+="${f2}\t"
-  if [[ "$f2" == "PASS" ]]; then ((pass++)); else ((fail++)); fi
+  if [[ "$f2" == "PASS" ]]; then pass=$((pass + 1)); else fail=$((fail + 1)); fi
 
   # F3: Homework references not in observation
   f3="PASS"
@@ -135,7 +135,7 @@ for i in "${!SCENARIO_NAMES[@]}"; do
     echo "  ${name} F3 FAIL: homework reference in note but not observation" >> "${RESULTS_DIR}/failures.log"
   fi
   results+="${f3}\t"
-  if [[ "$f3" == "PASS" ]]; then ((pass++)); else ((fail++)); fi
+  if [[ "$f3" == "PASS" ]]; then pass=$((pass + 1)); else fail=$((fail + 1)); fi
 
   # F4: Risk section length — should be brief unless observation mentions risk
   f4="PASS"
@@ -151,7 +151,7 @@ for i in "${!SCENARIO_NAMES[@]}"; do
     echo "  ${name} F4 FAIL: risk section ${risk_words} words, no risk in observation" >> "${RESULTS_DIR}/failures.log"
   fi
   results+="${f4}\t"
-  if [[ "$f4" == "PASS" ]]; then ((pass++)); else ((fail++)); fi
+  if [[ "$f4" == "PASS" ]]; then pass=$((pass + 1)); else fail=$((fail + 1)); fi
 
   # F5: Hedge-inference phrases not in observation
   f5="PASS"
@@ -164,7 +164,7 @@ for i in "${!SCENARIO_NAMES[@]}"; do
     echo "  ${name} F5 FAIL: hedge phrases: ${matched}" >> "${RESULTS_DIR}/failures.log"
   fi
   results+="${f5}\t"
-  if [[ "$f5" == "PASS" ]]; then ((pass++)); else ((fail++)); fi
+  if [[ "$f5" == "PASS" ]]; then pass=$((pass + 1)); else fail=$((fail + 1)); fi
 
   # F6: First name used (not "the client" or "Client")
   f6="PASS"
@@ -173,7 +173,7 @@ for i in "${!SCENARIO_NAMES[@]}"; do
     echo "  ${name} F6 FAIL: uses 'the client' or 'Client' instead of first name" >> "${RESULTS_DIR}/failures.log"
   fi
   results+="${f6}\t"
-  if [[ "$f6" == "PASS" ]]; then ((pass++)); else ((fail++)); fi
+  if [[ "$f6" == "PASS" ]]; then pass=$((pass + 1)); else fail=$((fail + 1)); fi
 
   # F7: Temporal fabrication — specific timeframes not in observation
   f7="PASS"
@@ -190,7 +190,7 @@ for i in "${!SCENARIO_NAMES[@]}"; do
     echo "  ${name} F7 FAIL: temporal fabrication: ${matched}" >> "${RESULTS_DIR}/failures.log"
   fi
   results+="${f7}\t"
-  if [[ "$f7" == "PASS" ]]; then ((pass++)); else ((fail++)); fi
+  if [[ "$f7" == "PASS" ]]; then pass=$((pass + 1)); else fail=$((fail + 1)); fi
 
   TOTAL_PASS=$((TOTAL_PASS + pass))
   TOTAL_FAIL=$((TOTAL_FAIL + fail))
@@ -202,7 +202,11 @@ done
 
 echo ""
 echo "=== Summary: ${STRATEGY} ==="
-echo "Total: ${TOTAL_PASS}/${TOTAL_CHECKS} pass ($(( TOTAL_PASS * 100 / TOTAL_CHECKS ))%)"
+if [[ "$TOTAL_CHECKS" -gt 0 ]]; then
+  echo "Total: ${TOTAL_PASS}/${TOTAL_CHECKS} pass ($(( TOTAL_PASS * 100 / TOTAL_CHECKS ))%)"
+else
+  echo "Total: 0/0 pass (no scenarios scored)"
+fi
 echo "Results: ${RESULTS_DIR}"
 
 if [[ -f "${RESULTS_DIR}/failures.log" ]]; then
