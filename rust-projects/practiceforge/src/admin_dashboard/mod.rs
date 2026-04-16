@@ -1,10 +1,9 @@
-//! Admin Dashboard — practice-wide web UI for administration.
+//! PracticeForge Dashboard — the unified web UI for all users.
 //!
-//! A separate Axum server from the practitioner dashboard, intended for
-//! practice admin (Olly). Provides multi-practitioner calendar views,
-//! client management, search, and billing overview.
+//! Primary views: Clinic (session workflow), Clients, Calendar, Search, Billing.
+//! Keyboard-first navigation, solarized dark theme.
 //!
-//! All static assets are embedded in the binary via `include_str!`.
+//! Static assets embedded via `include_str!`, with PF_DEV=1 live-reload mode.
 
 mod handlers;
 mod routes;

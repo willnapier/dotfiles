@@ -2,7 +2,7 @@
 
 use axum::{
     response::Html,
-    routing::get,
+    routing::{get, post, put},
     Router,
 };
 
@@ -32,6 +32,14 @@ pub fn build_router() -> Router {
         // Practice info
         .route("/api/practice", get(handlers::practice_info))
         .route("/api/practitioners", get(handlers::practitioners))
+        // Clinic workflow
+        .route("/api/session", get(handlers::get_session).put(handlers::save_session))
+        .route("/api/generate", post(handlers::generate_note))
+        .route("/api/save-note", post(handlers::save_note))
+        .route("/api/client/{id}/notes", get(handlers::get_client_notes))
+        .route("/api/client/{id}/metadata", get(handlers::get_client_metadata))
+        .route("/api/inference/status", get(handlers::inference_status))
+        .route("/api/end-clinic", post(handlers::end_clinic))
 }
 
 /// Serves admin.html. In dev mode (PF_DEV=1), reads from disk on every

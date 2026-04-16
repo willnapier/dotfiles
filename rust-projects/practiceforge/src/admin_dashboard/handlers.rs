@@ -7,6 +7,7 @@ use axum::{
 };
 use chrono::{Datelike, Local, NaiveDate};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 use crate::registry;
 use crate::registry::config::RegistryConfig;
@@ -514,4 +515,411 @@ pub async fn practitioners() -> Result<Json<Vec<PractitionerResponse>>, (StatusC
     } else {
         Ok(Json(vec![]))
     }
+}
+
+// ---------------------------------------------------------------------------
+// Clinic workflow types
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ClinicSession {
+    pub date: String,
+    #[serde(default)]
+    pub started_at: String,
+    #[serde(default)]
+    pub clients: Vec<ClinicClient>,
+    #[serde(default)]
+    pub clinic_ended: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ClinicClient {
+    pub id: String,
+    #[serde(default)]
+    pub client_name: String,
+    #[serde(default)]
+    pub time: String,
+    #[serde(default)]
+    pub end_time: String,
+    #[serde(default = "default_pending")]
+    pub status: String,
+    #[serde(default)]
+    pub rate_tag: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft_observation: Option<String>,
+}
+
+fn default_pending() -> String { "pending".to_string() }
+
+#[derive(Deserialize)]
+pub struct SessionQuery {
+    pub date: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct GenerateRequest {
+    pub client_id: String,
+    pub observation: String,
+    #[serde(default)]
+    pub model: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct GenerateResponse {
+    pub note_text: String,
+    pub elapsed_seconds: f64,
+}
+
+#[derive(Deserialize)]
+pub struct SaveNoteRequest {
+    pub client_id: String,
+    pub note_text: String,
+}
+
+#[derive(Serialize)]
+pub struct ClientMetadata {
+    pub sessions_count: usize,
+    pub sessions_authorised: Option<u32>,
+    pub sessions_used: Option<u32>,
+    pub funding_type: Option<String>,
+    pub letter_cadence_until: Option<i32>,
+    pub letter_due: bool,
+    pub referrer_name: Option<String>,
+    pub referrer_practice: Option<String>,
+    pub referrer_email: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct InferenceStatus {
+    pub available: bool,
+}
+
+#[derive(Deserialize)]
+pub struct EndClinicRequest {
+    pub session: ClinicSession,
+}
+
+#[derive(Serialize)]
+pub struct EndClinicResponse {
+    pub report: String,
+    pub ok: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Session file helpers
+// ---------------------------------------------------------------------------
+
+fn session_dir() -> PathBuf {
+    dirs::data_local_dir()
+        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".local/share"))
+        .join("practiceforge")
+}
+
+fn session_path(date: &str) -> PathBuf {
+    session_dir().join(format!("session-{}.json", date))
+}
+
+// ---------------------------------------------------------------------------
+// Clinic workflow handlers
+// ---------------------------------------------------------------------------
+
+/// GET /api/session?date=YYYY-MM-DD — load or create session for a date.
+pub async fn get_session(
+    Query(params): Query<SessionQuery>,
+) -> Result<Json<ClinicSession>, (StatusCode, String)> {
+    let date = params.date.unwrap_or_else(|| Local::now().format("%Y-%m-%d").to_string());
+    let path = session_path(&date);
+
+    if path.exists() {
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        let session: ClinicSession = serde_json::from_str(&content)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Invalid session JSON: {}", e)))?;
+        Ok(Json(session))
+    } else {
+        Ok(Json(ClinicSession {
+            date,
+            started_at: Local::now().to_rfc3339(),
+            clients: vec![],
+            clinic_ended: false,
+        }))
+    }
+}
+
+/// PUT /api/session — persist the full session state.
+pub async fn save_session(
+    Json(session): Json<ClinicSession>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let dir = session_dir();
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let path = session_path(&session.date);
+    let json = serde_json::to_string_pretty(&session)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    std::fs::write(&path, json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(serde_json::json!({"ok": true})))
+}
+
+/// POST /api/generate — run `clinical note` with observation, return generated note.
+pub async fn generate_note(
+    Json(req): Json<GenerateRequest>,
+) -> Result<Json<GenerateResponse>, (StatusCode, String)> {
+    let start = std::time::Instant::now();
+
+    let mut cmd = tokio::process::Command::new("clinical");
+    cmd.arg("note")
+        .arg(&req.client_id)
+        .arg(&req.observation)
+        .arg("--no-save")
+        .arg("--yes");
+
+    if let Some(model) = &req.model {
+        cmd.arg("--model-override").arg(model);
+    }
+
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to run clinical note: {}", e)))?;
+
+    let elapsed = start.elapsed().as_secs_f64();
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Generation failed: {}", stderr)));
+    }
+
+    let note_text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+    Ok(Json(GenerateResponse {
+        note_text,
+        elapsed_seconds: elapsed,
+    }))
+}
+
+/// POST /api/save-note — run `clinical note-save` with note text on stdin.
+pub async fn save_note(
+    Json(req): Json<SaveNoteRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    use tokio::io::AsyncWriteExt;
+
+    let mut child = tokio::process::Command::new("clinical")
+        .arg("note-save")
+        .arg(&req.client_id)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to run clinical note-save: {}", e)))?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(req.note_text.as_bytes()).await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    }
+
+    let output = child.wait_with_output().await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Save failed: {}", stderr)));
+    }
+
+    Ok(Json(serde_json::json!({"ok": true})))
+}
+
+/// GET /api/client/:id/notes — read the client's notes.md.
+pub async fn get_client_notes(
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let clinical_root = crate::config::clinical_root();
+    let notes_path = clinical_root.join("clients").join(&id).join("notes.md");
+
+    if !notes_path.exists() {
+        return Ok(Json(serde_json::json!({"content": "", "exists": false})));
+    }
+
+    let content = std::fs::read_to_string(&notes_path)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(serde_json::json!({"content": content, "exists": true})))
+}
+
+/// GET /api/client/:id/metadata — funding badges, letter cadence, referrer info.
+pub async fn get_client_metadata(
+    Path(id): Path<String>,
+) -> Result<Json<ClientMetadata>, (StatusCode, String)> {
+    let clinical_root = crate::config::clinical_root();
+    let client_dir = clinical_root.join("clients").join(&id);
+
+    // Count sessions from notes.md
+    let notes_path = client_dir.join("notes.md");
+    let sessions_count = if notes_path.exists() {
+        std::fs::read_to_string(&notes_path)
+            .map(|content| content.lines().filter(|l| l.starts_with("### ")).count())
+            .unwrap_or(0)
+    } else {
+        0
+    };
+
+    // Read identity.yaml for funding + referrer
+    let identity_path = if client_dir.join("identity.yaml").exists() {
+        client_dir.join("identity.yaml")
+    } else {
+        client_dir.join("private").join("identity.yaml")
+    };
+
+    let (sessions_authorised, sessions_used, funding_type, referrer_name, referrer_practice, referrer_email) =
+        if identity_path.exists() {
+            let content = std::fs::read_to_string(&identity_path).unwrap_or_default();
+            let val: serde_yaml::Value = serde_yaml::from_str(&content).unwrap_or_default();
+
+            let auth = val.get("authorisation")
+                .and_then(|a| a.get("sessions_authorised"))
+                .and_then(|v| v.as_u64().map(|n| n as u32));
+            let used = val.get("authorisation")
+                .and_then(|a| a.get("sessions_used"))
+                .and_then(|v| v.as_u64().map(|n| n as u32));
+            let ft = val.get("funding")
+                .and_then(|f| f.get("type"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let rn = val.get("referrer")
+                .and_then(|r| r.get("name"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let rp = val.get("referrer")
+                .and_then(|r| r.get("practice"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let re = val.get("referrer")
+                .and_then(|r| r.get("email"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+
+            (auth, used, ft, rn, rp, re)
+        } else {
+            (None, None, None, None, None, None)
+        };
+
+    // Letter cadence from config
+    let config = crate::config::load_config();
+    let first_letter_after = config.as_ref()
+        .and_then(|c| c.get("letters"))
+        .and_then(|l| l.get("first_letter_after"))
+        .and_then(|v| v.as_integer())
+        .unwrap_or(2) as i32;
+    let cycle_length = config.as_ref()
+        .and_then(|c| c.get("letters"))
+        .and_then(|l| l.get("cycle_length"))
+        .and_then(|v| v.as_integer())
+        .unwrap_or(6) as i32;
+
+    let sc = sessions_count as i32;
+    let (letter_cadence_until, letter_due) = if sc < first_letter_after {
+        (Some(first_letter_after - sc), false)
+    } else {
+        let since_first = sc - first_letter_after;
+        let remaining = cycle_length - (since_first % cycle_length);
+        let remaining = if remaining == cycle_length { 0 } else { remaining };
+        (Some(remaining), remaining == 0)
+    };
+
+    Ok(Json(ClientMetadata {
+        sessions_count,
+        sessions_authorised,
+        sessions_used,
+        funding_type,
+        letter_cadence_until,
+        letter_due,
+        referrer_name,
+        referrer_practice,
+        referrer_email,
+    }))
+}
+
+/// GET /api/inference/status — check if inference server is reachable.
+pub async fn inference_status() -> Json<InferenceStatus> {
+    let available = reqwest::Client::new()
+        .get("http://localhost:11434/api/tags")
+        .timeout(std::time::Duration::from_secs(3))
+        .send()
+        .await
+        .map(|r| r.status().is_success())
+        .unwrap_or(false);
+
+    Json(InferenceStatus { available })
+}
+
+/// POST /api/end-clinic — generate attendance report and daypage entry.
+pub async fn end_clinic(
+    Json(req): Json<EndClinicRequest>,
+) -> Result<Json<EndClinicResponse>, (StatusCode, String)> {
+    let session = &req.session;
+    let date = &session.date;
+
+    // Parse date for display
+    let display_date = NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .map(|d| d.format("%A %e %B %Y").to_string())
+        .unwrap_or_else(|_| date.clone());
+
+    // Build attendance report
+    let mut report_lines = vec![format!("{} — Attendance\n", display_date)];
+    let mut attended = 0;
+    let mut dna_count = 0;
+    let mut insurer_count = 0;
+    let mut client_ids = Vec::new();
+
+    for c in &session.clients {
+        if c.status == "cancelled" { continue; }
+        let icon = match c.status.as_str() {
+            "done" => { attended += 1; client_ids.push(c.id.clone()); "✓" }
+            "dna" => { dna_count += 1; "✗" }
+            _ => "?"
+        };
+        if !c.rate_tag.is_empty() && c.rate_tag != "self-pay" && c.rate_tag != "Private" {
+            insurer_count += 1;
+        }
+        let time_range = if c.end_time.is_empty() {
+            c.time.clone()
+        } else {
+            format!("{}-{}", c.time, c.end_time)
+        };
+        let tag = if c.rate_tag.is_empty() { String::new() } else { format!(" {}", c.rate_tag) };
+        report_lines.push(format!("{} {} {}{}", icon, time_range, c.id, tag));
+    }
+
+    let total = attended + dna_count;
+    report_lines.push(String::new());
+    report_lines.push(format!(
+        "{}/{} attended · {} DNA/LC · {} insurer",
+        attended, total, dna_count, insurer_count
+    ));
+
+    let report = report_lines.join("\n");
+
+    // Save attendance report
+    let attendance_dir = crate::config::clinical_root().join("attendance");
+    std::fs::create_dir_all(&attendance_dir)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    std::fs::write(attendance_dir.join(format!("{}.txt", date)), &report)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Calculate duration
+    let started = chrono::DateTime::parse_from_rfc3339(&session.started_at)
+        .map(|dt| dt.with_timezone(&Local))
+        .unwrap_or_else(|_| Local::now());
+    let minutes = (Local::now() - started).num_minutes();
+
+    // Daypage entry
+    let ids_str = client_ids.join(", ");
+    let entry = format!("clinic:: {} clients {}min - {}", attended, minutes, ids_str);
+    let _ = std::process::Command::new("daypage-append")
+        .arg(&entry)
+        .output();
+
+    Ok(Json(EndClinicResponse { report, ok: true }))
 }
