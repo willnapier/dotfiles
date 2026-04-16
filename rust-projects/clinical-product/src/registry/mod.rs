@@ -3,6 +3,8 @@ pub mod config;
 pub mod import;
 pub mod repo;
 pub mod sync;
+#[cfg(test)]
+mod tests;
 pub mod types;
 
 pub use client::{get_client, list_client_ids, list_clients};
