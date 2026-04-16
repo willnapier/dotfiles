@@ -18,14 +18,20 @@ use anyhow::Result;
 pub async fn serve(port: u16, open_browser: bool) -> Result<()> {
     let app = routes::build_router();
 
-    let addr = format!("0.0.0.0:{port}");
+    // Dev mode uses port+1 so it can run alongside the production service
+    let actual_port = if std::env::var("PF_DEV").is_ok() { port + 1 } else { port };
+    let addr = format!("0.0.0.0:{actual_port}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    eprintln!("Admin dashboard running at http://{addr}");
+    if std::env::var("PF_DEV").is_ok() {
+        eprintln!("DEV dashboard at http://127.0.0.1:{actual_port} (live-reload from disk)");
+    } else {
+        eprintln!("Dashboard running at http://127.0.0.1:{actual_port}");
+    }
 
     if open_browser {
-        let _ = std::process::Command::new("xdg-open")
-            .arg(format!("http://127.0.0.1:{port}"))
-            .spawn();
+        let url = format!("http://127.0.0.1:{actual_port}");
+        let _ = std::process::Command::new("open").arg(&url).spawn()
+            .or_else(|_| std::process::Command::new("xdg-open").arg(&url).spawn());
     }
 
     axum::serve(listener, app).await?;
