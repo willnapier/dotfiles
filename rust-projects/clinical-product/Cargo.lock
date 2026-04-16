@@ -391,6 +391,7 @@ dependencies = [
  "tokio",
  "toml",
  "totp-rs",
+ "tower",
  "tower-http",
  "uuid",
 ]

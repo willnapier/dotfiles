@@ -6,6 +6,7 @@ use std::io::{self, Read, Write};
 
 pub mod billing;
 pub mod config;
+mod admin_dashboard;
 mod dashboard;
 pub mod email;
 pub mod onboard;
@@ -15,6 +16,7 @@ mod runpod;
 pub mod search;
 pub mod scheduling;
 pub mod session_cookies;
+pub mod sms;
 mod sync;
 mod inference;
 pub mod tm3_clients;
@@ -142,6 +144,21 @@ enum Command {
         open: bool,
     },
 
+    /// PracticeForge admin dashboard — multi-practitioner practice management UI.
+    ///
+    /// A separate web UI for practice admin: calendar views across all
+    /// practitioners, client management, search, and billing overview.
+    /// Runs on a different port from the practitioner dashboard.
+    AdminDashboard {
+        /// Port to listen on
+        #[arg(long, default_value = "3457")]
+        port: u16,
+
+        /// Open browser automatically
+        #[arg(long)]
+        open: bool,
+    },
+
     /// PracticeForge scheduling — appointments, recurrence, self-booking.
     ///
     /// Infinite recurring sessions, block expiry warnings, ICS export.
@@ -158,6 +175,16 @@ enum Command {
     Registry {
         #[command(subcommand)]
         action: RegistryAction,
+    },
+
+    /// SMS appointment reminders via Twilio.
+    ///
+    /// Send reminder texts to clients before appointments. Preview
+    /// what would be sent, send for real, or check delivery status.
+    /// Enable via [sms] section in config.toml.
+    Sms {
+        #[command(subcommand)]
+        action: SmsAction,
     },
 
     /// Full-text search across all client files.
@@ -430,6 +457,36 @@ enum RegistryAction {
         client_id: String,
         /// Path to the letter PDF
         path: String,
+    },
+}
+
+#[derive(Parser, Debug)]
+enum SmsAction {
+    /// Preview reminders that would be sent (dry run).
+    Preview {
+        /// Date to preview reminders for (YYYY-MM-DD). Default: tomorrow.
+        #[arg(long)]
+        date: Option<String>,
+    },
+    /// Send reminders for a date.
+    Send {
+        /// Date to send reminders for (YYYY-MM-DD). Default: tomorrow.
+        #[arg(long)]
+        date: Option<String>,
+    },
+    /// Show delivery status for sent reminders.
+    Status {
+        /// Date to check status for (YYYY-MM-DD). Default: today.
+        #[arg(long)]
+        date: Option<String>,
+    },
+    /// Send a test SMS to verify Twilio configuration.
+    Test {
+        /// Phone number to send to (E.164 format, e.g. +447700900000)
+        phone: String,
+        /// Message text
+        #[arg(long, default_value = "Test from PracticeForge")]
+        message: String,
     },
 }
 
@@ -784,11 +841,17 @@ async fn main() -> anyhow::Result<()> {
         Command::Dashboard { port, open } => {
             dashboard::serve(port, open).await?;
         }
+        Command::AdminDashboard { port, open } => {
+            admin_dashboard::serve(port, open).await?;
+        }
         Command::Schedule { action } => {
             handle_schedule(action)?;
         }
         Command::Registry { action } => {
             handle_registry(action)?;
+        }
+        Command::Sms { action } => {
+            handle_sms(action).await?;
         }
         Command::Search {
             query,
@@ -946,6 +1009,75 @@ fn handle_registry(action: RegistryAction) -> anyhow::Result<()> {
             )?;
 
             println!("Letter pushed to registry: {}", relative);
+        }
+    }
+
+    Ok(())
+}
+
+async fn handle_sms(action: SmsAction) -> anyhow::Result<()> {
+    let config = sms::SmsConfig::load();
+
+    match action {
+        SmsAction::Preview { date } => {
+            let previews = sms::remind::preview_reminders(&config, date.as_deref())?;
+            if previews.is_empty() {
+                println!("No reminders to send.");
+                return Ok(());
+            }
+
+            println!(
+                "{} reminder(s) for {}:\n",
+                previews.len(),
+                previews[0].appointment_date
+            );
+            for p in &previews {
+                println!(
+                    "  {} ({}) -> {} at {}",
+                    p.client_name,
+                    p.client_id,
+                    p.phone,
+                    p.appointment_time.format("%H:%M"),
+                );
+                println!("    \"{}\"", p.message_text);
+                println!();
+            }
+        }
+
+        SmsAction::Send { date } => {
+            let results = sms::remind::send_reminders(&config, date.as_deref()).await?;
+            let sent = results.iter().filter(|r| r.error_message.is_none()).count();
+            let failed = results.iter().filter(|r| r.error_message.is_some()).count();
+            println!(
+                "\nDone: {} sent, {} failed.",
+                sent, failed
+            );
+        }
+
+        SmsAction::Status { date } => {
+            sms::remind::show_status(&config, date.as_deref())?;
+        }
+
+        SmsAction::Test { phone, message } => {
+            if !config.enabled {
+                println!("Warning: SMS is not enabled in config, but sending test anyway.");
+            }
+
+            if config.twilio_account_sid.is_empty() || config.resolve_auth_token().is_empty() {
+                anyhow::bail!(
+                    "Twilio credentials not configured. Set twilio_account_sid and twilio_auth_token in [sms] section of {}",
+                    crate::config::config_file_path().display()
+                );
+            }
+
+            println!("Sending test SMS to {}...", phone);
+            let result = sms::twilio::send_sms(&config, &phone, &message).await?;
+
+            if let Some(err) = &result.error_message {
+                println!("Failed: {}", err);
+            } else {
+                println!("Sent. SID: {} Status: {}", result.message_sid, result.status);
+            }
         }
     }
 

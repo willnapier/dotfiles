@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PracticeForge Admin</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #333; }
+
+  /* Header */
+  header { background: #1a1a2e; color: #fff; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
+  header h1 { font-size: 18px; font-weight: 600; }
+  header .practice-name { font-size: 13px; opacity: 0.7; }
+
+  /* Navigation */
+  nav { background: #16213e; display: flex; gap: 0; }
+  nav button { background: none; border: none; color: #aab; padding: 12px 24px; cursor: pointer; font-size: 14px; border-bottom: 3px solid transparent; transition: all 0.15s; }
+  nav button:hover { color: #fff; background: rgba(255,255,255,0.05); }
+  nav button.active { color: #fff; border-bottom-color: #4ecdc4; }
+
+  /* Main content */
+  main { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* Cards */
+  .card { background: #fff; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 16px; }
+  .card h2 { font-size: 16px; margin-bottom: 12px; color: #1a1a2e; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 12px; border-bottom: 2px solid #e0e0e0; font-weight: 600; color: #555; font-size: 11px; text-transform: uppercase; }
+  td { padding: 8px 12px; border-bottom: 1px solid #eee; }
+  tr:hover { background: #f8f9fa; }
+
+  /* Status badges */
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .badge-active { background: #d4edda; color: #155724; }
+  .badge-discharged { background: #f8d7da; color: #721c24; }
+  .badge-overdue { background: #f8d7da; color: #721c24; }
+  .badge-sent { background: #cce5ff; color: #004085; }
+  .badge-draft { background: #e2e3e5; color: #383d41; }
+
+  /* Search */
+  .search-bar { display: flex; gap: 8px; margin-bottom: 16px; }
+  .search-bar input { flex: 1; padding: 10px 14px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+  .search-bar button { padding: 10px 20px; background: #1a1a2e; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+  .search-bar button:hover { background: #16213e; }
+
+  /* Calendar */
+  .cal-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .cal-header input[type="date"] { padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+  .cal-header label { font-size: 13px; display: flex; align-items: center; gap: 4px; }
+  .cal-nav { display: flex; gap: 4px; }
+  .cal-nav button { padding: 6px 12px; background: #e9ecef; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 13px; }
+  .cal-nav button:hover { background: #dee2e6; }
+  .day-header { background: #f0f0f0; padding: 8px 12px; font-weight: 600; margin-top: 8px; border-radius: 4px; font-size: 13px; }
+
+  /* Summary cards */
+  .summary-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .summary-card { background: #fff; border-radius: 6px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); text-align: center; }
+  .summary-card .number { font-size: 28px; font-weight: 700; color: #1a1a2e; }
+  .summary-card .label { font-size: 12px; color: #777; margin-top: 4px; }
+
+  /* Search results */
+  .search-result { padding: 12px; border-bottom: 1px solid #eee; }
+  .search-result:last-child { border-bottom: none; }
+  .search-result .result-header { font-weight: 600; margin-bottom: 4px; }
+  .search-result .result-id { color: #888; font-size: 12px; }
+  .search-result .result-snippet { font-size: 13px; color: #555; margin-top: 4px; }
+  .search-result .result-snippet b { color: #1a1a2e; }
+
+  /* Loading */
+  .loading { text-align: center; padding: 40px; color: #888; }
+
+  /* Clickable rows */
+  tr.clickable { cursor: pointer; }
+
+  /* Client detail */
+  .client-detail { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .client-detail dt { font-weight: 600; color: #555; font-size: 12px; text-transform: uppercase; }
+  .client-detail dd { margin-bottom: 12px; }
+  .back-link { display: inline-block; margin-bottom: 12px; color: #1a1a2e; cursor: pointer; font-size: 13px; }
+  .back-link:hover { text-decoration: underline; }
+
+  @media (max-width: 768px) {
+    main { padding: 12px; }
+    nav button { padding: 10px 16px; font-size: 13px; }
+    .client-detail { grid-template-columns: 1fr; }
+    .summary-row { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>PracticeForge Admin</h1>
+    <div class="practice-name" id="practice-name"></div>
+  </div>
+</header>
+
+<nav>
+  <button class="active" data-view="clients">Clients</button>
+  <button data-view="calendar">Calendar</button>
+  <button data-view="search">Search</button>
+  <button data-view="billing">Billing</button>
+</nav>
+
+<main>
+  <!-- Clients view -->
+  <div id="view-clients" class="view active">
+    <div id="client-list">
+      <div class="card">
+        <h2>All Clients</h2>
+        <div id="clients-loading" class="loading">Loading clients...</div>
+        <table id="clients-table" style="display:none;">
+          <thead>
+            <tr><th>ID</th><th>Name</th><th>Funding</th><th>Status</th><th>Referrer</th></tr>
+          </thead>
+          <tbody id="clients-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div id="client-detail" style="display:none;">
+      <span class="back-link" onclick="showClientList()">&larr; Back to clients</span>
+      <div class="card" id="client-detail-card"></div>
+      <div class="card">
+        <h2>Practitioner Assignments</h2>
+        <div id="client-assignments"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Calendar view -->
+  <div id="view-calendar" class="view">
+    <div class="card">
+      <div class="cal-header">
+        <div class="cal-nav">
+          <button onclick="calPrev()">&larr;</button>
+          <button onclick="calToday()">Today</button>
+          <button onclick="calNext()">&rarr;</button>
+        </div>
+        <input type="date" id="cal-date" onchange="loadCalendar()">
+        <label><input type="checkbox" id="cal-week" onchange="loadCalendar()"> Week view</label>
+      </div>
+      <div id="calendar-content">
+        <div class="loading">Loading calendar...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Search view -->
+  <div id="view-search" class="view">
+    <div class="search-bar">
+      <input type="text" id="search-input" placeholder="Search clients, notes, correspondence..." onkeydown="if(event.key==='Enter')doSearch()">
+      <button onclick="doSearch()">Search</button>
+    </div>
+    <div class="card" id="search-results" style="display:none;"></div>
+  </div>
+
+  <!-- Billing view -->
+  <div id="view-billing" class="view">
+    <div class="summary-row" id="billing-summary"></div>
+    <div class="card">
+      <h2>Outstanding Invoices</h2>
+      <div id="billing-loading" class="loading">Loading billing data...</div>
+      <table id="billing-table" style="display:none;">
+        <thead>
+          <tr><th>Reference</th><th>Client</th><th>Bill To</th><th>Amount</th><th>Due</th><th>Status</th><th>Overdue</th></tr>
+        </thead>
+        <tbody id="billing-tbody"></tbody>
+      </table>
+      <div id="billing-empty" style="display:none;" class="loading">No outstanding invoices.</div>
+    </div>
+  </div>
+</main>
+
+<script>
+// ---------------------------------------------------------------------------
+// Navigation
+// ---------------------------------------------------------------------------
+const navButtons = document.querySelectorAll('nav button');
+const views = document.querySelectorAll('.view');
+
+navButtons.forEach(btn => {
+  btn.addEventListener('click', () => {
+    navButtons.forEach(b => b.classList.remove('active'));
+    views.forEach(v => v.classList.remove('active'));
+    btn.classList.add('active');
+    const viewId = 'view-' + btn.dataset.view;
+    document.getElementById(viewId).classList.add('active');
+
+    // Lazy-load data
+    if (btn.dataset.view === 'clients' && !clientsLoaded) loadClients();
+    if (btn.dataset.view === 'calendar' && !calendarLoaded) loadCalendar();
+    if (btn.dataset.view === 'billing' && !billingLoaded) loadBilling();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Practice info
+// ---------------------------------------------------------------------------
+fetch('/api/practice')
+  .then(r => r.json())
+  .then(p => {
+    if (p.name) document.getElementById('practice-name').textContent = p.name;
+  })
+  .catch(() => {});
+
+// ---------------------------------------------------------------------------
+// Clients
+// ---------------------------------------------------------------------------
+let clientsLoaded = false;
+
+function loadClients() {
+  fetch('/api/clients')
+    .then(r => r.json())
+    .then(clients => {
+      clientsLoaded = true;
+      const tbody = document.getElementById('clients-tbody');
+      tbody.innerHTML = '';
+      clients.forEach(c => {
+        const tr = document.createElement('tr');
+        tr.className = 'clickable';
+        tr.onclick = () => showClientDetail(c.client_id);
+        const statusClass = c.status === 'active' ? 'badge-active' : 'badge-discharged';
+        tr.innerHTML = `
+          <td>${esc(c.client_id)}</td>
+          <td>${esc(c.name)}</td>
+          <td>${esc(c.funding_type || '-')}</td>
+          <td><span class="badge ${statusClass}">${esc(c.status)}</span></td>
+          <td>${esc(c.referrer_name || '-')}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+      document.getElementById('clients-loading').style.display = 'none';
+      document.getElementById('clients-table').style.display = '';
+    })
+    .catch(e => {
+      document.getElementById('clients-loading').textContent = 'Failed to load clients: ' + e;
+    });
+}
+
+function showClientList() {
+  document.getElementById('client-list').style.display = '';
+  document.getElementById('client-detail').style.display = 'none';
+}
+
+function showClientDetail(clientId) {
+  document.getElementById('client-list').style.display = 'none';
+  document.getElementById('client-detail').style.display = '';
+
+  const card = document.getElementById('client-detail-card');
+  card.innerHTML = '<div class="loading">Loading...</div>';
+
+  fetch('/api/clients/' + encodeURIComponent(clientId))
+    .then(r => r.json())
+    .then(c => {
+      const statusClass = c.status === 'active' ? 'badge-active' : 'badge-discharged';
+      card.innerHTML = `
+        <h2>${esc(c.name)} <span class="badge ${statusClass}">${esc(c.status)}</span></h2>
+        <dl class="client-detail">
+          <dt>Client ID</dt><dd>${esc(c.client_id)}</dd>
+          <dt>DOB</dt><dd>${esc(c.dob || '-')}</dd>
+          <dt>Phone</dt><dd>${esc(c.phone || '-')}</dd>
+          <dt>Email</dt><dd>${esc(c.email || '-')}</dd>
+          <dt>Funding</dt><dd>${esc(c.funding_type || '-')}${c.funding_rate ? ' (' + c.funding_rate + '/session)' : ''}</dd>
+          <dt>Referrer</dt><dd>${esc(c.referrer_name || '-')}</dd>
+          <dt>Diagnosis</dt><dd>${esc(c.diagnosis || '-')}</dd>
+        </dl>
+      `;
+    })
+    .catch(e => { card.innerHTML = 'Error: ' + esc(String(e)); });
+
+  const assignments = document.getElementById('client-assignments');
+  assignments.innerHTML = '<div class="loading">Loading...</div>';
+  fetch('/api/clients/' + encodeURIComponent(clientId) + '/assignments')
+    .then(r => r.json())
+    .then(list => {
+      if (list.length === 0) {
+        assignments.innerHTML = '<p style="color:#888;font-size:13px;">No assignments recorded.</p>';
+        return;
+      }
+      let html = '<table><thead><tr><th>Practitioner</th><th>Since</th><th>Primary</th></tr></thead><tbody>';
+      list.forEach(a => {
+        html += `<tr><td>${esc(a.practitioner_id)}</td><td>${esc(a.since)}</td><td>${a.primary ? 'Yes' : ''}</td></tr>`;
+      });
+      html += '</tbody></table>';
+      assignments.innerHTML = html;
+    })
+    .catch(e => { assignments.innerHTML = 'Error: ' + esc(String(e)); });
+}
+
+// ---------------------------------------------------------------------------
+// Calendar
+// ---------------------------------------------------------------------------
+let calendarLoaded = false;
+let calDate = new Date();
+
+function initCalDate() {
+  const input = document.getElementById('cal-date');
+  input.value = formatDate(calDate);
+}
+
+function formatDate(d) {
+  return d.toISOString().split('T')[0];
+}
+
+function calPrev() {
+  const week = document.getElementById('cal-week').checked;
+  calDate.setDate(calDate.getDate() - (week ? 7 : 1));
+  document.getElementById('cal-date').value = formatDate(calDate);
+  loadCalendar();
+}
+
+function calNext() {
+  const week = document.getElementById('cal-week').checked;
+  calDate.setDate(calDate.getDate() + (week ? 7 : 1));
+  document.getElementById('cal-date').value = formatDate(calDate);
+  loadCalendar();
+}
+
+function calToday() {
+  calDate = new Date();
+  document.getElementById('cal-date').value = formatDate(calDate);
+  loadCalendar();
+}
+
+function loadCalendar() {
+  calendarLoaded = true;
+  const dateVal = document.getElementById('cal-date').value;
+  if (dateVal) calDate = new Date(dateVal + 'T12:00:00');
+  const week = document.getElementById('cal-week').checked;
+  const url = '/api/calendar?date=' + formatDate(calDate) + (week ? '&week=true' : '');
+
+  const content = document.getElementById('calendar-content');
+  content.innerHTML = '<div class="loading">Loading...</div>';
+
+  fetch(url)
+    .then(r => r.json())
+    .then(entries => {
+      if (entries.length === 0) {
+        content.innerHTML = '<p style="padding:12px;color:#888;">No appointments for this period.</p>';
+        return;
+      }
+      let html = '';
+      let currentDate = '';
+      entries.forEach(e => {
+        if (e.date !== currentDate) {
+          currentDate = e.date;
+          const d = new Date(e.date + 'T12:00:00');
+          const dayName = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
+          html += `<div class="day-header">${esc(dayName)}</div>`;
+          html += '<table><thead><tr><th>Time</th><th>Client</th><th>ID</th><th>Practitioner</th><th>Status</th></tr></thead><tbody>';
+        }
+        html += `<tr>
+          <td>${esc(e.start_time)} - ${esc(e.end_time)}</td>
+          <td>${esc(e.client_name)}</td>
+          <td>${esc(e.client_id)}</td>
+          <td>${esc(e.practitioner)}</td>
+          <td>${esc(e.status)}</td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+      content.innerHTML = html;
+    })
+    .catch(e => { content.innerHTML = 'Error: ' + esc(String(e)); });
+}
+
+// ---------------------------------------------------------------------------
+// Search
+// ---------------------------------------------------------------------------
+function doSearch() {
+  const q = document.getElementById('search-input').value.trim();
+  if (!q) return;
+
+  const results = document.getElementById('search-results');
+  results.style.display = '';
+  results.innerHTML = '<div class="loading">Searching...</div>';
+
+  fetch('/api/search?q=' + encodeURIComponent(q))
+    .then(r => r.json())
+    .then(list => {
+      if (list.length === 0) {
+        results.innerHTML = '<p style="padding:12px;color:#888;">No results found.</p>';
+        return;
+      }
+      let html = '';
+      list.forEach(r => {
+        html += `<div class="search-result">
+          <div class="result-header">${esc(r.name)} <span class="result-id">(${esc(r.client_id)}, score: ${r.score.toFixed(2)})</span></div>
+          <div class="result-snippet">${r.snippet}</div>
+        </div>`;
+      });
+      results.innerHTML = html;
+    })
+    .catch(e => { results.innerHTML = 'Error: ' + esc(String(e)); });
+}
+
+// ---------------------------------------------------------------------------
+// Billing
+// ---------------------------------------------------------------------------
+let billingLoaded = false;
+
+function loadBilling() {
+  billingLoaded = true;
+
+  // Load summary
+  fetch('/api/billing/summary')
+    .then(r => r.json())
+    .then(s => {
+      document.getElementById('billing-summary').innerHTML = `
+        <div class="summary-card"><div class="number">${s.outstanding_count}</div><div class="label">Outstanding</div></div>
+        <div class="summary-card"><div class="number">${s.overdue_count}</div><div class="label">Overdue</div></div>
+        <div class="summary-card"><div class="number">${s.total_outstanding.toFixed(0)}</div><div class="label">Total Outstanding</div></div>
+        <div class="summary-card"><div class="number">${s.total_overdue.toFixed(0)}</div><div class="label">Total Overdue</div></div>
+      `;
+    })
+    .catch(() => {});
+
+  // Load status
+  fetch('/api/billing/status')
+    .then(r => r.json())
+    .then(invoices => {
+      document.getElementById('billing-loading').style.display = 'none';
+      if (invoices.length === 0) {
+        document.getElementById('billing-empty').style.display = '';
+        return;
+      }
+      const tbody = document.getElementById('billing-tbody');
+      tbody.innerHTML = '';
+      invoices.forEach(i => {
+        const tr = document.createElement('tr');
+        const stateClass = i.state === 'overdue' ? 'badge-overdue' : i.state === 'sent' ? 'badge-sent' : 'badge-draft';
+        const overdue = i.days_overdue > 0 ? i.days_overdue + 'd' : '';
+        tr.innerHTML = `
+          <td>${esc(i.reference)}</td>
+          <td>${esc(i.client_name)} (${esc(i.client_id)})</td>
+          <td>${esc(i.bill_to || '-')}</td>
+          <td>${esc(i.currency)} ${i.total.toFixed(0)}</td>
+          <td>${esc(i.due_date)}</td>
+          <td><span class="badge ${stateClass}">${esc(i.state)}</span></td>
+          <td>${overdue}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+      document.getElementById('billing-table').style.display = '';
+    })
+    .catch(e => {
+      document.getElementById('billing-loading').textContent = 'Failed to load: ' + e;
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Utils
+// ---------------------------------------------------------------------------
+function esc(s) {
+  if (s == null) return '';
+  const div = document.createElement('div');
+  div.textContent = String(s);
+  return div.innerHTML;
+}
+
+// ---------------------------------------------------------------------------
+// Init
+// ---------------------------------------------------------------------------
+initCalDate();
+loadClients();
+</script>
+</body>
+</html>
