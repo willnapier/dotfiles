@@ -16,7 +16,8 @@ use anyhow::Result;
 ///
 /// If `open_browser` is true, attempt to open the URL in the default browser.
 pub async fn serve(port: u16, open_browser: bool) -> Result<()> {
-    let app = routes::build_router();
+    let app = routes::build_router()
+        .merge(crate::portal::build_router());
 
     // Dev mode uses port+1 so it can run alongside the production service
     let actual_port = if std::env::var("PF_DEV").is_ok() { port + 1 } else { port };

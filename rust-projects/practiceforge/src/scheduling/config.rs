@@ -25,6 +25,12 @@ pub struct SchedulingConfig {
     pub sms: SmsConfig,
 }
 
+impl SchedulingConfig {
+    pub fn portal_base_url(&self) -> String {
+        "http://localhost:3457".to_string()
+    }
+}
+
 impl Default for SchedulingConfig {
     fn default() -> Self {
         Self {

@@ -10,6 +10,7 @@ mod admin_dashboard;
 mod dashboard;
 pub mod email;
 pub mod onboard;
+pub mod portal;
 mod referral;
 pub mod registry;
 mod runpod;
@@ -427,6 +428,11 @@ enum ScheduleAction {
     /// Periodic maintenance: check block expiry, send reminders.
     /// Safe to run from any scheduler (launchd, systemd, cron).
     Maintain,
+    /// Generate a self-booking link for a client.
+    Link {
+        /// Client ID (e.g. "EB76")
+        client_id: String,
+    },
 }
 
 #[derive(Parser, Debug)]
@@ -2506,6 +2512,16 @@ fn handle_schedule(action: ScheduleAction) -> anyhow::Result<()> {
 
             // TODO: SMS reminders (Phase 4)
             println!("  ✓ SMS reminders: not yet configured.");
+        }
+
+        ScheduleAction::Link { client_id } => {
+            let token = portal::create_booking_link(&client_id, practitioner);
+            let base_url = config.portal_base_url();
+            println!("Booking link for {}:", client_id);
+            println!("  {}/book/{}", base_url, token);
+            println!();
+            println!("Note: link is valid for this server session only.");
+            println!("The client opens this URL, verifies via SMS OTP, and picks a slot.");
         }
 
     }

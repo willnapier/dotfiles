@@ -39,6 +39,7 @@ icalendar = { version = "0.16", features = ["parser"] }
 chrono-tz = "0.10"
 uuid = { version = "1", features = ["v4", "serde"] }
 shellexpand = "3"
+lazy_static = "1"
 
 # Search (PracticeForge)
 tantivy = "0.22"
