@@ -32,8 +32,20 @@ pub fn import_client(
     let content = std::fs::read_to_string(&identity_path)
         .with_context(|| format!("Failed to read {}", identity_path.display()))?;
 
+    // Identity files may contain multiple YAML documents (--- separators).
+    // Extract only the first document for parsing.
+    let first_doc = if content.contains("\n---\n") {
+        content.splitn(2, "\n---\n").next().unwrap_or(&content)
+    } else if content.starts_with("---\n") {
+        // Starts with ---, take everything up to the next ---
+        let after_first = &content[4..];
+        after_first.splitn(2, "\n---").next().unwrap_or(after_first)
+    } else {
+        &content
+    };
+
     // Parse with serde_yaml::Value first for flexible handling
-    let value: serde_yaml::Value = serde_yaml::from_str(&content)
+    let value: serde_yaml::Value = serde_yaml::from_str(first_doc)
         .with_context(|| format!("Failed to parse YAML for {}", client_id))?;
 
     let registry_client = convert_identity_to_registry(client_id, &value)?;
@@ -168,7 +180,8 @@ fn convert_identity_to_registry(
         RegistryFunding::default()
     };
 
-    // Parse referrer section
+    // Parse referrer section — Route C identity uses referral_via (flat string),
+    // registry uses structured referrer section.
     let referrer = if let Some(r) = value.get("referrer") {
         RegistryReferrer {
             name: r.get("name").and_then(|v| v.as_str()).map(|s| s.to_string()),
@@ -177,6 +190,12 @@ fn convert_identity_to_registry(
             email: r.get("email").and_then(|v| v.as_str()).map(|s| s.to_string()),
             credentials: r.get("credentials").and_then(|v| v.as_str()).map(|s| s.to_string()),
             gmc: r.get("gmc").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        }
+    } else if let Some(via) = get_str("referral_via") {
+        // Route C flat field → structured referrer
+        RegistryReferrer {
+            name: Some(via),
+            ..RegistryReferrer::default()
         }
     } else {
         RegistryReferrer::default()
