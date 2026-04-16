@@ -2714,6 +2714,7 @@ alias .... = cd ../../..
 alias cdn = cd-notes  # Direct alias to the function (not a subshell evaluation)
 alias hx = hx-auto  # Auto-detect theme based on system appearance
 alias codex = continuum-codex  # Auto-capture conversations to continuum logs
+alias pf = practiceforge        # PracticeForge CLI shortcut
 
 # Todo shortcuts
 alias td = todo-scanner          # Summary with stats

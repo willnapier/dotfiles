@@ -23,7 +23,7 @@ pub mod tm3_clients;
 pub mod tm3_migrate;
 
 #[derive(Parser)]
-#[command(name = "practiceforge", about = "Clinical session note generator")]
+#[command(name = "practiceforge", about = "PracticeForge — clinical practice management")]
 struct Cli {
     #[command(subcommand)]
     command: Command,

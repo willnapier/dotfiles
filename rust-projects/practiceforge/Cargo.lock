@@ -363,40 +363,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
-name = "clinical-product"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-stream",
- "axum",
- "chrono",
- "chrono-tz",
- "clap",
- "dirs",
- "futures-util",
- "headless_chrome",
- "icalendar",
- "imap",
- "lettre",
- "mail-parser",
- "regex",
- "reqwest",
- "rrule",
- "serde",
- "serde_json",
- "serde_yaml",
- "shellexpand",
- "tantivy",
- "tempfile",
- "tokio",
- "toml",
- "totp-rs",
- "tower",
- "tower-http",
- "uuid",
-]
-
-[[package]]
 name = "colorchoice"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1828,6 +1794,40 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85eae3c4ed2f50dcfe72643da4befc30deadb458a9b590d720cde2f2b1e97da9"
 dependencies = [
  "zerocopy",
+]
+
+[[package]]
+name = "practiceforge"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "axum",
+ "chrono",
+ "chrono-tz",
+ "clap",
+ "dirs",
+ "futures-util",
+ "headless_chrome",
+ "icalendar",
+ "imap",
+ "lettre",
+ "mail-parser",
+ "regex",
+ "reqwest",
+ "rrule",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "shellexpand",
+ "tantivy",
+ "tempfile",
+ "tokio",
+ "toml",
+ "totp-rs",
+ "tower",
+ "tower-http",
+ "uuid",
 ]
 
 [[package]]
