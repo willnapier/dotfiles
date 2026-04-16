@@ -20,6 +20,7 @@ pub mod sms;
 mod sync;
 mod inference;
 pub mod tm3_clients;
+pub mod tm3_migrate;
 
 #[derive(Parser)]
 #[command(name = "clinical-product", about = "Clinical session note generator")]
@@ -206,6 +207,16 @@ enum Command {
         /// Rebuild the search index
         #[arg(long)]
         reindex: bool,
+    },
+
+    /// TM3 data export and migration to PracticeForge.
+    ///
+    /// Orchestrates a full data export from TM3 into PracticeForge's
+    /// registry: clients, calendar, documents, and validation.
+    #[command(name = "tm3-migrate")]
+    Tm3Migrate {
+        #[command(subcommand)]
+        action: Tm3MigrateAction,
     },
 }
 
@@ -487,6 +498,32 @@ enum SmsAction {
         /// Message text
         #[arg(long, default_value = "Test from PracticeForge")]
         message: String,
+    },
+}
+
+#[derive(Parser, Debug)]
+enum Tm3MigrateAction {
+    /// Export all TM3 clients into the PracticeForge registry.
+    ExportClients {
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Export TM3 diary data into PracticeForge scheduling format.
+    ExportCalendar {
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Download all documents from TM3 into the registry.
+    ExportDocuments {
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Validate migration completeness — compare TM3 against registry.
+    Validate,
+    /// Run full migration: clients -> calendar -> documents -> validate.
+    Run {
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -861,6 +898,9 @@ async fn main() -> anyhow::Result<()> {
             reindex,
         } => {
             handle_search(query, client, field, limit, reindex)?;
+        }
+        Command::Tm3Migrate { action } => {
+            handle_tm3_migrate(action)?;
         }
     }
 
@@ -1663,6 +1703,148 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
 
         // Already handled above, before the enabled check
         BillingAction::Init | BillingAction::Config { .. } => unreachable!(),
+    }
+
+    Ok(())
+}
+
+fn handle_tm3_migrate(action: Tm3MigrateAction) -> anyhow::Result<()> {
+    use registry::config::RegistryConfig;
+
+    let registry_config = RegistryConfig::load();
+    let clinical_root = crate::config::clinical_root();
+
+    match action {
+        Tm3MigrateAction::ExportClients { dry_run } => {
+            println!("=== TM3 Migration: Export Clients ===\n");
+            let report = tm3_migrate::clients::export_clients(
+                &registry_config,
+                &clinical_root,
+                dry_run,
+            )?;
+            println!("\n{}", report);
+            if !report.warnings.is_empty() {
+                println!("\nWarnings:");
+                for w in &report.warnings {
+                    println!("  {}", w);
+                }
+            }
+            if !report.errors.is_empty() {
+                println!("\nErrors:");
+                for e in &report.errors {
+                    println!("  {}", e);
+                }
+            }
+        }
+        Tm3MigrateAction::ExportCalendar { dry_run } => {
+            println!("=== TM3 Migration: Export Calendar ===\n");
+            let schedules_dir = shellexpand::tilde("~/Clinical/schedules").to_string();
+            let report = tm3_migrate::calendar::export_calendar(
+                std::path::Path::new(&schedules_dir),
+                dry_run,
+            )?;
+            println!("\n{}", report);
+        }
+        Tm3MigrateAction::ExportDocuments { dry_run } => {
+            println!("=== TM3 Migration: Export Documents ===\n");
+            let report = tm3_migrate::documents::export_documents(
+                &registry_config,
+                dry_run,
+            )?;
+            println!("\n{}", report);
+            if !report.failed.is_empty() {
+                println!("\nFailures:");
+                for f in &report.failed {
+                    println!("  {}", f);
+                }
+            }
+        }
+        Tm3MigrateAction::Validate => {
+            println!("=== TM3 Migration: Validate ===\n");
+            let report = tm3_migrate::validate::validate(
+                &registry_config,
+                &clinical_root,
+            )?;
+            println!("{}", report);
+
+            if !report.missing.is_empty() {
+                println!("\nMissing from registry (in TM3 but not imported):");
+                for m in &report.missing {
+                    println!("  TM3 #{}: {}", m.tm3_id, m.name);
+                }
+            }
+            if !report.extra.is_empty() {
+                println!("\nExtra in registry (not in TM3 cache):");
+                for e in &report.extra {
+                    println!("  {}", e);
+                }
+            }
+            if !report.mismatches.is_empty() {
+                println!("\nField mismatches:");
+                for m in &report.mismatches {
+                    println!("  {}", m);
+                }
+            }
+            if !report.missing_documents.is_empty() {
+                println!("\nClients missing documents:");
+                for d in &report.missing_documents {
+                    println!("  {}", d);
+                }
+            }
+        }
+        Tm3MigrateAction::Run { dry_run } => {
+            println!("=== TM3 Full Migration ===\n");
+
+            if dry_run {
+                println!("[DRY RUN — no changes will be made]\n");
+            }
+
+            // Step 1: Export clients
+            println!("--- Step 1/4: Export Clients ---\n");
+            let client_report = tm3_migrate::clients::export_clients(
+                &registry_config,
+                &clinical_root,
+                dry_run,
+            )?;
+            println!("{}\n", client_report);
+
+            // Step 2: Export calendar
+            println!("--- Step 2/4: Export Calendar ---\n");
+            let schedules_dir = shellexpand::tilde("~/Clinical/schedules").to_string();
+            let calendar_report = tm3_migrate::calendar::export_calendar(
+                std::path::Path::new(&schedules_dir),
+                dry_run,
+            )?;
+            println!("{}\n", calendar_report);
+
+            // Step 3: Export documents
+            println!("--- Step 3/4: Export Documents ---\n");
+            let doc_report = tm3_migrate::documents::export_documents(
+                &registry_config,
+                dry_run,
+            )?;
+            println!("{}\n", doc_report);
+
+            // Step 4: Validate
+            println!("--- Step 4/4: Validate ---\n");
+            let validation_report = tm3_migrate::validate::validate(
+                &registry_config,
+                &clinical_root,
+            )?;
+            println!("{}\n", validation_report);
+
+            // Summary
+            println!("=== Migration Summary ===");
+            println!("  {}", client_report);
+            println!("  {}", calendar_report);
+            println!("  {}", doc_report);
+            println!(
+                "  Validation: {} missing, {} extra, {} mismatches",
+                validation_report.missing.len(),
+                validation_report.extra.len(),
+                validation_report.mismatches.len(),
+            );
+        }
     }
 
     Ok(())
