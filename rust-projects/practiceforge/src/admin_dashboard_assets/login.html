@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PracticeForge</title>
+<style>
+  :root {
+    --base03: #002b36; --base02: #073642; --base01: #586e75;
+    --base0: #839496; --base1: #93a1a1; --fg-em: #93a1a1;
+    --cyan: #2aa198; --green: #859900; --red: #dc322f;
+    --border: #0a4050;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', monospace;
+    background: var(--base03); color: var(--base0);
+    height: 100vh; display: flex; align-items: center; justify-content: center;
+  }
+  .login-box {
+    width: 360px; max-width: 90vw; text-align: center;
+  }
+  .logo {
+    font-size: 16px; font-weight: 600; color: var(--cyan);
+    letter-spacing: 1px; margin-bottom: 32px;
+  }
+  .login-card {
+    background: var(--base02); border-radius: 6px;
+    padding: 28px 24px; border: 1px solid var(--border);
+  }
+  .login-card p {
+    font-size: 12px; color: var(--base01); margin-bottom: 16px;
+    line-height: 1.5;
+  }
+  input {
+    width: 100%; padding: 12px 14px;
+    background: var(--base03); border: 1px solid var(--border);
+    border-radius: 4px; color: var(--fg-em);
+    font: inherit; font-size: 15px; outline: none;
+    text-align: center; letter-spacing: 0.5px;
+  }
+  input:focus { border-color: var(--cyan); box-shadow: 0 0 0 2px rgba(42,161,152,0.15); }
+  input::placeholder { color: var(--base01); }
+  .code-input {
+    font-size: 24px; letter-spacing: 8px; font-weight: 600;
+  }
+  .btn {
+    display: block; width: 100%; padding: 12px;
+    border: none; border-radius: 4px;
+    font: inherit; font-size: 13px; font-weight: 600;
+    cursor: pointer; margin-top: 12px;
+    transition: background 0.1s;
+  }
+  .btn-primary {
+    background: var(--cyan); color: var(--base03);
+  }
+  .btn-primary:hover { background: #35b5ab; }
+  .btn-primary:disabled { opacity: 0.4; cursor: default; }
+  .msg {
+    font-size: 12px; margin-top: 10px; min-height: 18px;
+    transition: color 0.2s;
+  }
+  .msg-ok { color: var(--green); }
+  .msg-err { color: var(--red); }
+  .step { display: none; }
+  .step.active { display: block; }
+  .back {
+    font-size: 11px; color: var(--base01); cursor: pointer;
+    margin-bottom: 12px; display: inline-block;
+  }
+  .back:hover { color: var(--cyan); }
+</style>
+</head>
+<body>
+<div class="login-box">
+  <div class="logo">PracticeForge</div>
+  <div class="login-card">
+    <!-- Step 1: Email -->
+    <div class="step active" id="step-email">
+      <p>Enter your practice email to sign in.</p>
+      <input type="email" id="login-email" placeholder="you@practice.com" autofocus
+        onkeydown="if(event.key==='Enter')sendLoginCode()">
+      <button class="btn btn-primary" id="send-btn" onclick="sendLoginCode()">Send Code</button>
+      <div class="msg" id="email-msg"></div>
+    </div>
+    <!-- Step 2: OTP -->
+    <div class="step" id="step-code">
+      <span class="back" onclick="showStep('step-email')">&larr; different email</span>
+      <p>Enter the 6-digit code sent to <strong id="code-email-display"></strong></p>
+      <input type="text" class="code-input" id="login-code" placeholder="------"
+        maxlength="6" inputmode="numeric" autocomplete="one-time-code"
+        onkeydown="if(event.key==='Enter')verifyLoginCode()" oninput="autoSubmitCode()">
+      <button class="btn btn-primary" id="verify-btn" onclick="verifyLoginCode()">Verify</button>
+      <div class="msg" id="code-msg"></div>
+    </div>
+  </div>
+</div>
+<script>
+function showStep(id) {
+  document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function sendLoginCode() {
+  const email = document.getElementById('login-email').value.trim();
+  if (!email || !email.includes('@')) {
+    setMsg('email-msg', 'Enter your email address', true);
+    return;
+  }
+  document.getElementById('send-btn').disabled = true;
+  setMsg('email-msg', 'Sending...', false);
+
+  fetch('/api/auth/send-code', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: email })
+  })
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById('send-btn').disabled = false;
+      if (d.ok) {
+        document.getElementById('code-email-display').textContent = email;
+        showStep('step-code');
+        document.getElementById('login-code').focus();
+        // Dev mode: if code was returned, auto-fill it
+        if (d.dev_code) {
+          document.getElementById('login-code').value = d.dev_code;
+          setMsg('code-msg', 'Dev mode — code auto-filled', false);
+        }
+      } else {
+        setMsg('email-msg', d.error || 'Failed', true);
+      }
+    })
+    .catch(e => {
+      document.getElementById('send-btn').disabled = false;
+      setMsg('email-msg', 'Error: ' + e, true);
+    });
+}
+
+function verifyLoginCode() {
+  const email = document.getElementById('login-email').value.trim();
+  const code = document.getElementById('login-code').value.trim();
+  if (code.length !== 6) {
+    setMsg('code-msg', 'Enter the 6-digit code', true);
+    return;
+  }
+  document.getElementById('verify-btn').disabled = true;
+  setMsg('code-msg', 'Verifying...', false);
+
+  fetch('/api/auth/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: email, code: code })
+  })
+    .then(r => {
+      if (r.ok) {
+        // Cookie set by server — redirect to dashboard
+        window.location.href = '/';
+      } else {
+        return r.json().then(d => {
+          document.getElementById('verify-btn').disabled = false;
+          setMsg('code-msg', d.error || 'Invalid code', true);
+        });
+      }
+    })
+    .catch(e => {
+      document.getElementById('verify-btn').disabled = false;
+      setMsg('code-msg', 'Error: ' + e, true);
+    });
+}
+
+function autoSubmitCode() {
+  const code = document.getElementById('login-code').value.trim();
+  if (code.length === 6) {
+    verifyLoginCode();
+  }
+}
+
+function setMsg(id, text, isErr) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = 'msg ' + (isErr ? 'msg-err' : 'msg-ok');
+}
+</script>
+</body>
+</html>

@@ -1163,6 +1163,111 @@ pub async fn end_clinic(
 }
 
 // ---------------------------------------------------------------------------
+// Auth handlers
+// ---------------------------------------------------------------------------
+
+use std::sync::Mutex;
+
+lazy_static::lazy_static! {
+    /// OTP codes: email → (code, expires_at)
+    static ref AUTH_CODES: Mutex<std::collections::HashMap<String, (String, chrono::DateTime<chrono::Utc>)>> =
+        Mutex::new(std::collections::HashMap::new());
+    /// Valid session tokens: token → (email, created_at)
+    static ref AUTH_SESSIONS: Mutex<std::collections::HashMap<String, (String, chrono::DateTime<chrono::Utc>)>> =
+        Mutex::new(std::collections::HashMap::new());
+}
+
+/// Check if a session token is valid (not expired — 30 day max).
+pub fn validate_session_token(token: &str) -> bool {
+    let sessions = AUTH_SESSIONS.lock().unwrap();
+    if let Some((_email, created)) = sessions.get(token) {
+        let age = chrono::Utc::now() - *created;
+        age.num_days() < 30
+    } else {
+        false
+    }
+}
+
+/// Send an OTP code to the practitioner's email.
+pub async fn auth_send_code_handler(
+    email: &str,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    // Generate 6-digit code
+    let code = format!("{:06}", {
+        use std::time::SystemTime;
+        let seed = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .subsec_nanos();
+        (seed % 900000) + 100000
+    });
+
+    let expires = chrono::Utc::now() + chrono::Duration::minutes(10);
+    AUTH_CODES.lock().unwrap().insert(email.to_string(), (code.clone(), expires));
+
+    // Try to send via email
+    match crate::email::load_email_config() {
+        Ok(config) => {
+            let body = format!(
+                "Your PracticeForge login code is: {}\n\nThis code is valid for 10 minutes.",
+                code
+            );
+            match crate::email::send_email(
+                &config,
+                email,
+                "",
+                "PracticeForge Login Code",
+                &body,
+                None,
+                None,
+            ) {
+                Ok(_) => Ok(Json(serde_json::json!({"ok": true}))),
+                Err(e) => {
+                    // Email failed — log the code for dev use
+                    eprintln!("[auth] OTP for {}: {} (email send failed: {})", email, code, e);
+                    Ok(Json(serde_json::json!({"ok": true, "dev_note": "email failed, check server logs"})))
+                }
+            }
+        }
+        Err(_) => {
+            // No email configured — log code to stderr (dev mode)
+            eprintln!("[auth] OTP for {}: {} (email not configured)", email, code);
+            Ok(Json(serde_json::json!({"ok": true, "dev_code": code})))
+        }
+    }
+}
+
+/// Verify an OTP code and return a session token.
+pub fn auth_verify_handler(
+    email: &str,
+    code: &str,
+) -> Result<String, (StatusCode, String)> {
+    let codes = AUTH_CODES.lock().unwrap();
+    let (stored_code, expires) = codes
+        .get(email)
+        .ok_or((StatusCode::BAD_REQUEST, "No code sent to this email".to_string()))?;
+
+    if chrono::Utc::now() > *expires {
+        return Err((StatusCode::BAD_REQUEST, "Code expired — request a new one".to_string()));
+    }
+
+    if stored_code != code {
+        return Err((StatusCode::BAD_REQUEST, "Invalid code".to_string()));
+    }
+
+    drop(codes);
+
+    // Create session token
+    let token = uuid::Uuid::new_v4().to_string();
+    AUTH_SESSIONS.lock().unwrap().insert(
+        token.clone(),
+        (email.to_string(), chrono::Utc::now()),
+    );
+
+    Ok(token)
+}
+
+// ---------------------------------------------------------------------------
 // Scheduling action handlers
 // ---------------------------------------------------------------------------
 

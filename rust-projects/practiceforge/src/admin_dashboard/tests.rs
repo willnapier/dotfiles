@@ -6,10 +6,24 @@ use axum::http::{Request, StatusCode};
 use tower::ServiceExt;
 
 #[tokio::test]
-async fn test_index_returns_html() {
+async fn test_index_redirects_to_login_without_auth() {
     let app = build_router();
     let response = app
         .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    // Unauthenticated: should redirect to /login
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let location = response.headers().get("location").map(|v| v.to_str().unwrap_or("")).unwrap_or("");
+    assert_eq!(location, "/login");
+}
+
+#[tokio::test]
+async fn test_login_page_returns_html() {
+    let app = build_router();
+    let response = app
+        .oneshot(Request::builder().uri("/login").body(Body::empty()).unwrap())
         .await
         .unwrap();
 
