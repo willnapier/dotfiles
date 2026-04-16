@@ -37,6 +37,11 @@ pub fn build_router() -> Router {
         // Practice info
         .route("/api/practice", get(handlers::practice_info))
         .route("/api/practitioners", get(handlers::practitioners))
+        // Scheduling actions
+        .route("/api/schedule/create", post(handlers::schedule_create))
+        .route("/api/schedule/cancel", post(handlers::schedule_cancel))
+        .route("/api/schedule/move", post(handlers::schedule_move))
+        .route("/api/schedule/blocks", get(handlers::schedule_blocks))
         // Email setup
         .route("/api/email/status", get(handlers::email_status))
         .route("/api/email/setup", post(handlers::email_setup))
