@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.williamnapier.practiceforge-dashboard</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/williamnapier/.local/bin/practiceforge</string>
+        <string>admin-dashboard</string>
+        <string>--port</string>
+        <string>3457</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/williamnapier/.local/share/practiceforge/dashboard-stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/williamnapier/.local/share/practiceforge/dashboard-stderr.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/williamnapier/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
