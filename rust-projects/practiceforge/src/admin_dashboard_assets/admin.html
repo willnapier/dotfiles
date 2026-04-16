@@ -971,7 +971,7 @@ function clinicSaveSession() {
   }).catch(e => { setClinicStatus('Save failed: ' + String(e)); });
 }
 
-// --- Generate note ---
+// --- Generate note (streaming) ---
 function clinicGenerate() {
   if (!S.clinicSelectedId || S.clinicGenerating) return;
   const obs = document.getElementById('clinic-observation').value.trim();
@@ -980,37 +980,81 @@ function clinicGenerate() {
   S.clinicGenerating = true;
   document.getElementById('clinic-generate-btn').disabled = true;
   document.getElementById('clinic-spinner').classList.add('visible');
-  setClinicStatus('Generating...');
+  document.getElementById('clinic-generated-wrap').style.display = '';
+  document.getElementById('clinic-generated-note').value = '';
+  setClinicStatus('Connecting to inference...');
 
   const model = document.getElementById('clinic-model-picker').value;
-  const startTime = performance.now();
+  const textarea = document.getElementById('clinic-generated-note');
 
-  fetch('/api/generate', {
+  // Use streaming SSE endpoint
+  fetch('/api/generate-stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ client_id: S.clinicSelectedId, observation: obs, model: model })
-  })
-    .then(r => r.json())
-    .then(data => {
-      S.clinicGenerating = false;
-      document.getElementById('clinic-generate-btn').disabled = false;
-      document.getElementById('clinic-spinner').classList.remove('visible');
+  }).then(response => {
+    if (!response.ok) {
+      return response.text().then(t => { throw new Error(t || response.statusText); });
+    }
 
-      if (data.note_text) {
-        document.getElementById('clinic-generated-wrap').style.display = '';
-        document.getElementById('clinic-generated-note').value = data.note_text;
-        const elapsed = data.elapsed_seconds != null ? data.elapsed_seconds.toFixed(1) : ((performance.now() - startTime) / 1000).toFixed(1);
-        setClinicStatus('Complete — ' + elapsed + 's');
-      } else {
-        setClinicStatus('Generation returned empty result');
-      }
-    })
-    .catch(e => {
-      S.clinicGenerating = false;
-      document.getElementById('clinic-generate-btn').disabled = false;
-      document.getElementById('clinic-spinner').classList.remove('visible');
-      setClinicStatus('Generate failed: ' + String(e));
-    });
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let firstToken = true;
+
+    function read() {
+      reader.read().then(({ done, value }) => {
+        if (done) {
+          S.clinicGenerating = false;
+          document.getElementById('clinic-generate-btn').disabled = false;
+          document.getElementById('clinic-spinner').classList.remove('visible');
+          if (!textarea.value.trim()) {
+            setClinicStatus('Generation returned empty result');
+          }
+          return;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data.startsWith('[DONE]')) {
+              const elapsed = data.replace('[DONE] ', '');
+              setClinicStatus('Complete — ' + elapsed);
+              S.clinicGenerating = false;
+              document.getElementById('clinic-generate-btn').disabled = false;
+              document.getElementById('clinic-spinner').classList.remove('visible');
+            } else {
+              if (firstToken) {
+                setClinicStatus('Generating...');
+                firstToken = false;
+              }
+              textarea.value += data;
+              // Auto-scroll to bottom
+              textarea.scrollTop = textarea.scrollHeight;
+            }
+          }
+        }
+
+        read();
+      }).catch(e => {
+        S.clinicGenerating = false;
+        document.getElementById('clinic-generate-btn').disabled = false;
+        document.getElementById('clinic-spinner').classList.remove('visible');
+        setClinicStatus('Stream error: ' + String(e));
+      });
+    }
+
+    read();
+  }).catch(e => {
+    S.clinicGenerating = false;
+    document.getElementById('clinic-generate-btn').disabled = false;
+    document.getElementById('clinic-spinner').classList.remove('visible');
+    setClinicStatus('Generate failed: ' + String(e));
+  });
 }
 
 // --- Accept note ---

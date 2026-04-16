@@ -938,6 +938,203 @@ pub async fn generate_note(
     }))
 }
 
+/// POST /api/generate-stream — streaming note generation via SSE.
+///
+/// Builds the prompt locally, calls Ollama streaming API directly,
+/// proxies token chunks as SSE events. First token appears in 1-2s.
+pub async fn generate_note_stream(
+    Json(req): Json<GenerateRequest>,
+) -> Result<axum::response::Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>>, (StatusCode, String)> {
+    use axum::response::sse::{Event, KeepAlive};
+    use futures_util::StreamExt;
+
+    let start = std::time::Instant::now();
+
+    // Build prompt by calling `clinical note` with --prompt-only via a quick subprocess
+    // that just outputs the prompt without generating. We pipe observation via env var.
+    let client_id = req.client_id.clone();
+    let observation = req.observation.clone();
+
+    // Load inference config
+    let config = crate::config::load_config();
+    let endpoint = config.as_ref()
+        .and_then(|c| c.get("voice"))
+        .and_then(|v| v.get("endpoint"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("http://localhost:11434")
+        .to_string();
+    let model = req.model.clone().unwrap_or_else(|| {
+        config.as_ref()
+            .and_then(|c| c.get("voice"))
+            .and_then(|v| v.get("model"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("clinical-voice-q4")
+            .to_string()
+    });
+
+    // Build the prompt using the clinical binary (captures client context, summary, modality)
+    let prompt_output = tokio::process::Command::new("clinical")
+        .arg("note")
+        .arg(&client_id)
+        .arg(&observation)
+        .arg("--no-save")
+        .arg("--yes")
+        .env("CLINICAL_PROMPT_ONLY", "1")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to build prompt: {}", e)))?;
+
+    // If CLINICAL_PROMPT_ONLY isn't supported, fall back to using the observation directly
+    // with a system prompt built from the modality file
+    let prompt = if prompt_output.status.success() && !prompt_output.stdout.is_empty() {
+        String::from_utf8_lossy(&prompt_output.stdout).to_string()
+    } else {
+        // Fallback: build a basic prompt with observation + system instructions
+        build_fallback_prompt(&client_id, &observation)
+    };
+
+    // Build the system prompt from modality-act.md + faithfulness-prompt.md
+    let system_prompt = load_system_prompt();
+
+    // Call Ollama streaming API
+    let ollama_url = format!("{}/api/generate", endpoint);
+    let body = serde_json::json!({
+        "model": model,
+        "prompt": prompt,
+        "system": system_prompt,
+        "stream": true,
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(&ollama_url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, format!("Ollama connection failed: {}. Is the inference tunnel up?", e)))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err((StatusCode::BAD_GATEWAY, format!("Ollama returned {}: {}", status, body)));
+    }
+
+    // Stream Ollama's NDJSON response as SSE events
+    let byte_stream = resp.bytes_stream();
+
+    let stream = byte_stream.map(move |chunk| {
+        let chunk = chunk.unwrap_or_default();
+        let text = String::from_utf8_lossy(&chunk);
+
+        // Ollama sends one JSON object per line: {"response":"token","done":false}
+        let mut tokens = String::new();
+        let mut is_done = false;
+
+        for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty() { continue; }
+            if let Ok(obj) = serde_json::from_str::<serde_json::Value>(line) {
+                if let Some(tok) = obj.get("response").and_then(|v| v.as_str()) {
+                    tokens.push_str(tok);
+                }
+                if obj.get("done").and_then(|v| v.as_bool()).unwrap_or(false) {
+                    is_done = true;
+                }
+            }
+        }
+
+        if is_done {
+            let elapsed = start.elapsed().as_secs_f64();
+            Ok(Event::default().data(format!("[DONE] {:.1}s", elapsed)))
+        } else if !tokens.is_empty() {
+            Ok(Event::default().data(tokens))
+        } else {
+            Ok(Event::default().comment("keepalive"))
+        }
+    });
+
+    Ok(axum::response::Sse::new(stream).keep_alive(KeepAlive::default()))
+}
+
+/// Load system prompt from modality + faithfulness prompt files.
+fn load_system_prompt() -> String {
+    let home = dirs::home_dir().unwrap_or_default();
+
+    // Try modality-act.md first (the practitioner's ACT framework)
+    let modality_path = home.join(".claude/skills/clinical-notes/modality-act.md");
+    let modality = std::fs::read_to_string(&modality_path).unwrap_or_default();
+
+    // Faithfulness prompt (universal grounding rules)
+    let faithfulness_path = home.join(".claude/skills/clinical-notes/faithfulness-prompt.md");
+    let faithfulness = std::fs::read_to_string(&faithfulness_path).unwrap_or_default();
+
+    if modality.is_empty() && faithfulness.is_empty() {
+        // Fallback system prompt
+        return "You are a clinical psychologist's session note writer. Produce a session note in the practitioner's established style. Frame clinical reasoning using explicit ACT/CBS process terminology.".to_string();
+    }
+
+    format!("{}\n\n{}", modality.trim(), faithfulness.trim())
+}
+
+/// Build a basic prompt when the clinical binary doesn't support --prompt-only.
+fn build_fallback_prompt(client_id: &str, observation: &str) -> String {
+    let clinical_root = crate::config::clinical_root();
+    let client_dir = clinical_root.join("clients").join(client_id);
+
+    // Try to load summary for context
+    let summary_path = client_dir.join("summary.md");
+    let summary = std::fs::read_to_string(&summary_path).unwrap_or_default();
+
+    // Load last few sessions from notes.md
+    let notes_path = client_dir.join("notes.md");
+    let recent_notes = if notes_path.exists() {
+        let content = std::fs::read_to_string(&notes_path).unwrap_or_default();
+        // Extract last 3 sessions (### headers)
+        let sessions: Vec<&str> = content.split("\n### ").collect();
+        let last_3 = sessions.iter().rev().take(3).rev().cloned().collect::<Vec<_>>();
+        if last_3.is_empty() {
+            String::new()
+        } else {
+            format!("Recent sessions:\n### {}", last_3.join("\n### "))
+        }
+    } else {
+        String::new()
+    };
+
+    // Load client name from identity.yaml
+    let identity_path = client_dir.join("identity.yaml");
+    let client_name = if identity_path.exists() {
+        std::fs::read_to_string(&identity_path)
+            .ok()
+            .and_then(|c| serde_yaml::from_str::<serde_yaml::Value>(&c).ok())
+            .and_then(|v| v.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()))
+            .unwrap_or_else(|| client_id.to_string())
+    } else {
+        client_id.to_string()
+    };
+
+    let mut prompt = format!("Client: {} ({})\n\n", client_name, client_id);
+
+    if !summary.is_empty() {
+        prompt.push_str("Clinical summary:\n");
+        prompt.push_str(&summary);
+        prompt.push_str("\n\n");
+    }
+
+    if !recent_notes.is_empty() {
+        prompt.push_str(&recent_notes);
+        prompt.push_str("\n\n");
+    }
+
+    prompt.push_str("Today's observation:\n");
+    prompt.push_str(observation);
+    prompt.push_str("\n\nWrite a session note for today.");
+
+    prompt
+}
+
 /// POST /api/save-note — run `clinical note-save` with note text on stdin.
 pub async fn save_note(
     Json(req): Json<SaveNoteRequest>,
