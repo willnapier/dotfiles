@@ -3,470 +3,561 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PracticeForge Admin</title>
+<title>PracticeForge</title>
 <style>
+  :root {
+    --base03: #002b36; --base02: #073642; --base01: #586e75;
+    --base00: #657b83; --base0: #839496; --base1: #93a1a1;
+    --base2: #eee8d5; --base3: #fdf6e3;
+    --yellow: #b58900; --orange: #cb4b16; --red: #dc322f;
+    --magenta: #d33682; --violet: #6c71c4; --blue: #268bd2;
+    --cyan: #2aa198; --green: #859900;
+    --bg: var(--base03); --bg-hl: var(--base02);
+    --fg: var(--base0); --fg-em: var(--base1);
+    --fg-dim: var(--base01); --border: #0a4050;
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #333; }
+  body { font-family: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', monospace; background: var(--bg); color: var(--fg); font-size: 13px; line-height: 1.5; height: 100vh; display: flex; flex-direction: column; }
 
   /* Header */
-  header { background: #1a1a2e; color: #fff; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; }
-  header h1 { font-size: 18px; font-weight: 600; }
-  header .practice-name { font-size: 13px; opacity: 0.7; }
+  header { background: var(--bg-hl); border-bottom: 1px solid var(--border); padding: 8px 16px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  header h1 { font-size: 14px; font-weight: 600; color: var(--cyan); letter-spacing: 0.5px; }
+  header .practice-name { font-size: 12px; color: var(--fg-dim); }
 
-  /* Navigation */
-  nav { background: #16213e; display: flex; gap: 0; }
-  nav button { background: none; border: none; color: #aab; padding: 12px 24px; cursor: pointer; font-size: 14px; border-bottom: 3px solid transparent; transition: all 0.15s; }
-  nav button:hover { color: #fff; background: rgba(255,255,255,0.05); }
-  nav button.active { color: #fff; border-bottom-color: #4ecdc4; }
+  /* Tab bar */
+  nav { background: var(--bg); border-bottom: 1px solid var(--border); display: flex; flex-shrink: 0; }
+  nav button { background: none; border: none; color: var(--fg-dim); padding: 8px 20px; cursor: pointer; font: inherit; font-size: 12px; border-bottom: 2px solid transparent; transition: color 0.1s; position: relative; }
+  nav button:hover { color: var(--fg); }
+  nav button.active { color: var(--cyan); border-bottom-color: var(--cyan); }
+  nav button .kbd { font-size: 10px; color: var(--fg-dim); margin-left: 4px; opacity: 0.6; }
 
-  /* Main content */
-  main { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  /* Main layout */
+  main { flex: 1; overflow: auto; padding: 12px 16px; }
   .view { display: none; }
   .view.active { display: block; }
 
-  /* Cards */
-  .card { background: #fff; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 16px; }
-  .card h2 { font-size: 16px; margin-bottom: 12px; color: #1a1a2e; }
-
   /* Tables */
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th { text-align: left; padding: 8px 12px; border-bottom: 2px solid #e0e0e0; font-weight: 600; color: #555; font-size: 11px; text-transform: uppercase; }
-  td { padding: 8px 12px; border-bottom: 1px solid #eee; }
-  tr:hover { background: #f8f9fa; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; padding: 4px 10px; font-size: 11px; text-transform: uppercase; color: var(--fg-dim); border-bottom: 1px solid var(--border); letter-spacing: 0.5px; font-weight: 600; }
+  td { padding: 5px 10px; border-bottom: 1px solid rgba(255,255,255,0.03); }
+  tr.row { cursor: default; }
+  tr.row:hover { background: rgba(255,255,255,0.02); }
+  tr.row.selected { background: var(--bg-hl); outline: 1px solid var(--cyan); outline-offset: -1px; }
+  tr.row.selected td:first-child { color: var(--cyan); }
 
-  /* Status badges */
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
-  .badge-active { background: #d4edda; color: #155724; }
-  .badge-discharged { background: #f8d7da; color: #721c24; }
-  .badge-overdue { background: #f8d7da; color: #721c24; }
-  .badge-sent { background: #cce5ff; color: #004085; }
-  .badge-draft { background: #e2e3e5; color: #383d41; }
+  /* Badges */
+  .badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px; font-weight: 600; }
+  .badge-active { background: rgba(133,153,0,0.15); color: var(--green); }
+  .badge-discharged { background: rgba(220,50,47,0.15); color: var(--red); }
+  .badge-overdue { background: rgba(220,50,47,0.15); color: var(--red); }
+  .badge-sent { background: rgba(38,139,210,0.15); color: var(--blue); }
+  .badge-draft { background: rgba(88,110,117,0.15); color: var(--fg-dim); }
+  .badge-recurring { background: rgba(42,161,152,0.15); color: var(--cyan); }
 
-  /* Search */
-  .search-bar { display: flex; gap: 8px; margin-bottom: 16px; }
-  .search-bar input { flex: 1; padding: 10px 14px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
-  .search-bar button { padding: 10px 20px; background: #1a1a2e; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
-  .search-bar button:hover { background: #16213e; }
+  /* Search bar */
+  .search-bar { margin-bottom: 12px; }
+  .search-bar input { width: 100%; padding: 8px 12px; background: var(--bg-hl); border: 1px solid var(--border); border-radius: 4px; color: var(--fg); font: inherit; font-size: 13px; outline: none; }
+  .search-bar input:focus { border-color: var(--cyan); }
+  .search-bar input::placeholder { color: var(--fg-dim); }
 
   /* Calendar */
-  .cal-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
-  .cal-header input[type="date"] { padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
-  .cal-header label { font-size: 13px; display: flex; align-items: center; gap: 4px; }
-  .cal-nav { display: flex; gap: 4px; }
-  .cal-nav button { padding: 6px 12px; background: #e9ecef; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 13px; }
-  .cal-nav button:hover { background: #dee2e6; }
-  .day-header { background: #f0f0f0; padding: 8px 12px; font-weight: 600; margin-top: 8px; border-radius: 4px; font-size: 13px; }
+  .cal-controls { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .cal-controls input[type="date"] { padding: 4px 8px; background: var(--bg-hl); border: 1px solid var(--border); border-radius: 3px; color: var(--fg); font: inherit; font-size: 12px; }
+  .cal-controls input[type="date"]:focus { border-color: var(--cyan); outline: none; }
+  .cal-controls label { font-size: 12px; color: var(--fg-dim); display: flex; align-items: center; gap: 4px; }
+  .cal-btn { padding: 4px 10px; background: var(--bg-hl); border: 1px solid var(--border); border-radius: 3px; color: var(--fg); cursor: pointer; font: inherit; font-size: 12px; }
+  .cal-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+  .day-header { background: var(--bg-hl); padding: 6px 10px; font-weight: 600; color: var(--fg-em); margin-top: 10px; border-radius: 3px; font-size: 12px; border-left: 3px solid var(--cyan); }
 
   /* Summary cards */
-  .summary-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
-  .summary-card { background: #fff; border-radius: 6px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); text-align: center; }
-  .summary-card .number { font-size: 28px; font-weight: 700; color: #1a1a2e; }
-  .summary-card .label { font-size: 12px; color: #777; margin-top: 4px; }
+  .summary-row { display: flex; gap: 12px; margin-bottom: 12px; }
+  .summary-card { background: var(--bg-hl); border-radius: 4px; padding: 12px 16px; border: 1px solid var(--border); flex: 1; }
+  .summary-card .number { font-size: 22px; font-weight: 700; color: var(--fg-em); }
+  .summary-card .label { font-size: 11px; color: var(--fg-dim); margin-top: 2px; }
 
   /* Search results */
-  .search-result { padding: 12px; border-bottom: 1px solid #eee; }
-  .search-result:last-child { border-bottom: none; }
-  .search-result .result-header { font-weight: 600; margin-bottom: 4px; }
-  .search-result .result-id { color: #888; font-size: 12px; }
-  .search-result .result-snippet { font-size: 13px; color: #555; margin-top: 4px; }
-  .search-result .result-snippet b { color: #1a1a2e; }
-
-  /* Loading */
-  .loading { text-align: center; padding: 40px; color: #888; }
-
-  /* Clickable rows */
-  tr.clickable { cursor: pointer; }
+  .search-result { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.03); cursor: default; }
+  .search-result:hover { background: rgba(255,255,255,0.02); }
+  .search-result.selected { background: var(--bg-hl); outline: 1px solid var(--cyan); outline-offset: -1px; }
+  .search-result .result-header { font-weight: 600; color: var(--fg-em); }
+  .search-result .result-id { color: var(--fg-dim); font-size: 11px; }
+  .search-result .result-score { color: var(--fg-dim); font-size: 11px; }
+  .search-result .result-snippet { font-size: 12px; color: var(--fg-dim); margin-top: 2px; }
+  .search-result .result-snippet b { color: var(--yellow); font-weight: 600; }
 
   /* Client detail */
-  .client-detail { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .client-detail dt { font-weight: 600; color: #555; font-size: 12px; text-transform: uppercase; }
-  .client-detail dd { margin-bottom: 12px; }
-  .back-link { display: inline-block; margin-bottom: 12px; color: #1a1a2e; cursor: pointer; font-size: 13px; }
-  .back-link:hover { text-decoration: underline; }
+  .detail-grid { display: grid; grid-template-columns: 120px 1fr 120px 1fr; gap: 4px 12px; margin-top: 8px; }
+  .detail-grid dt { color: var(--fg-dim); font-size: 11px; text-transform: uppercase; padding: 4px 0; }
+  .detail-grid dd { color: var(--fg); padding: 4px 0; }
+  .section-head { font-size: 12px; font-weight: 600; color: var(--cyan); margin-top: 16px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .back-hint { font-size: 11px; color: var(--fg-dim); margin-bottom: 8px; }
+
+  /* Status bar */
+  #statusbar { background: var(--bg-hl); border-top: 1px solid var(--border); padding: 4px 16px; font-size: 11px; color: var(--fg-dim); flex-shrink: 0; display: flex; justify-content: space-between; }
+  #statusbar .hint { }
+  #statusbar .mode { color: var(--cyan); }
+  #statusbar kbd { background: var(--bg); padding: 0 4px; border-radius: 2px; border: 1px solid var(--border); margin: 0 1px; font-family: inherit; }
+
+  /* Empty / loading states */
+  .empty { padding: 20px; color: var(--fg-dim); text-align: center; }
 
   @media (max-width: 768px) {
-    main { padding: 12px; }
-    nav button { padding: 10px 16px; font-size: 13px; }
-    .client-detail { grid-template-columns: 1fr; }
-    .summary-row { grid-template-columns: repeat(2, 1fr); }
+    main { padding: 8px; }
+    nav button { padding: 8px 12px; }
+    .detail-grid { grid-template-columns: 100px 1fr; }
+    .summary-row { flex-wrap: wrap; }
+    .summary-card { min-width: 120px; }
   }
 </style>
 </head>
 <body>
+
 <header>
   <div>
-    <h1>PracticeForge Admin</h1>
+    <h1>PracticeForge</h1>
     <div class="practice-name" id="practice-name"></div>
   </div>
 </header>
 
-<nav>
-  <button class="active" data-view="clients">Clients</button>
-  <button data-view="calendar">Calendar</button>
-  <button data-view="search">Search</button>
-  <button data-view="billing">Billing</button>
+<nav id="nav">
+  <button class="active" data-view="clients" data-key="1">Clients <span class="kbd">1</span></button>
+  <button data-view="calendar" data-key="2">Calendar <span class="kbd">2</span></button>
+  <button data-view="search" data-key="3">Search <span class="kbd">3</span></button>
+  <button data-view="billing" data-key="4">Billing <span class="kbd">4</span></button>
 </nav>
 
 <main>
-  <!-- Clients view -->
+  <!-- Clients -->
   <div id="view-clients" class="view active">
     <div id="client-list">
-      <div class="card">
-        <h2>All Clients</h2>
-        <div id="clients-loading" class="loading">Loading clients...</div>
-        <table id="clients-table" style="display:none;">
-          <thead>
-            <tr><th>ID</th><th>Name</th><th>Funding</th><th>Status</th><th>Referrer</th></tr>
-          </thead>
-          <tbody id="clients-tbody"></tbody>
-        </table>
-      </div>
+      <table>
+        <thead><tr><th>ID</th><th>Name</th><th>Funding</th><th>Status</th><th>Referrer</th></tr></thead>
+        <tbody id="clients-tbody"></tbody>
+      </table>
+      <div id="clients-empty" class="empty" style="display:none">No clients in registry. Run: pf registry import --all</div>
     </div>
-    <div id="client-detail" style="display:none;">
-      <span class="back-link" onclick="showClientList()">&larr; Back to clients</span>
-      <div class="card" id="client-detail-card"></div>
-      <div class="card">
-        <h2>Practitioner Assignments</h2>
-        <div id="client-assignments"></div>
-      </div>
+    <div id="client-detail" style="display:none">
+      <div class="back-hint"><kbd>Esc</kbd> back to list</div>
+      <div id="client-detail-content"></div>
+      <div class="section-head">Assignments</div>
+      <div id="client-assignments"></div>
     </div>
   </div>
 
-  <!-- Calendar view -->
+  <!-- Calendar -->
   <div id="view-calendar" class="view">
-    <div class="card">
-      <div class="cal-header">
-        <div class="cal-nav">
-          <button onclick="calPrev()">&larr;</button>
-          <button onclick="calToday()">Today</button>
-          <button onclick="calNext()">&rarr;</button>
-        </div>
-        <input type="date" id="cal-date" onchange="loadCalendar()">
-        <label><input type="checkbox" id="cal-week" onchange="loadCalendar()"> Week view</label>
-      </div>
-      <div id="calendar-content">
-        <div class="loading">Loading calendar...</div>
-      </div>
+    <div class="cal-controls">
+      <button class="cal-btn" onclick="calPrev()" title="Previous"><kbd>h</kbd> &larr;</button>
+      <button class="cal-btn" onclick="calToday()">Today <kbd>t</kbd></button>
+      <button class="cal-btn" onclick="calNext()" title="Next">&rarr; <kbd>l</kbd></button>
+      <input type="date" id="cal-date" onchange="loadCalendar()">
+      <label><input type="checkbox" id="cal-week" onchange="loadCalendar()"> Week <kbd>w</kbd></label>
     </div>
+    <div id="calendar-content"></div>
   </div>
 
-  <!-- Search view -->
+  <!-- Search -->
   <div id="view-search" class="view">
     <div class="search-bar">
-      <input type="text" id="search-input" placeholder="Search clients, notes, correspondence..." onkeydown="if(event.key==='Enter')doSearch()">
-      <button onclick="doSearch()">Search</button>
+      <input type="text" id="search-input" placeholder="Search notes, correspondence, clients...  (/ to focus)">
     </div>
-    <div class="card" id="search-results" style="display:none;"></div>
+    <div id="search-results"></div>
   </div>
 
-  <!-- Billing view -->
+  <!-- Billing -->
   <div id="view-billing" class="view">
     <div class="summary-row" id="billing-summary"></div>
-    <div class="card">
-      <h2>Outstanding Invoices</h2>
-      <div id="billing-loading" class="loading">Loading billing data...</div>
-      <table id="billing-table" style="display:none;">
-        <thead>
-          <tr><th>Reference</th><th>Client</th><th>Bill To</th><th>Amount</th><th>Due</th><th>Status</th><th>Overdue</th></tr>
-        </thead>
-        <tbody id="billing-tbody"></tbody>
-      </table>
-      <div id="billing-empty" style="display:none;" class="loading">No outstanding invoices.</div>
-    </div>
+    <table id="billing-table" style="display:none">
+      <thead><tr><th>Ref</th><th>Client</th><th>Bill To</th><th>Amount</th><th>Due</th><th>Status</th><th>Overdue</th></tr></thead>
+      <tbody id="billing-tbody"></tbody>
+    </table>
+    <div id="billing-empty" class="empty" style="display:none">No outstanding invoices.</div>
   </div>
 </main>
 
+<div id="statusbar">
+  <span class="hint" id="status-hint">
+    <kbd>1</kbd>-<kbd>4</kbd> views &middot; <kbd>/</kbd> search &middot; <kbd>j</kbd>/<kbd>k</kbd> navigate &middot; <kbd>Enter</kbd> open &middot; <kbd>Esc</kbd> back
+  </span>
+  <span class="mode" id="status-mode">CLIENTS</span>
+</div>
+
 <script>
-// ---------------------------------------------------------------------------
+// ============================================================================
+// State
+// ============================================================================
+const S = {
+  view: 'clients',
+  clientIdx: 0,
+  clients: [],
+  searchIdx: 0,
+  searchResults: [],
+  calDate: new Date(),
+  inDetail: false,
+  loaded: { clients: false, calendar: false, billing: false },
+};
+
+// ============================================================================
 // Navigation
-// ---------------------------------------------------------------------------
-const navButtons = document.querySelectorAll('nav button');
+// ============================================================================
+const navBtns = document.querySelectorAll('nav button');
 const views = document.querySelectorAll('.view');
 
-navButtons.forEach(btn => {
-  btn.addEventListener('click', () => {
-    navButtons.forEach(b => b.classList.remove('active'));
-    views.forEach(v => v.classList.remove('active'));
-    btn.classList.add('active');
-    const viewId = 'view-' + btn.dataset.view;
-    document.getElementById(viewId).classList.add('active');
+function switchView(name) {
+  S.view = name;
+  navBtns.forEach(b => b.classList.toggle('active', b.dataset.view === name));
+  views.forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
+  document.getElementById('status-mode').textContent = name.toUpperCase();
 
-    // Lazy-load data
-    if (btn.dataset.view === 'clients' && !clientsLoaded) loadClients();
-    if (btn.dataset.view === 'calendar' && !calendarLoaded) loadCalendar();
-    if (btn.dataset.view === 'billing' && !billingLoaded) loadBilling();
-  });
+  if (name === 'clients' && !S.loaded.clients) loadClients();
+  if (name === 'calendar' && !S.loaded.calendar) loadCalendar();
+  if (name === 'billing' && !S.loaded.billing) loadBilling();
+  if (name === 'search') document.getElementById('search-input').focus();
+
+  updateHints();
+}
+
+function updateHints() {
+  const el = document.getElementById('status-hint');
+  if (S.view === 'clients' && S.inDetail) {
+    el.innerHTML = '<kbd>Esc</kbd> back to list';
+  } else if (S.view === 'clients') {
+    el.innerHTML = '<kbd>j</kbd>/<kbd>k</kbd> navigate &middot; <kbd>Enter</kbd> open &middot; <kbd>/</kbd> search';
+  } else if (S.view === 'search') {
+    el.innerHTML = '<kbd>j</kbd>/<kbd>k</kbd> results &middot; <kbd>Enter</kbd> open &middot; <kbd>Esc</kbd> clear';
+  } else if (S.view === 'calendar') {
+    el.innerHTML = '<kbd>h</kbd>/<kbd>l</kbd> prev/next &middot; <kbd>t</kbd> today &middot; <kbd>w</kbd> toggle week';
+  } else if (S.view === 'billing') {
+    el.innerHTML = '<kbd>j</kbd>/<kbd>k</kbd> navigate';
+  }
+}
+
+navBtns.forEach(b => b.addEventListener('click', () => switchView(b.dataset.view)));
+
+// ============================================================================
+// Keyboard
+// ============================================================================
+document.addEventListener('keydown', (e) => {
+  // Don't intercept when typing in input fields
+  const tag = document.activeElement.tagName;
+  const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+
+  // Escape always works
+  if (e.key === 'Escape') {
+    if (inInput) { document.activeElement.blur(); return; }
+    if (S.view === 'clients' && S.inDetail) { showClientList(); return; }
+    return;
+  }
+
+  // / focuses search from anywhere
+  if (e.key === '/' && !inInput) {
+    e.preventDefault();
+    switchView('search');
+    return;
+  }
+
+  // Enter in search input triggers search
+  if (e.key === 'Enter' && document.activeElement.id === 'search-input') {
+    doSearch();
+    return;
+  }
+
+  if (inInput) return;
+
+  // View switching: 1-4
+  if (e.key === '1') { switchView('clients'); return; }
+  if (e.key === '2') { switchView('calendar'); return; }
+  if (e.key === '3') { switchView('search'); return; }
+  if (e.key === '4') { switchView('billing'); return; }
+
+  // j/k navigation
+  if (S.view === 'clients' && !S.inDetail) {
+    if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); moveClient(1); }
+    if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); moveClient(-1); }
+    if (e.key === 'Enter') { openSelectedClient(); }
+    if (e.key === 'g' || e.key === 'Home') { S.clientIdx = 0; highlightClient(); }
+    if (e.key === 'G' || e.key === 'End') { S.clientIdx = S.clients.length - 1; highlightClient(); }
+  }
+
+  if (S.view === 'search') {
+    if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); moveSearch(1); }
+    if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); moveSearch(-1); }
+    if (e.key === 'Enter') { openSelectedSearch(); }
+  }
+
+  // Calendar shortcuts
+  if (S.view === 'calendar') {
+    if (e.key === 'h' || e.key === 'ArrowLeft') { calPrev(); }
+    if (e.key === 'l' || e.key === 'ArrowRight') { calNext(); }
+    if (e.key === 't') { calToday(); }
+    if (e.key === 'w') {
+      const cb = document.getElementById('cal-week');
+      cb.checked = !cb.checked;
+      loadCalendar();
+    }
+  }
 });
 
-// ---------------------------------------------------------------------------
-// Practice info
-// ---------------------------------------------------------------------------
-fetch('/api/practice')
-  .then(r => r.json())
-  .then(p => {
-    if (p.name) document.getElementById('practice-name').textContent = p.name;
-  })
-  .catch(() => {});
-
-// ---------------------------------------------------------------------------
-// Clients
-// ---------------------------------------------------------------------------
-let clientsLoaded = false;
-
+// ============================================================================
+// Client list
+// ============================================================================
 function loadClients() {
   fetch('/api/clients')
     .then(r => r.json())
     .then(clients => {
-      clientsLoaded = true;
-      const tbody = document.getElementById('clients-tbody');
-      tbody.innerHTML = '';
-      clients.forEach(c => {
-        const tr = document.createElement('tr');
-        tr.className = 'clickable';
-        tr.onclick = () => showClientDetail(c.client_id);
-        const statusClass = c.status === 'active' ? 'badge-active' : 'badge-discharged';
-        tr.innerHTML = `
-          <td>${esc(c.client_id)}</td>
-          <td>${esc(c.name)}</td>
-          <td>${esc(c.funding_type || '-')}</td>
-          <td><span class="badge ${statusClass}">${esc(c.status)}</span></td>
-          <td>${esc(c.referrer_name || '-')}</td>
-        `;
-        tbody.appendChild(tr);
-      });
-      document.getElementById('clients-loading').style.display = 'none';
-      document.getElementById('clients-table').style.display = '';
+      S.loaded.clients = true;
+      S.clients = clients;
+      S.clientIdx = 0;
+      renderClients();
     })
     .catch(e => {
-      document.getElementById('clients-loading').textContent = 'Failed to load clients: ' + e;
+      document.getElementById('clients-tbody').innerHTML =
+        `<tr><td colspan="5" class="empty">Failed to load: ${esc(String(e))}</td></tr>`;
     });
 }
 
-function showClientList() {
-  document.getElementById('client-list').style.display = '';
-  document.getElementById('client-detail').style.display = 'none';
+function renderClients() {
+  const tbody = document.getElementById('clients-tbody');
+  if (S.clients.length === 0) {
+    tbody.innerHTML = '';
+    document.getElementById('clients-empty').style.display = '';
+    return;
+  }
+  document.getElementById('clients-empty').style.display = 'none';
+  tbody.innerHTML = S.clients.map((c, i) => {
+    const cls = c.status === 'active' ? 'badge-active' : 'badge-discharged';
+    const sel = i === S.clientIdx ? ' selected' : '';
+    return `<tr class="row${sel}" data-idx="${i}" onclick="S.clientIdx=${i};highlightClient();openSelectedClient()">
+      <td>${esc(c.client_id)}</td>
+      <td>${esc(c.name)}</td>
+      <td>${esc(c.funding_type || '-')}</td>
+      <td><span class="badge ${cls}">${esc(c.status)}</span></td>
+      <td>${esc(c.referrer_name || '-')}</td>
+    </tr>`;
+  }).join('');
 }
 
-function showClientDetail(clientId) {
+function moveClient(d) {
+  S.clientIdx = Math.max(0, Math.min(S.clients.length - 1, S.clientIdx + d));
+  highlightClient();
+}
+
+function highlightClient() {
+  document.querySelectorAll('#clients-tbody tr.row').forEach((tr, i) => {
+    tr.classList.toggle('selected', i === S.clientIdx);
+  });
+  // Scroll into view
+  const sel = document.querySelector('#clients-tbody tr.selected');
+  if (sel) sel.scrollIntoView({ block: 'nearest' });
+}
+
+function openSelectedClient() {
+  if (S.clients.length === 0) return;
+  const c = S.clients[S.clientIdx];
+  showClientDetail(c.client_id);
+}
+
+function showClientList() {
+  S.inDetail = false;
+  document.getElementById('client-list').style.display = '';
+  document.getElementById('client-detail').style.display = 'none';
+  updateHints();
+}
+
+function showClientDetail(id) {
+  S.inDetail = true;
   document.getElementById('client-list').style.display = 'none';
   document.getElementById('client-detail').style.display = '';
+  updateHints();
 
-  const card = document.getElementById('client-detail-card');
-  card.innerHTML = '<div class="loading">Loading...</div>';
+  const content = document.getElementById('client-detail-content');
+  content.innerHTML = '<div class="empty">Loading...</div>';
 
-  fetch('/api/clients/' + encodeURIComponent(clientId))
+  fetch('/api/clients/' + encodeURIComponent(id))
     .then(r => r.json())
     .then(c => {
-      const statusClass = c.status === 'active' ? 'badge-active' : 'badge-discharged';
-      card.innerHTML = `
-        <h2>${esc(c.name)} <span class="badge ${statusClass}">${esc(c.status)}</span></h2>
-        <dl class="client-detail">
-          <dt>Client ID</dt><dd>${esc(c.client_id)}</dd>
+      const cls = c.status === 'active' ? 'badge-active' : 'badge-discharged';
+      content.innerHTML = `
+        <div style="margin-bottom:8px"><span style="font-size:15px;font-weight:600;color:var(--fg-em)">${esc(c.name)}</span>
+        <span class="badge ${cls}" style="margin-left:8px">${esc(c.status)}</span>
+        <span style="color:var(--fg-dim);margin-left:8px;font-size:12px">${esc(c.client_id)}</span></div>
+        <dl class="detail-grid">
           <dt>DOB</dt><dd>${esc(c.dob || '-')}</dd>
           <dt>Phone</dt><dd>${esc(c.phone || '-')}</dd>
           <dt>Email</dt><dd>${esc(c.email || '-')}</dd>
           <dt>Funding</dt><dd>${esc(c.funding_type || '-')}${c.funding_rate ? ' (' + c.funding_rate + '/session)' : ''}</dd>
           <dt>Referrer</dt><dd>${esc(c.referrer_name || '-')}</dd>
           <dt>Diagnosis</dt><dd>${esc(c.diagnosis || '-')}</dd>
-        </dl>
-      `;
+        </dl>`;
     })
-    .catch(e => { card.innerHTML = 'Error: ' + esc(String(e)); });
+    .catch(e => { content.innerHTML = '<div class="empty">Error: ' + esc(String(e)) + '</div>'; });
 
-  const assignments = document.getElementById('client-assignments');
-  assignments.innerHTML = '<div class="loading">Loading...</div>';
-  fetch('/api/clients/' + encodeURIComponent(clientId) + '/assignments')
+  const asgn = document.getElementById('client-assignments');
+  asgn.innerHTML = '<div class="empty">Loading...</div>';
+  fetch('/api/clients/' + encodeURIComponent(id) + '/assignments')
     .then(r => r.json())
     .then(list => {
-      if (list.length === 0) {
-        assignments.innerHTML = '<p style="color:#888;font-size:13px;">No assignments recorded.</p>';
-        return;
-      }
-      let html = '<table><thead><tr><th>Practitioner</th><th>Since</th><th>Primary</th></tr></thead><tbody>';
-      list.forEach(a => {
-        html += `<tr><td>${esc(a.practitioner_id)}</td><td>${esc(a.since)}</td><td>${a.primary ? 'Yes' : ''}</td></tr>`;
-      });
-      html += '</tbody></table>';
-      assignments.innerHTML = html;
+      if (list.length === 0) { asgn.innerHTML = '<div style="color:var(--fg-dim);font-size:12px">No assignments.</div>'; return; }
+      asgn.innerHTML = '<table><thead><tr><th>Practitioner</th><th>Since</th><th>Primary</th></tr></thead><tbody>' +
+        list.map(a => `<tr><td>${esc(a.practitioner_id)}</td><td>${esc(a.since)}</td><td>${a.primary ? '<span style="color:var(--green)">yes</span>' : ''}</td></tr>`).join('') +
+        '</tbody></table>';
     })
-    .catch(e => { assignments.innerHTML = 'Error: ' + esc(String(e)); });
+    .catch(e => { asgn.innerHTML = 'Error: ' + esc(String(e)); });
 }
 
-// ---------------------------------------------------------------------------
+// ============================================================================
 // Calendar
-// ---------------------------------------------------------------------------
-let calendarLoaded = false;
-let calDate = new Date();
-
+// ============================================================================
 function initCalDate() {
-  const input = document.getElementById('cal-date');
-  input.value = formatDate(calDate);
+  document.getElementById('cal-date').value = fmtDate(S.calDate);
 }
 
-function formatDate(d) {
-  return d.toISOString().split('T')[0];
-}
+function fmtDate(d) { return d.toISOString().split('T')[0]; }
 
 function calPrev() {
-  const week = document.getElementById('cal-week').checked;
-  calDate.setDate(calDate.getDate() - (week ? 7 : 1));
-  document.getElementById('cal-date').value = formatDate(calDate);
+  const w = document.getElementById('cal-week').checked;
+  S.calDate.setDate(S.calDate.getDate() - (w ? 7 : 1));
+  document.getElementById('cal-date').value = fmtDate(S.calDate);
   loadCalendar();
 }
-
 function calNext() {
-  const week = document.getElementById('cal-week').checked;
-  calDate.setDate(calDate.getDate() + (week ? 7 : 1));
-  document.getElementById('cal-date').value = formatDate(calDate);
+  const w = document.getElementById('cal-week').checked;
+  S.calDate.setDate(S.calDate.getDate() + (w ? 7 : 1));
+  document.getElementById('cal-date').value = fmtDate(S.calDate);
   loadCalendar();
 }
-
 function calToday() {
-  calDate = new Date();
-  document.getElementById('cal-date').value = formatDate(calDate);
+  S.calDate = new Date();
+  document.getElementById('cal-date').value = fmtDate(S.calDate);
   loadCalendar();
 }
 
 function loadCalendar() {
-  calendarLoaded = true;
-  const dateVal = document.getElementById('cal-date').value;
-  if (dateVal) calDate = new Date(dateVal + 'T12:00:00');
-  const week = document.getElementById('cal-week').checked;
-  const url = '/api/calendar?date=' + formatDate(calDate) + (week ? '&week=true' : '');
+  S.loaded.calendar = true;
+  const v = document.getElementById('cal-date').value;
+  if (v) S.calDate = new Date(v + 'T12:00:00');
+  const w = document.getElementById('cal-week').checked;
+  const url = '/api/calendar?date=' + fmtDate(S.calDate) + (w ? '&week=true' : '');
 
-  const content = document.getElementById('calendar-content');
-  content.innerHTML = '<div class="loading">Loading...</div>';
+  const el = document.getElementById('calendar-content');
+  el.innerHTML = '<div class="empty">Loading...</div>';
 
-  fetch(url)
-    .then(r => r.json())
-    .then(entries => {
-      if (entries.length === 0) {
-        content.innerHTML = '<p style="padding:12px;color:#888;">No appointments for this period.</p>';
-        return;
+  fetch(url).then(r => r.json()).then(entries => {
+    if (entries.length === 0) { el.innerHTML = '<div class="empty">No appointments.</div>'; return; }
+    let html = '', curDate = '';
+    entries.forEach(e => {
+      if (e.date !== curDate) {
+        if (curDate) html += '</tbody></table>';
+        curDate = e.date;
+        const d = new Date(e.date + 'T12:00:00');
+        const day = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
+        html += `<div class="day-header">${esc(day)}</div><table><thead><tr><th>Time</th><th>Client</th><th>ID</th><th>Practitioner</th><th>Status</th></tr></thead><tbody>`;
       }
-      let html = '';
-      let currentDate = '';
-      entries.forEach(e => {
-        if (e.date !== currentDate) {
-          currentDate = e.date;
-          const d = new Date(e.date + 'T12:00:00');
-          const dayName = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
-          html += `<div class="day-header">${esc(dayName)}</div>`;
-          html += '<table><thead><tr><th>Time</th><th>Client</th><th>ID</th><th>Practitioner</th><th>Status</th></tr></thead><tbody>';
-        }
-        html += `<tr>
-          <td>${esc(e.start_time)} - ${esc(e.end_time)}</td>
-          <td>${esc(e.client_name)}</td>
-          <td>${esc(e.client_id)}</td>
-          <td>${esc(e.practitioner)}</td>
-          <td>${esc(e.status)}</td>
-        </tr>`;
-      });
-      html += '</tbody></table>';
-      content.innerHTML = html;
-    })
-    .catch(e => { content.innerHTML = 'Error: ' + esc(String(e)); });
+      const statusCls = e.status === 'recurring' ? 'badge-recurring' : 'badge-active';
+      html += `<tr class="row"><td>${esc(e.start_time)}-${esc(e.end_time)}</td><td>${esc(e.client_name)}</td><td style="color:var(--fg-dim)">${esc(e.client_id)}</td><td>${esc(e.practitioner)}</td><td><span class="badge ${statusCls}">${esc(e.status)}</span></td></tr>`;
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  }).catch(e => { el.innerHTML = '<div class="empty">Error: ' + esc(String(e)) + '</div>'; });
 }
 
-// ---------------------------------------------------------------------------
+// ============================================================================
 // Search
-// ---------------------------------------------------------------------------
+// ============================================================================
 function doSearch() {
   const q = document.getElementById('search-input').value.trim();
   if (!q) return;
 
-  const results = document.getElementById('search-results');
-  results.style.display = '';
-  results.innerHTML = '<div class="loading">Searching...</div>';
+  const el = document.getElementById('search-results');
+  el.innerHTML = '<div class="empty">Searching...</div>';
 
-  fetch('/api/search?q=' + encodeURIComponent(q))
-    .then(r => r.json())
-    .then(list => {
-      if (list.length === 0) {
-        results.innerHTML = '<p style="padding:12px;color:#888;">No results found.</p>';
-        return;
-      }
-      let html = '';
-      list.forEach(r => {
-        html += `<div class="search-result">
-          <div class="result-header">${esc(r.name)} <span class="result-id">(${esc(r.client_id)}, score: ${r.score.toFixed(2)})</span></div>
-          <div class="result-snippet">${r.snippet}</div>
-        </div>`;
-      });
-      results.innerHTML = html;
-    })
-    .catch(e => { results.innerHTML = 'Error: ' + esc(String(e)); });
+  fetch('/api/search?q=' + encodeURIComponent(q)).then(r => r.json()).then(list => {
+    S.searchResults = list;
+    S.searchIdx = 0;
+    if (list.length === 0) { el.innerHTML = '<div class="empty">No results.</div>'; return; }
+    renderSearch();
+    // Blur input so j/k work
+    document.getElementById('search-input').blur();
+  }).catch(e => { el.innerHTML = '<div class="empty">Error: ' + esc(String(e)) + '</div>'; });
 }
 
-// ---------------------------------------------------------------------------
+function renderSearch() {
+  const el = document.getElementById('search-results');
+  el.innerHTML = S.searchResults.map((r, i) => {
+    const sel = i === S.searchIdx ? ' selected' : '';
+    return `<div class="search-result${sel}" data-idx="${i}" onclick="S.searchIdx=${i};renderSearch()">
+      <div class="result-header">${esc(r.name)} <span class="result-id">${esc(r.client_id)}</span> <span class="result-score">${r.score.toFixed(2)}</span></div>
+      <div class="result-snippet">${r.snippet}</div>
+    </div>`;
+  }).join('');
+}
+
+function moveSearch(d) {
+  S.searchIdx = Math.max(0, Math.min(S.searchResults.length - 1, S.searchIdx + d));
+  renderSearch();
+  const sel = document.querySelector('.search-result.selected');
+  if (sel) sel.scrollIntoView({ block: 'nearest' });
+}
+
+function openSelectedSearch() {
+  if (S.searchResults.length === 0) return;
+  const r = S.searchResults[S.searchIdx];
+  switchView('clients');
+  // Find client in list and open
+  const idx = S.clients.findIndex(c => c.client_id === r.client_id);
+  if (idx >= 0) { S.clientIdx = idx; highlightClient(); }
+  showClientDetail(r.client_id);
+}
+
+// ============================================================================
 // Billing
-// ---------------------------------------------------------------------------
-let billingLoaded = false;
-
+// ============================================================================
 function loadBilling() {
-  billingLoaded = true;
+  S.loaded.billing = true;
 
-  // Load summary
-  fetch('/api/billing/summary')
-    .then(r => r.json())
-    .then(s => {
-      document.getElementById('billing-summary').innerHTML = `
-        <div class="summary-card"><div class="number">${s.outstanding_count}</div><div class="label">Outstanding</div></div>
-        <div class="summary-card"><div class="number">${s.overdue_count}</div><div class="label">Overdue</div></div>
-        <div class="summary-card"><div class="number">${s.total_outstanding.toFixed(0)}</div><div class="label">Total Outstanding</div></div>
-        <div class="summary-card"><div class="number">${s.total_overdue.toFixed(0)}</div><div class="label">Total Overdue</div></div>
-      `;
-    })
-    .catch(() => {});
+  fetch('/api/billing/summary').then(r => r.json()).then(s => {
+    document.getElementById('billing-summary').innerHTML = `
+      <div class="summary-card"><div class="number">${s.outstanding_count}</div><div class="label">Outstanding</div></div>
+      <div class="summary-card"><div class="number" style="color:${s.overdue_count > 0 ? 'var(--red)' : 'var(--fg-em)'}">${s.overdue_count}</div><div class="label">Overdue</div></div>
+      <div class="summary-card"><div class="number">&pound;${s.total_outstanding.toFixed(0)}</div><div class="label">Total Outstanding</div></div>
+      <div class="summary-card"><div class="number" style="color:${s.total_overdue > 0 ? 'var(--red)' : 'var(--fg-em)'}">&pound;${s.total_overdue.toFixed(0)}</div><div class="label">Total Overdue</div></div>`;
+  }).catch(() => {});
 
-  // Load status
-  fetch('/api/billing/status')
-    .then(r => r.json())
-    .then(invoices => {
-      document.getElementById('billing-loading').style.display = 'none';
-      if (invoices.length === 0) {
-        document.getElementById('billing-empty').style.display = '';
-        return;
-      }
-      const tbody = document.getElementById('billing-tbody');
-      tbody.innerHTML = '';
-      invoices.forEach(i => {
-        const tr = document.createElement('tr');
-        const stateClass = i.state === 'overdue' ? 'badge-overdue' : i.state === 'sent' ? 'badge-sent' : 'badge-draft';
-        const overdue = i.days_overdue > 0 ? i.days_overdue + 'd' : '';
-        tr.innerHTML = `
-          <td>${esc(i.reference)}</td>
-          <td>${esc(i.client_name)} (${esc(i.client_id)})</td>
-          <td>${esc(i.bill_to || '-')}</td>
-          <td>${esc(i.currency)} ${i.total.toFixed(0)}</td>
-          <td>${esc(i.due_date)}</td>
-          <td><span class="badge ${stateClass}">${esc(i.state)}</span></td>
-          <td>${overdue}</td>
-        `;
-        tbody.appendChild(tr);
-      });
-      document.getElementById('billing-table').style.display = '';
-    })
-    .catch(e => {
-      document.getElementById('billing-loading').textContent = 'Failed to load: ' + e;
-    });
+  fetch('/api/billing/status').then(r => r.json()).then(invoices => {
+    if (invoices.length === 0) { document.getElementById('billing-empty').style.display = ''; return; }
+    document.getElementById('billing-empty').style.display = 'none';
+    document.getElementById('billing-table').style.display = '';
+    document.getElementById('billing-tbody').innerHTML = invoices.map(i => {
+      const cls = i.state === 'overdue' ? 'badge-overdue' : i.state === 'sent' ? 'badge-sent' : 'badge-draft';
+      const od = i.days_overdue > 0 ? i.days_overdue + 'd' : '';
+      return `<tr class="row"><td>${esc(i.reference)}</td><td>${esc(i.client_name)} <span style="color:var(--fg-dim)">${esc(i.client_id)}</span></td><td>${esc(i.bill_to || '-')}</td><td>&pound;${i.total.toFixed(0)}</td><td>${esc(i.due_date)}</td><td><span class="badge ${cls}">${esc(i.state)}</span></td><td style="color:${od ? 'var(--red)' : ''}">${od}</td></tr>`;
+    }).join('');
+  }).catch(e => {
+    document.getElementById('billing-empty').textContent = 'Failed to load: ' + e;
+    document.getElementById('billing-empty').style.display = '';
+  });
 }
 
-// ---------------------------------------------------------------------------
+// ============================================================================
 // Utils
-// ---------------------------------------------------------------------------
+// ============================================================================
 function esc(s) {
   if (s == null) return '';
-  const div = document.createElement('div');
-  div.textContent = String(s);
-  return div.innerHTML;
+  const d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
 }
 
-// ---------------------------------------------------------------------------
+// ============================================================================
 // Init
-// ---------------------------------------------------------------------------
+// ============================================================================
+fetch('/api/practice').then(r => r.json()).then(p => {
+  if (p.name) document.getElementById('practice-name').textContent = p.name;
+}).catch(() => {});
+
 initCalDate();
 loadClients();
+updateHints();
 </script>
 </body>
 </html>
