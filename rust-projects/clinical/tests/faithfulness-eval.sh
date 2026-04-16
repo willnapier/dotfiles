@@ -53,7 +53,7 @@ for i in "${!SCENARIO_NAMES[@]}"; do
   end_epoch=$(date +%s%N)
 
   elapsed_ms=$(( (end_epoch - start_epoch) / 1000000 ))
-  elapsed_s=$(echo "scale=1; $elapsed_ms / 1000" | bc)
+  elapsed_s=$(awk "BEGIN {printf \"%.1f\", $elapsed_ms / 1000}")
 
   attempts=$(grep -c "Regenerating" "$errfile" 2>/dev/null | tr -d '[:space:]' || true)
   attempts=${attempts:-0}
