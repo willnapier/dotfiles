@@ -394,7 +394,22 @@
         <button class="cal-btn" onclick="calNext()" title="Next">&rarr; <kbd>l</kbd></button>
         <input type="date" id="cal-date" onchange="loadCalendar()">
         <label><input type="checkbox" id="cal-week" onchange="loadCalendar()"> Week <kbd>w</kbd></label>
+        <button class="cal-btn" onclick="calShowCreateForm()" title="New appointment"><kbd>c</kbd> + New</button>
+        <button class="cal-btn" onclick="calShowBlocks()" title="Block warnings">Blocks</button>
       </div>
+      <div id="cal-create-form" style="display:none;margin-bottom:12px;padding:10px;background:var(--bg-hl);border:1px solid var(--border);border-radius:4px">
+        <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap">
+          <div><label style="font-size:10px;color:var(--fg-dim);display:block">Client ID</label><input type="text" id="cal-create-client" style="width:80px;padding:4px 6px;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--fg);font:inherit;font-size:12px" placeholder="EB76"></div>
+          <div><label style="font-size:10px;color:var(--fg-dim);display:block">Date</label><input type="date" id="cal-create-date" style="padding:4px 6px;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--fg);font:inherit;font-size:12px"></div>
+          <div><label style="font-size:10px;color:var(--fg-dim);display:block">Time</label><input type="time" id="cal-create-time" value="10:00" style="padding:4px 6px;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--fg);font:inherit;font-size:12px"></div>
+          <div><label style="font-size:10px;color:var(--fg-dim);display:block">Recurrence</label><select id="cal-create-recur" style="padding:4px 6px;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--fg);font:inherit;font-size:12px"><option value="">One-off</option><option value="weekly">Weekly</option><option value="fortnightly">Fortnightly</option><option value="every3w">Every 3 weeks</option><option value="monthly">Monthly</option></select></div>
+          <div id="cal-create-inf-wrap" style="display:none"><label style="font-size:10px;color:var(--fg-dim);display:block">Sessions</label><input type="number" id="cal-create-count" placeholder="∞" style="width:50px;padding:4px 6px;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--fg);font:inherit;font-size:12px" title="Leave empty for infinite"></div>
+          <button class="clinic-action-btn btn-accept" style="font-size:11px;padding:4px 10px" onclick="calCreateAppointment()">Create</button>
+          <button class="clinic-action-btn btn-reject" style="font-size:11px;padding:4px 10px" onclick="calHideCreateForm()">Cancel</button>
+        </div>
+        <div id="cal-create-msg" style="font-size:11px;margin-top:4px;min-height:16px"></div>
+      </div>
+      <div id="cal-blocks-panel" style="display:none;margin-bottom:12px"></div>
       <div id="calendar-content"></div>
     </div>
   </div>
@@ -647,6 +662,8 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'h' || e.key === 'ArrowLeft') { calPrev(); }
     if (e.key === 'l' || e.key === 'ArrowRight') { calNext(); }
     if (e.key === 't') { calToday(); }
+    if (e.key === 'c') { calShowCreateForm(); return; }
+    if (e.key === 'b') { calShowBlocks(); return; }
     if (e.key === 'w') {
       const cb = document.getElementById('cal-week');
       cb.checked = !cb.checked;
@@ -1429,10 +1446,11 @@ function loadCalendar() {
         curDate = e.date;
         const d = new Date(e.date + 'T12:00:00');
         const day = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
-        html += '<div class="day-header">' + esc(day) + '</div><table><thead><tr><th>Time</th><th>Client</th><th>ID</th><th>Practitioner</th><th>Status</th></tr></thead><tbody>';
+        html += '<div class="day-header">' + esc(day) + '</div><table><thead><tr><th>Time</th><th>Client</th><th>ID</th><th>Practitioner</th><th>Status</th><th></th></tr></thead><tbody>';
       }
       const statusCls = e.status === 'recurring' ? 'badge-recurring' : 'badge-active';
-      html += '<tr class="row"><td>' + esc(e.start_time) + '-' + esc(e.end_time) + '</td><td>' + esc(e.client_name) + '</td><td style="color:var(--fg-dim)">' + esc(e.client_id) + '</td><td>' + esc(e.practitioner) + '</td><td><span class="badge ' + statusCls + '">' + esc(e.status) + '</span></td></tr>';
+      const cancelBtn = '<button class="cal-btn" style="font-size:10px;padding:1px 6px" onclick="calCancelEntry(\'' + esc(e.client_id) + '\',\'' + esc(e.date) + '\')">Cancel</button>';
+      html += '<tr class="row"><td>' + esc(e.start_time) + '-' + esc(e.end_time) + '</td><td>' + esc(e.client_name) + '</td><td style="color:var(--fg-dim)">' + esc(e.client_id) + '</td><td>' + esc(e.practitioner) + '</td><td><span class="badge ' + statusCls + '">' + esc(e.status) + '</span></td><td>' + cancelBtn + '</td></tr>';
     });
     html += '</tbody></table>';
     el.innerHTML = html;
@@ -1515,6 +1533,102 @@ function loadBilling() {
     document.getElementById('billing-empty').style.display = '';
   });
 }
+
+// ============================================================================
+// Calendar scheduling actions
+// ============================================================================
+function calShowCreateForm() {
+  const form = document.getElementById('cal-create-form');
+  form.style.display = form.style.display === 'none' ? '' : 'none';
+  if (form.style.display !== 'none') {
+    document.getElementById('cal-create-date').value = fmtDate(S.calDate);
+    document.getElementById('cal-create-client').focus();
+  }
+}
+function calHideCreateForm() { document.getElementById('cal-create-form').style.display = 'none'; }
+
+// Show/hide count field based on recurrence selection
+document.getElementById('cal-create-recur').addEventListener('change', function() {
+  document.getElementById('cal-create-inf-wrap').style.display = this.value ? '' : 'none';
+});
+
+function calCreateAppointment() {
+  const client_id = document.getElementById('cal-create-client').value.trim();
+  const date = document.getElementById('cal-create-date').value;
+  const time = document.getElementById('cal-create-time').value;
+  const recur = document.getElementById('cal-create-recur').value || undefined;
+  const countVal = document.getElementById('cal-create-count').value;
+  const count = countVal ? parseInt(countVal) : undefined;
+  const infinite = recur && !count;
+
+  if (!client_id || !date || !time) {
+    document.getElementById('cal-create-msg').textContent = 'Client ID, date, and time required';
+    return;
+  }
+
+  const body = { client_id, date, time, recur, count, infinite };
+  document.getElementById('cal-create-msg').textContent = 'Creating...';
+
+  fetch('/api/schedule/create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  })
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        const desc = d.type === 'series' ? 'Recurring series created' : 'Appointment created';
+        document.getElementById('cal-create-msg').textContent = desc + ' for ' + (d.client_name || client_id);
+        document.getElementById('cal-create-msg').style.color = 'var(--green)';
+        loadCalendar();
+        setTimeout(() => { calHideCreateForm(); }, 1500);
+      }
+    })
+    .catch(e => {
+      document.getElementById('cal-create-msg').textContent = 'Error: ' + e;
+      document.getElementById('cal-create-msg').style.color = 'var(--red)';
+    });
+}
+
+function calCancelEntry(clientId, date) {
+  if (!confirm('Cancel ' + clientId + ' on ' + date + '?')) return;
+  fetch('/api/schedule/cancel', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: clientId, date: date })
+  })
+    .then(r => r.json())
+    .then(d => { if (d.ok) loadCalendar(); })
+    .catch(e => alert('Error: ' + e));
+}
+
+function calShowBlocks() {
+  const panel = document.getElementById('cal-blocks-panel');
+  if (panel.style.display !== 'none') { panel.style.display = 'none'; return; }
+  panel.innerHTML = '<div class="empty">Loading...</div>';
+  panel.style.display = '';
+
+  fetch('/api/schedule/blocks').then(r => r.json()).then(data => {
+    const blocks = data.blocks || [];
+    if (blocks.length === 0) {
+      panel.innerHTML = '<div style="padding:8px;font-size:12px;color:var(--fg-dim)">No authorisation blocks configured.</div>';
+      return;
+    }
+    let html = '<div class="section-head">Authorisation Blocks</div><table><thead><tr><th>Client</th><th>Insurer</th><th>Used</th><th>Authorised</th><th>Remaining</th><th>Status</th></tr></thead><tbody>';
+    blocks.forEach(b => {
+      const warnStyle = b.warning ? 'color:var(--red);font-weight:600' : '';
+      html += '<tr class="row"><td>' + esc(b.client_id) + '</td><td>' + esc(b.insurer) + '</td><td>' + b.used + '</td><td>' + b.authorised + '</td><td style="' + warnStyle + '">' + b.remaining + '</td><td>' + esc(b.status) + '</td></tr>';
+      if (b.warning) {
+        html += '<tr><td colspan="6" style="color:var(--red);font-size:11px;padding:2px 10px 6px">' + esc(b.warning) + '</td></tr>';
+      }
+    });
+    html += '</tbody></table>';
+    panel.innerHTML = html;
+  }).catch(e => { panel.innerHTML = '<div class="empty">Error: ' + e + '</div>'; });
+}
+
+// Calendar 'c' shortcut for create
+// (already in keyboard handler, just need to add it)
 
 // ============================================================================
 // Email setup wizard
