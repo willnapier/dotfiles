@@ -162,6 +162,7 @@ mod tests {
             start_time: NaiveTime::from_hms_opt(10, 0, 0).unwrap(),
             end_time: NaiveTime::from_hms_opt(10, 50, 0).unwrap(),
             location: "37 Gloucester Place".to_string(),
+            modality: None,
             rate_tag: None,
             recurrence: RecurrenceRule {
                 freq,

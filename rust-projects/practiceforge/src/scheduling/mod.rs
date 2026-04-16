@@ -15,5 +15,6 @@ pub mod recurrence;
 pub use config::SchedulingConfig;
 pub use models::{
     Appointment, AppointmentSource, AppointmentStatus, AuthorisationBlock, BlockExpiryWarning,
-    BlockStatus, Frequency, RecurrenceRule, RecurringSeries, SeriesStatus, Weekday,
+    BlockStatus, Frequency, RecurrenceRule, RecurringSeries, SeriesStatus, SessionModality,
+    Weekday,
 };

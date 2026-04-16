@@ -1784,6 +1784,7 @@ pub async fn schedule_create(
             start_time,
             end_time,
             location: sched_config.location.clone(),
+            modality: None,
             rate_tag: None,
             recurrence: scheduling::RecurrenceRule {
                 freq,
@@ -1827,8 +1828,10 @@ pub async fn schedule_create(
             end_time,
             status: scheduling::AppointmentStatus::Confirmed,
             source: scheduling::AppointmentSource::Admin,
+            modality: None,
             rate_tag: None,
             location: sched_config.location.clone(),
+            reschedule_for: None,
             sms_confirmation: None,
             notes: None,
             created_at: chrono::Utc::now().to_rfc3339(),

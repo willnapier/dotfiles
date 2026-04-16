@@ -18,9 +18,15 @@ pub struct Appointment {
     pub end_time: NaiveTime,
     pub status: AppointmentStatus,
     pub source: AppointmentSource,
+    /// Session modality — required on Tue/Wed/Thu, defaults to remote on Mon/Fri.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modality: Option<SessionModality>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rate_tag: Option<String>,
     pub location: String,
+    /// If this is a no-charge reschedule, the date of the original cancelled session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reschedule_for: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sms_confirmation: Option<SmsConfirmation>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -59,6 +65,24 @@ pub enum AppointmentSource {
     Admin,
     SelfBooked,
     Migration,
+    Reschedule,
+}
+
+/// Whether a session is remote (Zoom) or in-person.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SessionModality {
+    Remote,
+    InPerson,
+}
+
+impl std::fmt::Display for SessionModality {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SessionModality::Remote => write!(f, "remote"),
+            SessionModality::InPerson => write!(f, "in-person"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,6 +110,9 @@ pub struct RecurringSeries {
     pub start_time: NaiveTime,
     pub end_time: NaiveTime,
     pub location: String,
+    /// Session modality — required on Tue/Wed/Thu, defaults to remote on Mon/Fri.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modality: Option<SessionModality>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rate_tag: Option<String>,
     pub recurrence: RecurrenceRule,

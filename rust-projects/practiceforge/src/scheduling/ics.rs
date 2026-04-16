@@ -230,8 +230,10 @@ mod tests {
             end_time: NaiveTime::from_hms_opt(10, 50, 0).unwrap(),
             status: AppointmentStatus::Confirmed,
             source: AppointmentSource::Practitioner,
+            modality: None,
             rate_tag: Some("insurer".to_string()),
             location: "37 Gloucester Place".to_string(),
+            reschedule_for: None,
             sms_confirmation: None,
             notes: None,
             created_at: "2026-04-16T00:00:00Z".to_string(),
@@ -247,6 +249,7 @@ mod tests {
             start_time: NaiveTime::from_hms_opt(10, 0, 0).unwrap(),
             end_time: NaiveTime::from_hms_opt(10, 50, 0).unwrap(),
             location: "37 Gloucester Place".to_string(),
+            modality: None,
             rate_tag: None,
             recurrence: RecurrenceRule {
                 freq: Frequency::Weekly,

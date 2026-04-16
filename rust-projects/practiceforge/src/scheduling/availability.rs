@@ -9,7 +9,7 @@ use chrono::{Datelike, NaiveDate, NaiveTime};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-use super::models::{Appointment, RecurringSeries, SeriesStatus};
+use super::models::{Appointment, RecurringSeries, SessionModality, SeriesStatus};
 use super::recurrence;
 
 // ---------------------------------------------------------------------------
@@ -188,7 +188,7 @@ pub struct SlotScore {
 struct OccupiedSlot {
     start: NaiveTime,
     end: NaiveTime,
-    modality: Option<Modality>,
+    modality: Option<SessionModality>,
 }
 
 /// Load a practitioner's availability from their schedules directory.
@@ -492,7 +492,7 @@ fn occupied_slots_for_date(
             occupied.push(OccupiedSlot {
                 start: s.start_time,
                 end: s.end_time,
-                modality: None, // series doesn't have modality yet
+                modality: s.modality.clone(),
             });
         }
     }
@@ -506,7 +506,7 @@ fn occupied_slots_for_date(
             occupied.push(OccupiedSlot {
                 start: appt.start_time,
                 end: appt.end_time,
-                modality: None, // to be added when modality field exists
+                modality: appt.modality.clone(),
             });
         }
     }
@@ -534,10 +534,10 @@ fn detect_travel_gap(
 
     for occ in occupied {
         match &occ.modality {
-            Some(Modality::Remote) => {
+            Some(SessionModality::Remote) => {
                 last_remote_end = Some(occ.end);
             }
-            Some(Modality::InPerson) => {
+            Some(SessionModality::InPerson) => {
                 // Found first in-person after remotes
                 if let Some(remote_end) = last_remote_end {
                     let gap = (occ.start - remote_end).num_minutes();
@@ -843,7 +843,7 @@ mod tests {
         let occupied = vec![OccupiedSlot {
             start: parse_time("10:00"),
             end: parse_time("10:45"),
-            modality: Some(Modality::InPerson),
+            modality: Some(SessionModality::InPerson),
         }];
 
         // Slot within span (10:45-11:30) vs extending earlier (08:00-08:45)
@@ -909,8 +909,10 @@ mod tests {
             end_time: parse_time("16:00"),
             status: super::super::AppointmentStatus::Confirmed,
             source: super::super::AppointmentSource::Practitioner,
+            modality: None,
             rate_tag: None,
             location: "37 Gloucester Place".to_string(),
+            reschedule_for: None,
             sms_confirmation: None,
             notes: None,
             created_at: "2026-04-23T00:00:00Z".to_string(),
