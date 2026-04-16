@@ -785,6 +785,9 @@ function renderClinicList() {
     html += '<span class="ccr-id">' + esc(c.id) + '</span>';
     html += badges;
     html += '<span class="ccr-spacer"></span>';
+    if (c.status === 'dna' || c.status === 'cancelled') {
+      html += '<button class="ccr-resched" onclick="event.stopPropagation();openReschedulePanel(\'' + esc(c.id) + '\')" title="Find reschedule slots" style="font-size:10px;padding:1px 6px;margin-right:4px;background:var(--blue);color:var(--bg);border:none;border-radius:3px;cursor:pointer">Reschedule</button>';
+    }
     html += '<button class="ccr-dismiss" onclick="event.stopPropagation();clinicDismissClient(' + i + ')" title="Remove">&times;</button>';
     html += '</div>';
   });
@@ -1506,7 +1509,10 @@ function loadCalendar() {
       }
       const statusCls = e.status === 'recurring' ? 'badge-recurring' : 'badge-active';
       const cancelBtn = '<button class="cal-btn" style="font-size:10px;padding:1px 6px" onclick="calCancelEntry(\'' + esc(e.client_id) + '\',\'' + esc(e.date) + '\')">Cancel</button>';
-      html += '<tr class="row"><td>' + esc(e.start_time) + '-' + esc(e.end_time) + '</td><td>' + esc(e.client_name) + '</td><td style="color:var(--fg-dim)">' + esc(e.client_id) + '</td><td>' + esc(e.practitioner) + '</td><td><span class="badge ' + statusCls + '">' + esc(e.status) + '</span></td><td>' + cancelBtn + '</td></tr>';
+      const reschedBtn = (e.status === 'cancelled' || e.status === 'no-show' || e.status === 'late-cancellation')
+        ? ' <button class="cal-btn" style="font-size:10px;padding:1px 6px;background:var(--blue);color:var(--bg);border:none;border-radius:3px" onclick="openReschedulePanel(\'' + esc(e.client_id) + '\',\'' + esc(e.date) + '\')">Reschedule</button>'
+        : '';
+      html += '<tr class="row"><td>' + esc(e.start_time) + '-' + esc(e.end_time) + '</td><td>' + esc(e.client_name) + '</td><td style="color:var(--fg-dim)">' + esc(e.client_id) + '</td><td>' + esc(e.practitioner) + '</td><td><span class="badge ' + statusCls + '">' + esc(e.status) + '</span></td><td>' + cancelBtn + reschedBtn + '</td></tr>';
     });
     html += '</tbody></table>';
     el.innerHTML = html;
@@ -1966,6 +1972,91 @@ function billingShowReminders() {
       }).join('');
     })
     .catch(e => alert('Error: ' + e));
+}
+
+// ============================================================================
+// Reschedule panel
+// ============================================================================
+function openReschedulePanel(clientId, cancelledDate) {
+  // Use today's date if not provided (clinic view DNA)
+  const date = cancelledDate || new Date().toISOString().slice(0, 10);
+  S.rescheduleClientId = clientId;
+  S.rescheduleCancelledDate = date;
+
+  // Create or show the modal overlay
+  let overlay = document.getElementById('reschedule-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'reschedule-overlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center';
+    overlay.onclick = function(e) { if (e.target === overlay) closeReschedulePanel(); };
+    const panel = document.createElement('div');
+    panel.id = 'reschedule-panel';
+    panel.style.cssText = 'background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:20px;min-width:420px;max-width:600px;max-height:80vh;overflow-y:auto';
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+  }
+  overlay.style.display = 'flex';
+
+  const panel = document.getElementById('reschedule-panel');
+  panel.innerHTML = '<div style="font-weight:600;margin-bottom:12px">Finding reschedule slots for ' + esc(clientId) + '...</div><div class="empty">Loading...</div>';
+
+  fetch('/api/reschedule/slots?client_id=' + encodeURIComponent(clientId) + '&date=' + encodeURIComponent(date))
+    .then(r => r.json())
+    .then(data => {
+      let html = '<div style="font-weight:600;margin-bottom:4px">Reschedule: ' + esc(clientId) + '</div>';
+      html += '<div style="color:var(--fg-dim);font-size:12px;margin-bottom:12px">Cancelled: ' + esc(data.cancelled_date) + ' · ' + data.session_duration + ' min';
+      if (data.fallback_to_45) html += ' <span style="color:var(--yellow)">(no ' + data.session_duration + '-min slots; showing 45-min)</span>';
+      html += '</div>';
+
+      if (!data.slots || data.slots.length === 0) {
+        html += '<div class="empty">No slots available in the reschedule window.</div>';
+      } else {
+        html += '<table style="width:100%"><thead><tr><th></th><th>Day</th><th>Date</th><th>Time</th><th>Duration</th><th>Mode</th><th></th></tr></thead><tbody>';
+        data.slots.forEach(s => {
+          html += '<tr class="row">';
+          html += '<td>' + s.index + '.</td>';
+          html += '<td>' + esc(s.day) + '</td>';
+          html += '<td>' + esc(s.date) + '</td>';
+          html += '<td>' + esc(s.start) + '-' + esc(s.end) + '</td>';
+          html += '<td>' + s.duration + ' min</td>';
+          html += '<td>' + esc(s.modality) + '</td>';
+          html += '<td><button class="cal-btn" style="font-size:10px;padding:2px 8px;background:var(--green);color:var(--bg);border:none;border-radius:3px;cursor:pointer" onclick="bookReschedule(\'' + esc(clientId) + '\',\'' + esc(s.date) + '\',\'' + esc(s.start) + '\',\'' + esc(s.end) + '\',\'' + esc(date) + '\')">Book</button></td>';
+          html += '</tr>';
+        });
+        html += '</tbody></table>';
+      }
+      html += '<div style="margin-top:12px;text-align:right"><button class="clinic-action-btn btn-reject" style="font-size:11px;padding:4px 12px" onclick="closeReschedulePanel()">Close</button></div>';
+      panel.innerHTML = html;
+    })
+    .catch(e => {
+      panel.innerHTML = '<div class="empty">Error: ' + esc(String(e)) + '</div>' +
+        '<div style="margin-top:12px;text-align:right"><button class="clinic-action-btn btn-reject" style="font-size:11px;padding:4px 12px" onclick="closeReschedulePanel()">Close</button></div>';
+    });
+}
+
+function closeReschedulePanel() {
+  const overlay = document.getElementById('reschedule-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+function bookReschedule(clientId, date, start, end, cancelledDate) {
+  if (!confirm('Book reschedule for ' + clientId + ' on ' + date + ' ' + start + '-' + end + '?\n\nThis will be a no-charge session.')) return;
+
+  fetch('/api/reschedule/book', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: clientId, date: date, start: start, end: end, cancelled_date: cancelledDate })
+  }).then(r => r.json()).then(data => {
+    if (data.ok) {
+      closeReschedulePanel();
+      alert('Reschedule booked: ' + data.client_name + ' on ' + data.date + ' ' + data.start + '-' + data.end + ' (no charge)');
+      // Refresh calendar if visible
+      if (S.loaded.calendar) loadCalendar();
+    } else {
+      alert('Error: ' + JSON.stringify(data));
+    }
+  }).catch(e => alert('Error: ' + e));
 }
 
 // ============================================================================

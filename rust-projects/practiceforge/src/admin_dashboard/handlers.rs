@@ -2026,6 +2026,221 @@ fn lookup_client_name(client_id: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Reschedule handlers
+// ---------------------------------------------------------------------------
+
+/// GET /api/reschedule/slots?client_id=XX&date=YYYY-MM-DD — find available reschedule slots.
+pub async fn reschedule_slots(
+    Query(params): Query<RescheduleQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    use crate::scheduling::{availability, ics};
+
+    let client_id = params.client_id.as_deref().ok_or_else(|| {
+        (StatusCode::BAD_REQUEST, "client_id is required".to_string())
+    })?;
+    let date_str = params.date.as_deref().ok_or_else(|| {
+        (StatusCode::BAD_REQUEST, "date is required".to_string())
+    })?;
+
+    let cancelled_date = NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid date: {}", e)))?;
+
+    let sched_config = crate::scheduling::SchedulingConfig::default();
+    let schedules_dir = shellexpand::tilde(&sched_config.schedules_dir).to_string();
+    let prac_dir = std::path::PathBuf::from(&schedules_dir)
+        .join(&sched_config.default_practitioner);
+
+    let avail = availability::load_availability(&prac_dir)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("No availability config: {}", e)))?;
+
+    let series = ics::load_series_dir(&prac_dir.join("series")).unwrap_or_default();
+    let one_offs = ics::load_appointments_dir(&prac_dir.join("appointments")).unwrap_or_default();
+
+    let holidays_path = prac_dir.join("holidays.yaml");
+    let holidays = if holidays_path.exists() {
+        std::fs::read_to_string(&holidays_path)
+            .ok()
+            .and_then(|yaml| ics::load_holidays(&yaml).ok())
+            .unwrap_or_default()
+    } else {
+        vec![]
+    };
+
+    // Get session duration from identity.yaml
+    let clinical_root = shellexpand::tilde("~/Clinical").to_string();
+    let id_path = std::path::PathBuf::from(&clinical_root)
+        .join("clients")
+        .join(client_id)
+        .join("identity.yaml");
+
+    let session_dur = if id_path.exists() {
+        std::fs::read_to_string(&id_path)
+            .ok()
+            .and_then(|content| serde_yaml::from_str::<serde_yaml::Value>(&content).ok())
+            .and_then(|id| {
+                id.get("funding")
+                    .and_then(|f| f.get("session_duration"))
+                    .and_then(|v| v.as_u64())
+            })
+            .unwrap_or(45) as u32
+    } else {
+        params.duration.unwrap_or(45)
+    };
+
+    // Find original appointment time
+    let original_time = one_offs
+        .iter()
+        .find(|a| a.client_id == client_id && a.date == cancelled_date)
+        .map(|a| a.start_time)
+        .or_else(|| {
+            series
+                .iter()
+                .find(|s| s.client_id == client_id)
+                .map(|s| s.start_time)
+        })
+        .unwrap_or(chrono::NaiveTime::from_hms_opt(9, 0, 0).unwrap());
+
+    let from = cancelled_date.and_time(original_time);
+
+    let mut slots = availability::find_reschedule_slots(
+        &avail, &series, &one_offs, from, session_dur, &holidays,
+    );
+
+    let mut fallback = false;
+    if slots.is_empty() && session_dur > 45 {
+        slots = availability::find_reschedule_slots(
+            &avail, &series, &one_offs, from, 45, &holidays,
+        );
+        fallback = true;
+    }
+
+    let slot_list: Vec<serde_json::Value> = slots
+        .iter()
+        .take(8)
+        .enumerate()
+        .map(|(i, s)| {
+            let dur = (s.end_time - s.start_time).num_minutes();
+            serde_json::json!({
+                "index": i + 1,
+                "date": s.date.format("%Y-%m-%d").to_string(),
+                "day": s.day_name,
+                "start": s.start_time.format("%H:%M").to_string(),
+                "end": s.end_time.format("%H:%M").to_string(),
+                "duration": dur,
+                "modality": s.modality.to_string(),
+            })
+        })
+        .collect();
+
+    Ok(Json(serde_json::json!({
+        "client_id": client_id,
+        "cancelled_date": date_str,
+        "session_duration": session_dur,
+        "fallback_to_45": fallback,
+        "slots": slot_list,
+    })))
+}
+
+/// POST /api/reschedule/book — book a reschedule slot (no-charge).
+pub async fn reschedule_book(
+    Json(req): Json<RescheduleBookRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    use crate::scheduling::{ics, models::*};
+
+    let sched_config = crate::scheduling::SchedulingConfig::default();
+    let schedules_dir = shellexpand::tilde(&sched_config.schedules_dir).to_string();
+    let prac_dir = std::path::PathBuf::from(&schedules_dir)
+        .join(&sched_config.default_practitioner);
+    let appts_dir = prac_dir.join("appointments");
+    std::fs::create_dir_all(&appts_dir)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let date = NaiveDate::parse_from_str(&req.date, "%Y-%m-%d")
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid date: {}", e)))?;
+    let start = chrono::NaiveTime::parse_from_str(&req.start, "%H:%M")
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid start time: {}", e)))?;
+    let end = chrono::NaiveTime::parse_from_str(&req.end, "%H:%M")
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid end time: {}", e)))?;
+
+    // Determine modality from day
+    let modality = match date.weekday() {
+        chrono::Weekday::Mon | chrono::Weekday::Fri => Some(SessionModality::Remote),
+        _ => Some(SessionModality::InPerson),
+    };
+
+    // Look up client name
+    let clinical_root = shellexpand::tilde("~/Clinical").to_string();
+    let id_path = std::path::PathBuf::from(&clinical_root)
+        .join("clients")
+        .join(&req.client_id)
+        .join("identity.yaml");
+    let client_name = if id_path.exists() {
+        std::fs::read_to_string(&id_path)
+            .ok()
+            .and_then(|c| serde_yaml::from_str::<serde_yaml::Value>(&c).ok())
+            .and_then(|id| id.get("name").and_then(|v| v.as_str()).map(|s| s.to_string()))
+            .unwrap_or_else(|| req.client_id.clone())
+    } else {
+        req.client_id.clone()
+    };
+
+    let appt = Appointment {
+        id: uuid::Uuid::new_v4(),
+        series_id: None,
+        practitioner: sched_config.default_practitioner.clone(),
+        client_id: req.client_id.clone(),
+        client_name: client_name.clone(),
+        date,
+        start_time: start,
+        end_time: end,
+        status: AppointmentStatus::Confirmed,
+        source: AppointmentSource::Reschedule,
+        modality,
+        rate_tag: None,
+        location: sched_config.location.clone(),
+        reschedule_for: Some(req.cancelled_date.clone()),
+        sms_confirmation: None,
+        notes: Some(format!("No-charge reschedule for cancelled session {}", req.cancelled_date)),
+        created_at: chrono::Local::now().to_rfc3339(),
+    };
+
+    // Save appointment YAML
+    let appt_path = appts_dir.join(format!("{}.yaml", appt.id));
+    let yaml = serde_yaml::to_string(&appt)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    std::fs::write(&appt_path, &yaml)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "appointment_id": appt.id.to_string(),
+        "client_id": req.client_id,
+        "client_name": client_name,
+        "date": req.date,
+        "start": req.start,
+        "end": req.end,
+        "reschedule_for": req.cancelled_date,
+        "no_charge": true,
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct RescheduleQuery {
+    pub client_id: Option<String>,
+    pub date: Option<String>,
+    pub duration: Option<u32>,
+}
+
+#[derive(Deserialize)]
+pub struct RescheduleBookRequest {
+    pub client_id: String,
+    pub date: String,
+    pub start: String,
+    pub end: String,
+    pub cancelled_date: String,
+}
+
+// ---------------------------------------------------------------------------
 // Email setup handlers
 // ---------------------------------------------------------------------------
 

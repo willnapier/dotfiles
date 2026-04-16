@@ -54,6 +54,9 @@ pub fn build_router() -> Router {
         .route("/api/schedule/cancel", post(handlers::schedule_cancel))
         .route("/api/schedule/move", post(handlers::schedule_move))
         .route("/api/schedule/blocks", get(handlers::schedule_blocks))
+        // Reschedule
+        .route("/api/reschedule/slots", get(handlers::reschedule_slots))
+        .route("/api/reschedule/book", post(handlers::reschedule_book))
         // Email setup
         .route("/api/email/status", get(handlers::email_status))
         .route("/api/email/setup", post(handlers::email_setup))

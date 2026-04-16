@@ -419,6 +419,23 @@ enum ScheduleAction {
         #[arg(long, value_parser = ["arrived", "completed", "noshow", "late-cancel"])]
         status: String,
     },
+    /// Find available reschedule slots for a cancelled/DNA session.
+    ///
+    /// Searches the next 48h for gaps that fit the client's session duration.
+    /// Ranked by preference cascade: minimise day span, prefer Tue-Thu,
+    /// pack contiguous, sooner is better.
+    Reschedule {
+        /// Client ID (e.g. "EB76")
+        client_id: String,
+        /// Date of the cancelled session (YYYY-MM-DD)
+        date: String,
+        /// Override session duration in minutes (default: from identity.yaml)
+        #[arg(long)]
+        duration: Option<u32>,
+        /// Send the slot offer via email to the client
+        #[arg(long)]
+        send: bool,
+    },
     /// Export appointments as ICS (iCalendar) format.
     Export {
         /// Filter by practitioner
@@ -2529,6 +2546,212 @@ fn handle_schedule(action: ScheduleAction) -> anyhow::Result<()> {
                 if !found {
                     anyhow::bail!("No appointment found for {} on {}", client_id, target_date);
                 }
+            }
+        }
+
+        ScheduleAction::Reschedule {
+            client_id,
+            date,
+            duration,
+            send,
+        } => {
+            use scheduling::availability;
+
+            let prac_dir = std::path::PathBuf::from(&schedules_dir).join(practitioner);
+            let avail = availability::load_availability(&prac_dir)?;
+
+            let series_dir = prac_dir.join("series");
+            let appts_dir = prac_dir.join("appointments");
+            let series_list = ics::load_series_dir(&series_dir)?;
+            let one_offs = ics::load_appointments_dir(&appts_dir)?;
+
+            // Load holidays
+            let holidays_path = prac_dir.join("holidays.yaml");
+            let holidays = if holidays_path.exists() {
+                let yaml = std::fs::read_to_string(&holidays_path)?;
+                ics::load_holidays(&yaml)?
+            } else {
+                vec![]
+            };
+
+            // Parse the cancelled date and build the search window start
+            let cancelled_date = chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d")
+                .map_err(|e| anyhow::anyhow!("Invalid date '{}': {}", date, e))?;
+
+            // Find the original appointment to get its start time
+            let original_time = one_offs
+                .iter()
+                .find(|a| a.client_id == client_id && a.date == cancelled_date)
+                .map(|a| a.start_time)
+                .or_else(|| {
+                    // Check recurring series
+                    series_list
+                        .iter()
+                        .find(|s| s.client_id == client_id)
+                        .map(|s| s.start_time)
+                })
+                .unwrap_or(chrono::NaiveTime::from_hms_opt(9, 0, 0).unwrap());
+
+            let from = cancelled_date.and_time(original_time);
+
+            // Determine session duration
+            let session_dur = if let Some(d) = duration {
+                d
+            } else {
+                // Read from identity.yaml
+                let clinical_root = shellexpand::tilde("~/Clinical").to_string();
+                let id_path = std::path::PathBuf::from(&clinical_root)
+                    .join("clients")
+                    .join(&client_id)
+                    .join("identity.yaml");
+                if id_path.exists() {
+                    let content = std::fs::read_to_string(&id_path)?;
+                    let identity: serde_yaml::Value = serde_yaml::from_str(&content)?;
+                    identity
+                        .get("funding")
+                        .and_then(|f| f.get("session_duration"))
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(45) as u32
+                } else {
+                    45
+                }
+            };
+
+            println!(
+                "Finding reschedule slots for {} (cancelled {}), {} min session...\n",
+                client_id, date, session_dur
+            );
+
+            let mut slots = availability::find_reschedule_slots(
+                &avail,
+                &series_list,
+                &one_offs,
+                from,
+                session_dur,
+                &holidays,
+            );
+
+            // If no slots for full duration and it's a 90-min client, try 45
+            if slots.is_empty() && session_dur > 45 {
+                println!(
+                    "No {}-minute slots available. Checking for 45-minute alternatives...\n",
+                    session_dur
+                );
+                slots = availability::find_reschedule_slots(
+                    &avail,
+                    &series_list,
+                    &one_offs,
+                    from,
+                    45,
+                    &holidays,
+                );
+            }
+
+            if slots.is_empty() {
+                println!("No available slots within the {}h reschedule window.", avail.reschedule.window_hours);
+                return Ok(());
+            }
+
+            // Display top slots (max 8)
+            let display_count = slots.len().min(8);
+            println!("Top {} slot(s):\n", display_count);
+            for (i, slot) in slots.iter().take(display_count).enumerate() {
+                let dur = (slot.end_time - slot.start_time).num_minutes();
+                println!(
+                    "  {}. {} {} {}-{} ({} min, {})",
+                    i + 1,
+                    slot.day_name,
+                    slot.date.format("%Y-%m-%d"),
+                    slot.start_time.format("%H:%M"),
+                    slot.end_time.format("%H:%M"),
+                    dur,
+                    slot.modality,
+                );
+            }
+
+            if send {
+                // Load client email from identity.yaml
+                let clinical_root = shellexpand::tilde("~/Clinical").to_string();
+                let id_path = std::path::PathBuf::from(&clinical_root)
+                    .join("clients")
+                    .join(&client_id)
+                    .join("identity.yaml");
+
+                let client_email = if id_path.exists() {
+                    let content = std::fs::read_to_string(&id_path)?;
+                    let identity: serde_yaml::Value = serde_yaml::from_str(&content)?;
+                    identity
+                        .get("email")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                } else {
+                    None
+                };
+
+                let client_name = if id_path.exists() {
+                    let content = std::fs::read_to_string(&id_path)?;
+                    let identity: serde_yaml::Value = serde_yaml::from_str(&content)?;
+                    identity
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(&client_id)
+                        .to_string()
+                } else {
+                    client_id.clone()
+                };
+
+                if let Some(email) = client_email {
+                    let email_config = crate::email::load_email_config()?;
+
+                    // Build slot list for the email body
+                    let slot_list: String = slots
+                        .iter()
+                        .take(display_count)
+                        .enumerate()
+                        .map(|(i, s)| {
+                            let dur = (s.end_time - s.start_time).num_minutes();
+                            format!(
+                                "  {}. {} {} at {} ({} min, {})",
+                                i + 1,
+                                s.day_name,
+                                s.date.format("%d %B"),
+                                s.start_time.format("%H:%M"),
+                                dur,
+                                s.modality,
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+
+                    let body = format!(
+                        "Dear {},\n\n\
+                         Following the cancellation of your session on {}, \
+                         I have the following times available for a replacement session:\n\n\
+                         {}\n\n\
+                         Please let me know which, if any, of these times works for you.\n\n\
+                         Kind regards,\n{}",
+                        client_name.split_whitespace().next().unwrap_or(&client_name),
+                        cancelled_date.format("%A %d %B"),
+                        slot_list,
+                        email_config.from_name,
+                    );
+
+                    crate::email::send_email(
+                        &email_config,
+                        &email,
+                        &client_name,
+                        &format!("Rescheduling your session — {}", cancelled_date.format("%d %B")),
+                        &body,
+                        None,
+                        None,
+                    )?;
+
+                    println!("\n✓ Offer sent to {} <{}>", client_name, email);
+                } else {
+                    eprintln!("\n✗ No email address for {}. Add 'email:' to identity.yaml.", client_id);
+                }
+            } else {
+                println!("\nUse --send to email these options to the client.");
             }
         }
 
