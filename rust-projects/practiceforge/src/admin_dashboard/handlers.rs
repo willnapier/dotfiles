@@ -1163,6 +1163,305 @@ pub async fn end_clinic(
 }
 
 // ---------------------------------------------------------------------------
+// Scheduling action handlers
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct ScheduleCreateRequest {
+    pub client_id: String,
+    pub date: String,
+    pub time: String,
+    #[serde(default = "default_duration")]
+    pub duration: u32,
+    /// "weekly", "fortnightly", "every3w", "monthly", or null for one-off.
+    #[serde(default)]
+    pub recur: Option<String>,
+    #[serde(default)]
+    pub count: Option<u32>,
+    #[serde(default)]
+    pub infinite: bool,
+    #[serde(default)]
+    pub practitioner: Option<String>,
+}
+
+fn default_duration() -> u32 { 50 }
+
+/// POST /api/schedule/create — create appointment or recurring series.
+pub async fn schedule_create(
+    Json(req): Json<ScheduleCreateRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    use chrono::NaiveTime;
+
+    let sched_config = scheduling::SchedulingConfig::default();
+    let schedules_dir = shellexpand::tilde(&sched_config.schedules_dir).to_string();
+    let prac = req.practitioner.as_deref().unwrap_or(&sched_config.default_practitioner);
+
+    let date = NaiveDate::parse_from_str(&req.date, "%Y-%m-%d")
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid date: {}", e)))?;
+    let start_time = NaiveTime::parse_from_str(&req.time, "%H:%M")
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid time: {}", e)))?;
+    let end_time = start_time + chrono::Duration::minutes(req.duration as i64);
+
+    // Look up client name from registry or identity.yaml
+    let client_name = lookup_client_name(&req.client_id);
+
+    let (freq, interval) = match req.recur.as_deref() {
+        Some("weekly") => (Some(scheduling::Frequency::Weekly), 1u32),
+        Some("fortnightly") => (Some(scheduling::Frequency::Weekly), 2),
+        Some("every3w") => (Some(scheduling::Frequency::Weekly), 3),
+        Some("monthly") => (Some(scheduling::Frequency::Monthly), 1),
+        _ => (None, 1),
+    };
+
+    if let Some(freq) = freq {
+        let series_count = if req.infinite { None } else { req.count };
+        let series = scheduling::RecurringSeries {
+            id: uuid::Uuid::new_v4(),
+            practitioner: prac.to_string(),
+            client_id: req.client_id.clone(),
+            client_name: client_name.clone(),
+            start_time,
+            end_time,
+            location: sched_config.location.clone(),
+            rate_tag: None,
+            recurrence: scheduling::RecurrenceRule {
+                freq,
+                interval,
+                by_day: None,
+                dtstart: date,
+                until: None,
+                count: series_count,
+            },
+            exdates: vec![],
+            status: scheduling::SeriesStatus::Active,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            notes: None,
+        };
+
+        let series_dir = std::path::PathBuf::from(&schedules_dir).join(prac).join("series");
+        std::fs::create_dir_all(&series_dir)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        let path = series_dir.join(format!("{}.yaml", series.id));
+        let yaml = serde_yaml::to_string(&series)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        std::fs::write(&path, &yaml)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+        Ok(Json(serde_json::json!({
+            "ok": true,
+            "type": "series",
+            "series_id": series.id.to_string(),
+            "client_name": client_name,
+        })))
+    } else {
+        // One-off appointment
+        let appt = scheduling::Appointment {
+            id: uuid::Uuid::new_v4(),
+            series_id: None,
+            practitioner: prac.to_string(),
+            client_id: req.client_id.clone(),
+            client_name: client_name.clone(),
+            date,
+            start_time,
+            end_time,
+            status: scheduling::AppointmentStatus::Confirmed,
+            source: scheduling::AppointmentSource::Admin,
+            rate_tag: None,
+            location: sched_config.location.clone(),
+            sms_confirmation: None,
+            notes: None,
+            created_at: chrono::Utc::now().to_rfc3339(),
+        };
+
+        let appts_dir = std::path::PathBuf::from(&schedules_dir).join(prac).join("appointments");
+        std::fs::create_dir_all(&appts_dir)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        let path = appts_dir.join(format!("{}.yaml", appt.id));
+        let yaml = serde_yaml::to_string(&appt)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        std::fs::write(&path, &yaml)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+        Ok(Json(serde_json::json!({
+            "ok": true,
+            "type": "one-off",
+            "appointment_id": appt.id.to_string(),
+            "client_name": client_name,
+        })))
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ScheduleCancelRequest {
+    pub client_id: String,
+    /// Date to cancel (YYYY-MM-DD). If series, adds EXDATE; if one-off, removes file.
+    pub date: String,
+    /// Cancel the entire series (not just one date)
+    #[serde(default)]
+    pub series: bool,
+}
+
+/// POST /api/schedule/cancel — cancel an appointment or series.
+pub async fn schedule_cancel(
+    Json(req): Json<ScheduleCancelRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let sched_config = scheduling::SchedulingConfig::default();
+    let schedules_dir = shellexpand::tilde(&sched_config.schedules_dir).to_string();
+    let schedules_path = std::path::PathBuf::from(&schedules_dir);
+
+    let cancel_date = NaiveDate::parse_from_str(&req.date, "%Y-%m-%d")
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid date: {}", e)))?;
+
+    // Search all practitioner dirs for matching series/appointments
+    if !schedules_path.exists() {
+        return Err((StatusCode::NOT_FOUND, "No schedules directory".to_string()));
+    }
+
+    for entry in std::fs::read_dir(&schedules_path).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))? {
+        let entry = entry.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) { continue; }
+        let prac_path = entry.path();
+
+        // Check series
+        let series_dir = prac_path.join("series");
+        if series_dir.exists() {
+            for se in std::fs::read_dir(&series_dir).unwrap_or_else(|_| std::fs::read_dir("/dev/null").unwrap()) {
+                let se = match se { Ok(s) => s, Err(_) => continue };
+                let path = se.path();
+                if !path.extension().is_some_and(|e| e == "yaml" || e == "yml") { continue; }
+                let content = std::fs::read_to_string(&path).unwrap_or_default();
+                let mut series: scheduling::RecurringSeries = match serde_yaml::from_str(&content) {
+                    Ok(s) => s, Err(_) => continue,
+                };
+
+                if series.client_id != req.client_id { continue; }
+
+                if req.series {
+                    // End the entire series
+                    series.status = scheduling::SeriesStatus::Ended;
+                    let yaml = serde_yaml::to_string(&series).unwrap_or_default();
+                    let _ = std::fs::write(&path, &yaml);
+                    return Ok(Json(serde_json::json!({"ok": true, "action": "series_ended"})));
+                } else {
+                    // Add EXDATE for this specific date
+                    if !series.exdates.contains(&cancel_date) {
+                        series.exdates.push(cancel_date);
+                        let yaml = serde_yaml::to_string(&series).unwrap_or_default();
+                        let _ = std::fs::write(&path, &yaml);
+                        return Ok(Json(serde_json::json!({"ok": true, "action": "exdate_added", "date": req.date})));
+                    }
+                }
+            }
+        }
+
+        // Check one-off appointments
+        let appts_dir = prac_path.join("appointments");
+        if appts_dir.exists() {
+            for ae in std::fs::read_dir(&appts_dir).unwrap_or_else(|_| std::fs::read_dir("/dev/null").unwrap()) {
+                let ae = match ae { Ok(a) => a, Err(_) => continue };
+                let path = ae.path();
+                if !path.extension().is_some_and(|e| e == "yaml" || e == "yml") { continue; }
+                let content = std::fs::read_to_string(&path).unwrap_or_default();
+                let mut appt: scheduling::Appointment = match serde_yaml::from_str(&content) {
+                    Ok(a) => a, Err(_) => continue,
+                };
+                if appt.client_id == req.client_id && appt.date == cancel_date {
+                    appt.status = scheduling::AppointmentStatus::Cancelled;
+                    let yaml = serde_yaml::to_string(&appt).unwrap_or_default();
+                    let _ = std::fs::write(&path, &yaml);
+                    return Ok(Json(serde_json::json!({"ok": true, "action": "appointment_cancelled"})));
+                }
+            }
+        }
+    }
+
+    Err((StatusCode::NOT_FOUND, format!("No appointment found for {} on {}", req.client_id, req.date)))
+}
+
+#[derive(Deserialize)]
+pub struct ScheduleMoveRequest {
+    pub client_id: String,
+    pub from_date: String,
+    pub to_date: String,
+    pub to_time: String,
+}
+
+/// POST /api/schedule/move — reschedule an appointment.
+pub async fn schedule_move(
+    Json(req): Json<ScheduleMoveRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    // Cancel the old date (adds EXDATE for series, cancels one-off)
+    let cancel_req = ScheduleCancelRequest {
+        client_id: req.client_id.clone(),
+        date: req.from_date.clone(),
+        series: false,
+    };
+    schedule_cancel(Json(cancel_req)).await?;
+
+    // Create a new one-off at the new date/time
+    let create_req = ScheduleCreateRequest {
+        client_id: req.client_id,
+        date: req.to_date,
+        time: req.to_time,
+        duration: default_duration(),
+        recur: None,
+        count: None,
+        infinite: false,
+        practitioner: None,
+    };
+    schedule_create(Json(create_req)).await
+}
+
+/// GET /api/schedule/blocks — block expiry warnings for all clients.
+pub async fn schedule_blocks() -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let sched_config = scheduling::SchedulingConfig::default();
+    let clinical_root = crate::config::clinical_root();
+    let clients_dir = clinical_root.join("clients");
+
+    let mut blocks = Vec::new();
+    if clients_dir.exists() {
+        for entry in std::fs::read_dir(&clients_dir).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))? {
+            let entry = entry.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            let blocks_path = entry.path().join("blocks.yaml");
+            if !blocks_path.exists() { continue; }
+
+            let yaml = std::fs::read_to_string(&blocks_path).unwrap_or_default();
+            let client_blocks: Vec<scheduling::AuthorisationBlock> = serde_yaml::from_str(&yaml).unwrap_or_default();
+
+            for block in &client_blocks {
+                let warning = scheduling::recurrence::check_block_expiry(block, sched_config.blocks.warning_threshold);
+                blocks.push(serde_json::json!({
+                    "client_id": block.client_id,
+                    "insurer": block.insurer,
+                    "authorised": block.authorised_sessions,
+                    "used": block.used_sessions,
+                    "remaining": block.remaining(),
+                    "status": block.status.to_string(),
+                    "warning": warning.as_ref().map(|w| &w.message),
+                }));
+            }
+        }
+    }
+
+    Ok(Json(serde_json::json!({"blocks": blocks})))
+}
+
+fn lookup_client_name(client_id: &str) -> String {
+    let clinical_root = crate::config::clinical_root();
+    let identity_path = clinical_root.join("clients").join(client_id).join("identity.yaml");
+    if identity_path.exists() {
+        if let Ok(content) = std::fs::read_to_string(&identity_path) {
+            if let Ok(val) = serde_yaml::from_str::<serde_yaml::Value>(&content) {
+                if let Some(name) = val.get("name").and_then(|v| v.as_str()) {
+                    return name.to_string();
+                }
+            }
+        }
+    }
+    client_id.to_string()
+}
+
+// ---------------------------------------------------------------------------
 // Email setup handlers
 // ---------------------------------------------------------------------------
 
