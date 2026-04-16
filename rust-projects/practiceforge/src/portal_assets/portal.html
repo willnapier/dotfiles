@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Book Appointment</title>
+<style>
+  :root {
+    --bg: #fdf6e3; --bg-hl: #eee8d5; --fg: #657b83; --fg-em: #586e75;
+    --cyan: #2aa198; --green: #859900; --red: #dc322f; --blue: #268bd2;
+    --border: #93a1a1;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--fg); font-size: 15px; line-height: 1.5; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+
+  .container { width: 100%; max-width: 480px; padding: 20px 16px; }
+  .logo { text-align: center; margin-bottom: 20px; }
+  .logo h1 { font-size: 18px; color: var(--cyan); font-weight: 600; letter-spacing: 0.5px; }
+  .logo .practice { font-size: 13px; color: var(--fg); }
+
+  .card { background: white; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .card h2 { font-size: 16px; color: var(--fg-em); margin-bottom: 12px; }
+
+  label { display: block; font-size: 13px; color: var(--fg); margin-bottom: 4px; }
+  input[type="tel"], input[type="text"] { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 16px; color: var(--fg-em); background: white; outline: none; }
+  input:focus { border-color: var(--cyan); box-shadow: 0 0 0 2px rgba(42,161,152,0.2); }
+
+  .btn { display: block; width: 100%; padding: 12px; border: none; border-radius: 6px; font-size: 15px; font-weight: 600; cursor: pointer; text-align: center; margin-top: 12px; }
+  .btn-primary { background: var(--cyan); color: white; }
+  .btn-primary:hover { background: #1a8a82; }
+  .btn-primary:disabled { opacity: 0.5; cursor: default; }
+
+  .msg { font-size: 13px; margin-top: 8px; min-height: 20px; }
+  .msg-error { color: var(--red); }
+  .msg-ok { color: var(--green); }
+
+  /* Slot grid */
+  .slots-date { font-weight: 600; color: var(--fg-em); margin-top: 16px; margin-bottom: 8px; font-size: 14px; padding-bottom: 4px; border-bottom: 1px solid var(--bg-hl); }
+  .slots-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 6px; margin-bottom: 12px; }
+  .slot { padding: 8px 4px; border: 1px solid var(--border); border-radius: 6px; text-align: center; cursor: pointer; font-size: 14px; color: var(--fg-em); background: white; transition: all 0.1s; }
+  .slot:hover { border-color: var(--cyan); background: rgba(42,161,152,0.05); }
+  .slot.selected { border-color: var(--cyan); background: rgba(42,161,152,0.1); color: var(--cyan); font-weight: 600; }
+
+  .confirm-detail { font-size: 14px; color: var(--fg-em); margin-bottom: 8px; }
+  .confirm-detail strong { color: var(--cyan); }
+
+  .step { display: none; }
+  .step.active { display: block; }
+
+  .back-link { font-size: 13px; color: var(--cyan); cursor: pointer; margin-bottom: 12px; display: inline-block; }
+  .back-link:hover { text-decoration: underline; }
+
+  @media (max-width: 480px) {
+    .container { padding: 12px; }
+    .slots-grid { grid-template-columns: repeat(3, 1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="logo">
+    <h1>PracticeForge</h1>
+    <div class="practice" id="practice-name"></div>
+  </div>
+
+  <!-- Step 1: Phone verification -->
+  <div class="step active" id="step-verify">
+    <div class="card">
+      <h2>Verify your identity</h2>
+      <p style="font-size:13px;color:var(--fg);margin-bottom:12px">Enter your phone number to receive a verification code.</p>
+      <label>Phone number</label>
+      <input type="tel" id="phone-input" placeholder="+44 7..." autocomplete="tel">
+      <button class="btn btn-primary" id="send-code-btn" onclick="sendCode()">Send Code</button>
+      <div class="msg" id="verify-msg"></div>
+    </div>
+    <div class="card" id="code-card" style="display:none">
+      <label>Enter the 6-digit code</label>
+      <input type="text" id="code-input" placeholder="000000" maxlength="6" inputmode="numeric" autocomplete="one-time-code">
+      <button class="btn btn-primary" onclick="verifyCode()">Verify</button>
+      <div class="msg" id="code-msg"></div>
+    </div>
+  </div>
+
+  <!-- Step 2: Select a slot -->
+  <div class="step" id="step-slots">
+    <div class="card">
+      <h2>Choose a time</h2>
+      <p style="font-size:13px;color:var(--fg);margin-bottom:12px">Select an available appointment slot.</p>
+      <div id="slots-content"></div>
+      <button class="btn btn-primary" id="reserve-btn" onclick="reserveSlot()" disabled>Book Selected Slot</button>
+      <div class="msg" id="slots-msg"></div>
+    </div>
+  </div>
+
+  <!-- Step 3: Confirmation -->
+  <div class="step" id="step-confirm">
+    <div class="card" style="text-align:center">
+      <div style="font-size:32px;margin-bottom:8px">&#10003;</div>
+      <h2>Appointment Booked</h2>
+      <div class="confirm-detail" id="confirm-detail"></div>
+      <p style="font-size:13px;color:var(--fg);margin-top:12px">You will receive a confirmation SMS. Reply N to cancel.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+const TOKEN = window.location.pathname.split('/').pop();
+let selectedSlot = null;
+let sessionToken = null;
+
+function showStep(id) {
+  document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function sendCode() {
+  const phone = document.getElementById('phone-input').value.trim();
+  if (!phone) { setMsg('verify-msg', 'Enter your phone number', true); return; }
+
+  document.getElementById('send-code-btn').disabled = true;
+  setMsg('verify-msg', 'Sending code...', false);
+
+  fetch('/book/' + TOKEN + '/send-code', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone: phone })
+  })
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById('send-code-btn').disabled = false;
+      if (d.ok) {
+        document.getElementById('code-card').style.display = '';
+        document.getElementById('code-input').focus();
+        setMsg('verify-msg', 'Code sent', false);
+      } else {
+        setMsg('verify-msg', d.error || 'Failed to send code', true);
+      }
+    })
+    .catch(e => {
+      document.getElementById('send-code-btn').disabled = false;
+      setMsg('verify-msg', 'Error: ' + e, true);
+    });
+}
+
+function verifyCode() {
+  const code = document.getElementById('code-input').value.trim();
+  if (code.length !== 6) { setMsg('code-msg', 'Enter the 6-digit code', true); return; }
+
+  fetch('/book/' + TOKEN + '/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code: code })
+  })
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        sessionToken = d.session_token;
+        loadSlots();
+        showStep('step-slots');
+      } else {
+        setMsg('code-msg', d.error || 'Invalid code', true);
+      }
+    })
+    .catch(e => setMsg('code-msg', 'Error: ' + e, true));
+}
+
+function loadSlots() {
+  const el = document.getElementById('slots-content');
+  el.innerHTML = '<div style="text-align:center;color:var(--fg);padding:20px">Loading available times...</div>';
+
+  fetch('/book/' + TOKEN + '/slots', {
+    headers: { 'Authorization': 'Bearer ' + sessionToken }
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.slots || data.slots.length === 0) {
+        el.innerHTML = '<div style="text-align:center;color:var(--fg);padding:20px">No available slots at this time. Please contact the practice.</div>';
+        return;
+      }
+
+      // Group by date
+      const byDate = {};
+      data.slots.forEach(s => {
+        if (!byDate[s.date]) byDate[s.date] = [];
+        byDate[s.date].push(s);
+      });
+
+      let html = '';
+      for (const [date, slots] of Object.entries(byDate)) {
+        const d = new Date(date + 'T12:00:00');
+        const label = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
+        html += '<div class="slots-date">' + label + '</div><div class="slots-grid">';
+        slots.forEach(s => {
+          html += '<div class="slot" data-date="' + s.date + '" data-time="' + s.start_time + '" onclick="selectSlot(this)">' + s.start_time + '</div>';
+        });
+        html += '</div>';
+      }
+      el.innerHTML = html;
+
+      if (data.practitioner_name) {
+        document.getElementById('practice-name').textContent = 'with ' + data.practitioner_name;
+      }
+    })
+    .catch(e => { el.innerHTML = '<div style="color:var(--red);padding:20px">Error loading slots: ' + e + '</div>'; });
+}
+
+function selectSlot(el) {
+  document.querySelectorAll('.slot').forEach(s => s.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedSlot = { date: el.dataset.date, time: el.dataset.time };
+  document.getElementById('reserve-btn').disabled = false;
+}
+
+function reserveSlot() {
+  if (!selectedSlot || !sessionToken) return;
+
+  document.getElementById('reserve-btn').disabled = true;
+  setMsg('slots-msg', 'Booking...', false);
+
+  fetch('/book/' + TOKEN + '/reserve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + sessionToken },
+    body: JSON.stringify(selectedSlot)
+  })
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        const slotDate = new Date(selectedSlot.date + 'T12:00:00');
+        const label = slotDate.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+        document.getElementById('confirm-detail').innerHTML =
+          '<strong>' + label + '</strong> at <strong>' + selectedSlot.time + '</strong>';
+        showStep('step-confirm');
+      } else {
+        setMsg('slots-msg', d.error || 'Booking failed', true);
+        document.getElementById('reserve-btn').disabled = false;
+      }
+    })
+    .catch(e => {
+      setMsg('slots-msg', 'Error: ' + e, true);
+      document.getElementById('reserve-btn').disabled = false;
+    });
+}
+
+function setMsg(id, text, isError) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = 'msg ' + (isError ? 'msg-error' : 'msg-ok');
+}
+
+// Load practice name
+fetch('/book/' + TOKEN + '/info')
+  .then(r => r.json())
+  .then(d => {
+    if (d.practice_name) document.getElementById('practice-name').textContent = d.practice_name;
+  })
+  .catch(() => {});
+</script>
+</body>
+</html>
