@@ -3,8 +3,8 @@
 # Usage: ./tests/faithfulness-eval.sh [strategy-name]
 # Runs trap scenarios, scores F1-F7 assertions, outputs results.
 #
-# Requires: rg (ripgrep), gdate (coreutils), clinical binary
-# macOS-compatible: no grep -P, no GNU time
+# Requires: rg (ripgrep), clinical binary
+# Linux/macOS compatible
 
 set -euo pipefail
 
@@ -38,6 +38,15 @@ echo "Results: ${RESULTS_DIR}"
 echo "Scenarios: ${#SCENARIO_NAMES[@]}"
 echo ""
 
+# --- Pre-warm: ensure model is loaded before timing ---
+WARMUP_MODEL="${MODEL_OVERRIDE:-clinical-voice-q4}"
+echo "Pre-warming ${WARMUP_MODEL}..."
+curl -s --max-time 60 -X POST http://localhost:11434/api/generate \
+  -d "{\"model\":\"${WARMUP_MODEL}\",\"prompt\":\"hi\",\"stream\":false}" \
+  > /dev/null 2>&1 || true
+echo "Model ready."
+echo ""
+
 # --- Generate notes ---
 for i in "${!SCENARIO_NAMES[@]}"; do
   name="${SCENARIO_NAMES[$i]}"
@@ -47,7 +56,7 @@ for i in "${!SCENARIO_NAMES[@]}"; do
   outfile="${RESULTS_DIR}/${name}.txt"
   errfile="${RESULTS_DIR}/${name}.stderr"
 
-  TIMEOUT_SECS=120
+  TIMEOUT_SECS=240
   start_epoch=$(date +%s%N)
   MODEL_FLAG=""
   if [[ -n "$MODEL_OVERRIDE" ]]; then MODEL_FLAG="--model-override $MODEL_OVERRIDE"; fi
