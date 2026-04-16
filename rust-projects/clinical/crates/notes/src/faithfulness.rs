@@ -721,11 +721,14 @@ fn truncate(s: &str, max: usize) -> String {
     }
 }
 
-/// Run all faithfulness layers, cheapest first.
+/// Run faithfulness layers: L1 (string match) → L3 (embeddings).
 ///
-/// Layer 1 (string match) runs on all sentences.
-/// Layer 2 (NLP structural) runs on sentences not yet resolved by Layer 1.
-/// Layer 3 (embeddings) runs on sentences still Uncertain after Layer 2.
+/// Layer 2 (NLP structural / stemming) removed — Anne Hsu confirmed it's
+/// redundant with Layer 3 embeddings, which catch the same issues with
+/// better semantic understanding. Removal simplifies the pipeline.
+///
+/// Layer 1 runs on all sentences (hard failures: fabricated quotes).
+/// Layer 3 runs on sentences not resolved by Layer 1 (soft flags).
 pub fn check_faithfulness(
     note: &str,
     observation: &str,
@@ -744,7 +747,7 @@ pub fn check_faithfulness(
     let mut final_assessments: Vec<SentenceAssessment> = Vec::new();
     let mut remaining: Vec<String> = Vec::new();
 
-    // Layer 1: string match
+    // Layer 1: string match (microseconds — catches fabricated quotes)
     let l1_results = layer1_string_match(&note_sentences, observation, client_context, &config);
     for (assessment_opt, sentence) in l1_results.into_iter().zip(note_sentences.iter()) {
         match assessment_opt {
@@ -759,46 +762,104 @@ pub fn check_faithfulness(
         };
     }
 
-    // Layer 2: NLP structural
-    let l2_results =
-        layer2_nlp_structural(&remaining, observation, client_context, &config);
+    // Layer 3: embeddings (9ms warm — semantic similarity, soft flags only)
+    // Skips gracefully if Ollama embedding endpoint is unavailable.
+    let l3_results = layer3_embeddings(&remaining, &obs_sentences, &config);
 
-    let mut still_uncertain: Vec<String> = Vec::new();
-    for assessment in l2_results {
-        if assessment.level == GroundingLevel::Uncertain {
-            still_uncertain.push(assessment.sentence.clone());
-        }
-        final_assessments.push(assessment);
-    }
-
-    if still_uncertain.is_empty() {
-        return FaithfulnessResult {
-            assessments: final_assessments,
-        };
-    }
-
-    // Layer 3: embeddings (may be skipped if Ollama unavailable)
-    let l3_results = layer3_embeddings(&still_uncertain, &obs_sentences, &config);
-
-    // Replace Layer 2 uncertain assessments with Layer 3 results where available
     if !l3_results.is_empty() {
-        let l3_map: std::collections::HashMap<String, SentenceAssessment> = l3_results
-            .into_iter()
-            .map(|a| (a.sentence.clone(), a))
-            .collect();
-
-        for assessment in &mut final_assessments {
-            if assessment.level == GroundingLevel::Uncertain && assessment.assessed_by_layer == 2 {
-                if let Some(l3) = l3_map.get(&assessment.sentence) {
-                    *assessment = l3.clone();
-                }
-            }
+        final_assessments.extend(l3_results);
+    } else {
+        // Embeddings unavailable — mark remaining sentences as unchecked
+        for sentence in &remaining {
+            final_assessments.push(SentenceAssessment {
+                sentence: sentence.clone(),
+                assessed_by_layer: 0,
+                level: GroundingLevel::Uncertain,
+                reason: "Embedding endpoint unavailable — unchecked".to_string(),
+                best_match: None,
+                score: 0.0,
+            });
         }
     }
 
     FaithfulnessResult {
         assessments: final_assessments,
     }
+}
+
+// ---------------------------------------------------------------------------
+// Prompt-Rail: upstream confabulation prevention
+// ---------------------------------------------------------------------------
+
+/// Extract entities, claims, and absences from the observation.
+///
+/// Returns a constraint string to inject into the generation prompt.
+/// This prevents confabulation upstream — the LLM is told what IS and
+/// ISN'T in the observation, so it doesn't need to invent.
+pub fn prompt_rail(observation: &str, client_context: &str) -> String {
+    let entities = extract_entities(observation);
+    let context_entities = extract_entities(client_context);
+
+    // Claims: concrete facts stated in the observation
+    let claims: Vec<String> = observation
+        .split('.')
+        .map(|s| s.trim())
+        .filter(|s| s.len() > 20) // Skip fragments
+        .map(|s| s.to_string())
+        .collect();
+
+    // Detect what's NOT mentioned — common confabulation targets
+    let obs_lower = observation.to_lowercase();
+    let mut absences = Vec::new();
+
+    if !obs_lower.contains("homework") && !obs_lower.contains("between-session")
+        && !obs_lower.contains("task") && !obs_lower.contains("practice")
+    {
+        absences.push("No homework or between-session tasks were discussed");
+    }
+    if !obs_lower.contains("metaphor") && !obs_lower.contains("exercise")
+        && !obs_lower.contains("experiential")
+    {
+        absences.push("No specific metaphors or experiential exercises were used");
+    }
+    if !obs_lower.contains("risk") && !obs_lower.contains("suicid")
+        && !obs_lower.contains("harm") && !obs_lower.contains("safety")
+    {
+        absences.push("No risk factors were noted");
+    }
+    if !obs_lower.contains("formulation") && !obs_lower.contains("developmental")
+        && !obs_lower.contains("history")
+    {
+        absences.push("No developmental history or formulation revision was discussed");
+    }
+
+    let mut rail = String::new();
+
+    if !entities.is_empty() {
+        rail.push_str("\n\nGROUNDING CONSTRAINTS (from observation):\n");
+        rail.push_str("Named entities in today's session: ");
+        rail.push_str(&entities.join(", "));
+        rail.push_str("\nDo not introduce any named entities, people, places, or specific examples not listed above.\n");
+    }
+
+    if !absences.is_empty() {
+        rail.push_str("\nABSENCES (do NOT fabricate these):\n");
+        for a in &absences {
+            rail.push_str("- ");
+            rail.push_str(a);
+            rail.push('\n');
+        }
+        rail.push_str("If the observation does not mention these topics, the note must not invent them.\n");
+    }
+
+    if claims.len() > 1 {
+        rail.push_str("\nSOURCE CLAIMS (every detail must trace to one of these):\n");
+        for (i, claim) in claims.iter().enumerate().take(8) {
+            rail.push_str(&format!("{}. {}\n", i + 1, claim));
+        }
+    }
+
+    rail
 }
 
 /// Format faithfulness flags for display in a batch review file.

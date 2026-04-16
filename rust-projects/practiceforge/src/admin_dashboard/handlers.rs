@@ -1128,6 +1128,29 @@ fn build_fallback_prompt(client_id: &str, observation: &str) -> String {
         prompt.push_str("\n\n");
     }
 
+    // Prompt-Rail: grounding constraints to prevent confabulation
+    let obs_lower = observation.to_lowercase();
+    let mut absences = Vec::new();
+    if !obs_lower.contains("homework") && !obs_lower.contains("between-session") && !obs_lower.contains("task") {
+        absences.push("No homework or between-session tasks were discussed");
+    }
+    if !obs_lower.contains("metaphor") && !obs_lower.contains("exercise") && !obs_lower.contains("experiential") {
+        absences.push("No specific metaphors or experiential exercises were used");
+    }
+    if !obs_lower.contains("risk") && !obs_lower.contains("suicid") && !obs_lower.contains("harm") {
+        absences.push("No risk factors were noted — use brief default risk statement");
+    }
+
+    if !absences.is_empty() {
+        prompt.push_str("\nGROUNDING CONSTRAINTS:\n");
+        for a in &absences {
+            prompt.push_str("- ");
+            prompt.push_str(a);
+            prompt.push('\n');
+        }
+        prompt.push_str("Do not invent details not present in the observation.\n\n");
+    }
+
     prompt.push_str("Today's observation:\n");
     prompt.push_str(observation);
     prompt.push_str("\n\nWrite a session note for today.");
