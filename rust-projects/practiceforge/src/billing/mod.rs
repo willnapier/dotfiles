@@ -16,5 +16,5 @@ pub mod traits;
 
 pub use config::BillingConfig;
 pub use invoice::{BillTo, Invoice, InvoiceState, LineItem};
-pub use manual::ManualProvider;
+pub use manual::{ManualProvider, ReminderLogEntry};
 pub use traits::{AccountingProvider, PaymentProvider};

@@ -6,12 +6,23 @@
 
 use anyhow::{bail, Context, Result};
 use chrono::{Local, NaiveDate};
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
 use super::config::BillingConfig;
 use super::invoice::{Invoice, InvoiceRef, InvoiceState};
 use super::traits::{AccountingProvider, InvoiceFilter, InvoiceSummary, PaymentProvider};
+
+/// A record of a sent reminder, persisted to reminder-log.json.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReminderLogEntry {
+    pub reference: String,
+    pub sent_at: String,
+    pub tone: String,
+    pub to_email: String,
+    pub to_name: String,
+}
 
 /// File-based billing provider. Stores invoices as JSON in a local directory.
 pub struct ManualProvider {
@@ -54,7 +65,8 @@ impl ManualProvider {
     }
 
     /// Convert an Invoice to an InvoiceSummary with computed overdue days.
-    fn to_summary(invoice: &Invoice) -> InvoiceSummary {
+    /// Note: this is now &self to access the reminder log.
+    fn to_summary_with_reminders(&self, invoice: &Invoice) -> InvoiceSummary {
         let today = Local::now().date_naive();
         let due = NaiveDate::parse_from_str(&invoice.due_date, "%Y-%m-%d")
             .unwrap_or(today);
@@ -71,11 +83,14 @@ impl ManualProvider {
             invoice.state.clone()
         };
 
+        let (reminders_sent, last_reminder) = self.reminders_sent_for(&invoice.reference);
+
         InvoiceSummary {
             reference: invoice.reference.clone(),
             client_id: invoice.client_id.clone(),
             client_name: invoice.client_name.clone(),
             bill_to_name: invoice.bill_to.display_name().to_string(),
+            bill_to_email: invoice.bill_to.email().map(|s| s.to_string()),
             total: invoice.total(),
             currency: invoice.currency.clone(),
             issue_date: invoice.issue_date.clone(),
@@ -83,9 +98,50 @@ impl ManualProvider {
             state: effective_state,
             days_overdue,
             payment_link: invoice.payment_link.clone(),
-            reminders_sent: 0, // TODO: track from reminder log
-            last_reminder: None,
+            reminders_sent,
+            last_reminder,
         }
+    }
+
+    /// Path to the reminder log file.
+    fn reminder_log_path(&self) -> PathBuf {
+        self.storage_dir.join("reminder-log.json")
+    }
+
+    /// Load the reminder log (all sent reminders).
+    pub fn load_reminder_log(&self) -> Result<Vec<ReminderLogEntry>> {
+        let path = self.reminder_log_path();
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        let data = fs::read_to_string(&path)
+            .with_context(|| format!("Cannot read {}", path.display()))?;
+        let entries: Vec<ReminderLogEntry> =
+            serde_json::from_str(&data).context("Failed to parse reminder log")?;
+        Ok(entries)
+    }
+
+    /// Append a sent reminder to the log.
+    pub fn log_reminder(&self, entry: ReminderLogEntry) -> Result<()> {
+        let mut entries = self.load_reminder_log()?;
+        entries.push(entry);
+        let path = self.reminder_log_path();
+        let data = serde_json::to_string_pretty(&entries)?;
+        fs::write(&path, data)
+            .with_context(|| format!("Cannot write {}", path.display()))?;
+        Ok(())
+    }
+
+    /// Count reminders sent for a specific invoice reference.
+    fn reminders_sent_for(&self, reference: &str) -> (u32, Option<String>) {
+        let entries = self.load_reminder_log().unwrap_or_default();
+        let matching: Vec<&ReminderLogEntry> = entries
+            .iter()
+            .filter(|e| e.reference == reference)
+            .collect();
+        let count = matching.len() as u32;
+        let last = matching.last().map(|e| e.sent_at.clone());
+        (count, last)
     }
 
     /// Get invoiced session dates for a specific client.
@@ -132,14 +188,14 @@ impl AccountingProvider for ManualProvider {
         Ok(invoices
             .iter()
             .find(|i| i.reference == reference)
-            .map(Self::to_summary))
+            .map(|inv| self.to_summary_with_reminders(inv)))
     }
 
     fn list_invoices(&self, filter: InvoiceFilter) -> Result<Vec<InvoiceSummary>> {
         let invoices = self.load_index()?;
         let summaries: Vec<InvoiceSummary> = invoices
             .iter()
-            .map(Self::to_summary)
+            .map(|inv| self.to_summary_with_reminders(inv))
             .filter(|s| {
                 if let Some(ref cid) = filter.client_id {
                     if &s.client_id != cid {
@@ -363,5 +419,105 @@ mod tests {
 
         let dates2 = provider.invoiced_dates_for_client("XX99").unwrap();
         assert!(dates2.is_empty());
+    }
+
+    #[test]
+    fn test_reminder_log_empty_by_default() {
+        let tmp = TempDir::new().unwrap();
+        let provider = ManualProvider::new(&test_config(tmp.path())).unwrap();
+
+        let log = provider.load_reminder_log().unwrap();
+        assert!(log.is_empty());
+    }
+
+    #[test]
+    fn test_log_and_count_reminders() {
+        let tmp = TempDir::new().unwrap();
+        let provider = ManualProvider::new(&test_config(tmp.path())).unwrap();
+
+        // No reminders sent yet
+        let (count, last) = provider.reminders_sent_for("INV-2026-0001");
+        assert_eq!(count, 0);
+        assert!(last.is_none());
+
+        // Log a reminder
+        provider
+            .log_reminder(ReminderLogEntry {
+                reference: "INV-2026-0001".to_string(),
+                sent_at: "2026-04-16T12:00:00".to_string(),
+                tone: "sensitive".to_string(),
+                to_email: "jane@example.com".to_string(),
+                to_name: "Jane Bloggs".to_string(),
+            })
+            .unwrap();
+
+        let (count, last) = provider.reminders_sent_for("INV-2026-0001");
+        assert_eq!(count, 1);
+        assert_eq!(last.unwrap(), "2026-04-16T12:00:00");
+
+        // Log another reminder
+        provider
+            .log_reminder(ReminderLogEntry {
+                reference: "INV-2026-0001".to_string(),
+                sent_at: "2026-04-23T12:00:00".to_string(),
+                tone: "businesslike".to_string(),
+                to_email: "jane@example.com".to_string(),
+                to_name: "Jane Bloggs".to_string(),
+            })
+            .unwrap();
+
+        let (count, last) = provider.reminders_sent_for("INV-2026-0001");
+        assert_eq!(count, 2);
+        assert_eq!(last.unwrap(), "2026-04-23T12:00:00");
+
+        // Different invoice has 0 reminders
+        let (count, _) = provider.reminders_sent_for("INV-2026-9999");
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_bill_to_email_in_summary() {
+        let tmp = TempDir::new().unwrap();
+        let provider = ManualProvider::new(&test_config(tmp.path())).unwrap();
+
+        let inv = sample_invoice("INV-2026-0001");
+        provider.create_invoice(&inv).unwrap();
+
+        let summary = provider.get_invoice("INV-2026-0001").unwrap().unwrap();
+        assert_eq!(summary.bill_to_email.as_deref(), Some("jane@example.com"));
+    }
+
+    #[test]
+    fn test_reminders_sent_reflected_in_summary() {
+        let tmp = TempDir::new().unwrap();
+        let provider = ManualProvider::new(&test_config(tmp.path())).unwrap();
+
+        let mut inv = sample_invoice("INV-2026-0001");
+        inv.due_date = "2026-01-01".to_string();
+        inv.state = InvoiceState::Sent;
+        provider.create_invoice(&inv).unwrap();
+
+        // Before any reminders
+        let summary = provider.get_invoice("INV-2026-0001").unwrap().unwrap();
+        assert_eq!(summary.reminders_sent, 0);
+
+        // Log a reminder
+        provider
+            .log_reminder(ReminderLogEntry {
+                reference: "INV-2026-0001".to_string(),
+                sent_at: "2026-04-16T12:00:00".to_string(),
+                tone: "sensitive".to_string(),
+                to_email: "jane@example.com".to_string(),
+                to_name: "Jane Bloggs".to_string(),
+            })
+            .unwrap();
+
+        // Summary now reflects the sent reminder
+        let summary = provider.get_invoice("INV-2026-0001").unwrap().unwrap();
+        assert_eq!(summary.reminders_sent, 1);
+        assert_eq!(
+            summary.last_reminder.as_deref(),
+            Some("2026-04-16T12:00:00")
+        );
     }
 }

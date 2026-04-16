@@ -46,6 +46,7 @@ pub struct InvoiceSummary {
     pub client_id: String,
     pub client_name: String,
     pub bill_to_name: String,
+    pub bill_to_email: Option<String>,
     pub total: f64,
     pub currency: String,
     pub issue_date: String,

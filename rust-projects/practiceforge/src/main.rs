@@ -1622,10 +1622,15 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
                 return Ok(());
             }
 
-            // Load practitioner name from email config if available
-            let practitioner = crate::email::load_email_config()
-                .map(|c| c.from_name)
+            // Load email config (needed for practitioner name and sending)
+            let email_config = crate::email::load_email_config();
+            let practitioner = email_config
+                .as_ref()
+                .map(|c| c.from_name.clone())
                 .unwrap_or_else(|_| "The Practitioner".to_string());
+
+            let mut sent_count = 0u32;
+            let mut failed_count = 0u32;
 
             for (inv, tone) in &due {
                 let is_insurer = !inv.bill_to_name.is_empty()
@@ -1638,17 +1643,73 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
                 };
 
                 if send {
-                    if let Some(ref to_email) = inv.payment_link {
-                        // This is a placeholder — real email comes from BillTo
-                        println!("  Would send to {} — email integration pending", to_email);
+                    let to_email = match &reminder.to_email {
+                        Some(email) => email.clone(),
+                        None => {
+                            eprintln!(
+                                "  ✗ {} — no email address for {}. Skipping.",
+                                inv.reference, reminder.to_name
+                            );
+                            failed_count += 1;
+                            continue;
+                        }
+                    };
+
+                    let email_cfg = match &email_config {
+                        Ok(cfg) => cfg,
+                        Err(_) => {
+                            eprintln!(
+                                "  ✗ Email not configured. Run: practiceforge email init"
+                            );
+                            return Ok(());
+                        }
+                    };
+
+                    match crate::email::send_email(
+                        email_cfg,
+                        &to_email,
+                        &reminder.to_name,
+                        &reminder.subject,
+                        &reminder.body,
+                        None,
+                        None,
+                    ) {
+                        Ok(()) => {
+                            // Log the sent reminder
+                            let now = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+                            let log_entry = crate::billing::ReminderLogEntry {
+                                reference: inv.reference.clone(),
+                                sent_at: now,
+                                tone: tone.clone(),
+                                to_email: to_email.clone(),
+                                to_name: reminder.to_name.clone(),
+                            };
+                            if let Err(e) = provider.log_reminder(log_entry) {
+                                eprintln!("  ⚠ Sent but failed to log: {}", e);
+                            }
+
+                            println!(
+                                "  ✓ {} → {} <{}> [{}]",
+                                inv.reference, reminder.to_name, to_email, tone
+                            );
+                            sent_count += 1;
+                        }
+                        Err(e) => {
+                            eprintln!(
+                                "  ✗ {} → {} — send failed: {}",
+                                inv.reference, reminder.to_name, e
+                            );
+                            failed_count += 1;
+                        }
                     }
-                    println!(
-                        "  ✓ {} → {} [{}] (send not yet wired to email)",
-                        inv.reference, reminder.to_name, tone
-                    );
                 } else {
+                    // Dry-run: preview the reminder
+                    let email_display = reminder
+                        .to_email
+                        .as_deref()
+                        .unwrap_or("(no email)");
                     println!("--- {} ({}) ---", inv.reference, tone);
-                    println!("To: {}", reminder.to_name);
+                    println!("To: {} <{}>", reminder.to_name, email_display);
                     println!("Subject: {}", reminder.subject);
                     println!();
                     println!("{}", reminder.body);
@@ -1656,7 +1717,12 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
                 }
             }
 
-            if !send {
+            if send {
+                println!(
+                    "\n{} sent, {} failed.",
+                    sent_count, failed_count
+                );
+            } else {
                 println!(
                     "{} reminder(s) ready. Use --send to deliver via email.",
                     due.len()

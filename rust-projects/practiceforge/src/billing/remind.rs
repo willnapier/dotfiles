@@ -65,7 +65,7 @@ pub fn render_client_reminder(
         subject,
         body,
         tone: tone.to_string(),
-        to_email: invoice.payment_link.clone(), // will be populated from BillTo
+        to_email: invoice.bill_to_email.clone(),
         to_name: invoice.client_name.clone(),
         invoice_reference: invoice.reference.clone(),
     }
@@ -105,7 +105,7 @@ pub fn render_insurer_reminder(
         subject,
         body,
         tone: "businesslike".to_string(),
-        to_email: None, // populated from BillTo.email
+        to_email: invoice.bill_to_email.clone(),
         to_name: invoice.bill_to_name.clone(),
         invoice_reference: invoice.reference.clone(),
     }
@@ -275,6 +275,7 @@ mod tests {
             client_id: "JB92".to_string(),
             client_name: "Jane Bloggs".to_string(),
             bill_to_name: "Jane Bloggs".to_string(),
+            bill_to_email: Some("jane@example.com".to_string()),
             total: 198.0,
             currency: "GBP".to_string(),
             issue_date: "2026-04-01".to_string(),

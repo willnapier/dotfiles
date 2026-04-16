@@ -697,6 +697,121 @@ pub async fn list_reminders() -> Result<Json<serde_json::Value>, (StatusCode, St
     Ok(Json(serde_json::json!({"reminders": reminder_list})))
 }
 
+/// POST /api/billing/reminders/send — send a specific reminder by invoice reference.
+///
+/// Request body: { "reference": "INV-2026-0001" }
+/// Sends the reminder email and logs it. Returns success/failure.
+pub async fn send_reminder(
+    Json(req): Json<SendReminderRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let config = crate::billing::config::BillingConfig::load()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if !config.enabled {
+        return Err((StatusCode::BAD_REQUEST, "Billing is not enabled".to_string()));
+    }
+
+    let provider = crate::billing::ManualProvider::new(&config)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Find the specific overdue invoice
+    use crate::billing::traits::{AccountingProvider, InvoiceFilter};
+    let overdue = provider
+        .list_invoices(InvoiceFilter {
+            overdue_only: true,
+            ..Default::default()
+        })
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let inv = overdue
+        .iter()
+        .find(|i| i.reference == req.reference)
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                format!("Invoice {} not found or not overdue", req.reference),
+            )
+        })?;
+
+    // Get the reminder tone for this invoice
+    let tone = crate::billing::remind::next_reminder_tone(&config, inv).ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("No reminder due for {}", req.reference),
+        )
+    })?;
+
+    // Load email config
+    let email_config = crate::email::load_email_config().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Email not configured: {}", e),
+        )
+    })?;
+
+    let practitioner = email_config.from_name.clone();
+
+    let is_insurer = !inv.bill_to_name.is_empty() && inv.bill_to_name != inv.client_name;
+    let reminder = if is_insurer {
+        crate::billing::remind::render_insurer_reminder(inv, &practitioner)
+    } else {
+        crate::billing::remind::render_client_reminder(inv, &tone, &practitioner, "")
+    };
+
+    let to_email = reminder.to_email.as_deref().ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("No email address for {}", reminder.to_name),
+        )
+    })?;
+
+    // Send the email
+    crate::email::send_email(
+        &email_config,
+        to_email,
+        &reminder.to_name,
+        &reminder.subject,
+        &reminder.body,
+        None,
+        None,
+    )
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to send: {}", e),
+        )
+    })?;
+
+    // Log the sent reminder
+    let now = chrono::Local::now()
+        .format("%Y-%m-%dT%H:%M:%S")
+        .to_string();
+    let log_entry = crate::billing::ReminderLogEntry {
+        reference: inv.reference.clone(),
+        sent_at: now,
+        tone: tone.clone(),
+        to_email: to_email.to_string(),
+        to_name: reminder.to_name.clone(),
+    };
+    provider.log_reminder(log_entry).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Sent but failed to log: {}", e),
+        )
+    })?;
+
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "reference": inv.reference,
+        "to_email": to_email,
+        "tone": tone,
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct SendReminderRequest {
+    pub reference: String,
+}
+
 // ---------------------------------------------------------------------------
 // Practice info handlers
 // ---------------------------------------------------------------------------

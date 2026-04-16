@@ -44,6 +44,7 @@ pub fn build_router() -> Router {
         .route("/api/billing/paid", post(handlers::mark_paid))
         .route("/api/billing/cancel", post(handlers::cancel_invoice))
         .route("/api/billing/reminders", get(handlers::list_reminders))
+        .route("/api/billing/reminders/send", post(handlers::send_reminder))
         // Practice info
         .route("/api/practice", get(handlers::practice_info))
         .route("/api/practitioners", get(handlers::practitioners))
