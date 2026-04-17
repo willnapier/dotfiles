@@ -41,6 +41,8 @@ com.williamnapier.git-auto-pull-watcher
 com.williamnapier.git-auto-push-watcher
 com.williamnapier.link-service
 com.williamnapier.linkmanager.plist.disabled
+com.williamnapier.practiceforge-dashboard
+com.williamnapier.practiceforge-maintain
 com.williamnapier.state-capture
 com.williamnapier.syncthing-monitor
 com.williamnapier.system-health-check
