@@ -57,15 +57,16 @@ for i in "${!SCENARIO_NAMES[@]}"; do
   errfile="${RESULTS_DIR}/${name}.stderr"
 
   TIMEOUT_SECS=240
-  start_epoch=$(date +%s%N)
+  # Portable ms-resolution timing (BSD date lacks %N). Perl's Time::HiRes is on every Mac + Linux.
+  start_epoch=$(perl -MTime::HiRes=time -e 'printf "%d\n", time * 1000')
   MODEL_FLAG=""
   if [[ -n "$MODEL_OVERRIDE" ]]; then MODEL_FLAG="--model-override $MODEL_OVERRIDE"; fi
   # shellcheck disable=SC2086
   timeout "${TIMEOUT_SECS}" clinical note "$CLIENT_ID" "$observation" --no-save --yes $MODEL_FLAG \
       > "$outfile" 2> "$errfile" || true
-  end_epoch=$(date +%s%N)
+  end_epoch=$(perl -MTime::HiRes=time -e 'printf "%d\n", time * 1000')
 
-  elapsed_ms=$(( (end_epoch - start_epoch) / 1000000 ))
+  elapsed_ms=$(( end_epoch - start_epoch ))
   elapsed_s=$(awk "BEGIN {printf \"%.1f\", $elapsed_ms / 1000}")
 
   attempts=$(grep -c "Regenerating" "$errfile" 2>/dev/null | tr -d '[:space:]' || true)
