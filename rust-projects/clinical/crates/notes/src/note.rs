@@ -284,11 +284,17 @@ fn build_prompt(id: &str, observation: &str) -> Result<String> {
 
     // Prompt-Rail: extract grounding constraints from the observation
     // to prevent confabulation upstream (cheaper than catching it downstream).
+    // Disable via CLINICAL_NO_PROMPT_RAIL=1 for A/B eval testing.
     let client_context = load_client_context(id).unwrap_or_default();
-    let rail = crate::faithfulness::prompt_rail(observation, &client_context);
-    if !rail.is_empty() {
-        out.push_str(&rail);
-        out.push('\n');
+    let rail_disabled = std::env::var("CLINICAL_NO_PROMPT_RAIL").is_ok();
+    if rail_disabled {
+        eprintln!("Prompt-Rail DISABLED (CLINICAL_NO_PROMPT_RAIL set)");
+    } else {
+        let rail = crate::faithfulness::prompt_rail(observation, &client_context);
+        if !rail.is_empty() {
+            out.push_str(&rail);
+            out.push('\n');
+        }
     }
 
     // Instruction
