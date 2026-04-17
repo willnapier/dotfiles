@@ -21,6 +21,7 @@ himalaya	1.1.0	https://github.com/pimalaya/himalaya.git#85988da4
 jaq	2.3.0	crates.io
 module	0.1.0	/home/will/dotfiles/rust-projects/module
 nu	0.107.0	crates.io
+practiceforge	0.1.0	/home/will/dotfiles/rust-projects/practiceforge
 ripgrep	14.1.1	crates.io
 sd	1.0.0	crates.io
 skill-eval	0.1.0	/home/will/dotfiles/rust-projects/skill-eval
