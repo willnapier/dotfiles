@@ -980,12 +980,18 @@ pub struct SessionQuery {
     pub date: Option<String>,
 }
 
+fn default_true() -> bool { true }
+
 #[derive(Deserialize)]
 pub struct GenerateRequest {
     pub client_id: String,
     pub observation: String,
     #[serde(default)]
     pub model: Option<String>,
+    /// Whether to apply Prompt-Rail grounding constraints. Default true.
+    /// Pass false to generate the no-rail variant for A/B analysis.
+    #[serde(default = "default_true")]
+    pub with_rail: bool,
 }
 
 #[derive(Serialize)]
@@ -1014,6 +1020,9 @@ pub struct LogPairRequest {
     /// "q4", "q8", or null (both rejected)
     #[serde(default)]
     pub accepted: Option<String>,
+    /// Whether Prompt-Rail was active for this pair. Default true.
+    #[serde(default = "default_true")]
+    pub prompt_rail: bool,
 }
 
 /// One row in ~/Clinical/comparisons.jsonl. Mirrors the CLI schema
@@ -1033,6 +1042,7 @@ struct ComparisonEntry {
     regen_reasons: Vec<String>,
     generation_secs: f64,
     accepted: Option<bool>,
+    prompt_rail: bool,
 }
 
 #[derive(Serialize)]
@@ -1175,6 +1185,7 @@ pub async fn generate_note_stream(
     // that just outputs the prompt without generating. We pipe observation via env var.
     let client_id = req.client_id.clone();
     let observation = req.observation.clone();
+    let with_rail = req.with_rail;
 
     // Load inference config
     let config = crate::config::load_config();
@@ -1194,7 +1205,8 @@ pub async fn generate_note_stream(
     });
 
     // Build the prompt using the clinical binary (captures client context, summary, modality)
-    let prompt_output = tokio::process::Command::new("clinical")
+    let mut prompt_cmd = tokio::process::Command::new("clinical");
+    prompt_cmd
         .arg("note")
         .arg(&client_id)
         .arg(&observation)
@@ -1202,9 +1214,11 @@ pub async fn generate_note_stream(
         .arg("--yes")
         .env("CLINICAL_PROMPT_ONLY", "1")
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .await
+        .stderr(std::process::Stdio::piped());
+    if !with_rail {
+        prompt_cmd.env("CLINICAL_NO_PROMPT_RAIL", "1");
+    }
+    let prompt_output = prompt_cmd.output().await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to build prompt: {}", e)))?;
 
     // If CLINICAL_PROMPT_ONLY isn't supported, fall back to using the observation directly
@@ -1213,7 +1227,7 @@ pub async fn generate_note_stream(
         String::from_utf8_lossy(&prompt_output.stdout).to_string()
     } else {
         // Fallback: build a basic prompt with observation + system instructions
-        build_fallback_prompt(&client_id, &observation)
+        build_fallback_prompt(&client_id, &observation, with_rail)
     };
 
     // Build the system prompt from modality-act.md + faithfulness-prompt.md
@@ -1303,7 +1317,7 @@ fn load_system_prompt() -> String {
 }
 
 /// Build a basic prompt when the clinical binary doesn't support --prompt-only.
-fn build_fallback_prompt(client_id: &str, observation: &str) -> String {
+fn build_fallback_prompt(client_id: &str, observation: &str, with_rail: bool) -> String {
     let clinical_root = crate::config::clinical_root();
     let client_dir = clinical_root.join("clients").join(client_id);
 
@@ -1352,27 +1366,29 @@ fn build_fallback_prompt(client_id: &str, observation: &str) -> String {
         prompt.push_str("\n\n");
     }
 
-    // Prompt-Rail: grounding constraints to prevent confabulation
-    let obs_lower = observation.to_lowercase();
-    let mut absences = Vec::new();
-    if !obs_lower.contains("homework") && !obs_lower.contains("between-session") && !obs_lower.contains("task") {
-        absences.push("No homework or between-session tasks were discussed");
-    }
-    if !obs_lower.contains("metaphor") && !obs_lower.contains("exercise") && !obs_lower.contains("experiential") {
-        absences.push("No specific metaphors or experiential exercises were used");
-    }
-    if !obs_lower.contains("risk") && !obs_lower.contains("suicid") && !obs_lower.contains("harm") {
-        absences.push("No risk factors were noted — use brief default risk statement");
-    }
-
-    if !absences.is_empty() {
-        prompt.push_str("\nGROUNDING CONSTRAINTS:\n");
-        for a in &absences {
-            prompt.push_str("- ");
-            prompt.push_str(a);
-            prompt.push('\n');
+    // Prompt-Rail: grounding constraints to prevent confabulation.
+    // Skipped when with_rail=false (norail A/B variant).
+    if with_rail {
+        let obs_lower = observation.to_lowercase();
+        let mut absences = Vec::new();
+        if !obs_lower.contains("homework") && !obs_lower.contains("between-session") && !obs_lower.contains("task") {
+            absences.push("No homework or between-session tasks were discussed");
         }
-        prompt.push_str("Do not invent details not present in the observation.\n\n");
+        if !obs_lower.contains("metaphor") && !obs_lower.contains("exercise") && !obs_lower.contains("experiential") {
+            absences.push("No specific metaphors or experiential exercises were used");
+        }
+        if !obs_lower.contains("risk") && !obs_lower.contains("suicid") && !obs_lower.contains("harm") {
+            absences.push("No risk factors were noted — use brief default risk statement");
+        }
+        if !absences.is_empty() {
+            prompt.push_str("\nGROUNDING CONSTRAINTS:\n");
+            for a in &absences {
+                prompt.push_str("- ");
+                prompt.push_str(a);
+                prompt.push('\n');
+            }
+            prompt.push_str("Do not invent details not present in the observation.\n\n");
+        }
     }
 
     prompt.push_str("Today's observation:\n");
@@ -1455,6 +1471,7 @@ pub async fn log_pair(
         regen_reasons: Vec::new(),
         generation_secs: req.q4_generation_secs,
         accepted: Some(q4_accepted),
+        prompt_rail: req.prompt_rail,
     };
     let q8_entry = ComparisonEntry {
         timestamp: now,
@@ -1469,6 +1486,7 @@ pub async fn log_pair(
         regen_reasons: Vec::new(),
         generation_secs: req.q8_generation_secs,
         accepted: Some(q8_accepted),
+        prompt_rail: req.prompt_rail,
     };
 
     use tokio::io::AsyncWriteExt;

@@ -1219,6 +1219,8 @@ const clinicCompareState = {
   observation: '',
   q4: { note: '', secs: 0, done: false },
   q8: { note: '', secs: 0, done: false },
+  q4_norail: { note: '', secs: 0, done: false },
+  q8_norail: { note: '', secs: 0, done: false },
 };
 
 function clinicCompareReset() {
@@ -1226,6 +1228,8 @@ function clinicCompareReset() {
   clinicCompareState.observation = '';
   clinicCompareState.q4 = { note: '', secs: 0, done: false };
   clinicCompareState.q8 = { note: '', secs: 0, done: false };
+  clinicCompareState.q4_norail = { note: '', secs: 0, done: false };
+  clinicCompareState.q8_norail = { note: '', secs: 0, done: false };
   document.getElementById('clinic-compare-wrap').style.display = 'none';
   for (const { key } of CLINIC_COMPARE_MODELS) {
     const text = document.getElementById('clinic-compare-text-' + key);
@@ -1240,6 +1244,45 @@ function clinicCompareReset() {
   document.getElementById('clinic-compare-global-actions').style.display = 'none';
   document.getElementById('clinic-compare-generate-btn').disabled = false;
   document.getElementById('clinic-generate-btn').disabled = false;
+}
+
+// Fire a generate-stream request silently (no UI update) and store the result
+// in clinicCompareState[stateKey]. Used for norail background variants.
+async function clinicCompareStreamSilent(stateKey, modelId) {
+  const start = performance.now();
+  try {
+    const resp = await fetch('/api/generate-stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: S.clinicSelectedId,
+        observation: clinicCompareState.observation,
+        model: modelId,
+        with_rail: false,
+      }),
+    });
+    if (!resp.ok) { clinicCompareState[stateKey] = { note: '', secs: 0, done: true }; return; }
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '', collected = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const data = line.slice(6);
+        if (data.startsWith('[DONE]')) continue;
+        collected += data;
+      }
+    }
+    const elapsed = (performance.now() - start) / 1000;
+    clinicCompareState[stateKey] = { note: collected, secs: elapsed, done: true };
+  } catch (err) {
+    clinicCompareState[stateKey] = { note: '', secs: 0, done: true };
+  }
 }
 
 async function clinicCompareStreamOne(variantKey, modelId) {
@@ -1310,9 +1353,10 @@ async function clinicCompareGenerate() {
   document.getElementById('clinic-compare-wrap').style.display = '';
   document.getElementById('clinic-compare-generate-btn').disabled = true;
   document.getElementById('clinic-generate-btn').disabled = true;
-  // Reset panes to clean state for this run
+  // Reset panes to clean state for this run (including hidden norail variants)
   for (const { key } of CLINIC_COMPARE_MODELS) {
     clinicCompareState[key] = { note: '', secs: 0, done: false };
+    clinicCompareState[key + '_norail'] = { note: '', secs: 0, done: false };
     const pane = document.querySelector('.clinic-compare-pane[data-variant="' + key + '"]');
     if (pane) pane.removeAttribute('data-selected');
     const actions = document.getElementById('clinic-compare-actions-' + key);
@@ -1320,34 +1364,50 @@ async function clinicCompareGenerate() {
   }
   document.getElementById('clinic-compare-global-actions').style.display = 'none';
 
-  await Promise.all(CLINIC_COMPARE_MODELS.map(m => clinicCompareStreamOne(m.key, m.id)));
+  // Fire 4 parallel streams: Q4+rail, Q8+rail (visible) + Q4+norail, Q8+norail (silent background)
+  await Promise.all([
+    ...CLINIC_COMPARE_MODELS.map(m => clinicCompareStreamOne(m.key, m.id)),
+    ...CLINIC_COMPARE_MODELS.map(m => clinicCompareStreamSilent(m.key + '_norail', m.id)),
+  ]);
 
   // Both done — show reject-both / cancel
   document.getElementById('clinic-compare-global-actions').style.display = '';
 }
 
 async function clinicCompareLogPair(acceptedVariant /* 'q4' | 'q8' | null */) {
-  try {
-    const resp = await fetch('/api/log-pair', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        client_id: S.clinicSelectedId,
-        observation: clinicCompareState.observation,
-        q4_note: clinicCompareState.q4.note,
-        q4_generation_secs: clinicCompareState.q4.secs,
-        q8_note: clinicCompareState.q8.note,
-        q8_generation_secs: clinicCompareState.q8.secs,
-        accepted: acceptedVariant,
-      }),
-    });
-    if (!resp.ok) {
-      const t = await resp.text();
-      console.error('log-pair failed:', t);
-    }
-  } catch (e) {
-    console.error('log-pair error:', e);
-  }
+  // Log two pairs: rail-ON (with accepted decision) + rail-OFF (always accepted:null — user never saw it)
+  const pairs = [
+    {
+      client_id: S.clinicSelectedId,
+      observation: clinicCompareState.observation,
+      q4_note: clinicCompareState.q4.note,
+      q4_generation_secs: clinicCompareState.q4.secs,
+      q8_note: clinicCompareState.q8.note,
+      q8_generation_secs: clinicCompareState.q8.secs,
+      accepted: acceptedVariant,
+      prompt_rail: true,
+    },
+    {
+      client_id: S.clinicSelectedId,
+      observation: clinicCompareState.observation,
+      q4_note: clinicCompareState.q4_norail.note,
+      q4_generation_secs: clinicCompareState.q4_norail.secs,
+      q8_note: clinicCompareState.q8_norail.note,
+      q8_generation_secs: clinicCompareState.q8_norail.secs,
+      accepted: null,
+      prompt_rail: false,
+    },
+  ];
+  await Promise.all(pairs.map(async p => {
+    try {
+      const resp = await fetch('/api/log-pair', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(p),
+      });
+      if (!resp.ok) console.error('log-pair failed (rail=' + p.prompt_rail + '):', await resp.text());
+    } catch (e) { console.error('log-pair error:', e); }
+  }));
 }
 
 async function clinicCompareAccept(variant) {
