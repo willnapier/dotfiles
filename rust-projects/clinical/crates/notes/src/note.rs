@@ -757,17 +757,17 @@ pub fn run(
 // ---------------------------------------------------------------------------
 
 /// Internal: generate a note with a specific model, run faithfulness, return result.
-struct GeneratedComparison {
-    model: String,
-    note: String,
-    attempts: usize,
-    hard_failures: usize,
-    soft_flags: Vec<String>,
-    regen_reasons: Vec<String>,
-    generation_secs: f64,
+pub(crate) struct GeneratedComparison {
+    pub model: String,
+    pub note: String,
+    pub attempts: usize,
+    pub hard_failures: usize,
+    pub soft_flags: Vec<String>,
+    pub regen_reasons: Vec<String>,
+    pub generation_secs: f64,
 }
 
-fn generate_one(
+pub(crate) fn generate_one(
     _id: &str,
     observation: &str,
     model: &str,

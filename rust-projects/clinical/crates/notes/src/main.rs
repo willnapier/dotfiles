@@ -235,6 +235,12 @@ enum Commands {
         /// Generate and display but do NOT save to client files
         #[arg(long)]
         no_save: bool,
+
+        /// Generate Q4 and Q8 per observation for side-by-side review.
+        /// All attempts are logged to ~/Clinical/comparisons.jsonl.
+        /// In the review file, delete unwanted variants — keep one per client.
+        #[arg(long)]
+        compare: bool,
     },
 
     /// Send a letter: secure link to recipient + file to TM3
@@ -471,7 +477,7 @@ fn main() -> Result<()> {
                 import::import_from_tm3(&id, dry_run)
             }
         }
-        Commands::NotesBatch { file, no_save } => batch::run(&file, no_save),
+        Commands::NotesBatch { file, no_save, compare } => batch::run(&file, no_save, compare),
         Commands::Send {
             client_id,
             pdf,
