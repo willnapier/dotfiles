@@ -1198,6 +1198,208 @@ function clinicClearComparisons() {
   renderClinicComparisons();
 }
 
+// =========================================================================
+// Side-by-side compare (Q4 vs Q8 parallel streaming)
+// =========================================================================
+//
+// Fires two /api/generate-stream requests in parallel — one per model.
+// Each streams into its own textarea. When both are done the user picks
+// one (or rejects both). The chosen note goes to /api/save-note; both
+// notes + the decision go to /api/log-pair which appends to
+// ~/Clinical/comparisons.jsonl.
+
+const CLINIC_COMPARE_MODELS = [
+  { key: 'q4', id: 'clinical-voice-q4' },
+  { key: 'q8', id: 'clinical-voice-q8' },
+];
+
+// Per-run state — reset at the start of every clinicCompareGenerate().
+const clinicCompareState = {
+  active: false,
+  observation: '',
+  q4: { note: '', secs: 0, done: false },
+  q8: { note: '', secs: 0, done: false },
+};
+
+function clinicCompareReset() {
+  clinicCompareState.active = false;
+  clinicCompareState.observation = '';
+  clinicCompareState.q4 = { note: '', secs: 0, done: false };
+  clinicCompareState.q8 = { note: '', secs: 0, done: false };
+  document.getElementById('clinic-compare-wrap').style.display = 'none';
+  for (const { key } of CLINIC_COMPARE_MODELS) {
+    const text = document.getElementById('clinic-compare-text-' + key);
+    const status = document.getElementById('clinic-compare-status-' + key);
+    const actions = document.getElementById('clinic-compare-actions-' + key);
+    const pane = document.querySelector('.clinic-compare-pane[data-variant="' + key + '"]');
+    if (text) text.value = '';
+    if (status) { status.textContent = ''; status.classList.remove('streaming'); }
+    if (actions) actions.style.display = 'none';
+    if (pane) pane.removeAttribute('data-selected');
+  }
+  document.getElementById('clinic-compare-global-actions').style.display = 'none';
+  document.getElementById('clinic-compare-generate-btn').disabled = false;
+  document.getElementById('clinic-generate-btn').disabled = false;
+}
+
+async function clinicCompareStreamOne(variantKey, modelId) {
+  const text = document.getElementById('clinic-compare-text-' + variantKey);
+  const status = document.getElementById('clinic-compare-status-' + variantKey);
+  const actions = document.getElementById('clinic-compare-actions-' + variantKey);
+
+  status.textContent = 'Generating...';
+  status.classList.add('streaming');
+  text.value = '';
+
+  const start = performance.now();
+  try {
+    const resp = await fetch('/api/generate-stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: S.clinicSelectedId,
+        observation: clinicCompareState.observation,
+        model: modelId,
+      }),
+    });
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw new Error(errText || ('HTTP ' + resp.status));
+    }
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const data = line.slice(6);
+        if (data.startsWith('[DONE]')) continue;
+        text.value += data;
+        text.scrollTop = text.scrollHeight;
+      }
+    }
+    const elapsed = (performance.now() - start) / 1000;
+    clinicCompareState[variantKey] = { note: text.value, secs: elapsed, done: true };
+    status.classList.remove('streaming');
+    status.textContent = 'Complete — ' + elapsed.toFixed(1) + 's';
+    actions.style.display = '';
+  } catch (err) {
+    status.classList.remove('streaming');
+    status.textContent = 'Error';
+    text.value = '[' + variantKey + ' failed: ' + String(err) + ']';
+    clinicCompareState[variantKey] = { note: '', secs: 0, done: true };
+  }
+}
+
+async function clinicCompareGenerate() {
+  if (clinicCompareState.active) return;
+  if (!S.clinicSelectedId) { setClinicStatus('Select a client first'); return; }
+  const obs = document.getElementById('clinic-observation').value.trim();
+  if (!obs) { setClinicStatus('Write an observation first'); return; }
+
+  clinicCompareState.active = true;
+  clinicCompareState.observation = obs;
+
+  // Hide the single-model generate output (if it was open)
+  document.getElementById('clinic-generated-wrap').style.display = 'none';
+  document.getElementById('clinic-compare-wrap').style.display = '';
+  document.getElementById('clinic-compare-generate-btn').disabled = true;
+  document.getElementById('clinic-generate-btn').disabled = true;
+  // Reset panes to clean state for this run
+  for (const { key } of CLINIC_COMPARE_MODELS) {
+    clinicCompareState[key] = { note: '', secs: 0, done: false };
+    const pane = document.querySelector('.clinic-compare-pane[data-variant="' + key + '"]');
+    if (pane) pane.removeAttribute('data-selected');
+    const actions = document.getElementById('clinic-compare-actions-' + key);
+    if (actions) actions.style.display = 'none';
+  }
+  document.getElementById('clinic-compare-global-actions').style.display = 'none';
+
+  await Promise.all(CLINIC_COMPARE_MODELS.map(m => clinicCompareStreamOne(m.key, m.id)));
+
+  // Both done — show reject-both / cancel
+  document.getElementById('clinic-compare-global-actions').style.display = '';
+}
+
+async function clinicCompareLogPair(acceptedVariant /* 'q4' | 'q8' | null */) {
+  try {
+    const resp = await fetch('/api/log-pair', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: S.clinicSelectedId,
+        observation: clinicCompareState.observation,
+        q4_note: clinicCompareState.q4.note,
+        q4_generation_secs: clinicCompareState.q4.secs,
+        q8_note: clinicCompareState.q8.note,
+        q8_generation_secs: clinicCompareState.q8.secs,
+        accepted: acceptedVariant,
+      }),
+    });
+    if (!resp.ok) {
+      const t = await resp.text();
+      console.error('log-pair failed:', t);
+    }
+  } catch (e) {
+    console.error('log-pair error:', e);
+  }
+}
+
+async function clinicCompareAccept(variant) {
+  if (!S.clinicSelectedId) return;
+  // Use the (possibly edited) textarea value, not the stored original
+  const text = document.getElementById('clinic-compare-text-' + variant);
+  const noteText = text ? text.value.trim() : '';
+  if (!noteText) { setClinicStatus('Chosen variant is empty'); return; }
+  // Keep state in sync with any last-minute edits before logging
+  clinicCompareState[variant].note = noteText;
+
+  // Visual selection
+  const pane = document.querySelector('.clinic-compare-pane[data-variant="' + variant + '"]');
+  if (pane) pane.setAttribute('data-selected', 'true');
+
+  // Disable all buttons while saving
+  document.querySelectorAll('.clinic-compare-actions button, #clinic-compare-global-actions button').forEach(b => b.disabled = true);
+
+  setClinicStatus('Saving ' + variant.toUpperCase() + '...');
+  try {
+    const saveResp = await fetch('/api/save-note', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id: S.clinicSelectedId, note_text: noteText }),
+    });
+    if (!saveResp.ok) throw new Error('save HTTP ' + saveResp.status);
+    const saveResult = await saveResp.json();
+    if (!saveResult.ok) throw new Error(saveResult.error || 'Save failed');
+
+    await clinicCompareLogPair(variant);
+
+    setClinicStatus(variant.toUpperCase() + ' saved — both logged');
+    clinicSetStatus(S.clinicSelectedId, 'done');
+    clinicCompareReset();
+  } catch (e) {
+    setClinicStatus('Save failed: ' + String(e));
+    document.querySelectorAll('.clinic-compare-actions button, #clinic-compare-global-actions button').forEach(b => b.disabled = false);
+  }
+}
+
+async function clinicCompareRejectBoth() {
+  if (!confirm('Reject both variants? Both will be logged to comparisons.jsonl as rejected.')) return;
+  await clinicCompareLogPair(null);
+  setClinicStatus('Both rejected (logged)');
+  clinicCompareReset();
+}
+
+function clinicCompareCancel() {
+  clinicCompareReset();
+  setClinicStatus('Comparison cancelled (not logged)');
+}
+
 // --- Client status management ---
 function clinicSetStatus(clientId, newStatus) {
   if (!S.clinicSession) return;
