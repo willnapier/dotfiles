@@ -331,11 +331,18 @@ pub fn layer1_string_match(
         .map(|sentence| {
             let norm_sent = normalize(sentence);
 
-            // Check quoted text first — fabricated quotes are hard failures
+            // Check quoted text first — fabricated quotes are hard failures.
+            // Floor at 5 words: sub-5-word quotes often differ from source by
+            // dropped/inserted stopwords (e.g., "not worthy enough" vs
+            // "not feeling worthy enough"). Exact substring match can't handle
+            // those paraphrases, and regen produces the same paraphrase again,
+            // wasting 3 LLM calls. Let short quotes fall through to Layer 3
+            // (embeddings) which correctly scores semantic similarity.
+            // Real confabulation traps are long (8-10 words) — still caught.
             let quotes = extract_quotes(sentence);
             for quote in &quotes {
                 let norm_quote = normalize(quote);
-                if norm_quote.split_whitespace().count() >= 3
+                if norm_quote.split_whitespace().count() >= 5
                     && !source.contains(&norm_quote)
                     && !is_clinical_term(&norm_quote)
                 {
