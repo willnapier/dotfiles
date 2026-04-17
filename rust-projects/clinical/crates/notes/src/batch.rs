@@ -659,4 +659,67 @@ Explored the function of avoidance behaviours.
         let result = parse_batch_file("no headers here");
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_parse_compare_review_both_variants_kept() {
+        let input = "\
+# Batch Review
+# Delete one variant per client.
+
+## CT71 — q4 [12s, 1 attempt]
+
+### 2026-04-17
+
+Body of q4 note.
+
+---
+
+## CT71 — q8 [11s, 1 attempt]
+
+### 2026-04-17
+
+Body of q8 note.
+
+---
+";
+        let result = parse_compare_review(input).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].0, "CT71");
+        assert_eq!(result[0].1, "q4");
+        assert!(result[0].2.contains("Body of q4"));
+        assert_eq!(result[1].0, "CT71");
+        assert_eq!(result[1].1, "q8");
+        assert!(result[1].2.contains("Body of q8"));
+    }
+
+    #[test]
+    fn test_parse_compare_review_one_variant_kept() {
+        let input = "\
+# Batch Review
+
+## CT71 — q8 [11s, 1 attempt]
+
+### 2026-04-17
+
+Only q8 survived.
+
+---
+";
+        let result = parse_compare_review(input).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, "CT71");
+        assert_eq!(result[0].1, "q8");
+        assert!(result[0].2.contains("Only q8"));
+    }
+
+    #[test]
+    fn test_parse_compare_review_none_kept() {
+        let input = "\
+# Batch Review
+
+<!-- everything deleted -->
+";
+        let result = parse_compare_review(input).unwrap();
+        assert!(result.is_empty());
+    }
 }
