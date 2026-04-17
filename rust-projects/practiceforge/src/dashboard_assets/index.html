@@ -59,6 +59,54 @@
                     <button id="generate-btn" class="btn btn-primary" disabled>
                         Generate Note
                     </button>
+                    <button id="compare-generate-btn" class="btn btn-primary" disabled title="Generate Q4 and Q8 side-by-side for comparison">
+                        Compare Q4 &amp; Q8
+                    </button>
+                </div>
+            </section>
+
+            <!-- Side-by-side compare (Q4 vs Q8 parallel generation) -->
+            <section id="compare-generate-section" class="card" hidden>
+                <div class="note-header">
+                    <h3>Compare: Q4 &amp; Q8</h3>
+                    <button id="compare-cancel-btn" class="btn btn-reject">Cancel</button>
+                </div>
+                <div class="compare-generate-grid">
+                    <div class="compare-pane" data-variant="q4">
+                        <div class="compare-pane-header">
+                            <span class="compare-pane-label">Q4</span>
+                            <span class="compare-pane-status status-indicator"></span>
+                        </div>
+                        <pre class="compare-pane-output note-output"></pre>
+                        <div class="compare-pane-actions form-actions" hidden>
+                            <button class="btn btn-accept" data-action="accept" data-variant="q4">Accept Q4 &amp; Save</button>
+                            <button class="btn btn-edit" data-action="edit" data-variant="q4">Edit Q4</button>
+                        </div>
+                    </div>
+                    <div class="compare-pane" data-variant="q8">
+                        <div class="compare-pane-header">
+                            <span class="compare-pane-label">Q8</span>
+                            <span class="compare-pane-status status-indicator"></span>
+                        </div>
+                        <pre class="compare-pane-output note-output"></pre>
+                        <div class="compare-pane-actions form-actions" hidden>
+                            <button class="btn btn-accept" data-action="accept" data-variant="q8">Accept Q8 &amp; Save</button>
+                            <button class="btn btn-edit" data-action="edit" data-variant="q8">Edit Q8</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-actions compare-global-actions" hidden>
+                    <button id="compare-reject-btn" class="btn btn-reject">Reject Both (log as rejected)</button>
+                </div>
+            </section>
+
+            <!-- Edit-a-variant pane (replaces one side during edit) -->
+            <section id="compare-edit-section" class="card" hidden>
+                <h3>Edit <span id="compare-edit-label"></span></h3>
+                <textarea id="compare-edit-area" rows="20"></textarea>
+                <div class="form-actions">
+                    <button id="compare-edit-save-btn" class="btn btn-accept">Save Edited &amp; Accept</button>
+                    <button id="compare-edit-cancel-btn" class="btn btn-reject">Cancel Edit</button>
                 </div>
             </section>
 

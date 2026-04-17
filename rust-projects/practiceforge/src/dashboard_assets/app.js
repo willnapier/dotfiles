@@ -37,12 +37,34 @@ const comparePanels  = document.getElementById("compare-panels");
 const clearCompareBtn= document.getElementById("clear-compare-btn");
 const toast          = document.getElementById("toast");
 
+// Compare-generate (Q4/Q8 parallel) refs
+const compareGenerateBtn     = document.getElementById("compare-generate-btn");
+const compareGenerateSection = document.getElementById("compare-generate-section");
+const compareCancelBtn       = document.getElementById("compare-cancel-btn");
+const compareRejectBtn       = document.getElementById("compare-reject-btn");
+const compareEditSection     = document.getElementById("compare-edit-section");
+const compareEditLabel       = document.getElementById("compare-edit-label");
+const compareEditArea        = document.getElementById("compare-edit-area");
+const compareEditSaveBtn     = document.getElementById("compare-edit-save-btn");
+const compareEditCancelBtn   = document.getElementById("compare-edit-cancel-btn");
+
 // --- State ---
 
 let selectedClientId = null;
 let generatedNote    = "";
 let isGenerating     = false;
 let compareCount     = 0;
+
+// Compare-generate state
+let compareActive    = false;
+let compareObservation = "";
+// Per-variant generated notes + timing. Set as streams arrive; used for
+// save + log-pair call on accept/reject.
+const compareState = {
+    q4: { note: "", generation_secs: 0, done: false },
+    q8: { note: "", generation_secs: 0, done: false },
+};
+let compareEditingVariant = null;
 
 // Draft observations persist per client (survives client switching + page reload)
 const draftKey = (id) => `clinic-draft-${id}`;

@@ -499,6 +499,66 @@ textarea:focus {
     margin: 0;
 }
 
+/* --- Compare generate (Q4/Q8 side-by-side) --- */
+
+.compare-generate-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+}
+
+@media (max-width: 1000px) {
+    .compare-generate-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.compare-pane {
+    background: var(--note-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    min-width: 0; /* allow flex children to shrink below content width */
+}
+
+.compare-pane[data-selected="true"] {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+}
+
+.compare-pane-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.3rem;
+}
+
+.compare-pane-label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.compare-pane-output {
+    flex: 1 1 auto;
+    max-height: 500px;
+    overflow-y: auto;
+    margin: 0 0 0.5rem 0;
+}
+
+.compare-pane-actions {
+    margin-top: 0.25rem;
+    flex-wrap: wrap;
+}
+
+.compare-global-actions {
+    margin-top: 0.75rem;
+    justify-content: center;
+}
+
 /* --- Empty state --- */
 
 .empty-state {

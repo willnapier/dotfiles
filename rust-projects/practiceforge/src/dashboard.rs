@@ -86,6 +86,40 @@ struct SaveResponse {
     error: Option<String>,
 }
 
+/// Payload from the dashboard's compare view. Contains both variants
+/// plus the user's accepted choice (or None if rejected).
+#[derive(Deserialize)]
+struct LogPairRequest {
+    client_id: String,
+    observation: String,
+    q4_note: String,
+    q4_generation_secs: f64,
+    q8_note: String,
+    q8_generation_secs: f64,
+    /// "q4", "q8", or null (rejected)
+    #[serde(default)]
+    accepted: Option<String>,
+}
+
+/// One row appended to ~/Clinical/comparisons.jsonl.
+/// Mirrors `clinical::faithfulness::ComparisonEntry` schema so downstream
+/// analysis tools can consume both CLI-generated and dashboard-generated rows.
+#[derive(Serialize)]
+struct ComparisonEntry {
+    timestamp: String,
+    client_id: String,
+    model: String,
+    observation: String,
+    note: String,
+    hard_failures: usize,
+    soft_flags: usize,
+    flag_details: Vec<String>,
+    attempts: usize,
+    regen_reasons: Vec<String>,
+    generation_secs: f64,
+    accepted: Option<bool>,
+}
+
 // ---------------------------------------------------------------------------
 // Server entry point
 // ---------------------------------------------------------------------------
@@ -101,6 +135,7 @@ pub async fn serve(port: u16, open_browser: bool) -> anyhow::Result<()> {
         .route("/api/client/{id}", get(client_info))
         .route("/api/note", post(generate_note))
         .route("/api/note/save", post(save_note))
+        .route("/api/note/log-pair", post(log_pair))
         // Billing API — all routes return 404 if billing is disabled
         .route("/api/billing/config", get(billing_config))
         .route("/api/billing/invoices", get(billing_invoices))
@@ -451,6 +486,91 @@ async fn save_note(
             }),
         }))
     }
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/note/log-pair — record a Q4/Q8 comparison from the dashboard
+// ---------------------------------------------------------------------------
+//
+// The dashboard streams two variants in parallel (see app.js handleCompare).
+// After the user accepts one (or rejects both), this endpoint appends two
+// rows to ~/Clinical/comparisons.jsonl in the same schema the CLI writes.
+//
+// Faithfulness stats (hard_failures / soft_flags / attempts / regen_reasons)
+// are not tracked client-side — we pass zeroes/empties. Analysis tools that
+// want those can re-check offline against the stored note + observation.
+
+async fn log_pair(
+    Json(req): Json<LogPairRequest>,
+) -> Result<Json<SaveResponse>, (StatusCode, String)> {
+    if !req
+        .client_id
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '+')
+    {
+        return Err((StatusCode::BAD_REQUEST, "Invalid client ID".to_string()));
+    }
+
+    let home = dirs::home_dir()
+        .ok_or((StatusCode::INTERNAL_SERVER_ERROR, "No home dir".to_string()))?;
+    let path = home.join("Clinical/comparisons.jsonl");
+
+    let now = chrono::Local::now()
+        .format("%Y-%m-%dT%H:%M:%S")
+        .to_string();
+
+    let q4_accepted = req.accepted.as_deref() == Some("q4");
+    let q8_accepted = req.accepted.as_deref() == Some("q8");
+
+    let q4_entry = ComparisonEntry {
+        timestamp: now.clone(),
+        client_id: req.client_id.clone(),
+        model: "clinical-voice-q4".to_string(),
+        observation: req.observation.clone(),
+        note: req.q4_note,
+        hard_failures: 0,
+        soft_flags: 0,
+        flag_details: Vec::new(),
+        attempts: 0,
+        regen_reasons: Vec::new(),
+        generation_secs: req.q4_generation_secs,
+        accepted: Some(q4_accepted),
+    };
+    let q8_entry = ComparisonEntry {
+        timestamp: now,
+        client_id: req.client_id.clone(),
+        model: "clinical-voice-q8".to_string(),
+        observation: req.observation,
+        note: req.q8_note,
+        hard_failures: 0,
+        soft_flags: 0,
+        flag_details: Vec::new(),
+        attempts: 0,
+        regen_reasons: Vec::new(),
+        generation_secs: req.q8_generation_secs,
+        accepted: Some(q8_accepted),
+    };
+
+    use tokio::io::AsyncWriteExt;
+    let mut file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("open jsonl: {e}")))?;
+
+    for entry in [&q4_entry, &q8_entry] {
+        let line = serde_json::to_string(entry)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("serialize: {e}")))?;
+        file.write_all(line.as_bytes())
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("write jsonl: {e}")))?;
+        file.write_all(b"\n")
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("write jsonl: {e}")))?;
+    }
+
+    Ok(Json(SaveResponse { ok: true, error: None }))
 }
 
 // ---------------------------------------------------------------------------
