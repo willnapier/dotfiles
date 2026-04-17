@@ -1,0 +1,9 @@
+[Unit]
+Description=TM3 diary live capture — write PracticeForge session files
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/will/.local/bin/tm3-diary-capture --live
+StandardOutput=append:/home/will/.local/share/tm3-diary-capture.log
+StandardError=append:/home/will/.local/share/tm3-diary-capture.log

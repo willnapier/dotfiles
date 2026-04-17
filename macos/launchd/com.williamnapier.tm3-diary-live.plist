@@ -7,8 +7,9 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/williamnapier/.local/bin/tm3-diary-capture</string>
-        <string>--live</string>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>/Users/williamnapier/.local/bin/tm3-cookie-sync; /Users/williamnapier/.local/bin/tm3-diary-capture --live</string>
     </array>
 
     <!-- Hourly during clinic hours (07:00-20:00) -->

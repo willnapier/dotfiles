@@ -8,6 +8,7 @@ use anyhow::{bail, Context, Result};
 use headless_chrome::protocol::cdp::Network;
 use headless_chrome::{Browser, LaunchOptions};
 use serde::Deserialize;
+#[cfg(target_os = "macos")]
 use std::process::Command;
 use std::time::Duration;
 
@@ -236,6 +237,27 @@ pub fn scrape_diary(weeks_back: u32) -> Result<Vec<DaySchedule>> {
 }
 
 fn load_cookies() -> Result<Vec<Cookie>> {
+    // Try shared cookie file first (required on Linux, optional on macOS).
+    // Written by tm3-cookie-sync on Mac, synced to nimbini via Syncthing.
+    let cookie_file = dirs::home_dir()
+        .unwrap_or_default()
+        .join("Assistants/shared/.tm3-session-cookies.json");
+
+    if cookie_file.exists() {
+        let json = std::fs::read_to_string(&cookie_file)
+            .with_context(|| format!("Failed to read cookie file: {}", cookie_file.display()))?;
+        let json = json.trim();
+        if !json.is_empty() {
+            return serde_json::from_str(json)
+                .with_context(|| "Failed to parse cookie file — may be corrupt or empty");
+        }
+    }
+
+    load_cookies_from_keychain(&cookie_file.display().to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn load_cookies_from_keychain(_cookie_path: &str) -> Result<Vec<Cookie>> {
     let output = Command::new("security")
         .args([
             "find-generic-password",
@@ -254,4 +276,12 @@ fn load_cookies() -> Result<Vec<Cookie>> {
 
     let json = String::from_utf8(output.stdout)?.trim().to_string();
     Ok(serde_json::from_str(&json)?)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn load_cookies_from_keychain(cookie_path: &str) -> Result<Vec<Cookie>> {
+    bail!(
+        "No TM3 cookie file found at {}. On Mac, run 'tm3-upload login' then 'tm3-cookie-sync'.",
+        cookie_path
+    )
 }
