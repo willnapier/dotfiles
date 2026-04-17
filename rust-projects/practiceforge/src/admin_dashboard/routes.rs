@@ -70,6 +70,7 @@ pub fn build_router() -> Router {
         .route("/api/generate", post(handlers::generate_note))
         .route("/api/generate-stream", post(handlers::generate_note_stream))
         .route("/api/save-note", post(handlers::save_note))
+        .route("/api/log-pair", post(handlers::log_pair))
         .route("/api/client/{id}/notes", get(handlers::get_client_notes))
         .route("/api/client/{id}/metadata", get(handlers::get_client_metadata))
         .route("/api/inference/status", get(handlers::inference_status))

@@ -231,6 +231,21 @@
   .comp-clear-btn { padding: 3px 10px; background: rgba(220,50,47,0.1); border: 1px solid var(--border); border-radius: 3px; color: var(--fg-dim); cursor: pointer; font: inherit; font-size: 11px; }
   .comp-clear-btn:hover { border-color: var(--red); color: var(--red); }
 
+  /* Side-by-side compare (Q4/Q8 parallel streaming) */
+  #clinic-compare-wrap { margin-top: 14px; }
+  .clinic-compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
+  @media (max-width: 1100px) { .clinic-compare-grid { grid-template-columns: 1fr; } }
+  .clinic-compare-pane { background: var(--bg-hl); border: 1px solid var(--border); border-radius: 4px; padding: 8px 10px; display: flex; flex-direction: column; min-width: 0; }
+  .clinic-compare-pane[data-selected="true"] { border-color: var(--cyan); box-shadow: 0 0 0 1px var(--cyan); }
+  .clinic-compare-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .clinic-compare-label { font-size: 12px; font-weight: 600; color: var(--cyan); text-transform: uppercase; letter-spacing: 0.5px; }
+  .clinic-compare-status { font-size: 11px; color: var(--fg-dim); }
+  .clinic-compare-status.streaming { color: var(--cyan); }
+  .clinic-compare-textarea { width: 100%; min-height: 360px; padding: 6px 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; color: var(--fg); font: inherit; font-size: 12px; resize: vertical; outline: none; }
+  .clinic-compare-textarea:focus { border-color: var(--cyan); }
+  .clinic-compare-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  .clinic-compare-global-actions { display: flex; gap: 8px; margin-top: 10px; justify-content: center; }
+
   .clinic-status-msg { font-size: 11px; color: var(--fg-dim); margin-top: 8px; min-height: 18px; }
 
   @media (max-width: 768px) {
@@ -335,10 +350,11 @@
           <textarea class="clinic-textarea" id="clinic-observation" rows="5" placeholder="Session observation..."></textarea>
           <div class="clinic-generate-bar">
             <select id="clinic-model-picker">
-              <option value="Q4">Q4</option>
-              <option value="Q8">Q8</option>
+              <option value="clinical-voice-q4">Q4</option>
+              <option value="clinical-voice-q8">Q8</option>
             </select>
             <button class="clinic-generate-btn" id="clinic-generate-btn" onclick="clinicGenerate()">Generate</button>
+            <button class="clinic-generate-btn" id="clinic-compare-generate-btn" onclick="clinicCompareGenerate()" title="Stream Q4 and Q8 side-by-side">Compare Q4 &amp; Q8</button>
             <span class="clinic-spinner" id="clinic-spinner">Generating...</span>
           </div>
           <div id="clinic-generated-wrap" style="display:none">
@@ -348,6 +364,36 @@
               <button class="clinic-action-btn btn-accept" onclick="clinicAcceptNote()">Accept &amp; Save</button>
               <button class="clinic-action-btn btn-reject" onclick="clinicRejectNote()">Reject</button>
               <button class="clinic-action-btn btn-compare" onclick="clinicCompareNote()">Compare</button>
+            </div>
+          </div>
+          <!-- Side-by-side Q4/Q8 compare (parallel streaming) -->
+          <div id="clinic-compare-wrap" style="display:none">
+            <div class="section-head">Compare: Q4 &amp; Q8 (side-by-side)</div>
+            <div class="clinic-compare-grid">
+              <div class="clinic-compare-pane" data-variant="q4">
+                <div class="clinic-compare-header">
+                  <span class="clinic-compare-label">Q4</span>
+                  <span class="clinic-compare-status" id="clinic-compare-status-q4"></span>
+                </div>
+                <textarea class="clinic-compare-textarea" id="clinic-compare-text-q4" rows="16"></textarea>
+                <div class="clinic-compare-actions" id="clinic-compare-actions-q4" style="display:none">
+                  <button class="clinic-action-btn btn-accept" onclick="clinicCompareAccept('q4')">Accept Q4 &amp; Save</button>
+                </div>
+              </div>
+              <div class="clinic-compare-pane" data-variant="q8">
+                <div class="clinic-compare-header">
+                  <span class="clinic-compare-label">Q8</span>
+                  <span class="clinic-compare-status" id="clinic-compare-status-q8"></span>
+                </div>
+                <textarea class="clinic-compare-textarea" id="clinic-compare-text-q8" rows="16"></textarea>
+                <div class="clinic-compare-actions" id="clinic-compare-actions-q8" style="display:none">
+                  <button class="clinic-action-btn btn-accept" onclick="clinicCompareAccept('q8')">Accept Q8 &amp; Save</button>
+                </div>
+              </div>
+            </div>
+            <div class="clinic-compare-global-actions" id="clinic-compare-global-actions" style="display:none">
+              <button class="clinic-action-btn btn-reject" onclick="clinicCompareRejectBoth()">Reject Both (log as rejected)</button>
+              <button class="clinic-action-btn btn-reject" onclick="clinicCompareCancel()">Cancel (don't log)</button>
             </div>
           </div>
           <div class="clinic-comparisons" id="clinic-comparisons" style="display:none">
