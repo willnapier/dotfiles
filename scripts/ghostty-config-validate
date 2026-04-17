@@ -4,9 +4,27 @@
 
 GHOSTTY="/Applications/Ghostty.app/Contents/MacOS/ghostty"
 LOG="$HOME/.local/share/ghostty-config-validate.log"
+APP_SUPPORT_CONFIG="$HOME/Library/Application Support/com.mitchellh.ghostty/config"
+REAL_CONFIG="$HOME/.config/ghostty/config"
 
 if [ ! -x "$GHOSTTY" ]; then
     exit 0
+fi
+
+# Heal Application Support config. Ghostty auto-creates a template here on
+# macOS when it can't find a config, and that template has been corrupted by
+# stray keystrokes before (2025-12-05). If it exists as a regular file,
+# move it aside and re-link to the dotter-managed config.
+if [ -e "$APP_SUPPORT_CONFIG" ] && [ ! -L "$APP_SUPPORT_CONFIG" ]; then
+    TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
+    mv "$APP_SUPPORT_CONFIG" "${APP_SUPPORT_CONFIG}.regenerated-$(date +%Y%m%d-%H%M%S)"
+    ln -s "$REAL_CONFIG" "$APP_SUPPORT_CONFIG"
+    echo "$TIMESTAMP HEALED — Application Support config was a regular file, symlinked to $REAL_CONFIG" >> "$LOG"
+elif [ ! -e "$APP_SUPPORT_CONFIG" ]; then
+    mkdir -p "$(dirname "$APP_SUPPORT_CONFIG")"
+    ln -s "$REAL_CONFIG" "$APP_SUPPORT_CONFIG"
+    TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
+    echo "$TIMESTAMP HEALED — Application Support config was missing, symlinked to $REAL_CONFIG" >> "$LOG"
 fi
 
 ERROR=$("$GHOSTTY" +show-config 2>&1 >/dev/null)
