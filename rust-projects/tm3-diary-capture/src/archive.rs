@@ -97,9 +97,9 @@ pub fn write_dashboard_session(
     date: &chrono::NaiveDate,
     clients: &[SessionClient],
 ) -> Result<()> {
-    let session_dir = dirs::home_dir()
-        .expect("no home dir")
-        .join(".local/share/clinical-dashboard");
+    let session_dir = dirs::data_local_dir()
+        .unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".local/share"))
+        .join("practiceforge");
     std::fs::create_dir_all(&session_dir)
         .with_context(|| format!("create session dir: {}", session_dir.display()))?;
 
