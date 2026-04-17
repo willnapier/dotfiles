@@ -194,10 +194,49 @@ const TRAINING_SYSTEM_PROMPT: &str =
 
 const TRAINING_USER_PROMPT: &str = "Write a session note for today's session.";
 
+/// Replace the client's first name with "Client" (and possessive forms) in a
+/// note's text. Used for anonymised training export — on-disk notes are
+/// unchanged; only the JSONL corpus sees the substitution.
+///
+/// Word-boundary matching prevents partial overlaps (e.g. "Emma" inside
+/// "Emmanuel"). Possessive forms are replaced first so "Emma's" becomes
+/// "Client's", not "Client" + stranded "'s".
+pub fn anonymise_first_name(note_text: &str, first_name: &str) -> String {
+    if first_name.trim().is_empty() {
+        return note_text.to_string();
+    }
+    let escaped = regex::escape(first_name);
+    // Possessive first — \b before the name, then literal 's (apostrophe breaks word boundary)
+    let possessive = Regex::new(&format!(r"\b{}'s", escaped)).unwrap();
+    // Bare name with word boundaries on both sides
+    let bare = Regex::new(&format!(r"\b{}\b", escaped)).unwrap();
+    let step1 = possessive.replace_all(note_text, "Client's").to_string();
+    bare.replace_all(&step1, "Client").to_string()
+}
+
+/// Look up a client's first name from identity.yaml. Returns empty string
+/// if the file is missing, malformed, or has no name field.
+fn client_first_name(client_id: &str) -> String {
+    let path = client::identity_path(client_id);
+    if !path.exists() {
+        return String::new();
+    }
+    let identity = match clinical_core::identity::load_identity(&path) {
+        Ok(i) => i,
+        Err(_) => return String::new(),
+    };
+    let name = identity.name.unwrap_or_default();
+    name.split_whitespace().next().unwrap_or("").to_string()
+}
+
 /// Run `clinical training export`.
 /// Outputs one JSONL line per eligible note, in the format used for
 /// voice model fine-tuning (messages array with system/user/assistant roles).
-pub fn export(output: Option<&str>, all: bool) -> Result<()> {
+///
+/// When `anonymise` is true, each client's first name (and possessive forms)
+/// is replaced with "Client" in the exported corpus. On-disk notes are not
+/// modified.
+pub fn export(output: Option<&str>, all: bool, anonymise: bool) -> Result<()> {
     let records = collect_all_notes()?;
     let last_ft = if all { None } else { last_finetune_date() };
 
@@ -227,8 +266,14 @@ pub fn export(output: Option<&str>, all: bool) -> Result<()> {
         })
         .collect();
 
+    // First-name cache so we don't re-parse identity.yaml for every note
+    let mut first_name_cache: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+
     let mut lines = Vec::new();
     let mut skipped = 0u32;
+    let mut anonymised_count = 0u32;
+    let mut missing_name = 0u32;
 
     for rec in &eligible {
         let content = match file_contents.get(&rec.client_id) {
@@ -247,11 +292,27 @@ pub fn export(output: Option<&str>, all: bool) -> Result<()> {
             }
         };
 
+        let final_note = if anonymise {
+            let first_name = first_name_cache
+                .entry(rec.client_id.clone())
+                .or_insert_with(|| client_first_name(&rec.client_id))
+                .clone();
+            if first_name.is_empty() {
+                missing_name += 1;
+                note_text
+            } else {
+                anonymised_count += 1;
+                anonymise_first_name(&note_text, &first_name)
+            }
+        } else {
+            note_text
+        };
+
         let entry = serde_json::json!({
             "messages": [
                 {"role": "system", "content": TRAINING_SYSTEM_PROMPT},
                 {"role": "user", "content": TRAINING_USER_PROMPT},
-                {"role": "assistant", "content": note_text}
+                {"role": "assistant", "content": final_note}
             ]
         });
 
@@ -270,6 +331,13 @@ pub fn export(output: Option<&str>, all: bool) -> Result<()> {
 
     if skipped > 0 {
         eprintln!("{} notes skipped (missing file or empty note).", skipped);
+    }
+
+    if anonymise {
+        eprintln!(
+            "Anonymised {} note(s); {} note(s) had no client name in identity.yaml.",
+            anonymised_count, missing_name
+        );
     }
 
     Ok(())
@@ -308,5 +376,60 @@ mod tests {
         assert!(results[0].1, "First note should be excluded");
         assert_eq!(results[1].0, "2026-01-22");
         assert!(!results[1].1, "Second note should be included");
+    }
+
+    #[test]
+    fn test_anonymise_bare_name() {
+        let note = "Emma attended today. Emma reported feeling stuck.";
+        assert_eq!(
+            anonymise_first_name(note, "Emma"),
+            "Client attended today. Client reported feeling stuck."
+        );
+    }
+
+    #[test]
+    fn test_anonymise_possessive() {
+        let note = "Emma's mood was low. Emma described Emma's brother.";
+        assert_eq!(
+            anonymise_first_name(note, "Emma"),
+            "Client's mood was low. Client described Client's brother."
+        );
+    }
+
+    #[test]
+    fn test_anonymise_word_boundary_protects_longer_names() {
+        // "Emmanuel" should NOT be anonymised when the client's first name is "Emma"
+        let note = "Emma referred to her friend Emmanuel.";
+        assert_eq!(
+            anonymise_first_name(note, "Emma"),
+            "Client referred to her friend Emmanuel."
+        );
+    }
+
+    #[test]
+    fn test_anonymise_leaves_other_names_intact() {
+        // Partner/family/referrer names stay — only the client's own first name changes
+        let note = "Emma discussed her husband David and Dr Sarah Smith (referrer).";
+        assert_eq!(
+            anonymise_first_name(note, "Emma"),
+            "Client discussed her husband David and Dr Sarah Smith (referrer)."
+        );
+    }
+
+    #[test]
+    fn test_anonymise_empty_first_name_is_noop() {
+        let note = "Some note body.";
+        assert_eq!(anonymise_first_name(note, ""), "Some note body.");
+        assert_eq!(anonymise_first_name(note, "   "), "Some note body.");
+    }
+
+    #[test]
+    fn test_anonymise_handles_apostrophe_edge_case() {
+        // "Emma's Emma" — both forms present
+        let note = "Emma's tone shifted when Emma paused.";
+        assert_eq!(
+            anonymise_first_name(note, "Emma"),
+            "Client's tone shifted when Client paused."
+        );
     }
 }
