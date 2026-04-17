@@ -171,7 +171,9 @@ fn main() -> Result<()> {
 
         // Write PracticeForge session file for this date (source of truth for clinic schedule)
         if !cli.dry_run {
-            let session_clients: Vec<archive::SessionClient> = schedule.appointments.iter().map(|appt| {
+            let mut all_appts: Vec<&_> = schedule.appointments.iter().collect();
+            all_appts.sort_by(|a, b| a.start_time.cmp(&b.start_time));
+            let session_clients: Vec<archive::SessionClient> = all_appts.iter().map(|appt| {
                 let (cid, name) = match &client_map {
                     Some(map) => match map.lookup(&appt.client_name) {
                         Some(id) => (id.to_string(), None),

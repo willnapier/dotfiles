@@ -1102,8 +1102,9 @@ pub async fn get_session(
     if path.exists() {
         let content = std::fs::read_to_string(&path)
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        let session: ClinicSession = serde_json::from_str(&content)
+        let mut session: ClinicSession = serde_json::from_str(&content)
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Invalid session JSON: {}", e)))?;
+        session.clients.sort_by(|a, b| a.time.cmp(&b.time));
         Ok(Json(session))
     } else {
         Ok(Json(ClinicSession {
