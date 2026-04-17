@@ -342,6 +342,12 @@ enum TrainingCommands {
         /// Export all eligible notes (ignore last fine-tune date)
         #[arg(long)]
         all: bool,
+
+        /// Replace each client's first name (and possessive forms) with "Client"
+        /// in the exported corpus. On-disk notes are untouched. Use this so the
+        /// fine-tuned LoRA doesn't encode specific client names in its weights.
+        #[arg(long)]
+        anonymise_client_first_name: bool,
     },
 }
 
@@ -453,8 +459,8 @@ fn main() -> Result<()> {
         Commands::Training { command } => match command {
             TrainingCommands::Count { all } => training::count(all),
             TrainingCommands::List { excluded } => training::list(excluded),
-            TrainingCommands::Export { output, all } => {
-                training::export(output.as_deref(), all)
+            TrainingCommands::Export { output, all, anonymise_client_first_name } => {
+                training::export(output.as_deref(), all, anonymise_client_first_name)
             }
         },
         Commands::NoteFinalise { id } => finalise::run(&id),
