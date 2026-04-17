@@ -115,9 +115,27 @@ function loadGeneratedNote(id) {
     compareBtn.addEventListener("click", handleCompare);
     clearCompareBtn.addEventListener("click", handleClearCompare);
 
+    // Compare-generate (parallel Q4/Q8) wiring
+    compareGenerateBtn.addEventListener("click", handleCompareGenerate);
+    compareCancelBtn.addEventListener("click", handleCompareCancel);
+    compareRejectBtn.addEventListener("click", handleCompareRejectBoth);
+    compareEditSaveBtn.addEventListener("click", handleCompareEditSave);
+    compareEditCancelBtn.addEventListener("click", handleCompareEditCancel);
+    // Per-pane buttons via delegation (data-action + data-variant)
+    compareGenerateSection.addEventListener("click", (e) => {
+        const btn = e.target.closest("button[data-action]");
+        if (!btn) return;
+        const variant = btn.dataset.variant;
+        const action = btn.dataset.action;
+        if (action === "accept") handleCompareAccept(variant);
+        else if (action === "edit") handleCompareEdit(variant);
+    });
+
     // Enable generate when observation has content + auto-save draft
     obsTextarea.addEventListener("input", () => {
-        generateBtn.disabled = obsTextarea.value.trim().length === 0 || isGenerating;
+        const hasText = obsTextarea.value.trim().length > 0;
+        generateBtn.disabled = !hasText || isGenerating;
+        compareGenerateBtn.disabled = !hasText || isGenerating || compareActive;
         if (selectedClientId) saveDraft(selectedClientId, obsTextarea.value);
     });
 
@@ -221,6 +239,10 @@ async function selectClient(id) {
     obsTextarea.value = draft;
     obsTextarea.focus();
     generateBtn.disabled = draft.trim().length === 0;
+    compareGenerateBtn.disabled = draft.trim().length === 0 || compareActive;
+
+    // If a compare session was active for a different client, cancel it
+    if (compareActive) compareResetState();
 
     // Restore generated note if one exists
     const savedNote = loadGeneratedNote(id);
@@ -427,6 +449,232 @@ function handleClearCompare() {
     comparePanels.innerHTML = "";
     compareSection.hidden = true;
     compareCount = 0;
+}
+
+// --- Compare-generate (Q4/Q8 in parallel) ---
+
+const COMPARE_MODELS = [
+    { key: "q4", id: "clinical-voice-q4", label: "Q4" },
+    { key: "q8", id: "clinical-voice-q8", label: "Q8" },
+];
+
+function compareResetState() {
+    compareActive = false;
+    compareObservation = "";
+    compareState.q4 = { note: "", generation_secs: 0, done: false };
+    compareState.q8 = { note: "", generation_secs: 0, done: false };
+    compareEditingVariant = null;
+    for (const { key } of COMPARE_MODELS) {
+        const pane = compareGenerateSection.querySelector(`.compare-pane[data-variant="${key}"]`);
+        if (!pane) continue;
+        pane.removeAttribute("data-selected");
+        pane.querySelector(".compare-pane-output").textContent = "";
+        pane.querySelector(".compare-pane-status").textContent = "";
+        pane.querySelector(".compare-pane-status").className = "compare-pane-status status-indicator";
+        pane.querySelector(".compare-pane-actions").hidden = true;
+    }
+    compareGenerateSection.querySelector(".compare-global-actions").hidden = true;
+    compareGenerateSection.hidden = true;
+}
+
+async function streamOneVariant(variantKey, modelId) {
+    const pane = compareGenerateSection.querySelector(`.compare-pane[data-variant="${variantKey}"]`);
+    const out = pane.querySelector(".compare-pane-output");
+    const status = pane.querySelector(".compare-pane-status");
+
+    status.textContent = "Generating";
+    status.className = "compare-pane-status status-indicator streaming";
+    out.textContent = "";
+
+    const start = performance.now();
+    try {
+        const resp = await fetch("/api/note", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                client_id: selectedClientId,
+                observation: compareObservation,
+                model: modelId,
+            }),
+        });
+        if (!resp.ok) {
+            const errText = await resp.text();
+            throw new Error(errText || `HTTP ${resp.status}`);
+        }
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let noteText = "";
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = decoder.decode(value, { stream: true });
+            noteText += chunk;
+            out.textContent = noteText;
+            out.scrollTop = out.scrollHeight;
+        }
+        const elapsed = (performance.now() - start) / 1000;
+        compareState[variantKey] = { note: noteText, generation_secs: elapsed, done: true };
+        status.textContent = `Complete — ${elapsed.toFixed(1)}s`;
+        status.className = "compare-pane-status status-indicator";
+        pane.querySelector(".compare-pane-actions").hidden = false;
+    } catch (err) {
+        status.textContent = "Error";
+        status.className = "compare-pane-status status-indicator";
+        out.textContent = `[${variantKey} failed: ${err.message}]`;
+        compareState[variantKey] = { note: "", generation_secs: 0, done: true };
+    }
+}
+
+async function handleCompareGenerate() {
+    if (compareActive || !selectedClientId) return;
+    const observation = obsTextarea.value.trim();
+    if (!observation) return;
+
+    compareActive = true;
+    compareObservation = observation;
+    // Hide the single-model generate flow if it's showing
+    noteSection.hidden = true;
+    editSection.hidden = true;
+    compareGenerateSection.hidden = false;
+    compareEditSection.hidden = true;
+
+    // Reset any prior compare state (but keep `compareActive=true` above)
+    for (const { key } of COMPARE_MODELS) {
+        const pane = compareGenerateSection.querySelector(`.compare-pane[data-variant="${key}"]`);
+        if (!pane) continue;
+        pane.removeAttribute("data-selected");
+        pane.querySelector(".compare-pane-output").textContent = "";
+        pane.querySelector(".compare-pane-actions").hidden = true;
+    }
+    compareState.q4 = { note: "", generation_secs: 0, done: false };
+    compareState.q8 = { note: "", generation_secs: 0, done: false };
+
+    generateBtn.disabled = true;
+    compareGenerateBtn.disabled = true;
+
+    // Fire both streams in parallel. Each writes to its own pane.
+    await Promise.all(COMPARE_MODELS.map(m => streamOneVariant(m.key, m.id)));
+
+    // Both done — show the reject-both option
+    compareGenerateSection.querySelector(".compare-global-actions").hidden = false;
+}
+
+function handleCompareCancel() {
+    // User backed out before accepting anything. Do not log.
+    compareResetState();
+    generateBtn.disabled = obsTextarea.value.trim().length === 0;
+    compareGenerateBtn.disabled = obsTextarea.value.trim().length === 0;
+    showToast("Comparison cancelled — nothing logged");
+}
+
+async function logComparePair(acceptedVariant /* "q4" | "q8" | null */) {
+    try {
+        const resp = await fetch("/api/note/log-pair", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                client_id: selectedClientId,
+                observation: compareObservation,
+                q4_note: compareState.q4.note,
+                q4_generation_secs: compareState.q4.generation_secs,
+                q8_note: compareState.q8.note,
+                q8_generation_secs: compareState.q8.generation_secs,
+                accepted: acceptedVariant,
+            }),
+        });
+        if (!resp.ok) {
+            const errText = await resp.text();
+            console.error("log-pair failed:", errText);
+        }
+    } catch (err) {
+        console.error("log-pair error:", err);
+    }
+}
+
+async function handleCompareAccept(variant) {
+    if (!selectedClientId || !compareState[variant].done || !compareState[variant].note.trim()) return;
+
+    // Disable all action buttons
+    for (const btn of compareGenerateSection.querySelectorAll(".compare-pane-actions button")) {
+        btn.disabled = true;
+    }
+    compareRejectBtn.disabled = true;
+
+    try {
+        // 1) Save the chosen note to the client file
+        const saveResp = await fetch("/api/note/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                client_id: selectedClientId,
+                note: compareState[variant].note,
+            }),
+        });
+        if (!saveResp.ok) throw new Error(`save HTTP ${saveResp.status}`);
+        const saveResult = await saveResp.json();
+        if (!saveResult.ok) throw new Error(saveResult.error || "Save failed");
+
+        // 2) Log both variants (with accepted flag) to comparisons.jsonl
+        await logComparePair(variant);
+
+        showToast(`${variant.toUpperCase()} saved for ${selectedClientId}`);
+
+        // 3) Reset UI
+        compareResetState();
+        obsTextarea.value = "";
+        saveDraft(selectedClientId, "");
+        saveGeneratedNote(selectedClientId, "");
+        generateBtn.disabled = true;
+        compareGenerateBtn.disabled = true;
+    } catch (err) {
+        showToast("Save failed: " + err.message, true);
+        // Re-enable so the user can try again
+        for (const btn of compareGenerateSection.querySelectorAll(".compare-pane-actions button")) {
+            btn.disabled = false;
+        }
+        compareRejectBtn.disabled = false;
+    }
+}
+
+async function handleCompareRejectBoth() {
+    if (!confirm("Reject both variants? Both will still be logged to comparisons.jsonl.")) return;
+    await logComparePair(null);
+    showToast("Both variants rejected (logged)");
+    compareResetState();
+    generateBtn.disabled = obsTextarea.value.trim().length === 0;
+    compareGenerateBtn.disabled = obsTextarea.value.trim().length === 0;
+}
+
+function handleCompareEdit(variant) {
+    if (!compareState[variant].done || !compareState[variant].note.trim()) return;
+    compareEditingVariant = variant;
+    compareEditLabel.textContent = variant.toUpperCase();
+    compareEditArea.value = compareState[variant].note;
+    compareGenerateSection.hidden = true;
+    compareEditSection.hidden = false;
+    compareEditArea.focus();
+}
+
+async function handleCompareEditSave() {
+    if (!compareEditingVariant) return;
+    // Update stored note with edited text, then accept.
+    compareState[compareEditingVariant].note = compareEditArea.value;
+    compareEditSection.hidden = true;
+    compareGenerateSection.hidden = false;
+    // Update the pane display to reflect the edit
+    const pane = compareGenerateSection.querySelector(`.compare-pane[data-variant="${compareEditingVariant}"]`);
+    if (pane) {
+        pane.querySelector(".compare-pane-output").textContent = compareEditArea.value;
+    }
+    const variant = compareEditingVariant;
+    compareEditingVariant = null;
+    await handleCompareAccept(variant);
+}
+
+function handleCompareEditCancel() {
+    compareEditingVariant = null;
+    compareEditSection.hidden = true;
+    compareGenerateSection.hidden = false;
 }
 
 function resetNoteState() {
