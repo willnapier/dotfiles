@@ -115,7 +115,17 @@
   .clinic-date-nav { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
   .clinic-date-nav button { background: var(--bg-hl); border: 1px solid var(--border); border-radius: 3px; color: var(--fg); cursor: pointer; font: inherit; font-size: 12px; padding: 3px 8px; }
   .clinic-date-nav button:hover { border-color: var(--cyan); color: var(--cyan); }
-  .clinic-date-display { font-size: 12px; color: var(--fg-em); font-weight: 600; flex: 1; text-align: center; }
+  .mini-cal { width: 100%; font-size: 11px; margin-bottom: 8px; }
+  .mini-cal-header { display: flex; align-items: center; justify-content: space-between; padding: 2px 0 5px; }
+  .mini-cal-nav { background: none; border: none; color: var(--fg-dim); cursor: pointer; padding: 0 4px; font-size: 10px; line-height: 1; }
+  .mini-cal-nav:hover { color: var(--cyan); }
+  .mini-cal-title { font-weight: 600; color: var(--fg-em); font-size: 11px; }
+  .mini-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; }
+  .mini-cal-dow { text-align: center; color: var(--fg-dim); font-size: 10px; padding-bottom: 3px; }
+  .mini-cal-day { text-align: center; padding: 3px 1px; border-radius: 3px; cursor: pointer; color: var(--fg); }
+  .mini-cal-day:hover { background: var(--bg-hl); color: var(--cyan); }
+  .mini-cal-today { color: var(--yellow); font-weight: 600; }
+  .mini-cal-sel { background: var(--cyan) !important; color: var(--bg) !important; font-weight: 600; border-radius: 3px; }
   .clinic-inference { font-size: 11px; color: var(--fg-dim); display: flex; align-items: center; gap: 5px; }
   .clinic-inference .dot { font-size: 14px; line-height: 1; }
   .dot-green { color: var(--green); }
@@ -316,13 +326,12 @@
     <div class="clinic-layout">
       <div class="clinic-sidebar">
         <div class="clinic-sidebar-header">
+          <div id="clinic-mini-cal"></div>
           <div class="clinic-date-nav">
             <button onclick="clinicPrevDay()" title="Previous day">&#9664;</button>
             <button onclick="clinicToday()">Today</button>
             <button onclick="clinicNextDay()" title="Next day">&#9654;</button>
           </div>
-          <div class="clinic-date-display" id="clinic-date-display" onclick="clinicPickDate()" title="Click to pick a date" style="cursor:pointer"></div>
-          <input type="date" id="clinic-date-picker" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0" onchange="clinicPickDate_apply(this.value)">
           <div class="clinic-inference" id="clinic-inference">
             <span class="dot dot-red" id="clinic-inference-dot">&#9679;</span>
             <span>Inference</span>
@@ -533,6 +542,8 @@ const S = {
   calDate: new Date(),
   // Clinic tab
   clinicDate: new Date(),
+  calYear: new Date().getFullYear(),
+  calMonth: new Date().getMonth(),
   clinicSession: null,
   clinicClientIdx: -1,
   clinicSelectedId: null,
@@ -736,39 +747,79 @@ document.addEventListener('keydown', (e) => {
 // ============================================================================
 
 // --- Date navigation ---
-function clinicPickDate() {
-  const picker = document.getElementById('clinic-date-picker');
-  const y = S.clinicDate.getFullYear();
-  const m = String(S.clinicDate.getMonth() + 1).padStart(2, '0');
-  const d = String(S.clinicDate.getDate()).padStart(2, '0');
-  picker.value = y + '-' + m + '-' + d;
-  picker.style.pointerEvents = 'auto';
-  picker.showPicker();
-  picker.style.pointerEvents = 'none';
+function renderClinicMiniCal() {
+  const container = document.getElementById('clinic-mini-cal');
+  if (!container) return;
+  const sel = S.clinicDate;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const year = S.calYear;
+  const month = S.calMonth;
+  const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const firstDow = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const selInMonth = sel.getFullYear() === year && sel.getMonth() === month;
+  const todayInMonth = today.getFullYear() === year && today.getMonth() === month;
+  let h = '<div class="mini-cal">';
+  h += '<div class="mini-cal-header">';
+  h += '<button class="mini-cal-nav" onclick="clinicCalPrevMonth()">&#9664;</button>';
+  h += `<span class="mini-cal-title">${monthNames[month]} ${year}</span>`;
+  h += '<button class="mini-cal-nav" onclick="clinicCalNextMonth()">&#9654;</button>';
+  h += '</div><div class="mini-cal-grid">';
+  for (const d of ['Su','Mo','Tu','We','Th','Fr','Sa']) h += `<div class="mini-cal-dow">${d}</div>`;
+  for (let i = 0; i < firstDow; i++) h += '<div></div>';
+  for (let d = 1; d <= daysInMonth; d++) {
+    const isSel = selInMonth && sel.getDate() === d;
+    const isToday = todayInMonth && today.getDate() === d;
+    const cls = 'mini-cal-day' + (isSel ? ' mini-cal-sel' : '') + (isToday && !isSel ? ' mini-cal-today' : '');
+    const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    h += `<div class="${cls}" onclick="clinicPickDate_apply('${dateStr}')">${d}</div>`;
+  }
+  h += '</div></div>';
+  container.innerHTML = h;
+}
+
+function clinicCalPrevMonth() {
+  if (S.calMonth === 0) { S.calYear--; S.calMonth = 11; }
+  else S.calMonth--;
+  renderClinicMiniCal();
+}
+
+function clinicCalNextMonth() {
+  if (S.calMonth === 11) { S.calYear++; S.calMonth = 0; }
+  else S.calMonth++;
+  renderClinicMiniCal();
 }
 
 function clinicPickDate_apply(val) {
   if (!val) return;
   const parts = val.split('-');
   S.clinicDate = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+  S.calYear = S.clinicDate.getFullYear();
+  S.calMonth = S.clinicDate.getMonth();
   clinicDeselectClient();
   loadClinicSession();
 }
 
 function clinicPrevDay() {
   S.clinicDate.setDate(S.clinicDate.getDate() - 1);
+  S.calYear = S.clinicDate.getFullYear();
+  S.calMonth = S.clinicDate.getMonth();
   clinicDeselectClient();
   loadClinicSession();
 }
 
 function clinicNextDay() {
   S.clinicDate.setDate(S.clinicDate.getDate() + 1);
+  S.calYear = S.clinicDate.getFullYear();
+  S.calMonth = S.clinicDate.getMonth();
   clinicDeselectClient();
   loadClinicSession();
 }
 
 function clinicToday() {
   S.clinicDate = new Date();
+  S.calYear = S.clinicDate.getFullYear();
+  S.calMonth = S.clinicDate.getMonth();
   clinicDeselectClient();
   loadClinicSession();
 }
@@ -777,7 +828,7 @@ function clinicToday() {
 function loadClinicSession() {
   S.loaded.clinic = true;
   const dateStr = fmtDate(S.clinicDate);
-  document.getElementById('clinic-date-display').textContent = fmtDateDisplay(S.clinicDate);
+  renderClinicMiniCal();
 
   fetch('/api/session?date=' + encodeURIComponent(dateStr))
     .then(r => r.json())
