@@ -121,12 +121,12 @@
   .mini-cal-nav:hover { color: var(--cyan); }
   .mini-cal-title { font-weight: 600; color: var(--fg-em); font-size: 11px; }
   .mini-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; }
-  .mini-cal-dow { text-align: center; color: var(--fg-dim); font-size: 10px; padding-bottom: 3px; }
+  .mini-cal-dow { text-align: center; color: var(--fg-dim); font-size: 10px; padding: 6px 0 3px; }
   .mini-cal-day { text-align: center; padding: 3px 1px; border-radius: 3px; cursor: pointer; color: var(--fg); }
   .mini-cal-day:hover { background: var(--bg-hl); color: var(--cyan); }
   .mini-cal-today { color: var(--yellow); font-weight: 600; }
   .mini-cal-sel { background: var(--cyan) !important; color: var(--bg) !important; font-weight: 600; border-radius: 3px; }
-  .clinic-inference { font-size: 11px; color: var(--fg-dim); display: flex; align-items: center; gap: 5px; }
+  .clinic-inference { font-size: 11px; color: var(--fg-dim); display: flex; align-items: center; gap: 5px; margin: 10px 0; }
   .clinic-inference .dot { font-size: 14px; line-height: 1; }
   .dot-green { color: var(--green); }
   .dot-red { color: var(--red); }
@@ -334,7 +334,7 @@
           </div>
           <div class="clinic-inference" id="clinic-inference">
             <span class="dot dot-red" id="clinic-inference-dot">&#9679;</span>
-            <span>Inference</span>
+            <span>Auto-draft</span>
             <span id="clinic-inference-label" style="margin-left:auto;font-size:10px;">checking...</span>
           </div>
         </div>
