@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PracticeForge</title>
+<script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js'></script>
 <style>
   :root {
     --base03: #002b36; --base02: #073642; --base01: #586e75;
@@ -82,6 +83,24 @@
   .cal-btn { padding: 4px 10px; background: var(--bg-hl); border: 1px solid var(--border); border-radius: 3px; color: var(--fg); cursor: pointer; font: inherit; font-size: 14px; }
   .cal-btn:hover { border-color: var(--cyan); color: var(--cyan); }
   .day-header { background: var(--bg-hl); padding: 6px 10px; font-weight: 600; color: var(--fg-em); margin-top: 10px; border-radius: 3px; font-size: 14px; border-left: 3px solid var(--cyan); }
+  .cal-title-span { font-weight: 600; color: var(--fg-em); padding: 0 8px; font-size: 15px; }
+  /* FullCalendar solarized-dark theme */
+  #fc-calendar { --fc-border-color: var(--border); --fc-today-bg-color: rgba(42,161,152,0.07); --fc-neutral-bg-color: var(--bg-hl); --fc-event-bg-color: #2aa198; --fc-event-border-color: #2aa198; --fc-event-text-color: #002b36; --fc-page-bg-color: var(--bg); --fc-non-business-color: rgba(0,0,0,0.18); --fc-highlight-color: rgba(42,161,152,0.12); color: var(--fg); background: var(--bg); }
+  #fc-calendar .fc-col-header-cell { background: var(--bg-hl); padding: 8px 0; border-color: var(--border); }
+  #fc-calendar .fc-col-header-cell a { color: var(--fg-em); text-decoration: none; font-size: 13px; }
+  #fc-calendar .fc-col-header-cell.fc-day-today a { color: var(--cyan); font-weight: 700; }
+  #fc-calendar .fc-timegrid-slot-label-cushion { color: var(--fg-dim); font-size: 12px; }
+  #fc-calendar .fc-timegrid-axis { background: var(--bg-hl); }
+  #fc-calendar .fc-scrollgrid, #fc-calendar .fc-scrollgrid td, #fc-calendar .fc-scrollgrid th { border-color: var(--border); }
+  #fc-calendar .fc-timegrid-slot { border-color: rgba(10,64,80,0.35); }
+  #fc-calendar .fc-timegrid-slot-minor { border-color: rgba(10,64,80,0.15); }
+  #fc-calendar .fc-now-indicator-line { border-color: #dc322f; }
+  #fc-calendar .fc-now-indicator-arrow { border-top-color: #dc322f; border-bottom-color: #dc322f; }
+  .fc-pf-event { padding: 2px 4px; overflow: hidden; height: 100%; display: flex; flex-direction: column; gap: 1px; }
+  .fc-pf-time { font-size: 11px; color: rgba(0,43,54,0.75); line-height: 1.2; }
+  .fc-pf-title { font-size: 13px; font-weight: 700; color: #002b36; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
+  .fc-pf-id { font-size: 11px; color: rgba(0,43,54,0.65); line-height: 1.2; }
+  .fc-pf-cancelled .fc-pf-title { text-decoration: line-through; opacity: 0.7; }
 
   /* Summary cards */
   .summary-row { display: flex; gap: 12px; margin-bottom: 12px; }
@@ -482,8 +501,9 @@
         <button class="cal-btn" onclick="calPrev()" title="Previous"><kbd>h</kbd> &larr;</button>
         <button class="cal-btn" onclick="calToday()">Today <kbd>t</kbd></button>
         <button class="cal-btn" onclick="calNext()" title="Next">&rarr; <kbd>l</kbd></button>
-        <input type="date" id="cal-date" onchange="loadCalendar()">
-        <label><input type="checkbox" id="cal-week" onchange="loadCalendar()"> Week <kbd>w</kbd></label>
+        <button class="cal-btn" id="cal-view-toggle" onclick="calToggleView()" title="Toggle day/week view (w)">Week</button>
+        <input type="date" id="cal-date" onchange="calJumpToDate()">
+        <span class="cal-title-span" id="cal-title"></span>
         <button class="cal-btn" onclick="calShowCreateForm()" title="New appointment"><kbd>c</kbd> + New</button>
         <button class="cal-btn" onclick="calShowBlocks()" title="Block warnings">Blocks</button>
       </div>
@@ -500,7 +520,7 @@
         <div id="cal-create-msg" style="font-size:11px;margin-top:4px;min-height:16px"></div>
       </div>
       <div id="cal-blocks-panel" style="display:none;margin-bottom:12px"></div>
-      <div id="calendar-content"></div>
+      <div id="fc-calendar"></div>
     </div>
   </div>
 
@@ -810,11 +830,7 @@ document.addEventListener('keydown', (e) => {
     if (nkey === 't') { calToday(); }
     if (nkey === 'c') { calShowCreateForm(); return; }
     if (nkey === 'b') { calShowBlocks(); return; }
-    if (e.key === 'w') {
-      const cb = document.getElementById('cal-week');
-      cb.checked = !cb.checked;
-      loadCalendar();
-    }
+    if (e.key === 'w') { calToggleView(); }
   }
 });
 
@@ -1919,59 +1935,107 @@ function showClientDetail(id) {
 // ============================================================================
 // Calendar (tab 3)
 // ============================================================================
+let FC = null;
+
 function initCalDate() {
-  document.getElementById('cal-date').value = fmtDate(S.calDate);
+  const el = document.getElementById('cal-date');
+  if (el) el.value = fmtDate(S.calDate);
 }
 
-function calPrev() {
-  const w = document.getElementById('cal-week').checked;
-  S.calDate.setDate(S.calDate.getDate() - (w ? 7 : 1));
-  document.getElementById('cal-date').value = fmtDate(S.calDate);
-  loadCalendar();
+function calPrev() { if (FC) FC.prev(); }
+function calNext() { if (FC) FC.next(); }
+function calToday() { if (FC) FC.today(); }
+
+function calJumpToDate() {
+  const v = document.getElementById('cal-date').value;
+  if (v && FC) FC.gotoDate(v);
 }
-function calNext() {
-  const w = document.getElementById('cal-week').checked;
-  S.calDate.setDate(S.calDate.getDate() + (w ? 7 : 1));
-  document.getElementById('cal-date').value = fmtDate(S.calDate);
-  loadCalendar();
-}
-function calToday() {
-  S.calDate = new Date();
-  document.getElementById('cal-date').value = fmtDate(S.calDate);
-  loadCalendar();
+
+function calToggleView() {
+  if (!FC) return;
+  const isWeek = FC.view.type === 'timeGridWeek';
+  FC.changeView(isWeek ? 'timeGridDay' : 'timeGridWeek');
+  document.getElementById('cal-view-toggle').textContent = isWeek ? 'Day' : 'Week';
 }
 
 function loadCalendar() {
   S.loaded.calendar = true;
-  const v = document.getElementById('cal-date').value;
-  if (v) S.calDate = new Date(v + 'T12:00:00');
-  const w = document.getElementById('cal-week').checked;
-  const url = '/api/calendar?date=' + fmtDate(S.calDate) + (w ? '&week=true' : '');
+  if (!FC) initFullCalendar();
+  else FC.refetchEvents();
+}
 
-  const el = document.getElementById('calendar-content');
-  el.innerHTML = '<div class="empty">Loading...</div>';
-
-  fetch(url).then(r => r.json()).then(entries => {
-    if (entries.length === 0) { el.innerHTML = '<div class="empty">No appointments.</div>'; return; }
-    let html = '', curDate = '';
-    entries.forEach(e => {
-      if (e.date !== curDate) {
-        if (curDate) html += '</tbody></table>';
-        curDate = e.date;
-        const d = new Date(e.date + 'T12:00:00');
-        const day = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
-        html += '<div class="day-header">' + esc(day) + '</div><table><thead><tr><th>Time</th><th>Client</th><th>ID</th><th>Practitioner</th><th>Status</th><th></th></tr></thead><tbody>';
-      }
-      const statusCls = e.status === 'recurring' ? 'badge-recurring' : 'badge-active';
-      const cancelBtn = '<button class="cal-btn" style="font-size:10px;padding:1px 6px" onclick="calCancelEntry(\'' + esc(e.client_id) + '\',\'' + esc(e.date) + '\')">Cancel</button>';
-      const reschedBtn = (e.status === 'cancelled' || e.status === 'no-show' || e.status === 'late-cancellation')
-        ? ' <button class="cal-btn" style="font-size:10px;padding:1px 6px;background:var(--blue);color:var(--bg);border:none;border-radius:3px" onclick="openReschedulePanel(\'' + esc(e.client_id) + '\',\'' + esc(e.date) + '\')">Reschedule</button>'
-        : '';
-      html += '<tr class="row"><td>' + esc(e.start_time) + '-' + esc(e.end_time) + '</td><td>' + esc(e.client_name) + '</td><td style="color:var(--fg-dim)">' + esc(e.client_id) + '</td><td>' + esc(e.practitioner) + '</td><td><span class="badge ' + statusCls + '">' + esc(e.status) + '</span></td><td>' + cancelBtn + reschedBtn + '</td></tr>';
-    });
-    html += '</tbody></table>';
-    el.innerHTML = html;
-  }).catch(e => { el.innerHTML = '<div class="empty">Error: ' + esc(String(e)) + '</div>'; });
+function initFullCalendar() {
+  const el = document.getElementById('fc-calendar');
+  if (!el) return;
+  FC = new FullCalendar.Calendar(el, {
+    initialView: 'timeGridWeek',
+    initialDate: fmtDate(S.calDate),
+    headerToolbar: false,
+    slotDuration: '00:30:00',
+    slotLabelInterval: '01:00:00',
+    slotMinTime: '07:00:00',
+    slotMaxTime: '21:00:00',
+    allDaySlot: false,
+    nowIndicator: true,
+    weekends: false,
+    expandRows: true,
+    height: 'auto',
+    scrollTime: '08:30:00',
+    businessHours: { daysOfWeek: [1,2,3,4,5], startTime: '08:00', endTime: '20:00' },
+    eventTimeFormat: { hour: '2-digit', minute: '2-digit', hour12: false },
+    datesSet: function(info) {
+      S.calDate = new Date(info.startStr.slice(0, 10) + 'T12:00:00');
+      const d = document.getElementById('cal-date');
+      if (d) d.value = fmtDate(S.calDate);
+      const t = document.getElementById('cal-title');
+      if (t) t.textContent = FC.view.title;
+    },
+    events: function(fetchInfo, successCb, failureCb) {
+      const dateStr = fetchInfo.startStr.slice(0, 10);
+      const isWeek = FC.view.type === 'timeGridWeek';
+      const url = '/api/calendar?date=' + dateStr + (isWeek ? '&week=true' : '');
+      fetch(url)
+        .then(r => r.json())
+        .then(entries => {
+          successCb(entries.map(e => {
+            const cancelled = e.status === 'cancelled' || e.status === 'no-show' || e.status === 'late-cancellation';
+            return {
+              id: e.client_id + '-' + e.date + '-' + e.start_time,
+              title: e.client_name,
+              start: e.date + 'T' + e.start_time + ':00',
+              end: e.date + 'T' + e.end_time + ':00',
+              backgroundColor: cancelled ? '#cb4b16' : '#2aa198',
+              borderColor: cancelled ? '#cb4b16' : '#2aa198',
+              textColor: '#002b36',
+              extendedProps: { client_id: e.client_id, practitioner: e.practitioner, status: e.status }
+            };
+          }));
+        })
+        .catch(failureCb);
+    },
+    eventClick: function(info) {
+      const cid = info.event.extendedProps.client_id;
+      switchView('clients');
+      const idx = S.clients.findIndex(c => c.client_id === cid);
+      if (idx >= 0) { S.clientIdx = idx; highlightClient(); }
+      showClientDetail(cid);
+    },
+    eventContent: function(arg) {
+      const st = arg.event.extendedProps.status;
+      const cid = arg.event.extendedProps.client_id;
+      const prac = arg.event.extendedProps.practitioner;
+      const cancelled = st === 'cancelled' || st === 'no-show' || st === 'late-cancellation';
+      return { html:
+        '<div class="fc-pf-event' + (cancelled ? ' fc-pf-cancelled' : '') + '">' +
+        '<div class="fc-pf-time">' + esc(arg.timeText) + '</div>' +
+        '<div class="fc-pf-title">' + esc(arg.event.title) + '</div>' +
+        '<div class="fc-pf-id">' + esc(cid) + (prac ? ' · ' + esc(prac) : '') + '</div>' +
+        (cancelled ? '<div class="fc-pf-id" style="color:#dc322f">' + esc(st) + '</div>' : '') +
+        '</div>'
+      };
+    }
+  });
+  FC.render();
 }
 
 // ============================================================================
