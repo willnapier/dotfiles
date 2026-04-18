@@ -20,13 +20,13 @@
   body { font-family: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', monospace; background: var(--bg); color: var(--fg); font-size: 13px; line-height: 1.5; height: 100vh; display: flex; flex-direction: column; }
 
   /* Header */
-  header { background: var(--bg-hl); border-bottom: 1px solid var(--border); padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  header { background: var(--bg-hl); border-bottom: 1px solid var(--border); padding: 22px 20px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
   header h1 { font-size: 14px; font-weight: 600; color: var(--cyan); letter-spacing: 0.5px; }
   header .practice-name { font-size: 12px; color: var(--fg-dim); }
 
   /* Tab bar */
   nav { background: var(--bg); border-bottom: 1px solid var(--border); display: flex; flex-shrink: 0; }
-  nav button { background: none; border: none; color: var(--fg-dim); padding: 13px 20px; cursor: pointer; font: inherit; font-size: 12px; border-bottom: 2px solid transparent; transition: color 0.1s; position: relative; }
+  nav button { background: none; border: none; color: var(--fg-dim); padding: 18px 24px; cursor: pointer; font: inherit; font-size: 12px; border-bottom: 2px solid transparent; transition: color 0.1s; position: relative; }
   nav button:hover { color: var(--fg); }
   nav button.active { color: var(--cyan); border-bottom-color: var(--cyan); }
   nav button .kbd { font-size: 10px; color: var(--fg-dim); margin-left: 4px; opacity: 0.6; }
@@ -111,22 +111,22 @@
   .clinic-sidebar { width: 280px; min-width: 280px; border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; background: var(--bg); }
   .clinic-main { flex: 1; overflow-y: auto; padding: 12px 16px; }
 
-  .clinic-sidebar-header { padding: 24px 12px 16px; border-bottom: 1px solid var(--border); }
-  .clinic-date-nav { display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 14px; }
+  .clinic-sidebar-header { padding: 32px 16px 20px; border-bottom: 1px solid var(--border); }
+  .clinic-date-nav { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 0; }
   .clinic-date-nav button { background: var(--bg-hl); border: 1px solid var(--border); border-radius: 3px; color: var(--fg); cursor: pointer; font: inherit; font-size: 12px; padding: 3px 8px; }
   .clinic-date-nav button:hover { border-color: var(--cyan); color: var(--cyan); }
-  .mini-cal { width: 100%; font-size: 11px; margin-bottom: 24px; }
-  .mini-cal-header { display: flex; align-items: center; justify-content: space-between; padding: 2px 0 10px; }
+  .mini-cal { width: 100%; font-size: 11px; margin-bottom: 28px; }
+  .mini-cal-header { display: flex; align-items: center; justify-content: space-between; padding: 2px 0 14px; }
   .mini-cal-nav { background: none; border: none; color: var(--fg-dim); cursor: pointer; padding: 0 4px; font-size: 10px; line-height: 1; }
   .mini-cal-nav:hover { color: var(--cyan); }
   .mini-cal-title { font-weight: 600; color: var(--fg-em); font-size: 11px; }
   .mini-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; }
-  .mini-cal-dow { text-align: center; color: var(--fg-dim); font-size: 10px; padding: 12px 0 5px; }
-  .mini-cal-day { text-align: center; padding: 5px 1px; border-radius: 3px; cursor: pointer; color: var(--fg); }
+  .mini-cal-dow { text-align: center; color: var(--fg-dim); font-size: 10px; padding: 16px 0 6px; }
+  .mini-cal-day { text-align: center; padding: 6px 1px; border-radius: 3px; cursor: pointer; color: var(--fg); }
   .mini-cal-day:hover { background: var(--bg-hl); color: var(--cyan); }
   .mini-cal-today { color: var(--yellow); font-weight: 600; }
   .mini-cal-sel { background: var(--cyan) !important; color: var(--bg) !important; font-weight: 600; border-radius: 3px; }
-  .clinic-inference { font-size: 11px; color: var(--fg-dim); display: flex; align-items: center; gap: 5px; margin: 20px 0 4px; }
+  .clinic-inference { font-size: 11px; color: var(--fg-dim); display: flex; align-items: center; gap: 5px; }
   .clinic-inference .dot { font-size: 14px; line-height: 1; }
   .dot-green { color: var(--green); }
   .dot-red { color: var(--red); }
@@ -332,11 +332,6 @@
             <button onclick="clinicToday()">Today</button>
             <button onclick="clinicNextDay()" title="Next day">&#9654;</button>
           </div>
-          <div class="clinic-inference" id="clinic-inference">
-            <span class="dot dot-red" id="clinic-inference-dot">&#9679;</span>
-            <span>Auto-draft</span>
-            <span id="clinic-inference-label" style="margin-left:auto;font-size:10px;">checking...</span>
-          </div>
         </div>
         <div class="clinic-client-list" id="clinic-client-list">
           <div class="empty" id="clinic-list-empty">No clients for this date.</div>
@@ -366,6 +361,11 @@
             <button class="clinic-generate-btn" id="clinic-generate-btn" onclick="clinicGenerate()">Generate</button>
             <button class="clinic-generate-btn" id="clinic-compare-generate-btn" onclick="clinicCompareGenerate()" title="Stream Q4 and Q8 side-by-side">Compare Q4 &amp; Q8</button>
             <span class="clinic-spinner" id="clinic-spinner">Generating...</span>
+            <span class="clinic-inference" id="clinic-inference" style="margin-left:auto">
+              <span class="dot dot-red" id="clinic-inference-dot">&#9679;</span>
+              <span>Auto-draft</span>
+              <span id="clinic-inference-label" style="font-size:10px;">checking...</span>
+            </span>
           </div>
           <div id="clinic-generated-wrap" style="display:none">
             <div class="section-head">Generated Note</div>
