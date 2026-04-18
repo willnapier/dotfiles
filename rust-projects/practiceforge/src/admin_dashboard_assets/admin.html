@@ -354,6 +354,15 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
           <label><input type="radio" name="keylayout" value="colemak-dh" onchange="setKeyLayout(this.value)"> Colemak-DH</label>
         </div>
       </div>
+      <div class="settings-row">
+        <div class="settings-row-label">Calendar date format</div>
+        <div class="settings-options">
+          <label><input type="radio" name="datefmt" value="ordinal" onchange="setDateFmt(this.value)"> Mon 13th</label>
+          <label><input type="radio" name="datefmt" value="short" onchange="setDateFmt(this.value)"> Mon 13</label>
+          <label><input type="radio" name="datefmt" value="long" onchange="setDateFmt(this.value)"> Mon Apr 13</label>
+          <label><input type="radio" name="datefmt" value="numeric" onchange="setDateFmt(this.value)"> 13/4 Mon</label>
+        </div>
+      </div>
     </div>
   </div>
 </header>
@@ -676,6 +685,7 @@ navBtns.forEach(b => b.addEventListener('click', () => switchView(b.dataset.view
 // Settings
 // ============================================================================
 let pfKeyLayout = localStorage.getItem('pf-keylayout') || 'qwerty';
+let pfDateFmt = localStorage.getItem('pf-datefmt') || 'ordinal';
 
 const COLEMAK_DH_REMAP = {
   'n': 'h',  // nav left  (phys QWERTY-J)
@@ -698,6 +708,21 @@ function toggleSettings() {
 function setKeyLayout(v) {
   pfKeyLayout = v;
   localStorage.setItem('pf-keylayout', v);
+}
+function fmtDayHeader(d) {
+  const wd = d.toLocaleDateString('en-GB', { weekday: 'short' });
+  const n = d.getDate();
+  if (pfDateFmt === 'short') return wd + ' ' + n;
+  if (pfDateFmt === 'long') return wd + ' ' + d.toLocaleDateString('en-GB', { month: 'short' }) + ' ' + n;
+  if (pfDateFmt === 'numeric') return n + '/' + (d.getMonth() + 1) + ' ' + wd;
+  // ordinal (default)
+  const ord = n >= 11 && n <= 13 ? 'th' : n % 10 === 1 ? 'st' : n % 10 === 2 ? 'nd' : n % 10 === 3 ? 'rd' : 'th';
+  return wd + ' ' + n + ord;
+}
+function setDateFmt(v) {
+  pfDateFmt = v;
+  localStorage.setItem('pf-datefmt', v);
+  if (FC) FC.gotoDate(FC.getDate());
 }
 
 document.addEventListener('click', (ev) => {
@@ -1994,12 +2019,7 @@ function initFullCalendar() {
     businessHours: { daysOfWeek: [1,2,3,4,5], startTime: '08:00', endTime: '20:00' },
     eventTimeFormat: { hour: '2-digit', minute: '2-digit', hour12: false },
     dayHeaderContent: function(arg) {
-      const n = arg.date.getDate();
-      const ord = n >= 11 && n <= 13 ? 'th'
-        : n % 10 === 1 ? 'st'
-        : n % 10 === 2 ? 'nd'
-        : n % 10 === 3 ? 'rd' : 'th';
-      return arg.date.toLocaleDateString('en-GB', { weekday: 'short' }) + ' ' + n + ord;
+      return fmtDayHeader(arg.date);
     },
     datesSet: function(info) {
       S.calDate = new Date(info.startStr.slice(0, 10) + 'T12:00:00');
@@ -2610,6 +2630,7 @@ fetch('/api/practice').then(r => r.json()).then(p => {
 }).catch(() => {});
 
 document.querySelector(`input[name="keylayout"][value="${pfKeyLayout}"]`).checked = true;
+document.querySelector(`input[name="datefmt"][value="${pfDateFmt}"]`).checked = true;
 initCalDate();
 loadClinicSession();
 pollInferenceStatus();
