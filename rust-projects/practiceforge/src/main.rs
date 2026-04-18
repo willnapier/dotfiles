@@ -19,6 +19,7 @@ pub mod scheduling;
 pub mod session_cookies;
 pub mod sms;
 mod sync;
+mod sync_docs;
 mod inference;
 pub mod tm3_clients;
 pub mod tm3_migrate;
@@ -112,6 +113,26 @@ enum Command {
         /// TM3 numeric client ID (found via sync or diary links)
         #[arg(long)]
         tm3_id: Option<String>,
+    },
+
+    /// Poll TM3 for newly added documents across all clients and import them.
+    ///
+    /// For each client with a tm3_id in identity.yaml, runs `clinical import-doc`
+    /// to list/download/extract any documents Olly has uploaded since the last
+    /// sync. Idempotent — existing files are skipped by filename. Intended to
+    /// run on a timer (hourly alongside tm3-diary-capture).
+    SyncDocs {
+        /// List remote docs without downloading or importing.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Restrict the sync to a single client ID.
+        #[arg(long)]
+        client: Option<String>,
+
+        /// Show per-client outcome, not just the summary.
+        #[arg(long)]
+        verbose: bool,
     },
 
     /// Email configuration and sending.
@@ -860,6 +881,10 @@ async fn main() -> anyhow::Result<()> {
                     if result.docs_imported == 1 { "" } else { "s" }
                 );
             }
+        }
+        Command::SyncDocs { dry_run, client, verbose } => {
+            let result = sync_docs::sync_all(dry_run, client.as_deref())?;
+            sync_docs::print_report(&result, verbose);
         }
         Command::Email { action } => {
             match action {

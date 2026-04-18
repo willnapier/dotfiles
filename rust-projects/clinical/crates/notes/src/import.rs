@@ -77,6 +77,10 @@ pub fn clean_extracted_text(raw: &str) -> String {
 ///
 /// Filename format: `YYYY-MM-DD-<doc_type>.md`
 /// where doc_type is "referral", "patient-info", "gp-letter", etc.
+///
+/// Route C clients: saved under `correspondence/` so the note/letter prompt
+/// pipeline picks them up via `find_correspondence()`.
+/// Route A clients: saved at client root (legacy location).
 pub fn save_document_text(
     client_id: &str,
     doc_type: &str,
@@ -88,8 +92,18 @@ pub fn save_document_text(
         bail!("Client directory not found: {}", client_dir.display());
     }
 
+    let dest_dir = match client::detect_layout(client_id) {
+        client::Layout::RouteC => {
+            let corr = client::correspondence_dir(client_id);
+            std::fs::create_dir_all(&corr)
+                .with_context(|| format!("Failed to create: {}", corr.display()))?;
+            corr
+        }
+        client::Layout::RouteA => client_dir,
+    };
+
     let filename = format!("{}-{}.md", date, doc_type);
-    let path = client_dir.join(&filename);
+    let path = dest_dir.join(&filename);
 
     // Don't overwrite existing files
     if path.exists() {
