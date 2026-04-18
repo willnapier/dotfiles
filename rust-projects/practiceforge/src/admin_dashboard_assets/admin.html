@@ -611,7 +611,7 @@ function switchView(name) {
   if (name === 'clients' && !S.loaded.clients) loadClients();
   if (name === 'calendar' && !S.loaded.calendar) loadCalendar();
   if (name === 'billing' && !S.loaded.billing) loadBilling();
-  if (name === 'search') document.getElementById('search-input').focus();
+  if (name === 'search') setTimeout(() => document.getElementById('search-input').focus(), 10);
 
   updateHints();
 }
@@ -735,13 +735,15 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowUp') { e.preventDefault(); moveSearch(-1); return; }
   }
 
-  // Alt+1-5 view switching works from anywhere (including inputs)
-  if (e.altKey) {
+  // View switching from anywhere (including inputs): Alt+1-5 and Ctrl+Shift+1-5
+  if ((e.altKey || (e.ctrlKey && e.shiftKey)) && !e.metaKey) {
     if (e.code === 'Digit1') { e.preventDefault(); switchView('clinic'); return; }
     if (e.code === 'Digit2') { e.preventDefault(); switchView('clients'); return; }
     if (e.code === 'Digit3') { e.preventDefault(); switchView('calendar'); return; }
     if (e.code === 'Digit4') { e.preventDefault(); switchView('search'); return; }
     if (e.code === 'Digit5') { e.preventDefault(); switchView('billing'); return; }
+  }
+  if (e.altKey && !e.ctrlKey && !e.metaKey) {
     if (e.code === 'KeyH') { e.preventDefault(); if (S.view === 'calendar') calPrev(); return; }
     if (e.code === 'KeyL') { e.preventDefault(); if (S.view === 'calendar') calNext(); return; }
     if (e.code === 'KeyT') { e.preventDefault(); if (S.view === 'calendar') calToday(); return; }
