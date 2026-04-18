@@ -1965,13 +1965,18 @@ function calToggleView() {
 
 function loadCalendar() {
   S.loaded.calendar = true;
-  if (!FC) initFullCalendar();
+  if (!FC) requestAnimationFrame(() => initFullCalendar());
   else FC.refetchEvents();
 }
 
 function initFullCalendar() {
   const el = document.getElementById('fc-calendar');
   if (!el) return;
+  if (typeof FullCalendar === 'undefined') {
+    el.innerHTML = '<div style="padding:20px;color:var(--red)">FullCalendar failed to load — check browser console.</div>';
+    return;
+  }
+  try {
   FC = new FullCalendar.Calendar(el, {
     initialView: 'timeGridWeek',
     initialDate: fmtDate(S.calDate),
@@ -1993,11 +1998,12 @@ function initFullCalendar() {
       const d = document.getElementById('cal-date');
       if (d) d.value = fmtDate(S.calDate);
       const t = document.getElementById('cal-title');
-      if (t) t.textContent = FC.view.title;
+      if (t) t.textContent = info.view.title;
     },
     events: function(fetchInfo, successCb, failureCb) {
       const dateStr = fetchInfo.startStr.slice(0, 10);
-      const isWeek = FC.view.type === 'timeGridWeek';
+      const daySpan = (fetchInfo.end - fetchInfo.start) / 86400000;
+      const isWeek = daySpan > 1;
       const url = '/api/calendar?date=' + dateStr + (isWeek ? '&week=true' : '');
       fetch(url)
         .then(r => r.json())
@@ -2041,6 +2047,11 @@ function initFullCalendar() {
     }
   });
   FC.render();
+  FC.updateSize();
+  } catch(e) {
+    el.innerHTML = '<div style="padding:20px;color:var(--red)">FC error: ' + esc(String(e)) + '</div>';
+    console.error('FullCalendar init error:', e);
+  }
 }
 
 // ============================================================================
