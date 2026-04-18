@@ -617,7 +617,7 @@ function updateHints() {
   } else if (S.view === 'search') {
     el.innerHTML = '<kbd>j</kbd>/<kbd>k</kbd> results &middot; <kbd>Enter</kbd> open &middot; <kbd>Esc</kbd> clear';
   } else if (S.view === 'calendar') {
-    el.innerHTML = '<kbd>h</kbd>/<kbd>l</kbd> prev/next &middot; <kbd>t</kbd> today &middot; <kbd>w</kbd> toggle week';
+    el.innerHTML = '<kbd>h</kbd>/<kbd>l</kbd> prev/next &middot; <kbd>t</kbd> today &middot; <kbd>w</kbd> week &middot; <kbd>Alt</kbd>+<kbd>1</kbd>-<kbd>5</kbd> views (works from inputs)';
   } else if (S.view === 'billing') {
     el.innerHTML = '<kbd>j</kbd>/<kbd>k</kbd> navigate';
   }
@@ -670,6 +670,18 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && activeId === 'clinic-add-input') {
     clinicAddClient();
     return;
+  }
+
+  // Alt+1-5 view switching works from anywhere (including inputs)
+  if (e.altKey) {
+    if (e.code === 'Digit1') { e.preventDefault(); switchView('clinic'); return; }
+    if (e.code === 'Digit2') { e.preventDefault(); switchView('clients'); return; }
+    if (e.code === 'Digit3') { e.preventDefault(); switchView('calendar'); return; }
+    if (e.code === 'Digit4') { e.preventDefault(); switchView('search'); return; }
+    if (e.code === 'Digit5') { e.preventDefault(); switchView('billing'); return; }
+    if (e.code === 'KeyH') { e.preventDefault(); if (S.view === 'calendar') calPrev(); return; }
+    if (e.code === 'KeyL') { e.preventDefault(); if (S.view === 'calendar') calNext(); return; }
+    if (e.code === 'KeyT') { e.preventDefault(); if (S.view === 'calendar') calToday(); return; }
   }
 
   if (inInput) return;
