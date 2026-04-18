@@ -1,0 +1,164 @@
+#!/usr/bin/env nu
+
+# Rebuild nimbini from state-capture baselines.
+# Idempotent — safe to run on a fresh install or to fill gaps on an existing one.
+# Sources: ~/dotfiles/{arch-packages,arch-packages-aur,cargo-crates,npm-globals-nimbini,
+#           system-services-enabled,system-timers-enabled,user-units-enabled,user-groups-nimbini}.txt
+
+def run-or-dry [dry: bool, cmd: list<string>] {
+    if $dry {
+        print $"  [dry] ($cmd | str join ' ')"
+    } else {
+        let rest = ($cmd | skip 1)
+        let result = (run-external $cmd.0 ...$rest | complete)
+        if $result.exit_code != 0 {
+            print $"  [warn] failed: ($cmd | str join ' ')"
+        }
+    }
+}
+
+def section [name: string] {
+    print $"\n=== ($name) ==="
+}
+
+def main [
+    --dry-run(-n)    # Print commands without executing
+    --skip-pacman    # Skip pacman packages
+    --skip-aur       # Skip AUR packages
+    --skip-cargo     # Skip cargo crates
+    --skip-npm       # Skip npm globals
+    --skip-services  # Skip systemd services/timers/units
+    --skip-groups    # Skip user group membership
+    --skip-dotter    # Skip dotter deploy
+] {
+    let state_dir = ("~/dotfiles" | path expand)
+
+    # ── pacman packages ──────────────────────────────────────────────────────
+    if not $skip_pacman {
+        section "pacman packages"
+        let pkgs_file = $"($state_dir)/arch-packages.txt"
+        if ($pkgs_file | path exists) {
+            let pkgs = (open $pkgs_file | lines | where { |l| ($l | str trim) != "" })
+            print $"  ($pkgs | length) packages"
+            run-or-dry $dry_run ["sudo" "pacman" "-S" "--noconfirm" "--needed" ...$pkgs]
+        } else {
+            print "  [skip] arch-packages.txt not found"
+        }
+    }
+
+    # ── AUR packages ─────────────────────────────────────────────────────────
+    if not $skip_aur {
+        section "AUR packages (paru)"
+        let aur_file = $"($state_dir)/arch-packages-aur.txt"
+        if ($aur_file | path exists) {
+            let pkgs = (open $aur_file | lines | where { |l| ($l | str trim) != "" })
+            print $"  ($pkgs | length) AUR packages"
+            run-or-dry $dry_run ["paru" "-S" "--noconfirm" "--needed" ...$pkgs]
+        } else {
+            print "  [skip] arch-packages-aur.txt not found"
+        }
+    }
+
+    # ── cargo crates ─────────────────────────────────────────────────────────
+    if not $skip_cargo {
+        section "cargo crates"
+        let cargo_file = $"($state_dir)/cargo-crates.txt"
+        if ($cargo_file | path exists) {
+            let rows = (open $cargo_file | lines | where { |l| ($l | str trim) != "" } | each { |l|
+                let parts = ($l | split column "\t" name version source)
+                $parts | first
+            })
+            for row in $rows {
+                let name = $row.name
+                let src = $row.source
+                if ($src | str starts-with "/") or ($src | str starts-with "~") {
+                    # local path install
+                    let expanded = ($src | path expand)
+                    print $"  cargo install --path ($expanded)  [($name)]"
+                    run-or-dry $dry_run ["cargo" "install" "--path" $expanded]
+                    if not $dry_run {
+                        let bin = ($"~/.cargo/bin/($name)" | path expand)
+                        if ($bin | path exists) {
+                            run-or-dry $dry_run ["cp" $bin ($"~/.local/bin/($name)" | path expand)]
+                        }
+                    }
+                } else if ($src | str starts-with "https://github.com") {
+                    print $"  cargo install --git ($src)  [($name)]"
+                    run-or-dry $dry_run ["cargo" "install" "--git" $src $name]
+                } else {
+                    # crates.io
+                    print $"  cargo install ($name)"
+                    run-or-dry $dry_run ["cargo" "install" $name]
+                }
+            }
+        } else {
+            print "  [skip] cargo-crates.txt not found"
+        }
+    }
+
+    # ── npm globals ───────────────────────────────────────────────────────────
+    if not $skip_npm {
+        section "npm globals"
+        let npm_file = $"($state_dir)/npm-globals-nimbini.txt"
+        if ($npm_file | path exists) {
+            let pkgs = (open $npm_file | lines | where { |l| ($l | str trim) != "" })
+            print $"  ($pkgs | length) npm globals"
+            for pkg in $pkgs {
+                run-or-dry $dry_run ["npm" "install" "-g" $pkg]
+            }
+        } else {
+            print "  [skip] npm-globals-nimbini.txt not found"
+        }
+    }
+
+    # ── systemd system services + timers ─────────────────────────────────────
+    if not $skip_services {
+        section "system services"
+        let svc_file = $"($state_dir)/system-services-enabled.txt"
+        if ($svc_file | path exists) {
+            let units = (open $svc_file | lines | where { |l| ($l | str trim) != "" })
+            for unit in $units {
+                run-or-dry $dry_run ["sudo" "systemctl" "enable" $unit]
+            }
+        }
+
+        section "system timers"
+        let timer_file = $"($state_dir)/system-timers-enabled.txt"
+        if ($timer_file | path exists) {
+            let units = (open $timer_file | lines | where { |l| ($l | str trim) != "" })
+            for unit in $units {
+                run-or-dry $dry_run ["sudo" "systemctl" "enable" $unit]
+            }
+        }
+
+        section "user units"
+        let user_file = $"($state_dir)/user-units-enabled.txt"
+        if ($user_file | path exists) {
+            let units = (open $user_file | lines | where { |l| ($l | str trim) != "" })
+            for unit in $units {
+                run-or-dry $dry_run ["systemctl" "--user" "enable" $unit]
+            }
+        }
+    }
+
+    # ── user groups ───────────────────────────────────────────────────────────
+    if not $skip_groups {
+        section "user groups"
+        let groups_file = $"($state_dir)/user-groups-nimbini.txt"
+        if ($groups_file | path exists) {
+            let groups = (open $groups_file | lines | where { |l| ($l | str trim) != "" })
+            print $"  ($groups | length) groups"
+            run-or-dry $dry_run ["sudo" "usermod" "-aG" ($groups | str join ",") (whoami)]
+        } else {
+            print "  [skip] user-groups-nimbini.txt not found"
+        }
+    }
+
+    # ── dotter deploy ─────────────────────────────────────────────────────────
+    if not $skip_dotter {
+        section "dotter deploy"
+        run-or-dry $dry_run ["dotter" "deploy"]
+    }
+
+    print "\n✓ rebuild-nimbini complete"
+}

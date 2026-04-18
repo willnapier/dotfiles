@@ -377,6 +377,7 @@ depends = ["shared"]
 # forge-metadata-backup scripts moved to [shared.files]
 "scripts/clinical-attendance" = "~/.local/bin/clinical-attendance"
 "scripts/clinic-auth" = "~/.local/bin/clinic-auth"
+"scripts/rebuild-nimbini" = "~/.local/bin/rebuild-nimbini"
 "systemd/git-auto-push-watcher.service" = "~/.config/systemd/user/git-auto-push-watcher.service"
 "systemd/zotero-pdf-watcher.service" = "~/.config/systemd/user/zotero-pdf-watcher.service"
 "systemd/zotero-bridge.service" = "~/.config/systemd/user/zotero-bridge.service"
