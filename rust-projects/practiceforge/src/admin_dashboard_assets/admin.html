@@ -1993,6 +1993,14 @@ function initFullCalendar() {
     scrollTime: '08:30:00',
     businessHours: { daysOfWeek: [1,2,3,4,5], startTime: '08:00', endTime: '20:00' },
     eventTimeFormat: { hour: '2-digit', minute: '2-digit', hour12: false },
+    dayHeaderContent: function(arg) {
+      const n = arg.date.getDate();
+      const ord = n >= 11 && n <= 13 ? 'th'
+        : n % 10 === 1 ? 'st'
+        : n % 10 === 2 ? 'nd'
+        : n % 10 === 3 ? 'rd' : 'th';
+      return arg.date.toLocaleDateString('en-GB', { weekday: 'short' }) + ' ' + n + ord;
+    },
     datesSet: function(info) {
       S.calDate = new Date(info.startStr.slice(0, 10) + 'T12:00:00');
       const d = document.getElementById('cal-date');
