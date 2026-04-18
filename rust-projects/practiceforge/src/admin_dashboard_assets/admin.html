@@ -20,7 +20,16 @@
   body { font-family: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', monospace; background: var(--bg); color: var(--fg); font-size: 13px; line-height: 1.5; height: 100vh; display: flex; flex-direction: column; }
 
   /* Header */
-  header { background: var(--bg-hl); border-bottom: 1px solid var(--border); padding: 22px 20px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  header { background: var(--bg-hl); border-bottom: 1px solid var(--border); padding: 22px 20px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; position: relative; }
+  .settings-anchor { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); }
+  .settings-btn { background: none; border: none; color: var(--fg-dim); cursor: pointer; font-size: 15px; padding: 4px 6px; line-height: 1; }
+  .settings-btn:hover { color: var(--fg); }
+  .settings-panel { position: absolute; top: calc(100% + 6px); right: 0; background: var(--bg-hl); border: 1px solid var(--border); border-radius: 4px; padding: 14px 16px; min-width: 210px; z-index: 100; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+  .settings-head { font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--fg-dim); margin-bottom: 12px; }
+  .settings-row { margin-bottom: 10px; }
+  .settings-row-label { font-size: 11px; color: var(--fg-em); margin-bottom: 6px; }
+  .settings-options { display: flex; flex-direction: column; gap: 5px; }
+  .settings-options label { display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; color: var(--fg); }
   header h1 { font-size: 18px; font-weight: 600; color: var(--cyan); letter-spacing: 0.5px; text-align: center; }
   header .practice-name { font-size: 12px; color: var(--fg-dim); text-align: center; }
 
@@ -309,6 +318,19 @@
   <div>
     <h1>PracticeForge</h1>
     <div class="practice-name" id="practice-name"></div>
+  </div>
+  <div class="settings-anchor">
+    <button class="settings-btn" id="settings-btn" onclick="toggleSettings()" title="Settings">⚙</button>
+    <div class="settings-panel" id="settings-panel" style="display:none">
+      <div class="settings-head">Settings</div>
+      <div class="settings-row">
+        <div class="settings-row-label">Keyboard layout</div>
+        <div class="settings-options">
+          <label><input type="radio" name="keylayout" value="qwerty" onchange="setKeyLayout(this.value)"> QWERTY</label>
+          <label><input type="radio" name="keylayout" value="colemak-dh" onchange="setKeyLayout(this.value)"> Colemak-DH</label>
+        </div>
+      </div>
+    </div>
   </div>
 </header>
 
@@ -626,6 +648,41 @@ function updateHints() {
 navBtns.forEach(b => b.addEventListener('click', () => switchView(b.dataset.view)));
 
 // ============================================================================
+// Settings
+// ============================================================================
+let pfKeyLayout = localStorage.getItem('pf-keylayout') || 'qwerty';
+
+const COLEMAK_DH_REMAP = {
+  'n': 'h',  // nav left  (phys QWERTY-J)
+  'e': 'j',  // nav down  (phys QWERTY-K)
+  'i': 'k',  // nav up    (phys QWERTY-L)
+  'o': 'l',  // nav right (phys QWERTY-;)
+  'k': 'n',  // notes     (phys QWERTY-N → colemak k)
+  'b': 't',  // today     (phys QWERTY-T → colemak b)
+};
+
+function normKey(k) {
+  return pfKeyLayout === 'colemak-dh' ? (COLEMAK_DH_REMAP[k] ?? k) : k;
+}
+
+function toggleSettings() {
+  const p = document.getElementById('settings-panel');
+  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+}
+
+function setKeyLayout(v) {
+  pfKeyLayout = v;
+  localStorage.setItem('pf-keylayout', v);
+}
+
+document.addEventListener('click', (ev) => {
+  if (!ev.target.closest('#settings-btn') && !ev.target.closest('#settings-panel')) {
+    const p = document.getElementById('settings-panel');
+    if (p) p.style.display = 'none';
+  }
+});
+
+// ============================================================================
 // Keyboard
 // ============================================================================
 document.addEventListener('keydown', (e) => {
@@ -686,6 +743,8 @@ document.addEventListener('keydown', (e) => {
 
   if (inInput) return;
 
+  const nkey = normKey(e.key);
+
   // View switching: 1-5
   if (e.key === '1') { switchView('clinic'); return; }
   if (e.key === '2') { switchView('clients'); return; }
@@ -697,22 +756,19 @@ document.addEventListener('keydown', (e) => {
   if (S.view === 'clinic') {
     const clients = S.clinicSession ? S.clinicSession.clients : [];
     if (S.clinicSelectedId !== null) {
-      // Client selected — context-specific shortcuts
-      if (e.key === 'n') { e.preventDefault(); toggleClinicNotes(); return; }
-      if (e.key === 'd') { e.preventDefault(); clinicMarkDNA(); return; }
+      if (nkey === 'n') { e.preventDefault(); toggleClinicNotes(); return; }
+      if (nkey === 'd') { e.preventDefault(); clinicMarkDNA(); return; }
       if (e.key === 'Enter') { e.preventDefault(); document.getElementById('clinic-observation').focus(); updateHints(); return; }
-      // j/k still navigate even with selection
-      if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); moveClinicClient(1); return; }
-      if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); moveClinicClient(-1); return; }
+      if (nkey === 'j' || e.key === 'ArrowDown') { e.preventDefault(); moveClinicClient(1); return; }
+      if (nkey === 'k' || e.key === 'ArrowUp') { e.preventDefault(); moveClinicClient(-1); return; }
     } else {
-      // No client selected
-      if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); moveClinicClient(1); return; }
-      if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); moveClinicClient(-1); return; }
+      if (nkey === 'j' || e.key === 'ArrowDown') { e.preventDefault(); moveClinicClient(1); return; }
+      if (nkey === 'k' || e.key === 'ArrowUp') { e.preventDefault(); moveClinicClient(-1); return; }
       if (e.key === 'Enter') { e.preventDefault(); clinicSelectCurrentClient(); return; }
-      if (e.key === 'g' || e.key === 'Home') { e.preventDefault(); if (clients.length > 0) { S.clinicClientIdx = 0; highlightClinicClient(); } return; }
-      if (e.key === 'G' || e.key === 'End') { e.preventDefault(); if (clients.length > 0) { S.clinicClientIdx = clients.length - 1; highlightClinicClient(); } return; }
-      if (e.key === 'a') { e.preventDefault(); document.getElementById('clinic-add-input').focus(); return; }
-      if (e.key === 'd') {
+      if (nkey === 'g' || e.key === 'Home') { e.preventDefault(); if (clients.length > 0) { S.clinicClientIdx = 0; highlightClinicClient(); } return; }
+      if (nkey === 'G' || e.key === 'End') { e.preventDefault(); if (clients.length > 0) { S.clinicClientIdx = clients.length - 1; highlightClinicClient(); } return; }
+      if (nkey === 'a') { e.preventDefault(); document.getElementById('clinic-add-input').focus(); return; }
+      if (nkey === 'd') {
         e.preventDefault();
         if (S.clinicClientIdx >= 0 && S.clinicClientIdx < clients.length) {
           clinicSetStatus(clients[S.clinicClientIdx].id, 'dna');
@@ -723,29 +779,29 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
-  // Clients tab j/k navigation
+  // Clients tab navigation
   if (S.view === 'clients' && !S.inDetail) {
-    if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); moveClient(1); }
-    if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); moveClient(-1); }
+    if (nkey === 'j' || e.key === 'ArrowDown') { e.preventDefault(); moveClient(1); }
+    if (nkey === 'k' || e.key === 'ArrowUp') { e.preventDefault(); moveClient(-1); }
     if (e.key === 'Enter') { openSelectedClient(); }
-    if (e.key === 'g' || e.key === 'Home') { S.clientIdx = 0; highlightClient(); }
-    if (e.key === 'G' || e.key === 'End') { S.clientIdx = S.clients.length - 1; highlightClient(); }
+    if (nkey === 'g' || e.key === 'Home') { S.clientIdx = 0; highlightClient(); }
+    if (nkey === 'G' || e.key === 'End') { S.clientIdx = S.clients.length - 1; highlightClient(); }
   }
 
-  // Search tab j/k navigation
+  // Search tab navigation
   if (S.view === 'search') {
-    if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); moveSearch(1); }
-    if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); moveSearch(-1); }
+    if (nkey === 'j' || e.key === 'ArrowDown') { e.preventDefault(); moveSearch(1); }
+    if (nkey === 'k' || e.key === 'ArrowUp') { e.preventDefault(); moveSearch(-1); }
     if (e.key === 'Enter') { openSelectedSearch(); }
   }
 
   // Calendar shortcuts
   if (S.view === 'calendar') {
-    if (e.key === 'h' || e.key === 'ArrowLeft') { calPrev(); }
-    if (e.key === 'l' || e.key === 'ArrowRight') { calNext(); }
-    if (e.key === 't') { calToday(); }
-    if (e.key === 'c') { calShowCreateForm(); return; }
-    if (e.key === 'b') { calShowBlocks(); return; }
+    if (nkey === 'h' || e.key === 'ArrowLeft') { calPrev(); }
+    if (nkey === 'l' || e.key === 'ArrowRight') { calNext(); }
+    if (nkey === 't') { calToday(); }
+    if (nkey === 'c') { calShowCreateForm(); return; }
+    if (nkey === 'b') { calShowBlocks(); return; }
     if (e.key === 'w') {
       const cb = document.getElementById('cal-week');
       cb.checked = !cb.checked;
@@ -2457,6 +2513,7 @@ fetch('/api/practice').then(r => r.json()).then(p => {
   if (p.name) document.getElementById('practice-name').textContent = p.name;
 }).catch(() => {});
 
+document.querySelector(`input[name="keylayout"][value="${pfKeyLayout}"]`).checked = true;
 initCalDate();
 loadClinicSession();
 pollInferenceStatus();
