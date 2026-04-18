@@ -321,7 +321,8 @@
             <button onclick="clinicToday()">Today</button>
             <button onclick="clinicNextDay()" title="Next day">&#9654;</button>
           </div>
-          <div class="clinic-date-display" id="clinic-date-display"></div>
+          <div class="clinic-date-display" id="clinic-date-display" onclick="clinicPickDate()" title="Click to pick a date" style="cursor:pointer"></div>
+          <input type="date" id="clinic-date-picker" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0" onchange="clinicPickDate_apply(this.value)">
           <div class="clinic-inference" id="clinic-inference">
             <span class="dot dot-red" id="clinic-inference-dot">&#9679;</span>
             <span>Inference</span>
@@ -735,6 +736,25 @@ document.addEventListener('keydown', (e) => {
 // ============================================================================
 
 // --- Date navigation ---
+function clinicPickDate() {
+  const picker = document.getElementById('clinic-date-picker');
+  const y = S.clinicDate.getFullYear();
+  const m = String(S.clinicDate.getMonth() + 1).padStart(2, '0');
+  const d = String(S.clinicDate.getDate()).padStart(2, '0');
+  picker.value = y + '-' + m + '-' + d;
+  picker.style.pointerEvents = 'auto';
+  picker.showPicker();
+  picker.style.pointerEvents = 'none';
+}
+
+function clinicPickDate_apply(val) {
+  if (!val) return;
+  const parts = val.split('-');
+  S.clinicDate = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+  clinicDeselectClient();
+  loadClinicSession();
+}
+
 function clinicPrevDay() {
   S.clinicDate.setDate(S.clinicDate.getDate() - 1);
   clinicDeselectClient();
