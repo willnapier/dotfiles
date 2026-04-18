@@ -31,6 +31,7 @@ ssh-import-env.service
 state-capture.timer
 syncthing.service
 system-health-check.timer
+tm3-diary-capture.timer
 voice-pod-maintain.timer
 web-clip-watcher.service
 wireplumber.service
