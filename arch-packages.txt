@@ -72,7 +72,6 @@ smartmontools
 snap-pac
 snapper
 sox
-surfshark-client
 sway
 swaybg
 swayidle
