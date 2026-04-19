@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 use clap::Parser;
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -22,6 +24,7 @@ mod sync;
 mod sync_docs;
 mod inference;
 pub mod tm3_clients;
+pub mod tm3_diary;
 pub mod tm3_migrate;
 pub mod outcomes;
 
@@ -249,6 +252,18 @@ enum Command {
     Outcomes {
         #[command(subcommand)]
         action: OutcomesAction,
+    },
+
+    /// TM3 diary write-back — create appointments directly in TM3.
+    ///
+    /// Calls the TM3 ServiceStack API using stored session cookies.
+    /// Requires a valid TM3 session (run tm3-spike login on Mac to refresh).
+    /// IDs (practitioner_id, location_id, stock_id) are read from [tm3_diary]
+    /// in config.toml; defaults match the 2026-04-19 capture.
+    #[command(name = "tm3-diary")]
+    Tm3Diary {
+        #[command(subcommand)]
+        action: Tm3DiaryAction,
     },
 }
 
@@ -641,6 +656,37 @@ enum OutcomesAction {
     },
 }
 
+#[derive(Parser, Debug)]
+enum Tm3DiaryAction {
+    /// Book an appointment in TM3 for a client.
+    ///
+    /// Reads tm3_id from the client's identity.yaml, looks up the full
+    /// customer record in the TM3 client cache, and creates the appointment
+    /// via the captured ServiceStack API.
+    ///
+    /// Example: practiceforge tm3-diary book AB79 "2026-04-21 14:30" --duration 60
+    Book {
+        /// PracticeForge client ID (e.g. "AB79")
+        client_id: String,
+        /// Date and time: "YYYY-MM-DD HH:MM"
+        datetime: String,
+        /// Duration in minutes
+        #[arg(long, default_value = "60")]
+        duration: u32,
+        /// Override TM3 customer ID (skips identity.yaml lookup)
+        #[arg(long)]
+        tm3_id: Option<u64>,
+        /// Print what would be sent without calling the API
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Refresh the TM3 client cache (alias for convenience).
+    ///
+    /// Same as running 'practiceforge tm3-clients refresh'. Required before
+    /// first booking and when new clients are added in TM3.
+    RefreshCache,
+}
+
 #[derive(Serialize)]
 struct GenerateRequest {
     model: String,
@@ -1022,6 +1068,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Outcomes { action } => {
             handle_outcomes(action)?;
+        }
+        Command::Tm3Diary { action } => {
+            handle_tm3_diary(action)?;
         }
     }
 
@@ -3142,6 +3191,76 @@ fn handle_outcomes(action: OutcomesAction) -> anyhow::Result<()> {
             } else {
                 print!("{}", block);
             }
+        }
+    }
+
+    Ok(())
+}
+
+fn handle_tm3_diary(action: Tm3DiaryAction) -> anyhow::Result<()> {
+    match action {
+        Tm3DiaryAction::Book {
+            client_id,
+            datetime,
+            duration,
+            tm3_id,
+            dry_run,
+        } => {
+            // Resolve TM3 customer ID from identity.yaml unless overridden
+            let customer_id = if let Some(id) = tm3_id {
+                id
+            } else {
+                tm3_diary::read_tm3_id(&client_id).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "No tm3_id in identity.yaml for client '{}'.\n\
+                         Set tm3_id: <number> in ~/Clinical/clients/{}/identity.yaml\n\
+                         or pass --tm3-id <id>.",
+                        client_id, client_id
+                    )
+                })?
+            };
+
+            let (start_dt, end_dt) = tm3_diary::parse_datetime(&datetime, duration)?;
+            let cfg = tm3_diary::Tm3DiaryConfig::load();
+
+            eprintln!(
+                "[tm3-diary] {} → TM3 customer {} | {} – {} ({} min)",
+                client_id, customer_id, start_dt, end_dt, duration
+            );
+            eprintln!(
+                "[tm3-diary] practitionerId={} locationId={} stockId={} serviceTypeId={}",
+                cfg.practitioner_id, cfg.location_id, cfg.stock_id, cfg.service_type_id
+            );
+
+            if dry_run {
+                println!("[dry-run] Would book {} for {} on {} ({} min).", client_id, customer_id, start_dt, duration);
+                return Ok(());
+            }
+
+            let req = tm3_diary::BookingRequest {
+                tm3_customer_id: customer_id,
+                start_dt,
+                end_dt,
+                duration_mins: duration,
+            };
+
+            // Use std::thread::spawn to escape the tokio runtime context
+            let result = std::thread::spawn(move || {
+                let client = tm3_diary::Tm3DiaryClient::new()?;
+                client.book(&req, &cfg)
+            })
+            .join()
+            .map_err(|e| anyhow::anyhow!("Thread panic: {:?}", e))??;
+
+            match result.appointment_id {
+                Some(id) => println!("✓ Booked. TM3 appointment ID: {}", id),
+                None => println!("✓ Booked. (TM3 did not return an appointment ID)"),
+            }
+        }
+
+        Tm3DiaryAction::RefreshCache => {
+            let count = tm3_clients::refresh_cache()?;
+            println!("✓ TM3 client cache refreshed ({} clients).", count);
         }
     }
 
