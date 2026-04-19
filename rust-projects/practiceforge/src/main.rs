@@ -1782,8 +1782,9 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
             if send {
                 let prac = billing::practitioner::PractitionerConfig::load();
                 let email_cfg = crate::email::load_email_config()?;
-                billing::invoice_render::send_invoice(&inv, &prac, &email_cfg)?;
+                let pdf = billing::invoice_render::send_invoice(&inv, &prac, &email_cfg)?;
                 println!("✓ Invoice emailed to {}.", inv.bill_to.email().unwrap_or(""));
+                println!("  PDF: {}", pdf.display());
             }
         }
 
@@ -1887,7 +1888,7 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
                                 let prac = billing::practitioner::PractitionerConfig::load();
                                 let email_cfg = crate::email::load_email_config()?;
                                 match billing::invoice_render::send_invoice(&inv, &prac, &email_cfg) {
-                                    Ok(()) => println!("    ✓ Emailed to {}.", inv.bill_to.email().unwrap_or("")),
+                                    Ok(pdf) => println!("    ✓ Emailed to {}. PDF: {}", inv.bill_to.email().unwrap_or(""), pdf.display()),
                                     Err(e) => eprintln!("    ✗ Email failed: {}", e),
                                 }
                             }

@@ -1,54 +1,48 @@
-//! Invoice HTML rendering and email delivery.
+//! Invoice PDF rendering and email delivery.
 //!
-//! Renders a professional HTML invoice on the practitioner's letterhead
-//! and sends it via the configured SMTP server.
+//! Renders a professional invoice as a LaTeX PDF on the practitioner's
+//! letterhead and sends it as an email attachment via the configured
+//! SMTP server. Same toolchain as clinical letters (lualatex).
 //!
-//! No external template engine or PDF library — pure Rust string rendering.
-//! HTML uses inline styles for maximum email-client compatibility.
+//! PDF is saved to the client's admin directory so there is a permanent
+//! record of exactly what was sent.
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
+use std::path::PathBuf;
 
 use super::invoice::{BillTo, Invoice};
 use super::practitioner::PractitionerConfig;
 use crate::email::EmailConfig;
 
 // ---------------------------------------------------------------------------
-// HTML rendering
+// LaTeX rendering
 // ---------------------------------------------------------------------------
 
-/// Render a complete invoice as a self-contained HTML string.
-pub fn render_invoice_html(inv: &Invoice, prac: &PractitionerConfig) -> String {
-    let display_name = prac.display_name();
+/// Render a complete invoice as a LaTeX source string.
+pub fn render_invoice_latex(inv: &Invoice, prac: &PractitionerConfig) -> String {
+    let display_name = esc_tex(prac.display_name());
     let company_legal = if prac.trading_name.is_some() {
-        format!(
-            r#"<div style="color:#555;font-size:13px;margin-top:2px;">{}</div>"#,
-            esc(&prac.company_name)
-        )
+        format!(r"\small\color{{gray}}{}", esc_tex(&prac.company_name))
     } else {
         String::new()
     };
 
-    let address_html = prac
+    let address_line = prac
         .address
         .as_deref()
-        .map(|a| format!(r#"<div style="color:#555;font-size:13px;margin-top:4px;">{}</div>"#, esc(a)))
+        .map(|a| format!(r"\\ \small\color{{gray}}{}", esc_tex(a)))
         .unwrap_or_default();
 
-    let contact_html = {
+    let contact_line = {
         let mut parts = Vec::new();
-        if let Some(p) = &prac.phone {
-            parts.push(esc(p));
-        }
+        if let Some(p) = &prac.phone { parts.push(esc_tex(p)); }
         if let Some(e) = &prac.email {
-            parts.push(format!(r#"<a href="mailto:{e}" style="color:#555;">{}</a>"#, esc(e)));
+            parts.push(format!(r"\href{{mailto:{}}}{{{}}}", e, esc_tex(e)));
         }
         if parts.is_empty() {
             String::new()
         } else {
-            format!(
-                r#"<div style="color:#555;font-size:13px;margin-top:2px;">{}</div>"#,
-                parts.join(" &nbsp;|&nbsp; ")
-            )
+            format!(r"\\ \small\color{{gray}}{}", parts.join(r" \textbar\ "))
         }
     };
 
@@ -57,51 +51,32 @@ pub fn render_invoice_html(inv: &Invoice, prac: &PractitionerConfig) -> String {
         BillTo::Client { name, email } => {
             let extra = email
                 .as_deref()
-                .map(|e| format!(r#"<div style="font-size:13px;color:#555;">{}</div>"#, esc(e)))
+                .map(|e| format!("\\\\ \\small\\color{{gray}}{}", esc_tex(e)))
                 .unwrap_or_default();
-            (esc(name), extra)
+            (esc_tex(name), extra)
         }
-        BillTo::Insurer {
-            name,
-            policy,
-            contact,
-            ..
-        } => {
+        BillTo::Insurer { name, policy, contact, .. } => {
             let mut extra = String::new();
             if let Some(c) = contact {
-                extra.push_str(&format!(
-                    r#"<div style="font-size:13px;color:#555;">{}</div>"#,
-                    esc(c)
-                ));
+                extra.push_str(&format!("\\\\ \\small\\color{{gray}}{}", esc_tex(c)));
             }
             if let Some(p) = policy {
-                extra.push_str(&format!(
-                    r#"<div style="font-size:13px;color:#555;">Policy: {}</div>"#,
-                    esc(p)
-                ));
+                extra.push_str(&format!("\\\\ \\small\\color{{gray}}Policy: {}", esc_tex(p)));
             }
-            (esc(name), extra)
+            (esc_tex(name), extra)
         }
     };
 
-    // Line items table rows
-    let rows: String = inv
-        .line_items
-        .iter()
-        .map(|li| {
-            format!(
-                r#"<tr>
-  <td style="padding:8px 10px;border-bottom:1px solid #eee;color:#555;font-size:14px;">{}</td>
-  <td style="padding:8px 10px;border-bottom:1px solid #eee;font-size:14px;">{}</td>
-  <td style="padding:8px 10px;border-bottom:1px solid #eee;font-size:14px;text-align:right;">{} {:.2}</td>
-</tr>"#,
-                esc(&li.session_date),
-                esc(&li.description),
-                esc(&inv.currency),
-                li.unit_amount * li.quantity as f64,
-            )
-        })
-        .collect();
+    // Line items rows
+    let rows: String = inv.line_items.iter().map(|li| {
+        format!(
+            "    {} & {} & {} {:.2} \\\\\n",
+            esc_tex(&li.session_date),
+            esc_tex(&li.description),
+            esc_tex(&inv.currency),
+            li.unit_amount * li.quantity as f64,
+        )
+    }).collect();
 
     let total = inv.total();
 
@@ -110,189 +85,232 @@ pub fn render_invoice_html(inv: &Invoice, prac: &PractitionerConfig) -> String {
         let bank = prac.bank_name.as_deref().unwrap_or("");
         let sort = prac.sort_code.as_deref().unwrap_or("");
         let acc = prac.account_number.as_deref().unwrap_or("");
-        let acc_name = prac
-            .account_name
-            .as_deref()
-            .unwrap_or(&prac.company_name);
+        let acc_name = prac.account_name.as_deref().unwrap_or(&prac.company_name);
 
-        let payment_link_html = inv
-            .payment_link
-            .as_deref()
-            .map(|link| {
-                format!(
-                    r#"<p style="margin:12px 0 4px 0;"><a href="{link}" style="display:inline-block;background:#1a1a2e;color:#fff;padding:10px 20px;border-radius:4px;text-decoration:none;font-size:14px;">Pay online</a></p>"#
-                )
-            })
-            .unwrap_or_default();
+        let bank_row = if bank.is_empty() {
+            String::new()
+        } else {
+            format!("    \\textcolor{{gray}}{{Bank}} & {} \\\\\n", esc_tex(bank))
+        };
+
+        let payment_link_block = inv.payment_link.as_deref().map(|link| {
+            format!(
+                "\n\\vspace{{8pt}}\n\\href{{{link}}}{{\\colorbox{{navy}}{{\\textcolor{{white}}{{\\textbf{{Pay online}}}}}}}}\n"
+            )
+        }).unwrap_or_default();
 
         format!(
-            r#"<div style="background:#f9f9f9;border:1px solid #e0e0e0;border-radius:4px;padding:16px;margin-top:24px;">
-  <h3 style="margin:0 0 10px 0;font-size:15px;color:#1a1a2e;">Payment details</h3>
-  <table cellpadding="0" cellspacing="0" style="font-size:14px;">
-    {bank_row}
-    <tr><td style="color:#888;padding:2px 16px 2px 0;">Account name</td><td><strong>{}</strong></td></tr>
-    <tr><td style="color:#888;padding:2px 16px 2px 0;">Sort code</td><td>{}</td></tr>
-    <tr><td style="color:#888;padding:2px 16px 2px 0;">Account number</td><td>{}</td></tr>
-    <tr><td style="color:#888;padding:2px 16px 2px 0;">Reference</td><td>{}</td></tr>
-  </table>
-  {payment_link_html}
-</div>"#,
-            esc(acc_name),
-            esc(sort),
-            esc(acc),
-            esc(&inv.reference),
-            bank_row = if bank.is_empty() {
-                String::new()
-            } else {
-                format!(r#"<tr><td style="color:#888;padding:2px 16px 2px 0;">Bank</td><td>{}</td></tr>"#, esc(bank))
-            },
+            r"\vspace{{12pt}}
+\colorbox{{lightgray}}{{\begin{{minipage}}{{\linewidth}}
+\vspace{{6pt}}
+{{\small\textbf{{Payment details}}}}\\[4pt]
+\begin{{tabular}}{{ll}}
+{bank_row}    \textcolor{{gray}}{{Account name}} & \textbf{{{acc_name}}} \\
+    \textcolor{{gray}}{{Sort code}} & {sort} \\
+    \textcolor{{gray}}{{Account number}} & {acc} \\
+    \textcolor{{gray}}{{Reference}} & {reference} \\
+\end{{tabular}}
+{payment_link_block}\vspace{{4pt}}
+\end{{minipage}}}}",
+            bank_row = bank_row,
+            acc_name = esc_tex(acc_name),
+            sort = esc_tex(sort),
+            acc = esc_tex(acc),
+            reference = esc_tex(&inv.reference),
+            payment_link_block = payment_link_block,
         )
     } else if let Some(link) = &inv.payment_link {
         format!(
-            r#"<div style="margin-top:24px;">
-  <a href="{link}" style="display:inline-block;background:#1a1a2e;color:#fff;padding:10px 20px;border-radius:4px;text-decoration:none;font-size:14px;">Pay online</a>
-</div>"#
+            "\n\\vspace{{12pt}}\n\\href{{{link}}}{{\\colorbox{{navy}}{{\\textcolor{{white}}{{\\textbf{{Pay online}}}}}}}}\n"
         )
     } else {
-        // Insurer or no payment config — generic reference note
         format!(
-            r#"<p style="color:#555;font-size:13px;margin-top:16px;">Please quote invoice reference <strong>{}</strong> on payment.</p>"#,
-            esc(&inv.reference)
+            "\n\\vspace{{12pt}}\n\\small\\color{{gray}}Please quote invoice reference \\textbf{{{}}} on payment.\n",
+            esc_tex(&inv.reference)
         )
     };
 
     // Footer (company reg / VAT)
     let footer_parts: Vec<String> = [
-        prac.company_reg
-            .as_deref()
-            .map(|r| format!("Company reg: {}", esc(r))),
-        prac.vat_number
-            .as_deref()
-            .map(|v| format!("VAT: {}", esc(v))),
-    ]
-    .into_iter()
-    .flatten()
-    .collect();
+        prac.company_reg.as_deref().map(|r| format!("Company reg: {}", esc_tex(r))),
+        prac.vat_number.as_deref().map(|v| format!("VAT: {}", esc_tex(v))),
+    ].into_iter().flatten().collect();
 
-    let footer_html = if footer_parts.is_empty() {
+    let footer = if footer_parts.is_empty() {
         String::new()
     } else {
         format!(
-            r#"<p style="color:#aaa;font-size:11px;margin-top:24px;border-top:1px solid #eee;padding-top:12px;">{}</p>"#,
-            footer_parts.join(" &nbsp;&middot;&nbsp; ")
+            "\n\\vspace{{12pt}}\\noindent\\rule{{\\linewidth}}{{0.4pt}}\\\\\n\\tiny\\color{{gray}}{}\n",
+            footer_parts.join(" \\textperiodcentered\\ ")
         )
     };
 
-    let notes_html = inv
-        .notes
-        .as_deref()
-        .filter(|n| !n.is_empty())
-        .map(|n| {
-            format!(
-                r#"<p style="font-size:13px;color:#666;margin-top:16px;font-style:italic;">{}</p>"#,
-                esc(n)
-            )
-        })
-        .unwrap_or_default();
+    let notes_block = inv.notes.as_deref().filter(|n| !n.is_empty()).map(|n| {
+        format!("\n\\vspace{{8pt}}\n\\small\\textit{{\\color{{gray}}{}}}\n", esc_tex(n))
+    }).unwrap_or_default();
 
     format!(
-        r#"<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f0f0f0;font-family:Arial,Helvetica,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f0f0;"><tr><td align="center" style="padding:30px 10px;">
-<table width="660" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:6px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.1);">
+        r"\documentclass[a4paper,11pt]{{article}}
+\usepackage{{fontspec}}
+\usepackage[margin=2.5cm]{{geometry}}
+\usepackage{{xcolor}}
+\usepackage{{hyperref}}
+\usepackage{{booktabs}}
+\usepackage{{array}}
+\usepackage{{tabularx}}
+\usepackage{{parskip}}
+\usepackage{{colortbl}}
 
-  <!-- Header bar -->
-  <tr><td style="background:#1a1a2e;padding:0;height:6px;"></td></tr>
+\definecolor{{navy}}{{HTML}}{{1a1a2e}}
+\definecolor{{gray}}{{HTML}}{{666666}}
+\definecolor{{lightgray}}{{HTML}}{{f5f5f5}}
 
-  <!-- Letterhead -->
-  <tr><td style="padding:28px 36px 0 36px;">
-    <table width="100%" cellpadding="0" cellspacing="0"><tr>
-      <td>
-        <div style="font-size:22px;font-weight:bold;color:#1a1a2e;">{display_name}</div>
-        {company_legal}
-        {address_html}
-        {contact_html}
-      </td>
-      <td align="right" valign="top">
-        <div style="font-size:30px;font-weight:bold;color:#888;letter-spacing:2px;">INVOICE</div>
-      </td>
-    </tr></table>
-  </td></tr>
+\hypersetup{{
+  colorlinks=true,
+  linkcolor=navy,
+  urlcolor=navy,
+}}
 
-  <!-- Divider -->
-  <tr><td style="padding:20px 36px 0 36px;"><hr style="border:none;border-top:2px solid #1a1a2e;margin:0;"></td></tr>
+\setlength{{\parindent}}{{0pt}}
 
-  <!-- Invoice meta -->
-  <tr><td style="padding:16px 36px;">
-    <table width="100%" cellpadding="0" cellspacing="0"><tr>
-      <td style="font-size:14px;color:#333;">
-        <table cellpadding="0" cellspacing="0">
-          <tr><td style="color:#888;padding-right:16px;">Invoice</td><td><strong>{reference}</strong></td></tr>
-          <tr><td style="color:#888;padding-right:16px;">Date</td><td>{issue_date}</td></tr>
-          <tr><td style="color:#888;padding-right:16px;">Due</td><td>{due_date}</td></tr>
-        </table>
-      </td>
-      <td align="right" valign="top" style="font-size:14px;color:#333;">
-        <div style="color:#888;font-size:12px;margin-bottom:4px;">BILL TO</div>
-        <div style="font-weight:bold;">{bill_to_name}</div>
-        {bill_to_extra}
-      </td>
-    </tr></table>
-  </td></tr>
+\begin{{document}}
+\pagestyle{{empty}}
 
-  <!-- Line items -->
-  <tr><td style="padding:0 36px;">
-    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
-      <thead>
-        <tr style="background:#f5f5f5;">
-          <th style="padding:8px 10px;text-align:left;font-size:12px;color:#888;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #e0e0e0;">Date</th>
-          <th style="padding:8px 10px;text-align:left;font-size:12px;color:#888;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #e0e0e0;">Description</th>
-          <th style="padding:8px 10px;text-align:right;font-size:12px;color:#888;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #e0e0e0;">Amount</th>
-        </tr>
-      </thead>
-      <tbody>{rows}</tbody>
-      <tfoot>
-        <tr>
-          <td colspan="2" style="padding:12px 10px;text-align:right;font-weight:bold;font-size:15px;border-top:2px solid #333;">TOTAL</td>
-          <td style="padding:12px 10px;text-align:right;font-weight:bold;font-size:15px;border-top:2px solid #333;">{currency} {total:.2}</td>
-        </tr>
-      </tfoot>
-    </table>
-  </td></tr>
+% Top colour bar
+{{\color{{navy}}\rule{{\linewidth}}{{6pt}}}}
 
-  <!-- Payment + notes -->
-  <tr><td style="padding:0 36px 28px 36px;">
-    {payment_section}
-    {notes_html}
-    {footer_html}
-  </td></tr>
+\vspace{{12pt}}
 
-  <!-- Footer bar -->
-  <tr><td style="background:#1a1a2e;padding:0;height:4px;"></td></tr>
+% Letterhead
+\begin{{minipage}}[t]{{0.6\linewidth}}
+{{\large\textbf{{\color{{navy}}{display_name}}}}}\\
+{company_legal}{address_line}{contact_line}
+\end{{minipage}}%
+\hfill
+\begin{{minipage}}[t]{{0.35\linewidth}}
+\raggedleft
+{{\fontsize{{28}}{{34}}\selectfont\color{{lightgray!80!gray}}\textbf{{INVOICE}}}}
+\end{{minipage}}
 
-</table>
-</td></tr></table>
-</body>
-</html>"#,
-        display_name = esc(display_name),
-        reference = esc(&inv.reference),
-        issue_date = esc(&inv.issue_date),
-        due_date = esc(&inv.due_date),
-        currency = esc(&inv.currency),
+\vspace{{8pt}}
+{{\color{{navy}}\rule{{\linewidth}}{{1.5pt}}}}
+\vspace{{8pt}}
+
+% Invoice meta + Bill To
+\begin{{minipage}}[t]{{0.5\linewidth}}
+\begin{{tabular}}{{ll}}
+  \textcolor{{gray}}{{Invoice}} & \textbf{{{reference}}} \\
+  \textcolor{{gray}}{{Date}}    & {issue_date} \\
+  \textcolor{{gray}}{{Due}}     & {due_date} \\
+\end{{tabular}}
+\end{{minipage}}%
+\hfill
+\begin{{minipage}}[t]{{0.45\linewidth}}
+\raggedleft
+{{\small\color{{gray}}BILL TO}}\\
+\textbf{{{bill_to_name}}}{bill_to_extra}
+\end{{minipage}}
+
+\vspace{{16pt}}
+
+% Line items
+\begin{{tabularx}}{{\linewidth}}{{lXr}}
+\toprule
+\rowcolor{{lightgray}}
+\small\textcolor{{gray}}{{DATE}} & \small\textcolor{{gray}}{{DESCRIPTION}} & \small\textcolor{{gray}}{{AMOUNT}} \\
+\midrule
+{rows}\bottomrule
+\addlinespace[4pt]
+\multicolumn{{2}}{{r}}{{\textbf{{TOTAL}}}} & \textbf{{{currency} {total:.2}}} \\
+\end{{tabularx}}
+
+{payment_section}
+{notes_block}
+{footer}
+
+% Bottom colour bar
+\vfill
+{{\color{{navy}}\rule{{\linewidth}}{{4pt}}}}
+
+\end{{document}}
+",
+        display_name = display_name,
+        company_legal = company_legal,
+        address_line = address_line,
+        contact_line = contact_line,
+        reference = esc_tex(&inv.reference),
+        issue_date = esc_tex(&inv.issue_date),
+        due_date = esc_tex(&inv.due_date),
+        bill_to_name = bill_to_name,
+        bill_to_extra = bill_to_extra,
+        rows = rows,
+        currency = esc_tex(&inv.currency),
         total = total,
+        payment_section = payment_section,
+        notes_block = notes_block,
+        footer = footer,
     )
 }
 
-/// Send an invoice email to the bill-to address.
+// ---------------------------------------------------------------------------
+// PDF build
+// ---------------------------------------------------------------------------
+
+/// Compile LaTeX source to PDF. Returns path to the generated PDF.
 ///
-/// Requires practitioner config (for letterhead) and email config (SMTP).
+/// Stores the PDF in `~/Clinical/clients/<client_id>/admin/` so there is
+/// a permanent record of what was sent. The .tex source is written alongside
+/// it (useful for debugging or manual re-renders).
+pub fn build_invoice_pdf(inv: &Invoice, prac: &PractitionerConfig) -> Result<PathBuf> {
+    let clients_dir = crate::config::clients_dir();
+    let admin_dir = clients_dir.join(&inv.client_id).join("admin");
+    std::fs::create_dir_all(&admin_dir)
+        .with_context(|| format!("Could not create {}", admin_dir.display()))?;
+
+    let stem = inv.reference.replace('/', "-");
+    let tex_path = admin_dir.join(format!("{}.tex", stem));
+    let pdf_path = admin_dir.join(format!("{}.pdf", stem));
+
+    let source = render_invoice_latex(inv, prac);
+    std::fs::write(&tex_path, &source)
+        .with_context(|| format!("Could not write {}", tex_path.display()))?;
+
+    let output = std::process::Command::new("lualatex")
+        .args([
+            "--interaction=nonstopmode",
+            &format!("--output-directory={}", admin_dir.display()),
+            tex_path.to_str().unwrap(),
+        ])
+        .output()
+        .context("lualatex not found — install texlive-luatex")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stdout); // lualatex writes errors to stdout
+        bail!(
+            "lualatex failed for {}:\n{}",
+            inv.reference,
+            &stderr.lines().filter(|l| l.contains("Error") || l.contains("error") || l.starts_with('!')).collect::<Vec<_>>().join("\n")
+        );
+    }
+
+    // Clean up lualatex auxiliary files
+    for ext in &["aux", "log", "out"] {
+        let _ = std::fs::remove_file(admin_dir.join(format!("{}.{}", stem, ext)));
+    }
+
+    Ok(pdf_path)
+}
+
+// ---------------------------------------------------------------------------
+// Email delivery
+// ---------------------------------------------------------------------------
+
+/// Build a PDF invoice and email it to the bill-to address.
 pub fn send_invoice(
     inv: &Invoice,
     prac: &PractitionerConfig,
     email_cfg: &EmailConfig,
-) -> Result<()> {
+) -> Result<PathBuf> {
     let to_email = inv
         .bill_to
         .email()
@@ -312,7 +330,8 @@ pub fn send_invoice(
         );
     }
 
-    let html = render_invoice_html(inv, prac);
+    let pdf_path = build_invoice_pdf(inv, prac)?;
+
     let subject = format!(
         "Invoice {} from {} — {} {:.2}",
         inv.reference,
@@ -321,8 +340,17 @@ pub fn send_invoice(
         inv.total()
     );
 
-    // Use practitioner's own email as the from-address if configured,
-    // falling back to the [email] config (which may be the COHS address).
+    let body = format!(
+        "Dear {},\n\nPlease find attached invoice {} for {} {:.2}, due {}.\n\n{}\n",
+        inv.bill_to.display_name(),
+        inv.reference,
+        inv.currency,
+        inv.total(),
+        inv.due_date,
+        if inv.payment_link.is_some() { "You can pay online using the link in the attached invoice." } else { "" },
+    );
+
+    // Use practitioner's own email as from-address if configured.
     // Invoices come from the practitioner's company, not COHS.
     let mut invoice_email_cfg = email_cfg.clone();
     if let Some(prac_email) = &prac.email {
@@ -330,17 +358,32 @@ pub fn send_invoice(
         invoice_email_cfg.from_name = prac.display_name().to_string();
     }
 
-    crate::email::send_html_email(&invoice_email_cfg, to_email, to_name, &subject, &html)?;
-    Ok(())
+    crate::email::send_email(
+        &invoice_email_cfg,
+        to_email,
+        to_name,
+        &subject,
+        &body,
+        Some(&pdf_path),
+        None,
+    )?;
+
+    Ok(pdf_path)
 }
 
 // ---------------------------------------------------------------------------
-// HTML escaping (no external dep needed)
+// LaTeX escaping
 // ---------------------------------------------------------------------------
 
-fn esc(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
+fn esc_tex(s: &str) -> String {
+    s.replace('\\', r"\textbackslash{}")
+        .replace('{', r"\{")
+        .replace('}', r"\}")
+        .replace('&', r"\&")
+        .replace('%', r"\%")
+        .replace('$', r"\$")
+        .replace('#', r"\#")
+        .replace('_', r"\_")
+        .replace('^', r"\textasciicircum{}")
+        .replace('~', r"\textasciitilde{}")
 }
