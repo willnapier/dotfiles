@@ -1,15 +1,26 @@
-//! TM3 diary write-back — creates appointments directly via the TM3 API.
-//!
-//! Uses session cookies (shared with tm3-discover / tm3-clients) and
-//! reqwest::blocking to call the ServiceStack endpoints captured from
-//! the browser recon on 2026-04-19.
+//! TM3 diary write-back — create, update, reschedule, and delete appointments
+//! directly via the TM3 ServiceStack API.
 //!
 //! Auth: session cookies only (no Bearer token). Required header: x-tm3-date.
 //!
-//! Booking flow:
+//! Booking flow (new appointment):
 //!   1. POST /api/json/reply/CreateTemporaryAppointmentRequest — reserve slot
 //!   2. POST /api/json/reply/AppointmentBookRequest — commit booking
 //!   3. POST /api/lock/release — release slot lock
+//!
+//! Update flow (attendance / edit):
+//!   1. GET  /api/json/reply/AppointmentGetRequest?id=<id> — fetch current state
+//!   2. POST /api/json/reply/LockSameRequest — preflight lock
+//!   3. POST /api/json/reply/AppointmentBookRequest — update-style body (has `id`, no `tempId`)
+//!   4. POST /api/json/reply/LockReleaseRequest — release
+//!
+//! Reschedule flow (move to new time):
+//!   1. POST /api/lock/request — lock by objectType/objectId
+//!   2. POST /api/appointment/update — new startDateTime/endDateTime
+//!   3. POST /api/json/reply/LockReleaseRequest — release
+//!
+//! Delete flow:
+//!   1. POST /api/json/reply/AppointmentDeleteRequest — `{id, backgroundJobId: null}`
 //!
 //! Run inside std::thread::spawn to avoid blocking the tokio executor.
 
@@ -68,6 +79,64 @@ impl Tm3DiaryConfig {
         }
         cfg
     }
+}
+
+/// TM3 attendance status codes (captured from LockSameRequest.status and
+/// AppointmentBookRequest.status fields in the 2026-04-19-full recon).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum AttendanceStatus {
+    Scheduled = 0,
+    Arrived = 1,
+    Completed = 2,
+    NoShow = 3,
+}
+
+impl AttendanceStatus {
+    pub fn as_u8(self) -> u8 {
+        self as u8
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "scheduled" | "booked" => Some(Self::Scheduled),
+            "arrived" => Some(Self::Arrived),
+            "completed" | "done" => Some(Self::Completed),
+            "dna" | "noshow" | "no-show" => Some(Self::NoShow),
+            _ => None,
+        }
+    }
+}
+
+/// Minimal appointment data from AppointmentGetRequest, enough to
+/// build LockSameRequest and the update AppointmentBookRequest body.
+#[derive(Debug, Deserialize)]
+pub struct TM3Appointment {
+    pub id: u64,
+    #[serde(rename = "startDateTime")]
+    pub start_date_time: String,
+    #[serde(rename = "endDateTime")]
+    pub end_date_time: String,
+    #[serde(rename = "practitionerId")]
+    pub practitioner_id: u64,
+    #[serde(rename = "locationId")]
+    pub location_id: u64,
+    #[serde(rename = "roomId", default)]
+    pub room_id: i64,
+    #[serde(rename = "customerId")]
+    pub customer_id: u64,
+    #[serde(rename = "stockId")]
+    pub stock_id: u64,
+    #[serde(rename = "serviceTypeId", default)]
+    pub service_type_id: u64,
+    pub status: u8,
+    #[serde(rename = "subStatus", default)]
+    pub sub_status: u8,
+    pub name: Option<String>,
+    pub comment: Option<String>,
+    #[serde(rename = "bookingMethod", default)]
+    pub booking_method: String,
+    #[serde(rename = "prepaymentType", default)]
+    pub prepayment_type: String,
 }
 
 /// Parameters for a single booking request.
@@ -301,6 +370,151 @@ impl Tm3DiaryClient {
             "emergencyContact":    "",
             "isRequestingCard":    false,
         }))
+    }
+
+    // -----------------------------------------------------------------------
+    // Single-appointment operations (update, reschedule, delete, get)
+    // -----------------------------------------------------------------------
+
+    /// Fetch an existing appointment by TM3 ID.
+    pub fn get_appointment(&self, appointment_id: u64) -> Result<TM3Appointment> {
+        let path = format!("/api/json/reply/AppointmentGetRequest?id={}", appointment_id);
+        let url = format!("{}{}", TM3_BASE, &path);
+        let resp = self
+            .client
+            .get(&url)
+            .header("Cookie", &self.cookie_header)
+            .header("Content-Type", "application/json")
+            .header("x-tm3-date", Self::now_header())
+            .send()
+            .with_context(|| format!("GET {} failed", path))?;
+        let status = resp.status();
+        let text = resp.text()?;
+        if !status.is_success() {
+            bail!("TM3 GET {} returned HTTP {}: {}", path, status, &text[..text.len().min(400)]);
+        }
+        serde_json::from_str(&text)
+            .with_context(|| format!("Failed to parse AppointmentGetRequest response: {}", &text[..text.len().min(200)]))
+    }
+
+    /// Mark attendance on an existing appointment.
+    ///
+    /// Flow: GET appointment → LockSameRequest → AppointmentBookRequest (update body)
+    /// → LockReleaseRequest.
+    pub fn update_status(
+        &self,
+        appointment_id: u64,
+        new_status: AttendanceStatus,
+        comment: Option<&str>,
+    ) -> Result<Value> {
+        let appt = self.get_appointment(appointment_id)
+            .with_context(|| format!("Failed to fetch appointment {}", appointment_id))?;
+        eprintln!(
+            "[tm3-diary] Fetched appointment {}: {} → {} ({} → {})",
+            appt.id, appt.start_date_time, appt.end_date_time,
+            appt.status, new_status.as_u8()
+        );
+
+        // Step 1: LockSameRequest preflight
+        let client_name = appt.name.as_deref().unwrap_or("");
+        let lock_body = serde_json::json!({
+            "id":             appt.id,
+            "startDateTime":  appt.start_date_time,
+            "endDateTime":    appt.end_date_time,
+            "status":         appt.status,
+            "practitionerId": appt.practitioner_id,
+            "locationId":     appt.location_id,
+            "roomId":         appt.room_id,
+            "type":           "A",
+            "name":           client_name,
+            "description":    "",
+        });
+        let _ = self.post("/api/json/reply/LockSameRequest", &lock_body);
+
+        // Step 2: AppointmentBookRequest (update-style body — has `id`, no `tempId`/`customer`)
+        let update_body = serde_json::json!({
+            "id":             appt.id,
+            "startDateTime":  appt.start_date_time,
+            "endDateTime":    appt.end_date_time,
+            "practitionerId": appt.practitioner_id,
+            "caseId":         0,
+            "groupId":        0,
+            "name":           client_name,
+            "locationId":     appt.location_id,
+            "roomId":         appt.room_id,
+            "apptType":       "A",
+            "comment":        comment.unwrap_or(""),
+            "customerId":     appt.customer_id,
+            "stockId":        appt.stock_id,
+            "status":         new_status.as_u8(),
+            "subStatus":      appt.sub_status,
+            "serviceTypeId":  appt.service_type_id,
+            "reminderType":   null,
+            "duration":       1,
+            "bookingMethod":  "TW",
+            "prepaymentType": if appt.prepayment_type.is_empty() { "PayLater" } else { &appt.prepayment_type },
+            "depositPaid":    false,
+            "resourceMode":   "practitioner",
+        });
+        let resp = self.post("/api/json/reply/AppointmentBookRequest", &update_body)?;
+        eprintln!("[tm3-diary] Status updated: {} → {}", appt.status, new_status.as_u8());
+
+        // Step 3: LockReleaseRequest
+        let release_body = serde_json::json!({"objectType": "A", "objectId": appt.id});
+        let _ = self.post("/api/json/reply/LockReleaseRequest", &release_body);
+
+        Ok(resp)
+    }
+
+    /// Reschedule an appointment to a new time.
+    ///
+    /// Flow: POST /api/lock/request → POST /api/appointment/update → LockReleaseRequest.
+    pub fn reschedule(
+        &self,
+        appointment_id: u64,
+        new_start: &str,
+        new_end: &str,
+    ) -> Result<Value> {
+        let appt = self.get_appointment(appointment_id)
+            .with_context(|| format!("Failed to fetch appointment {}", appointment_id))?;
+        eprintln!(
+            "[tm3-diary] Rescheduling {}: {} → {}",
+            appointment_id, appt.start_date_time, new_start
+        );
+
+        // Step 1: Lock
+        let lock_req_body = serde_json::json!({"objectType": "A", "objectId": appointment_id});
+        let _ = self.post("/api/lock/request", &lock_req_body);
+
+        // Step 2: Move
+        let update_body = serde_json::json!({
+            "id":                  appointment_id,
+            "roomId":              appt.room_id,
+            "apptType":            "A",
+            "locationId":          appt.location_id,
+            "startDateTime":       new_start,
+            "endDateTime":         new_end,
+            "practitionerId":      appt.practitioner_id,
+            "resourceMode":        "practitioner",
+            "resendConfirmations": false,
+            "reminderType":        null,
+        });
+        let resp = self.post("/api/appointment/update", &update_body)?;
+        eprintln!("[tm3-diary] Appointment {} moved to {} – {}", appointment_id, new_start, new_end);
+
+        // Step 3: Release
+        let release_body = serde_json::json!({"objectType": "A", "objectId": appointment_id});
+        let _ = self.post("/api/json/reply/LockReleaseRequest", &release_body);
+
+        Ok(resp)
+    }
+
+    /// Delete an appointment.
+    pub fn delete_appointment(&self, appointment_id: u64) -> Result<Value> {
+        let body = serde_json::json!({"id": appointment_id, "backgroundJobId": null});
+        let resp = self.post("/api/json/reply/AppointmentDeleteRequest", &body)?;
+        eprintln!("[tm3-diary] Appointment {} deleted.", appointment_id);
+        Ok(resp)
     }
 }
 

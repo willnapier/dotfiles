@@ -680,6 +680,59 @@ enum Tm3DiaryAction {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Mark attendance on an existing TM3 appointment.
+    ///
+    /// Requires the TM3 appointment ID (returned by `book` or found in TM3 URL).
+    /// Status options: arrived, completed, dna (no-show), scheduled (revert).
+    ///
+    /// Example: practiceforge tm3-diary update 155058 --status arrived
+    Update {
+        /// TM3 appointment ID (numeric)
+        appointment_id: u64,
+        /// New attendance status
+        #[arg(long, value_parser = ["arrived", "completed", "dna", "scheduled"])]
+        status: String,
+        /// Optional appointment note / comment
+        #[arg(long)]
+        comment: Option<String>,
+        /// Print what would be sent without calling the API
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Reschedule an existing appointment to a new date/time.
+    ///
+    /// Example: practiceforge tm3-diary reschedule 155058 "2026-04-22 14:30" --duration 60
+    Reschedule {
+        /// TM3 appointment ID (numeric)
+        appointment_id: u64,
+        /// New date and time: "YYYY-MM-DD HH:MM"
+        datetime: String,
+        /// Duration in minutes (to compute end time)
+        #[arg(long, default_value = "60")]
+        duration: u32,
+        /// Print what would be sent without calling the API
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Delete a TM3 appointment.
+    ///
+    /// Example: practiceforge tm3-diary delete 155058
+    Delete {
+        /// TM3 appointment ID (numeric)
+        appointment_id: u64,
+        /// Print what would be sent without calling the API
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Fetch a TM3 appointment by ID and print its details.
+    Get {
+        /// TM3 appointment ID (numeric)
+        appointment_id: u64,
+    },
+
     /// Refresh the TM3 client cache (alias for convenience).
     ///
     /// Same as running 'practiceforge tm3-clients refresh'. Required before
@@ -3255,6 +3308,101 @@ fn handle_tm3_diary(action: Tm3DiaryAction) -> anyhow::Result<()> {
             match result.appointment_id {
                 Some(id) => println!("✓ Booked. TM3 appointment ID: {}", id),
                 None => println!("✓ Booked. (TM3 did not return an appointment ID)"),
+            }
+        }
+
+        Tm3DiaryAction::Update {
+            appointment_id,
+            status,
+            comment,
+            dry_run,
+        } => {
+            let new_status = tm3_diary::AttendanceStatus::from_str(&status)
+                .ok_or_else(|| anyhow::anyhow!("Unknown status '{}' — use: arrived, completed, dna, scheduled", status))?;
+
+            eprintln!("[tm3-diary] Marking appointment {} as {:?}", appointment_id, status);
+
+            if dry_run {
+                println!("[dry-run] Would set appointment {} status to {} ({})", appointment_id, status, new_status.as_u8());
+                return Ok(());
+            }
+
+            let comment_owned = comment.clone();
+            let result = std::thread::spawn(move || {
+                let client = tm3_diary::Tm3DiaryClient::new()?;
+                client.update_status(appointment_id, new_status, comment_owned.as_deref())
+            })
+            .join()
+            .map_err(|e| anyhow::anyhow!("Thread panic: {:?}", e))??;
+
+            let returned_id = result.get("id").and_then(|v| v.as_u64());
+            println!("✓ Appointment {} marked as {}. (TM3 id={:?})", appointment_id, status, returned_id);
+        }
+
+        Tm3DiaryAction::Reschedule {
+            appointment_id,
+            datetime,
+            duration,
+            dry_run,
+        } => {
+            let (new_start, new_end) = tm3_diary::parse_datetime(&datetime, duration)?;
+
+            eprintln!("[tm3-diary] Rescheduling appointment {} to {} – {}", appointment_id, new_start, new_end);
+
+            if dry_run {
+                println!("[dry-run] Would reschedule appointment {} to {} ({} min)", appointment_id, new_start, duration);
+                return Ok(());
+            }
+
+            let result = std::thread::spawn(move || {
+                let client = tm3_diary::Tm3DiaryClient::new()?;
+                client.reschedule(appointment_id, &new_start, &new_end)
+            })
+            .join()
+            .map_err(|e| anyhow::anyhow!("Thread panic: {:?}", e))??;
+
+            let returned_id = result.get("id").and_then(|v| v.as_u64());
+            println!("✓ Appointment {} rescheduled to {}. (TM3 id={:?})", appointment_id, datetime, returned_id);
+        }
+
+        Tm3DiaryAction::Delete {
+            appointment_id,
+            dry_run,
+        } => {
+            if dry_run {
+                println!("[dry-run] Would delete appointment {}", appointment_id);
+                return Ok(());
+            }
+
+            std::thread::spawn(move || {
+                let client = tm3_diary::Tm3DiaryClient::new()?;
+                client.delete_appointment(appointment_id)
+            })
+            .join()
+            .map_err(|e| anyhow::anyhow!("Thread panic: {:?}", e))??;
+
+            println!("✓ Appointment {} deleted.", appointment_id);
+        }
+
+        Tm3DiaryAction::Get { appointment_id } => {
+            let appt = std::thread::spawn(move || {
+                let client = tm3_diary::Tm3DiaryClient::new()?;
+                client.get_appointment(appointment_id)
+            })
+            .join()
+            .map_err(|e| anyhow::anyhow!("Thread panic: {:?}", e))??;
+
+            println!("TM3 appointment {}", appt.id);
+            println!("  Time:          {} – {}", appt.start_date_time, appt.end_date_time);
+            println!("  Status:        {} ({})", appt.status, match appt.status {
+                0 => "Scheduled", 1 => "Arrived", 2 => "Completed", 3 => "DNA", _ => "Unknown"
+            });
+            println!("  Customer:      id={}", appt.customer_id);
+            println!("  Name:          {}", appt.name.as_deref().unwrap_or("(none)"));
+            if let Some(ref c) = appt.comment {
+                if !c.is_empty() {
+                    println!("  Comment:       {}", c);
+                }
             }
         }
 
