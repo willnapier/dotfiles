@@ -690,24 +690,21 @@ async fn billing_create_invoice(
     let clients_dir = crate::config::clients_dir();
     let client_dir = clients_dir.join(&client_id);
     let identity_path = client_dir.join("identity.yaml");
-    let notes_path = client_dir.join("notes.md");
 
     if !identity_path.exists() {
         return Err((StatusCode::NOT_FOUND, format!("No identity.yaml for {}", client_id)));
     }
-    if !notes_path.exists() {
-        return Err((StatusCode::NOT_FOUND, format!("No notes.md for {}", client_id)));
-    }
 
-    let notes = std::fs::read_to_string(&notes_path)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    let all_sessions = crate::billing::invoice::extract_session_dates(&notes);
+    let all_sessions = crate::billing::sessions::billable_sessions_for_client(
+        &client_id,
+        &crate::billing::sessions::default_session_dir(),
+        Some(&crate::billing::sessions::default_schedules_dir()),
+    )
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let already_invoiced = provider
         .invoiced_dates_for_client(&client_id)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let uninvoiced =
-        crate::billing::invoice::uninvoiced_sessions(&all_sessions, &already_invoiced);
+    let uninvoiced = crate::billing::sessions::uninvoiced_billable(&all_sessions, &already_invoiced);
 
     if uninvoiced.is_empty() {
         return Ok(Json(serde_json::json!({

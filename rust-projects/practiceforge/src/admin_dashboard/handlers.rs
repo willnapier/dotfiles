@@ -566,33 +566,34 @@ pub async fn create_invoice(
         return Err((StatusCode::NOT_FOUND, format!("No identity.yaml for {}", req.client_id)));
     }
 
-    // Get session dates
-    let session_dates = if let Some(dates) = req.dates {
+    // Get billable sessions
+    let uninvoiced: Vec<crate::billing::sessions::BillableSession> = if let Some(dates) = req.dates {
         dates
+            .into_iter()
+            .map(|date| crate::billing::sessions::BillableSession {
+                date,
+                reason: crate::billing::sessions::BillReason::Attended,
+            })
+            .collect()
     } else {
-        let notes_path = client_dir.join("notes.md");
-        if !notes_path.exists() {
-            return Err((StatusCode::NOT_FOUND, "No notes.md found".to_string()));
-        }
-        let content = std::fs::read_to_string(&notes_path)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        let all_dates = crate::billing::invoice::extract_session_dates(&content);
+        let all_sessions = crate::billing::sessions::billable_sessions_for_client(
+            &req.client_id,
+            &crate::billing::sessions::default_session_dir(),
+            Some(&crate::billing::sessions::default_schedules_dir()),
+        )
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-        use crate::billing::traits::AccountingProvider;
-        let invoiced_summaries = provider.list_invoices(crate::billing::traits::InvoiceFilter {
-            client_id: Some(req.client_id.clone()),
-            ..Default::default()
-        }).unwrap_or_default();
+        let already_invoiced = {
+            use crate::billing::traits::AccountingProvider;
+            provider
+                .invoiced_dates_for_client(&req.client_id)
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        };
 
-        // Extract the issue dates from invoiced summaries as the "already invoiced" dates
-        let invoiced_dates: Vec<String> = invoiced_summaries.iter()
-            .map(|s| s.issue_date.clone())
-            .collect();
-
-        crate::billing::invoice::uninvoiced_sessions(&all_dates, &invoiced_dates)
+        crate::billing::sessions::uninvoiced_billable(&all_sessions, &already_invoiced)
     };
 
-    if session_dates.is_empty() {
+    if uninvoiced.is_empty() {
         return Ok(Json(serde_json::json!({"ok": false, "error": "No uninvoiced sessions"})));
     }
 
@@ -604,7 +605,7 @@ pub async fn create_invoice(
         reference,
         &req.client_id,
         &identity_path,
-        &session_dates,
+        &uninvoiced,
         config.payment_terms_days,
         &config.currency,
     ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -616,7 +617,7 @@ pub async fn create_invoice(
         "ok": true,
         "reference": inv_ref.reference,
         "total": invoice.total(),
-        "sessions": session_dates.len()
+        "sessions": uninvoiced.len()
     })))
 }
 
@@ -642,25 +643,26 @@ pub async fn create_invoice_batch() -> Result<Json<serde_json::Value>, (StatusCo
             let entry = entry.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
             let client_id = entry.file_name().to_string_lossy().to_string();
             let client_dir = entry.path();
-            let notes_path = client_dir.join("notes.md");
             let identity_path = if client_dir.join("identity.yaml").exists() {
                 client_dir.join("identity.yaml")
             } else {
                 client_dir.join("private").join("identity.yaml")
             };
 
-            if !notes_path.exists() || !identity_path.exists() { continue; }
+            if !identity_path.exists() { continue; }
 
-            let content = std::fs::read_to_string(&notes_path).unwrap_or_default();
-            let all_dates = crate::billing::invoice::extract_session_dates(&content);
-            let invoiced_summaries = provider.list_invoices(crate::billing::traits::InvoiceFilter {
-                client_id: Some(client_id.clone()),
-                ..Default::default()
-            }).unwrap_or_default();
-            let invoiced_dates: Vec<String> = invoiced_summaries.iter()
-                .map(|s| s.issue_date.clone())
-                .collect();
-            let uninvoiced = crate::billing::invoice::uninvoiced_sessions(&all_dates, &invoiced_dates);
+            let all_sessions = match crate::billing::sessions::billable_sessions_for_client(
+                &client_id,
+                &crate::billing::sessions::default_session_dir(),
+                Some(&crate::billing::sessions::default_schedules_dir()),
+            ) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            let already_invoiced = provider
+                .invoiced_dates_for_client(&client_id)
+                .unwrap_or_default();
+            let uninvoiced = crate::billing::sessions::uninvoiced_billable(&all_sessions, &already_invoiced);
 
             if uninvoiced.is_empty() { continue; }
 

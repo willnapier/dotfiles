@@ -1410,9 +1410,13 @@ async fn handle_inference(action: InferencePodAction) -> anyhow::Result<()> {
 fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
     use billing::{
         config::BillingConfig,
-        invoice::{self, build_invoice, extract_session_dates, uninvoiced_sessions},
+        invoice::{self, build_invoice},
         manual::ManualProvider,
         remind,
+        sessions::{
+            billable_sessions_for_client, default_schedules_dir, default_session_dir,
+            uninvoiced_billable, BillReason, BillableSession,
+        },
         status,
         traits::{AccountingProvider, InvoiceFilter},
     };
@@ -1479,27 +1483,27 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
                 );
             }
 
-            let session_dates = if let Some(dates_str) = dates {
+            let uninvoiced: Vec<BillableSession> = if let Some(dates_str) = dates {
                 dates_str
                     .split(',')
-                    .map(|s| s.trim().to_string())
+                    .map(|s| BillableSession {
+                        date: s.trim().to_string(),
+                        reason: BillReason::Attended,
+                    })
                     .collect()
             } else {
-                // Find uninvoiced sessions
-                let notes_path = client_dir.join("notes.md");
-                if !notes_path.exists() {
-                    anyhow::bail!("No notes.md for client {}", client_id);
-                }
-                let notes = std::fs::read_to_string(&notes_path)?;
-                let all_sessions = extract_session_dates(&notes);
+                let all_sessions = billable_sessions_for_client(
+                    &client_id,
+                    &default_session_dir(),
+                    Some(&default_schedules_dir()),
+                )?;
                 let already_invoiced = provider.invoiced_dates_for_client(&client_id)?;
-                let uninvoiced = uninvoiced_sessions(&all_sessions, &already_invoiced);
-
-                if uninvoiced.is_empty() {
+                let sessions = uninvoiced_billable(&all_sessions, &already_invoiced);
+                if sessions.is_empty() {
                     println!("No uninvoiced sessions for {}.", client_id);
                     return Ok(());
                 }
-                uninvoiced
+                sessions
             };
 
             let reference = provider.next_invoice_number()?;
@@ -1507,7 +1511,7 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
                 reference,
                 &client_id,
                 &identity_path,
-                &session_dates,
+                &uninvoiced,
                 config.payment_terms_days,
                 &config.currency,
             )?;
@@ -1546,9 +1550,8 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
                 let client_id = entry.file_name().to_string_lossy().to_string();
                 let client_dir = entry.path();
                 let identity_path = client_dir.join("identity.yaml");
-                let notes_path = client_dir.join("notes.md");
 
-                if !identity_path.exists() || !notes_path.exists() {
+                if !identity_path.exists() {
                     continue;
                 }
 
@@ -1571,11 +1574,17 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
                     continue;
                 }
 
-                let notes = std::fs::read_to_string(&notes_path).unwrap_or_default();
-                let all_sessions = extract_session_dates(&notes);
+                let all_sessions = match billable_sessions_for_client(
+                    &client_id,
+                    &default_session_dir(),
+                    Some(&default_schedules_dir()),
+                ) {
+                    Ok(s) => s,
+                    Err(_) => continue,
+                };
                 let already_invoiced =
                     provider.invoiced_dates_for_client(&client_id).unwrap_or_default();
-                let uninvoiced = uninvoiced_sessions(&all_sessions, &already_invoiced);
+                let uninvoiced = uninvoiced_billable(&all_sessions, &already_invoiced);
 
                 if uninvoiced.is_empty() {
                     continue;
