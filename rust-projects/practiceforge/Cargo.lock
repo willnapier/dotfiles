@@ -736,6 +736,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07bbe89c50d7a535e539b8c17bc0b49bdb77747034daa8087407d655f3f7cc1d"
 dependencies = [
  "futures-core",
+ "futures-sink",
 ]
 
 [[package]]
@@ -1806,6 +1807,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "clap",
+ "data-encoding",
  "dirs",
  "futures-util",
  "headless_chrome",
@@ -1814,12 +1816,14 @@ dependencies = [
  "lazy_static",
  "lettre",
  "mail-parser",
+ "rand 0.8.5",
  "regex",
  "reqwest",
  "rrule",
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha2",
  "shellexpand",
  "tantivy",
  "tempfile",
@@ -2037,6 +2041,7 @@ dependencies = [
  "base64",
  "bytes",
  "encoding_rs",
+ "futures-channel",
  "futures-core",
  "futures-util",
  "h2",

@@ -348,6 +348,25 @@ enum BillingAction {
         #[arg(name = "KEY=VALUE")]
         setting: Option<String>,
     },
+    /// Run the Xero OAuth2 PKCE authorization flow.
+    ///
+    /// Opens a browser URL, waits for the callback on localhost:8765,
+    /// and saves the access/refresh tokens to secrets.toml.
+    XeroAuth,
+    /// Save Xero API credentials to secrets.toml.
+    ///
+    /// Obtain client_id and client_secret from the Xero Developer Portal.
+    XeroSetup {
+        /// Xero OAuth2 client ID
+        client_id: String,
+        /// Xero OAuth2 client secret
+        client_secret: String,
+    },
+    /// Save Stripe secret key to secrets.toml.
+    StripeKey {
+        /// Stripe secret key (sk_live_... or sk_test_...)
+        secret_key: String,
+    },
 }
 
 #[derive(Parser, Debug)]
@@ -1421,7 +1440,7 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
         traits::{AccountingProvider, InvoiceFilter},
     };
 
-    // Init and Config work without billing being enabled
+    // Init, Config, and credential-setup commands work without billing being enabled
     match &action {
         BillingAction::Init => {
             return billing::config::init_billing();
@@ -1432,6 +1451,45 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
             } else {
                 billing::config::show_config()
             };
+        }
+        BillingAction::XeroSetup { client_id, client_secret } => {
+            let mut secrets = billing::BillingSecrets::load()?;
+            secrets.xero.client_id = Some(client_id.clone());
+            secrets.xero.client_secret = Some(client_secret.clone());
+            secrets.save()?;
+            println!("✓ Xero credentials saved. Run 'billing xero-auth' to authorize.");
+            return Ok(());
+        }
+        BillingAction::XeroAuth => {
+            let secrets = billing::BillingSecrets::load()?;
+            let client_id = secrets
+                .xero
+                .client_id
+                .as_deref()
+                .ok_or_else(|| anyhow::anyhow!("Run 'billing xero-setup <client_id> <client_secret>' first"))?
+                .to_string();
+            let (auth_url, _state, verifier) =
+                billing::XeroProvider::auth_url(&client_id)?;
+            println!("Open this URL in your browser to authorize Xero:");
+            println!("\n  {}\n", auth_url);
+            let code = billing::xero::run_oauth_callback_server(8765)?;
+            let client_secret = secrets
+                .xero
+                .client_secret
+                .as_deref()
+                .ok_or_else(|| anyhow::anyhow!("client_secret not set"))?
+                .to_string();
+            let tenant_name =
+                billing::XeroProvider::auth_complete(&code, &verifier, &client_id, &client_secret)?;
+            println!("✓ Authorized. Connected to Xero tenant: {}", tenant_name);
+            return Ok(());
+        }
+        BillingAction::StripeKey { secret_key } => {
+            let mut secrets = billing::BillingSecrets::load()?;
+            secrets.stripe.secret_key = Some(secret_key.clone());
+            secrets.save()?;
+            println!("✓ Stripe secret key saved.");
+            return Ok(());
         }
         _ => {}
     }
@@ -1458,13 +1516,21 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
         }
     }
 
-    // For now, only the Manual provider is implemented.
-    // Future: match on config.provider to select Xero, etc.
-    let provider = ManualProvider::new(&config)?;
+    // Select accounting provider based on config
+    let provider: Box<dyn billing::traits::AccountingProvider> = match config.provider.as_str() {
+        "xero" => Box::new(billing::XeroProvider::new()?),
+        _ => Box::new(ManualProvider::new(&config)?),
+    };
+
+    // Select payment provider based on config
+    let payment: Box<dyn billing::traits::PaymentProvider> = match config.payment_provider.as_str() {
+        "stripe" => Box::new(billing::StripeProvider::new()?),
+        _ => Box::new(ManualProvider::new(&config)?),
+    };
 
     match action {
         BillingAction::Status { overdue } => {
-            status::show_status(&provider, overdue)?;
+            status::show_status(provider.as_ref(), overdue)?;
         }
 
         BillingAction::Invoice { client_id, dates } => {
@@ -1526,10 +1592,22 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
                 inv.total()
             );
 
+            // Generate payment link for self-pay clients
+            let payment_link = if matches!(inv.bill_to, billing::BillTo::Client { .. }) {
+                payment.create_payment_link(&inv).unwrap_or(None)
+            } else {
+                None
+            };
+            let mut inv = inv;
+            inv.payment_link = payment_link;
+
             let result = provider.create_invoice(&inv)?;
             println!("✓ Invoice {} created.", result.reference);
             if let Some(path) = &result.file_path {
                 println!("  File: {}", path);
+            }
+            if let Some(link) = &inv.payment_link {
+                println!("  Payment link: {}", link);
             }
         }
 
@@ -1726,7 +1804,7 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
                         None,
                     ) {
                         Ok(()) => {
-                            // Log the sent reminder
+                            // Log the sent reminder (always local, regardless of provider)
                             let now = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
                             let log_entry = crate::billing::ReminderLogEntry {
                                 reference: inv.reference.clone(),
@@ -1735,8 +1813,10 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
                                 to_email: to_email.clone(),
                                 to_name: reminder.to_name.clone(),
                             };
-                            if let Err(e) = provider.log_reminder(log_entry) {
-                                eprintln!("  ⚠ Sent but failed to log: {}", e);
+                            if let Ok(manual) = ManualProvider::new(&config) {
+                                if let Err(e) = manual.log_reminder(log_entry) {
+                                    eprintln!("  ⚠ Sent but failed to log: {}", e);
+                                }
                             }
 
                             println!(
@@ -1782,7 +1862,7 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
         }
 
         BillingAction::Maintain => {
-            let summary = status::compact_summary(&provider)?;
+            let summary = status::compact_summary(provider.as_ref())?;
             println!("Billing: {}", summary);
 
             let overdue = provider.list_invoices(InvoiceFilter {
@@ -1825,7 +1905,11 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
         }
 
         // Already handled above, before the enabled check
-        BillingAction::Init | BillingAction::Config { .. } => unreachable!(),
+        BillingAction::Init
+        | BillingAction::Config { .. }
+        | BillingAction::XeroSetup { .. }
+        | BillingAction::XeroAuth
+        | BillingAction::StripeKey { .. } => unreachable!(),
     }
 
     Ok(())

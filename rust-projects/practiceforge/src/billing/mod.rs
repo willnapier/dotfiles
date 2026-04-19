@@ -11,12 +11,18 @@ pub mod config;
 pub mod invoice;
 pub mod manual;
 pub mod remind;
+pub mod secrets;
 pub mod sessions;
 pub mod status;
+pub mod stripe;
 pub mod traits;
+pub mod xero;
 
 pub use config::BillingConfig;
 pub use invoice::{BillTo, Invoice, InvoiceState, LineItem};
 pub use manual::{ManualProvider, ReminderLogEntry};
+pub use secrets::BillingSecrets;
 pub use sessions::{billable_sessions_for_client, uninvoiced_billable, BillReason, BillableSession};
+pub use stripe::StripeProvider;
 pub use traits::{AccountingProvider, PaymentProvider};
+pub use xero::XeroProvider;

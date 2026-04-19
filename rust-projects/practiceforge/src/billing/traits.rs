@@ -25,6 +25,10 @@ pub trait AccountingProvider: Send + Sync {
 
     /// Get the next invoice number (auto-incrementing).
     fn next_invoice_number(&self) -> Result<String>;
+
+    /// Get all session dates already covered by invoices for this client.
+    /// Used to determine which sessions still need invoicing.
+    fn invoiced_dates_for_client(&self, client_id: &str) -> Result<Vec<String>>;
 }
 
 /// How self-pay clients pay.

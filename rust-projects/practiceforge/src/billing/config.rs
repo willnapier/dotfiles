@@ -297,20 +297,17 @@ pub fn init_billing() -> Result<()> {
     )?;
 
     if provider == "xero" {
-        println!("\n  Xero integration is not yet available.");
-        println!("  Setting to 'manual' for now. Change later with: billing config provider=xero");
+        println!("\n  Xero integration requires credentials.");
+        println!("  After setup, run: billing xero-setup <client_id> <client_secret>");
+        println!("  Then: billing xero-auth");
     }
 
-    let provider_final = if provider == "xero" {
-        "manual".to_string()
-    } else {
-        provider
-    };
+    let provider_final = provider;
 
     // Payment provider
     println!("\nPayment provider — how self-pay clients pay.");
     println!("  manual: Bank transfer (you send details in the reminder)");
-    println!("  stripe: Stripe payment links (coming soon)");
+    println!("  stripe: Stripe payment links");
     let payment_provider = prompt_choice(
         "Payment provider",
         &["manual", "stripe"],
@@ -318,15 +315,11 @@ pub fn init_billing() -> Result<()> {
     )?;
 
     if payment_provider == "stripe" {
-        println!("\n  Stripe integration is not yet available.");
-        println!("  Setting to 'manual' for now.");
+        println!("\n  Stripe requires a secret key.");
+        println!("  After setup, run: billing stripe-key <sk_live_...>");
     }
 
-    let payment_final = if payment_provider == "stripe" {
-        "manual".to_string()
-    } else {
-        payment_provider
-    };
+    let payment_final = payment_provider;
 
     // Build the TOML section
     let reminder_days_str = reminder_days

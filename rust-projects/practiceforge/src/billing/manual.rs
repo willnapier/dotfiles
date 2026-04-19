@@ -144,17 +144,6 @@ impl ManualProvider {
         (count, last)
     }
 
-    /// Get invoiced session dates for a specific client.
-    /// Used to determine which sessions still need invoicing.
-    pub fn invoiced_dates_for_client(&self, client_id: &str) -> Result<Vec<String>> {
-        let invoices = self.load_index()?;
-        let dates: Vec<String> = invoices
-            .iter()
-            .filter(|inv| inv.client_id == client_id && inv.state != InvoiceState::Cancelled)
-            .flat_map(|inv| inv.line_items.iter().map(|li| li.session_date.clone()))
-            .collect();
-        Ok(dates)
-    }
 }
 
 impl AccountingProvider for ManualProvider {
@@ -270,6 +259,16 @@ impl AccountingProvider for ManualProvider {
             .unwrap_or(0);
 
         Ok(format!("{}{:04}", prefix, max_num + 1))
+    }
+
+    fn invoiced_dates_for_client(&self, client_id: &str) -> Result<Vec<String>> {
+        let invoices = self.load_index()?;
+        let dates: Vec<String> = invoices
+            .iter()
+            .filter(|inv| inv.client_id == client_id && inv.state != InvoiceState::Cancelled)
+            .flat_map(|inv| inv.line_items.iter().map(|li| li.session_date.clone()))
+            .collect();
+        Ok(dates)
     }
 }
 
