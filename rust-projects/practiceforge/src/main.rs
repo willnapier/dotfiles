@@ -23,6 +23,7 @@ mod sync_docs;
 mod inference;
 pub mod tm3_clients;
 pub mod tm3_migrate;
+pub mod outcomes;
 
 #[derive(Parser)]
 #[command(name = "practiceforge", about = "PracticeForge — clinical practice management")]
@@ -239,6 +240,15 @@ enum Command {
     Tm3Migrate {
         #[command(subcommand)]
         action: Tm3MigrateAction,
+    },
+
+    /// Outcome measures — record, view, and export standardised questionnaire scores.
+    ///
+    /// Supports PHQ-9, GAD-7, CORE-10, PCL-5, WEMWBS, ISI, and any custom measure.
+    /// Scores are stored per-client at ~/Clinical/clients/<id>/outcomes/<measure>.yaml.
+    Outcomes {
+        #[command(subcommand)]
+        action: OutcomesAction,
     },
 }
 
@@ -587,6 +597,47 @@ enum Tm3MigrateAction {
     Run {
         #[arg(long)]
         dry_run: bool,
+    },
+}
+
+#[derive(Parser, Debug)]
+enum OutcomesAction {
+    /// Record a new score for a client.
+    ///
+    /// Example: `practiceforge outcomes record WN01 phq9 14 --notes "Baseline"`
+    Record {
+        /// Client ID (e.g. "WN01")
+        client_id: String,
+        /// Measure slug (e.g. "phq9", "gad7", "core10", "pcl5", "wemwbs", "isi")
+        measure: String,
+        /// Total score
+        score: f64,
+        /// Date of assessment (YYYY-MM-DD). Defaults to today.
+        #[arg(long)]
+        date: Option<String>,
+        /// Individual item scores as comma-separated values (e.g. "1,2,1,2,2,1,1,2,2")
+        #[arg(long)]
+        items: Option<String>,
+        /// Free-text notes
+        #[arg(long)]
+        notes: Option<String>,
+    },
+    /// Show outcome scores for a client.
+    ///
+    /// With no measure: summary table across all measures.
+    /// With a measure slug: full history for that measure.
+    Show {
+        /// Client ID
+        client_id: String,
+        /// Measure slug (optional — omit for all-measures summary)
+        measure: Option<String>,
+    },
+    /// Print the outcomes context block (markdown table) to stdout.
+    ///
+    /// Useful for copy-paste into clinical records or piping to other tools.
+    Export {
+        /// Client ID
+        client_id: String,
     },
 }
 
@@ -968,6 +1019,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Tm3Migrate { action } => {
             handle_tm3_migrate(action)?;
+        }
+        Command::Outcomes { action } => {
+            handle_outcomes(action)?;
         }
     }
 
@@ -2938,6 +2992,157 @@ fn handle_schedule(action: ScheduleAction) -> anyhow::Result<()> {
             println!("The client opens this URL, verifies via SMS OTP, and picks a slot.");
         }
 
+    }
+
+    Ok(())
+}
+
+fn handle_outcomes(action: OutcomesAction) -> anyhow::Result<()> {
+    use outcomes::{
+        all_measures_for_client, display_name, outcomes_context_block, severity_label,
+        validate_score, OutcomeEntry, OutcomeRecord,
+    };
+
+    match action {
+        // ----------------------------------------------------------------
+        // record
+        // ----------------------------------------------------------------
+        OutcomesAction::Record {
+            client_id,
+            measure,
+            score,
+            date,
+            items,
+            notes,
+        } => {
+            // Validate score for known measures (warn but don't fail).
+            if let Some(warning) = validate_score(&measure, score) {
+                eprintln!("{}", warning);
+            }
+
+            let date_str = date.unwrap_or_else(|| {
+                chrono::Local::now().format("%Y-%m-%d").to_string()
+            });
+
+            let items_parsed: Option<Vec<f64>> = items.map(|s| {
+                s.split(',')
+                    .map(|v| v.trim().parse::<f64>().unwrap_or(0.0))
+                    .collect()
+            });
+
+            let entry = OutcomeEntry {
+                date: date_str.clone(),
+                score,
+                items: items_parsed,
+                notes,
+            };
+
+            let mut record = OutcomeRecord::load(&client_id, &measure)?;
+            record.add_entry(entry);
+            record.save()?;
+
+            println!(
+                "Recorded {} score {:.1} for {} on {}.",
+                display_name(&measure),
+                score,
+                client_id,
+                date_str,
+            );
+        }
+
+        // ----------------------------------------------------------------
+        // show
+        // ----------------------------------------------------------------
+        OutcomesAction::Show { client_id, measure } => {
+            match measure {
+                // --- Full history for one measure ---
+                Some(slug) => {
+                    let record = OutcomeRecord::load(&client_id, &slug)?;
+                    if record.entries.is_empty() {
+                        println!("No {} scores recorded for {}.", display_name(&slug), client_id);
+                        return Ok(());
+                    }
+
+                    println!("{} — {} ({})", display_name(&slug), client_id, slug);
+                    println!();
+                    println!("{:<12} {:>8} {:<14} {}", "Date", "Score", "Severity", "Notes");
+                    println!("{}", "-".repeat(60));
+                    for entry in &record.entries {
+                        let sev = severity_label(&slug, entry.score);
+                        let notes = entry.notes.as_deref().unwrap_or("");
+                        println!(
+                            "{:<12} {:>8} {:<14} {}",
+                            entry.date,
+                            format!("{:.1}", entry.score),
+                            sev,
+                            notes,
+                        );
+                    }
+
+                    if let Some(trend) = record.trend() {
+                        let direction = if trend < 0.0 { "improving" } else if trend > 0.0 { "worsening" } else { "stable" };
+                        println!();
+                        println!("Trend (last 2): {:.1} ({})", trend, direction);
+                    }
+                }
+
+                // --- Summary table across all measures ---
+                None => {
+                    let records = all_measures_for_client(&client_id)?;
+                    let records: Vec<&OutcomeRecord> =
+                        records.iter().filter(|r| !r.entries.is_empty()).collect();
+
+                    if records.is_empty() {
+                        println!("No outcome scores recorded for {}.", client_id);
+                        return Ok(());
+                    }
+
+                    println!("Outcomes for {}", client_id);
+                    println!();
+                    println!(
+                        "{:<10} {:>8} {:<12} {:<14} {}",
+                        "Measure", "Latest", "Date", "Severity", "Trend"
+                    );
+                    println!("{}", "-".repeat(65));
+                    for rec in &records {
+                        let latest = rec.latest().unwrap();
+                        let sev = severity_label(&rec.measure, latest.score);
+                        let trend_str = match rec.trend() {
+                            None => "–".to_string(),
+                            Some(d) => {
+                                if d == 0.0 {
+                                    "→ 0".to_string()
+                                } else if d < 0.0 {
+                                    format!("↑ {:.1} improving", d.abs())
+                                } else {
+                                    format!("↓ {:.1} worsening", d.abs())
+                                }
+                            }
+                        };
+                        println!(
+                            "{:<10} {:>8} {:<12} {:<14} {}",
+                            display_name(&rec.measure),
+                            format!("{:.1}", latest.score),
+                            latest.date,
+                            sev,
+                            trend_str,
+                        );
+                    }
+                }
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // export
+        // ----------------------------------------------------------------
+        OutcomesAction::Export { client_id } => {
+            let block = outcomes_context_block(&client_id);
+            if block.is_empty() {
+                eprintln!("No outcome measures recorded for {}.", client_id);
+            } else {
+                print!("{}", block);
+            }
+        }
     }
 
     Ok(())

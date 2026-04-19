@@ -266,6 +266,14 @@ fn build_prompt(id: &str, observation: &str) -> Result<String> {
         }
     }
 
+    // Outcome measures — inject if any are recorded for this client
+    let outcomes_block = clinical_core::outcomes::outcomes_context_block(id);
+    if !outcomes_block.is_empty() {
+        out.push_str("=== OUTCOME MEASURES ===\n");
+        out.push_str(&outcomes_block);
+        out.push_str("\n\n");
+    }
+
     // Deterministic metadata
     out.push_str(&format!("=== SESSION METADATA ===\n"));
     out.push_str(&format!("Date: {}\n", today));
