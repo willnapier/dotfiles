@@ -272,6 +272,64 @@ pub fn send_email(
     Ok(())
 }
 
+/// Send an invoice (or any content) as an HTML email.
+///
+/// No attachment, no CC — just a clean HTML body for invoice delivery.
+pub fn send_html_email(
+    config: &EmailConfig,
+    to_email: &str,
+    to_name: &str,
+    subject: &str,
+    html_body: &str,
+) -> Result<()> {
+    let password = load_password(&config.username)?;
+
+    let from: lettre::message::Mailbox = format!("{} <{}>", config.from_name, config.from_email)
+        .parse()
+        .context("Invalid from address")?;
+
+    let to: lettre::message::Mailbox = if to_name.is_empty() {
+        to_email.parse().context("Invalid recipient address")?
+    } else {
+        format!("{} <{}>", to_name, to_email)
+            .parse()
+            .context("Invalid recipient address")?
+    };
+
+    let message = Message::builder()
+        .from(from)
+        .to(to)
+        .subject(subject)
+        .singlepart(
+            SinglePart::builder()
+                .header(ContentType::TEXT_HTML)
+                .body(html_body.to_string()),
+        )
+        .context("Failed to build HTML email message")?;
+
+    let creds = Credentials::new(config.username.clone(), password);
+
+    let transport = if config.smtp_port == 465 {
+        SmtpTransport::relay(&config.smtp_server)
+            .context("Failed to create SMTP transport")?
+            .port(config.smtp_port)
+            .credentials(creds)
+            .build()
+    } else {
+        SmtpTransport::starttls_relay(&config.smtp_server)
+            .context("Failed to create SMTP transport")?
+            .port(config.smtp_port)
+            .credentials(creds)
+            .build()
+    };
+
+    transport
+        .send(&message)
+        .context("Failed to send HTML email")?;
+
+    Ok(())
+}
+
 /// Generate a random 6-digit verification code.
 fn generate_otp() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};

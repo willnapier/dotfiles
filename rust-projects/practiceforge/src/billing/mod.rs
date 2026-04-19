@@ -9,7 +9,9 @@
 
 pub mod config;
 pub mod invoice;
+pub mod invoice_render;
 pub mod manual;
+pub mod practitioner;
 pub mod remind;
 pub mod secrets;
 pub mod sessions;

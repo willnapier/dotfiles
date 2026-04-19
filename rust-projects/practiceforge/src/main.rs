@@ -329,12 +329,18 @@ enum BillingAction {
         /// If omitted, invoices all uninvoiced sessions.
         #[arg(long)]
         dates: Option<String>,
+        /// Email the invoice to the bill-to party after creating it.
+        #[arg(long)]
+        send: bool,
     },
     /// Create invoices for all clients with uninvoiced sessions.
     InvoiceBatch {
         /// Preview only — show what would be invoiced without creating.
         #[arg(long)]
         dry_run: bool,
+        /// Email each invoice to the bill-to party after creating it.
+        #[arg(long)]
+        send: bool,
     },
     /// Mark an invoice as paid.
     Paid {
@@ -1689,7 +1695,7 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
             status::show_status(provider.as_ref(), overdue)?;
         }
 
-        BillingAction::Invoice { client_id, dates } => {
+        BillingAction::Invoice { client_id, dates, send } => {
             let clients_dir = crate::config::clients_dir();
             let client_dir = clients_dir.join(&client_id);
 
@@ -1765,9 +1771,16 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
             if let Some(link) = &inv.payment_link {
                 println!("  Payment link: {}", link);
             }
+
+            if send {
+                let prac = billing::practitioner::PractitionerConfig::load();
+                let email_cfg = crate::email::load_email_config()?;
+                billing::invoice_render::send_invoice(&inv, &prac, &email_cfg)?;
+                println!("✓ Invoice emailed to {}.", inv.bill_to.email().unwrap_or(""));
+            }
         }
 
-        BillingAction::InvoiceBatch { dry_run } => {
+        BillingAction::InvoiceBatch { dry_run, send } => {
             let clients_dir = crate::config::clients_dir();
             if !clients_dir.exists() {
                 anyhow::bail!("Clients directory not found: {}", clients_dir.display());
@@ -1858,6 +1871,14 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
                                 inv.total()
                             );
                             total_created += 1;
+                            if send {
+                                let prac = billing::practitioner::PractitionerConfig::load();
+                                let email_cfg = crate::email::load_email_config()?;
+                                match billing::invoice_render::send_invoice(&inv, &prac, &email_cfg) {
+                                    Ok(()) => println!("    ✓ Emailed to {}.", inv.bill_to.email().unwrap_or("")),
+                                    Err(e) => eprintln!("    ✗ Email failed: {}", e),
+                                }
+                            }
                         }
                         Err(e) => {
                             eprintln!("  ✗ {} — {}", client_id, e);
