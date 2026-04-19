@@ -321,7 +321,16 @@ pub fn send_invoice(
         inv.total()
     );
 
-    crate::email::send_html_email(email_cfg, to_email, to_name, &subject, &html)?;
+    // Use practitioner's own email as the from-address if configured,
+    // falling back to the [email] config (which may be the COHS address).
+    // Invoices come from the practitioner's company, not COHS.
+    let mut invoice_email_cfg = email_cfg.clone();
+    if let Some(prac_email) = &prac.email {
+        invoice_email_cfg.from_email = prac_email.clone();
+        invoice_email_cfg.from_name = prac.display_name().to_string();
+    }
+
+    crate::email::send_html_email(&invoice_email_cfg, to_email, to_name, &subject, &html)?;
     Ok(())
 }
 
