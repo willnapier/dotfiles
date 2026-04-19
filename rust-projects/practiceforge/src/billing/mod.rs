@@ -11,10 +11,12 @@ pub mod config;
 pub mod invoice;
 pub mod manual;
 pub mod remind;
+pub mod sessions;
 pub mod status;
 pub mod traits;
 
 pub use config::BillingConfig;
 pub use invoice::{BillTo, Invoice, InvoiceState, LineItem};
 pub use manual::{ManualProvider, ReminderLogEntry};
+pub use sessions::{billable_sessions_for_client, uninvoiced_billable, BillReason, BillableSession};
 pub use traits::{AccountingProvider, PaymentProvider};

@@ -6,6 +6,8 @@ use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+use super::sessions::BillableSession;
+
 /// A generated invoice ready to be persisted via an AccountingProvider.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Invoice {
@@ -120,10 +122,17 @@ pub fn parse_rate(rate: &serde_yaml::Value) -> Option<f64> {
     }
 }
 
-/// Parse session dates from a client's notes.md file.
+/// Legacy notes.md scraper — kept for backfill / fallback only.
+///
+/// **Do not use for new invoicing.** The session JSON loader in
+/// `billing::sessions::billable_sessions_for_client` is the authoritative
+/// source; it carries attendance status (DNA, cancelled, late-cancel)
+/// that notes.md headers cannot express.
 ///
 /// Returns dates in YYYY-MM-DD format, extracted from `### YYYY-MM-DD` headers.
-/// Excludes DNA sessions (marked as `### YYYY-MM-DD DNA`).
+/// Historically excluded DNA — this was a bug against policy (DNA bills)
+/// but is preserved here because legacy-corpus notes.md files were written
+/// with that assumption.
 pub fn extract_session_dates(notes_content: &str) -> Vec<String> {
     let re = regex::Regex::new(r"^### (\d{4}-\d{2}-\d{2})(?:\s|$)").unwrap();
     let dna_re = regex::Regex::new(r"^### \d{4}-\d{2}-\d{2}\s+DNA").unwrap();
@@ -139,10 +148,8 @@ pub fn extract_session_dates(notes_content: &str) -> Vec<String> {
         .collect()
 }
 
-/// Find session dates that don't yet have invoices.
-///
-/// Compares session dates from notes.md against existing invoice records
-/// to determine which sessions need invoicing.
+/// Legacy filter — date-only. Session-JSON callers use
+/// `billing::sessions::uninvoiced_billable` instead.
 pub fn uninvoiced_sessions(
     all_sessions: &[String],
     invoiced_dates: &[String],
@@ -154,15 +161,19 @@ pub fn uninvoiced_sessions(
         .collect()
 }
 
-/// Build an Invoice from session data and client metadata.
+/// Build an Invoice from billable sessions and client metadata.
 ///
-/// Reads identity.yaml for funding info, constructs line items from
-/// session dates, and calculates the due date.
+/// Each `BillableSession` carries a `BillReason` (Attended / Dna /
+/// LateCancellation) that is appended to the line item description so
+/// the recipient sees *why* a session was billed even though the client
+/// did not attend.
+///
+/// Reads identity.yaml for funding info and calculates the due date.
 pub fn build_invoice(
     reference: String,
     client_id: &str,
     identity_path: &Path,
-    session_dates: &[String],
+    sessions: &[BillableSession],
     payment_terms_days: i64,
     currency: &str,
 ) -> Result<Invoice> {
@@ -232,14 +243,16 @@ pub fn build_invoice(
         }
     };
 
-    let line_items: Vec<LineItem> = session_dates
+    let line_items: Vec<LineItem> = sessions
         .iter()
-        .map(|date| LineItem {
+        .map(|s| LineItem {
             description: format!(
-                "Clinical psychology session ({} min) — {}",
-                session_duration, date
+                "Clinical psychology session ({} min) — {}{}",
+                session_duration,
+                s.date,
+                s.reason.line_item_tag()
             ),
-            session_date: date.clone(),
+            session_date: s.date.clone(),
             quantity: 1,
             unit_amount: rate,
         })
