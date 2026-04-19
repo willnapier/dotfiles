@@ -334,6 +334,9 @@ enum BillingAction {
         send: bool,
     },
     /// Create invoices for all clients with uninvoiced sessions.
+    ///
+    /// By default only invoices sessions from completed calendar months
+    /// (i.e. excludes the current month). Use --include-current to override.
     InvoiceBatch {
         /// Preview only — show what would be invoiced without creating.
         #[arg(long)]
@@ -341,6 +344,10 @@ enum BillingAction {
         /// Email each invoice to the bill-to party after creating it.
         #[arg(long)]
         send: bool,
+        /// Include sessions from the current calendar month.
+        /// Default is to exclude them so partial months are never invoiced.
+        #[arg(long)]
+        include_current: bool,
     },
     /// Mark an invoice as paid.
     Paid {
@@ -1780,11 +1787,13 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
             }
         }
 
-        BillingAction::InvoiceBatch { dry_run, send } => {
+        BillingAction::InvoiceBatch { dry_run, send, include_current } => {
             let clients_dir = crate::config::clients_dir();
             if !clients_dir.exists() {
                 anyhow::bail!("Clients directory not found: {}", clients_dir.display());
             }
+
+            let current_month = chrono::Local::now().format("%Y-%m").to_string();
 
             let mut total_created = 0u32;
             let mut entries: Vec<std::fs::DirEntry> = std::fs::read_dir(&clients_dir)?
@@ -1831,7 +1840,10 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
                 };
                 let already_invoiced =
                     provider.invoiced_dates_for_client(&client_id).unwrap_or_default();
-                let uninvoiced = uninvoiced_billable(&all_sessions, &already_invoiced);
+                let uninvoiced: Vec<_> = uninvoiced_billable(&all_sessions, &already_invoiced)
+                    .into_iter()
+                    .filter(|s| include_current || !s.date.starts_with(&current_month))
+                    .collect();
 
                 if uninvoiced.is_empty() {
                     continue;
