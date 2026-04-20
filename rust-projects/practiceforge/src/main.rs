@@ -3486,35 +3486,53 @@ async fn handle_ai(action: AiAction) -> anyhow::Result<()> {
         AiAction::Setup => {
             println!("PracticeForge AI setup\n");
 
-            // Model selection
             println!("Select backend:");
-            println!("  1) Anthropic (recommended — Haiku ~£11/yr, Sonnet ~£25/yr)");
-            println!("  2) Ollama (local inference, requires GPU server)");
+            println!("  1) Anthropic API        (pay-per-token — Haiku ~£11/yr, Sonnet ~£25/yr per practitioner)");
+            println!("  2) Claude subscription  (uses `claude` CLI — no separate API key needed)");
+            println!("  3) Ollama               (local inference, requires GPU server)");
             print!("Choice [1]: ");
             std::io::stdout().flush()?;
             let mut line = String::new();
             std::io::stdin().lock().read_line(&mut line)?;
-            let backend = if line.trim() == "2" { "ollama" } else { "anthropic" };
-
-            let model = if backend == "anthropic" {
-                println!("\nSelect model:");
-                println!("  1) claude-haiku-4-5-20251001  (fast, cheapest)");
-                println!("  2) claude-sonnet-4-6          (higher quality, ~2.3x cost)");
-                print!("Choice [1]: ");
-                std::io::stdout().flush()?;
-                let mut m = String::new();
-                std::io::stdin().lock().read_line(&mut m)?;
-                if m.trim() == "2" { "claude-sonnet-4-6" } else { "claude-haiku-4-5-20251001" }
-            } else {
-                "gemma4:26b"
+            let backend = match line.trim() {
+                "2" => "claude-cli",
+                "3" => "ollama",
+                _   => "anthropic",
             };
 
-            // Write config.toml [ai] section
+            // Model selection (Anthropic API and Claude CLI share the same model names)
+            let model = match backend {
+                "anthropic" | "claude-cli" => {
+                    println!("\nSelect model:");
+                    println!("  1) claude-haiku-4-5-20251001  (fast, cheapest)");
+                    println!("  2) claude-sonnet-4-6          (higher quality, ~2.3x cost)");
+                    println!("  3) claude-opus-4-7            (highest quality, ~15x cost)");
+                    print!("Choice [1]: ");
+                    std::io::stdout().flush()?;
+                    let mut m = String::new();
+                    std::io::stdin().lock().read_line(&mut m)?;
+                    match m.trim() {
+                        "2" => "claude-sonnet-4-6",
+                        "3" => "claude-opus-4-7",
+                        _   => "claude-haiku-4-5-20251001",
+                    }
+                }
+                _ => "gemma4:26b",
+            };
+
+            if backend == "claude-cli" {
+                // Verify the claude binary is available before committing.
+                if std::process::Command::new("claude").arg("--version").output().is_err() {
+                    anyhow::bail!("`claude` not found on PATH. Install Claude Code first: https://claude.ai/code");
+                }
+                println!("✓ claude CLI found.");
+            }
+
+            // Write [ai] section to config.toml
             let config_path = config::config_dir().join("config.toml");
             std::fs::create_dir_all(config::config_dir())?;
             let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
             let updated = if existing.contains("[ai]") {
-                // Replace existing [ai] block (simple approach: append a note)
                 existing
             } else {
                 format!("{}\n[ai]\nbackend = \"{}\"\nmodel = \"{}\"\n", existing.trim_end(), backend, model)
@@ -3522,7 +3540,7 @@ async fn handle_ai(action: AiAction) -> anyhow::Result<()> {
             std::fs::write(&config_path, updated)?;
             println!("✓ Written [ai] to config.toml (backend={}, model={})", backend, model);
 
-            // API key (Anthropic only)
+            // API key only needed for direct Anthropic API access
             if backend == "anthropic" {
                 print!("\nAnthropic API key (sk-ant-...): ");
                 std::io::stdout().flush()?;
@@ -3544,18 +3562,24 @@ async fn handle_ai(action: AiAction) -> anyhow::Result<()> {
             let ai = config::load_ai_config();
             println!("Backend : {}", ai.backend.as_deref().unwrap_or("(not set)"));
             println!("Model   : {}", ai.model.as_deref().unwrap_or("(not set)"));
-            let secrets = BillingSecrets::load()?;
-            let key_status = match &secrets.ai.api_key {
-                Some(k) if !k.is_empty() => "present",
-                _ => "absent",
-            };
-            println!("API key : {}", key_status);
+            if ai.backend.as_deref() == Some("anthropic") {
+                let secrets = BillingSecrets::load()?;
+                let key_status = match &secrets.ai.api_key {
+                    Some(k) if !k.is_empty() => "present",
+                    _ => "absent",
+                };
+                println!("API key : {}", key_status);
+            } else if ai.backend.as_deref() == Some("claude-cli") {
+                let cli_ok = std::process::Command::new("claude").arg("--version").output().is_ok();
+                println!("claude  : {}", if cli_ok { "found on PATH" } else { "NOT FOUND" });
+            }
         }
 
         AiAction::Test { observation } => {
-            let Some(backend) = llm::load_anthropic_backend() else {
-                anyhow::bail!("No Anthropic backend configured. Run `practiceforge ai setup` first.");
+            let Some(backend) = llm::load_backend() else {
+                anyhow::bail!("No AI backend configured. Run `practiceforge ai setup` first.");
             };
+            println!("Backend : {}", backend.backend_name());
             let system = "You are a clinical session note writer. Produce a brief, defensible ACT-framed session note. Include a Risk line and a Formulation.";
             let prompt = format!("Write a session note.\n\nObservation: {}", observation);
             println!("Generating test note...\n");

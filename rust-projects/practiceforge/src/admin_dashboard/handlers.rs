@@ -1143,8 +1143,8 @@ pub async fn generate_note(
 ) -> Result<Json<GenerateResponse>, (StatusCode, String)> {
     let start = std::time::Instant::now();
 
-    // Anthropic path: build prompt locally, call API directly.
-    if let Some(backend) = crate::llm::load_anthropic_backend() {
+    // Frontier backend (Anthropic API or Claude CLI subscription).
+    if let Some(backend) = crate::llm::load_backend() {
         let system_prompt = load_system_prompt();
         let prompt = build_fallback_prompt(&req.client_id, &req.observation, req.with_rail);
         let note_text = backend
@@ -1208,9 +1208,9 @@ pub async fn generate_note_stream(
     let prompt = build_fallback_prompt(&client_id, &observation, with_rail);
     let system_prompt = load_system_prompt();
 
-    // Anthropic path
-    if let Some(backend) = crate::llm::load_anthropic_backend() {
-        eprintln!("[gen] anthropic client={client_id}");
+    // Frontier backend (Anthropic API or Claude CLI subscription).
+    if let Some(backend) = crate::llm::load_backend() {
+        eprintln!("[gen] {} client={client_id}", backend.backend_name());
         let token_stream = backend
             .generate_stream(system_prompt, prompt)
             .await
@@ -1672,9 +1672,9 @@ pub async fn get_client_metadata(
 
 /// GET /api/inference/status — check if inference server is reachable.
 pub async fn inference_status() -> Json<InferenceStatus> {
-    // Anthropic backend: always available if configured (API, no local server).
-    if crate::llm::load_anthropic_backend().is_some() {
-        return Json(InferenceStatus { available: true, backend: "anthropic".to_string() });
+    // Frontier backends (Anthropic API, Claude CLI) are always reachable — no local server.
+    if let Some(b) = crate::llm::load_backend() {
+        return Json(InferenceStatus { available: true, backend: b.backend_name().to_string() });
     }
 
     let client = reqwest::Client::new();

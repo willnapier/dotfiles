@@ -1,11 +1,18 @@
 //! Frontier LLM backends for clinical note generation.
 //!
-//! The Anthropic backend is the production path. The Ollama backend
-//! remains in `admin_dashboard/handlers.rs` in archive posture — it
+//! Two production paths:
+//! - `anthropic`: direct API access (pay-per-token, requires api_key in secrets.toml)
+//! - `claude-cli`: uses the `claude -p` subprocess (Claude subscription, no API key needed)
+//!
+//! The Ollama backend remains in `admin_dashboard/handlers.rs` in archive posture —
 //! still compiles and is selected when `[ai] backend = "ollama"`.
+//!
+//! Use `load_backend()` to get whichever is configured. Use `AiBackend` for
+//! the unified interface both handlers call.
 
 use anyhow::{bail, Context, Result};
 use futures_util::{Stream, StreamExt};
+use futures_util::stream::BoxStream;
 use serde_json::json;
 
 const ANTHROPIC_API: &str = "https://api.anthropic.com/v1/messages";
@@ -15,6 +22,8 @@ const ANTHROPIC_BETA: &str = "prompt-caching-2024-07-31";
 
 // Conservative defaults — enough for a 300-word note with formulation.
 const DEFAULT_MAX_TOKENS: u32 = 700;
+
+// ─── Anthropic API backend ────────────────────────────────────────────────────
 
 pub struct AnthropicBackend {
     pub api_key: String,
@@ -77,11 +86,7 @@ impl AnthropicBackend {
             .map(|s| s.to_string())
     }
 
-    /// Streaming generation. Returns a `'static` stream of text token strings.
-    ///
-    /// Takes owned `String` arguments so the returned stream is `'static` and
-    /// can be boxed for use in Axum SSE handlers. Parses Anthropic's SSE format
-    /// (`content_block_delta` events) and yields each text chunk as it arrives.
+    /// Streaming generation. Parses Anthropic's SSE `content_block_delta` events.
     pub async fn generate_stream(
         &self,
         system: String,
@@ -113,8 +118,6 @@ impl AnthropicBackend {
             bail!("Anthropic API returned {}: {}", status, err);
         }
 
-        // Anthropic sends proper SSE lines: "data: {json}\n\n"
-        // We look for content_block_delta events and extract the text field.
         let stream = resp.bytes_stream().map(|chunk| {
             let chunk = chunk.unwrap_or_default();
             let text = String::from_utf8_lossy(&chunk);
@@ -155,4 +158,152 @@ pub fn load_anthropic_backend() -> Option<AnthropicBackend> {
     let model = ai.model
         .unwrap_or_else(|| "claude-haiku-4-5-20251001".to_string());
     Some(AnthropicBackend::new(api_key, model))
+}
+
+// ─── Claude CLI backend (subscription) ───────────────────────────────────────
+
+/// Generates notes by shelling out to `claude -p`. Uses the existing Claude
+/// Code auth (OAuth subscription) — no API key required in PracticeForge config.
+pub struct ClaudeCliBackend {
+    pub model: Option<String>,
+}
+
+impl ClaudeCliBackend {
+    pub fn new(model: Option<String>) -> Self {
+        Self { model }
+    }
+
+    pub async fn generate(&self, system: &str, prompt: &str) -> Result<String> {
+        use tokio::io::AsyncWriteExt;
+
+        let mut cmd = tokio::process::Command::new("claude");
+        cmd.args(["-p", "--no-session-persistence", "--tools", ""])
+            .arg("--system-prompt").arg(system);
+        if let Some(m) = &self.model {
+            cmd.arg("--model").arg(m);
+        }
+        cmd.stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null());
+
+        let mut child = cmd.spawn().context("Failed to spawn claude CLI — is it on PATH?")?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(prompt.as_bytes()).await?;
+        }
+
+        let out = child.wait_with_output().await
+            .context("claude CLI process failed")?;
+
+        if !out.status.success() {
+            bail!("claude CLI exited {}", out.status);
+        }
+
+        Ok(String::from_utf8(out.stdout)?.trim().to_string())
+    }
+
+    /// Streams stdout from `claude -p` as raw byte chunks. The CLI streams
+    /// tokens progressively even when stdout is piped, so this gives near-token
+    /// granularity without needing stream-json parsing.
+    pub async fn generate_stream(
+        &self,
+        system: String,
+        prompt: String,
+    ) -> Result<BoxStream<'static, String>> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let mut cmd = tokio::process::Command::new("claude");
+        cmd.args(["-p", "--no-session-persistence", "--tools", ""])
+            .arg("--system-prompt").arg(&system);
+        if let Some(m) = &self.model {
+            cmd.arg("--model").arg(m);
+        }
+        cmd.stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null());
+
+        let mut child = cmd.spawn().context("Failed to spawn claude CLI")?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(prompt.as_bytes()).await?;
+        }
+
+        let stdout = child.stdout.take().context("no stdout from claude CLI")?;
+
+        // Detach child wait so the process isn't killed when child is dropped.
+        tokio::spawn(async move { let _ = child.wait().await; });
+
+        let stream = futures_util::stream::unfold(stdout, |mut out| async move {
+            let mut buf = vec![0u8; 256];
+            match out.read(&mut buf).await {
+                Ok(0) | Err(_) => None,
+                Ok(n) => {
+                    let text = String::from_utf8_lossy(&buf[..n]).to_string();
+                    Some((text, out))
+                }
+            }
+        }).boxed();
+
+        Ok(stream)
+    }
+}
+
+/// Load the Claude CLI backend if `[ai] backend = "claude-cli"` and `claude` is on PATH.
+pub fn load_claude_cli_backend() -> Option<ClaudeCliBackend> {
+    let ai = crate::config::load_ai_config();
+    if ai.backend.as_deref() != Some("claude-cli") {
+        return None;
+    }
+    // Verify the binary exists before committing to this path.
+    if std::process::Command::new("claude").arg("--version").output().is_err() {
+        return None;
+    }
+    Some(ClaudeCliBackend::new(ai.model))
+}
+
+// ─── Unified backend enum ─────────────────────────────────────────────────────
+
+/// Unified interface over all AI backends. Handlers call `load_backend()` and
+/// use this type — they don't need to know which backend is active.
+pub enum AiBackend {
+    Anthropic(AnthropicBackend),
+    ClaudeCli(ClaudeCliBackend),
+}
+
+impl AiBackend {
+    pub async fn generate(&self, system: &str, prompt: &str) -> Result<String> {
+        match self {
+            AiBackend::Anthropic(b) => b.generate(system, prompt).await,
+            AiBackend::ClaudeCli(b) => b.generate(system, prompt).await,
+        }
+    }
+
+    pub async fn generate_stream(
+        &self,
+        system: String,
+        prompt: String,
+    ) -> Result<BoxStream<'static, String>> {
+        match self {
+            AiBackend::Anthropic(b) => b.generate_stream(system, prompt).await.map(|s| s.boxed()),
+            AiBackend::ClaudeCli(b) => b.generate_stream(system, prompt).await,
+        }
+    }
+
+    pub fn backend_name(&self) -> &'static str {
+        match self {
+            AiBackend::Anthropic(_) => "anthropic",
+            AiBackend::ClaudeCli(_) => "claude-cli",
+        }
+    }
+}
+
+/// Return whichever backend is configured, in priority order: Anthropic → Claude CLI → None.
+pub fn load_backend() -> Option<AiBackend> {
+    if let Some(b) = load_anthropic_backend() {
+        return Some(AiBackend::Anthropic(b));
+    }
+    if let Some(b) = load_claude_cli_backend() {
+        return Some(AiBackend::ClaudeCli(b));
+    }
+    None
 }
