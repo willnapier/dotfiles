@@ -271,33 +271,58 @@ fn cmd_upload(tm3_id: &str, file_path: &str) -> Result<()> {
 // ── Keychain helpers ────────────────────────────────────────────────────────
 
 fn keychain_store(data: &str) -> Result<()> {
-    let status = Command::new("security")
-        .args([
-            "add-generic-password",
-            "-s", KEYCHAIN_SERVICE,
-            "-a", KEYCHAIN_ACCOUNT,
-            "-w", data,
-            "-U", // update if exists
-        ])
-        .status()
-        .context("Failed to run security CLI")?;
-
-    if !status.success() {
-        bail!("Failed to store in keychain (exit {})", status);
+    if cfg!(target_os = "macos") {
+        keychain_delete().ok();
+        let status = Command::new("security")
+            .args([
+                "add-generic-password",
+                "-s", KEYCHAIN_SERVICE,
+                "-a", KEYCHAIN_ACCOUNT,
+                "-w", data,
+                "-U",
+            ])
+            .status()
+            .context("Failed to run macOS security CLI")?;
+        if !status.success() {
+            bail!("Failed to store in macOS keychain (exit {})", status);
+        }
+    } else {
+        use std::io::Write;
+        let mut child = Command::new("secret-tool")
+            .args([
+                "store",
+                "--label", &format!("{} session", KEYCHAIN_SERVICE),
+                "service", KEYCHAIN_SERVICE,
+                "account", KEYCHAIN_ACCOUNT,
+            ])
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .context("Failed to run secret-tool — is libsecret-tools installed?")?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(data.as_bytes())?;
+        }
+        child.wait()?;
     }
     Ok(())
 }
 
 fn keychain_load() -> Result<String> {
-    let output = Command::new("security")
-        .args([
-            "find-generic-password",
-            "-s", KEYCHAIN_SERVICE,
-            "-a", KEYCHAIN_ACCOUNT,
-            "-w",
-        ])
-        .output()
-        .context("Failed to run security CLI")?;
+    let output = if cfg!(target_os = "macos") {
+        Command::new("security")
+            .args([
+                "find-generic-password",
+                "-s", KEYCHAIN_SERVICE,
+                "-a", KEYCHAIN_ACCOUNT,
+                "-w",
+            ])
+            .output()
+            .context("Failed to run macOS security CLI")?
+    } else {
+        Command::new("secret-tool")
+            .args(["lookup", "service", KEYCHAIN_SERVICE, "account", KEYCHAIN_ACCOUNT])
+            .output()
+            .context("Failed to run secret-tool — is libsecret-tools installed?")?
+    };
 
     if !output.status.success() {
         bail!("No TM3 session in keychain. Run 'tm3-upload login' first.");
@@ -308,13 +333,19 @@ fn keychain_load() -> Result<String> {
 }
 
 fn keychain_delete() -> Result<()> {
-    Command::new("security")
-        .args([
-            "delete-generic-password",
-            "-s", KEYCHAIN_SERVICE,
-            "-a", KEYCHAIN_ACCOUNT,
-        ])
-        .output()?;
+    if cfg!(target_os = "macos") {
+        Command::new("security")
+            .args([
+                "delete-generic-password",
+                "-s", KEYCHAIN_SERVICE,
+                "-a", KEYCHAIN_ACCOUNT,
+            ])
+            .output()?;
+    } else {
+        Command::new("secret-tool")
+            .args(["clear", "service", KEYCHAIN_SERVICE, "account", KEYCHAIN_ACCOUNT])
+            .output()?;
+    }
     Ok(())
 }
 

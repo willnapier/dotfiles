@@ -109,28 +109,55 @@ fn resolve_dates(headers: &[String], month_year: &str) -> Result<Vec<NaiveDate>>
     let mut month = parse_month(month_name)?;
     let mut current_year = year;
 
+    // Collect day numbers to detect month boundaries up-front.
+    // TM3 shows the "majority" month as the header, so two cases arise:
+    //   A) Week starts in prev month ("April" shown, Mon=30 Mar, Tue=31 Mar, Wed=1 Apr…)
+    //      → days at the boundary position are INVALID in the displayed month (Apr 31 invalid)
+    //   B) Week ends in next month ("April" shown, …Thu=30, Fri=1 May, Sat=2, Sun=3)
+    //      → days at the boundary position are VALID in the displayed month (Apr 30 valid)
+    let day_nums: Vec<u32> = headers
+        .iter()
+        .filter_map(|h| re.captures(h).and_then(|cap| cap[1].parse().ok()))
+        .collect();
+
+    // Find first index where day number drops (month boundary)
+    let boundary_idx = day_nums.windows(2).position(|w| w[1] < w[0]);
+
+    // Case A: the day AT the boundary is invalid in the displayed month
+    let starts_in_prev_month = boundary_idx
+        .map(|b| NaiveDate::from_ymd_opt(current_year, month, day_nums[b]).is_none())
+        .unwrap_or(false);
+
+    let (prev_year, prev_month) = if month == 1 {
+        (current_year - 1, 12u32)
+    } else {
+        (current_year, month - 1)
+    };
+    let (next_year, next_month) = if month == 12 {
+        (current_year + 1, 1u32)
+    } else {
+        (current_year, month + 1)
+    };
+
     let mut dates = Vec::new();
-    let mut prev_day: Option<u32> = None;
-    for header in headers {
+    for (i, header) in headers.iter().enumerate() {
         let cap = re
             .captures(header)
             .with_context(|| format!("Invalid day header: {}", header))?;
         let day: u32 = cap[1].parse()?;
 
-        // If day number drops, we've crossed a month boundary
-        if let Some(prev) = prev_day {
-            if day < prev {
-                month += 1;
-                if month > 12 {
-                    month = 1;
-                    current_year += 1;
-                }
-            }
-        }
-        prev_day = Some(day);
-
-        let date = NaiveDate::from_ymd_opt(current_year, month, day)
-            .with_context(|| format!("Invalid date: {} {} {}", current_year, month, day))?;
+        let date = if starts_in_prev_month && boundary_idx.map_or(false, |b| i <= b) {
+            // Days before the boundary belong to the previous month
+            NaiveDate::from_ymd_opt(prev_year, prev_month, day)
+                .with_context(|| format!("Invalid date: {} {} {}", prev_year, prev_month, day))?
+        } else if !starts_in_prev_month && boundary_idx.map_or(false, |b| i > b) {
+            // Days after the boundary belong to the next month
+            NaiveDate::from_ymd_opt(next_year, next_month, day)
+                .with_context(|| format!("Invalid date: {} {} {}", next_year, next_month, day))?
+        } else {
+            NaiveDate::from_ymd_opt(current_year, month, day)
+                .with_context(|| format!("Invalid date: {} {} {}", current_year, month, day))?
+        };
         dates.push(date);
     }
     Ok(dates)

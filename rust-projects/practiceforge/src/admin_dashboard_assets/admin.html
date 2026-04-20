@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en-GB">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -249,7 +249,7 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
   .clinic-spinner { display: none; color: var(--cyan); font-size: 14px; }
   .clinic-spinner.visible { display: inline; }
 
-  .clinic-generated-note { width: 100%; height: 300px; padding: 8px 10px; background: var(--bg-hl); border: 1px solid var(--border); border-radius: 4px; color: var(--fg); font: inherit; font-size: 15px; resize: vertical; outline: none; margin-top: 10px; }
+  .clinic-generated-note { width: 100%; height: 650px; padding: 8px 10px; background: var(--bg-hl); border: 1px solid var(--border); border-radius: 4px; color: var(--fg); font: inherit; font-size: 15px; resize: vertical; outline: none; margin-top: 10px; }
   .clinic-generated-note:focus { border-color: var(--cyan); }
 
   .clinic-actions { display: flex; gap: 8px; margin-top: 10px; }
@@ -261,17 +261,6 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
   .btn-compare { background: rgba(42,161,152,0.15); border-color: var(--cyan); color: var(--cyan); }
   .btn-compare:hover { background: rgba(42,161,152,0.25); }
 
-  .clinic-comparisons { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px; }
-  .clinic-comparisons .comp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-  .clinic-comparisons .comp-head span { font-size: 14px; font-weight: 600; color: var(--fg-em); text-transform: uppercase; letter-spacing: 0.5px; }
-  .clinic-comp-item { margin-bottom: 10px; }
-  .clinic-comp-item .comp-label { font-size: 13px; color: var(--fg-dim); margin-bottom: 3px; }
-  .clinic-comp-item textarea { width: 100%; height: 120px; padding: 6px 8px; background: var(--bg-hl); border: 1px solid var(--border); border-radius: 3px; color: var(--fg); font: inherit; font-size: 14px; resize: vertical; outline: none; }
-  .clinic-comp-item textarea:focus { border-color: var(--cyan); }
-  .clinic-comp-item .comp-actions { display: flex; gap: 6px; margin-top: 4px; }
-  .comp-accept-btn { padding: 3px 10px; background: rgba(133,153,0,0.15); border: 1px solid var(--green); border-radius: 3px; color: var(--green); cursor: pointer; font: inherit; font-size: 13px; }
-  .comp-accept-btn:hover { background: rgba(133,153,0,0.25); }
-  .comp-clear-btn { padding: 3px 10px; background: rgba(220,50,47,0.1); border: 1px solid var(--border); border-radius: 3px; color: var(--fg-dim); cursor: pointer; font: inherit; font-size: 13px; }
   .comp-clear-btn:hover { border-color: var(--red); color: var(--red); }
 
   /* Side-by-side compare (Q4/Q8 parallel streaming) */
@@ -284,7 +273,8 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
   .clinic-compare-label { font-size: 14px; font-weight: 600; color: var(--cyan); text-transform: uppercase; letter-spacing: 0.5px; }
   .clinic-compare-status { font-size: 13px; color: var(--fg-dim); }
   .clinic-compare-status.streaming { color: var(--cyan); }
-  .clinic-compare-textarea { width: 100%; min-height: 360px; padding: 6px 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; color: var(--fg); font: inherit; font-size: 14px; resize: vertical; outline: none; }
+  .clinic-compare-status.complete { color: var(--fg-em); font-weight: 600; }
+  .clinic-compare-textarea { width: 100%; min-height: 650px; padding: 6px 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; color: var(--fg); font: inherit; font-size: 14px; resize: vertical; outline: none; }
   .clinic-compare-textarea:focus { border-color: var(--cyan); }
   .clinic-compare-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
   .clinic-compare-global-actions { display: flex; gap: 8px; margin-top: 10px; justify-content: center; }
@@ -409,12 +399,7 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
           <div class="section-head">Observation</div>
           <textarea class="clinic-textarea" id="clinic-observation" rows="5" placeholder="Session observation..."></textarea>
           <div class="clinic-generate-bar">
-            <select id="clinic-model-picker">
-              <option value="clinical-voice-q4">Q4</option>
-              <option value="clinical-voice-q8">Q8</option>
-            </select>
-            <button class="clinic-generate-btn" id="clinic-generate-btn" onclick="clinicGenerate()">Generate</button>
-            <button class="clinic-generate-btn" id="clinic-compare-generate-btn" onclick="clinicCompareGenerate()" title="Stream Q4 and Q8 side-by-side">Compare Q4 &amp; Q8</button>
+            <button class="clinic-generate-btn" id="clinic-compare-generate-btn" onclick="clinicCompareGenerate()">Generate</button>
             <span class="clinic-spinner" id="clinic-spinner">Generating...</span>
             <span class="clinic-inference" id="clinic-inference" style="margin-left:auto">
               <span class="dot dot-red" id="clinic-inference-dot">&#9679;</span>
@@ -423,12 +408,11 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
             </span>
           </div>
           <div id="clinic-generated-wrap" style="display:none">
-            <div class="section-head">Generated Note</div>
+            <div class="section-head">Generated Draft</div>
             <textarea class="clinic-generated-note" id="clinic-generated-note"></textarea>
             <div class="clinic-actions">
               <button class="clinic-action-btn btn-accept" onclick="clinicAcceptNote()">Accept &amp; Save</button>
               <button class="clinic-action-btn btn-reject" onclick="clinicRejectNote()">Reject</button>
-              <button class="clinic-action-btn btn-compare" onclick="clinicCompareNote()">Compare</button>
             </div>
           </div>
           <!-- Side-by-side Q4/Q8 compare (parallel streaming) -->
@@ -440,7 +424,7 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
                   <span class="clinic-compare-label">Q4</span>
                   <span class="clinic-compare-status" id="clinic-compare-status-q4"></span>
                 </div>
-                <textarea class="clinic-compare-textarea" id="clinic-compare-text-q4" rows="16"></textarea>
+                <textarea class="clinic-compare-textarea" id="clinic-compare-text-q4" rows="30"></textarea>
                 <div class="clinic-compare-actions" id="clinic-compare-actions-q4" style="display:none">
                   <button class="clinic-action-btn btn-accept" onclick="clinicCompareAccept('q4')">Accept Q4 &amp; Save</button>
                 </div>
@@ -450,24 +434,18 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
                   <span class="clinic-compare-label">Q8</span>
                   <span class="clinic-compare-status" id="clinic-compare-status-q8"></span>
                 </div>
-                <textarea class="clinic-compare-textarea" id="clinic-compare-text-q8" rows="16"></textarea>
+                <textarea class="clinic-compare-textarea" id="clinic-compare-text-q8" rows="30"></textarea>
                 <div class="clinic-compare-actions" id="clinic-compare-actions-q8" style="display:none">
                   <button class="clinic-action-btn btn-accept" onclick="clinicCompareAccept('q8')">Accept Q8 &amp; Save</button>
                 </div>
               </div>
             </div>
             <div class="clinic-compare-global-actions" id="clinic-compare-global-actions" style="display:none">
-              <button class="clinic-action-btn btn-reject" onclick="clinicCompareRejectBoth()">Reject Both (log as rejected)</button>
+              <button class="clinic-action-btn btn-reject" id="clinic-compare-reject-btn" onclick="clinicCompareRejectBoth()">Reject Both (log as rejected)</button>
               <button class="clinic-action-btn btn-reject" onclick="clinicCompareCancel()">Cancel (don't log)</button>
             </div>
           </div>
-          <div class="clinic-comparisons" id="clinic-comparisons" style="display:none">
-            <div class="comp-head">
-              <span>Previous Variants</span>
-              <button class="comp-clear-btn" onclick="clinicClearComparisons()">Clear</button>
-            </div>
-            <div id="clinic-comp-list"></div>
-          </div>
+
           <div class="letter-panel" id="clinic-letter-panel" style="display:none">
             <div class="section-head">Letter Draft</div>
             <div class="letter-info" id="clinic-letter-info"></div>
@@ -604,7 +582,6 @@ const S = {
   clinicClientIdx: -1,
   clinicSelectedId: null,
   clinicNotesVisible: false,
-  clinicComparisons: [],
   clinicInferenceAvailable: false,
   clinicGenerating: false,
   // Loading flags
@@ -616,6 +593,14 @@ let clinicSaveTimer = null;
 // ============================================================================
 // Utils
 // ============================================================================
+function normalizeNoteSpacing(text) {
+  return text
+    .replace(/([^\n])\n(\*\*Risk\*\*:)/g, '$1\n\n$2')
+    .replace(/(\*\*Risk\*\*:[^\n]*)\n([^\n])/g, '$1\n\n$2')
+    .replace(/([^\n])\n(\*\*Formulation\*\*:)/g, '$1\n\n$2')
+    .replace(/(\*\*Formulation\*\*:[^\n]*)\n([^\n])/g, '$1\n\n$2');
+}
+
 function esc(s) {
   if (s == null) return '';
   const d = document.createElement('div');
@@ -623,7 +608,7 @@ function esc(s) {
   return d.innerHTML;
 }
 
-function fmtDate(d) { return d.toISOString().split('T')[0]; }
+function fmtDate(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 
 function fmtDateDisplay(d) {
   return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
@@ -659,7 +644,7 @@ function updateHints() {
       if (document.activeElement === obs) {
         el.innerHTML = '<kbd>Ctrl+Enter</kbd> generate &middot; <kbd>Esc</kbd> deselect';
       } else if (document.activeElement === gen) {
-        el.innerHTML = '<kbd>Esc</kbd> back &middot; editing generated note';
+        el.innerHTML = '<kbd>Esc</kbd> back &middot; editing generated draft';
       } else {
         el.innerHTML = '<kbd>j</kbd>/<kbd>k</kbd> clients &middot; <kbd>n</kbd> notes &middot; <kbd>d</kbd> DNA &middot; <kbd>Enter</kbd> edit &middot; <kbd>Esc</kbd> deselect';
       }
@@ -1111,11 +1096,6 @@ function clinicSelectClient(clientId) {
   document.getElementById('clinic-notes-toggle').innerHTML = '&#9654; Notes <kbd>n</kbd>';
   document.getElementById('clinic-notes-viewer').textContent = '';
 
-  // Reset comparisons
-  S.clinicComparisons = [];
-  document.getElementById('clinic-comparisons').style.display = 'none';
-  document.getElementById('clinic-comp-list').innerHTML = '';
-
   // Reset status
   if (client.draft_observation) {
     setClinicStatus('Draft restored');
@@ -1214,13 +1194,22 @@ function clinicSaveSession() {
 }
 
 // --- Generate note (streaming) ---
+let clinicGenerateAbort = null;
+
+function clinicGenerateReset() {
+  S.clinicGenerating = false;
+  const _gb1 = document.getElementById('clinic-generate-btn'); if (_gb1) _gb1.disabled = false;
+  document.getElementById('clinic-spinner').classList.remove('visible');
+}
+
 function clinicGenerate() {
   if (!S.clinicSelectedId || S.clinicGenerating) return;
   const obs = document.getElementById('clinic-observation').value.trim();
   if (!obs) { setClinicStatus('Write an observation first'); return; }
 
   S.clinicGenerating = true;
-  document.getElementById('clinic-generate-btn').disabled = true;
+  clinicGenerateAbort = new AbortController();
+  const _gb2 = document.getElementById('clinic-generate-btn'); if (_gb2) _gb2.disabled = true;
   document.getElementById('clinic-spinner').classList.add('visible');
   document.getElementById('clinic-generated-wrap').style.display = '';
   document.getElementById('clinic-generated-note').value = '';
@@ -1231,6 +1220,7 @@ function clinicGenerate() {
 
   // Use streaming SSE endpoint
   fetch('/api/generate-stream', {
+    signal: clinicGenerateAbort.signal,
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ client_id: S.clinicSelectedId, observation: obs, model: model })
@@ -1247,9 +1237,7 @@ function clinicGenerate() {
     function read() {
       reader.read().then(({ done, value }) => {
         if (done) {
-          S.clinicGenerating = false;
-          document.getElementById('clinic-generate-btn').disabled = false;
-          document.getElementById('clinic-spinner').classList.remove('visible');
+          clinicGenerateReset();
           if (!textarea.value.trim()) {
             setClinicStatus('Generation returned empty result');
           }
@@ -1265,10 +1253,10 @@ function clinicGenerate() {
             const data = line.slice(6);
             if (data.startsWith('[DONE]')) {
               const elapsed = data.replace('[DONE] ', '');
+              const ta = document.getElementById('clinic-generated-note');
+              ta.value = normalizeNoteSpacing(ta.value);
               setClinicStatus('Complete — ' + elapsed);
-              S.clinicGenerating = false;
-              document.getElementById('clinic-generate-btn').disabled = false;
-              document.getElementById('clinic-spinner').classList.remove('visible');
+              clinicGenerateReset();
             } else {
               if (firstToken) {
                 setClinicStatus('Generating...');
@@ -1283,19 +1271,15 @@ function clinicGenerate() {
 
         read();
       }).catch(e => {
-        S.clinicGenerating = false;
-        document.getElementById('clinic-generate-btn').disabled = false;
-        document.getElementById('clinic-spinner').classList.remove('visible');
-        setClinicStatus('Stream error: ' + String(e));
+        clinicGenerateReset();
+        if (e.name !== 'AbortError') setClinicStatus('Stream error: ' + String(e));
       });
     }
 
     read();
   }).catch(e => {
-    S.clinicGenerating = false;
-    document.getElementById('clinic-generate-btn').disabled = false;
-    document.getElementById('clinic-spinner').classList.remove('visible');
-    setClinicStatus('Generate failed: ' + String(e));
+    clinicGenerateReset();
+    if (e.name !== 'AbortError') setClinicStatus('Generate failed: ' + String(e));
   });
 }
 
@@ -1314,8 +1298,8 @@ function clinicAcceptNote() {
     .then(r => r.json())
     .then(data => {
       if (data.ok) {
-        setClinicStatus('Saved');
         clinicSetStatus(S.clinicSelectedId, 'done');
+        clinicMoveClient(1);
       } else {
         setClinicStatus('Save failed');
       }
@@ -1325,71 +1309,13 @@ function clinicAcceptNote() {
 
 // --- Reject note ---
 function clinicRejectNote() {
+  if (clinicGenerateAbort) { clinicGenerateAbort.abort(); clinicGenerateAbort = null; }
+  clinicGenerateReset();
   document.getElementById('clinic-generated-wrap').style.display = 'none';
   document.getElementById('clinic-generated-note').value = '';
-  setClinicStatus('Note rejected');
+  setClinicStatus('');
 }
 
-// --- Compare note ---
-function clinicCompareNote() {
-  const noteText = document.getElementById('clinic-generated-note').value.trim();
-  if (!noteText) return;
-
-  const label = 'Variant ' + (S.clinicComparisons.length + 1);
-  S.clinicComparisons.push({ label: label, text: noteText });
-  renderClinicComparisons();
-  // Clear the generated note so user can re-generate
-  document.getElementById('clinic-generated-wrap').style.display = 'none';
-  document.getElementById('clinic-generated-note').value = '';
-  setClinicStatus('Added to comparisons — generate again for another variant');
-}
-
-function renderClinicComparisons() {
-  if (S.clinicComparisons.length === 0) {
-    document.getElementById('clinic-comparisons').style.display = 'none';
-    return;
-  }
-  document.getElementById('clinic-comparisons').style.display = '';
-  const listEl = document.getElementById('clinic-comp-list');
-  listEl.innerHTML = S.clinicComparisons.map((comp, i) => {
-    return '<div class="clinic-comp-item">' +
-      '<div class="comp-label">' + esc(comp.label) + '</div>' +
-      '<textarea id="clinic-comp-text-' + i + '" onfocus="updateHints()">' + esc(comp.text) + '</textarea>' +
-      '<div class="comp-actions">' +
-      '<button class="comp-accept-btn" onclick="clinicAcceptComparison(' + i + ')">Accept</button>' +
-      '</div></div>';
-  }).join('');
-}
-
-function clinicAcceptComparison(idx) {
-  const textarea = document.getElementById('clinic-comp-text-' + idx);
-  if (!textarea) return;
-  const noteText = textarea.value.trim();
-  if (!noteText || !S.clinicSelectedId) return;
-
-  setClinicStatus('Saving...');
-  fetch('/api/save-note', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ client_id: S.clinicSelectedId, note_text: noteText })
-  })
-    .then(r => r.json())
-    .then(data => {
-      if (data.ok) {
-        setClinicStatus('Saved');
-        clinicSetStatus(S.clinicSelectedId, 'done');
-        clinicClearComparisons();
-      } else {
-        setClinicStatus('Save failed');
-      }
-    })
-    .catch(e => { setClinicStatus('Save failed: ' + String(e)); });
-}
-
-function clinicClearComparisons() {
-  S.clinicComparisons = [];
-  renderClinicComparisons();
-}
 
 // =========================================================================
 // Side-by-side compare (Q4 vs Q8 parallel streaming)
@@ -1430,13 +1356,13 @@ function clinicCompareReset() {
     const actions = document.getElementById('clinic-compare-actions-' + key);
     const pane = document.querySelector('.clinic-compare-pane[data-variant="' + key + '"]');
     if (text) text.value = '';
-    if (status) { status.textContent = ''; status.classList.remove('streaming'); }
+    if (status) { status.textContent = ''; status.classList.remove('streaming', 'complete'); }
     if (actions) actions.style.display = 'none';
     if (pane) pane.removeAttribute('data-selected');
   }
   document.getElementById('clinic-compare-global-actions').style.display = 'none';
   document.getElementById('clinic-compare-generate-btn').disabled = false;
-  document.getElementById('clinic-generate-btn').disabled = false;
+  const _gb3 = document.getElementById('clinic-generate-btn'); if (_gb3) _gb3.disabled = false;
 }
 
 // Fire a generate-stream request silently (no UI update) and store the result
@@ -1520,8 +1446,10 @@ async function clinicCompareStreamOne(variantKey, modelId) {
       }
     }
     const elapsed = (performance.now() - start) / 1000;
+    text.value = normalizeNoteSpacing(text.value);
     clinicCompareState[variantKey] = { note: text.value, secs: elapsed, done: true };
     status.classList.remove('streaming');
+    status.classList.add('complete');
     status.textContent = 'Complete — ' + elapsed.toFixed(1) + 's';
     actions.style.display = '';
   } catch (err) {
@@ -1545,7 +1473,7 @@ async function clinicCompareGenerate() {
   document.getElementById('clinic-generated-wrap').style.display = 'none';
   document.getElementById('clinic-compare-wrap').style.display = '';
   document.getElementById('clinic-compare-generate-btn').disabled = true;
-  document.getElementById('clinic-generate-btn').disabled = true;
+  const _gb4 = document.getElementById('clinic-generate-btn'); if (_gb4) _gb4.disabled = true;
   // Reset panes to clean state for this run (including hidden norail variants)
   for (const { key } of CLINIC_COMPARE_MODELS) {
     clinicCompareState[key] = { note: '', secs: 0, done: false };
@@ -1555,16 +1483,21 @@ async function clinicCompareGenerate() {
     const actions = document.getElementById('clinic-compare-actions-' + key);
     if (actions) actions.style.display = 'none';
   }
-  document.getElementById('clinic-compare-global-actions').style.display = 'none';
-
-  // Fire 4 parallel streams: Q4+rail, Q8+rail (visible) + Q4+norail, Q8+norail (silent background)
-  await Promise.all([
-    ...CLINIC_COMPARE_MODELS.map(m => clinicCompareStreamOne(m.key, m.id)),
-    ...CLINIC_COMPARE_MODELS.map(m => clinicCompareStreamSilent(m.key + '_norail', m.id)),
-  ]);
-
-  // Both done — show reject-both / cancel
+  // Show Cancel immediately so user can escape if generation hangs
   document.getElementById('clinic-compare-global-actions').style.display = '';
+  // Hide reject-both until complete (only Cancel is meaningful while generating)
+  document.getElementById('clinic-compare-reject-btn').style.display = 'none';
+
+  // Fire visible streams sequentially — Ollama has limited VRAM headroom with both
+  // models resident; concurrent KV cache allocation overflows 48GB. Sequential ensures
+  // only one KV cache is active at a time.
+  for (const m of CLINIC_COMPARE_MODELS) {
+    await clinicCompareStreamOne(m.key, m.id);
+  }
+
+  // Both visible done — show reject-both, then fire silent variants sequentially
+  document.getElementById('clinic-compare-reject-btn').style.display = '';
+  (async () => { for (const m of CLINIC_COMPARE_MODELS) await clinicCompareStreamSilent(m.key + '_norail', m.id); })();
 }
 
 async function clinicCompareLogPair(acceptedVariant /* 'q4' | 'q8' | null */) {
@@ -1632,9 +1565,9 @@ async function clinicCompareAccept(variant) {
 
     await clinicCompareLogPair(variant);
 
-    setClinicStatus(variant.toUpperCase() + ' saved — both logged');
     clinicSetStatus(S.clinicSelectedId, 'done');
     clinicCompareReset();
+    clinicMoveClient(1);
   } catch (e) {
     setClinicStatus('Save failed: ' + String(e));
     document.querySelectorAll('.clinic-compare-actions button, #clinic-compare-global-actions button').forEach(b => b.disabled = false);

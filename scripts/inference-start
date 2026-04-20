@@ -46,14 +46,20 @@ start_server() {
         python3 -c "import sys,json; r=json.load(sys.stdin); print('OK' if r.get('success') else f'FAILED: {r}')" 2>/dev/null
 }
 
-# Kill any existing tunnel on the local port
+# Kill any existing process on the local port
 kill_existing_tunnel() {
-    local pids
-    pids=$(lsof -ti "tcp:$TROOPER_LOCAL_PORT" 2>/dev/null || true)
-    if [ -n "$pids" ]; then
-        echo "Killing existing tunnel on port $TROOPER_LOCAL_PORT..."
-        echo "$pids" | xargs kill 2>/dev/null || true
+    # fuser -k kills all user-owned processes holding the port
+    if fuser -k "${TROOPER_LOCAL_PORT}/tcp" 2>/dev/null; then
+        echo "Killed existing process on port $TROOPER_LOCAL_PORT"
         sleep 1
+    elif command -v lsof &>/dev/null; then
+        local pids
+        pids=$(lsof -ti "tcp:$TROOPER_LOCAL_PORT" 2>/dev/null || true)
+        if [ -n "$pids" ]; then
+            echo "Killing existing tunnel on port $TROOPER_LOCAL_PORT (pids: $pids)..."
+            echo "$pids" | xargs kill 2>/dev/null || true
+            sleep 1
+        fi
     fi
 }
 

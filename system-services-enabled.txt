@@ -4,7 +4,6 @@ NetworkManager.service
 bluetooth.service
 getty@.service
 keyd.service
-ollama.service
 seatd.service
 sshd.service
 systemd-resolved.service

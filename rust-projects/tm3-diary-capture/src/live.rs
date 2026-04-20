@@ -280,8 +280,25 @@ fn load_cookies_from_keychain(_cookie_path: &str) -> Result<Vec<Cookie>> {
 
 #[cfg(not(target_os = "macos"))]
 fn load_cookies_from_keychain(cookie_path: &str) -> Result<Vec<Cookie>> {
+    // Try Linux secret service (populated by `tm3-upload login` on this machine)
+    let output = std::process::Command::new("secret-tool")
+        .args(["lookup", "service", "tm3-session", "account", "changeofharleystreet"])
+        .output();
+
+    if let Ok(out) = output {
+        if out.status.success() {
+            let json = String::from_utf8(out.stdout)?.trim().to_string();
+            if !json.is_empty() {
+                return serde_json::from_str(&json)
+                    .context("Failed to parse cookies from secret-tool");
+            }
+        }
+    }
+
     bail!(
-        "No TM3 cookie file found at {}. On Mac, run 'tm3-upload login' then 'tm3-cookie-sync'.",
+        "No TM3 cookies found. Options:\n\
+         - Run 'tm3-upload login' on this machine\n\
+         - Or sync from Mac: ensure {} is populated via Syncthing",
         cookie_path
     )
 }

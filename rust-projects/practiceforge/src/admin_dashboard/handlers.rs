@@ -1207,45 +1207,24 @@ pub async fn generate_note_stream(
             .to_string()
     });
 
-    // Build the prompt using the clinical binary (captures client context, summary, modality)
-    let mut prompt_cmd = tokio::process::Command::new("clinical");
-    prompt_cmd
-        .arg("note")
-        .arg(&client_id)
-        .arg(&observation)
-        .arg("--no-save")
-        .arg("--yes")
-        .env("CLINICAL_PROMPT_ONLY", "1")
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-    if !with_rail {
-        prompt_cmd.env("CLINICAL_NO_PROMPT_RAIL", "1");
-    }
-    let prompt_output = prompt_cmd.output().await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to build prompt: {}", e)))?;
-
-    // If CLINICAL_PROMPT_ONLY isn't supported, fall back to using the observation directly
-    // with a system prompt built from the modality file
-    let prompt = if prompt_output.status.success() && !prompt_output.stdout.is_empty() {
-        String::from_utf8_lossy(&prompt_output.stdout).to_string()
-    } else {
-        // Fallback: build a basic prompt with observation + system instructions
-        build_fallback_prompt(&client_id, &observation, with_rail)
-    };
-
-    // Build the system prompt from modality-act.md + faithfulness-prompt.md
+    eprintln!("[gen] A client={client_id} endpoint={endpoint}");
+    let prompt = build_fallback_prompt(&client_id, &observation, with_rail);
+    eprintln!("[gen] B prompt={}b", prompt.len());
     let system_prompt = load_system_prompt();
-
-    // Call Ollama streaming API
-    // keep_alive: -1 keeps the model loaded in VRAM indefinitely (no cold start penalty).
-    // Without this, Ollama unloads after 5min idle → 5-8s reload on next request.
+    eprintln!("[gen] C system={}b", system_prompt.len());
     let ollama_url = format!("{}/api/generate", endpoint);
+    eprintln!("[gen] D sending to {ollama_url}");
     let body = serde_json::json!({
         "model": model,
         "prompt": prompt,
         "system": system_prompt,
         "stream": true,
         "keep_alive": -1,
+        // num_ctx must be explicit: both models loaded use 44GB VRAM, leaving
+        // ~3.6GB free. 4096 needs ~2GB KV cache; safe because compare requests are
+        // now sequential (only one KV cache active at a time).
+        // repeat_penalty >1.0 prevents Q4 repetition loops without hurting quality.
+        "options": {"num_ctx": 4096, "repeat_penalty": 1.15},
     });
 
     let client = reqwest::Client::new();
@@ -1344,17 +1323,22 @@ fn build_fallback_prompt(client_id: &str, observation: &str, with_rail: bool) ->
         String::new()
     };
 
-    // Load client name from identity.yaml
+    // Load client name from identity.yaml using a simple line scan — avoids
+    // serde_yaml hanging on multi-document YAML (files that end with ---).
     let identity_path = client_dir.join("identity.yaml");
-    let client_name = if identity_path.exists() {
-        std::fs::read_to_string(&identity_path)
-            .ok()
-            .and_then(|c| serde_yaml::from_str::<serde_yaml::Value>(&c).ok())
-            .and_then(|v| v.get("name").and_then(|n| n.as_str()).map(|s| s.to_string()))
-            .unwrap_or_else(|| client_id.to_string())
-    } else {
-        client_id.to_string()
-    };
+    let client_name = std::fs::read_to_string(&identity_path)
+        .ok()
+        .and_then(|c| {
+            c.lines()
+                .find(|l| {
+                    let trimmed = l.trim_start();
+                    trimmed.starts_with("name:") && !trimmed.contains("null") && !trimmed.contains('~')
+                })
+                .and_then(|l| l.splitn(2, ':').nth(1))
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+        })
+        .unwrap_or_else(|| client_id.to_string());
 
     let mut prompt = format!("Client: {} ({})\n\n", client_name, client_id);
 
@@ -1394,9 +1378,41 @@ fn build_fallback_prompt(client_id: &str, observation: &str, with_rail: bool) ->
         }
     }
 
+    let today = {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+        let days = secs / 86400;
+        // Days since 1970-01-01 → Gregorian date
+        let mut y = 1970u32;
+        let mut d = days as u32;
+        loop {
+            let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+            let days_in_year = if leap { 366 } else { 365 };
+            if d < days_in_year { break; }
+            d -= days_in_year;
+            y += 1;
+        }
+        let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+        let month_days = [31u32, if leap { 29 } else { 28 }, 31,30,31,30,31,31,30,31,30,31];
+        let mut m = 1u32;
+        for md in &month_days {
+            if d < *md { break; }
+            d -= md;
+            m += 1;
+        }
+        format!("{:04}-{:02}-{:02}", y, m, d + 1)
+    };
+
     prompt.push_str("Today's observation:\n");
     prompt.push_str(observation);
-    prompt.push_str("\n\nWrite a session note for today.");
+    prompt.push_str(&format!("\n\nWrite the session note using exactly this template (date is {today}):\n\
+### {today}\n\
+\n\
+**Risk**: \n\
+\n\
+[narrative]\n\
+\n\
+**Formulation**: "));
 
     prompt
 }
@@ -1658,30 +1674,34 @@ pub async fn inference_status() -> Json<InferenceStatus> {
         };
 
         if needs_warmup {
-            let config = crate::config::load_config();
-            let model = config.as_ref()
-                .and_then(|c| c.get("voice"))
-                .and_then(|v| v.get("model"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("clinical-voice-q4")
-                .to_string();
-
-            // Fire-and-forget: load model into VRAM with a 1-token generation.
-            // keep_alive: -1 pins it indefinitely (no 5-min idle unload).
-            tokio::spawn(async move {
-                let _ = reqwest::Client::new()
-                    .post("http://localhost:11434/api/generate")
-                    .json(&serde_json::json!({
-                        "model": model,
-                        "prompt": "warmup",
-                        "keep_alive": -1,
-                        "stream": false,
-                        "options": {"num_predict": 1},
-                    }))
-                    .timeout(std::time::Duration::from_secs(120))
-                    .send()
-                    .await;
-            });
+            // Warm both Q4 and Q8 — keep_alive: -1 pins them indefinitely.
+            // Use stream:true so Ollama sends back headers immediately after first
+            // token, preventing this warmup from blocking the generate queue.
+            for model in ["clinical-voice-q4", "clinical-voice-q8"] {
+                let model = model.to_string();
+                tokio::spawn(async move {
+                    use futures_util::StreamExt;
+                    let Ok(resp) = reqwest::Client::new()
+                        .post("http://127.0.0.1:11434/api/generate")
+                        .json(&serde_json::json!({
+                            "model": model,
+                            "prompt": "warmup",
+                            "keep_alive": -1,
+                            "stream": true,
+                            "options": {"num_predict": 3},
+                        }))
+                        .timeout(std::time::Duration::from_secs(180))
+                        .send()
+                        .await else { return; };
+                    // Drain 3 chunks then drop — warms GPU caches without occupying queue long.
+                    let mut stream = resp.bytes_stream();
+                    let mut count = 0;
+                    while let Some(Ok(_)) = stream.next().await {
+                        count += 1;
+                        if count >= 3 { break; }
+                    }
+                });
+            }
         }
     }
 
