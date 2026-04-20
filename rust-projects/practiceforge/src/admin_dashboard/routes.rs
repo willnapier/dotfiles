@@ -75,6 +75,7 @@ pub fn build_router() -> Router {
         .route("/api/client/{id}/metadata", get(handlers::get_client_metadata))
         .route("/api/inference/status", get(handlers::inference_status))
         .route("/api/ai/model", post(handlers::set_ai_model))
+        .route("/api/ai/setup", post(handlers::ai_setup))
         .route("/api/end-clinic", post(handlers::end_clinic))
 }
 

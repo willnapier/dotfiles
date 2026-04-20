@@ -1063,6 +1063,9 @@ pub struct ClientMetadata {
 #[derive(Serialize)]
 pub struct InferenceStatus {
     pub available: bool,
+    /// Whether any backend is configured (frontier or Ollama).
+    /// False only when nothing is set up at all.
+    pub configured: bool,
     /// "anthropic", "claude-cli", "ollama", or "none"
     pub backend: String,
     /// Active model name, if a frontier backend is configured.
@@ -1781,6 +1784,7 @@ pub async fn inference_status() -> Json<InferenceStatus> {
         let ai = crate::config::load_ai_config();
         return Json(InferenceStatus {
             available: true,
+            configured: true,
             backend: b.backend_name().to_string(),
             model: ai.model,
         });
@@ -1850,7 +1854,7 @@ pub async fn inference_status() -> Json<InferenceStatus> {
     }
 
     let backend = if available { "ollama" } else { "none" }.to_string();
-    Json(InferenceStatus { available, backend, model: None })
+    Json(InferenceStatus { available, configured: available, backend, model: None })
 }
 
 /// POST /api/end-clinic — generate attendance report and daypage entry.
@@ -2844,5 +2848,55 @@ pub async fn set_ai_model(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok(Json(serde_json::json!({ "ok": true, "model": req.model })))
+}
+
+#[derive(Deserialize)]
+pub struct AiSetupRequest {
+    pub backend: String,
+    pub model: String,
+    #[serde(default)]
+    pub api_key: Option<String>,
+}
+
+/// POST /api/ai/setup — write [ai] section to config.toml and optionally save API key.
+pub async fn ai_setup(
+    Json(req): Json<AiSetupRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let allowed_backends = ["anthropic", "claude-cli", "ollama"];
+    if !allowed_backends.contains(&req.backend.as_str()) {
+        return Err((StatusCode::BAD_REQUEST, format!("Unknown backend: {}", req.backend)));
+    }
+
+    let config_path = crate::config::config_dir().join("config.toml");
+    std::fs::create_dir_all(crate::config::config_dir())
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
+
+    let new_ai = format!("[ai]\nbackend = \"{}\"\nmodel = \"{}\"\n", req.backend, req.model);
+    let updated = if let Some(ai_pos) = existing.find("[ai]") {
+        let after = ai_pos + 4;
+        let next = existing[after..].find("\n[").map(|p| after + p).unwrap_or(existing.len());
+        format!("{}{}{}", &existing[..ai_pos], new_ai, &existing[next..])
+    } else {
+        format!("{}\n{}", existing.trim_end(), new_ai)
+    };
+
+    std::fs::write(&config_path, updated)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Save API key for Anthropic backend
+    if req.backend == "anthropic" {
+        if let Some(key) = &req.api_key {
+            if !key.is_empty() {
+                let mut secrets = crate::billing::secrets::BillingSecrets::load()
+                    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+                secrets.ai.api_key = Some(key.clone());
+                secrets.save()
+                    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            }
+        }
+    }
+
+    Ok(Json(serde_json::json!({ "ok": true, "backend": req.backend, "model": req.model })))
 }
 
