@@ -3528,14 +3528,18 @@ async fn handle_ai(action: AiAction) -> anyhow::Result<()> {
                 println!("✓ claude CLI found.");
             }
 
-            // Write [ai] section to config.toml
+            // Write [ai] section to config.toml, replacing any existing [ai] block.
             let config_path = config::config_dir().join("config.toml");
             std::fs::create_dir_all(config::config_dir())?;
             let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
-            let updated = if existing.contains("[ai]") {
-                existing
+            let new_ai = format!("[ai]\nbackend = \"{}\"\nmodel = \"{}\"\n", backend, model);
+            let updated = if let Some(ai_pos) = existing.find("[ai]") {
+                // Splice out the old [ai] section (up to the next section header).
+                let after = ai_pos + 4;
+                let next = existing[after..].find("\n[").map(|p| after + p).unwrap_or(existing.len());
+                format!("{}{}{}", &existing[..ai_pos], new_ai, &existing[next..])
             } else {
-                format!("{}\n[ai]\nbackend = \"{}\"\nmodel = \"{}\"\n", existing.trim_end(), backend, model)
+                format!("{}\n{}", existing.trim_end(), new_ai)
             };
             std::fs::write(&config_path, updated)?;
             println!("✓ Written [ai] to config.toml (backend={}, model={})", backend, model);
