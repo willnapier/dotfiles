@@ -1147,12 +1147,16 @@ pub async fn generate_note(
 
     // Frontier backend (Anthropic API or Claude CLI subscription).
     if let Some(backend) = crate::llm::load_backend() {
-        let system_prompt = load_system_prompt();
-        let prompt = build_fallback_prompt(&req.client_id, &req.observation, req.with_rail);
-        let note_text = backend
+        let (prompt, pmap) = build_fallback_prompt(&req.client_id, &req.observation, req.with_rail);
+        let mut system_prompt = load_system_prompt();
+        if let Some(addendum) = pmap.system_addendum() {
+            system_prompt.push_str(&addendum);
+        }
+        let raw = backend
             .generate(&system_prompt, &prompt)
             .await
             .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+        let note_text = pmap.revert(&raw);
         return Ok(Json(GenerateResponse {
             note_text,
             elapsed_seconds: start.elapsed().as_secs_f64(),
@@ -1207,8 +1211,11 @@ pub async fn generate_note_stream(
     let observation = req.observation.clone();
     let with_rail = req.with_rail;
 
-    let prompt = build_fallback_prompt(&client_id, &observation, with_rail);
-    let system_prompt = load_system_prompt();
+    let (prompt, pmap) = build_fallback_prompt(&client_id, &observation, with_rail);
+    let mut system_prompt = load_system_prompt();
+    if let Some(addendum) = pmap.system_addendum() {
+        system_prompt.push_str(&addendum);
+    }
 
     // Frontier backend (Anthropic API or Claude CLI subscription).
     if let Some(backend) = crate::llm::load_backend() {
@@ -1218,15 +1225,17 @@ pub async fn generate_note_stream(
             .await
             .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
 
+        // Revert placeholders server-side as each chunk arrives.
+        // Rare chunk-boundary straddle (e.g. "[CLI" + "ENT]") is handled by
+        // the client-side JS final revert on [DONE].
         let sse_stream = token_stream.map(move |tokens| {
             if tokens.is_empty() {
                 Ok(Event::default().comment("keepalive"))
             } else {
-                Ok(Event::default().data(tokens))
+                Ok(Event::default().data(pmap.revert(&tokens)))
             }
         });
 
-        // Sentinel [DONE] event appended after the token stream finishes
         let done_event = futures_util::stream::once(async move {
             Ok(Event::default().data(format!("[DONE] {:.1}s", start.elapsed().as_secs_f64())))
         });
@@ -1330,49 +1339,48 @@ fn load_system_prompt() -> String {
     format!("{}\n\n{}", modality.trim(), faithfulness.trim())
 }
 
-/// Build a basic prompt when the clinical binary doesn't support --prompt-only.
-fn build_fallback_prompt(client_id: &str, observation: &str, with_rail: bool) -> String {
+/// Build a de-identified prompt for the AI backend.
+///
+/// Returns the prompt text (with all PHI replaced by placeholders) and the
+/// PseudonymMap needed to revert the AI output before display or saving.
+fn build_fallback_prompt(
+    client_id: &str,
+    observation: &str,
+    with_rail: bool,
+) -> (String, crate::dephi::PseudonymMap) {
     let clinical_root = crate::config::clinical_root();
     let client_dir = clinical_root.join("clients").join(client_id);
+
+    // Build the pseudonym map from identity.yaml before loading any other text.
+    let identity_path = client_dir.join("identity.yaml");
+    let pmap = crate::dephi::PseudonymMap::from_identity_file(&identity_path);
 
     // Try to load summary for context
     let summary_path = client_dir.join("summary.md");
     let summary = std::fs::read_to_string(&summary_path).unwrap_or_default();
+    let summary = pmap.apply(&summary);
 
     // Load last few sessions from notes.md
     let notes_path = client_dir.join("notes.md");
     let recent_notes = if notes_path.exists() {
         let content = std::fs::read_to_string(&notes_path).unwrap_or_default();
-        // Extract last 3 sessions (### headers)
         let sessions: Vec<&str> = content.split("\n### ").collect();
         let last_3 = sessions.iter().rev().take(3).rev().cloned().collect::<Vec<_>>();
         if last_3.is_empty() {
             String::new()
         } else {
-            format!("Recent sessions:\n### {}", last_3.join("\n### "))
+            pmap.apply(&format!("Recent sessions:\n### {}", last_3.join("\n### ")))
         }
     } else {
         String::new()
     };
 
-    // Load client name from identity.yaml using a simple line scan — avoids
-    // serde_yaml hanging on multi-document YAML (files that end with ---).
-    let identity_path = client_dir.join("identity.yaml");
-    let client_name = std::fs::read_to_string(&identity_path)
-        .ok()
-        .and_then(|c| {
-            c.lines()
-                .find(|l| {
-                    let trimmed = l.trim_start();
-                    trimmed.starts_with("name:") && !trimmed.contains("null") && !trimmed.contains('~')
-                })
-                .and_then(|l| l.splitn(2, ':').nth(1))
-                .map(|v| v.trim().to_string())
-                .filter(|v| !v.is_empty())
-        })
-        .unwrap_or_else(|| client_id.to_string());
+    // De-identify the observation too (belt-and-suspenders for practitioner slip).
+    let observation = pmap.apply(observation);
 
-    let mut prompt = format!("Client: {} ({})\n\n", client_name, client_id);
+    // Use [CLIENT] placeholder as the client identifier in the prompt header.
+    let client_label = if pmap.is_empty() { client_id.to_string() } else { "[CLIENT]".to_string() };
+    let mut prompt = format!("Client: {} ({})\n\n", client_label, client_id);
 
     if !summary.is_empty() {
         prompt.push_str("Clinical summary:\n");
@@ -1436,7 +1444,7 @@ fn build_fallback_prompt(client_id: &str, observation: &str, with_rail: bool) ->
     };
 
     prompt.push_str("Today's observation:\n");
-    prompt.push_str(observation);
+    prompt.push_str(&observation);
     prompt.push_str(&format!("\n\nWrite the session note using exactly this template (date is {today}):\n\
 ### {today}\n\
 \n\
@@ -1446,7 +1454,7 @@ fn build_fallback_prompt(client_id: &str, observation: &str, with_rail: bool) ->
 \n\
 **Formulation**: "));
 
-    prompt
+    (prompt, pmap)
 }
 
 /// POST /api/save-note — run `clinical note-save` with note text on stdin.
@@ -1454,6 +1462,13 @@ pub async fn save_note(
     Json(req): Json<SaveNoteRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     use tokio::io::AsyncWriteExt;
+
+    // Final revert pass — catches any placeholders that slipped through
+    // chunk-boundary straddle in streaming or were missed client-side.
+    let identity_path = crate::config::clinical_root()
+        .join("clients").join(&req.client_id).join("identity.yaml");
+    let pmap = crate::dephi::PseudonymMap::from_identity_file(&identity_path);
+    let note_text = pmap.revert(&req.note_text);
 
     let mut child = tokio::process::Command::new("clinical")
         .arg("note-save")
@@ -1465,7 +1480,7 @@ pub async fn save_note(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to run clinical note-save: {}", e)))?;
 
     if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(req.note_text.as_bytes()).await
+        stdin.write_all(note_text.as_bytes()).await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     }
 

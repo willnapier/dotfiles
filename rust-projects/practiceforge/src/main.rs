@@ -8,6 +8,7 @@ use std::io::{self, Read, Write};
 
 pub mod billing;
 pub mod config;
+pub mod dephi;
 pub mod llm;
 mod admin_dashboard;
 mod dashboard;

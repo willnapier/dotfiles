@@ -1079,6 +1079,10 @@ function clinicSelectClient(clientId) {
   const client = clients.find(c => c.id === clientId);
   if (!client) return;
 
+  // Cache first name for client-side placeholder revert after streaming
+  const fullName = client.client_name || '';
+  S.clinicClientFirstName = fullName ? fullName.split(' ')[0] : '';
+
   document.getElementById('clinic-empty-msg').style.display = 'none';
   document.getElementById('clinic-client-content').style.display = '';
 
@@ -1260,6 +1264,10 @@ function clinicGenerate() {
               const elapsed = data.replace('[DONE] ', '');
               const ta = document.getElementById('clinic-generated-note');
               ta.value = normalizeNoteSpacing(ta.value);
+              // Final revert: catch any placeholder that straddled a chunk boundary
+              if (S.clinicClientFirstName) {
+                ta.value = ta.value.replace(/\[CLIENT\]/g, S.clinicClientFirstName);
+              }
               setClinicStatus('Complete — ' + elapsed);
               clinicGenerateReset();
             } else {
