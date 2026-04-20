@@ -20,8 +20,8 @@ const ANTHROPIC_VERSION: &str = "2023-06-01";
 // Prompt-caching beta — cache the system prompt across all notes in a session.
 const ANTHROPIC_BETA: &str = "prompt-caching-2024-07-31";
 
-// Conservative defaults — enough for a 300-word note with formulation.
-const DEFAULT_MAX_TOKENS: u32 = 700;
+// Enough for a 400-word note with formulation at Opus verbosity; Haiku/Sonnet use far fewer.
+const DEFAULT_MAX_TOKENS: u32 = 900;
 
 // ─── Anthropic API backend ────────────────────────────────────────────────────
 
