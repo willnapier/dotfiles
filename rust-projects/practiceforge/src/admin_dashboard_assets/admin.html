@@ -337,33 +337,14 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
 </div>
 
 <div class="setup-overlay" id="setup-overlay" style="display:none">
-  <div class="setup-panel">
+  <div class="setup-panel" style="max-width:520px;max-height:85vh;overflow-y:auto">
     <h2>Email Setup</h2>
-    <p style="font-size:12px;color:var(--fg-dim);margin-bottom:8px">Configure SMTP for sending letters and reminders.</p>
-    <label>Email Address</label>
-    <input type="email" id="setup-email" placeholder="will@willnapier.com" oninput="setupAutoDetect()">
-    <div class="setup-row">
-      <div><label>SMTP Server</label><input type="text" id="setup-smtp" placeholder="mail.example.com"></div>
-      <div><label>Port</label><input type="number" id="setup-port" value="465"></div>
-    </div>
-    <label>Username (if different from email)</label>
-    <input type="text" id="setup-username" placeholder="Same as email">
-    <label>Password</label>
-    <input type="password" id="setup-password">
-    <label>Display Name</label>
-    <input type="text" id="setup-name" placeholder="Will Napier">
-    <div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border)">
-      <label style="font-size:12px;color:var(--fg-em);text-transform:none;letter-spacing:0;margin-bottom:6px">Secondary "send as" identity (optional)</label>
-      <p style="font-size:11px;color:var(--fg);margin-bottom:8px">For clients not via your main practice. Uses the same SMTP server.</p>
-      <div class="setup-row">
-        <div><label>Email</label><input type="email" id="setup-alt-email" placeholder="will@willnapier.com"></div>
-        <div><label>Label</label><input type="text" id="setup-alt-label" placeholder="Napier Psychology"></div>
-      </div>
-    </div>
-    <div class="setup-msg" id="setup-msg"></div>
-    <div class="setup-actions">
-      <button class="clinic-action-btn btn-compare" onclick="setupTest()">Test</button>
-      <button class="clinic-action-btn btn-accept" onclick="setupSave()">Save</button>
+    <p style="font-size:12px;color:var(--fg-dim);margin-bottom:14px">Configure one identity per email address. Each has its own SMTP server and password.</p>
+    <div id="email-identities-list"></div>
+    <button onclick="emailAddIdentity()" style="margin-top:4px;background:none;border:1px dashed var(--border);color:var(--fg-dim);padding:5px 14px;border-radius:4px;cursor:pointer;font-size:12px;width:100%">+ Add another identity</button>
+    <div class="setup-msg" id="setup-msg" style="margin-top:10px"></div>
+    <div class="setup-actions" style="margin-top:10px">
+      <button class="clinic-action-btn btn-accept" onclick="setupSave()">Save all</button>
       <button class="clinic-action-btn btn-reject" onclick="setupSkip()">Skip</button>
     </div>
   </div>
@@ -2333,83 +2314,166 @@ function aiSetupSkip() {
 // ============================================================================
 // Email setup wizard
 // ============================================================================
+let emailIdentityCount = 0;
+
 function checkEmailSetup() {
   fetch('/api/email/status').then(r => r.json()).then(data => {
     if (!data.configured) {
-      document.getElementById('setup-overlay').style.display = '';
+      emailSetupOpen(null);
     }
   }).catch(() => {});
 }
 
-function setupAutoDetect() {
-  const email = document.getElementById('setup-email').value;
-  const domain = email.split('@')[1];
-  if (!domain) return;
-  const smtp = document.getElementById('setup-smtp');
-  const username = document.getElementById('setup-username');
-  if (!smtp.value || smtp.dataset.auto) {
-    smtp.value = 'mail.' + domain;
-    smtp.dataset.auto = '1';
+function emailSetupOpen(existingIdentities) {
+  const list = document.getElementById('email-identities-list');
+  list.innerHTML = '';
+  emailIdentityCount = 0;
+  if (existingIdentities && existingIdentities.length > 0) {
+    existingIdentities.forEach(id => emailAddIdentity(id));
+  } else {
+    emailAddIdentity(null);
   }
-  if (!username.value) {
-    username.placeholder = email;
+  document.getElementById('setup-overlay').style.display = '';
+}
+
+function emailSmtpFromDomain(email) {
+  const domain = (email.split('@')[1] || '').toLowerCase();
+  if (!domain) return { server: '', port: 465 };
+  if (domain.includes('gmail') || domain.includes('googlemail')) return { server: 'smtp.gmail.com', port: 465 };
+  if (domain.includes('outlook') || domain.includes('hotmail') || domain.includes('live')
+      || domain.includes('office365') || domain.includes('microsoft')) return { server: 'smtp.office365.com', port: 587 };
+  if (domain.includes('icloud') || domain.includes('me.com') || domain.includes('mac.com')) return { server: 'smtp.mail.me.com', port: 587 };
+  // cPanel/hosting default
+  return { server: 'mail.' + domain, port: 465 };
+}
+
+function emailAddIdentity(prefill) {
+  const idx = emailIdentityCount++;
+  const isPrimary = idx === 0;
+  const list = document.getElementById('email-identities-list');
+  const card = document.createElement('div');
+  card.id = 'email-id-card-' + idx;
+  card.style.cssText = 'border:1px solid var(--border);border-radius:4px;padding:12px;margin-bottom:10px;position:relative';
+
+  const smtpHint = prefill ? { server: prefill.smtp_server, port: prefill.smtp_port }
+                            : { server: '', port: 465 };
+
+  card.innerHTML =
+    (idx > 0 ? '<button onclick="emailRemoveIdentity(' + idx + ')" style="position:absolute;top:8px;right:8px;background:none;border:none;color:var(--fg-dim);cursor:pointer;font-size:14px">✕</button>' : '') +
+    '<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--fg-dim);margin-bottom:8px">' +
+    (isPrimary ? 'Primary identity' : 'Identity ' + (idx + 1)) + '</div>' +
+    '<label>Label <span style="font-weight:normal;text-transform:none;letter-spacing:0;font-size:11px">(e.g. "Napier Psychology")</span></label>' +
+    '<input type="text" id="eid-label-' + idx + '" value="' + esc(prefill ? prefill.label : '') + '" placeholder="Practice name">' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' +
+      '<div><label>From email</label><input type="email" id="eid-email-' + idx + '" value="' + esc(prefill ? prefill.from_email : '') + '" placeholder="will@willnapier.com" oninput="emailAutoDetect(' + idx + ')"></div>' +
+      '<div><label>Display name</label><input type="text" id="eid-name-' + idx + '" value="' + esc(prefill ? prefill.from_name : '') + '" placeholder="Will Napier"></div>' +
+    '</div>' +
+    '<div style="display:grid;grid-template-columns:1fr auto;gap:8px">' +
+      '<div><label>SMTP server</label><input type="text" id="eid-smtp-' + idx + '" value="' + esc(smtpHint.server) + '" placeholder="mail.example.com"></div>' +
+      '<div><label>Port</label><input type="number" id="eid-port-' + idx + '" value="' + smtpHint.port + '" style="width:72px"></div>' +
+    '</div>' +
+    '<label>SMTP username <span style="font-weight:normal;text-transform:none;letter-spacing:0;font-size:11px">(usually same as email)</span></label>' +
+    '<input type="text" id="eid-user-' + idx + '" value="' + esc(prefill ? prefill.username : '') + '" placeholder="Same as from email">' +
+    '<label>Password <span id="eid-pw-hint-' + idx + '" style="font-weight:normal;text-transform:none;letter-spacing:0;font-size:11px;color:var(--fg-dim)">' + (prefill ? '(leave blank to keep existing)' : '') + '</span></label>' +
+    '<input type="password" id="eid-pw-' + idx + '" placeholder="SMTP password">' +
+    '<div style="margin-top:8px">' +
+      '<button onclick="emailTestIdentity(' + idx + ')" style="background:none;border:1px solid var(--border);color:var(--fg-dim);padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px">Test</button>' +
+      '<span id="eid-test-result-' + idx + '" style="font-size:11px;margin-left:8px"></span>' +
+    '</div>';
+
+  list.appendChild(card);
+}
+
+function emailRemoveIdentity(idx) {
+  const card = document.getElementById('email-id-card-' + idx);
+  if (card) card.remove();
+}
+
+function emailAutoDetect(idx) {
+  const email = document.getElementById('eid-email-' + idx).value;
+  const smtp = document.getElementById('eid-smtp-' + idx);
+  const port = document.getElementById('eid-port-' + idx);
+  if (!smtp.dataset.manual) {
+    const detected = emailSmtpFromDomain(email);
+    if (detected.server) {
+      smtp.value = detected.server;
+      port.value = detected.port;
+    }
+  }
+  // Auto-fill username and name if empty
+  const user = document.getElementById('eid-user-' + idx);
+  if (!user.value) user.placeholder = email;
+  const name = document.getElementById('eid-name-' + idx);
+  if (!name.value && email.includes('@')) {
+    const prefix = email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    name.placeholder = prefix;
   }
 }
 
-function setupTest() {
-  document.getElementById('setup-msg').textContent = 'Sending test email...';
-  document.getElementById('setup-msg').style.color = 'var(--cyan)';
+function emailCollectIdentities() {
+  const identities = [];
+  for (let i = 0; i < emailIdentityCount; i++) {
+    const card = document.getElementById('email-id-card-' + i);
+    if (!card) continue;
+    const fromEmail = (document.getElementById('eid-email-' + i) || {}).value || '';
+    if (!fromEmail) continue;
+    identities.push({
+      label: (document.getElementById('eid-label-' + i) || {}).value || '',
+      from_email: fromEmail,
+      from_name: (document.getElementById('eid-name-' + i) || {}).value || fromEmail.split('@')[0],
+      smtp_server: (document.getElementById('eid-smtp-' + i) || {}).value || '',
+      smtp_port: parseInt((document.getElementById('eid-port-' + i) || {}).value) || 465,
+      username: (document.getElementById('eid-user-' + i) || {}).value || fromEmail,
+      password: (document.getElementById('eid-pw-' + i) || {}).value || '',
+      primary: i === 0,
+    });
+  }
+  return identities;
+}
 
-  const body = setupBody();
-  fetch('/api/email/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    .then(() => fetch('/api/email/test', { method: 'POST' }))
+function emailTestIdentity(idx) {
+  const result = document.getElementById('eid-test-result-' + idx);
+  result.textContent = 'Saving first...';
+  result.style.color = 'var(--cyan)';
+
+  // Save first, then test that identity
+  const identities = emailCollectIdentities();
+  const fromEmail = identities[idx] ? identities[idx].from_email : '';
+
+  fetch('/api/email/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identities }) })
+    .then(() => fetch('/api/email/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from_email: fromEmail }) }))
     .then(r => r.json())
     .then(d => {
-      if (d.ok) {
-        document.getElementById('setup-msg').textContent = 'Test email sent to ' + d.sent_to;
-        document.getElementById('setup-msg').style.color = 'var(--green)';
-      }
+      result.textContent = d.ok ? '✓ sent to ' + d.sent_to : '✗ failed';
+      result.style.color = d.ok ? 'var(--green)' : 'var(--red)';
     })
-    .catch(e => {
-      document.getElementById('setup-msg').textContent = 'Failed: ' + e;
-      document.getElementById('setup-msg').style.color = 'var(--red)';
-    });
+    .catch(e => { result.textContent = '✗ ' + e; result.style.color = 'var(--red)'; });
 }
 
 function setupSave() {
-  const body = setupBody();
-  fetch('/api/email/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const identities = emailCollectIdentities();
+  if (!identities.length) {
+    document.getElementById('setup-msg').textContent = 'Add at least one identity';
+    return;
+  }
+  const msg = document.getElementById('setup-msg');
+  msg.textContent = 'Saving...';
+  msg.style.color = 'var(--cyan)';
+  fetch('/api/email/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identities }) })
     .then(r => r.json())
     .then(d => {
-      if (d.ok) { document.getElementById('setup-overlay').style.display = 'none'; }
+      if (d.ok) {
+        document.getElementById('setup-overlay').style.display = 'none';
+        emailIdentities = null; // force reload
+      } else {
+        msg.textContent = 'Save failed';
+        msg.style.color = 'var(--red)';
+      }
     })
-    .catch(e => {
-      document.getElementById('setup-msg').textContent = 'Save failed: ' + e;
-      document.getElementById('setup-msg').style.color = 'var(--red)';
-    });
+    .catch(e => { msg.textContent = 'Error: ' + e; msg.style.color = 'var(--red)'; });
 }
 
 function setupSkip() { document.getElementById('setup-overlay').style.display = 'none'; }
-
-function setupBody() {
-  const email = document.getElementById('setup-email').value;
-  const altEmail = document.getElementById('setup-alt-email').value.trim();
-  const altLabel = document.getElementById('setup-alt-label').value.trim();
-  const body = {
-    from_email: email,
-    from_name: document.getElementById('setup-name').value || email.split('@')[0],
-    smtp_server: document.getElementById('setup-smtp').value,
-    smtp_port: parseInt(document.getElementById('setup-port').value) || 465,
-    username: document.getElementById('setup-username').value || email,
-    password: document.getElementById('setup-password').value,
-    signature: '',
-  };
-  if (altEmail) {
-    body.alt_email = altEmail;
-    body.alt_label = altLabel || altEmail.split('@')[0];
-  }
-  return body;
-}
 
 // ============================================================================
 // Letter workflow
@@ -2424,28 +2488,22 @@ function loadEmailIdentities() {
     return;
   }
   fetch('/api/email/status').then(r => r.json()).then(data => {
-    if (!data.configured) {
+    if (!data.configured || !data.identities || !data.identities.length) {
       sel.innerHTML = '<option value="">Email not configured</option>';
       return;
     }
-    emailIdentities = [{
-      label: data.from_email.split('@')[1] || 'Primary',
-      from_email: data.from_email,
-      from_name: data.from_name,
-    }];
-    if (data.identities) {
-      data.identities.forEach(id => emailIdentities.push(id));
-    }
+    emailIdentities = data.identities;
     renderIdentityPicker(sel, emailIdentities);
 
-    // Auto-select based on client funding — insurer clients likely COHS
+    // Auto-select COHS identity for insurer-funded clients
     if (S.clinicSelectedId) {
       const clients = S.clinicSession ? S.clinicSession.clients : [];
       const client = clients.find(c => c.id === S.clinicSelectedId);
-      if (client && client._meta && client._meta.funding_type &&
-          client._meta.funding_type !== 'self-pay' && client._meta.funding_type !== 'Private' &&
-          emailIdentities.length > 0) {
-        sel.value = emailIdentities[0].from_email; // COHS primary for insurer clients
+      const isInsurer = client && client._meta && client._meta.funding_type &&
+          client._meta.funding_type !== 'self-pay' && client._meta.funding_type !== 'Private';
+      if (isInsurer) {
+        const cohsId = emailIdentities.find(i => i.from_email.includes('changeofharleystreet'));
+        if (cohsId) sel.value = cohsId.from_email;
       }
     }
   }).catch(() => {

@@ -21,6 +21,8 @@ pub struct BillingSecrets {
     pub stripe: StripeSecrets,
     #[serde(default)]
     pub ai: AiSecrets,
+    #[serde(default)]
+    pub email_passwords: Vec<EmailPassword>,
 }
 
 /// Xero OAuth2 credentials and tokens.
@@ -47,7 +49,33 @@ pub struct AiSecrets {
     pub api_key: Option<String>,
 }
 
+/// One stored email password, keyed by SMTP username.
+#[derive(Debug, Default, Serialize, Deserialize, Clone)]
+pub struct EmailPassword {
+    pub username: String,
+    pub password: String,
+}
+
 impl BillingSecrets {
+    /// Look up a stored email password by SMTP username.
+    pub fn email_password(&self, username: &str) -> Option<&str> {
+        self.email_passwords.iter()
+            .find(|p| p.username == username)
+            .map(|p| p.password.as_str())
+    }
+
+    /// Set or update a stored email password.
+    pub fn set_email_password(&mut self, username: &str, password: &str) {
+        if let Some(existing) = self.email_passwords.iter_mut().find(|p| p.username == username) {
+            existing.password = password.to_string();
+        } else {
+            self.email_passwords.push(EmailPassword {
+                username: username.to_string(),
+                password: password.to_string(),
+            });
+        }
+    }
+
     /// Load from secrets.toml, or return a default (all None) if the file
     /// doesn't exist yet.
     pub fn load() -> Result<Self> {

@@ -13,7 +13,122 @@ use std::path::Path;
 use std::process::Command;
 
 // ---------------------------------------------------------------------------
-// Config
+// Multi-identity config
+// ---------------------------------------------------------------------------
+
+/// One configured send-as identity with its own SMTP credentials.
+#[derive(Debug, Clone)]
+pub struct EmailIdentity {
+    pub label: String,
+    pub from_email: String,
+    pub from_name: String,
+    pub smtp_server: String,
+    pub smtp_port: u16,
+    pub username: String,
+    pub primary: bool,
+}
+
+/// Load all configured email identities from `[[email.identities]]` in config.toml.
+/// Falls back to the legacy flat `[email]` section for backward compat.
+pub fn load_identities() -> Vec<EmailIdentity> {
+    let config_path = dirs::config_dir()
+        .map(|d| d.join("practiceforge/config.toml"))
+        .unwrap_or_default();
+
+    let content = match std::fs::read_to_string(&config_path) {
+        Ok(c) => c,
+        Err(_) => return vec![],
+    };
+
+    let table: toml::Table = match content.parse() {
+        Ok(t) => t,
+        Err(_) => return vec![],
+    };
+
+    // Try [[email.identities]] array first
+    if let Some(email) = table.get("email").and_then(|v| v.as_table()) {
+        if let Some(arr) = email.get("identities").and_then(|v| v.as_array()) {
+            let mut identities: Vec<EmailIdentity> = arr.iter().filter_map(|item| {
+                let t = item.as_table()?;
+                let from_email = t.get("from_email")?.as_str()?;
+                let smtp_server = t.get("smtp_server")?.as_str()?;
+                let username = t.get("username")?.as_str()?;
+                Some(EmailIdentity {
+                    label: t.get("label").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    from_email: from_email.to_string(),
+                    from_name: t.get("from_name").and_then(|v| v.as_str()).unwrap_or(from_email).to_string(),
+                    smtp_server: smtp_server.to_string(),
+                    smtp_port: t.get("smtp_port").and_then(|v| v.as_integer()).unwrap_or(465) as u16,
+                    username: username.to_string(),
+                    primary: t.get("primary").and_then(|v| v.as_bool()).unwrap_or(false),
+                })
+            }).collect();
+            if !identities.is_empty() {
+                // If none is marked primary, make the first one primary
+                if !identities.iter().any(|i| i.primary) {
+                    identities[0].primary = true;
+                }
+                return identities;
+            }
+        }
+    }
+
+    // Legacy fallback: flat [email] section → single primary identity
+    if let Ok(config) = load_email_config() {
+        return vec![EmailIdentity {
+            label: String::new(),
+            from_email: config.from_email.clone(),
+            from_name: config.from_name.clone(),
+            smtp_server: config.smtp_server.clone(),
+            smtp_port: config.smtp_port,
+            username: config.username.clone(),
+            primary: true,
+        }];
+    }
+
+    vec![]
+}
+
+/// Find an identity by its from_email address.
+pub fn find_identity(from_email: &str) -> Option<EmailIdentity> {
+    load_identities().into_iter().find(|i| i.from_email == from_email)
+}
+
+/// Send an email using the identity matching `from_email`.
+/// Looks up the SMTP password from secrets.toml.
+pub fn send_email_from(
+    from_email: &str,
+    to_email: &str,
+    to_name: &str,
+    subject: &str,
+    body: &str,
+    attachment_path: Option<&std::path::Path>,
+    cc: Option<&[String]>,
+) -> anyhow::Result<()> {
+    let identity = find_identity(from_email)
+        .ok_or_else(|| anyhow::anyhow!("No email identity configured for {}", from_email))?;
+
+    let secrets = crate::billing::secrets::BillingSecrets::load()?;
+    let password = secrets.email_password(&identity.username)
+        .ok_or_else(|| anyhow::anyhow!(
+            "No password stored for {}. Re-run email setup.", identity.username
+        ))?
+        .to_string();
+
+    let config = EmailConfig {
+        smtp_server: identity.smtp_server,
+        smtp_port: identity.smtp_port,
+        username: identity.username,
+        from_name: identity.from_name,
+        from_email: identity.from_email,
+        signature: String::new(),
+    };
+
+    send_email_with_password(&config, &password, to_email, to_name, subject, body, attachment_path, cc)
+}
+
+// ---------------------------------------------------------------------------
+// Config (legacy single-identity)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
@@ -190,6 +305,20 @@ pub fn send_email(
     cc: Option<&[String]>,
 ) -> Result<()> {
     let password = load_password(&config.username)?;
+    send_email_with_password(config, &password, to_email, to_name, subject, body, attachment_path, cc)
+}
+
+/// Core send implementation taking an explicit password (used by both keychain and secrets.toml paths).
+pub fn send_email_with_password(
+    config: &EmailConfig,
+    password: &str,
+    to_email: &str,
+    to_name: &str,
+    subject: &str,
+    body: &str,
+    attachment_path: Option<&Path>,
+    cc: Option<&[String]>,
+) -> Result<()> {
 
     // Build the message
     let from = format!("{} <{}>", config.from_name, config.from_email)
@@ -247,7 +376,7 @@ pub fn send_email(
     };
 
     // Connect and send
-    let creds = Credentials::new(config.username.clone(), password);
+    let creds = Credentials::new(config.username.clone(), password.to_string());
 
     let transport = if config.smtp_port == 465 {
         // Implicit TLS (port 465)

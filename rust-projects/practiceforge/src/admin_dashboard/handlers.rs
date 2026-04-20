@@ -2551,130 +2551,153 @@ pub struct RescheduleBookRequest {
 
 /// GET /api/email/status — check if email is configured.
 pub async fn email_status() -> Json<serde_json::Value> {
-    match crate::email::load_email_config() {
-        Ok(config) => {
-            // Check for additional identities in config
-            let identities = load_email_identities();
-            Json(serde_json::json!({
-                "configured": true,
-                "from_email": config.from_email,
-                "from_name": config.from_name,
-                "smtp_server": config.smtp_server,
-                "identities": identities,
-            }))
-        },
-        Err(_) => Json(serde_json::json!({"configured": false})),
+    let identities = crate::email::load_identities();
+    if identities.is_empty() {
+        return Json(serde_json::json!({"configured": false}));
     }
-}
-
-fn load_email_identities() -> Vec<serde_json::Value> {
-    let config_path = dirs::config_dir()
-        .map(|d| d.join("practiceforge/config.toml"))
-        .unwrap_or_default();
-    let content = std::fs::read_to_string(&config_path).unwrap_or_default();
-    let table: toml::Table = content.parse().unwrap_or_default();
-
-    let email = match table.get("email").and_then(|v| v.as_table()) {
-        Some(e) => e,
-        None => return vec![],
-    };
-
-    let mut identities = vec![];
-    if let Some(arr) = email.get("identities").and_then(|v| v.as_array()) {
-        for item in arr {
-            if let Some(t) = item.as_table() {
-                identities.push(serde_json::json!({
-                    "label": t.get("label").and_then(|v| v.as_str()).unwrap_or(""),
-                    "from_email": t.get("from_email").and_then(|v| v.as_str()).unwrap_or(""),
-                    "from_name": t.get("from_name").and_then(|v| v.as_str()).unwrap_or(""),
-                }));
-            }
-        }
-    }
-    identities
+    let primary = identities.iter().find(|i| i.primary).unwrap_or(&identities[0]);
+    Json(serde_json::json!({
+        "configured": true,
+        "from_email": primary.from_email,
+        "from_name": primary.from_name,
+        "identities": identities.iter().map(|i| serde_json::json!({
+            "label": i.label,
+            "from_email": i.from_email,
+            "from_name": i.from_name,
+            "smtp_server": i.smtp_server,
+            "smtp_port": i.smtp_port,
+            "username": i.username,
+            "primary": i.primary,
+        })).collect::<Vec<_>>(),
+    }))
 }
 
 #[derive(Deserialize)]
-pub struct EmailSetupRequest {
+pub struct IdentitySetupEntry {
+    pub label: String,
     pub from_email: String,
     pub from_name: String,
     pub smtp_server: String,
+    #[serde(default = "default_smtp_port")]
     pub smtp_port: u16,
     pub username: String,
+    /// Password — required on first setup; omit (or empty) to keep existing.
+    #[serde(default)]
     pub password: String,
     #[serde(default)]
-    pub signature: String,
-    /// Secondary "send as" email (optional — for clients not via main practice)
-    #[serde(default)]
-    pub alt_email: Option<String>,
-    #[serde(default)]
-    pub alt_label: Option<String>,
+    pub primary: bool,
 }
 
-/// POST /api/email/setup — save email configuration.
+fn default_smtp_port() -> u16 { 465 }
+
+#[derive(Deserialize)]
+pub struct EmailSetupRequest {
+    pub identities: Vec<IdentitySetupEntry>,
+}
+
+/// POST /api/email/setup — save all email identities to config.toml + passwords to secrets.toml.
 pub async fn email_setup(
     Json(req): Json<EmailSetupRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let config_dir = dirs::config_dir()
-        .map(|d| d.join("practiceforge"))
-        .ok_or_else(|| (StatusCode::INTERNAL_SERVER_ERROR, "No config dir".to_string()))?;
-    std::fs::create_dir_all(&config_dir)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    let config_path = config_dir.join("config.toml");
-    let mut config_str = if config_path.exists() {
-        std::fs::read_to_string(&config_path).unwrap_or_default()
-    } else {
-        String::new()
-    };
-
-    // Remove existing [email] section if present
-    if let Some(start) = config_str.find("\n[email]") {
-        let rest = &config_str[start + 1..];
-        let end = rest.find("\n[").map(|p| start + 1 + p).unwrap_or(config_str.len());
-        config_str.replace_range(start..end, "");
-    } else if config_str.starts_with("[email]") {
-        let end = config_str.find("\n[").unwrap_or(config_str.len());
-        config_str.replace_range(0..end, "");
+    if req.identities.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "At least one identity required".to_string()));
     }
 
-    // Append new [email] section
-    config_str.push_str(&format!(
-        "\n[email]\nfrom_email = \"{}\"\nfrom_name = \"{}\"\nsmtp_server = \"{}\"\nsmtp_port = {}\nusername = \"{}\"\nsignature = \"{}\"\n",
-        req.from_email, req.from_name, req.smtp_server, req.smtp_port, req.username,
-        req.signature.replace('"', "\\\"")
-    ));
+    let config_path = crate::config::config_dir().join("config.toml");
+    std::fs::create_dir_all(crate::config::config_dir())
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    // Add secondary identity if provided
-    if let Some(ref alt_email) = req.alt_email {
-        let alt_label = req.alt_label.as_deref().unwrap_or("secondary");
-        config_str.push_str(&format!(
-            "\n[[email.identities]]\nlabel = \"{}\"\nfrom_email = \"{}\"\nfrom_name = \"{}\"\n",
-            alt_label, alt_email, req.from_name
+    // Read existing config and strip out all email-related sections
+    let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
+    let stripped = strip_email_sections(&existing);
+
+    // Build new [[email.identities]] blocks
+    let mut new_email = String::new();
+    for (i, id) in req.identities.iter().enumerate() {
+        let primary = id.primary || (i == 0 && !req.identities.iter().any(|x| x.primary));
+        new_email.push_str(&format!(
+            "\n[[email.identities]]\nlabel = \"{}\"\nfrom_email = \"{}\"\nfrom_name = \"{}\"\nsmtp_server = \"{}\"\nsmtp_port = {}\nusername = \"{}\"\nprimary = {}\n",
+            esc_toml(&id.label), esc_toml(&id.from_email), esc_toml(&id.from_name),
+            esc_toml(&id.smtp_server), id.smtp_port, esc_toml(&id.username), primary
         ));
     }
 
-    std::fs::write(&config_path, &config_str)
+    std::fs::write(&config_path, format!("{}{}", stripped.trim_end(), new_email))
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    // Store password in keychain
-    let _ = std::process::Command::new("security")
-        .args(["add-generic-password", "-a", "clinical-email", "-s", "clinical-email",
-               "-w", &req.password, "-U"])
-        .output();
+    // Store passwords in secrets.toml (only for identities with a non-empty password)
+    let mut secrets = crate::billing::secrets::BillingSecrets::load()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    for id in &req.identities {
+        if !id.password.is_empty() {
+            secrets.set_email_password(&id.username, &id.password);
+        }
+    }
+    secrets.save().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    Ok(Json(serde_json::json!({"ok": true})))
+    Ok(Json(serde_json::json!({"ok": true, "identities": req.identities.len()})))
 }
 
-/// POST /api/email/test — send a test email to self.
-pub async fn email_test() -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let config = crate::email::load_email_config()
-        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Email not configured: {}", e)))?;
+fn esc_toml(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
 
-    crate::email::send_test(&config)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Test email failed: {}", e)))?;
+/// Remove all [email] and [[email.identities]] sections from a config string.
+fn strip_email_sections(config: &str) -> String {
+    let mut out = String::new();
+    let mut skip = false;
+    for line in config.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[email]" || trimmed.starts_with("[email.") || trimmed == "[[email.identities]]" {
+            skip = true;
+        } else if skip && trimmed.starts_with('[') {
+            skip = false;
+        }
+        if !skip {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
+}
 
-    Ok(Json(serde_json::json!({"ok": true, "sent_to": config.from_email})))
+/// POST /api/email/test — send a test email to the primary (or specified) identity.
+pub async fn email_test(
+    body: Option<Json<serde_json::Value>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let from_email = body
+        .as_ref()
+        .and_then(|b| b.get("from_email"))
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+
+    let identities = crate::email::load_identities();
+    if identities.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "Email not configured".to_string()));
+    }
+
+    let identity = if let Some(ref fe) = from_email {
+        identities.iter().find(|i| &i.from_email == fe)
+            .ok_or_else(|| (StatusCode::NOT_FOUND, format!("No identity for {}", fe)))?
+    } else {
+        identities.iter().find(|i| i.primary).unwrap_or(&identities[0])
+    };
+
+    crate::email::send_email_from(
+        &identity.from_email,
+        &identity.from_email,
+        &identity.from_name,
+        "PracticeForge — Email Test",
+        &format!(
+            "This is a test email from PracticeForge.\n\nIdentity: {}\nServer: {}:{}\nFrom: {} <{}>",
+            identity.label, identity.smtp_server, identity.smtp_port,
+            identity.from_name, identity.from_email
+        ),
+        None,
+        None,
+    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Test failed: {}", e)))?;
+
+    Ok(Json(serde_json::json!({"ok": true, "sent_to": identity.from_email})))
 }
 
 // ---------------------------------------------------------------------------
