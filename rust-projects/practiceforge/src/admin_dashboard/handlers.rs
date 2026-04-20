@@ -2598,14 +2598,15 @@ pub struct EmailSetupRequest {
 /// POST /api/email/setup — save all email identities to config.toml + passwords to secrets.toml.
 pub async fn email_setup(
     Json(req): Json<EmailSetupRequest>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+) -> Json<serde_json::Value> {
     if req.identities.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "At least one identity required".to_string()));
+        return Json(serde_json::json!({"ok": false, "error": "At least one identity required"}));
     }
 
     let config_path = crate::config::config_dir().join("config.toml");
-    std::fs::create_dir_all(crate::config::config_dir())
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if let Err(e) = std::fs::create_dir_all(crate::config::config_dir()) {
+        return Json(serde_json::json!({"ok": false, "error": e.to_string()}));
+    }
 
     // Read existing config and strip out all email-related sections
     let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
@@ -2622,20 +2623,25 @@ pub async fn email_setup(
         ));
     }
 
-    std::fs::write(&config_path, format!("{}{}", stripped.trim_end(), new_email))
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if let Err(e) = std::fs::write(&config_path, format!("{}{}", stripped.trim_end(), new_email)) {
+        return Json(serde_json::json!({"ok": false, "error": e.to_string()}));
+    }
 
     // Store passwords in secrets.toml (only for identities with a non-empty password)
-    let mut secrets = crate::billing::secrets::BillingSecrets::load()
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let mut secrets = match crate::billing::secrets::BillingSecrets::load() {
+        Ok(s) => s,
+        Err(e) => return Json(serde_json::json!({"ok": false, "error": e.to_string()})),
+    };
     for id in &req.identities {
         if !id.password.is_empty() {
             secrets.set_email_password(&id.username, &id.password);
         }
     }
-    secrets.save().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if let Err(e) = secrets.save() {
+        return Json(serde_json::json!({"ok": false, "error": e.to_string()}));
+    }
 
-    Ok(Json(serde_json::json!({"ok": true, "identities": req.identities.len()})))
+    Json(serde_json::json!({"ok": true, "identities": req.identities.len()}))
 }
 
 fn esc_toml(s: &str) -> String {
@@ -2664,7 +2670,7 @@ fn strip_email_sections(config: &str) -> String {
 /// POST /api/email/test — send a test email to the primary (or specified) identity.
 pub async fn email_test(
     body: Option<Json<serde_json::Value>>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+) -> Json<serde_json::Value> {
     let from_email = body
         .as_ref()
         .and_then(|b| b.get("from_email"))
@@ -2673,17 +2679,19 @@ pub async fn email_test(
 
     let identities = crate::email::load_identities();
     if identities.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "Email not configured".to_string()));
+        return Json(serde_json::json!({"ok": false, "error": "Email not configured"}));
     }
 
     let identity = if let Some(ref fe) = from_email {
-        identities.iter().find(|i| &i.from_email == fe)
-            .ok_or_else(|| (StatusCode::NOT_FOUND, format!("No identity for {}", fe)))?
+        match identities.iter().find(|i| &i.from_email == fe) {
+            Some(id) => id,
+            None => return Json(serde_json::json!({"ok": false, "error": format!("No identity for {}", fe)})),
+        }
     } else {
         identities.iter().find(|i| i.primary).unwrap_or(&identities[0])
     };
 
-    crate::email::send_email_from(
+    match crate::email::send_email_from(
         &identity.from_email,
         &identity.from_email,
         &identity.from_name,
@@ -2695,9 +2703,10 @@ pub async fn email_test(
         ),
         None,
         None,
-    ).map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Test failed: {}", e)))?;
-
-    Ok(Json(serde_json::json!({"ok": true, "sent_to": identity.from_email})))
+    ) {
+        Ok(_) => Json(serde_json::json!({"ok": true, "sent_to": identity.from_email})),
+        Err(e) => Json(serde_json::json!({"ok": false, "error": format!("Test failed: {}", e)})),
+    }
 }
 
 // ---------------------------------------------------------------------------
