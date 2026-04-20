@@ -363,6 +363,7 @@ depends = ["shared"]
 "systemd/dotter-sync-watcher.service" = "~/.config/systemd/user/dotter-sync-watcher.service"
 "systemd/git-auto-pull-watcher.service" = "~/.config/systemd/user/git-auto-pull-watcher.service"
 "systemd/syncthing-monitor.service" = "~/.config/systemd/user/syncthing-monitor.service"
+"systemd/practiceforge.service" = "~/.config/systemd/user/practiceforge.service"
 "systemd/continuum-sync-claude.service" = "~/.config/systemd/user/continuum-sync-claude.service"
 "systemd/continuum-sync-claude.timer" = "~/.config/systemd/user/continuum-sync-claude.timer"
 "systemd/link-service.service" = "~/.config/systemd/user/link-service.service"

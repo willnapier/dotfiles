@@ -1,0 +1,11 @@
+[Unit]
+Description=PracticeForge Dashboard
+After=network.target
+
+[Service]
+ExecStart=%h/.local/bin/practiceforge admin-dashboard --port 3457
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
