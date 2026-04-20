@@ -8,6 +8,7 @@ use std::io::{self, Read, Write};
 
 pub mod billing;
 pub mod config;
+pub mod llm;
 mod admin_dashboard;
 mod dashboard;
 pub mod email;
@@ -264,6 +265,15 @@ enum Command {
     Tm3Diary {
         #[command(subcommand)]
         action: Tm3DiaryAction,
+    },
+
+    /// AI note generation — configure provider and test generation.
+    ///
+    /// Manages the `[ai]` section of config.toml and `[ai]` in secrets.toml.
+    /// Supports Anthropic (claude-haiku-4-5, claude-sonnet-4-6) and Ollama backends.
+    Ai {
+        #[command(subcommand)]
+        action: AiAction,
     },
 }
 
@@ -753,6 +763,22 @@ enum Tm3DiaryAction {
     RefreshCache,
 }
 
+#[derive(Parser, Debug)]
+enum AiAction {
+    /// Interactive setup wizard — choose backend, model, and enter API key.
+    ///
+    /// Writes `[ai]` to config.toml and `[ai] api_key` to secrets.toml (chmod 600).
+    Setup,
+    /// Print current AI configuration (backend, model, key presence only).
+    Status,
+    /// Run a test generation with the configured backend.
+    Test {
+        /// Observation text to generate a note from
+        #[arg(default_value = "Client described improved sleep this week.")]
+        observation: String,
+    },
+}
+
 #[derive(Serialize)]
 struct GenerateRequest {
     model: String,
@@ -1137,6 +1163,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Tm3Diary { action } => {
             handle_tm3_diary(action)?;
+        }
+        Command::Ai { action } => {
+            handle_ai(action).await?;
         }
     }
 
@@ -3443,6 +3472,95 @@ fn handle_tm3_diary(action: Tm3DiaryAction) -> anyhow::Result<()> {
         Tm3DiaryAction::RefreshCache => {
             let count = tm3_clients::refresh_cache()?;
             println!("✓ TM3 client cache refreshed ({} clients).", count);
+        }
+    }
+
+    Ok(())
+}
+
+async fn handle_ai(action: AiAction) -> anyhow::Result<()> {
+    use billing::secrets::BillingSecrets;
+    use std::io::{BufRead, Write};
+
+    match action {
+        AiAction::Setup => {
+            println!("PracticeForge AI setup\n");
+
+            // Model selection
+            println!("Select backend:");
+            println!("  1) Anthropic (recommended — Haiku ~£11/yr, Sonnet ~£25/yr)");
+            println!("  2) Ollama (local inference, requires GPU server)");
+            print!("Choice [1]: ");
+            std::io::stdout().flush()?;
+            let mut line = String::new();
+            std::io::stdin().lock().read_line(&mut line)?;
+            let backend = if line.trim() == "2" { "ollama" } else { "anthropic" };
+
+            let model = if backend == "anthropic" {
+                println!("\nSelect model:");
+                println!("  1) claude-haiku-4-5-20251001  (fast, cheapest)");
+                println!("  2) claude-sonnet-4-6          (higher quality, ~2.3x cost)");
+                print!("Choice [1]: ");
+                std::io::stdout().flush()?;
+                let mut m = String::new();
+                std::io::stdin().lock().read_line(&mut m)?;
+                if m.trim() == "2" { "claude-sonnet-4-6" } else { "claude-haiku-4-5-20251001" }
+            } else {
+                "gemma4:26b"
+            };
+
+            // Write config.toml [ai] section
+            let config_path = config::config_dir().join("config.toml");
+            std::fs::create_dir_all(config::config_dir())?;
+            let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
+            let updated = if existing.contains("[ai]") {
+                // Replace existing [ai] block (simple approach: append a note)
+                existing
+            } else {
+                format!("{}\n[ai]\nbackend = \"{}\"\nmodel = \"{}\"\n", existing.trim_end(), backend, model)
+            };
+            std::fs::write(&config_path, updated)?;
+            println!("✓ Written [ai] to config.toml (backend={}, model={})", backend, model);
+
+            // API key (Anthropic only)
+            if backend == "anthropic" {
+                print!("\nAnthropic API key (sk-ant-...): ");
+                std::io::stdout().flush()?;
+                let mut key = String::new();
+                std::io::stdin().lock().read_line(&mut key)?;
+                let key = key.trim().to_string();
+                if !key.is_empty() {
+                    let mut secrets = BillingSecrets::load()?;
+                    secrets.ai.api_key = Some(key);
+                    secrets.save()?;
+                    println!("✓ API key saved to secrets.toml (chmod 600).");
+                }
+            }
+
+            println!("\nRun `practiceforge ai test` to verify.");
+        }
+
+        AiAction::Status => {
+            let ai = config::load_ai_config();
+            println!("Backend : {}", ai.backend.as_deref().unwrap_or("(not set)"));
+            println!("Model   : {}", ai.model.as_deref().unwrap_or("(not set)"));
+            let secrets = BillingSecrets::load()?;
+            let key_status = match &secrets.ai.api_key {
+                Some(k) if !k.is_empty() => "present",
+                _ => "absent",
+            };
+            println!("API key : {}", key_status);
+        }
+
+        AiAction::Test { observation } => {
+            let Some(backend) = llm::load_anthropic_backend() else {
+                anyhow::bail!("No Anthropic backend configured. Run `practiceforge ai setup` first.");
+            };
+            let system = "You are a clinical session note writer. Produce a brief, defensible ACT-framed session note. Include a Risk line and a Formulation.";
+            let prompt = format!("Write a session note.\n\nObservation: {}", observation);
+            println!("Generating test note...\n");
+            let text = backend.generate(system, &prompt).await?;
+            println!("{}", text);
         }
     }
 

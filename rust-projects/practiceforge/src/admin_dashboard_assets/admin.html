@@ -398,6 +398,7 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
           <div class="clinic-notes-viewer" id="clinic-notes-viewer"></div>
           <div class="section-head">Observation</div>
           <textarea class="clinic-textarea" id="clinic-observation" rows="5" placeholder="Session observation..."></textarea>
+          <div style="font-size:11px;color:var(--fg-dim);margin:2px 0 4px;opacity:0.7;">Before generating: no full name, employer, named third parties, or rare identifying combination.</div>
           <div class="clinic-generate-bar">
             <button class="clinic-generate-btn" id="clinic-compare-generate-btn" onclick="clinicCompareGenerate()">Generate</button>
             <span class="clinic-spinner" id="clinic-spinner">Generating...</span>
@@ -2353,12 +2354,28 @@ function clinicLetterBuild() {
   if (!S.clinicSelectedId) return;
   const content = document.getElementById('clinic-letter-content').value.trim();
   if (!content) return;
+  // Show de-id confirmation modal before building PDF.
+  document.getElementById('deid-modal').style.display = 'flex';
+  document.querySelectorAll('.deid-check').forEach(cb => { cb.checked = false; });
+  document.getElementById('deid-confirm-btn').disabled = true;
+}
 
+function deidCheckChanged() {
+  const all = Array.from(document.querySelectorAll('.deid-check')).every(cb => cb.checked);
+  const btn = document.getElementById('deid-confirm-btn');
+  btn.disabled = !all;
+  btn.style.opacity = all ? '1' : '0.4';
+  btn.style.cursor = all ? 'pointer' : 'not-allowed';
+}
+
+function deidConfirm() {
+  document.getElementById('deid-modal').style.display = 'none';
+  const content = document.getElementById('clinic-letter-content').value.trim();
   document.getElementById('clinic-letter-status').textContent = 'Building PDF...';
   fetch('/api/letter/build', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ client_id: S.clinicSelectedId, content: content })
+    body: JSON.stringify({ client_id: S.clinicSelectedId, content: content, deid_confirmed_at: new Date().toISOString() })
   })
     .then(r => r.json())
     .then(data => {
@@ -2572,5 +2589,33 @@ setInterval(pollInferenceStatus, 30000);
 checkEmailSetup();
 updateHints();
 </script>
+
+<!-- De-identification confirmation modal for clinical update letters -->
+<div id="deid-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9000;align-items:center;justify-content:center;">
+  <div style="background:var(--base02);border:1px solid var(--border);border-radius:6px;padding:28px 32px;max-width:440px;width:90%;">
+    <div style="font-size:13px;text-transform:uppercase;letter-spacing:0.8px;color:var(--fg-dim);margin-bottom:14px;">Before building this letter</div>
+    <div style="font-size:14px;color:var(--fg);margin-bottom:16px;">Confirm you have checked the letter for identifying information:</div>
+    <label style="display:flex;align-items:flex-start;gap:10px;margin-bottom:12px;cursor:pointer;font-size:13px;">
+      <input type="checkbox" class="deid-check" onchange="deidCheckChanged()" style="margin-top:2px;flex-shrink:0;">
+      <span>No full name or initials of the client</span>
+    </label>
+    <label style="display:flex;align-items:flex-start;gap:10px;margin-bottom:12px;cursor:pointer;font-size:13px;">
+      <input type="checkbox" class="deid-check" onchange="deidCheckChanged()" style="margin-top:2px;flex-shrink:0;">
+      <span>No named employer or organisation</span>
+    </label>
+    <label style="display:flex;align-items:flex-start;gap:10px;margin-bottom:12px;cursor:pointer;font-size:13px;">
+      <input type="checkbox" class="deid-check" onchange="deidCheckChanged()" style="margin-top:2px;flex-shrink:0;">
+      <span>No named third parties (family members, colleagues)</span>
+    </label>
+    <label style="display:flex;align-items:flex-start;gap:10px;margin-bottom:20px;cursor:pointer;font-size:13px;">
+      <input type="checkbox" class="deid-check" onchange="deidCheckChanged()" style="margin-top:2px;flex-shrink:0;">
+      <span>No rare identifying combination (role + location + condition)</span>
+    </label>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button onclick="document.getElementById('deid-modal').style.display='none'" style="background:none;border:1px solid var(--border);color:var(--fg-dim);padding:6px 16px;border-radius:4px;cursor:pointer;font-size:13px;">Cancel</button>
+      <button id="deid-confirm-btn" onclick="deidConfirm()" disabled style="background:var(--cyan);border:none;color:var(--base03);padding:6px 16px;border-radius:4px;cursor:not-allowed;font-size:13px;opacity:0.4;transition:opacity 0.15s;" onmouseenter="" onfocus="">Confirm &amp; Build PDF</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>

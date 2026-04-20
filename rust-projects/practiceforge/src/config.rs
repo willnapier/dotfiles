@@ -65,3 +65,26 @@ pub fn clients_dir() -> PathBuf {
 pub fn attendance_dir() -> PathBuf {
     clinical_root().join("attendance")
 }
+
+/// AI configuration from `[ai]` section in config.toml.
+#[derive(Debug, Default)]
+pub struct AiConfig {
+    /// e.g. "anthropic" or "ollama"
+    pub backend: Option<String>,
+    /// Model name (provider-specific)
+    pub model: Option<String>,
+}
+
+/// Load the `[ai]` section from config.toml.
+pub fn load_ai_config() -> AiConfig {
+    let Some(config) = load_config() else {
+        return AiConfig::default();
+    };
+    let Some(ai) = config.get("ai") else {
+        return AiConfig::default();
+    };
+    AiConfig {
+        backend: ai.get("backend").and_then(|v| v.as_str()).map(str::to_owned),
+        model: ai.get("model").and_then(|v| v.as_str()).map(str::to_owned),
+    }
+}

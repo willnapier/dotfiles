@@ -1063,6 +1063,8 @@ pub struct ClientMetadata {
 #[derive(Serialize)]
 pub struct InferenceStatus {
     pub available: bool,
+    /// "anthropic", "ollama", or "none"
+    pub backend: String,
 }
 
 #[derive(Deserialize)]
@@ -1141,6 +1143,21 @@ pub async fn generate_note(
 ) -> Result<Json<GenerateResponse>, (StatusCode, String)> {
     let start = std::time::Instant::now();
 
+    // Anthropic path: build prompt locally, call API directly.
+    if let Some(backend) = crate::llm::load_anthropic_backend() {
+        let system_prompt = load_system_prompt();
+        let prompt = build_fallback_prompt(&req.client_id, &req.observation, req.with_rail);
+        let note_text = backend
+            .generate(&system_prompt, &prompt)
+            .await
+            .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+        return Ok(Json(GenerateResponse {
+            note_text,
+            elapsed_seconds: start.elapsed().as_secs_f64(),
+        }));
+    }
+
+    // Ollama/CLI fallback path.
     let mut cmd = tokio::process::Command::new("clinical");
     cmd.arg("note")
         .arg(&req.client_id)
@@ -1174,23 +1191,49 @@ pub async fn generate_note(
 
 /// POST /api/generate-stream — streaming note generation via SSE.
 ///
-/// Builds the prompt locally, calls Ollama streaming API directly,
-/// proxies token chunks as SSE events. First token appears in 1-2s.
+/// Uses the Anthropic backend when configured (`[ai] backend = "anthropic"`);
+/// falls back to direct Ollama streaming otherwise. The Ollama path remains
+/// in archive posture — functional but not the production default.
 pub async fn generate_note_stream(
     Json(req): Json<GenerateRequest>,
-) -> Result<axum::response::Sse<impl futures_util::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>>, (StatusCode, String)> {
+) -> Result<axum::response::Sse<axum::response::sse::KeepAliveStream<futures_util::stream::BoxStream<'static, Result<axum::response::sse::Event, std::convert::Infallible>>>>, (StatusCode, String)> {
     use axum::response::sse::{Event, KeepAlive};
     use futures_util::StreamExt;
 
     let start = std::time::Instant::now();
-
-    // Build prompt by calling `clinical note` with --prompt-only via a quick subprocess
-    // that just outputs the prompt without generating. We pipe observation via env var.
     let client_id = req.client_id.clone();
     let observation = req.observation.clone();
     let with_rail = req.with_rail;
 
-    // Load inference config
+    let prompt = build_fallback_prompt(&client_id, &observation, with_rail);
+    let system_prompt = load_system_prompt();
+
+    // Anthropic path
+    if let Some(backend) = crate::llm::load_anthropic_backend() {
+        eprintln!("[gen] anthropic client={client_id}");
+        let token_stream = backend
+            .generate_stream(system_prompt, prompt)
+            .await
+            .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
+
+        let sse_stream = token_stream.map(move |tokens| {
+            if tokens.is_empty() {
+                Ok(Event::default().comment("keepalive"))
+            } else {
+                Ok(Event::default().data(tokens))
+            }
+        });
+
+        // Sentinel [DONE] event appended after the token stream finishes
+        let done_event = futures_util::stream::once(async move {
+            Ok(Event::default().data(format!("[DONE] {:.1}s", start.elapsed().as_secs_f64())))
+        });
+
+        let combined = sse_stream.chain(done_event).boxed();
+        return Ok(axum::response::Sse::new(combined).keep_alive(KeepAlive::default()));
+    }
+
+    // Ollama fallback path (archive posture)
     let config = crate::config::load_config();
     let endpoint = config.as_ref()
         .and_then(|c| c.get("voice"))
@@ -1207,23 +1250,14 @@ pub async fn generate_note_stream(
             .to_string()
     });
 
-    eprintln!("[gen] A client={client_id} endpoint={endpoint}");
-    let prompt = build_fallback_prompt(&client_id, &observation, with_rail);
-    eprintln!("[gen] B prompt={}b", prompt.len());
-    let system_prompt = load_system_prompt();
-    eprintln!("[gen] C system={}b", system_prompt.len());
+    eprintln!("[gen] ollama client={client_id} endpoint={endpoint}");
     let ollama_url = format!("{}/api/generate", endpoint);
-    eprintln!("[gen] D sending to {ollama_url}");
     let body = serde_json::json!({
         "model": model,
         "prompt": prompt,
         "system": system_prompt,
         "stream": true,
         "keep_alive": -1,
-        // num_ctx must be explicit: both models loaded use 44GB VRAM, leaving
-        // ~3.6GB free. 4096 needs ~2GB KV cache; safe because compare requests are
-        // now sequential (only one KV cache active at a time).
-        // repeat_penalty >1.0 prevents Q4 repetition loops without hurting quality.
         "options": {"num_ctx": 4096, "repeat_penalty": 1.15},
     });
 
@@ -1241,14 +1275,10 @@ pub async fn generate_note_stream(
         return Err((StatusCode::BAD_GATEWAY, format!("Ollama returned {}: {}", status, body)));
     }
 
-    // Stream Ollama's NDJSON response as SSE events
     let byte_stream = resp.bytes_stream();
-
     let stream = byte_stream.map(move |chunk| {
         let chunk = chunk.unwrap_or_default();
         let text = String::from_utf8_lossy(&chunk);
-
-        // Ollama sends one JSON object per line: {"response":"token","done":false}
         let mut tokens = String::new();
         let mut is_done = false;
 
@@ -1273,7 +1303,7 @@ pub async fn generate_note_stream(
         } else {
             Ok(Event::default().comment("keepalive"))
         }
-    });
+    }).boxed();
 
     Ok(axum::response::Sse::new(stream).keep_alive(KeepAlive::default()))
 }
@@ -1642,6 +1672,11 @@ pub async fn get_client_metadata(
 
 /// GET /api/inference/status — check if inference server is reachable.
 pub async fn inference_status() -> Json<InferenceStatus> {
+    // Anthropic backend: always available if configured (API, no local server).
+    if crate::llm::load_anthropic_backend().is_some() {
+        return Json(InferenceStatus { available: true, backend: "anthropic".to_string() });
+    }
+
     let client = reqwest::Client::new();
 
     let available = client
@@ -1705,7 +1740,8 @@ pub async fn inference_status() -> Json<InferenceStatus> {
         }
     }
 
-    Json(InferenceStatus { available })
+    let backend = if available { "ollama" } else { "none" }.to_string();
+    Json(InferenceStatus { available, backend })
 }
 
 /// POST /api/end-clinic — generate attendance report and daypage entry.

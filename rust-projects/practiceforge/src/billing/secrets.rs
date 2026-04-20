@@ -19,6 +19,8 @@ pub struct BillingSecrets {
     pub xero: XeroSecrets,
     #[serde(default)]
     pub stripe: StripeSecrets,
+    #[serde(default)]
+    pub ai: AiSecrets,
 }
 
 /// Xero OAuth2 credentials and tokens.
@@ -37,6 +39,12 @@ pub struct XeroSecrets {
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct StripeSecrets {
     pub secret_key: Option<String>,
+}
+
+/// AI provider credentials.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct AiSecrets {
+    pub api_key: Option<String>,
 }
 
 impl BillingSecrets {
