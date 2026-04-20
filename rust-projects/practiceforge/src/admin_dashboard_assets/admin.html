@@ -402,9 +402,13 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
           <div class="clinic-generate-bar">
             <button class="clinic-generate-btn" id="clinic-compare-generate-btn" onclick="clinicCompareGenerate()">Generate</button>
             <span class="clinic-spinner" id="clinic-spinner">Generating...</span>
-            <span class="clinic-inference" id="clinic-inference" style="margin-left:auto">
+            <span class="clinic-inference" id="clinic-inference" style="margin-left:auto;gap:8px;">
               <span class="dot dot-red" id="clinic-inference-dot">&#9679;</span>
-              <span>Auto-draft</span>
+              <span id="clinic-model-picker" style="display:none;gap:4px;display:flex;">
+                <button id="model-btn-haiku"  onclick="setAiModel('claude-haiku-4-5-20251001')" style="font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid var(--border);background:none;color:var(--fg-dim);cursor:pointer;">Haiku</button>
+                <button id="model-btn-sonnet" onclick="setAiModel('claude-sonnet-4-6')"         style="font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid var(--border);background:none;color:var(--fg-dim);cursor:pointer;">Sonnet</button>
+                <button id="model-btn-opus"   onclick="setAiModel('claude-opus-4-7')"           style="font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid var(--border);background:none;color:var(--fg-dim);cursor:pointer;">Opus</button>
+              </span>
               <span id="clinic-inference-label" style="font-size:10px;">checking...</span>
             </span>
           </div>
@@ -1758,6 +1762,39 @@ function endClinic() {
 }
 
 // --- Inference status polling ---
+const MODEL_IDS = {
+  'claude-haiku-4-5-20251001': 'model-btn-haiku',
+  'claude-sonnet-4-6':         'model-btn-sonnet',
+  'claude-opus-4-7':           'model-btn-opus',
+};
+
+function updateModelPicker(backend, model) {
+  const picker = document.getElementById('clinic-model-picker');
+  const isFrontier = backend === 'anthropic' || backend === 'claude-cli';
+  picker.style.display = isFrontier ? 'flex' : 'none';
+  if (!isFrontier) return;
+  // Highlight active model button
+  Object.entries(MODEL_IDS).forEach(([m, btnId]) => {
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    const active = m === model;
+    btn.style.background = active ? 'var(--cyan)' : 'none';
+    btn.style.color = active ? 'var(--base03)' : 'var(--fg-dim)';
+    btn.style.borderColor = active ? 'var(--cyan)' : 'var(--border)';
+  });
+}
+
+function setAiModel(model) {
+  fetch('/api/ai/model', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model })
+  })
+    .then(r => r.json())
+    .then(data => { if (data.ok) pollInferenceStatus(); })
+    .catch(() => {});
+}
+
 function pollInferenceStatus() {
   fetch('/api/inference/status')
     .then(r => r.json())
@@ -1767,13 +1804,14 @@ function pollInferenceStatus() {
       const label = document.getElementById('clinic-inference-label');
       if (S.clinicInferenceAvailable) {
         dot.className = 'dot dot-green';
-        label.textContent = 'connected';
+        label.textContent = data.backend || 'connected';
         label.style.color = 'var(--green)';
       } else {
         dot.className = 'dot dot-red';
         label.textContent = 'disconnected';
         label.style.color = 'var(--red)';
       }
+      updateModelPicker(data.backend || '', data.model || '');
     })
     .catch(() => {
       S.clinicInferenceAvailable = false;
@@ -1782,6 +1820,7 @@ function pollInferenceStatus() {
       dot.className = 'dot dot-red';
       label.textContent = 'disconnected';
       label.style.color = 'var(--red)';
+      updateModelPicker('', '');
     });
 }
 

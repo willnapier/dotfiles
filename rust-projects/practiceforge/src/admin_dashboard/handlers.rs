@@ -1063,8 +1063,10 @@ pub struct ClientMetadata {
 #[derive(Serialize)]
 pub struct InferenceStatus {
     pub available: bool,
-    /// "anthropic", "ollama", or "none"
+    /// "anthropic", "claude-cli", "ollama", or "none"
     pub backend: String,
+    /// Active model name, if a frontier backend is configured.
+    pub model: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -1674,7 +1676,12 @@ pub async fn get_client_metadata(
 pub async fn inference_status() -> Json<InferenceStatus> {
     // Frontier backends (Anthropic API, Claude CLI) are always reachable — no local server.
     if let Some(b) = crate::llm::load_backend() {
-        return Json(InferenceStatus { available: true, backend: b.backend_name().to_string() });
+        let ai = crate::config::load_ai_config();
+        return Json(InferenceStatus {
+            available: true,
+            backend: b.backend_name().to_string(),
+            model: ai.model,
+        });
     }
 
     let client = reqwest::Client::new();
@@ -1741,7 +1748,7 @@ pub async fn inference_status() -> Json<InferenceStatus> {
     }
 
     let backend = if available { "ollama" } else { "none" }.to_string();
-    Json(InferenceStatus { available, backend })
+    Json(InferenceStatus { available, backend, model: None })
 }
 
 /// POST /api/end-clinic — generate attendance report and daypage entry.
@@ -2686,3 +2693,54 @@ pub async fn letter_send(
 
     Ok(Json(serde_json::json!({"ok": true})))
 }
+
+// ─── AI model selection ───────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct SetModelRequest {
+    pub model: String,
+}
+
+/// POST /api/ai/model — update the active model in config.toml.
+///
+/// Only changes the `model =` line; leaves backend and all other config intact.
+/// Returns the updated model name so the UI can confirm the change.
+pub async fn set_ai_model(
+    Json(req): Json<SetModelRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let allowed = ["claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-7"];
+    if !allowed.contains(&req.model.as_str()) {
+        return Err((StatusCode::BAD_REQUEST, format!("Unknown model: {}", req.model)));
+    }
+
+    let config_path = crate::config::config_dir().join("config.toml");
+    let existing = std::fs::read_to_string(&config_path)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Replace or insert model = "..." within the [ai] section.
+    let updated = if let Some(ai_pos) = existing.find("[ai]") {
+        let after = ai_pos + 4;
+        let next = existing[after..].find("\n[").map(|p| after + p).unwrap_or(existing.len());
+        let ai_section = &existing[ai_pos..next];
+        let new_model_line = format!("model = \"{}\"", req.model);
+        let new_section = if ai_section.contains("model = ") {
+            // Replace existing model line
+            ai_section.lines()
+                .map(|l| if l.trim_start().starts_with("model = ") { new_model_line.as_str() } else { l })
+                .collect::<Vec<_>>()
+                .join("\n")
+        } else {
+            // Append model line to [ai] section
+            format!("{}\n{}", ai_section.trim_end(), new_model_line)
+        };
+        format!("{}{}{}", &existing[..ai_pos], new_section, &existing[next..])
+    } else {
+        return Err((StatusCode::CONFLICT, "No [ai] section in config — run `practiceforge ai setup` first".to_string()));
+    };
+
+    std::fs::write(&config_path, updated)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(serde_json::json!({ "ok": true, "model": req.model })))
+}
+
