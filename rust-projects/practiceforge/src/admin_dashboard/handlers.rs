@@ -1322,27 +1322,91 @@ pub async fn generate_note_stream(
 /// Load system prompt from modality + faithfulness prompt files.
 fn load_system_prompt() -> String {
     let home = dirs::home_dir().unwrap_or_default();
+    let prompts_dir = crate::config::config_dir().join("prompts");
+    let skills_dir = home.join(".claude/skills/clinical-notes");
 
-    // Try modality-act.md first (the practitioner's ACT framework)
-    let modality_path = home.join(".claude/skills/clinical-notes/modality-act.md");
-    let modality = std::fs::read_to_string(&modality_path).unwrap_or_default();
+    // [a] Therapeutic model
+    let model_text = read_first_existing(&[
+        prompts_dir.join("therapeutic_model.md"),
+        skills_dir.join("modality-act.md"),
+    ]);
 
-    // Faithfulness prompt (universal grounding rules)
-    let faithfulness_path = home.join(".claude/skills/clinical-notes/faithfulness-prompt.md");
-    let faithfulness = std::fs::read_to_string(&faithfulness_path).unwrap_or_default();
+    // [b] Practitioner additions (optional, no fallback)
+    let additions_text = read_first_existing(&[
+        prompts_dir.join("practitioner_additions.md"),
+    ]);
 
-    if modality.is_empty() && faithfulness.is_empty() {
-        // Fallback system prompt
-        return "You are a clinical psychologist's session note writer. Produce a session note in the practitioner's established style. Frame clinical reasoning using explicit ACT/CBS process terminology.".to_string();
+    // [c] Rails — universal grounding rules
+    let rails_text = read_first_existing(&[
+        prompts_dir.join("rails.md"),
+        skills_dir.join("faithfulness-prompt.md"),
+    ]);
+
+    if model_text.is_empty() && rails_text.is_empty() {
+        return "You are a clinical psychologist's session note writer. \
+                Produce a session note in the practitioner's established style. \
+                Frame clinical reasoning using explicit ACT/CBS process terminology.".to_string();
     }
 
-    format!("{}\n\n{}", modality.trim(), faithfulness.trim())
+    let mut parts: Vec<&str> = Vec::new();
+    if !model_text.is_empty() { parts.push(model_text.trim()); }
+    if !additions_text.is_empty() { parts.push(additions_text.trim()); }
+    if !rails_text.is_empty() { parts.push(rails_text.trim()); }
+    parts.join("\n\n")
+}
+
+fn read_first_existing(paths: &[std::path::PathBuf]) -> String {
+    for p in paths {
+        if let Ok(s) = std::fs::read_to_string(p) {
+            if !s.trim().is_empty() {
+                return s;
+            }
+        }
+    }
+    String::new()
 }
 
 /// Build a de-identified prompt for the AI backend.
 ///
 /// Returns the prompt text (with all PHI replaced by placeholders) and the
 /// PseudonymMap needed to revert the AI output before display or saving.
+/// Scan identity.yaml for correspondence entries with type: referral or type: intake.
+/// Returns filenames in order encountered.
+fn referral_files_from_identity(content: &str) -> Vec<String> {
+    let mut in_correspondence = false;
+    let mut pending_file: Option<String> = None;
+    let mut results = Vec::new();
+
+    for line in content.lines() {
+        if line.trim_start().starts_with('#') { continue; }
+        let trimmed = line.trim_start();
+
+        if !in_correspondence {
+            if trimmed.starts_with("correspondence:") {
+                in_correspondence = true;
+            }
+        } else {
+            if !line.is_empty() && !line.starts_with(' ') && !line.starts_with('\t') {
+                break;
+            }
+            if let Some(rest) = trimmed.strip_prefix("- file:") {
+                // New entry — commit any prior file that was waiting without a match
+                pending_file = Some(rest.trim().trim_matches('"').trim_matches('\'').to_string());
+            } else if let Some(rest) = trimmed.strip_prefix("type:") {
+                let t = rest.trim().trim_matches('"').trim_matches('\'');
+                if t == "referral" || t == "intake" {
+                    if let Some(f) = pending_file.take() {
+                        results.push(f);
+                    }
+                } else {
+                    pending_file = None;
+                }
+            }
+        }
+    }
+    results
+}
+
 fn build_fallback_prompt(
     client_id: &str,
     observation: &str,
@@ -1355,21 +1419,37 @@ fn build_fallback_prompt(
     let identity_path = client_dir.join("identity.yaml");
     let pmap = crate::dephi::PseudonymMap::from_identity_file(&identity_path);
 
-    // Try to load summary for context
+    // Referral letter — first correspondence entry with type: referral or type: intake
+    let referral_context = {
+        let identity_content = std::fs::read_to_string(&identity_path).unwrap_or_default();
+        let referral_files = referral_files_from_identity(&identity_content);
+        let corr_dir = client_dir.join("correspondence");
+        let mut text = String::new();
+        for fname in referral_files {
+            let path = corr_dir.join(&fname);
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                if !content.trim().is_empty() {
+                    text = pmap.apply(&content);
+                    break; // first referral only
+                }
+            }
+        }
+        text
+    };
+
+    // Summary
     let summary_path = client_dir.join("summary.md");
     let summary = std::fs::read_to_string(&summary_path).unwrap_or_default();
     let summary = pmap.apply(&summary);
 
-    // Load last few sessions from notes.md
+    // Full session notes history
     let notes_path = client_dir.join("notes.md");
-    let recent_notes = if notes_path.exists() {
+    let session_notes = if notes_path.exists() {
         let content = std::fs::read_to_string(&notes_path).unwrap_or_default();
-        let sessions: Vec<&str> = content.split("\n### ").collect();
-        let last_3 = sessions.iter().rev().take(3).rev().cloned().collect::<Vec<_>>();
-        if last_3.is_empty() {
+        if content.trim().is_empty() {
             String::new()
         } else {
-            pmap.apply(&format!("Recent sessions:\n### {}", last_3.join("\n### ")))
+            pmap.apply(&content)
         }
     } else {
         String::new()
@@ -1382,14 +1462,21 @@ fn build_fallback_prompt(
     let client_label = if pmap.is_empty() { client_id.to_string() } else { "[CLIENT]".to_string() };
     let mut prompt = format!("Client: {} ({})\n\n", client_label, client_id);
 
+    if !referral_context.is_empty() {
+        prompt.push_str("Referral context:\n");
+        prompt.push_str(&referral_context);
+        prompt.push_str("\n\n");
+    }
+
     if !summary.is_empty() {
         prompt.push_str("Clinical summary:\n");
         prompt.push_str(&summary);
         prompt.push_str("\n\n");
     }
 
-    if !recent_notes.is_empty() {
-        prompt.push_str(&recent_notes);
+    if !session_notes.is_empty() {
+        prompt.push_str("Session notes:\n");
+        prompt.push_str(&session_notes);
         prompt.push_str("\n\n");
     }
 
