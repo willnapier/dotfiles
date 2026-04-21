@@ -1,72 +1,79 @@
 # Example mailcurator policies — copy to ~/.config/mailcurator/policies.toml
 # and edit to taste.
 #
-# Each [[policy]] is applied independently. Fields:
-#   name                 — identifier; used to make a "curator-<name>-seen" tag.
-#                          lowercase, alphanumeric, dashes allowed.
-#   from                 — notmuch from: search fragment (domain or address).
-#   subject_contains     — token or phrase in Subject. For phrases, quote them.
-#   subject_not_contains — exclusion.
-#   on_arrival.tags_add    — tags to apply to newly-matching messages.
-#   on_arrival.tags_remove — tags to remove from newly-matching messages.
-#   archive_after_days   — remove `inbox` tag when message age > this.
-#   delete_after_days    — add `trash` (and remove `inbox`) when message age > this.
+# Design principle: extract and destroy. If an email has extractable value
+# (invoice, tracking, dates, amounts), capture it to JSONL first; then the
+# envelope is disposable. If the email has no extractable value (e.g. a
+# verification code), it can be deleted on schedule.
 #
-# Every policy must either (a) add/remove on-arrival tags, OR (b) set at least
-# one of archive_after_days / delete_after_days. Otherwise it's a no-op.
+# v1 supports lifecycle only (archive, trash). Extraction lands in v2. Until
+# then, policies for senders with extractable data should set archive_after_days
+# but NOT delete_after_days — we don't want to destroy information we haven't
+# captured.
 
-# Verification codes — useless after a few hours
+# =============================================================================
+# CATEGORY A — zero extractable value, safe to delete on schedule
+# =============================================================================
+
+# Verification codes — nothing to capture; the code itself is ephemeral
 [[policy]]
 name = "verification-codes"
 subject_contains = "verification code"
 delete_after_days = 3
 
-# Password resets — similar shelf life
+# Password resets — same
 [[policy]]
 name = "password-resets"
 subject_contains = "reset your password"
 delete_after_days = 3
 
-# Royal Mail delivery notifications — once the parcel is here, done
+# =============================================================================
+# CATEGORY B — has extractable data; v1 archives only, v2 will extract + destroy
+# =============================================================================
+
+# Royal Mail: extract tracking number, expected delivery (v2)
 [[policy]]
 name = "royal-mail"
 from = "@royalmail.com"
 archive_after_days = 3
-delete_after_days = 30
+# delete_after_days deferred until extractor captures tracking + delivery date
 
-# Amazon shipping — separate from receipts by subject exclusion
+# Amazon shipping (not receipts): extract tracking, expected arrival (v2)
 [[policy]]
 name = "amazon-shipping"
 from = "@shipping.amazon.co.uk"
 subject_not_contains = "receipt"
 archive_after_days = 7
-delete_after_days = 30
+# delete_after_days deferred
 
-# Stripe payment events — billing-relevant, keep in inbox, tag for dashboard view
+# Stripe payment events: KEEP in inbox (billing-relevant live data).
+# Extractor will capture invoice_id, amount, currency, paid_at — feeds Xero reconciliation.
 [[policy]]
 name = "stripe-billing"
 from = "notifications@stripe.com"
 on_arrival.tags_add = ["billing"]
+# no archive, no delete — these stay visible until you process them
 
-# Uber trips (not receipts) — short-lived
+# Uber trips (not receipts): extract trip date, route, fare (v2)
 [[policy]]
 name = "uber-trips"
 from = "@uber.com"
 subject_not_contains = "receipt"
 archive_after_days = 2
-delete_after_days = 14
+# delete deferred
 
-# Uber receipts — tax-relevant, keep
+# Uber receipts: tax-relevant. Extract receipt number, amount, date (v2).
 [[policy]]
 name = "uber-receipts"
 from = "@uber.com"
 subject_contains = "receipt"
 on_arrival.tags_add = ["receipts"]
 archive_after_days = 7
+# never delete — tax/audit
 
-# Zoom meeting invites — expire after the meeting window
+# Zoom invites: extract meeting date, topic, host URL (v2)
 [[policy]]
 name = "zoom-invites"
 from = "@zoom.us"
 archive_after_days = 7
-delete_after_days = 30
+# delete deferred until extractor captures meeting metadata
