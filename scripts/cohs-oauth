@@ -25,6 +25,7 @@ AUTHORITY = "https://login.microsoftonline.com/common"
 SCOPES = [
     "https://outlook.office.com/IMAP.AccessAsUser.All",
     "https://outlook.office.com/SMTP.Send",
+    "https://graph.microsoft.com/Mail.Send",
 ]
 CACHE_PATH = Path.home() / ".config" / "cohs-auth" / "cache.bin"
 KEYCHAIN_SERVICE = "himalaya-cli"
