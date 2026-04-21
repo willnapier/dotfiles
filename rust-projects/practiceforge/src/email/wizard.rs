@@ -325,7 +325,8 @@ fn send_verification(entry: &IdentityEntry) -> Result<String> {
 /// implied by the backend variant and the user's story. Gmail with an
 /// app-password attempt that fails is almost always 2FA-not-enabled or
 /// the wrong app-password. SMTP against M365 is tenant policy. Graph
-/// needs `cohs-oauth init` done first.
+/// needs `cohs-oauth-graph init` done first (Graph scope, distinct from
+/// `cohs-oauth` which covers the Outlook/IMAP scopes).
 fn failure_hint(entry: &IdentityEntry) -> &'static str {
     match (&entry.backend, &entry.auth) {
         (BackendConfig::Smtp(smtp), AuthConfig::Password { .. })
@@ -343,9 +344,10 @@ fn failure_hint(entry: &IdentityEntry) -> &'static str {
              (Graph) setup path instead — it does not require SMTP AUTH."
         }
         (BackendConfig::Graph(_), _) => {
-            "Graph sends require a valid OAuth token from the helper command. \
-             Run `cohs-oauth init` in another terminal to complete the \
-             device-code flow, then retry."
+            "Graph sends require a valid Graph-scoped OAuth token (distinct \
+             from Outlook-scoped tokens). Run `cohs-oauth-graph init` in \
+             another terminal to complete the device-code flow with the \
+             Microsoft Graph CLI public client, then retry."
         }
         (BackendConfig::Smtp(_), _) => {
             "Double-check host, port, and credentials. Port 465 → TLS; port 587 \
@@ -624,13 +626,29 @@ fn wizard_m365(initial_email: Option<&str>) -> Result<IdentityEntry> {
     let from_name = prompt("Display name", Some(&default_name))?;
     let label = prompt("Label (short nickname for this identity)", Some("Microsoft 365"))?;
 
+    // Graph sendMail needs the Mail.Send scope. Microsoft's OAuth2 won't
+    // issue a single token spanning both outlook.office.com and
+    // graph.microsoft.com resources, AND Thunderbird's public client app
+    // isn't registered for Graph resources anyway. So the Graph send path
+    // uses a *separate* OAuth flow with Microsoft Graph CLI's public
+    // client ID — handled by the `cohs-oauth-graph` helper. The IMAP/SMTP
+    // side (if the tenant ever re-enables it) continues to use plain
+    // `cohs-oauth`, which is Thunderbird-client + Outlook scopes.
     eprintln!(
         "\nBefore this identity can send mail, you must have completed the \
-         device-code OAuth flow at least once. If you haven't, open another \
-         terminal and run `cohs-oauth init` now, then return here."
+         Graph-scope device-code flow at least once. If you haven't, open \
+         another terminal and run `cohs-oauth-graph init` now, then return \
+         here."
+    );
+    eprintln!(
+        "If you also want COHS IMAP access (not needed for Graph send), run \
+         `cohs-oauth init` separately — it's a distinct token pool."
     );
 
-    let command = prompt("OAuth token command", Some("cohs-oauth show"))?;
+    let command = prompt(
+        "OAuth token command (Graph-scope)",
+        Some("cohs-oauth-graph show"),
+    )?;
 
     Ok(IdentityEntry {
         label,
@@ -1045,7 +1063,7 @@ mod tests {
             primary: false,
             backend: BackendConfig::Graph(GraphConfig::default()),
             auth: AuthConfig::OAuth2Command {
-                command: "cohs-oauth show".to_string(),
+                command: "cohs-oauth-graph show".to_string(),
             },
         }
     }
@@ -1121,7 +1139,10 @@ signature = ""
             .find(|i| i["backend"]["type"].as_str() == Some("graph"))
             .expect("graph identity missing");
         assert_eq!(graph_row["auth"]["type"].as_str().unwrap(), "oauth2_command");
-        assert_eq!(graph_row["auth"]["command"].as_str().unwrap(), "cohs-oauth show");
+        assert_eq!(
+            graph_row["auth"]["command"].as_str().unwrap(),
+            "cohs-oauth-graph show"
+        );
     }
 
     #[test]
