@@ -813,15 +813,15 @@ pub async fn send_reminder(
         )
     })?;
 
-    // Load email config
-    let email_config = crate::email::load_email_config().map_err(|e| {
+    // Load email identity
+    let identity = crate::email::primary_identity().ok_or_else(|| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Email not configured: {}", e),
+            "Email not configured — run `practiceforge email init`".to_string(),
         )
     })?;
 
-    let practitioner = email_config.from_name.clone();
+    let practitioner = identity.from_name.clone();
 
     let is_insurer = !inv.bill_to_name.is_empty() && inv.bill_to_name != inv.client_name;
     let reminder = if is_insurer {
@@ -838,12 +838,12 @@ pub async fn send_reminder(
     })?;
 
     // Send the email
-    crate::email::send_email(
-        &email_config,
+    crate::email::send_as(
+        &identity.from_email,
         to_email,
         &reminder.to_name,
         &reminder.subject,
-        &reminder.body,
+        crate::email::Body::Text(reminder.body.clone()),
         None,
         None,
     )
@@ -1967,18 +1967,18 @@ pub async fn auth_send_code_handler(
     AUTH_CODES.lock().unwrap().insert(email.to_string(), (code.clone(), expires));
 
     // Try to send via email
-    match crate::email::load_email_config() {
-        Ok(config) => {
+    match crate::email::primary_identity() {
+        Some(identity) => {
             let body = format!(
                 "Your PracticeForge login code is: {}\n\nThis code is valid for 10 minutes.",
                 code
             );
-            match crate::email::send_email(
-                &config,
+            match crate::email::send_as(
+                &identity.from_email,
                 email,
                 "",
                 "PracticeForge Login Code",
-                &body,
+                crate::email::Body::Text(body),
                 None,
                 None,
             ) {
@@ -1990,7 +1990,7 @@ pub async fn auth_send_code_handler(
                 }
             }
         }
-        Err(_) => {
+        None => {
             // No email configured — log code to stderr (dev mode)
             eprintln!("[auth] OTP for {}: {} (email not configured)", email, code);
             Ok(Json(serde_json::json!({"ok": true, "dev_code": code})))
@@ -2551,24 +2551,42 @@ pub struct RescheduleBookRequest {
 
 /// GET /api/email/status — check if email is configured.
 pub async fn email_status() -> Json<serde_json::Value> {
+    use crate::email::backends::BackendConfig;
+
     let identities = crate::email::load_identities();
     if identities.is_empty() {
         return Json(serde_json::json!({"configured": false}));
     }
     let primary = identities.iter().find(|i| i.primary).unwrap_or(&identities[0]);
+
+    // Flatten backend-specific fields into the JSON shape the web UI still
+    // expects (smtp_server/smtp_port/username). Graph identities report
+    // empty strings for those — the UI treats empty smtp_server as
+    // "non-SMTP identity". This is a pragmatic shim for the admin dashboard
+    // until that UI is updated to speak the new shape directly.
+    let identity_rows: Vec<serde_json::Value> = identities.iter().map(|i| {
+        let (smtp_server, smtp_port, username) = match &i.config.backend {
+            BackendConfig::Smtp(cfg) => {
+                (cfg.host.clone(), cfg.port, cfg.username.clone())
+            }
+            BackendConfig::Graph(_) => (String::new(), 0u16, String::new()),
+        };
+        serde_json::json!({
+            "label": i.label,
+            "from_email": i.from_email,
+            "from_name": i.from_name,
+            "smtp_server": smtp_server,
+            "smtp_port": smtp_port,
+            "username": username,
+            "primary": i.primary,
+        })
+    }).collect();
+
     Json(serde_json::json!({
         "configured": true,
         "from_email": primary.from_email,
         "from_name": primary.from_name,
-        "identities": identities.iter().map(|i| serde_json::json!({
-            "label": i.label,
-            "from_email": i.from_email,
-            "from_name": i.from_name,
-            "smtp_server": i.smtp_server,
-            "smtp_port": i.smtp_port,
-            "username": i.username,
-            "primary": i.primary,
-        })).collect::<Vec<_>>(),
+        "identities": identity_rows,
     }))
 }
 
@@ -2677,6 +2695,8 @@ pub async fn email_test(
         .and_then(|v| v.as_str())
         .map(str::to_string);
 
+    use crate::email::backends::BackendConfig;
+
     let identities = crate::email::load_identities();
     if identities.is_empty() {
         return Json(serde_json::json!({"ok": false, "error": "Email not configured"}));
@@ -2691,16 +2711,22 @@ pub async fn email_test(
         identities.iter().find(|i| i.primary).unwrap_or(&identities[0])
     };
 
-    match crate::email::send_email_from(
+    // Describe the transport for the test-email body — Graph has no host/port.
+    let transport_desc = match &identity.config.backend {
+        BackendConfig::Smtp(cfg) => format!("SMTP {}:{}", cfg.host, cfg.port),
+        BackendConfig::Graph(_) => "Microsoft Graph".to_string(),
+    };
+
+    match crate::email::send_as(
         &identity.from_email,
         &identity.from_email,
         &identity.from_name,
         "PracticeForge — Email Test",
-        &format!(
-            "This is a test email from PracticeForge.\n\nIdentity: {}\nServer: {}:{}\nFrom: {} <{}>",
-            identity.label, identity.smtp_server, identity.smtp_port,
+        crate::email::Body::Text(format!(
+            "This is a test email from PracticeForge.\n\nIdentity: {}\nTransport: {}\nFrom: {} <{}>",
+            identity.label, transport_desc,
             identity.from_name, identity.from_email
-        ),
+        )),
         None,
         None,
     ) {

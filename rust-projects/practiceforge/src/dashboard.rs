@@ -807,9 +807,9 @@ async fn billing_reminders() -> Result<Json<Vec<ReminderResponse>>, (StatusCode,
         })
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let practitioner = crate::email::load_email_config()
-        .map(|c| c.from_name)
-        .unwrap_or_else(|_| "The Practitioner".to_string());
+    let practitioner = crate::email::primary_identity()
+        .map(|i| i.from_name)
+        .unwrap_or_else(|| "The Practitioner".to_string());
 
     let due = crate::billing::remind::due_reminders(&config, &overdue);
 

@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 use super::invoice::{BillTo, Invoice};
 use super::practitioner::PractitionerConfig;
-use crate::email::EmailConfig;
+use crate::email::{Body, Identity};
 
 // ---------------------------------------------------------------------------
 // LaTeX rendering
@@ -306,10 +306,15 @@ pub fn build_invoice_pdf(inv: &Invoice, prac: &PractitionerConfig) -> Result<Pat
 // ---------------------------------------------------------------------------
 
 /// Build a PDF invoice and email it to the bill-to address.
+///
+/// `identity` is the default send-as identity to fall back to; if the
+/// practitioner config defines a practitioner-specific email and one is
+/// configured as a practiceforge identity, that takes precedence (invoices
+/// come from the practitioner's company, not the practice aggregator).
 pub fn send_invoice(
     inv: &Invoice,
     prac: &PractitionerConfig,
-    email_cfg: &EmailConfig,
+    identity: &Identity,
 ) -> Result<PathBuf> {
     let to_email = inv
         .bill_to
@@ -350,20 +355,22 @@ pub fn send_invoice(
         if inv.payment_link.is_some() { "You can pay online using the link in the attached invoice." } else { "" },
     );
 
-    // Use practitioner's own email as from-address if configured.
-    // Invoices come from the practitioner's company, not COHS.
-    let mut invoice_email_cfg = email_cfg.clone();
-    if let Some(prac_email) = &prac.email {
-        invoice_email_cfg.from_email = prac_email.clone();
-        invoice_email_cfg.from_name = prac.display_name().to_string();
-    }
+    // Prefer the practitioner-specific from_email if one is configured as a
+    // practiceforge email identity — invoices should come from the company,
+    // not from any aggregator. If no matching identity exists, fall through
+    // to the provided default identity.
+    let from_email = prac
+        .email
+        .as_deref()
+        .filter(|e| crate::email::find_identity(e).is_some())
+        .unwrap_or(&identity.from_email);
 
-    crate::email::send_email(
-        &invoice_email_cfg,
+    crate::email::send_as(
+        from_email,
         to_email,
         to_name,
         &subject,
-        &body,
+        Body::Text(body),
         Some(&pdf_path),
         None,
     )?;

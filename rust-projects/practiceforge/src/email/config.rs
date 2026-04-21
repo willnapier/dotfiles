@@ -15,14 +15,8 @@
 //!
 //! Shape detection is per-identity, not per-file, so mixed files are OK.
 //!
-//! ## Name coexistence with `email::legacy`
-//!
-//! `email::legacy` exposes `load_identities()` and `find_identity()` returning
-//! `Vec<EmailIdentity>` / `Option<EmailIdentity>`. Since `email::mod.rs`
-//! re-exports `legacy::*`, the new loader here deliberately uses
-//! `load_identities_v2` / `find_identity_v2` to avoid name clashes during
-//! migration. When Phase 4 retires `legacy`, rename these back to the
-//! un-suffixed forms.
+//! Legacy was retired in Phase 4; these are the only `load_identities` /
+//! `find_identity` in the crate.
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -191,10 +185,7 @@ fn config_path() -> PathBuf {
 /// (they treat empty-vec as "no email configured"). Unlike
 /// [`parse_identities`], this swallows errors; use `parse_identities`
 /// directly in tests or when you want a surfaced error.
-///
-/// Named `_v2` to coexist with [`crate::email::legacy::load_identities`]
-/// during migration. Rename to `load_identities` when legacy retires.
-pub fn load_identities_v2() -> Vec<Identity> {
+pub fn load_identities() -> Vec<Identity> {
     let path = config_path();
     let content = match std::fs::read_to_string(&path) {
         Ok(c) => c,
@@ -204,12 +195,23 @@ pub fn load_identities_v2() -> Vec<Identity> {
 }
 
 /// Find an identity by its `from_email` address.
-///
-/// Named `_v2` to coexist with [`crate::email::legacy::find_identity`].
-pub fn find_identity_v2(from_email: &str) -> Option<Identity> {
-    load_identities_v2()
+pub fn find_identity(from_email: &str) -> Option<Identity> {
+    load_identities()
         .into_iter()
         .find(|i| i.from_email == from_email)
+}
+
+/// Return the primary identity, if any are configured.
+///
+/// Helper used by call sites that want "the default from-address" without
+/// knowing a specific email up front — CLI `email test`, billing reminders,
+/// reschedule offer letters.
+pub fn primary_identity() -> Option<Identity> {
+    let ids = load_identities();
+    ids.iter()
+        .find(|i| i.primary)
+        .cloned()
+        .or_else(|| ids.into_iter().next())
 }
 
 #[cfg(test)]
@@ -434,7 +436,7 @@ username = "u"
 
     #[test]
     fn find_by_from_email_on_parsed_list() {
-        // Exercise the same filter logic find_identity_v2 uses, without
+        // Exercise the same filter logic find_identity uses, without
         // hitting the real filesystem.
         let ids = parse_identities(&format!("{}\n{}", NEW_SHAPE_SMTP, NEW_SHAPE_GRAPH))
             .expect("parse");

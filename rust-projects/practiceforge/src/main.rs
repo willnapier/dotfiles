@@ -1113,15 +1113,33 @@ async fn main() -> anyhow::Result<()> {
         Command::Email { action } => {
             match action {
                 EmailAction::Init => {
-                    // The legacy flat-SMTP `email::init_config()` is kept
-                    // callable (re-exported from `email::legacy`) until
-                    // Phase 4 retires it — but the user-facing `init`
-                    // subcommand now goes through the multi-backend wizard.
+                    // Multi-backend wizard (Phase 3b) — the sole entry point
+                    // for email setup now that legacy flat-SMTP `init_config`
+                    // has been retired.
                     email::wizard::init_config()?;
                 }
                 EmailAction::Test => {
-                    let config = email::load_email_config()?;
-                    email::send_test(&config)?;
+                    let identity = email::primary_identity().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "No email identities configured. Run: practiceforge email init"
+                        )
+                    })?;
+                    eprintln!("Sending test email to {}...", identity.from_email);
+                    email::send_as(
+                        &identity.from_email,
+                        &identity.from_email,
+                        &identity.from_name,
+                        "PracticeForge — Email Test",
+                        email::Body::Text(format!(
+                            "This is a test email from practiceforge.\n\n\
+                             If you received this, your email configuration is working correctly.\n\n\
+                             Identity: {}\nFrom: {} <{}>\n",
+                            identity.label, identity.from_name, identity.from_email
+                        )),
+                        None,
+                        None,
+                    )?;
+                    println!("✓ Test email sent to {}", identity.from_email);
                 }
                 EmailAction::Send {
                     to,
@@ -1131,16 +1149,20 @@ async fn main() -> anyhow::Result<()> {
                     attachment,
                     cc,
                 } => {
-                    let config = email::load_email_config()?;
+                    let identity = email::primary_identity().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "No email identities configured. Run: practiceforge email init"
+                        )
+                    })?;
                     let cc_list: Option<Vec<String>> = cc.map(|c| {
                         c.split(',').map(|s| s.trim().to_string()).collect()
                     });
-                    email::send_email(
-                        &config,
+                    email::send_as(
+                        &identity.from_email,
                         &to,
                         &to_name,
                         &subject,
-                        &body,
+                        email::Body::Text(body),
                         attachment.as_ref().map(|p| std::path::Path::new(p.as_str())),
                         cc_list.as_deref(),
                     )?;
@@ -1861,8 +1883,12 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
 
             if send {
                 let prac = billing::practitioner::PractitionerConfig::load();
-                let email_cfg = crate::email::load_email_config()?;
-                let pdf = billing::invoice_render::send_invoice(&inv, &prac, &email_cfg)?;
+                let identity = crate::email::primary_identity().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "No email identities configured. Run: practiceforge email init"
+                    )
+                })?;
+                let pdf = billing::invoice_render::send_invoice(&inv, &prac, &identity)?;
                 println!("✓ Invoice emailed to {}.", inv.bill_to.email().unwrap_or(""));
                 println!("  PDF: {}", pdf.display());
             }
@@ -1966,8 +1992,12 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
                             total_created += 1;
                             if send {
                                 let prac = billing::practitioner::PractitionerConfig::load();
-                                let email_cfg = crate::email::load_email_config()?;
-                                match billing::invoice_render::send_invoice(&inv, &prac, &email_cfg) {
+                                let identity = crate::email::primary_identity().ok_or_else(|| {
+                                    anyhow::anyhow!(
+                                        "No email identities configured. Run: practiceforge email init"
+                                    )
+                                })?;
+                                match billing::invoice_render::send_invoice(&inv, &prac, &identity) {
                                     Ok(pdf) => println!("    ✓ Emailed to {}. PDF: {}", inv.bill_to.email().unwrap_or(""), pdf.display()),
                                     Err(e) => eprintln!("    ✗ Email failed: {}", e),
                                 }
@@ -2021,12 +2051,12 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
                 return Ok(());
             }
 
-            // Load email config (needed for practitioner name and sending)
-            let email_config = crate::email::load_email_config();
-            let practitioner = email_config
+            // Load email identity (needed for practitioner name and sending)
+            let email_identity = crate::email::primary_identity();
+            let practitioner = email_identity
                 .as_ref()
-                .map(|c| c.from_name.clone())
-                .unwrap_or_else(|_| "The Practitioner".to_string());
+                .map(|i| i.from_name.clone())
+                .unwrap_or_else(|| "The Practitioner".to_string());
 
             let mut sent_count = 0u32;
             let mut failed_count = 0u32;
@@ -2054,9 +2084,9 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
                         }
                     };
 
-                    let email_cfg = match &email_config {
-                        Ok(cfg) => cfg,
-                        Err(_) => {
+                    let send_identity = match &email_identity {
+                        Some(id) => id,
+                        None => {
                             eprintln!(
                                 "  ✗ Email not configured. Run: practiceforge email init"
                             );
@@ -2064,12 +2094,12 @@ fn handle_billing(action: BillingAction) -> anyhow::Result<()> {
                         }
                     };
 
-                    match crate::email::send_email(
-                        email_cfg,
+                    match crate::email::send_as(
+                        &send_identity.from_email,
                         &to_email,
                         &reminder.to_name,
                         &reminder.subject,
-                        &reminder.body,
+                        crate::email::Body::Text(reminder.body.clone()),
                         None,
                         None,
                     ) {
@@ -3089,7 +3119,11 @@ fn handle_schedule(action: ScheduleAction) -> anyhow::Result<()> {
                 };
 
                 if let Some(email) = client_email {
-                    let email_config = crate::email::load_email_config()?;
+                    let identity = crate::email::primary_identity().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "No email identities configured. Run: practiceforge email init"
+                        )
+                    })?;
 
                     // Build slot list for the email body
                     let slot_list: String = slots
@@ -3121,15 +3155,15 @@ fn handle_schedule(action: ScheduleAction) -> anyhow::Result<()> {
                         client_name.split_whitespace().next().unwrap_or(&client_name),
                         cancelled_date.format("%A %d %B"),
                         slot_list,
-                        email_config.from_name,
+                        identity.from_name,
                     );
 
-                    crate::email::send_email(
-                        &email_config,
+                    crate::email::send_as(
+                        &identity.from_email,
                         &email,
                         &client_name,
                         &format!("Rescheduling your session — {}", cancelled_date.format("%d %B")),
-                        &body,
+                        crate::email::Body::Text(body),
                         None,
                         None,
                     )?;
