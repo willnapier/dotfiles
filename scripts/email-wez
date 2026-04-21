@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# email-wez — open meli in a maximized WezTerm window (macOS)
+#
+# WezTerm has no single --maximize flag, so we use the "huge initial
+# size" trick: set initial_cols and initial_rows absurdly high.
+# WezTerm clamps to screen size, giving an effectively maximized window.
+# This is the standard community idiom.
+#
+# --always-new-process ensures a fresh WezTerm instance rather than
+# routing the command into an existing window via the multiplexer.
+
+exec wezterm \
+  --config 'initial_cols=500' \
+  --config 'initial_rows=200' \
+  start \
+  --always-new-process \
+  -- meli
