@@ -25,7 +25,12 @@ AUTHORITY = "https://login.microsoftonline.com/common"
 SCOPES = [
     "https://outlook.office.com/IMAP.AccessAsUser.All",
     "https://outlook.office.com/SMTP.Send",
-    "https://graph.microsoft.com/Mail.Send",
+    # NOTE: Graph scope deliberately NOT mixed here. Thunderbird's public
+    # Azure app (CLIENT_ID above) is registered for the Outlook API only;
+    # mixing graph.microsoft.com scopes fails at Microsoft's OAuth2 endpoint
+    # because (a) v2 tokens can't span multiple resources and (b) this client
+    # isn't authorised for Graph resources. Graph send will use a separate
+    # flow with Microsoft Graph CLI's client ID in a follow-up session.
 ]
 CACHE_PATH = Path.home() / ".config" / "cohs-auth" / "cache.bin"
 KEYCHAIN_SERVICE = "himalaya-cli"
