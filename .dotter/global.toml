@@ -25,6 +25,7 @@ depends = []
 "scripts/lask" = "~/.local/bin/lask"
 "scripts/semantic-cron-wrapper" = "~/.local/bin/semantic-cron-wrapper"
 "scripts/cohs-oauth" = { target = "~/.local/bin/cohs-oauth", type = "symbolic" }
+"scripts/cohs-oauth-graph" = { target = "~/.local/bin/cohs-oauth-graph", type = "symbolic" }
 
 "scripts/ai-brief.nu" = { target = "~/.local/bin/ai-brief.nu", type = "symbolic" }
 "scripts/tag-search" = { target = "~/.local/bin/tag-search", type = "symbolic" }
@@ -310,6 +311,7 @@ depends = ["shared"]
 "macos/launchd/com.williamnapier.wiki-link-manager.plist" = "~/Library/LaunchAgents/com.williamnapier.wiki-link-manager.plist"
 "macos/launchd/com.williamnapier.syncthing-monitor.plist" = "~/Library/LaunchAgents/com.williamnapier.syncthing-monitor.plist"
 "macos/launchd/com.williamnapier.cohs-token-refresh.plist" = "~/Library/LaunchAgents/com.williamnapier.cohs-token-refresh.plist"
+"macos/launchd/com.williamnapier.cohs-graph-token-refresh.plist" = "~/Library/LaunchAgents/com.williamnapier.cohs-graph-token-refresh.plist"
 "LaunchAgents/com.user.syncthing-sync-watchdog.plist" = "~/Library/LaunchAgents/com.user.syncthing-sync-watchdog.plist"
 "scripts/syncthing-sync-watchdog" = "~/.local/bin/syncthing-sync-watchdog"
 "macos/LaunchAgents/com.williamnapier.git-auto-pull-watcher.plist" = "~/Library/LaunchAgents/com.williamnapier.git-auto-pull-watcher.plist"

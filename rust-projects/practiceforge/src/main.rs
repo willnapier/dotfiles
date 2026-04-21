@@ -323,9 +323,9 @@ enum EmailAction {
         cc: Option<String>,
     },
     /// Live end-to-end test of the new MailTransport pipeline via Microsoft
-    /// Graph for the COHS identity. Uses `cohs-oauth show` for the access
-    /// token. Requires `Mail.Send` scope — re-run `cohs-oauth init` if the
-    /// first attempt returns 403.
+    /// Graph for the COHS identity. Uses `cohs-oauth-graph show` for the
+    /// Graph-scoped access token (distinct from cohs-oauth which is for
+    /// Outlook/IMAP). Run `cohs-oauth-graph init` once first.
     GraphTest {
         /// Recipient email address
         #[arg(long)]
@@ -1155,7 +1155,10 @@ async fn main() -> anyhow::Result<()> {
                     let identity = IdentityConfig {
                         backend: BackendConfig::Graph(GraphConfig::default()),
                         auth: AuthConfig::OAuth2Command {
-                            command: "cohs-oauth show".into(),
+                            // Graph-scoped tokens live in a separate msal cache + keychain
+                            // entries (distinct client ID registered for Graph). See
+                            // cohs-oauth-graph — a sibling of cohs-oauth.
+                            command: "cohs-oauth-graph show".into(),
                         },
                     };
 
