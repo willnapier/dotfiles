@@ -1,0 +1,54 @@
+# isync/mbsync config — COHS Microsoft 365 via XOAUTH2.
+#
+# This file is symlinked to ~/.mbsyncrc via dotter.
+#
+# Prerequisites (macOS):
+#   - mbsync (isync) built from upstream against Homebrew cyrus-sasl
+#     with the cyrus-sasl-xoauth2 plugin installed. Installed at
+#     ~/.local/bin/mbsync (takes PATH precedence over /opt/homebrew/bin).
+#   - cohs-oauth Python helper in ~/.local/bin/ — prints a fresh
+#     Outlook-scoped access token on stdout. Refresh handled by
+#     com.williamnapier.cohs-token-refresh launchd agent.
+#
+# On Linux (future Nimbini setup): distribution package
+# cyrus-sasl-xoauth2 drops the plugin into the system SASL dir; stock
+# mbsync from the distro works out of the box. Same mbsyncrc contents.
+
+IMAPAccount cohs
+Host outlook.office365.com
+Port 993
+User will.napier@changeofharleystreet.com
+AuthMechs XOAUTH2
+# PassCmd output is used as the SASL XOAUTH2 token. The Python helper
+# runs a silent refresh via msal before printing, so the token is always
+# fresh at the moment of use.
+PassCmd "/Users/williamnapier/.local/bin/cohs-oauth show"
+SSLType IMAPS
+# macOS trust store is used implicitly; no CertificateFile needed.
+
+IMAPStore cohs-remote
+Account cohs
+
+MaildirStore cohs-local
+Path ~/Mail/cohs/
+Inbox ~/Mail/cohs/INBOX/
+SubFolders Verbatim
+
+# Start with INBOX-only. The full COHS mailbox likely spans years of
+# email; a pull-all first sync could be multi-GB and take 30+ minutes.
+# Other folders can be added later by duplicating the Channel block
+# with different Far/Near paths.
+Channel cohs-inbox
+Far :cohs-remote:INBOX
+Near :cohs-local:INBOX
+# Pull-only: COHS IMAP is authoritative, local is a read-only mirror.
+# If mutation from local-side Meli is wanted later, change to `Sync All`.
+Sync Pull
+Expunge None
+CopyArrivalDate yes
+Create Near
+SyncState *
+
+# Convenience group so `mbsync cohs` syncs everything COHS-related.
+Group cohs
+Channel cohs-inbox
