@@ -26,7 +26,7 @@ osascript <<'EOF'
 tell application "Ghostty"
   activate
   set cfg to new surface configuration
-  set command of cfg to "meli"
+  set command of cfg to "/opt/homebrew/bin/meli"
   new window with configuration cfg
 end tell
 EOF
