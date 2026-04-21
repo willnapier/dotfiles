@@ -77,8 +77,9 @@
   <div class="login-card">
     <!-- Step 1: Email -->
     <div class="step active" id="step-email">
-      <p>Enter your practice email to sign in.</p>
-      <input type="email" id="login-email" placeholder="you@practice.com" autofocus
+      <p>Enter your personal email to sign in.</p>
+      <p style="font-size:12px;color:var(--fg-dim);margin-top:-6px;margin-bottom:10px">This identifies you to PracticeForge. Use the address where you most reliably receive mail &mdash; not necessarily a practice address.</p>
+      <input type="email" id="login-email" placeholder="you@example.com" autofocus
         onkeydown="if(event.key==='Enter')sendLoginCode()">
       <button class="btn btn-primary" id="send-btn" onclick="sendLoginCode()">Send Code</button>
       <div class="msg" id="email-msg"></div>
