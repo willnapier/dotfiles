@@ -9,6 +9,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use data_encoding::BASE64;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,19 +20,29 @@ use crate::email::{Body, Envelope, MailTransport, Mailbox, TokenSource};
 ///
 /// Uses the `/common` endpoint by default so any M365 tenant works with
 /// the same binary. Override via `tenant` for single-tenant apps if needed.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphConfig {
     /// Base URL — `https://graph.microsoft.com/v1.0` by default.
+    #[serde(default = "default_base_url")]
     pub base_url: String,
     /// Save a copy to Sent Items (usually yes).
+    #[serde(default = "default_save_to_sent_items")]
     pub save_to_sent_items: bool,
+}
+
+fn default_base_url() -> String {
+    "https://graph.microsoft.com/v1.0".to_string()
+}
+
+fn default_save_to_sent_items() -> bool {
+    true
 }
 
 impl Default for GraphConfig {
     fn default() -> Self {
         Self {
-            base_url: "https://graph.microsoft.com/v1.0".to_string(),
-            save_to_sent_items: true,
+            base_url: default_base_url(),
+            save_to_sent_items: default_save_to_sent_items(),
         }
     }
 }

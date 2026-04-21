@@ -13,6 +13,7 @@
 //! Ported from `email::legacy::send_email_with_password` in Phase 1.
 
 use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use lettre::message::{
@@ -26,7 +27,8 @@ use lettre::{Message, Transport};
 use crate::email::{Body, Envelope, MailTransport, Mailbox, TokenSource};
 
 /// Encryption posture for the SMTP connection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Encryption {
     /// Implicit TLS from connect (port 465).
     Tls,
@@ -35,14 +37,15 @@ pub enum Encryption {
 }
 
 /// How to authenticate to the SMTP server.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum AuthMode {
     Password,
     XOAuth2,
 }
 
 /// Configuration for [`SmtpTransport`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SmtpConfig {
     pub host: String,
     pub port: u16,

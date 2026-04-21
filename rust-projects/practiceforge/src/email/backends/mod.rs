@@ -16,6 +16,7 @@
 //! produce a ready-to-send `Box<dyn MailTransport>`.
 
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 pub mod smtp;
@@ -28,7 +29,8 @@ use crate::email::auth::{CommandTokenSource, KeychainPasswordSource, TokenSource
 use crate::email::MailTransport;
 
 /// Which backend delivers mail for this identity.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
 pub enum BackendConfig {
     /// SMTP submission — port 465 implicit TLS or 587 STARTTLS.
     Smtp(SmtpConfig),
@@ -42,7 +44,8 @@ pub enum BackendConfig {
 /// Deliberately separate from [`BackendConfig`] so the same auth strategy
 /// can be paired with different backends (e.g. OAuth2 command works for
 /// both SMTP XOAUTH2 and Graph).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum AuthConfig {
     /// Password retrieved from OS keychain (macOS Keychain / libsecret).
     Password {
@@ -51,13 +54,17 @@ pub enum AuthConfig {
     },
     /// Access token produced by shelling out to a command (e.g.
     /// `"cohs-oauth show"`). The command is responsible for OAuth refresh.
+    //
+    // Explicit rename: `rename_all = "snake_case"` would turn `OAuth2Command`
+    // into `o_auth2_command`, which doesn't match the spec's `oauth2_command`.
+    #[serde(rename = "oauth2_command")]
     OAuth2Command { command: String },
 }
 
 /// A complete send-identity configuration: what backend, what auth.
 ///
 /// Wizard and config-loader build these; [`transport_for`] consumes them.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IdentityConfig {
     pub backend: BackendConfig,
     pub auth: AuthConfig,
