@@ -6,8 +6,9 @@
     <string>com.williamnapier.cohs-graph-token-refresh</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/williamnapier/.local/bin/cohs-oauth-graph</string>
-        <string>refresh</string>
+        <string>/Users/williamnapier/.local/bin/practiceforge</string>
+        <string>email</string>
+        <string>m365-refresh</string>
     </array>
     <key>StartInterval</key>
     <integer>1800</integer>

@@ -339,13 +339,67 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
 <div class="setup-overlay" id="setup-overlay" style="display:none">
   <div class="setup-panel" style="max-width:520px;max-height:85vh;overflow-y:auto">
     <h2>Email Setup</h2>
-    <p style="font-size:12px;color:var(--fg-dim);margin-bottom:14px">Configure one identity per email address. Each has its own SMTP server and password.</p>
+    <p style="font-size:12px;color:var(--fg-dim);margin-bottom:14px">Configure one identity per email address.</p>
     <div id="email-identities-list"></div>
-    <button onclick="emailAddIdentity()" style="margin-top:4px;background:none;border:1px dashed var(--border);color:var(--fg-dim);padding:5px 14px;border-radius:4px;cursor:pointer;font-size:12px;width:100%">+ Add another identity</button>
+    <button onclick="emailAddIdentity()" style="margin-top:4px;background:none;border:1px dashed var(--border);color:var(--fg-dim);padding:5px 14px;border-radius:4px;cursor:pointer;font-size:12px;width:100%">+ Add SMTP identity (needs password)</button>
+    <button onclick="m365Begin()" style="margin-top:6px;background:var(--blue);border:none;color:#fff;padding:7px 14px;border-radius:4px;cursor:pointer;font-size:12px;width:100%;font-weight:bold">+ Add Microsoft 365 account (via sign-in, no password)</button>
     <div class="setup-msg" id="setup-msg" style="margin-top:10px"></div>
     <div class="setup-actions" style="margin-top:10px">
-      <button class="clinic-action-btn btn-accept" onclick="setupSave()">Save all</button>
-      <button class="clinic-action-btn btn-reject" onclick="setupSkip()">Skip</button>
+      <button class="clinic-action-btn btn-accept" onclick="setupSave()">Save SMTP identities</button>
+      <button class="clinic-action-btn btn-reject" onclick="setupSkip()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Microsoft 365 OAuth device-flow modal. Opens from the email-setup overlay.
+     Drives the user through: begin → browser sign-in → poll to completion →
+     collect display-name/label → save as a Graph-backed identity. -->
+<div class="setup-overlay" id="m365-overlay" style="display:none">
+  <div class="setup-panel" style="max-width:520px">
+    <h2>Add Microsoft 365 account</h2>
+
+    <!-- Stage 1: initial / loading / waiting-for-sign-in -->
+    <div id="m365-stage-code" style="display:none">
+      <p style="font-size:13px;color:var(--fg-dim);margin-bottom:10px">
+        1. Open this page in any browser:
+      </p>
+      <p style="margin-bottom:12px">
+        <a id="m365-url" target="_blank" rel="noopener" style="color:var(--cyan);font-size:14px"></a>
+      </p>
+      <p style="font-size:13px;color:var(--fg-dim);margin-bottom:6px">
+        2. Enter this code:
+      </p>
+      <p style="font-size:28px;font-family:monospace;letter-spacing:2px;color:var(--yellow);margin:4px 0 16px 0;padding:8px;background:rgba(0,0,0,0.15);border-radius:4px;text-align:center">
+        <span id="m365-code"></span>
+      </p>
+      <p style="font-size:12px;color:var(--fg-dim)" id="m365-poll-status">
+        Waiting for you to sign in…
+      </p>
+    </div>
+
+    <!-- Stage 2: details after successful auth -->
+    <div id="m365-stage-details" style="display:none">
+      <p style="font-size:12px;color:var(--green);margin-bottom:12px">✓ Signed in to Microsoft 365. A few final details:</p>
+      <label style="display:block;font-size:12px;color:var(--fg-dim);margin-top:6px">Email address (what you signed in as)</label>
+      <input type="text" id="m365-email" style="width:100%;padding:6px 8px;background:var(--bg-dim);color:var(--fg);border:1px solid var(--border);border-radius:3px;font-size:13px" placeholder="you@example.com">
+      <label style="display:block;font-size:12px;color:var(--fg-dim);margin-top:10px">Display name</label>
+      <input type="text" id="m365-name" style="width:100%;padding:6px 8px;background:var(--bg-dim);color:var(--fg);border:1px solid var(--border);border-radius:3px;font-size:13px" placeholder="Your Name">
+      <label style="display:block;font-size:12px;color:var(--fg-dim);margin-top:10px">Label (short nickname)</label>
+      <input type="text" id="m365-label" style="width:100%;padding:6px 8px;background:var(--bg-dim);color:var(--fg);border:1px solid var(--border);border-radius:3px;font-size:13px" placeholder="Microsoft 365">
+      <label style="display:block;font-size:12px;color:var(--fg-dim);margin-top:10px">
+        <input type="checkbox" id="m365-primary"> Make this my primary send identity
+      </label>
+    </div>
+
+    <!-- Stage 3: error -->
+    <div id="m365-stage-error" style="display:none">
+      <p style="color:var(--red);margin-bottom:10px">Sign-in failed</p>
+      <pre id="m365-error-msg" style="font-size:12px;background:rgba(0,0,0,0.15);padding:8px;border-radius:4px;white-space:pre-wrap"></pre>
+    </div>
+
+    <div class="setup-actions" style="margin-top:14px">
+      <button id="m365-save-btn" class="clinic-action-btn btn-accept" onclick="m365Save()" style="display:none">Save identity</button>
+      <button class="clinic-action-btn btn-reject" onclick="m365Cancel()">Cancel</button>
     </div>
   </div>
 </div>
@@ -2474,6 +2528,130 @@ function setupSave() {
 }
 
 function setupSkip() { document.getElementById('setup-overlay').style.display = 'none'; }
+
+// ============================================================================
+// Microsoft 365 OAuth device-flow — "+ Add Microsoft 365 account" button.
+// No password — user signs in via browser, tokens stored server-side.
+// ============================================================================
+
+let m365DeviceCode = null;    // opaque token from /begin, required by /poll
+let m365PollTimer = null;      // setTimeout handle so Cancel can abort
+let m365PollInterval = 5000;   // ms between polls; overridden by /begin response
+
+function m365Begin() {
+  const overlay = document.getElementById('m365-overlay');
+  const stageCode = document.getElementById('m365-stage-code');
+  const stageDetails = document.getElementById('m365-stage-details');
+  const stageError = document.getElementById('m365-stage-error');
+  const saveBtn = document.getElementById('m365-save-btn');
+  const statusEl = document.getElementById('m365-poll-status');
+
+  // Reset all stages, then show the overlay with a "starting" message.
+  stageDetails.style.display = 'none';
+  stageError.style.display = 'none';
+  saveBtn.style.display = 'none';
+  stageCode.style.display = 'block';
+  document.getElementById('m365-code').textContent = '···';
+  document.getElementById('m365-url').textContent = 'Contacting Microsoft…';
+  statusEl.textContent = 'Starting device-code flow…';
+  statusEl.style.color = 'var(--fg-dim)';
+  overlay.style.display = 'flex';
+
+  fetch('/api/email/m365/begin', { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) { m365ShowError(data.error || 'unknown error from /begin'); return; }
+      m365DeviceCode = data.device_code;
+      m365PollInterval = (data.interval || 5) * 1000;
+      const url = data.verification_uri || 'https://microsoft.com/devicelogin';
+      const urlEl = document.getElementById('m365-url');
+      urlEl.textContent = url;
+      urlEl.href = url;
+      document.getElementById('m365-code').textContent = data.user_code;
+      statusEl.textContent = 'Waiting for you to sign in…';
+      m365PollTimer = setTimeout(m365Poll, m365PollInterval);
+    })
+    .catch(e => m365ShowError('Network error: ' + e));
+}
+
+function m365Poll() {
+  if (!m365DeviceCode) return;   // cancelled
+  fetch('/api/email/m365/poll', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ device_code: m365DeviceCode })
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.status === 'complete') {
+        m365PollTimer = null;
+        // Swap to details stage so user can name the identity.
+        document.getElementById('m365-stage-code').style.display = 'none';
+        document.getElementById('m365-stage-details').style.display = 'block';
+        document.getElementById('m365-save-btn').style.display = 'inline-block';
+        document.getElementById('m365-label').value = 'Microsoft 365';
+      } else if (data.status === 'pending') {
+        // Not yet — keep polling at the server-suggested interval.
+        m365PollTimer = setTimeout(m365Poll, m365PollInterval);
+      } else {
+        m365ShowError(data.message || 'Microsoft reported an error');
+      }
+    })
+    .catch(e => {
+      // Transient network glitch: try one more time on the same interval.
+      m365PollTimer = setTimeout(m365Poll, m365PollInterval);
+    });
+}
+
+function m365Save() {
+  const email = document.getElementById('m365-email').value.trim();
+  const name = document.getElementById('m365-name').value.trim();
+  const label = document.getElementById('m365-label').value.trim() || 'Microsoft 365';
+  const primary = document.getElementById('m365-primary').checked;
+  if (!email) { alert('Email address is required.'); return; }
+
+  fetch('/api/email/m365/setup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      label: label,
+      from_email: email,
+      from_name: name || email,
+      primary: primary
+    })
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        m365Cancel();
+        // Refresh the outer email-setup overlay if open, so the new identity shows up.
+        const outer = document.getElementById('setup-overlay');
+        if (outer && outer.style.display !== 'none') {
+          fetch('/api/email/status').then(r => r.json()).then(s => emailSetupOpen(s.identities || null));
+        }
+        // Otherwise we just show a brief toast via the dashboard's msg area.
+        const msg = document.getElementById('setup-msg');
+        if (msg) { msg.textContent = '✓ Microsoft 365 identity saved.'; msg.style.color = 'var(--green)'; }
+      } else {
+        m365ShowError(data.error || 'Save failed');
+      }
+    })
+    .catch(e => m365ShowError('Network error saving identity: ' + e));
+}
+
+function m365Cancel() {
+  if (m365PollTimer) { clearTimeout(m365PollTimer); m365PollTimer = null; }
+  m365DeviceCode = null;
+  document.getElementById('m365-overlay').style.display = 'none';
+}
+
+function m365ShowError(msg) {
+  if (m365PollTimer) { clearTimeout(m365PollTimer); m365PollTimer = null; }
+  document.getElementById('m365-stage-code').style.display = 'none';
+  document.getElementById('m365-stage-details').style.display = 'none';
+  document.getElementById('m365-stage-error').style.display = 'block';
+  document.getElementById('m365-error-msg').textContent = msg;
+}
 
 // ============================================================================
 // Letter workflow

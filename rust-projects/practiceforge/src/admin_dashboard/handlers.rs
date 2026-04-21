@@ -2662,6 +2662,121 @@ pub async fn email_setup(
     Json(serde_json::json!({"ok": true, "identities": req.identities.len()}))
 }
 
+// ---------------------------------------------------------------------------
+// M365 OAuth device-flow — colleague-friendly "click a button" path.
+//
+// Pairs with the "Add Microsoft 365 account" affordance in admin.html:
+//   1. UI clicks /api/email/m365/begin → dashboard calls Microsoft's
+//      /devicecode endpoint, returns the user_code + verification URL.
+//   2. UI shows a modal with the code + URL; user authenticates in browser.
+//   3. UI polls /api/email/m365/poll every few seconds; when Microsoft
+//      issues tokens, they land in the keychain.
+//   4. UI posts /api/email/m365/setup to save the identity block with
+//      backend=graph, auth=oauth2_command pointing at the cohs-oauth-graph
+//      helper (which reads those same keychain entries).
+// ---------------------------------------------------------------------------
+
+/// POST /api/email/m365/begin — start a device-code flow.
+pub async fn email_m365_begin() -> Json<serde_json::Value> {
+    // Run blocking HTTP in a blocking task so we don't stall the runtime.
+    let result = tokio::task::spawn_blocking(crate::email::m365_oauth::begin).await;
+    match result {
+        Ok(Ok(start)) => Json(serde_json::json!({
+            "ok": true,
+            "user_code": start.user_code,
+            "verification_uri": start.verification_uri,
+            "device_code": start.device_code,
+            "expires_in": start.expires_in,
+            "interval": start.interval,
+            "message": start.message,
+        })),
+        Ok(Err(e)) => Json(serde_json::json!({"ok": false, "error": e.to_string()})),
+        Err(e) => Json(serde_json::json!({"ok": false, "error": format!("join error: {e}")})),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct M365PollRequest {
+    pub device_code: String,
+}
+
+/// POST /api/email/m365/poll — check whether the device flow has completed.
+pub async fn email_m365_poll(
+    Json(req): Json<M365PollRequest>,
+) -> Json<serde_json::Value> {
+    let code = req.device_code.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        crate::email::m365_oauth::poll(&code)
+    })
+    .await;
+    match result {
+        Ok(Ok(poll_result)) => Json(serde_json::to_value(&poll_result).unwrap_or_else(|e| {
+            serde_json::json!({"status": "error", "message": e.to_string()})
+        })),
+        Ok(Err(e)) => Json(serde_json::json!({"status": "error", "message": e.to_string()})),
+        Err(e) => Json(serde_json::json!({"status": "error", "message": format!("join error: {e}")})),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct M365SetupRequest {
+    pub label: String,
+    pub from_email: String,
+    pub from_name: String,
+    #[serde(default)]
+    pub primary: bool,
+}
+
+/// POST /api/email/m365/setup — write a Graph-backed identity to config.toml.
+/// Prerequisites: the OAuth device flow completed successfully (tokens in
+/// keychain). No password to store — Graph uses the OAuth2 token command.
+pub async fn email_m365_setup(
+    Json(req): Json<M365SetupRequest>,
+) -> Json<serde_json::Value> {
+    if req.from_email.trim().is_empty() {
+        return Json(serde_json::json!({"ok": false, "error": "from_email is required"}));
+    }
+
+    let config_path = crate::config::config_dir().join("config.toml");
+    if let Err(e) = std::fs::create_dir_all(crate::config::config_dir()) {
+        return Json(serde_json::json!({"ok": false, "error": e.to_string()}));
+    }
+    let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
+
+    // Build a new identity entry using the tagged shape that the Phase 3a
+    // config loader understands.
+    let entry = crate::email::wizard::IdentityEntry {
+        label: req.label.clone(),
+        from_email: req.from_email.clone(),
+        from_name: if req.from_name.is_empty() { req.from_email.clone() } else { req.from_name.clone() },
+        primary: req.primary,
+        backend: crate::email::backends::BackendConfig::Graph(
+            crate::email::backends::GraphConfig::default(),
+        ),
+        auth: crate::email::backends::AuthConfig::OAuth2Command {
+            command: "cohs-oauth-graph show".to_string(),
+        },
+    };
+    // Note: we delegate to the wizard's `append_identity` which already
+    // handles legacy-flat promotion, primary flag juggling, and pretty
+    // serde output. This is the only web caller that writes tagged-shape
+    // identities today; the SMTP setup endpoint above stays on the
+    // flat-shape writer.
+    let updated = match crate::email::wizard::append_identity(&existing, &entry) {
+        Ok(s) => s,
+        Err(e) => return Json(serde_json::json!({"ok": false, "error": e.to_string()})),
+    };
+    if let Err(e) = std::fs::write(&config_path, updated) {
+        return Json(serde_json::json!({"ok": false, "error": e.to_string()}));
+    }
+
+    Json(serde_json::json!({
+        "ok": true,
+        "from_email": req.from_email,
+        "label": req.label,
+    }))
+}
+
 fn esc_toml(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }

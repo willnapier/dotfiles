@@ -61,6 +61,10 @@ pub fn build_router() -> Router {
         .route("/api/email/status", get(handlers::email_status))
         .route("/api/email/setup", post(handlers::email_setup))
         .route("/api/email/test", post(handlers::email_test))
+        // Microsoft 365 OAuth device-flow (no password, colleague-friendly)
+        .route("/api/email/m365/begin", post(handlers::email_m365_begin))
+        .route("/api/email/m365/poll", post(handlers::email_m365_poll))
+        .route("/api/email/m365/setup", post(handlers::email_m365_setup))
         // Letter workflow
         .route("/api/letter/draft", post(handlers::letter_draft))
         .route("/api/letter/build", post(handlers::letter_build))

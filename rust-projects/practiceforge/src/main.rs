@@ -347,6 +347,14 @@ enum EmailAction {
     /// Auth via `cohs-oauth-graph show` — requires `cohs-oauth-graph init`
     /// to have run once to consent the Mail.Send scope.
     GraphSend,
+    /// Refresh the Microsoft Graph access token using the stored refresh
+    /// token. Replaces `cohs-oauth-graph refresh` — works for tokens
+    /// acquired via either the dashboard button OR the Python helper
+    /// (both store under the same keychain labels).
+    ///
+    /// Exit 0 on success; non-zero if refresh_token is missing or rejected
+    /// (user must re-authorise via the dashboard or `cohs-oauth-graph init`).
+    M365Refresh,
 }
 
 #[derive(Parser, Debug)]
@@ -1203,6 +1211,10 @@ async fn main() -> anyhow::Result<()> {
                     // doesn't mistake it for error output. Confirmation to
                     // stderr for interactive runs.
                     eprintln!("✓ Sent via Graph ({} bytes MIME)", mime.len());
+                }
+                EmailAction::M365Refresh => {
+                    crate::email::m365_oauth::refresh()?;
+                    eprintln!("✓ M365 Graph access token refreshed.");
                 }
                 EmailAction::GraphTest { to, subject, body } => {
                     use crate::email::backends::{
