@@ -1,45 +1,50 @@
 #!/usr/bin/env bash
 # email — open meli in a maximized Ghostty window (macOS)
 #
-# Strategy: open a new Ghostty window (reusing existing process if running),
-# wait for it to settle, then zoom it via AppleScript.
+# Strategy: launch a fresh Ghostty instance running meli (requires -n so
+# that Ghostty honours the -e command), then target that specific new
+# instance via PID-diffing and zoom its window via AppleScript.
 #
-# Key design notes:
-# - No `-n` flag: reuses the existing Ghostty process, so AppleScript's
-#   `process "ghostty"` is unambiguous. A new window is still opened
-#   because of the `-e meli` command.
-# - Longer settle time: Ghostty window creation + focus + menu bar
-#   population can take up to ~1s on first launch.
-# - Set bounds directly instead of menu-clicking "Zoom": more reliable
-#   because it doesn't depend on menu item indices or localisation.
-#
-# Requires Accessibility permission for the caller (Ghostty itself or
-# your launcher). Grant in System Settings → Privacy & Security →
-# Accessibility the first time macOS prompts.
+# Design history:
+# - v1: --maximize=true flag → didn't reliably reach Ghostty via open -na
+# - v2: drop -n, zoom "process ghostty" via menu → meli didn't launch
+#   because existing Ghostty ignores -e when not -n
+# - v3 (this): -n for meli-launch, PID-diff to target new window for zoom
 
 set -e
 
-# 1. Open a new Ghostty window running meli (reuses existing Ghostty process)
-open -a Ghostty.app --args -e meli
+# 1. Snapshot existing Ghostty PIDs
+before=$(pgrep -x ghostty | sort)
 
-# 2. Wait for the new window to become frontmost + menu bar ready
-sleep 1.0
+# 2. Launch a fresh Ghostty instance running meli
+open -na Ghostty.app --args -e meli
 
-# 3. Zoom the frontmost Ghostty window by setting its bounds to the screen
-#    (not entering macOS fullscreen-Space mode — stays in current Space)
-osascript <<'EOF'
+# 3. Wait for the new process to appear and window to settle
+sleep 1.2
+
+# 4. Find the newly-created Ghostty PID (the one not in the snapshot)
+after=$(pgrep -x ghostty | sort)
+new_pid=$(comm -13 <(echo "$before") <(echo "$after") | head -1)
+
+if [ -z "$new_pid" ]; then
+  echo "email: warning — couldn't identify new Ghostty PID; zoom skipped" >&2
+  exit 0
+fi
+
+# 5. Zoom the new instance's window via AppleScript, targeting by PID
+osascript <<EOF
 tell application "Finder"
   set screenBounds to bounds of window of desktop
 end tell
--- screenBounds is {0, 0, width, height}
 set screenWidth to item 3 of screenBounds
 set screenHeight to item 4 of screenBounds
 
 tell application "System Events"
-  tell process "ghostty"
+  tell (first process whose unix id is $new_pid)
     set frontmost to true
+    delay 0.2
     tell window 1
-      set position to {0, 25}  -- 25px below menu bar
+      set position to {0, 25}
       set size to {screenWidth, screenHeight - 25}
     end tell
   end tell
