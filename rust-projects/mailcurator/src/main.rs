@@ -59,8 +59,11 @@ fn config_path(cli_arg: Option<PathBuf>) -> Result<PathBuf> {
     if let Some(p) = cli_arg {
         return Ok(p);
     }
-    let home = dirs::config_dir().context("no XDG config dir")?;
-    Ok(home.join("mailcurator").join("policies.toml"))
+    // Use XDG-style ~/.config rather than dirs::config_dir() which returns
+    // macOS's ~/Library/Application Support. Matches the convention used by
+    // practiceforge, clinical, and other tools in this system.
+    let home = dirs::home_dir().context("couldn't resolve $HOME")?;
+    Ok(home.join(".config").join("mailcurator").join("policies.toml"))
 }
 
 fn main() -> Result<()> {

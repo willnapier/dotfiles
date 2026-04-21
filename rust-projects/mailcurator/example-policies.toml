@@ -1,0 +1,72 @@
+# Example mailcurator policies — copy to ~/.config/mailcurator/policies.toml
+# and edit to taste.
+#
+# Each [[policy]] is applied independently. Fields:
+#   name                 — identifier; used to make a "curator-<name>-seen" tag.
+#                          lowercase, alphanumeric, dashes allowed.
+#   from                 — notmuch from: search fragment (domain or address).
+#   subject_contains     — token or phrase in Subject. For phrases, quote them.
+#   subject_not_contains — exclusion.
+#   on_arrival.tags_add    — tags to apply to newly-matching messages.
+#   on_arrival.tags_remove — tags to remove from newly-matching messages.
+#   archive_after_days   — remove `inbox` tag when message age > this.
+#   delete_after_days    — add `trash` (and remove `inbox`) when message age > this.
+#
+# Every policy must either (a) add/remove on-arrival tags, OR (b) set at least
+# one of archive_after_days / delete_after_days. Otherwise it's a no-op.
+
+# Verification codes — useless after a few hours
+[[policy]]
+name = "verification-codes"
+subject_contains = "verification code"
+delete_after_days = 3
+
+# Password resets — similar shelf life
+[[policy]]
+name = "password-resets"
+subject_contains = "reset your password"
+delete_after_days = 3
+
+# Royal Mail delivery notifications — once the parcel is here, done
+[[policy]]
+name = "royal-mail"
+from = "@royalmail.com"
+archive_after_days = 3
+delete_after_days = 30
+
+# Amazon shipping — separate from receipts by subject exclusion
+[[policy]]
+name = "amazon-shipping"
+from = "@shipping.amazon.co.uk"
+subject_not_contains = "receipt"
+archive_after_days = 7
+delete_after_days = 30
+
+# Stripe payment events — billing-relevant, keep in inbox, tag for dashboard view
+[[policy]]
+name = "stripe-billing"
+from = "notifications@stripe.com"
+on_arrival.tags_add = ["billing"]
+
+# Uber trips (not receipts) — short-lived
+[[policy]]
+name = "uber-trips"
+from = "@uber.com"
+subject_not_contains = "receipt"
+archive_after_days = 2
+delete_after_days = 14
+
+# Uber receipts — tax-relevant, keep
+[[policy]]
+name = "uber-receipts"
+from = "@uber.com"
+subject_contains = "receipt"
+on_arrival.tags_add = ["receipts"]
+archive_after_days = 7
+
+# Zoom meeting invites — expire after the meeting window
+[[policy]]
+name = "zoom-invites"
+from = "@zoom.us"
+archive_after_days = 7
+delete_after_days = 30
