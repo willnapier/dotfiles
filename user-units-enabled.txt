@@ -25,6 +25,7 @@ p11-kit-server.socket
 pipewire-pulse.service
 pipewire-pulse.socket
 pipewire.socket
+practiceforge.service
 readwise-sync.timer
 ssh-agent.socket
 ssh-import-env.service
