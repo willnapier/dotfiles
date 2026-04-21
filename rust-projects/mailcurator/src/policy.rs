@@ -3,6 +3,7 @@
 // A policy has:
 //   - match criteria (from, subject, subject_not) — all must hold
 //   - on_arrival: tags to add to newly-seen messages (marked by curator-<name>-seen)
+//   - quarantine flag: when true, skip archive/delete (observe-only mode)
 //   - archive_after: remove `inbox` tag after N days
 //   - delete_after: add `trash` tag (and remove `inbox`) after N days
 //
@@ -27,6 +28,13 @@ pub struct Policy {
     #[serde(default)]
     pub on_arrival: OnArrival,
 
+    /// Observe-only mode. Messages get tagged with the seen-tag (and any
+    /// on_arrival tags) but archive/delete phases are skipped. Use when
+    /// piloting a new policy to check what it catches without destroying
+    /// mail. Flip to false once you're happy with the matches.
+    #[serde(default)]
+    pub quarantine: bool,
+
     /// Archive (remove `inbox` tag) after this many days from message date.
     /// Omit to never archive based on age.
     pub archive_after_days: Option<u32>,
@@ -41,10 +49,13 @@ pub struct MatchSpec {
     /// Notmuch from: query fragment (e.g. "@royalmail.com" or "noreply@zoom.us")
     pub from: Option<String>,
 
-    /// Regex matched against Subject header (via notmuch subject: query after anchoring).
-    /// Notmuch's subject: is whitespace-token-based; for true regex we'd need post-filtering.
-    /// For v1, we use notmuch's native subject: search with term(s); see build_match_query.
+    /// Single token/phrase match against Subject header.
     pub subject_contains: Option<String>,
+
+    /// OR-of-substrings match against Subject header. Any one matching causes
+    /// the message to match. Use for consolidating e.g. verification-code
+    /// patterns into a single policy.
+    pub subject_contains_any: Option<Vec<String>>,
 
     /// Convenience: exclude subjects containing this token.
     pub subject_not_contains: Option<String>,
@@ -71,6 +82,9 @@ impl Policy {
         let parts = [
             self.r#match.from.as_ref().map(|s| format!("from={s}")),
             self.r#match.subject_contains.as_ref().map(|s| format!("subject~{s}")),
+            self.r#match.subject_contains_any.as_ref()
+                .map(|v| format!("subject_any~[{}]", v.join("|"))),
+            if self.quarantine { Some("QUARANTINE".into()) } else { None },
             self.archive_after_days.map(|d| format!("archive@{d}d")),
             self.delete_after_days.map(|d| format!("delete@{d}d")),
         ];
@@ -81,8 +95,18 @@ impl Policy {
         if self.name.is_empty() {
             anyhow::bail!("name is empty");
         }
-        if self.r#match.from.is_none() && self.r#match.subject_contains.is_none() {
-            anyhow::bail!("must have at least one of match.from or match.subject_contains");
+        if self.r#match.from.is_none()
+            && self.r#match.subject_contains.is_none()
+            && self.r#match.subject_contains_any.is_none()
+        {
+            anyhow::bail!(
+                "must have at least one of match.from, match.subject_contains, or match.subject_contains_any"
+            );
+        }
+        if let Some(v) = &self.r#match.subject_contains_any {
+            if v.is_empty() {
+                anyhow::bail!("subject_contains_any is empty — omit the field entirely if no patterns");
+            }
         }
         // Ensure name is a valid tag suffix (safe characters only).
         let re = Regex::new(r"^[a-z0-9][a-z0-9-]*$").unwrap();
@@ -100,19 +124,25 @@ impl Policy {
         Ok(())
     }
 
-    fn seen_tag(&self) -> String {
+    pub fn seen_tag(&self) -> String {
         format!("curator-{}-seen", self.name)
     }
 
     /// Build the notmuch query that matches this policy's criteria
     /// (without the seen/lifecycle qualifiers).
-    fn base_query(&self) -> String {
+    pub fn base_query(&self) -> String {
         let mut parts: Vec<String> = Vec::new();
         if let Some(f) = &self.r#match.from {
             parts.push(format!("from:{f}"));
         }
         if let Some(s) = &self.r#match.subject_contains {
             parts.push(format!("subject:\"{s}\""));
+        }
+        if let Some(terms) = &self.r#match.subject_contains_any {
+            let or_parts: Vec<String> = terms.iter()
+                .map(|t| format!("subject:\"{t}\""))
+                .collect();
+            parts.push(format!("({})", or_parts.join(" or ")));
         }
         if let Some(s) = &self.r#match.subject_not_contains {
             parts.push(format!("not subject:\"{s}\""));
@@ -122,6 +152,7 @@ impl Policy {
 }
 
 /// Apply a policy: handle on_arrival (new matches) + lifecycle transitions.
+/// When `dry_run` is true, nothing is modified; counts are still reported.
 pub fn apply(pol: &Policy, dry_run: bool) -> Result<Stats> {
     let mut stats = Stats::default();
     let base = pol.base_query();
@@ -138,6 +169,11 @@ pub fn apply(pol: &Policy, dry_run: bool) -> Result<Stats> {
         if !dry_run {
             notmuch::apply_tag_changes(&arrival_query, &add, &remove)?;
         }
+    }
+
+    // Quarantine short-circuits archive/delete — observe only.
+    if pol.quarantine {
+        return Ok(stats);
     }
 
     // --- archive: matching messages past the age threshold, still in inbox ---
@@ -163,6 +199,11 @@ pub fn apply(pol: &Policy, dry_run: bool) -> Result<Stats> {
         if n > 0 {
             stats.deleted = n;
             if !dry_run {
+                // Log deletions BEFORE applying the tag, so the audit
+                // trail captures what was actually trashed.
+                if let Err(e) = crate::store::log_deletions(&pol.name, &q) {
+                    eprintln!("mailcurator: warning — failed to log deletions: {e}");
+                }
                 notmuch::apply_tag_changes(&q, &["trash"], &["inbox"])?;
             }
         }
