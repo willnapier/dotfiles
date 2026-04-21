@@ -34,15 +34,30 @@ Path ~/Mail/cohs/
 Inbox ~/Mail/cohs/INBOX/
 SubFolders Verbatim
 
-# Start with INBOX-only. The full COHS mailbox likely spans years of
-# email; a pull-all first sync could be multi-GB and take 30+ minutes.
-# Other folders can be added later by duplicating the Channel block
-# with different Far/Near paths.
+# Sync all standard M365/Exchange folders. Pull-only: COHS IMAP is
+# authoritative, local is a read-only mirror. If mutation from local-side
+# Meli is wanted later, change `Sync Pull` to `Sync All`.
+#
+# Patterns list matches typical Exchange Online folder names. The `!`
+# prefix excludes: we drop the "Conversation History", "RSS Subscriptions",
+# "Outbox" and a few other Outlook-internal folders that typically contain
+# nothing useful. Add more patterns (or `*` to catch everything) if
+# additional folders appear over time.
+
+Channel cohs-all
+Far :cohs-remote:
+Near :cohs-local:
+Patterns "INBOX" "Sent Items" "Drafts" "Archive" "Deleted Items" "Junk Email"
+Sync Pull
+Expunge None
+CopyArrivalDate yes
+Create Near
+SyncState *
+
+# Historical single-INBOX channel, kept for explicit "just pull inbox" invocations.
 Channel cohs-inbox
 Far :cohs-remote:INBOX
 Near :cohs-local:INBOX
-# Pull-only: COHS IMAP is authoritative, local is a read-only mirror.
-# If mutation from local-side Meli is wanted later, change to `Sync All`.
 Sync Pull
 Expunge None
 CopyArrivalDate yes
@@ -51,4 +66,4 @@ SyncState *
 
 # Convenience group so `mbsync cohs` syncs everything COHS-related.
 Group cohs
-Channel cohs-inbox
+Channel cohs-all
