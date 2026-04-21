@@ -322,6 +322,21 @@ enum EmailAction {
         #[arg(long)]
         cc: Option<String>,
     },
+    /// Live end-to-end test of the new MailTransport pipeline via Microsoft
+    /// Graph for the COHS identity. Uses `cohs-oauth show` for the access
+    /// token. Requires `Mail.Send` scope — re-run `cohs-oauth init` if the
+    /// first attempt returns 403.
+    GraphTest {
+        /// Recipient email address
+        #[arg(long)]
+        to: String,
+        /// Subject line
+        #[arg(long, default_value = "PracticeForge Graph transport test")]
+        subject: String,
+        /// Body text
+        #[arg(long, default_value = "End-to-end via MailTransport → GraphTransport → /me/sendMail.")]
+        body: String,
+    },
 }
 
 #[derive(Parser, Debug)]
@@ -1126,6 +1141,34 @@ async fn main() -> anyhow::Result<()> {
                         cc_list.as_deref(),
                     )?;
                     println!("✓ Email sent to {}", to);
+                }
+                EmailAction::GraphTest { to, subject, body } => {
+                    use crate::email::backends::{
+                        transport_for, AuthConfig, BackendConfig, GraphConfig, IdentityConfig,
+                    };
+                    use crate::email::{Body, Envelope, Mailbox};
+
+                    let identity = IdentityConfig {
+                        backend: BackendConfig::Graph(GraphConfig::default()),
+                        auth: AuthConfig::OAuth2Command {
+                            command: "cohs-oauth show".into(),
+                        },
+                    };
+
+                    let transport = transport_for(&identity)?;
+
+                    let envelope = Envelope::builder(Mailbox::with_name(
+                        "will.napier@changeofharleystreet.com",
+                        "Will Napier",
+                    ))
+                    .to(Mailbox::new(&to))
+                    .subject(&subject)
+                    .body(Body::Text(body))
+                    .build();
+
+                    println!("Sending via {}...", transport.name());
+                    transport.send(&envelope)?;
+                    println!("✓ Sent. Check inbox for arrival.");
                 }
             }
         }

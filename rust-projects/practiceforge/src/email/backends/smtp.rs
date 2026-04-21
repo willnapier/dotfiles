@@ -377,8 +377,10 @@ mod tests {
 
         assert!(rendered.contains("cc1@z.com"));
         assert!(rendered.contains("cc2@z.com"));
-        // Bcc is an envelope-level header in lettre's formatted output:
-        assert!(rendered.contains("bcc@z.com"));
+        // Note: lettre strips Bcc from the formatted message body (per RFC
+        // 5321 Bcc is an SMTP envelope-level concern, not a header). We
+        // verify Bcc survives on the Envelope struct itself in
+        // envelope_builder_sets_all_optional_fields; not re-checked here.
     }
 
     #[test]
