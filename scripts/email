@@ -1,46 +1,47 @@
 #!/usr/bin/env bash
 # email — open meli in a maximized Ghostty window (macOS)
 #
-# Strategy: launch a fresh Ghostty running meli, then use AppleScript to
-# zoom the window (macOS "green button" behaviour: fills screen but stays
-# in current Space, unlike fullscreen which makes a new Space).
+# Strategy: open a new Ghostty window (reusing existing process if running),
+# wait for it to settle, then zoom it via AppleScript.
 #
-# The --maximize=true Ghostty config flag doesn't reliably reach the app
-# via `open -na --args` on macOS 1.3.1, so we use AppleScript post-launch
-# which is the standard macOS idiom for this.
+# Key design notes:
+# - No `-n` flag: reuses the existing Ghostty process, so AppleScript's
+#   `process "ghostty"` is unambiguous. A new window is still opened
+#   because of the `-e meli` command.
+# - Longer settle time: Ghostty window creation + focus + menu bar
+#   population can take up to ~1s on first launch.
+# - Set bounds directly instead of menu-clicking "Zoom": more reliable
+#   because it doesn't depend on menu item indices or localisation.
 #
-# Requires Accessibility permission for the calling process (Ghostty or
-# your launcher) — macOS will prompt the first time. Grant it in
-# System Settings → Privacy & Security → Accessibility.
+# Requires Accessibility permission for the caller (Ghostty itself or
+# your launcher). Grant in System Settings → Privacy & Security →
+# Accessibility the first time macOS prompts.
 
 set -e
 
-# 1. Launch a fresh Ghostty instance running meli
-open -na Ghostty.app --args -e meli
+# 1. Open a new Ghostty window running meli (reuses existing Ghostty process)
+open -a Ghostty.app --args -e meli
 
-# 2. Brief delay so the window exists before we target it
-sleep 0.4
+# 2. Wait for the new window to become frontmost + menu bar ready
+sleep 1.0
 
-# 3. Zoom the frontmost Ghostty window via the Window menu
-#    (equivalent to Option-clicking the green traffic-light button)
+# 3. Zoom the frontmost Ghostty window by setting its bounds to the screen
+#    (not entering macOS fullscreen-Space mode — stays in current Space)
 osascript <<'EOF'
+tell application "Finder"
+  set screenBounds to bounds of window of desktop
+end tell
+-- screenBounds is {0, 0, width, height}
+set screenWidth to item 3 of screenBounds
+set screenHeight to item 4 of screenBounds
+
 tell application "System Events"
   tell process "ghostty"
-    try
-      tell menu bar 1
-        tell menu bar item "Window"
-          tell menu 1
-            click menu item "Zoom"
-          end tell
-        end tell
-      end tell
-    on error errMsg
-      -- Fall back: try setting window bounds explicitly
-      tell window 1
-        set position to {0, 25}
-        set size to {2560, 1600}
-      end tell
-    end try
+    set frontmost to true
+    tell window 1
+      set position to {0, 25}  -- 25px below menu bar
+      set size to {screenWidth, screenHeight - 25}
+    end tell
   end tell
 end tell
 EOF
