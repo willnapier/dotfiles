@@ -1,11 +1,46 @@
 #!/usr/bin/env bash
 # email — open meli in a maximized Ghostty window (macOS)
 #
-# Uses Ghostty's native --maximize flag. Result: fresh Ghostty window
-# filling the screen (but not entering macOS fullscreen-Space mode),
-# running meli. Other Ghostty windows are untouched.
+# Strategy: launch a fresh Ghostty running meli, then use AppleScript to
+# zoom the window (macOS "green button" behaviour: fills screen but stays
+# in current Space, unlike fullscreen which makes a new Space).
 #
-# Why `open -na`: on macOS, Ghostty is a .app bundle; launching with flags
-# from outside Terminal requires `open -na Ghostty.app --args ...`.
+# The --maximize=true Ghostty config flag doesn't reliably reach the app
+# via `open -na --args` on macOS 1.3.1, so we use AppleScript post-launch
+# which is the standard macOS idiom for this.
+#
+# Requires Accessibility permission for the calling process (Ghostty or
+# your launcher) — macOS will prompt the first time. Grant it in
+# System Settings → Privacy & Security → Accessibility.
 
-exec open -na Ghostty.app --args --maximize=true -e meli
+set -e
+
+# 1. Launch a fresh Ghostty instance running meli
+open -na Ghostty.app --args -e meli
+
+# 2. Brief delay so the window exists before we target it
+sleep 0.4
+
+# 3. Zoom the frontmost Ghostty window via the Window menu
+#    (equivalent to Option-clicking the green traffic-light button)
+osascript <<'EOF'
+tell application "System Events"
+  tell process "ghostty"
+    try
+      tell menu bar 1
+        tell menu bar item "Window"
+          tell menu 1
+            click menu item "Zoom"
+          end tell
+        end tell
+      end tell
+    on error errMsg
+      -- Fall back: try setting window bounds explicitly
+      tell window 1
+        set position to {0, 25}
+        set size to {2560, 1600}
+      end tell
+    end try
+  end tell
+end tell
+EOF
