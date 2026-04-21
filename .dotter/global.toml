@@ -437,6 +437,16 @@ depends = ["shared"]
 # TM3 diary capture - hourly live scrape during clinic hours, writes PracticeForge session files
 "systemd/tm3-diary-capture.service" = "~/.config/systemd/user/tm3-diary-capture.service"
 "systemd/tm3-diary-capture.timer" = "~/.config/systemd/user/tm3-diary-capture.timer"
+# COHS M365 mail stack (added 2026-04-21) - OAuth token refresh + mbsync pull
+# Dormant on macOS (launchd equivalents in [macos.files]); active on Linux.
+# Requires: isync, cyrus-sasl-xoauth2, libsecret (secret-tool). See
+# `~/Assistants/shared/CLI-EMAIL-SYSTEM.md` for new machine setup.
+"systemd/cohs-token-refresh.service" = "~/.config/systemd/user/cohs-token-refresh.service"
+"systemd/cohs-token-refresh.timer" = "~/.config/systemd/user/cohs-token-refresh.timer"
+"systemd/cohs-graph-token-refresh.service" = "~/.config/systemd/user/cohs-graph-token-refresh.service"
+"systemd/cohs-graph-token-refresh.timer" = "~/.config/systemd/user/cohs-graph-token-refresh.timer"
+"systemd/mbsync-cohs.service" = "~/.config/systemd/user/mbsync-cohs.service"
+"systemd/mbsync-cohs.timer" = "~/.config/systemd/user/mbsync-cohs.timer"
 # Wayland compositor configuration - Niri + Waybar + WezTerm
 "niri/config.kdl" = "~/.config/niri/config.kdl"
 "waybar/config" = "~/.config/waybar/config"

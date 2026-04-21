@@ -1,0 +1,11 @@
+[Unit]
+Description=Pull COHS M365 mail via mbsync (XOAUTH2) and re-index with notmuch
+After=network-online.target cohs-token-refresh.service gnome-keyring-daemon.service
+Wants=network-online.target gnome-keyring-daemon.service
+
+[Service]
+Type=oneshot
+# mbsync's PassCmd runs `cohs-oauth show` which needs secret-tool on PATH and
+# D-Bus for gnome-keyring. User systemd inherits these from the login session.
+# Absolute paths used because systemd's default PATH is minimal (no ~/.local/bin).
+ExecStart=/bin/sh -c '/usr/bin/mbsync cohs && /usr/bin/notmuch new'
