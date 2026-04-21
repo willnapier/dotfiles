@@ -1113,7 +1113,11 @@ async fn main() -> anyhow::Result<()> {
         Command::Email { action } => {
             match action {
                 EmailAction::Init => {
-                    email::init_config()?;
+                    // The legacy flat-SMTP `email::init_config()` is kept
+                    // callable (re-exported from `email::legacy`) until
+                    // Phase 4 retires it — but the user-facing `init`
+                    // subcommand now goes through the multi-backend wizard.
+                    email::wizard::init_config()?;
                 }
                 EmailAction::Test => {
                     let config = email::load_email_config()?;

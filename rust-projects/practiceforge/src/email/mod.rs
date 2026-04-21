@@ -19,6 +19,8 @@
 pub mod transport;
 pub mod auth;
 pub mod backends;
+pub mod config;
+pub mod wizard;
 
 // Legacy API — untouched during migration. Callers continue to work.
 mod legacy;
@@ -27,3 +29,4 @@ pub use legacy::*;
 // New API — currently stubs; Phase 1+ fill them in.
 pub use transport::{Attachment, Body, Envelope, MailTransport, Mailbox};
 pub use auth::TokenSource;
+pub use config::{find_identity_v2, load_identities_v2, Identity};
