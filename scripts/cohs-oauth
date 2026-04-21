@@ -1,0 +1,148 @@
+#!/Users/williamnapier/.config/cohs-auth/venv/bin/python3
+"""
+cohs-oauth — Microsoft 365 OAuth2 token manager for Change of Harley Street account.
+
+Uses Microsoft's msal library (canonical, handles PKCE + public app flow correctly,
+avoids the client_secret quirk that broke himalaya's built-in OAuth).
+
+Subcommands:
+    init     — device code flow to acquire initial tokens (interactive, run once)
+    refresh  — silently refresh access token (for timer use)
+    show     — print current access token to stdout (refresh if expired/stale)
+    status   — print token state (expiry, account) for debugging
+"""
+
+import json
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import msal
+
+CLIENT_ID = "9e5f94bc-e8a4-4e73-b8be-63364c29d753"  # Thunderbird public app
+AUTHORITY = "https://login.microsoftonline.com/common"
+SCOPES = [
+    "https://outlook.office.com/IMAP.AccessAsUser.All",
+    "https://outlook.office.com/SMTP.Send",
+]
+CACHE_PATH = Path.home() / ".config" / "cohs-auth" / "cache.bin"
+KEYCHAIN_SERVICE = "himalaya-cli"
+KEYCHAIN_ACCESS = "cohs-m365-access"
+KEYCHAIN_REFRESH = "cohs-m365-refresh"
+
+
+def load_cache() -> msal.SerializableTokenCache:
+    cache = msal.SerializableTokenCache()
+    if CACHE_PATH.exists():
+        cache.deserialize(CACHE_PATH.read_text())
+    return cache
+
+
+def save_cache(cache: msal.SerializableTokenCache) -> None:
+    if cache.has_state_changed:
+        CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        CACHE_PATH.write_text(cache.serialize())
+        CACHE_PATH.chmod(0o600)
+
+
+def build_app(cache: msal.SerializableTokenCache) -> msal.PublicClientApplication:
+    return msal.PublicClientApplication(CLIENT_ID, authority=AUTHORITY, token_cache=cache)
+
+
+def keychain_set(account: str, value: str) -> None:
+    subprocess.run(
+        ["security", "add-generic-password", "-U", "-s", KEYCHAIN_SERVICE, "-a", account, "-w", value],
+        check=True, capture_output=True,
+    )
+
+
+def keychain_get(account: str) -> str | None:
+    r = subprocess.run(
+        ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", account, "-w"],
+        capture_output=True, text=True,
+    )
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+def store_tokens(result: dict) -> None:
+    if "access_token" in result:
+        keychain_set(KEYCHAIN_ACCESS, result["access_token"])
+    if "refresh_token" in result:
+        keychain_set(KEYCHAIN_REFRESH, result["refresh_token"])
+
+
+def cmd_init() -> int:
+    cache = load_cache()
+    app = build_app(cache)
+    flow = app.initiate_device_flow(scopes=SCOPES)
+    if "user_code" not in flow:
+        print(f"Failed to initiate device flow: {json.dumps(flow, indent=2)}", file=sys.stderr)
+        return 1
+    print(flow["message"], file=sys.stderr)
+    result = app.acquire_token_by_device_flow(flow)  # blocks until user completes
+    save_cache(cache)
+    if "access_token" in result:
+        store_tokens(result)
+        print(f"Success. Access token stored; expires in {result.get('expires_in', '?')} seconds.", file=sys.stderr)
+        return 0
+    print(f"Failed: {json.dumps(result, indent=2)}", file=sys.stderr)
+    return 1
+
+
+def cmd_refresh() -> int:
+    cache = load_cache()
+    app = build_app(cache)
+    accounts = app.get_accounts()
+    if not accounts:
+        print("No cached account. Run 'cohs-oauth init' first.", file=sys.stderr)
+        return 1
+    result = app.acquire_token_silent(SCOPES, account=accounts[0])
+    save_cache(cache)
+    if result and "access_token" in result:
+        store_tokens(result)
+        print("Refreshed.", file=sys.stderr)
+        return 0
+    print(f"Silent refresh failed. Run 'cohs-oauth init' to re-auth. Detail: {result}", file=sys.stderr)
+    return 1
+
+
+def cmd_show() -> int:
+    # Refresh first to guarantee freshness, then print from keychain.
+    # (Side effect: also updates keychain for himalaya/mbsync.)
+    rc = cmd_refresh()
+    if rc != 0:
+        return rc
+    tok = keychain_get(KEYCHAIN_ACCESS)
+    if not tok:
+        print("No access token in keychain after refresh (unexpected).", file=sys.stderr)
+        return 1
+    print(tok)
+    return 0
+
+
+def cmd_status() -> int:
+    cache = load_cache()
+    app = build_app(cache)
+    accounts = app.get_accounts()
+    print(f"Cache path: {CACHE_PATH} (exists: {CACHE_PATH.exists()})")
+    print(f"Accounts: {[a.get('username') for a in accounts]}")
+    acc = keychain_get(KEYCHAIN_ACCESS)
+    ref = keychain_get(KEYCHAIN_REFRESH)
+    print(f"Keychain {KEYCHAIN_ACCESS}: {'present' if acc else 'MISSING'} ({len(acc) if acc else 0} chars)")
+    print(f"Keychain {KEYCHAIN_REFRESH}: {'present' if ref else 'MISSING'} ({len(ref) if ref else 0} chars)")
+    return 0
+
+
+COMMANDS = {"init": cmd_init, "refresh": cmd_refresh, "show": cmd_show, "status": cmd_status}
+
+
+def main() -> int:
+    if len(sys.argv) != 2 or sys.argv[1] not in COMMANDS:
+        print(f"Usage: {sys.argv[0]} {{{'|'.join(COMMANDS)}}}", file=sys.stderr)
+        return 2
+    return COMMANDS[sys.argv[1]]()
+
+
+if __name__ == "__main__":
+    sys.exit(main())
