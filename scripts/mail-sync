@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-# mail-sync — periodic Gmail sync via lieer + notmuch indexing
+# mail-sync — periodic bidirectional Gmail sync via lieer + notmuch indexing
 # Runs as launchd (macOS) or systemd timer (Linux)
 # Safe to run frequently; idempotent, network-aware, locking built into gmi
+#
+# Design principle (2026-04-21): local actions should be first-class.
+# When you tag a message in meli / notmuch, that action should actually
+# reach Gmail without a manual push step. So this script does the full
+# round trip: pull remote → index → push local → done.
 
 set -euo pipefail
 
@@ -61,6 +66,17 @@ if notmuch new >> "$LOG" 2>&1; then
 else
     log "ERROR: notmuch new failed (exit $?)"
     exit 1
+fi
+
+# Push local tag changes back to Gmail
+# gmi push is idempotent — if nothing to push, it's a fast no-op.
+# If it fails, we log and continue (don't exit 1) — pull+index already
+# succeeded, the push will retry on the next tick.
+log "START: gmi push"
+if "$GMI" push >> "$LOG" 2>&1; then
+    log "OK: gmi push complete"
+else
+    log "WARN: gmi push failed (exit $?) — will retry next tick"
 fi
 
 log "DONE"
