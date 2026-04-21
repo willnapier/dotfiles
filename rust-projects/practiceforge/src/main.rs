@@ -337,6 +337,16 @@ enum EmailAction {
         #[arg(long, default_value = "End-to-end via MailTransport → GraphTransport → /me/sendMail.")]
         body: String,
     },
+    /// sendmail-compatible Graph send: reads an RFC 5322 MIME message from
+    /// stdin and submits it via Graph's /me/sendMail (MIME variant). Meli
+    /// and any mail client that pipes MIME to a sendmail-style command
+    /// uses this as its send path for the COHS identity.
+    ///
+    /// Example (Meli config):  send_mail = "practiceforge email graph-send"
+    ///
+    /// Auth via `cohs-oauth-graph show` — requires `cohs-oauth-graph init`
+    /// to have run once to consent the Mail.Send scope.
+    GraphSend,
 }
 
 #[derive(Parser, Debug)]
@@ -1167,6 +1177,32 @@ async fn main() -> anyhow::Result<()> {
                         cc_list.as_deref(),
                     )?;
                     println!("✓ Email sent to {}", to);
+                }
+                EmailAction::GraphSend => {
+                    use anyhow::Context as _;
+                    use crate::email::auth::CommandTokenSource;
+                    use crate::email::backends::{graph::GraphTransport, GraphConfig};
+                    use std::io::Read;
+                    use std::sync::Arc;
+
+                    // Read full MIME from stdin — whatever Meli/mutt/etc pipe in.
+                    let mut mime = Vec::new();
+                    std::io::stdin()
+                        .read_to_end(&mut mime)
+                        .context("reading MIME message from stdin")?;
+                    if mime.is_empty() {
+                        anyhow::bail!("empty MIME message on stdin — nothing to send");
+                    }
+
+                    let transport = GraphTransport::new(
+                        GraphConfig::default(),
+                        Arc::new(CommandTokenSource::new("cohs-oauth-graph show")),
+                    );
+                    transport.send_mime(&mime)?;
+                    // sendmail-style tools are silent on stdout so the MUA
+                    // doesn't mistake it for error output. Confirmation to
+                    // stderr for interactive runs.
+                    eprintln!("✓ Sent via Graph ({} bytes MIME)", mime.len());
                 }
                 EmailAction::GraphTest { to, subject, body } => {
                     use crate::email::backends::{

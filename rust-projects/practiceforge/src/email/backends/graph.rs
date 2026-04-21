@@ -130,6 +130,44 @@ fn recipients_json(list: &[Mailbox]) -> Value {
     Value::Array(list.iter().map(mailbox_json).collect())
 }
 
+impl GraphTransport {
+    /// Send a raw RFC 5322 MIME message via Graph's "sendMail (MIME)" variant.
+    ///
+    /// This is the sendmail-style entry point — caller passes the full MIME
+    /// (headers + body + parts) as bytes, we base64-encode and POST with
+    /// `Content-Type: text/plain`. Graph parses the MIME server-side and
+    /// submits it as if the user had composed it in Outlook.
+    ///
+    /// Meli and other mail clients that produce MIME-on-stdin can use this
+    /// path without needing to round-trip through our structured
+    /// [`Envelope`] type — no MIME parsing by PracticeForge required.
+    ///
+    /// The `saveToSentItems` behaviour is always on for this variant; the
+    /// JSON shape's `saveToSentItems: false` escape hatch isn't available
+    /// in the MIME variant (Graph always archives a copy). Fine for
+    /// practitioner use where Sent Items IS the authoritative record.
+    pub fn send_mime(&self, mime: &[u8]) -> Result<()> {
+        let token = self
+            .token_source
+            .access_token()
+            .context("fetching access token for Microsoft Graph")?;
+
+        let encoded = data_encoding::BASE64.encode(mime);
+        let url = format!("{}/me/sendMail", self.config.base_url.trim_end_matches('/'));
+
+        let resp = self
+            .http
+            .post(&url)
+            .bearer_auth(&token)
+            .header("Content-Type", "text/plain")
+            .body(encoded)
+            .send()
+            .with_context(|| format!("POST {url} (MIME variant)"))?;
+
+        handle_send_response(resp, "MIME")
+    }
+}
+
 impl MailTransport for GraphTransport {
     fn send(&self, envelope: &Envelope) -> Result<()> {
         let token = self
@@ -149,32 +187,36 @@ impl MailTransport for GraphTransport {
             .send()
             .with_context(|| format!("POST {url}"))?;
 
-        let status = resp.status();
-        if status.as_u16() == 202 {
-            return Ok(());
-        }
-
-        // Non-202 — surface a helpful diagnostic. Body may or may not exist.
-        let body = resp.text().unwrap_or_else(|_| "<no body>".to_string());
-        let preview: String = body.chars().take(800).collect();
-
-        let hint = match status.as_u16() {
-            401 => " — token expired or revoked; re-run `cohs-oauth init`",
-            403 => " — token missing `Mail.Send` scope; re-run `cohs-oauth init` to re-consent with updated scopes",
-            _ => "",
-        };
-
-        Err(anyhow!(
-            "Graph /me/sendMail failed: HTTP {}{}. Response body: {}",
-            status,
-            hint,
-            preview
-        ))
+        handle_send_response(resp, "JSON")
     }
 
     fn name(&self) -> &str {
         "Microsoft Graph"
     }
+}
+
+fn handle_send_response(resp: reqwest::blocking::Response, variant: &str) -> Result<()> {
+    let status = resp.status();
+    if status.as_u16() == 202 {
+        return Ok(());
+    }
+
+    // Non-202 — surface a helpful diagnostic. Body may or may not exist.
+    let body = resp.text().unwrap_or_else(|_| "<no body>".to_string());
+    let preview: String = body.chars().take(800).collect();
+
+    let hint = match status.as_u16() {
+        401 => " — token expired or revoked; re-run `cohs-oauth-graph init`",
+        403 => " — token missing `Mail.Send` scope; re-run `cohs-oauth-graph init` to re-consent with updated scopes",
+        _ => "",
+    };
+
+    Err(anyhow!(
+        "Graph /me/sendMail ({variant} variant) failed: HTTP {}{}. Response body: {}",
+        status,
+        hint,
+        preview
+    ))
 }
 
 #[cfg(test)]
