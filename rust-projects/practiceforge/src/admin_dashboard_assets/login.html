@@ -123,10 +123,13 @@ function sendLoginCode() {
         document.getElementById('code-email-display').textContent = email;
         showStep('step-code');
         document.getElementById('login-code').focus();
-        // Dev mode: if code was returned, auto-fill it
+        // First-time bootstrap: no email identity is configured yet, so the
+        // server couldn't send the code. It hands us the code directly so we
+        // can complete the first login and configure an identity from inside
+        // the dashboard. After that, real codes arrive by email.
         if (d.dev_code) {
           document.getElementById('login-code').value = d.dev_code;
-          setMsg('code-msg', 'Dev mode — code auto-filled', false);
+          setMsg('code-msg', 'First-time setup — code shown here because no email identity is configured yet. Add one from inside the dashboard; subsequent logins will receive codes by email.', false);
         }
       } else {
         setMsg('email-msg', d.error || 'Failed', true);
