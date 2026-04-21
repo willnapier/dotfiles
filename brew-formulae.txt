@@ -8,6 +8,7 @@ avr-gcc@8
 avrdude
 bash
 bat
+berkeley-db@5
 boost
 bootloadhid
 borders
@@ -78,6 +79,7 @@ imagemagick
 imath
 inlyne
 isl
+isync
 jbig2dec
 jpeg-turbo
 jpeg-xl
@@ -161,6 +163,7 @@ mbedtls
 mdbtools
 mdloader
 media-info
+meli
 mingw-w64
 mlx
 mlx-c
@@ -169,6 +172,7 @@ mpdecimal
 mpfr
 mpg123
 mpv
+msmtp
 mujs
 ncurses
 neovim
