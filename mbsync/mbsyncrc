@@ -22,7 +22,7 @@ AuthMechs XOAUTH2
 # PassCmd output is used as the SASL XOAUTH2 token. The Python helper
 # runs a silent refresh via msal before printing, so the token is always
 # fresh at the moment of use.
-PassCmd "/Users/williamnapier/.local/bin/cohs-oauth show"
+PassCmd "$HOME/.local/bin/cohs-oauth show"
 SSLType IMAPS
 # macOS trust store is used implicitly; no CertificateFile needed.
 

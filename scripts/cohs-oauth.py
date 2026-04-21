@@ -13,6 +13,7 @@ Subcommands:
 """
 
 import json
+import platform
 import subprocess
 import sys
 import time
@@ -37,6 +38,11 @@ KEYCHAIN_SERVICE = "himalaya-cli"
 KEYCHAIN_ACCESS = "cohs-m365-access"
 KEYCHAIN_REFRESH = "cohs-m365-refresh"
 
+# Platform dispatch: macOS uses `security`, Linux uses `secret-tool` (libsecret).
+# Same attribute shape {service, account} on both, so himalaya (Rust keyring
+# crate) finds the tokens the same way regardless of OS.
+IS_MACOS = platform.system() == "Darwin"
+
 
 def load_cache() -> msal.SerializableTokenCache:
     cache = msal.SerializableTokenCache()
@@ -57,17 +63,32 @@ def build_app(cache: msal.SerializableTokenCache) -> msal.PublicClientApplicatio
 
 
 def keychain_set(account: str, value: str) -> None:
-    subprocess.run(
-        ["security", "add-generic-password", "-U", "-s", KEYCHAIN_SERVICE, "-a", account, "-w", value],
-        check=True, capture_output=True,
-    )
+    if IS_MACOS:
+        subprocess.run(
+            ["security", "add-generic-password", "-U", "-s", KEYCHAIN_SERVICE, "-a", account, "-w", value],
+            check=True, capture_output=True,
+        )
+    else:
+        # secret-tool store reads the secret from stdin. --label is required
+        # but purely cosmetic (shows up in Seahorse / keyring browsers).
+        subprocess.run(
+            ["secret-tool", "store", "--label", f"{KEYCHAIN_SERVICE}:{account}",
+             "service", KEYCHAIN_SERVICE, "account", account],
+            input=value, check=True, capture_output=True, text=True,
+        )
 
 
 def keychain_get(account: str) -> str | None:
-    r = subprocess.run(
-        ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", account, "-w"],
-        capture_output=True, text=True,
-    )
+    if IS_MACOS:
+        r = subprocess.run(
+            ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", account, "-w"],
+            capture_output=True, text=True,
+        )
+    else:
+        r = subprocess.run(
+            ["secret-tool", "lookup", "service", KEYCHAIN_SERVICE, "account", account],
+            capture_output=True, text=True,
+        )
     return r.stdout.strip() if r.returncode == 0 else None
 
 
