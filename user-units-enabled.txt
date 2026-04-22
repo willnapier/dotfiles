@@ -2,6 +2,8 @@ ai-export-watcher.service
 assistants-docs-watcher.service
 bequest-heartbeat.timer
 claude-code-nightly-cleanup.timer
+cohs-graph-token-refresh.timer
+cohs-token-refresh.timer
 collect-projects-watcher.service
 collect-projects.timer
 continuum-auto-import.timer
@@ -16,10 +18,12 @@ forge-link-manager.service
 frecency-daemon.timer
 git-auto-pull-watcher.service
 git-auto-push-watcher.service
+gmail-token-refresh.timer
 gnome-keyring-daemon.socket
 helix-undo-cleanup.timer
 link-service.service
 mail-sync.timer
+mbsync-cohs.timer
 nushell-env.service
 p11-kit-server.socket
 pipewire-pulse.service
