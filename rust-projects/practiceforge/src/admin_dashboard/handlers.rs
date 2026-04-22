@@ -1112,43 +1112,64 @@ pub struct SaveNoteRequest {
     pub note_text: String,
 }
 
-/// Payload for /api/log-pair — records a Q4/Q8 comparison from the dashboard's
-/// side-by-side view. Both notes are appended to ~/Clinical/comparisons.jsonl
-/// with the user's accepted choice (or None if both were rejected).
+/// A single variant identifier in a compare pair. Matches the `variant`
+/// shape the frontend sends on `/api/log-pair` and the shape stored in
+/// `~/Clinical/comparisons.jsonl` (v2 schema).
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub struct VariantSpec {
+    pub model: String,
+    #[serde(default = "default_true")]
+    pub with_rail: bool,
+    #[serde(default = "default_preset")]
+    pub prompt_preset: String,
+}
+
+fn default_preset() -> String {
+    "default".to_string()
+}
+
+/// Payload for /api/log-pair (v2 schema) — records a side-by-side comparison
+/// of two variants of {model, with_rail, prompt_preset}. One row is written
+/// to `~/Clinical/comparisons.jsonl` per pair.
 #[derive(Deserialize)]
 pub struct LogPairRequest {
     pub client_id: String,
     pub observation: String,
-    pub q4_note: String,
-    pub q4_generation_secs: f64,
-    pub q8_note: String,
-    pub q8_generation_secs: f64,
-    /// "q4", "q8", or null (both rejected)
+    pub variant_a: VariantSpec,
+    pub variant_a_note: String,
+    pub variant_a_secs: f64,
+    pub variant_b: VariantSpec,
+    pub variant_b_note: String,
+    pub variant_b_secs: f64,
+    /// "a", "b", or null (both rejected)
     #[serde(default)]
     pub accepted: Option<String>,
-    /// Whether Prompt-Rail was active for this pair. Default true.
-    #[serde(default = "default_true")]
-    pub prompt_rail: bool,
 }
 
-/// One row in ~/Clinical/comparisons.jsonl. Mirrors the CLI schema
-/// (clinical::faithfulness::ComparisonEntry) so downstream analysis
-/// tooling can consume both CLI- and dashboard-generated rows.
+/// Per-variant payload inside a v2 comparisons.jsonl row.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct VariantRecord {
+    pub model: String,
+    pub with_rail: bool,
+    pub prompt_preset: String,
+    pub note: String,
+    pub generation_secs: f64,
+    pub hard_failures: usize,
+    pub soft_flags: usize,
+    pub flag_details: Vec<String>,
+    pub accepted: bool,
+}
+
+/// v2 row in ~/Clinical/comparisons.jsonl — one entry per pair.
 #[derive(Serialize)]
-struct ComparisonEntry {
+struct ComparisonPairEntry {
     timestamp: String,
+    schema_version: u32,
     client_id: String,
-    model: String,
     observation: String,
-    note: String,
-    hard_failures: usize,
-    soft_flags: usize,
-    flag_details: Vec<String>,
-    attempts: usize,
+    variant_a: VariantRecord,
+    variant_b: VariantRecord,
     regen_reasons: Vec<String>,
-    generation_secs: f64,
-    accepted: Option<bool>,
-    prompt_rail: bool,
 }
 
 #[derive(Serialize)]
@@ -1542,18 +1563,36 @@ pub async fn generate_note_stream(
     let client_id = req.client_id.clone();
     let observation = req.observation.clone();
     let with_rail = req.with_rail;
+    let model_override = req.model.clone();
+    let preset_name = req.prompt_preset.clone();
 
     let (prompt, pmap) = build_fallback_prompt(&client_id, &observation, with_rail);
     let mut system_prompt = load_system_prompt();
     if let Some(addendum) = pmap.system_addendum() {
         system_prompt.push_str(&addendum);
     }
+    // Append the preset body (if any) after practitioner_additions slot.
+    // Missing / unknown presets log to stderr inside `load_preset` and return
+    // empty — we just no-op append in that case.
+    if let Some(name) = preset_name.as_deref() {
+        let body = crate::prompt_presets::load_preset(name);
+        if !body.trim().is_empty() {
+            system_prompt.push_str("\n\n");
+            system_prompt.push_str(body.trim());
+        }
+    }
 
     // Frontier backend (Anthropic API or Claude CLI subscription).
     if let Some(backend) = crate::llm::load_backend() {
-        eprintln!("[gen] {} client={client_id}", backend.backend_name());
+        eprintln!(
+            "[gen] {} client={client_id} model={} preset={} rail={}",
+            backend.backend_name(),
+            model_override.as_deref().unwrap_or("<default>"),
+            preset_name.as_deref().unwrap_or("<none>"),
+            with_rail,
+        );
         let token_stream = backend
-            .generate_stream(system_prompt, prompt)
+            .generate_stream(system_prompt, prompt, model_override)
             .await
             .map_err(|e| (StatusCode::BAD_GATEWAY, e.to_string()))?;
 
@@ -1914,12 +1953,14 @@ pub async fn save_note(
     Ok(Json(serde_json::json!({"ok": true})))
 }
 
-/// POST /api/log-pair — append a Q4/Q8 comparison pair to ~/Clinical/comparisons.jsonl.
+/// POST /api/log-pair — append a multi-variant comparison pair to
+/// ~/Clinical/comparisons.jsonl (v2 schema, one row per pair).
 ///
 /// Called by the dashboard's side-by-side compare view once the practitioner
-/// has accepted one variant or rejected both. Faithfulness stats (hard_failures,
-/// soft_flags, attempts, regen_reasons) aren't tracked at this layer — analysis
-/// tools that want them can re-run `check_faithfulness` offline against stored
+/// has accepted one variant or rejected both. Faithfulness stats
+/// (hard_failures / soft_flags / flag_details) are populated by running the
+/// same lightweight in-process check the legacy handler used — at this layer
+/// those are stubs; deeper analysis is still run offline against the stored
 /// (observation, note) pairs.
 pub async fn log_pair(
     Json(req): Json<LogPairRequest>,
@@ -1932,46 +1973,50 @@ pub async fn log_pair(
         return Err((StatusCode::BAD_REQUEST, "Invalid client ID".to_string()));
     }
 
+    // "a" | "b" | null — anything else also means "both rejected" defensively.
+    let accepted_code = req.accepted.as_deref();
+    let a_accepted = accepted_code == Some("a");
+    let b_accepted = accepted_code == Some("b");
+
+    let (a_hard, a_soft, a_details) = faithfulness_stub(&req.variant_a_note);
+    let (b_hard, b_soft, b_details) = faithfulness_stub(&req.variant_b_note);
+
     let home = dirs::home_dir()
         .ok_or((StatusCode::INTERNAL_SERVER_ERROR, "No home dir".to_string()))?;
     let path = home.join("Clinical/comparisons.jsonl");
 
-    let now = chrono::Local::now()
-        .format("%Y-%m-%dT%H:%M:%S")
+    let now = chrono::Utc::now()
+        .format("%Y-%m-%dT%H:%M:%SZ")
         .to_string();
 
-    let q4_accepted = req.accepted.as_deref() == Some("q4");
-    let q8_accepted = req.accepted.as_deref() == Some("q8");
-
-    let q4_entry = ComparisonEntry {
-        timestamp: now.clone(),
-        client_id: req.client_id.clone(),
-        model: "clinical-voice-q4".to_string(),
-        observation: req.observation.clone(),
-        note: req.q4_note,
-        hard_failures: 0,
-        soft_flags: 0,
-        flag_details: Vec::new(),
-        attempts: 0,
-        regen_reasons: Vec::new(),
-        generation_secs: req.q4_generation_secs,
-        accepted: Some(q4_accepted),
-        prompt_rail: req.prompt_rail,
-    };
-    let q8_entry = ComparisonEntry {
+    let entry = ComparisonPairEntry {
         timestamp: now,
-        client_id: req.client_id.clone(),
-        model: "clinical-voice-q8".to_string(),
+        schema_version: 2,
+        client_id: req.client_id,
         observation: req.observation,
-        note: req.q8_note,
-        hard_failures: 0,
-        soft_flags: 0,
-        flag_details: Vec::new(),
-        attempts: 0,
+        variant_a: VariantRecord {
+            model: req.variant_a.model,
+            with_rail: req.variant_a.with_rail,
+            prompt_preset: req.variant_a.prompt_preset,
+            note: req.variant_a_note,
+            generation_secs: req.variant_a_secs,
+            hard_failures: a_hard,
+            soft_flags: a_soft,
+            flag_details: a_details,
+            accepted: a_accepted,
+        },
+        variant_b: VariantRecord {
+            model: req.variant_b.model,
+            with_rail: req.variant_b.with_rail,
+            prompt_preset: req.variant_b.prompt_preset,
+            note: req.variant_b_note,
+            generation_secs: req.variant_b_secs,
+            hard_failures: b_hard,
+            soft_flags: b_soft,
+            flag_details: b_details,
+            accepted: b_accepted,
+        },
         regen_reasons: Vec::new(),
-        generation_secs: req.q8_generation_secs,
-        accepted: Some(q8_accepted),
-        prompt_rail: req.prompt_rail,
     };
 
     use tokio::io::AsyncWriteExt;
@@ -1982,18 +2027,25 @@ pub async fn log_pair(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("open jsonl: {e}")))?;
 
-    for entry in [&q4_entry, &q8_entry] {
-        let line = serde_json::to_string(entry)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("serialize: {e}")))?;
-        file.write_all(line.as_bytes())
-            .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("write jsonl: {e}")))?;
-        file.write_all(b"\n")
-            .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("write jsonl: {e}")))?;
-    }
+    let line = serde_json::to_string(&entry)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("serialize: {e}")))?;
+    file.write_all(line.as_bytes())
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("write jsonl: {e}")))?;
+    file.write_all(b"\n")
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("write jsonl: {e}")))?;
 
     Ok(Json(serde_json::json!({"ok": true})))
+}
+
+/// In-process faithfulness stub — matches the legacy log_pair handler, which
+/// writes zeroed fields and delegates real grounding analysis to offline
+/// tools (`clinical check_faithfulness`) against the persisted note. We keep
+/// the call-site shape (hard / soft / details tuple) so a richer check can
+/// drop in here without touching `log_pair`.
+fn faithfulness_stub(_note: &str) -> (usize, usize, Vec<String>) {
+    (0, 0, Vec::new())
 }
 
 /// GET /api/client/:id/notes — read the client's notes.md.
@@ -2250,6 +2302,247 @@ pub async fn end_clinic(
     // The attendance report at ~/Clinical/attendance/{date}.txt is the permanent record.
 
     Ok(Json(EndClinicResponse { report, ok: true }))
+}
+
+// ---------------------------------------------------------------------------
+// Prompt presets handler
+// ---------------------------------------------------------------------------
+
+/// GET /api/prompt-presets — enumerate the named prompt presets available in
+/// `~/.config/practiceforge/prompt-presets/`. Seeds a `default.md` on first
+/// run when the directory is missing. Always returns at least one entry.
+pub async fn prompt_presets() -> Json<Vec<crate::prompt_presets::PresetMeta>> {
+    Json(crate::prompt_presets::list_presets())
+}
+
+// ---------------------------------------------------------------------------
+// Compare analytics handler
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize)]
+pub struct VariantStats {
+    pub model: String,
+    pub with_rail: bool,
+    pub prompt_preset: String,
+    pub runs: u64,
+    pub accepts: u64,
+    pub accept_rate: f64,
+    pub avg_secs: f64,
+    pub avg_hard_failures: f64,
+    pub avg_soft_flags: f64,
+}
+
+#[derive(Serialize)]
+pub struct CompareAnalytics {
+    pub variants: Vec<VariantStats>,
+    pub total_pairs: u64,
+    pub reject_both_pairs: u64,
+}
+
+/// Accumulator for one `(model, with_rail, prompt_preset)` group.
+#[derive(Default)]
+struct Accum {
+    runs: u64,
+    accepts: u64,
+    sum_secs: f64,
+    sum_hard: f64,
+    sum_soft: f64,
+}
+
+/// Map a legacy model name to a stable, visible analytics label.
+fn map_legacy_model(model: &str) -> String {
+    match model {
+        "clinical-voice-q4" => "legacy-q4".to_string(),
+        "clinical-voice-q8" => "legacy-q8".to_string(),
+        _ => model.to_string(),
+    }
+}
+
+/// GET /api/compare/analytics — aggregate `~/Clinical/comparisons.jsonl` into
+/// per-variant stats. Tolerates both v2 pair rows and legacy per-generation
+/// rows. Unreadable or malformed rows are skipped with a stderr warning.
+pub async fn compare_analytics()
+    -> Result<Json<CompareAnalytics>, (StatusCode, String)>
+{
+    use std::collections::HashMap;
+
+    let home = dirs::home_dir()
+        .ok_or((StatusCode::INTERNAL_SERVER_ERROR, "No home dir".to_string()))?;
+    let path = home.join("Clinical/comparisons.jsonl");
+
+    if !path.exists() {
+        return Ok(Json(CompareAnalytics {
+            variants: Vec::new(),
+            total_pairs: 0,
+            reject_both_pairs: 0,
+        }));
+    }
+
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("read jsonl: {e}")))?;
+
+    // Keyed on (model, with_rail, prompt_preset) for grouping.
+    let mut groups: HashMap<(String, bool, String), Accum> = HashMap::new();
+    let mut total_pairs: u64 = 0;
+    let mut reject_both_pairs: u64 = 0;
+
+    for (line_idx, line) in raw.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let val: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!(
+                    "[compare_analytics] skipping malformed row {}: {}",
+                    line_idx + 1,
+                    e
+                );
+                continue;
+            }
+        };
+
+        // v2 rows have schema_version == 2 and variant_a/variant_b objects.
+        let is_v2 = val.get("schema_version").and_then(|v| v.as_u64()) == Some(2)
+            && val.get("variant_a").is_some()
+            && val.get("variant_b").is_some();
+
+        if is_v2 {
+            total_pairs += 1;
+            // v2 pair rows store "which variant was accepted" via the
+            // per-variant `accepted: bool` field — that's the authoritative
+            // source (log_pair writes it from the request's `accepted` code).
+            let a_accepted = val["variant_a"].get("accepted")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let b_accepted = val["variant_b"].get("accepted")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            if !a_accepted && !b_accepted {
+                reject_both_pairs += 1;
+            }
+
+            for (obj, accepted) in [
+                (&val["variant_a"], a_accepted),
+                (&val["variant_b"], b_accepted),
+            ] {
+                let Some(key) = extract_variant_key(obj) else {
+                    eprintln!(
+                        "[compare_analytics] v2 row {} missing variant key fields; skipping variant",
+                        line_idx + 1
+                    );
+                    continue;
+                };
+                let a = groups.entry(key).or_default();
+                a.runs += 1;
+                if accepted {
+                    a.accepts += 1;
+                }
+                a.sum_secs += obj.get("generation_secs")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
+                a.sum_hard += obj.get("hard_failures")
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as f64)
+                    .unwrap_or(0.0);
+                a.sum_soft += obj.get("soft_flags")
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as f64)
+                    .unwrap_or(0.0);
+            }
+        } else {
+            // Legacy row: one generation per row.
+            // {timestamp, client_id, model, observation, note, hard_failures,
+            //  soft_flags, flag_details, attempts, regen_reasons,
+            //  generation_secs, accepted, prompt_rail}
+            let Some(model_raw) = val.get("model").and_then(|v| v.as_str()) else {
+                eprintln!(
+                    "[compare_analytics] legacy row {} missing model; skipping",
+                    line_idx + 1
+                );
+                continue;
+            };
+            let model = map_legacy_model(model_raw);
+            // Per contract: legacy rows are grouped as {with_rail=true,
+            // prompt_preset="legacy"} regardless of their actual prompt_rail
+            // field — the legacy schema predates the multi-variant concept so
+            // treating them as a single grouping keeps the analytics stable.
+            let with_rail = true;
+            let prompt_preset = "legacy".to_string();
+
+            let accepted = val.get("accepted")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
+            let key = (model, with_rail, prompt_preset);
+            let a = groups.entry(key).or_default();
+            a.runs += 1;
+            if accepted {
+                a.accepts += 1;
+            }
+            a.sum_secs += val.get("generation_secs")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            a.sum_hard += val.get("hard_failures")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as f64)
+                .unwrap_or(0.0);
+            a.sum_soft += val.get("soft_flags")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as f64)
+                .unwrap_or(0.0);
+        }
+    }
+
+    let mut variants: Vec<VariantStats> = groups
+        .into_iter()
+        .map(|((model, with_rail, prompt_preset), a)| {
+            let runs_f = a.runs.max(1) as f64;
+            VariantStats {
+                model,
+                with_rail,
+                prompt_preset,
+                runs: a.runs,
+                accepts: a.accepts,
+                accept_rate: if a.runs == 0 { 0.0 } else { a.accepts as f64 / a.runs as f64 },
+                avg_secs: a.sum_secs / runs_f,
+                avg_hard_failures: a.sum_hard / runs_f,
+                avg_soft_flags: a.sum_soft / runs_f,
+            }
+        })
+        .collect();
+
+    // Stable UI order: model ASC, then rail on-before-off, then preset ASC.
+    variants.sort_by(|a, b| {
+        a.model.cmp(&b.model)
+            .then_with(|| b.with_rail.cmp(&a.with_rail))
+            .then_with(|| a.prompt_preset.cmp(&b.prompt_preset))
+    });
+
+    Ok(Json(CompareAnalytics {
+        variants,
+        total_pairs,
+        reject_both_pairs,
+    }))
+}
+
+/// Extract the grouping key `(model, with_rail, prompt_preset)` from a v2
+/// variant object. Returns `None` if `model` is missing.
+fn extract_variant_key(obj: &serde_json::Value)
+    -> Option<(String, bool, String)>
+{
+    let model = obj.get("model")
+        .and_then(|v| v.as_str())?
+        .to_string();
+    let with_rail = obj.get("with_rail")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let prompt_preset = obj.get("prompt_preset")
+        .and_then(|v| v.as_str())
+        .unwrap_or("default")
+        .to_string();
+    Some((model, with_rail, prompt_preset))
 }
 
 // ---------------------------------------------------------------------------

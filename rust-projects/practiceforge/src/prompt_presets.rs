@@ -61,7 +61,6 @@ fn ensure_dir_seeded() {
 /// The label is the first H1 line (`# Foo`). If absent, falls back to the
 /// derived name. The body is everything after the first H1 (trimmed).
 fn parse_preset(name: &str, raw: &str) -> (String, String) {
-    let mut lines = raw.lines();
     let mut label: Option<String> = None;
 
     // Scan for the first H1; everything before it is ignored.
@@ -79,25 +78,10 @@ fn parse_preset(name: &str, raw: &str) -> (String, String) {
             break;
         }
     }
-    let _ = lines; // silence unused var if lines() iterator is later needed
 
-    let label = label.unwrap_or_else(|| {
-        // Default label: capitalize name.
-        let mut chars = name.chars();
-        match chars.next() {
-            Some(c) => c.to_uppercase().chain(chars).collect(),
-            None => name.to_string(),
-        }
-    });
-    let label = if label.is_empty() {
-        let mut chars = name.chars();
-        match chars.next() {
-            Some(c) => c.to_uppercase().chain(chars).collect(),
-            None => name.to_string(),
-        }
-    } else {
-        label
-    };
+    let label = label
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| capitalize(name));
 
     let body: String = raw
         .lines()
@@ -106,6 +90,15 @@ fn parse_preset(name: &str, raw: &str) -> (String, String) {
         .join("\n");
 
     (label, body.trim().to_string())
+}
+
+/// Uppercase the first character of `s`, leaving the rest as-is.
+fn capitalize(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) => c.to_uppercase().chain(chars).collect(),
+        None => s.to_string(),
+    }
 }
 
 /// Flatten whitespace and take the first ~100 chars of the body, ignoring

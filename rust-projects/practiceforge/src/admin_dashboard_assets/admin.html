@@ -761,7 +761,6 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
               <button class="clinic-action-btn btn-reject" onclick="clinicCompareCancel()">Cancel (don't log)</button>
             </div>
           </div>
-          <div class="pf-toast" id="pf-toast"></div>
 
           <div class="letter-panel" id="clinic-letter-panel" style="display:none">
             <div class="section-head">Letter Draft</div>
@@ -1584,6 +1583,10 @@ function clinicSelectClient(clientId) {
   document.getElementById('clinic-generated-wrap').style.display = 'none';
   document.getElementById('clinic-generated-note').value = '';
 
+  // Reset compare panel + load per-client variant prefs (model/rails/prompt)
+  clinicCompareReset();
+  clinicCompareLoadPrefs(clientId);
+
   // Reset notes viewer
   S.clinicNotesVisible = false;
   document.getElementById('clinic-notes-viewer').classList.remove('visible');
@@ -1816,99 +1819,198 @@ function clinicRejectNote() {
 
 
 // =========================================================================
-// Side-by-side compare (Q4 vs Q8 parallel streaming)
+// Variant-aware compare (A vs B parallel streaming)
 // =========================================================================
 //
-// Fires two /api/generate-stream requests in parallel — one per model.
-// Each streams into its own textarea. When both are done the user picks
-// one (or rejects both). The chosen note goes to /api/save-note; both
-// notes + the decision go to /api/log-pair which appends to
-// ~/Clinical/comparisons.jsonl.
+// Each column picks a {model, with_rail, prompt_preset} triple. Columns A/B
+// fire in sequence (Ollama-friendly) against /api/generate-stream. On Accept
+// the chosen note goes to /api/save-note; the pair + decision goes to
+// /api/log-pair. On Reject both, the pair logs with accepted:null.
 
+const CLINIC_COMPARE_COLUMNS = ['a', 'b'];
 const CLINIC_COMPARE_MODELS = [
-  { key: 'q4', id: 'clinical-voice-q4' },
-  { key: 'q8', id: 'clinical-voice-q8' },
+  { value: 'claude-haiku-4-5',  label: 'Haiku 4.5'  },
+  { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
+  { value: 'claude-opus-4-7',   label: 'Opus 4.7'   },
 ];
+const CLINIC_COMPARE_DEFAULTS = {
+  a: { model: 'claude-sonnet-4-6', with_rail: true,  prompt_preset: 'default' },
+  b: { model: 'claude-sonnet-4-6', with_rail: false, prompt_preset: 'default' },
+};
 
 // Per-run state — reset at the start of every clinicCompareGenerate().
 const clinicCompareState = {
   active: false,
   observation: '',
-  q4: { note: '', secs: 0, done: false },
-  q8: { note: '', secs: 0, done: false },
-  q4_norail: { note: '', secs: 0, done: false },
-  q8_norail: { note: '', secs: 0, done: false },
+  // Per-column snapshot of the variant that produced the note in the textarea
+  a: { variant: null, note: '', secs: 0, done: false },
+  b: { variant: null, note: '', secs: 0, done: false },
 };
+
+// Cache of prompt presets fetched from /api/prompt-presets
+let clinicComparePromptPresets = null;
+
+// --- Prompt-preset cache + dropdown population ---
+async function clinicCompareEnsurePromptPresets() {
+  if (clinicComparePromptPresets) return clinicComparePromptPresets;
+  try {
+    const resp = await fetch('/api/prompt-presets');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    clinicComparePromptPresets = Array.isArray(data) ? data : [];
+  } catch (e) {
+    console.error('prompt-presets fetch failed:', e);
+    clinicComparePromptPresets = [{ name: 'default', label: 'Default', summary: '' }];
+  }
+  return clinicComparePromptPresets;
+}
+
+function clinicComparePopulatePromptSelect(col, presets, chosen) {
+  const sel = document.getElementById('clinic-compare-prompt-' + col);
+  if (!sel) return;
+  sel.innerHTML = '';
+  presets.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.name || '';
+    opt.textContent = p.label || p.name || '';
+    if (p.summary) opt.title = p.summary;
+    sel.appendChild(opt);
+  });
+  const target = chosen || CLINIC_COMPARE_DEFAULTS[col].prompt_preset;
+  // Fall back to the first preset if the desired one isn't present
+  if (presets.some(p => p.name === target)) {
+    sel.value = target;
+  } else if (presets.length > 0) {
+    sel.value = presets[0].name || '';
+  }
+}
+
+// --- localStorage prefs (per-client) ---
+function clinicCompareStorageKey(clientId) {
+  return 'pf.compare.variants.' + (clientId || '_none');
+}
+
+function clinicCompareReadVariant(col) {
+  const modelSel  = document.getElementById('clinic-compare-model-'  + col);
+  const railsSel  = document.getElementById('clinic-compare-rails-'  + col);
+  const promptSel = document.getElementById('clinic-compare-prompt-' + col);
+  return {
+    model: modelSel ? modelSel.value : CLINIC_COMPARE_DEFAULTS[col].model,
+    with_rail: railsSel ? (railsSel.value === 'true') : CLINIC_COMPARE_DEFAULTS[col].with_rail,
+    prompt_preset: promptSel ? promptSel.value : CLINIC_COMPARE_DEFAULTS[col].prompt_preset,
+  };
+}
+
+function clinicCompareApplyVariant(col, v) {
+  const modelSel  = document.getElementById('clinic-compare-model-'  + col);
+  const railsSel  = document.getElementById('clinic-compare-rails-'  + col);
+  if (modelSel)  modelSel.value  = v.model || CLINIC_COMPARE_DEFAULTS[col].model;
+  if (railsSel)  railsSel.value  = (v.with_rail === false) ? 'false' : (v.with_rail === true ? 'true' : (CLINIC_COMPARE_DEFAULTS[col].with_rail ? 'true' : 'false'));
+  // Prompt is populated async — the caller (clinicCompareLoadPrefs) handles it
+}
+
+async function clinicCompareLoadPrefs(clientId) {
+  // Load defaults (then overlay localStorage if present)
+  let prefs = {
+    a: Object.assign({}, CLINIC_COMPARE_DEFAULTS.a),
+    b: Object.assign({}, CLINIC_COMPARE_DEFAULTS.b),
+  };
+  try {
+    const raw = localStorage.getItem(clinicCompareStorageKey(clientId));
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.a) Object.assign(prefs.a, parsed.a);
+      if (parsed && parsed.b) Object.assign(prefs.b, parsed.b);
+    }
+  } catch (e) { /* ignore corrupt entries */ }
+
+  // Apply model + rails immediately
+  clinicCompareApplyVariant('a', prefs.a);
+  clinicCompareApplyVariant('b', prefs.b);
+
+  // Populate prompt selects (async — requires preset list)
+  const presets = await clinicCompareEnsurePromptPresets();
+  clinicComparePopulatePromptSelect('a', presets, prefs.a.prompt_preset);
+  clinicComparePopulatePromptSelect('b', presets, prefs.b.prompt_preset);
+}
+
+function clinicCompareSavePrefs() {
+  if (!S.clinicSelectedId) return;
+  const prefs = {
+    a: clinicCompareReadVariant('a'),
+    b: clinicCompareReadVariant('b'),
+  };
+  try {
+    localStorage.setItem(clinicCompareStorageKey(S.clinicSelectedId), JSON.stringify(prefs));
+  } catch (e) { /* storage may be full or disabled — ignore */ }
+}
+
+// --- UI helpers ---
+function clinicCompareVariantSummary(v) {
+  const modelShort = String(v.model || '').replace(/^claude-/, '');
+  const railsTxt   = v.with_rail ? 'rails on' : 'rails off';
+  return modelShort + ', ' + railsTxt + ', ' + (v.prompt_preset || 'default');
+}
+
+function clinicCompareSetColumnEnabled(col, enabled) {
+  ['model', 'rails', 'prompt'].forEach(k => {
+    const el = document.getElementById('clinic-compare-' + k + '-' + col);
+    if (el) el.disabled = !enabled;
+  });
+  const accept = document.getElementById('clinic-compare-accept-' + col);
+  const regen  = document.getElementById('clinic-compare-regen-'  + col);
+  if (accept) accept.disabled = !enabled;
+  if (regen)  regen.disabled  = !enabled;
+}
+
+function clinicCompareSetAcceptsEnabled(enabled) {
+  CLINIC_COMPARE_COLUMNS.forEach(col => {
+    const btn = document.getElementById('clinic-compare-accept-' + col);
+    if (btn) btn.disabled = !enabled;
+  });
+}
+
+function pfToast(msg, ms) {
+  const t = document.getElementById('pf-toast');
+  if (!t) return;
+  t.textContent = msg;
+  t.classList.add('visible');
+  if (t._timer) clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('visible'), ms || 2400);
+}
 
 function clinicCompareReset() {
   clinicCompareState.active = false;
   clinicCompareState.observation = '';
-  clinicCompareState.q4 = { note: '', secs: 0, done: false };
-  clinicCompareState.q8 = { note: '', secs: 0, done: false };
-  clinicCompareState.q4_norail = { note: '', secs: 0, done: false };
-  clinicCompareState.q8_norail = { note: '', secs: 0, done: false };
+  CLINIC_COMPARE_COLUMNS.forEach(col => {
+    clinicCompareState[col] = { variant: null, note: '', secs: 0, done: false };
+    const text   = document.getElementById('clinic-compare-text-'   + col);
+    const status = document.getElementById('clinic-compare-status-' + col);
+    const pane   = document.querySelector('.clinic-compare-pane[data-variant="' + col + '"]');
+    if (text)   text.value = '';
+    if (status) { status.textContent = ''; status.classList.remove('streaming', 'complete', 'error'); }
+    if (pane)   pane.removeAttribute('data-selected');
+    clinicCompareSetColumnEnabled(col, true);
+  });
   document.getElementById('clinic-compare-wrap').style.display = 'none';
-  for (const { key } of CLINIC_COMPARE_MODELS) {
-    const text = document.getElementById('clinic-compare-text-' + key);
-    const status = document.getElementById('clinic-compare-status-' + key);
-    const actions = document.getElementById('clinic-compare-actions-' + key);
-    const pane = document.querySelector('.clinic-compare-pane[data-variant="' + key + '"]');
-    if (text) text.value = '';
-    if (status) { status.textContent = ''; status.classList.remove('streaming', 'complete'); }
-    if (actions) actions.style.display = 'none';
-    if (pane) pane.removeAttribute('data-selected');
-  }
   document.getElementById('clinic-compare-global-actions').style.display = 'none';
-  document.getElementById('clinic-compare-generate-btn').disabled = false;
-  const _gb3 = document.getElementById('clinic-generate-btn'); if (_gb3) _gb3.disabled = false;
+  const gb = document.getElementById('clinic-compare-generate-btn'); if (gb) gb.disabled = false;
+  const gb2 = document.getElementById('clinic-generate-btn');        if (gb2) gb2.disabled = false;
 }
 
-// Fire a generate-stream request silently (no UI update) and store the result
-// in clinicCompareState[stateKey]. Used for norail background variants.
-async function clinicCompareStreamSilent(stateKey, modelId) {
-  const start = performance.now();
-  try {
-    const resp = await fetch('/api/generate-stream', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        client_id: S.clinicSelectedId,
-        observation: clinicCompareState.observation,
-        model: modelId,
-        with_rail: false,
-      }),
-    });
-    if (!resp.ok) { clinicCompareState[stateKey] = { note: '', secs: 0, done: true }; return; }
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '', collected = '';
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const data = line.slice(6);
-        if (data.startsWith('[DONE]')) continue;
-        collected += data;
-      }
-    }
-    const elapsed = (performance.now() - start) / 1000;
-    clinicCompareState[stateKey] = { note: collected, secs: elapsed, done: true };
-  } catch (err) {
-    clinicCompareState[stateKey] = { note: '', secs: 0, done: true };
-  }
-}
+// --- Streaming one column ---
+async function clinicCompareStreamColumn(col) {
+  const text   = document.getElementById('clinic-compare-text-'   + col);
+  const status = document.getElementById('clinic-compare-status-' + col);
+  const pane   = document.querySelector('.clinic-compare-pane[data-variant="' + col + '"]');
+  if (pane) pane.removeAttribute('data-selected');
 
-async function clinicCompareStreamOne(variantKey, modelId) {
-  const text = document.getElementById('clinic-compare-text-' + variantKey);
-  const status = document.getElementById('clinic-compare-status-' + variantKey);
-  const actions = document.getElementById('clinic-compare-actions-' + variantKey);
+  const variant = clinicCompareReadVariant(col);
+  clinicCompareState[col] = { variant: variant, note: '', secs: 0, done: false };
 
-  status.textContent = 'Generating...';
+  status.classList.remove('complete', 'error');
   status.classList.add('streaming');
+  status.textContent = 'Generating... (' + clinicCompareVariantSummary(variant) + ')';
   text.value = '';
 
   const start = performance.now();
@@ -1919,7 +2021,9 @@ async function clinicCompareStreamOne(variantKey, modelId) {
       body: JSON.stringify({
         client_id: S.clinicSelectedId,
         observation: clinicCompareState.observation,
-        model: modelId,
+        model: variant.model,
+        with_rail: variant.with_rail,
+        prompt_preset: variant.prompt_preset,
       }),
     });
     if (!resp.ok) {
@@ -1929,6 +2033,7 @@ async function clinicCompareStreamOne(variantKey, modelId) {
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let elapsedFromDone = null;
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -1938,23 +2043,42 @@ async function clinicCompareStreamOne(variantKey, modelId) {
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
         const data = line.slice(6);
-        if (data.startsWith('[DONE]')) continue;
+        if (data.startsWith('[DONE]')) { elapsedFromDone = data.replace('[DONE] ', '').trim(); continue; }
         text.value += data;
         text.scrollTop = text.scrollHeight;
       }
     }
     const elapsed = (performance.now() - start) / 1000;
     text.value = normalizeNoteSpacing(text.value);
-    clinicCompareState[variantKey] = { note: text.value, secs: elapsed, done: true };
+    if (S.clinicClientFirstName) {
+      text.value = text.value.replace(/\[CLIENT\]/g, S.clinicClientFirstName);
+    }
+    clinicCompareState[col] = { variant: variant, note: text.value, secs: elapsed, done: true };
     status.classList.remove('streaming');
     status.classList.add('complete');
     status.textContent = 'Complete — ' + elapsed.toFixed(1) + 's';
-    actions.style.display = '';
   } catch (err) {
     status.classList.remove('streaming');
-    status.textContent = 'Error';
-    text.value = '[' + variantKey + ' failed: ' + String(err) + ']';
-    clinicCompareState[variantKey] = { note: '', secs: 0, done: true };
+    status.classList.add('error');
+    status.textContent = 'Error — ' + String(err && err.message ? err.message : err);
+    clinicCompareState[col] = { variant: variant, note: '', secs: 0, done: true };
+  }
+}
+
+async function clinicCompareRegenerate(col) {
+  if (!S.clinicSelectedId) return;
+  if (!clinicCompareState.observation) {
+    // Fall back to current textarea observation (edge case: user cleared state)
+    const obs = document.getElementById('clinic-observation').value.trim();
+    if (!obs) { setClinicStatus('Write an observation first'); return; }
+    clinicCompareState.observation = obs;
+  }
+  // Preserve the other column's state entirely — only this column is re-run
+  clinicCompareSetColumnEnabled(col, false);
+  try {
+    await clinicCompareStreamColumn(col);
+  } finally {
+    clinicCompareSetColumnEnabled(col, true);
   }
 }
 
@@ -1970,87 +2094,82 @@ async function clinicCompareGenerate() {
   // Hide the single-model generate output (if it was open)
   document.getElementById('clinic-generated-wrap').style.display = 'none';
   document.getElementById('clinic-compare-wrap').style.display = '';
-  document.getElementById('clinic-compare-generate-btn').disabled = true;
-  const _gb4 = document.getElementById('clinic-generate-btn'); if (_gb4) _gb4.disabled = true;
-  // Reset panes to clean state for this run (including hidden norail variants)
-  for (const { key } of CLINIC_COMPARE_MODELS) {
-    clinicCompareState[key] = { note: '', secs: 0, done: false };
-    clinicCompareState[key + '_norail'] = { note: '', secs: 0, done: false };
-    const pane = document.querySelector('.clinic-compare-pane[data-variant="' + key + '"]');
+  const compareBtn = document.getElementById('clinic-compare-generate-btn');
+  if (compareBtn) compareBtn.disabled = true;
+
+  // Reset per-column UI (but keep the dropdown selections — they drive the run)
+  CLINIC_COMPARE_COLUMNS.forEach(col => {
+    clinicCompareState[col] = { variant: null, note: '', secs: 0, done: false };
+    const pane = document.querySelector('.clinic-compare-pane[data-variant="' + col + '"]');
     if (pane) pane.removeAttribute('data-selected');
-    const actions = document.getElementById('clinic-compare-actions-' + key);
-    if (actions) actions.style.display = 'none';
-  }
-  // Show Cancel immediately so user can escape if generation hangs
+    clinicCompareSetColumnEnabled(col, false);
+  });
+
+  // Show global actions; reject-both hidden until both streams complete
   document.getElementById('clinic-compare-global-actions').style.display = '';
-  // Hide reject-both until complete (only Cancel is meaningful while generating)
-  document.getElementById('clinic-compare-reject-btn').style.display = 'none';
+  const rejectBtn = document.getElementById('clinic-compare-reject-btn');
+  if (rejectBtn) rejectBtn.style.display = 'none';
 
-  // Fire visible streams sequentially — Ollama has limited VRAM headroom with both
-  // models resident; concurrent KV cache allocation overflows 48GB. Sequential ensures
-  // only one KV cache is active at a time.
-  for (const m of CLINIC_COMPARE_MODELS) {
-    await clinicCompareStreamOne(m.key, m.id);
+  // Stream sequentially (matches prior VRAM-friendly behaviour)
+  for (const col of CLINIC_COMPARE_COLUMNS) {
+    await clinicCompareStreamColumn(col);
   }
 
-  // Both visible done — show reject-both, then fire silent variants sequentially
-  document.getElementById('clinic-compare-reject-btn').style.display = '';
-  (async () => { for (const m of CLINIC_COMPARE_MODELS) await clinicCompareStreamSilent(m.key + '_norail', m.id); })();
+  // Done — re-enable controls, expose reject-both
+  CLINIC_COMPARE_COLUMNS.forEach(col => clinicCompareSetColumnEnabled(col, true));
+  if (rejectBtn) rejectBtn.style.display = '';
+  if (compareBtn) compareBtn.disabled = false;
+  clinicCompareState.active = false;
 }
 
-async function clinicCompareLogPair(acceptedVariant /* 'q4' | 'q8' | null */) {
-  // Log two pairs: rail-ON (with accepted decision) + rail-OFF (always accepted:null — user never saw it)
-  const pairs = [
-    {
-      client_id: S.clinicSelectedId,
-      observation: clinicCompareState.observation,
-      q4_note: clinicCompareState.q4.note,
-      q4_generation_secs: clinicCompareState.q4.secs,
-      q8_note: clinicCompareState.q8.note,
-      q8_generation_secs: clinicCompareState.q8.secs,
-      accepted: acceptedVariant,
-      prompt_rail: true,
-    },
-    {
-      client_id: S.clinicSelectedId,
-      observation: clinicCompareState.observation,
-      q4_note: clinicCompareState.q4_norail.note,
-      q4_generation_secs: clinicCompareState.q4_norail.secs,
-      q8_note: clinicCompareState.q8_norail.note,
-      q8_generation_secs: clinicCompareState.q8_norail.secs,
-      accepted: null,
-      prompt_rail: false,
-    },
-  ];
-  await Promise.all(pairs.map(async p => {
-    try {
-      const resp = await fetch('/api/log-pair', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(p),
-      });
-      if (!resp.ok) console.error('log-pair failed (rail=' + p.prompt_rail + '):', await resp.text());
-    } catch (e) { console.error('log-pair error:', e); }
-  }));
+// --- Logging / acceptance ---
+async function clinicCompareLogPair(acceptedCol /* 'a' | 'b' | null */) {
+  const a = clinicCompareState.a;
+  const b = clinicCompareState.b;
+  const payload = {
+    client_id: S.clinicSelectedId,
+    observation: clinicCompareState.observation,
+    variant_a: a.variant || clinicCompareReadVariant('a'),
+    variant_a_note: a.note || '',
+    variant_a_secs: Number((a.secs || 0).toFixed(3)),
+    variant_b: b.variant || clinicCompareReadVariant('b'),
+    variant_b_note: b.note || '',
+    variant_b_secs: Number((b.secs || 0).toFixed(3)),
+    accepted: (acceptedCol === 'a' || acceptedCol === 'b') ? acceptedCol : null,
+  };
+  try {
+    const resp = await fetch('/api/log-pair', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) console.error('log-pair failed:', await resp.text());
+  } catch (e) { console.error('log-pair error:', e); }
 }
 
-async function clinicCompareAccept(variant) {
+async function clinicCompareAccept(col) {
   if (!S.clinicSelectedId) return;
-  // Use the (possibly edited) textarea value, not the stored original
-  const text = document.getElementById('clinic-compare-text-' + variant);
+  const text = document.getElementById('clinic-compare-text-' + col);
   const noteText = text ? text.value.trim() : '';
   if (!noteText) { setClinicStatus('Chosen variant is empty'); return; }
-  // Keep state in sync with any last-minute edits before logging
-  clinicCompareState[variant].note = noteText;
+
+  // Keep state in sync with any last-minute textarea edits
+  clinicCompareState[col].note = noteText;
 
   // Visual selection
-  const pane = document.querySelector('.clinic-compare-pane[data-variant="' + variant + '"]');
+  const pane = document.querySelector('.clinic-compare-pane[data-variant="' + col + '"]');
   if (pane) pane.setAttribute('data-selected', 'true');
 
-  // Disable all buttons while saving
-  document.querySelectorAll('.clinic-compare-actions button, #clinic-compare-global-actions button').forEach(b => b.disabled = true);
+  // Prevent double-click: disable both Accept buttons immediately
+  clinicCompareSetAcceptsEnabled(false);
+  // Also disable the regen buttons + reject-both while we save
+  CLINIC_COMPARE_COLUMNS.forEach(c => {
+    const regen = document.getElementById('clinic-compare-regen-' + c);
+    if (regen) regen.disabled = true;
+  });
+  document.querySelectorAll('#clinic-compare-global-actions button').forEach(b => b.disabled = true);
 
-  setClinicStatus('Saving ' + variant.toUpperCase() + '...');
+  setClinicStatus('Saving variant ' + col.toUpperCase() + '...');
   try {
     const saveResp = await fetch('/api/save-note', {
       method: 'POST',
@@ -2061,20 +2180,31 @@ async function clinicCompareAccept(variant) {
     const saveResult = await saveResp.json();
     if (!saveResult.ok) throw new Error(saveResult.error || 'Save failed');
 
-    await clinicCompareLogPair(variant);
+    await clinicCompareLogPair(col);
 
     clinicSetStatus(S.clinicSelectedId, 'done');
+    pfToast('Saved as session note — pair logged');
+    setClinicStatus('Saved as session note — pair logged');
     clinicCompareReset();
     clinicMoveClient(1);
   } catch (e) {
     setClinicStatus('Save failed: ' + String(e));
-    document.querySelectorAll('.clinic-compare-actions button, #clinic-compare-global-actions button').forEach(b => b.disabled = false);
+    // Re-enable controls so the user can retry
+    clinicCompareSetAcceptsEnabled(true);
+    CLINIC_COMPARE_COLUMNS.forEach(c => {
+      const regen = document.getElementById('clinic-compare-regen-' + c);
+      if (regen) regen.disabled = false;
+    });
+    document.querySelectorAll('#clinic-compare-global-actions button').forEach(b => b.disabled = false);
   }
 }
 
 async function clinicCompareRejectBoth() {
-  if (!confirm('Reject both variants? Both will be logged to comparisons.jsonl as rejected.')) return;
+  if (!confirm('Reject both variants? The pair will be logged with accepted:null.')) return;
+  document.querySelectorAll('#clinic-compare-global-actions button').forEach(b => b.disabled = true);
+  clinicCompareSetAcceptsEnabled(false);
   await clinicCompareLogPair(null);
+  pfToast('Both rejected — pair logged');
   setClinicStatus('Both rejected (logged)');
   clinicCompareReset();
 }
@@ -2082,6 +2212,75 @@ async function clinicCompareRejectBoth() {
 function clinicCompareCancel() {
   clinicCompareReset();
   setClinicStatus('Comparison cancelled (not logged)');
+}
+
+// --- Analytics panel ---
+function clinicCompareAnalyticsToggle() {
+  const panel = document.getElementById('clinic-compare-analytics');
+  if (!panel) return;
+  const open = panel.getAttribute('data-open') === 'true';
+  panel.setAttribute('data-open', open ? 'false' : 'true');
+  // Auto-load on first open if no data yet
+  if (!open) {
+    const tbl = document.getElementById('clinic-compare-analytics-table');
+    if (tbl && !tbl.innerHTML.trim()) clinicCompareAnalyticsLoad();
+  }
+}
+
+function clinicCompareAnalyticsFmtPct(x) {
+  if (x == null || isNaN(x)) return '—';
+  return (x * 100).toFixed(1) + '%';
+}
+
+function clinicCompareAnalyticsFmtNum(x, digits) {
+  if (x == null || isNaN(x)) return '—';
+  return Number(x).toFixed(digits == null ? 2 : digits);
+}
+
+async function clinicCompareAnalyticsLoad() {
+  const tbl     = document.getElementById('clinic-compare-analytics-table');
+  const msg     = document.getElementById('clinic-compare-analytics-msg');
+  const footer  = document.getElementById('clinic-compare-analytics-footer');
+  if (!tbl) return;
+  msg.textContent = 'Loading...';
+  try {
+    const resp = await fetch('/api/compare/analytics');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    const variants = Array.isArray(data.variants) ? data.variants.slice() : [];
+    variants.sort((x, y) => (y.runs || 0) - (x.runs || 0));
+
+    if (variants.length === 0) {
+      tbl.innerHTML = '<div class="clinic-compare-analytics-msg">No comparison data yet.</div>';
+    } else {
+      let html = '<table><thead><tr>'
+        + '<th>Model</th><th>Rails</th><th>Preset</th>'
+        + '<th>Runs</th><th>Accept %</th><th>Avg secs</th><th>Avg failures</th>'
+        + '</tr></thead><tbody>';
+      variants.forEach(v => {
+        html += '<tr>'
+          + '<td>' + esc(v.model || '') + '</td>'
+          + '<td>' + (v.with_rail ? 'On' : 'Off') + '</td>'
+          + '<td>' + esc(v.prompt_preset || '') + '</td>'
+          + '<td>' + esc(String(v.runs != null ? v.runs : '—')) + '</td>'
+          + '<td>' + clinicCompareAnalyticsFmtPct(v.accept_rate) + '</td>'
+          + '<td>' + clinicCompareAnalyticsFmtNum(v.avg_secs, 1) + '</td>'
+          + '<td>' + clinicCompareAnalyticsFmtNum(v.avg_hard_failures, 2) + '</td>'
+          + '</tr>';
+      });
+      html += '</tbody></table>';
+      tbl.innerHTML = html;
+    }
+
+    const totalPairs      = data.total_pairs != null ? data.total_pairs : 0;
+    const rejectBothPairs = data.reject_both_pairs != null ? data.reject_both_pairs : 0;
+    footer.textContent = 'Total pairs: ' + totalPairs + ' • Reject-both: ' + rejectBothPairs;
+    msg.textContent = '';
+  } catch (e) {
+    tbl.innerHTML = '';
+    footer.textContent = '';
+    msg.textContent = 'Load failed: ' + String(e && e.message ? e.message : e);
+  }
 }
 
 // --- Client status management ---
@@ -3605,5 +3804,8 @@ updateHints();
     </div>
   </div>
 </div>
+
+<div class="pf-toast" id="pf-toast"></div>
+
 </body>
 </html>
