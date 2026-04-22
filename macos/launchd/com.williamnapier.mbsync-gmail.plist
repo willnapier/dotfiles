@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.williamnapier.mbsync-gmail</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/sh</string>
+        <string>-c</string>
+        <string>/Users/williamnapier/.local/bin/mbsync gmail &amp;&amp; /opt/homebrew/bin/notmuch new</string>
+    </array>
+    <!-- Pulls Gmail via IMAP + XOAUTH2 every 15 min, then runs notmuch
+         new to index newly-arrived messages. Pull-only: local changes
+         are propagated back by com.williamnapier.gmail-push-tags (the
+         missing half of the label-sync story). Do NOT load concurrently
+         with com.user.mail-sync (lieer) — lieer and mbsync would fight
+         over Gmail API quota and maildir state. Cutover sequence is in
+         the 2026-04-22 morning note in MESSAGEBOARD.md. -->
+    <key>StartInterval</key>
+    <integer>900</integer>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>/Users/williamnapier/Library/Logs/mbsync-gmail.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/williamnapier/Library/Logs/mbsync-gmail.log</string>
+</dict>
+</plist>

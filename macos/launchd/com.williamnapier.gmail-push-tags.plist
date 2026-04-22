@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.williamnapier.gmail-push-tags</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/williamnapier/.local/bin/practiceforge</string>
+        <string>email</string>
+        <string>gmail-push-tags</string>
+        <string>--push</string>
+    </array>
+    <!-- The push-tags half of the Gmail IMAP+notmuch stack: local
+         notmuch tag changes get reflected to Gmail as label changes
+         every 15 min. State file:
+         ~/.local/share/practiceforge/gmail-push-state.json.
+         First run bookmarks the current notmuch lastmod and does NO
+         API writes — subsequent runs push only deltas. Requires
+         com.user.mail-sync to be unloaded (lieer already handles this
+         job while it's loaded). Activation sequence in the 2026-04-22
+         morning note (MESSAGEBOARD.md). -->
+    <key>StartInterval</key>
+    <integer>900</integer>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>/Users/williamnapier/Library/Logs/gmail-push-tags.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/williamnapier/Library/Logs/gmail-push-tags.log</string>
+</dict>
+</plist>
