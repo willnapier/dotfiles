@@ -23,6 +23,7 @@ pub mod backends;
 pub mod config;
 pub mod wizard;
 pub mod m365_oauth;
+pub mod m365_imap_oauth;
 pub mod gmail_oauth;
 
 pub use transport::{Attachment, Body, Envelope, MailTransport, Mailbox};

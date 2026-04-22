@@ -365,6 +365,37 @@ enum EmailAction {
     /// refresh. Used as `send_mail`'s `OAuth2Command` for Gmail identities:
     /// the token printed feeds SmtpTransport's XOAUTH2 mode.
     GmailShow,
+    /// Print a fresh OAuth access token to stdout for IMAP/SMTP (XOAUTH2)
+    /// consumption by mbsync `PassCmd` or any other SASL-XOAUTH2 caller.
+    /// Silently refreshes first if the cached token is stale.
+    ///
+    ///  --account cohs  → Outlook/M365 IMAP scope (Thunderbird client ID)
+    ///  --account gmail → Gmail mail.google.com scope
+    ///
+    /// COHS needs a one-time `imap-init --account cohs` first to populate
+    /// the keystore; Gmail reuses the existing himalaya/practiceforge
+    /// Gmail OAuth tokens already in the keychain.
+    ImapToken {
+        /// "cohs" or "gmail"
+        #[arg(long)]
+        account: String,
+    },
+    /// First-time OAuth device-code flow for IMAP/SMTP access. Opens a
+    /// browser URL + code that the user enters to consent. On success
+    /// writes access + refresh + expires_at entries to the OS keystore.
+    /// Only needed once per account; thereafter `imap-token` refreshes
+    /// automatically.
+    ImapInit {
+        /// Currently only "cohs" is supported (Gmail uses the existing
+        /// `email init` wizard flow which registers a loopback OAuth).
+        #[arg(long)]
+        account: String,
+    },
+    /// Refresh the M365 IMAP/SMTP access token from the stored refresh
+    /// token. For use in periodic timers. Separate from `m365-refresh`
+    /// because IMAP and Graph live in different keystore slots with
+    /// different scopes.
+    M365ImapRefresh,
 }
 
 #[derive(Parser, Debug)]
@@ -1232,6 +1263,33 @@ async fn main() -> anyhow::Result<()> {
                 }
                 EmailAction::GmailShow => {
                     crate::email::gmail_oauth::show()?;
+                }
+                EmailAction::ImapToken { account } => {
+                    match account.as_str() {
+                        "cohs" => crate::email::m365_imap_oauth::show()?,
+                        "gmail" => crate::email::gmail_oauth::show()?,
+                        other => anyhow::bail!(
+                            "unknown --account {other:?}; expected \"cohs\" or \"gmail\""
+                        ),
+                    }
+                }
+                EmailAction::ImapInit { account } => {
+                    match account.as_str() {
+                        "cohs" => crate::email::m365_imap_oauth::run_device_flow_interactive()?,
+                        "gmail" => {
+                            anyhow::bail!(
+                                "Gmail first-run OAuth uses the loopback-redirect flow — run \
+                                 `practiceforge email init` and pick Gmail from the wizard."
+                            );
+                        }
+                        other => anyhow::bail!(
+                            "unknown --account {other:?}; expected \"cohs\" or \"gmail\""
+                        ),
+                    }
+                }
+                EmailAction::M365ImapRefresh => {
+                    crate::email::m365_imap_oauth::refresh()?;
+                    eprintln!("✓ M365 IMAP access token refreshed.");
                 }
                 EmailAction::GraphTest { to, subject, body } => {
                     use crate::email::backends::{
