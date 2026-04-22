@@ -3684,41 +3684,9 @@ pub async fn email_smtp_setup(
     Json(serde_json::json!({"ok": true, "from_email": req.from_email, "label": req.label}))
 }
 
-/// Write a password into the OS keychain under service/account.
+/// Write a password into the OS keystore under service/account.
 fn store_keychain_password(service: &str, account: &str, password: &str) -> Result<(), String> {
-    use std::process::Command;
-    if cfg!(target_os = "macos") {
-        // Delete existing entry (ignore failure)
-        let _ = Command::new("security")
-            .args(["delete-generic-password", "-s", service, "-a", account])
-            .output();
-        let status = Command::new("security")
-            .args([
-                "add-generic-password",
-                "-s", service, "-a", account, "-w", password, "-U",
-            ])
-            .status()
-            .map_err(|e| format!("spawn security: {e}"))?;
-        if !status.success() {
-            return Err(format!("security add-generic-password exited {status}"));
-        }
-    } else {
-        use std::io::Write;
-        let mut child = Command::new("secret-tool")
-            .args(["store", "--label", account, "service", service, "account", account])
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("spawn secret-tool: {e}"))?;
-        {
-            let stdin = child.stdin.as_mut().ok_or_else(|| "no stdin on secret-tool".to_string())?;
-            stdin.write_all(password.as_bytes()).map_err(|e| e.to_string())?;
-        }
-        let status = child.wait().map_err(|e| e.to_string())?;
-        if !status.success() {
-            return Err(format!("secret-tool exited {status}"));
-        }
-    }
-    Ok(())
+    crate::keystore::set(service, account, password).map_err(|e| e.to_string())
 }
 
 // ---------------------------------------------------------------------------

@@ -221,68 +221,13 @@ fn prompt_password(label: &str) -> Result<String> {
 // Keychain helper — reused here because legacy's `store_password` is private.
 // ---------------------------------------------------------------------------
 
-/// Store a password under (service, account) in the OS keychain.
+/// Store a password under (service, account) in the OS keystore.
 ///
-/// Mirrors `legacy::store_password` but takes an explicit service so future
-/// installs can namespace per-identity if they choose. Current callers all
-/// pass `"clinical-email"` to stay compatible with the existing stored
-/// credential, but parameterising now costs nothing.
+/// Thin wrapper over `crate::keystore::set` so the wizard's call-sites stay
+/// readable.
 fn store_password(service: &str, account: &str, password: &str) -> Result<()> {
-    use std::process::Command;
-
-    if cfg!(target_os = "macos") {
-        // Delete any existing entry first so `add` doesn't collide. Ignore
-        // failure — not-found is the common case.
-        Command::new("security")
-            .args([
-                "delete-generic-password",
-                "-s",
-                service,
-                "-a",
-                account,
-            ])
-            .output()
-            .ok();
-
-        let status = Command::new("security")
-            .args([
-                "add-generic-password",
-                "-s",
-                service,
-                "-a",
-                account,
-                "-w",
-                password,
-                "-U",
-            ])
-            .status()
-            .context("Failed to store in macOS keychain")?;
-
-        if !status.success() {
-            bail!("Failed to store password in keychain");
-        }
-    } else {
-        let mut child = Command::new("secret-tool")
-            .args([
-                "store",
-                "--label",
-                "Clinical email",
-                "service",
-                service,
-                "account",
-                account,
-            ])
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .context("Failed to run secret-tool")?;
-
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(password.as_bytes())?;
-        }
-        child.wait()?;
-    }
-
-    Ok(())
+    crate::keystore::set(service, account, password)
+        .with_context(|| format!("storing {service}/{account} in keystore"))
 }
 
 // ---------------------------------------------------------------------------

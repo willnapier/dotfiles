@@ -333,90 +333,13 @@ fn pkce_challenge(verifier: &str) -> String {
 }
 
 fn keychain_set(account: &str, value: &str) -> Result<()> {
-    if cfg!(target_os = "macos") {
-        let output = Command::new("security")
-            .args([
-                "add-generic-password",
-                "-U",
-                "-s",
-                KEYCHAIN_SERVICE,
-                "-a",
-                account,
-                "-w",
-                value,
-            ])
-            .output()
-            .context("spawning `security add-generic-password`")?;
-        if !output.status.success() {
-            return Err(anyhow!(
-                "keychain write failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
-        }
-    } else {
-        use std::io::Write;
-        let mut child = Command::new("secret-tool")
-            .args([
-                "store",
-                "--label",
-                account,
-                "service",
-                KEYCHAIN_SERVICE,
-                "account",
-                account,
-            ])
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .context("spawning `secret-tool store`")?;
-        {
-            let stdin = child
-                .stdin
-                .as_mut()
-                .ok_or_else(|| anyhow!("no stdin on secret-tool"))?;
-            stdin.write_all(value.as_bytes())?;
-        }
-        let status = child.wait().context("waiting for secret-tool")?;
-        if !status.success() {
-            return Err(anyhow!("secret-tool store exited with status {status}"));
-        }
-    }
-    Ok(())
+    crate::keystore::set(KEYCHAIN_SERVICE, account, value)
+        .with_context(|| format!("storing {account} in keystore"))
 }
 
 fn keychain_get(account: &str) -> Result<Option<String>> {
-    let output = if cfg!(target_os = "macos") {
-        Command::new("security")
-            .args([
-                "find-generic-password",
-                "-s",
-                KEYCHAIN_SERVICE,
-                "-a",
-                account,
-                "-w",
-            ])
-            .output()
-            .context("spawning `security find-generic-password`")?
-    } else {
-        Command::new("secret-tool")
-            .args([
-                "lookup",
-                "service",
-                KEYCHAIN_SERVICE,
-                "account",
-                account,
-            ])
-            .output()
-            .context("spawning `secret-tool lookup`")?
-    };
-
-    if !output.status.success() {
-        return Ok(None);
-    }
-    let value = String::from_utf8(output.stdout)
-        .context("keychain output not UTF-8")?
-        .trim_end_matches(['\r', '\n'])
-        .to_string();
-    if value.is_empty() { Ok(None) } else { Ok(Some(value)) }
+    crate::keystore::get(KEYCHAIN_SERVICE, account)
+        .with_context(|| format!("reading {account} from keystore"))
 }
 
 #[cfg(test)]
