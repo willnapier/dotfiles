@@ -1,0 +1,59 @@
+name: Windows CI (PracticeForge)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'rust-projects/practiceforge/**'
+      - '.github/workflows/windows-ci.yml'
+  pull_request:
+    paths:
+      - 'rust-projects/practiceforge/**'
+      - '.github/workflows/windows-ci.yml'
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: rust-projects/practiceforge
+
+jobs:
+  build:
+    name: Build (windows-msvc)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust-projects/practiceforge
+
+      - name: cargo build --release
+        run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: practiceforge-windows-${{ github.sha }}
+          path: rust-projects/practiceforge/target/x86_64-pc-windows-msvc/release/practiceforge.exe
+          retention-days: 14
+
+  test-keystore:
+    name: Test (keystore module)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust-projects/practiceforge
+
+      - name: cargo test keystore::
+        run: cargo test --bin practiceforge --target x86_64-pc-windows-msvc keystore::
