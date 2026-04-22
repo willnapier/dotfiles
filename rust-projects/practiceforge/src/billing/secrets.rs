@@ -104,13 +104,29 @@ impl BillingSecrets {
         std::fs::write(&path, &data)
             .with_context(|| format!("Cannot write secrets file: {}", path.display()))?;
 
-        // chmod 600 — owner read/write only
+        // chmod 600 — owner read/write only.
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             let perms = std::fs::Permissions::from_mode(0o600);
             std::fs::set_permissions(&path, perms)
                 .with_context(|| format!("Cannot set permissions on {}", path.display()))?;
+        }
+
+        // Windows: no-op for v1.
+        //
+        // The file lands in `%APPDATA%` (via `crate::config::config_dir()`),
+        // which is per-user by default — other users on the machine cannot
+        // read it without explicit ACL grants. For a single-user laptop
+        // (the practitioner's own machine) this is sufficient.
+        //
+        // For a multi-user Windows deployment (shared receptionist machine,
+        // server-class box) explicit DACL hardening via the `windows` crate
+        // would tighten the file's ACL to owner-only. Deferred — flagged in
+        // the feasibility doc §10.4 and revisitable when needed.
+        #[cfg(windows)]
+        {
+            // Nothing to do beyond what `%APPDATA%`'s default ACL provides.
         }
 
         Ok(())
