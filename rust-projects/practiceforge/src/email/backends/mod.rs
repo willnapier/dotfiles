@@ -25,7 +25,9 @@ pub mod graph;
 pub use smtp::{AuthMode, Encryption, SmtpConfig, SmtpTransport};
 pub use graph::{GraphConfig, GraphTransport};
 
-use crate::email::auth::{CommandTokenSource, KeychainPasswordSource, TokenSource};
+use crate::email::auth::{
+    CommandTokenSource, KeychainOAuthTokenSource, KeychainPasswordSource, TokenSource,
+};
 use crate::email::MailTransport;
 
 /// Which backend delivers mail for this identity.
@@ -59,6 +61,13 @@ pub enum AuthConfig {
     // into `o_auth2_command`, which doesn't match the spec's `oauth2_command`.
     #[serde(rename = "oauth2_command")]
     OAuth2Command { command: String },
+    /// In-Rust OAuth refresh-on-read for the COHS Microsoft 365 case.
+    /// No fields — the keystore service/account names and refresh
+    /// function are conventions hardcoded in
+    /// [`KeychainOAuthTokenSource::for_m365`]. Removes the dependency
+    /// on `cohs-oauth-graph show` (Python) for token retrieval.
+    #[serde(rename = "keychain_m365")]
+    KeychainM365,
 }
 
 /// A complete send-identity configuration: what backend, what auth.

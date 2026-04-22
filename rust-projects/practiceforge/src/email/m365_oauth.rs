@@ -34,9 +34,19 @@ const TOKEN_URL: &str = "https://login.microsoftonline.com/common/oauth2/v2.0/to
 /// Scopes for Graph sendMail. `offline_access` gets us a refresh_token.
 const SCOPES: &str = "https://graph.microsoft.com/Mail.Send offline_access";
 
-const KEYCHAIN_SERVICE: &str = "himalaya-cli";
-const KEY_ACCESS: &str = "cohs-m365-graph-access";
-const KEY_REFRESH: &str = "cohs-m365-graph-refresh";
+/// Keychain/libsecret service under which all `cohs-oauth-graph` tokens
+/// live. Shared with the Python helper — a Rust-acquired entry is read by
+/// the Python helper and vice-versa.
+pub(crate) const KEYCHAIN_SERVICE: &str = "himalaya-cli";
+/// Account name for the access token. JWT, ~60–90 min lifetime.
+pub(crate) const KEY_ACCESS: &str = "cohs-m365-graph-access";
+/// Account name for the refresh token. Long-lived (60–90 days inactive).
+pub(crate) const KEY_REFRESH: &str = "cohs-m365-graph-refresh";
+/// Account name for the access-token absolute Unix expiry timestamp,
+/// stored as a base-10 string. Computed at write time as `now() +
+/// expires_in`; `None` from Microsoft's response → no entry written
+/// (legacy/uncertain entries trigger an immediate refresh on next read).
+pub(crate) const KEY_EXPIRES_AT: &str = "cohs-m365-graph-expires-at";
 
 /// What a begin call returns. All fields come straight from Microsoft's
 /// devicecode endpoint except for `device_code`, which the caller stores
@@ -70,7 +80,10 @@ pub enum PollResult {
 struct TokenResponse {
     access_token: String,
     refresh_token: Option<String>,
-    #[allow(dead_code)]
+    /// Lifetime of `access_token` in seconds. Microsoft always returns
+    /// this in practice (typically 3600–5400) but the spec marks it
+    /// optional, so we treat absence as "expiry unknown — refresh on
+    /// next read".
     expires_in: Option<u64>,
 }
 
@@ -217,6 +230,17 @@ fn store_tokens(tokens: &TokenResponse) -> Result<()> {
     if let Some(rt) = &tokens.refresh_token {
         keychain_set(KEY_REFRESH, rt)
             .context("storing refresh_token in keychain")?;
+    }
+    // Compute and persist absolute expiry. Storing `now + expires_in`
+    // (rather than `expires_in` itself) means later readers don't need
+    // to know when the token was issued — they just compare to wall
+    // clock. If `expires_in` is missing we deliberately leave any
+    // existing expiry entry stale; the proactive refresh path treats
+    // "no expiry" as "must refresh", which is the safe default.
+    if let Some(secs) = tokens.expires_in {
+        let expires_at = chrono::Utc::now().timestamp() + secs as i64;
+        keychain_set(KEY_EXPIRES_AT, &expires_at.to_string())
+            .context("storing expires_at in keychain")?;
     }
     Ok(())
 }
