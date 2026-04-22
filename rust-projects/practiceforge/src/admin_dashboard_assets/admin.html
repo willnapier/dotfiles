@@ -571,6 +571,11 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
           <div style="margin-bottom:6px">⚠ TM3 session expired</div>
           <button onclick="clinicRelogin()" id="clinic-relogin-btn" style="background:var(--red);border:none;color:#fff;padding:4px 10px;border-radius:3px;cursor:pointer;font-size:12px;width:100%">Re-authenticate (Touch ID)</button>
         </div>
+        <div id="clinic-firsttime-banner" style="display:none;background:rgba(38,139,210,0.15);border:1px solid var(--blue);color:var(--fg);padding:8px 10px;margin:6px 10px;border-radius:4px;font-size:12px">
+          <div style="font-weight:600;margin-bottom:4px">Connect TM3</div>
+          <div style="margin-bottom:6px">First-time setup: sign in to your TM3 account so PracticeForge can read your diary. You'll use Touch ID or your TM3 password.</div>
+          <button onclick="clinicConnectTm3()" id="clinic-connect-tm3-btn" style="background:var(--blue);border:none;color:#fff;padding:4px 10px;border-radius:3px;cursor:pointer;font-size:12px;width:100%">Connect TM3 (Touch ID)</button>
+        </div>
         <div class="clinic-client-list" id="clinic-client-list">
           <div class="empty" id="clinic-list-empty">No clients for this date.</div>
         </div>
@@ -1200,15 +1205,22 @@ function clinicFreshnessPoll(dateStr, force) {
 
       const state = (data.refresh && data.refresh.state) || 'idle';
       const banner = document.getElementById('clinic-expired-banner');
+      const firstTimeBanner = document.getElementById('clinic-firsttime-banner');
 
       if (state === 'expired') {
         banner.style.display = '';
+        firstTimeBanner.style.display = 'none';
+      } else if (state === 'neverconnected') {
+        banner.style.display = 'none';
+        firstTimeBanner.style.display = '';
       } else if (state === 'running') {
         banner.style.display = 'none';
+        firstTimeBanner.style.display = 'none';
         // Poll again shortly — capture typically takes 15-45s.
         clinicFreshnessTimer = setTimeout(() => clinicFreshnessPoll(dateStr, false), 4000);
       } else if (state === 'done') {
         banner.style.display = 'none';
+        firstTimeBanner.style.display = 'none';
         // New data landed — reload session view silently.
         // We only reload if we haven't switched dates.
         fetch('/api/session?date=' + encodeURIComponent(dateStr))
@@ -1223,9 +1235,11 @@ function clinicFreshnessPoll(dateStr, force) {
           .catch(() => {});
       } else if (state === 'failed') {
         banner.style.display = 'none';
+        firstTimeBanner.style.display = 'none';
         // Leave the stale data visible; freshness badge shows the age.
       } else {
         banner.style.display = 'none';
+        firstTimeBanner.style.display = 'none';
       }
     })
     .catch(() => {
@@ -1243,6 +1257,8 @@ function clinicUpdateFreshnessText(data) {
     txt = 'Refreshing from TM3…';
   } else if (state === 'expired') {
     txt = 'TM3 session expired';
+  } else if (state === 'neverconnected') {
+    txt = 'TM3 not connected yet';
   } else if (age === null || age === undefined) {
     txt = 'No data captured yet';
   } else if (age < 60) {
@@ -1286,6 +1302,33 @@ function clinicRelogin() {
       btn.disabled = false;
       btn.textContent = originalLabel;
       alert('Re-login network error: ' + e);
+    });
+}
+
+// First-time TM3 connect. Reuses the same /api/session/tm3-relogin endpoint
+// as clinicRelogin() — the underlying `tm3-upload login` subprocess handles
+// both the "never connected" and "expired" cases transparently.
+function clinicConnectTm3() {
+  const btn = document.getElementById('clinic-connect-tm3-btn');
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Authenticating (Touch ID on dock/keyboard)…';
+  fetch('/api/session/tm3-relogin', { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+      if (data.ok) {
+        document.getElementById('clinic-firsttime-banner').style.display = 'none';
+        clinicManualRefresh();
+      } else {
+        alert('Connect failed: ' + (data.error || 'unknown error'));
+      }
+    })
+    .catch(e => {
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+      alert('Connect network error: ' + e);
     });
 }
 

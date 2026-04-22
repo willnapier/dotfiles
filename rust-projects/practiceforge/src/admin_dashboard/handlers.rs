@@ -1180,6 +1180,9 @@ enum RefreshState {
     /// Last capture failed because TM3 session cookies expired. UI should
     /// surface a re-auth prompt.
     Expired,
+    /// No TM3 cookies exist yet on this machine — first-time setup. UI
+    /// should surface an informational "Connect TM3" prompt (blue, not red).
+    NeverConnected,
     /// Last capture failed for some other reason; message is stderr tail.
     Failed { message: String },
 }
@@ -1291,6 +1294,8 @@ fn run_tm3_capture(date: &str) {
             let stderr = String::from_utf8_lossy(&out.stderr);
             if stderr.contains("Session expired") {
                 RefreshState::Expired
+            } else if stderr.contains("No TM3 session") {
+                RefreshState::NeverConnected
             } else if !out.status.success() {
                 // Keep the last ~400 chars of stderr for the frontend.
                 let msg: String = stderr.chars().rev().take(400).collect::<String>().chars().rev().collect();
