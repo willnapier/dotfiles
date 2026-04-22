@@ -396,6 +396,22 @@ enum EmailAction {
     /// because IMAP and Graph live in different keystore slots with
     /// different scopes.
     M365ImapRefresh,
+    /// Push local notmuch tag changes back to Gmail as label changes —
+    /// the missing half of an IMAP + notmuch Gmail stack. Compares each
+    /// recently-modified notmuch message's tag set against Gmail's
+    /// current label set for the same message, and issues
+    /// `/messages/{id}/modify` calls for the delta.
+    ///
+    /// Defaults to dry-run (prints what it WOULD do, doesn't touch
+    /// Gmail, doesn't advance state). Pass `--push` to actually write.
+    ///
+    /// State file: ~/.local/share/practiceforge/gmail-push-state.json
+    /// tracks last-seen notmuch lastmod + the label-ID cache.
+    GmailPushTags {
+        /// Issue real Gmail API modify calls (default is dry-run).
+        #[arg(long)]
+        push: bool,
+    },
 }
 
 #[derive(Parser, Debug)]
@@ -1290,6 +1306,9 @@ async fn main() -> anyhow::Result<()> {
                 EmailAction::M365ImapRefresh => {
                     crate::email::m365_imap_oauth::refresh()?;
                     eprintln!("✓ M365 IMAP access token refreshed.");
+                }
+                EmailAction::GmailPushTags { push } => {
+                    crate::email::gmail_push_tags::run(!push)?;
                 }
                 EmailAction::GraphTest { to, subject, body } => {
                     use crate::email::backends::{
