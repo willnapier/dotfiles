@@ -1142,6 +1142,226 @@ pub async fn save_session(
     Ok(Json(serde_json::json!({"ok": true})))
 }
 
+// ---------------------------------------------------------------------------
+// Background TM3 refresh coordination.
+//
+// On dashboard page load (clinic view mount), the frontend calls
+// /api/session/refresh?date=today. The handler:
+//   - Reports the age of the session file
+//   - If stale (> STALE_THRESHOLD_SECS), spawns `tm3-diary-capture --live`
+//     as a background task, returns immediately with status "refreshing"
+//   - Deduplicates concurrent refresh attempts via a global Mutex
+//
+// The frontend polls the same endpoint every few seconds until status
+// flips to "fresh". It then refetches /api/session to show new data.
+//
+// If the capture fails with session expiry, status becomes "expired" and
+// the frontend surfaces a banner offering to re-authenticate, which hits
+// /api/session/tm3-relogin (subprocess `tm3-upload login` — requires
+// user to touch the Touch ID sensor or enter password).
+// ---------------------------------------------------------------------------
+
+/// Session data older than this is considered stale and a refresh gets
+/// kicked off. 5 minutes hits a good compromise: frequent enough to keep
+/// the Clinic view current during active use, infrequent enough not to
+/// wear out TM3 or fire Touch ID re-auth prompts unnecessarily.
+const STALE_THRESHOLD_SECS: u64 = 300;
+
+/// State of the most-recent background refresh attempt. Keyed by date.
+#[derive(Clone, Serialize)]
+#[serde(tag = "state", rename_all = "lowercase")]
+enum RefreshState {
+    /// No refresh in flight. Session file is current (or never stale).
+    Idle,
+    /// Background capture is running right now.
+    Running,
+    /// Last capture completed at this instant; data on disk is fresh.
+    Done { at_epoch: u64 },
+    /// Last capture failed because TM3 session cookies expired. UI should
+    /// surface a re-auth prompt.
+    Expired,
+    /// Last capture failed for some other reason; message is stderr tail.
+    Failed { message: String },
+}
+
+fn refresh_state_table() -> &'static std::sync::Mutex<std::collections::HashMap<String, RefreshState>> {
+    static TABLE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, RefreshState>>> =
+        std::sync::OnceLock::new();
+    TABLE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+#[derive(Deserialize)]
+pub struct SessionRefreshQuery {
+    pub date: Option<String>,
+    /// If true, trigger a refresh even if the file isn't stale. Frontend
+    /// sends this on explicit "Refresh" button clicks.
+    #[serde(default)]
+    pub force: bool,
+}
+
+/// GET /api/session/refresh?date=YYYY-MM-DD[&force=true]
+///
+/// Reports freshness of the session file and kicks off a background
+/// `tm3-diary-capture --live` if the file is stale (or force=true).
+/// Deduplicates: if a capture is already in flight for this date, just
+/// returns "running" without spawning another.
+pub async fn session_refresh(
+    Query(params): Query<SessionRefreshQuery>,
+) -> Json<serde_json::Value> {
+    let date = params
+        .date
+        .unwrap_or_else(|| Local::now().format("%Y-%m-%d").to_string());
+    let path = session_path(&date);
+
+    let (age_secs, mtime_epoch) = match std::fs::metadata(&path) {
+        Ok(meta) => match meta.modified() {
+            Ok(mtime) => {
+                let epoch = mtime
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                (Some(now.saturating_sub(epoch)), Some(epoch))
+            }
+            Err(_) => (None, None),
+        },
+        Err(_) => (None, None),
+    };
+
+    let is_stale = age_secs.map(|a| a > STALE_THRESHOLD_SECS).unwrap_or(true);
+    let current_state = refresh_state_table()
+        .lock()
+        .unwrap()
+        .get(&date)
+        .cloned()
+        .unwrap_or(RefreshState::Idle);
+
+    // Never stack refreshes: if one's already running, just report it.
+    let already_running = matches!(current_state, RefreshState::Running);
+
+    let should_refresh = (params.force || is_stale) && !already_running;
+
+    if should_refresh {
+        refresh_state_table()
+            .lock()
+            .unwrap()
+            .insert(date.clone(), RefreshState::Running);
+        let date_for_task = date.clone();
+        tokio::task::spawn_blocking(move || {
+            run_tm3_capture(&date_for_task);
+        });
+    }
+
+    let state_after = refresh_state_table()
+        .lock()
+        .unwrap()
+        .get(&date)
+        .cloned()
+        .unwrap_or(RefreshState::Idle);
+
+    Json(serde_json::json!({
+        "date": date,
+        "mtime_epoch": mtime_epoch,
+        "age_seconds": age_secs,
+        "stale": is_stale,
+        "refresh": state_after,
+        "threshold_seconds": STALE_THRESHOLD_SECS,
+    }))
+}
+
+/// Run `tm3-diary-capture --live` and record the outcome in the refresh
+/// state table. Invoked from a tokio blocking task; must not panic even
+/// on weird subprocess output.
+fn run_tm3_capture(date: &str) {
+    use std::process::Command;
+
+    let tm3 = dirs::home_dir()
+        .unwrap_or_default()
+        .join(".local/bin/tm3-diary-capture");
+
+    let output = Command::new(&tm3)
+        .arg("--live")
+        .output();
+
+    let new_state = match output {
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            if stderr.contains("Session expired") {
+                RefreshState::Expired
+            } else if !out.status.success() {
+                // Keep the last ~400 chars of stderr for the frontend.
+                let msg: String = stderr.chars().rev().take(400).collect::<String>().chars().rev().collect();
+                RefreshState::Failed { message: msg }
+            } else {
+                let at = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                RefreshState::Done { at_epoch: at }
+            }
+        }
+        Err(e) => RefreshState::Failed {
+            message: format!("could not spawn tm3-diary-capture: {e}"),
+        },
+    };
+
+    refresh_state_table()
+        .lock()
+        .unwrap()
+        .insert(date.to_string(), new_state);
+}
+
+/// POST /api/session/tm3-relogin
+///
+/// Runs `tm3-upload login` as a subprocess. Blocks until done (typically
+/// 5-15s while the user authenticates via Touch ID or password). On
+/// success, clears the expired state so the next refresh proceeds
+/// normally. The frontend should call /api/session/refresh?force=true
+/// after this returns to immediately repopulate today's data.
+pub async fn session_tm3_relogin() -> Json<serde_json::Value> {
+    use std::process::Command;
+
+    let tm3_upload = dirs::home_dir()
+        .unwrap_or_default()
+        .join(".local/bin/tm3-upload");
+
+    let outcome = tokio::task::spawn_blocking(move || {
+        Command::new(&tm3_upload).arg("login").output()
+    })
+    .await;
+
+    match outcome {
+        Ok(Ok(out)) if out.status.success() => {
+            // Clear any lingering "Expired" state for any date — a fresh
+            // login makes all of them retry-able.
+            refresh_state_table().lock().unwrap().clear();
+            Json(serde_json::json!({
+                "ok": true,
+                "stdout": String::from_utf8_lossy(&out.stdout).to_string(),
+            }))
+        }
+        Ok(Ok(out)) => Json(serde_json::json!({
+            "ok": false,
+            "error": format!(
+                "tm3-upload login exited {}: {}",
+                out.status,
+                String::from_utf8_lossy(&out.stderr)
+            ),
+        })),
+        Ok(Err(e)) => Json(serde_json::json!({
+            "ok": false,
+            "error": format!("could not spawn tm3-upload: {e}"),
+        })),
+        Err(e) => Json(serde_json::json!({
+            "ok": false,
+            "error": format!("join error: {e}"),
+        })),
+    }
+}
+
 /// POST /api/generate — run `clinical note` with observation, return generated note.
 pub async fn generate_note(
     Json(req): Json<GenerateRequest>,

@@ -82,6 +82,10 @@ pub fn build_router() -> Router {
         .route("/api/letter/send", post(handlers::letter_send))
         // Clinic workflow
         .route("/api/session", get(handlers::get_session).put(handlers::save_session))
+        // Freshness check + async TM3 refresh trigger
+        .route("/api/session/refresh", get(handlers::session_refresh))
+        // Invoke tm3-upload login when cookies have expired
+        .route("/api/session/tm3-relogin", post(handlers::session_tm3_relogin))
         .route("/api/generate", post(handlers::generate_note))
         .route("/api/generate-stream", post(handlers::generate_note_stream))
         .route("/api/save-note", post(handlers::save_note))

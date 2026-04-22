@@ -560,6 +560,17 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
             <button onclick="clinicNextDay()" title="Next day">&#9654;</button>
           </div>
         </div>
+        <!-- Freshness badge: shows when the session file was last updated by
+             tm3-diary-capture. Also surfaces session-expired state with a
+             re-authenticate button. Updated whenever loadClinicSession runs. -->
+        <div id="clinic-freshness" style="font-size:11px;color:var(--fg-dim);padding:4px 10px;border-top:1px solid var(--border)">
+          <span id="clinic-freshness-text">Updated: checking…</span>
+          <button id="clinic-freshness-refresh" onclick="clinicManualRefresh()" title="Refresh from TM3 now" style="float:right;background:none;border:none;color:var(--fg-dim);cursor:pointer;padding:0 4px;font-size:13px">↻</button>
+        </div>
+        <div id="clinic-expired-banner" style="display:none;background:rgba(220,60,60,0.15);border:1px solid var(--red);color:var(--fg);padding:8px 10px;margin:6px 10px;border-radius:4px;font-size:12px">
+          <div style="margin-bottom:6px">⚠ TM3 session expired</div>
+          <button onclick="clinicRelogin()" id="clinic-relogin-btn" style="background:var(--red);border:none;color:#fff;padding:4px 10px;border-radius:3px;cursor:pointer;font-size:12px;width:100%">Re-authenticate (Touch ID)</button>
+        </div>
         <div class="clinic-client-list" id="clinic-client-list">
           <div class="empty" id="clinic-list-empty">No clients for this date.</div>
         </div>
@@ -1148,6 +1159,133 @@ function loadClinicSession() {
       S.clinicClientIdx = -1;
       renderClinicList();
       setClinicStatus('Failed to load session: ' + String(e));
+    });
+
+  // Fire-and-forget freshness check. If the session file is stale, the
+  // server kicks off a background capture; we poll for completion and
+  // re-fetch the session to show fresh data. No latency for first paint
+  // since the /api/session call above uses whatever's already on disk.
+  clinicCheckFreshness(dateStr, /*force=*/false);
+}
+
+// ---------------------------------------------------------------------------
+// Freshness + auto-refresh + expired-session handling.
+// On mount of the Clinic view, we poll /api/session/refresh. If the session
+// file is older than the server's threshold (5 min), the server spawns
+// tm3-diary-capture --live in the background and we poll for completion.
+// When it flips to done, we reload the session display silently. If TM3
+// cookies have expired, the banner with a "Re-authenticate" button appears.
+// ---------------------------------------------------------------------------
+
+let clinicFreshnessTimer = null;
+let clinicFreshnessDate = null;    // date string the current polling loop is for
+
+function clinicCheckFreshness(dateStr, force) {
+  // Abort any in-flight polling loop for a previous date.
+  if (clinicFreshnessTimer) { clearTimeout(clinicFreshnessTimer); clinicFreshnessTimer = null; }
+  clinicFreshnessDate = dateStr;
+  clinicFreshnessPoll(dateStr, force);
+}
+
+function clinicFreshnessPoll(dateStr, force) {
+  const url = '/api/session/refresh?date=' + encodeURIComponent(dateStr) + (force ? '&force=true' : '');
+  fetch(url)
+    .then(r => r.json())
+    .then(data => {
+      // Guard: user may have navigated to a different date while polling.
+      if (dateStr !== clinicFreshnessDate) return;
+
+      // Update the small age badge.
+      clinicUpdateFreshnessText(data);
+
+      const state = (data.refresh && data.refresh.state) || 'idle';
+      const banner = document.getElementById('clinic-expired-banner');
+
+      if (state === 'expired') {
+        banner.style.display = '';
+      } else if (state === 'running') {
+        banner.style.display = 'none';
+        // Poll again shortly — capture typically takes 15-45s.
+        clinicFreshnessTimer = setTimeout(() => clinicFreshnessPoll(dateStr, false), 4000);
+      } else if (state === 'done') {
+        banner.style.display = 'none';
+        // New data landed — reload session view silently.
+        // We only reload if we haven't switched dates.
+        fetch('/api/session?date=' + encodeURIComponent(dateStr))
+          .then(r => r.json())
+          .then(session => {
+            if (dateStr !== clinicFreshnessDate) return;
+            S.clinicSession = session;
+            if (!session.clients) S.clinicSession.clients = [];
+            renderClinicList();
+            checkEndClinicVisibility();
+          })
+          .catch(() => {});
+      } else if (state === 'failed') {
+        banner.style.display = 'none';
+        // Leave the stale data visible; freshness badge shows the age.
+      } else {
+        banner.style.display = 'none';
+      }
+    })
+    .catch(() => {
+      // Network/dashboard hiccup — leave the existing badge state alone.
+    });
+}
+
+function clinicUpdateFreshnessText(data) {
+  const el = document.getElementById('clinic-freshness-text');
+  if (!el) return;
+  const age = data.age_seconds;
+  const state = (data.refresh && data.refresh.state) || 'idle';
+  let txt;
+  if (state === 'running') {
+    txt = 'Refreshing from TM3…';
+  } else if (state === 'expired') {
+    txt = 'TM3 session expired';
+  } else if (age === null || age === undefined) {
+    txt = 'No data captured yet';
+  } else if (age < 60) {
+    txt = 'Updated: just now';
+  } else if (age < 3600) {
+    txt = 'Updated: ' + Math.floor(age / 60) + ' min ago';
+  } else if (age < 86400) {
+    txt = 'Updated: ' + Math.floor(age / 3600) + ' h ago';
+  } else {
+    txt = 'Updated: ' + Math.floor(age / 86400) + ' d ago';
+  }
+  el.textContent = txt;
+}
+
+function clinicManualRefresh() {
+  if (!S.clinicDate) return;
+  const dateStr = fmtDate(S.clinicDate);
+  // Explicit force — user asked for a fresh pull.
+  clinicCheckFreshness(dateStr, /*force=*/true);
+}
+
+function clinicRelogin() {
+  const btn = document.getElementById('clinic-relogin-btn');
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Authenticating (Touch ID on dock/keyboard)…';
+  fetch('/api/session/tm3-relogin', { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+      if (data.ok) {
+        // Hide the banner and force a fresh refresh.
+        document.getElementById('clinic-expired-banner').style.display = 'none';
+        clinicManualRefresh();
+      } else {
+        alert('Re-login failed: ' + (data.error || 'unknown error'));
+      }
+    })
+    .catch(e => {
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+      alert('Re-login network error: ' + e);
     });
 }
 
