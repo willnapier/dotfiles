@@ -183,6 +183,10 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
   .clinic-client-row:hover .ccr-dismiss { display: inline; }
   .ccr-dismiss:hover { color: var(--red); }
   .ccr-spacer { flex: 1; }
+  .clinic-client-row .ccr-unknown { color: var(--orange); font-weight: 600; flex-shrink: 0; }
+  .clinic-client-row .ccr-unknown-name { color: var(--fg); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .clinic-client-row .ccr-onboard { font-size: 10px; padding: 1px 6px; margin-right: 4px; background: var(--orange); color: var(--bg); border: none; border-radius: 3px; cursor: pointer; flex-shrink: 0; }
+  .clinic-client-row .ccr-onboard:hover { background: var(--yellow); }
 
   /* Referrer popup */
   .referrer-popup { position: absolute; right: 4px; top: 100%; z-index: 100; background: var(--bg-hl); border: 1px solid var(--cyan); border-radius: 4px; padding: 8px 12px; min-width: 220px; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
@@ -506,6 +510,39 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
     <div class="setup-actions" style="margin-top:14px">
       <button id="m365-save-btn" class="clinic-action-btn btn-accept" onclick="m365Save()" style="display:none">Save identity</button>
       <button class="clinic-action-btn btn-reject" onclick="m365Cancel()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Manual client-onboard modal. Opens from a `???` row in the clinic list
+     when the automatic TM3 cache lookup failed (e.g. booking made after
+     last TM3 snapshot, or a spelling mismatch). Practitioner supplies
+     date of birth and (optionally) TM3 numeric ID, server derives a local
+     client ID, scaffolds the directory, and rewrites the session file. -->
+<div class="setup-overlay" id="onboard-overlay" style="display:none">
+  <div class="setup-panel" style="max-width:480px">
+    <h2>Onboard client manually</h2>
+    <p style="font-size:12px;color:var(--fg-dim);margin-bottom:14px">
+      This client's TM3 record couldn't be matched automatically. Supplying
+      their date of birth lets the system derive a local client ID and
+      scaffold their directory. If you know their numeric TM3 ID, adding it
+      will also pull any documents TM3 already holds for them.
+    </p>
+
+    <label style="display:block;font-size:12px;color:var(--fg-dim);margin-top:6px">Name (from the diary — edit if TM3 spells it differently)</label>
+    <input type="text" id="onboard-name" style="width:100%;padding:6px 8px;background:var(--bg-dim);color:var(--fg);border:1px solid var(--border);border-radius:3px;font-size:13px">
+
+    <label style="display:block;font-size:12px;color:var(--fg-dim);margin-top:10px">Date of birth</label>
+    <input type="date" id="onboard-dob" style="width:100%;padding:6px 8px;background:var(--bg-dim);color:var(--fg);border:1px solid var(--border);border-radius:3px;font-size:13px">
+
+    <label style="display:block;font-size:12px;color:var(--fg-dim);margin-top:10px">TM3 ID (optional — leave blank if unknown)</label>
+    <input type="text" id="onboard-tm3id" style="width:100%;padding:6px 8px;background:var(--bg-dim);color:var(--fg);border:1px solid var(--border);border-radius:3px;font-size:13px" placeholder="e.g. 12345">
+
+    <div class="setup-msg" id="onboard-msg" style="margin-top:10px;font-size:12px;min-height:16px"></div>
+
+    <div class="setup-actions" style="margin-top:14px">
+      <button id="onboard-save-btn" class="clinic-action-btn btn-accept" onclick="onboardSave()">Onboard</button>
+      <button class="clinic-action-btn btn-reject" onclick="onboardCancel()">Cancel</button>
     </div>
   </div>
 </div>
@@ -1371,13 +1408,21 @@ function renderClinicList() {
       badges += '<span class="ccr-letter ccr-letter-dim">L:' + c._meta.letter_cadence_until + '</span>';
     }
 
+    const needsOnboard = c.id === '???';
     html += '<div class="clinic-client-row' + sel + '" data-idx="' + i + '" data-id="' + esc(c.id) + '" onclick="clinicRowClick(' + i + ')">';
     html += '<span class="ccr-status">' + statusIcon + '</span>';
     html += '<span class="ccr-time">' + timeRange + '</span>';
-    html += '<span class="ccr-id">' + esc(c.id) + '</span>';
+    if (needsOnboard) {
+      html += '<span class="ccr-unknown" title="TM3 ID could not be matched — click Onboard to assign one">&#9888;</span>';
+      html += '<span class="ccr-unknown-name" title="' + esc(c.client_name || 'Unknown') + '">' + esc(c.client_name || 'Unknown') + '</span>';
+    } else {
+      html += '<span class="ccr-id">' + esc(c.id) + '</span>';
+    }
     html += badges;
     html += '<span class="ccr-spacer"></span>';
-    if (c.status === 'dna' || c.status === 'cancelled') {
+    if (needsOnboard) {
+      html += '<button class="ccr-onboard" onclick="event.stopPropagation();openOnboardModal(' + i + ')" title="Enter date of birth to derive a local ID">Onboard</button>';
+    } else if (c.status === 'dna' || c.status === 'cancelled') {
       html += '<button class="ccr-resched" onclick="event.stopPropagation();openReschedulePanel(\'' + esc(c.id) + '\')" title="Find reschedule slots" style="font-size:10px;padding:1px 6px;margin-right:4px;background:var(--blue);color:var(--bg);border:none;border-radius:3px;cursor:pointer">Reschedule</button>';
     }
     html += '<button class="ccr-dismiss" onclick="event.stopPropagation();clinicDismissClient(' + i + ')" title="Remove">&times;</button>';
@@ -2029,6 +2074,72 @@ function undoDismiss() {
   highlightClinicClient();
   checkEndClinicVisibility();
   clinicSaveSession();
+}
+
+// --- Manual onboard (for `???` rows the cache-refresh couldn't resolve) ---
+function openOnboardModal(idx) {
+  const clients = S.clinicSession ? S.clinicSession.clients : [];
+  if (idx < 0 || idx >= clients.length) return;
+  const c = clients[idx];
+  document.getElementById('onboard-name').value = c.client_name || '';
+  document.getElementById('onboard-dob').value = '';
+  document.getElementById('onboard-tm3id').value = '';
+  const msg = document.getElementById('onboard-msg');
+  msg.textContent = '';
+  msg.style.color = '';
+  document.getElementById('onboard-save-btn').disabled = false;
+  document.getElementById('onboard-overlay').style.display = 'flex';
+  setTimeout(() => document.getElementById('onboard-dob').focus(), 50);
+}
+
+function onboardCancel() {
+  document.getElementById('onboard-overlay').style.display = 'none';
+}
+
+function onboardSave() {
+  const name = document.getElementById('onboard-name').value.trim();
+  const dob = document.getElementById('onboard-dob').value.trim();
+  const tm3id = document.getElementById('onboard-tm3id').value.trim();
+  const msg = document.getElementById('onboard-msg');
+  const saveBtn = document.getElementById('onboard-save-btn');
+
+  if (!name) { msg.textContent = 'Name is required.'; msg.style.color = 'var(--red)'; return; }
+  if (!dob) { msg.textContent = 'Date of birth is required.'; msg.style.color = 'var(--red)'; return; }
+
+  saveBtn.disabled = true;
+  msg.textContent = 'Onboarding (scaffolding directory, updating client map)…';
+  msg.style.color = 'var(--fg-dim)';
+
+  const date = S.clinicSession ? S.clinicSession.date : '';
+  const payload = { name: name, dob: dob, date: date };
+  if (tm3id) payload.tm3_id = tm3id;
+
+  fetch('/api/clients/onboard-manual', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+    .then(r => r.json().then(j => ({ ok: r.ok, body: j })))
+    .then(({ ok, body }) => {
+      if (!ok || !body.ok) {
+        saveBtn.disabled = false;
+        msg.textContent = 'Failed: ' + (body.error || body.message || 'unknown error');
+        msg.style.color = 'var(--red)';
+        return;
+      }
+      const existing = body.skipped ? ' (directory already existed — mapping added)' : '';
+      msg.textContent = '✓ Onboarded as ' + body.client_id + existing + '. Refreshing…';
+      msg.style.color = 'var(--green)';
+      loadClinicSession();
+      setTimeout(() => {
+        document.getElementById('onboard-overlay').style.display = 'none';
+      }, 700);
+    })
+    .catch(e => {
+      saveBtn.disabled = false;
+      msg.textContent = 'Request error: ' + String(e);
+      msg.style.color = 'var(--red)';
+    });
 }
 
 // --- Referrer popup ---
