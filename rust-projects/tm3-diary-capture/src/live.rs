@@ -237,12 +237,33 @@ pub fn scrape_diary(weeks_back: u32) -> Result<Vec<DaySchedule>> {
 }
 
 fn load_cookies() -> Result<Vec<Cookie>> {
-    // Try shared cookie file first (required on Linux, optional on macOS).
-    // Written by tm3-cookie-sync on Mac, synced to nimbini via Syncthing.
+    // Two sources:
+    //   1. OS keychain ("tm3-session" / "changeofharleystreet") — written
+    //      by `tm3-upload login` on the local machine. Always fresh on
+    //      whatever machine just logged in.
+    //   2. Shared cookie file (~/Assistants/shared/.tm3-session-cookies.json) —
+    //      written by tm3-cookie-sync on Mac and synced via Syncthing so
+    //      Nimbini can read Mac's session. Only useful on a machine that
+    //      doesn't have a local login.
+    //
+    // On macOS we prefer the keychain — if the user just ran `tm3-upload
+    // login`, that's the fresh source of truth. The shared file may be
+    // stale (3-day-old cookies synced back from Nimbini after a previous
+    // login, which happened to bite us 2026-04-22 morning). On Linux
+    // (Nimbini), the shared file is typically the only source.
     let cookie_file = dirs::home_dir()
         .unwrap_or_default()
         .join("Assistants/shared/.tm3-session-cookies.json");
 
+    #[cfg(target_os = "macos")]
+    {
+        // Try keychain first on Mac
+        if let Ok(cookies) = load_cookies_from_keychain(&cookie_file.display().to_string()) {
+            return Ok(cookies);
+        }
+    }
+
+    // Fall back to shared file (primary source on Linux, fallback on Mac)
     if cookie_file.exists() {
         let json = std::fs::read_to_string(&cookie_file)
             .with_context(|| format!("Failed to read cookie file: {}", cookie_file.display()))?;
