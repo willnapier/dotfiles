@@ -38,9 +38,10 @@ tower-http = { version = "0.6", features = ["fs", "cors"] }
 async-stream = "0.3"
 
 # On-device voice dictation (whisper.cpp via Rust bindings).
-# The `metal` feature enables Apple GPU acceleration on macOS.
-# Other platforms fall back to CPU inference automatically.
-whisper-rs = { version = "0.16", features = ["metal"] }
+# Platform-gated: `metal` is Apple-only; Linux builds CPU-only (whisper.cpp
+# compiles fine without accelerators and still runs — just slower).
+# Platform-specific entries for the same crate are further down the file
+# (see [target.'cfg(target_os = "macos")'.dependencies] etc.).
 
 # Scheduling (PracticeForge)
 rrule = "0.14"
@@ -59,6 +60,16 @@ keyring = { version = "3", features = ["apple-native", "windows-native"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 secret-service = { version = "5", features = ["rt-tokio-crypto-rust"] }
+
+# Whisper (voice dictation) — platform-gated feature set.
+# macOS: Metal GPU acceleration via the `metal` feature.
+# Linux/Windows: CPU-only build (whisper.cpp compiles cleanly without Metal).
+[target.'cfg(target_os = "macos")'.dependencies.whisper-rs]
+version = "0.16"
+features = ["metal"]
+
+[target.'cfg(not(target_os = "macos"))'.dependencies.whisper-rs]
+version = "0.16"
 
 [dev-dependencies]
 tempfile = "3"
