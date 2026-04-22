@@ -33,9 +33,14 @@ mail-parser = "0.9"
 regex = "1"
 
 # Dashboard (local web UI)
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
 tower-http = { version = "0.6", features = ["fs", "cors"] }
 async-stream = "0.3"
+
+# On-device voice dictation (whisper.cpp via Rust bindings).
+# The `metal` feature enables Apple GPU acceleration on macOS.
+# Other platforms fall back to CPU inference automatically.
+whisper-rs = { version = "0.16", features = ["metal"] }
 
 # Scheduling (PracticeForge)
 rrule = "0.14"

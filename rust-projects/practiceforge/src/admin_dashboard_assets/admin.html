@@ -250,6 +250,19 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
   .clinic-generate-btn { padding: 5px 14px; background: rgba(42,161,152,0.15); border: 1px solid var(--cyan); border-radius: 3px; color: var(--cyan); cursor: pointer; font: inherit; font-size: 14px; font-weight: 600; }
   .clinic-generate-btn:hover { background: rgba(42,161,152,0.25); }
   .clinic-generate-btn:disabled { opacity: 0.5; cursor: default; }
+  /* Voice dictation button. Sits immediately left of Generate. States are
+     driven by data-state: idle | recording | downloading | disabled. */
+  .pf-dictate-btn { display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 4px 8px; background: none; border: 1px solid var(--border); border-radius: 3px; color: var(--fg-dim); cursor: pointer; font: inherit; line-height: 1; transition: color 0.15s, border-color 0.15s; }
+  .pf-dictate-btn:hover { color: var(--fg); border-color: var(--fg-dim); }
+  .pf-dictate-btn[data-state="recording"] { color: var(--red); border-color: var(--red); animation: pf-dictate-pulse 1.2s ease-in-out infinite; }
+  .pf-dictate-btn[data-state="downloading"] { color: var(--cyan); border-color: var(--cyan); cursor: wait; }
+  .pf-dictate-btn[data-state="disabled"], .pf-dictate-btn:disabled { opacity: 0.45; cursor: not-allowed; color: var(--fg-dim); }
+  .pf-dictate-btn .pf-dictate-pct { font-size: 10px; font-weight: 600; }
+  @keyframes pf-dictate-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  /* Vocab edit modal — follows the setup-overlay pattern. */
+  .pf-vocab-textarea { width: 100%; min-height: 280px; padding: 10px 12px; background: var(--bg-dim); color: var(--fg); border: 1px solid var(--border); border-radius: 3px; font: inherit; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace; font-size: 12px; resize: vertical; box-sizing: border-box; }
+  .settings-link { background: none; border: none; color: var(--cyan); cursor: pointer; font: inherit; font-size: 13px; padding: 0; text-align: left; }
+  .settings-link:hover { text-decoration: underline; }
   .clinic-spinner { display: none; color: var(--cyan); font-size: 14px; }
   .clinic-spinner.visible { display: inline; }
 
@@ -577,6 +590,28 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
   </div>
 </div>
 
+<!-- Dictation vocab editor. Plain markdown body fed to whisper.cpp as
+     its initial_prompt, biasing the transcription toward practitioner
+     vocabulary (ACT/CBS terms, client initials, modality jargon). -->
+<div class="setup-overlay" id="dictation-vocab-overlay" style="display:none">
+  <div class="setup-panel" style="max-width:620px;max-height:88vh;overflow-y:auto">
+    <h2>Dictation vocabulary</h2>
+    <p style="font-size:12px;color:var(--fg-dim);margin-bottom:10px">
+      This text is fed to whisper as its <code>initial_prompt</code>. It
+      biases the decoder toward therapy vocabulary and any names that
+      would otherwise be mis-transcribed. Keep under roughly 900
+      characters (approx 224 tokens) — longer prompts are silently
+      truncated.
+    </p>
+    <textarea id="dictation-vocab-body" class="pf-vocab-textarea" spellcheck="false"></textarea>
+    <div class="setup-msg" id="dictation-vocab-msg" style="margin-top:10px;font-size:12px;min-height:16px"></div>
+    <div class="setup-actions" style="margin-top:14px">
+      <button class="clinic-action-btn btn-accept" onclick="pfVocabSave()">Save</button>
+      <button class="clinic-action-btn btn-reject" onclick="pfVocabClose()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <header>
   <div>
     <h1>PracticeForge</h1>
@@ -600,6 +635,12 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
           <label><input type="radio" name="datefmt" value="short" onchange="setDateFmt(this.value)"> Mon 13</label>
           <label><input type="radio" name="datefmt" value="long" onchange="setDateFmt(this.value)"> Mon Apr 13</label>
           <label><input type="radio" name="datefmt" value="numeric" onchange="setDateFmt(this.value)"> 13/4 Mon</label>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-label">Voice dictation</div>
+        <div class="settings-options">
+          <button type="button" class="settings-link" onclick="pfVocabOpen()">Edit dictation vocab</button>
         </div>
       </div>
     </div>
@@ -665,6 +706,13 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
           <textarea class="clinic-textarea" id="clinic-observation" rows="5" placeholder="Session observation..."></textarea>
           <div style="font-size:11px;color:var(--fg-dim);margin:2px 0 4px;opacity:0.7;">Before generating: no full name, employer, named third parties, or rare identifying combination.</div>
           <div class="clinic-generate-bar">
+            <button class="pf-dictate-btn" id="pf-dictate-btn" type="button" onclick="pfDictateToggle()" title="Dictate (Cmd+Shift+M)" aria-label="Toggle voice dictation">
+              <svg class="pf-dictate-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+                <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3z" fill="currentColor"/>
+                <path d="M19 11a1 1 0 1 0-2 0 5 5 0 0 1-10 0 1 1 0 1 0-2 0 7 7 0 0 0 6 6.92V20H9a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2h-2v-2.08A7 7 0 0 0 19 11z" fill="currentColor"/>
+              </svg>
+              <span class="pf-dictate-pct" id="pf-dictate-pct" style="display:none"></span>
+            </button>
             <button class="clinic-generate-btn" id="clinic-compare-generate-btn" onclick="clinicCompareGenerate()">Generate</button>
             <span class="clinic-spinner" id="clinic-spinner">Generating...</span>
             <span class="clinic-inference" id="clinic-inference" style="margin-left:auto;gap:8px;">
@@ -900,6 +948,10 @@ const S = {
   clinicNotesVisible: false,
   clinicInferenceAvailable: false,
   clinicGenerating: false,
+  // Practitioner id for this dashboard session — populated from
+  // /api/practice's default_practitioner field on page load. Used to
+  // key per-practitioner dictation vocab.
+  clinicPractitionerId: null,
   // Loading flags
   loaded: { clients: false, calendar: false, billing: false, clinic: false },
 };
@@ -3759,10 +3811,355 @@ function bookReschedule(clientId, date, start, end, cancelledDate) {
 }
 
 // ============================================================================
+// Voice dictation (on-device whisper.cpp via WebSocket)
+// ============================================================================
+// High-level flow:
+//   1. Click mic (or Cmd+Shift+M) while a client is selected.
+//   2. Browser opens /api/dictate, sends an init JSON, and spins up an
+//      AudioWorklet capturing mic audio at the device's native rate.
+//   3. The worklet downsamples each block to 16 kHz mono Float32 and posts
+//      it back to the main thread, which forwards it over the socket as a
+//      binary frame.
+//   4. Server streams {type:"partial"} JSON messages with the cumulative
+//      transcript. Client overwrites the observation textarea's text AFTER
+//      the `committedText` cursor so the practitioner can keep typing
+//      around the partial. On {type:"final"} the cursor advances.
+//
+// Privacy: audio only ever goes to localhost. No cloud fallback.
+
+const pfDictate = {
+  state: 'idle',            // idle | downloading | recording
+  ws: null,
+  ac: null,                 // AudioContext
+  mediaStream: null,
+  workletNode: null,
+  committedText: '',        // text in textarea AT the moment recording started
+  lastPartial: '',
+  downloadPct: 0,
+};
+
+function pfDictateSetState(s) {
+  pfDictate.state = s;
+  const btn = document.getElementById('pf-dictate-btn');
+  const pct = document.getElementById('pf-dictate-pct');
+  if (!btn) return;
+  btn.setAttribute('data-state', s);
+  if (s === 'downloading') {
+    pct.style.display = '';
+    pct.textContent = pfDictate.downloadPct + '%';
+  } else {
+    pct.style.display = 'none';
+    pct.textContent = '';
+  }
+  pfDictateUpdateTitle();
+}
+
+function pfDictateUpdateTitle() {
+  const btn = document.getElementById('pf-dictate-btn');
+  if (!btn) return;
+  const clientSelected = S.clinicSelectedId !== null && S.clinicSelectedId !== undefined;
+  const onClinic = S.view === 'clinic';
+  if (!onClinic || !clientSelected) {
+    btn.disabled = true;
+    btn.setAttribute('data-state', 'disabled');
+    btn.title = 'Select a client first';
+  } else {
+    btn.disabled = false;
+    if (pfDictate.state === 'idle') btn.setAttribute('data-state', 'idle');
+    if (pfDictate.state === 'recording') {
+      btn.title = 'Stop dictating (Cmd+Shift+M)';
+    } else if (pfDictate.state === 'downloading') {
+      btn.title = 'Downloading whisper model… ' + pfDictate.downloadPct + '%';
+    } else {
+      btn.title = 'Dictate (Cmd+Shift+M)';
+    }
+  }
+}
+
+// Recompute the mic button's enabled/disabled state whenever the selection
+// or view changes. We hook into a few existing call sites below via a
+// MutationObserver as a belt-and-braces measure.
+new MutationObserver(pfDictateUpdateTitle).observe(
+  document.getElementById('clinic-client-content'),
+  { attributes: true, attributeFilter: ['style'] },
+);
+
+async function pfDictateToggle() {
+  if (pfDictate.state === 'recording') {
+    pfDictateStop(/*finalize=*/true);
+    return;
+  }
+  if (pfDictate.state === 'downloading') {
+    // Ignore — the button pulses through download; stop is only valid
+    // once we're actually recording.
+    return;
+  }
+  if (S.clinicSelectedId === null || S.clinicSelectedId === undefined) {
+    pfToast('Select a client first');
+    return;
+  }
+  await pfDictateStart();
+}
+
+async function pfDictateStart() {
+  // Snapshot the textarea's current text as the committed cursor. All
+  // partials will overwrite *after* this offset; final commits it forward.
+  const ta = document.getElementById('clinic-observation');
+  pfDictate.committedText = ta.value || '';
+  pfDictate.lastPartial = '';
+
+  // 1. Open the websocket first so the user sees an immediate state change.
+  const wsUrl = (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/api/dictate';
+  let ws;
+  try {
+    ws = new WebSocket(wsUrl);
+  } catch (e) {
+    pfToast('Dictation unavailable: ' + String(e));
+    return;
+  }
+  ws.binaryType = 'arraybuffer';
+  pfDictate.ws = ws;
+
+  pfDictateSetState('downloading');
+  pfDictate.downloadPct = 0;
+
+  ws.addEventListener('open', () => {
+    ws.send(JSON.stringify({
+      op: 'init',
+      practitioner_id: (S.clinicPractitionerId || null),
+      sample_rate: 16000,
+    }));
+  });
+
+  ws.addEventListener('message', (ev) => {
+    if (typeof ev.data !== 'string') return;
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch (_) { return; }
+    if (msg.type === 'model_progress') {
+      pfDictate.downloadPct = Number(msg.pct) || 0;
+      pfDictateSetState('downloading');
+    } else if (msg.type === 'ready') {
+      // Model loaded — now kick the mic on.
+      pfDictateStartMic().catch((err) => {
+        pfToast('Mic error: ' + String(err && err.message ? err.message : err));
+        pfDictateStop(false);
+      });
+    } else if (msg.type === 'partial') {
+      pfDictate.lastPartial = msg.text || '';
+      pfDictateRenderPartial();
+    } else if (msg.type === 'final') {
+      pfDictate.lastPartial = msg.text || '';
+      pfDictateRenderPartial();
+      // Advance the committed cursor so subsequent dictation doesn't
+      // overwrite this text.
+      const taEl = document.getElementById('clinic-observation');
+      pfDictate.committedText = taEl.value;
+      pfDictate.lastPartial = '';
+    } else if (msg.type === 'error') {
+      pfToast('Dictation: ' + (msg.message || 'error'));
+      pfDictateStop(false);
+    }
+  });
+
+  ws.addEventListener('close', () => {
+    if (pfDictate.state === 'recording' || pfDictate.state === 'downloading') {
+      pfToast('Dictation disconnected');
+    }
+    pfDictateTeardownAudio();
+    pfDictateSetState('idle');
+    pfDictate.ws = null;
+  });
+
+  ws.addEventListener('error', () => {
+    pfToast('Dictation connection error');
+  });
+}
+
+async function pfDictateStartMic() {
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+  } catch (err) {
+    pfToast('Enable microphone in browser settings');
+    pfDictateStop(false);
+    throw err;
+  }
+  pfDictate.mediaStream = stream;
+
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const ac = new AC();
+  pfDictate.ac = ac;
+
+  // Register the downsampler worklet via a blob URL so we don't need a
+  // separate .js file. Each output post is a 16 kHz mono Float32Array.
+  const workletSrc = `
+    class PfDictateProcessor extends AudioWorkletProcessor {
+      constructor(opts) {
+        super();
+        this.targetRate = (opts && opts.processorOptions && opts.processorOptions.targetRate) || 16000;
+        this.ratio = sampleRate / this.targetRate;
+        this.acc = [];
+        this.counter = 0;
+      }
+      process(inputs) {
+        const input = inputs[0];
+        if (!input || input.length === 0) return true;
+        const ch = input[0];
+        if (!ch) return true;
+        // Linear downsample. AudioContext delivers 128 frames/call at
+        // native rate; we pick every ratio-th sample (rounded).
+        for (let i = 0; i < ch.length; i++) {
+          this.counter += 1;
+          if (this.counter >= this.ratio) {
+            this.counter -= this.ratio;
+            this.acc.push(ch[i]);
+          }
+        }
+        // Post about every 80 ms of output (approx 1280 samples at 16 kHz).
+        if (this.acc.length >= 1280) {
+          const out = new Float32Array(this.acc);
+          this.acc = [];
+          this.port.postMessage(out, [out.buffer]);
+        }
+        return true;
+      }
+    }
+    registerProcessor('pf-dictate-processor', PfDictateProcessor);
+  `;
+  const blob = new Blob([workletSrc], { type: 'application/javascript' });
+  const blobUrl = URL.createObjectURL(blob);
+  try {
+    await ac.audioWorklet.addModule(blobUrl);
+  } finally {
+    URL.revokeObjectURL(blobUrl);
+  }
+
+  const src = ac.createMediaStreamSource(stream);
+  const node = new AudioWorkletNode(ac, 'pf-dictate-processor', {
+    processorOptions: { targetRate: 16000 },
+  });
+  pfDictate.workletNode = node;
+
+  node.port.onmessage = (ev) => {
+    if (!pfDictate.ws || pfDictate.ws.readyState !== WebSocket.OPEN) return;
+    const f32 = ev.data;               // Float32Array at 16 kHz
+    pfDictate.ws.send(f32.buffer);     // little-endian on all supported platforms
+  };
+
+  src.connect(node);
+  // The worklet does not need to drive output — feeding into a dummy
+  // destination avoids silent-gc on some browsers.
+  node.connect(ac.destination);
+
+  pfDictateSetState('recording');
+}
+
+function pfDictateRenderPartial() {
+  const ta = document.getElementById('clinic-observation');
+  if (!ta) return;
+  const base = pfDictate.committedText || '';
+  const sep = (base.length === 0 || base.endsWith('\n') || base.endsWith(' ')) ? '' : ' ';
+  ta.value = base + sep + (pfDictate.lastPartial || '');
+  // Fire the input event so the autosave/size hooks still run.
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function pfDictateTeardownAudio() {
+  try {
+    if (pfDictate.workletNode) { pfDictate.workletNode.port.onmessage = null; pfDictate.workletNode.disconnect(); }
+  } catch (_) {}
+  try {
+    if (pfDictate.mediaStream) { pfDictate.mediaStream.getTracks().forEach(t => t.stop()); }
+  } catch (_) {}
+  try {
+    if (pfDictate.ac) { pfDictate.ac.close(); }
+  } catch (_) {}
+  pfDictate.workletNode = null;
+  pfDictate.mediaStream = null;
+  pfDictate.ac = null;
+}
+
+function pfDictateStop(finalize) {
+  pfDictateTeardownAudio();
+  if (pfDictate.ws && pfDictate.ws.readyState === WebSocket.OPEN) {
+    if (finalize) {
+      try { pfDictate.ws.send(JSON.stringify({ op: 'finalize' })); } catch (_) {}
+    }
+    try { pfDictate.ws.close(); } catch (_) {}
+  }
+  pfDictateSetState('idle');
+}
+
+// Dictation vocab editor — loaded lazily, persisted via PUT.
+function pfVocabOpen() {
+  // Close the settings panel so the modal isn't stacked over a dropdown.
+  const sp = document.getElementById('settings-panel');
+  if (sp) sp.style.display = 'none';
+  const overlay = document.getElementById('dictation-vocab-overlay');
+  const body = document.getElementById('dictation-vocab-body');
+  const msg = document.getElementById('dictation-vocab-msg');
+  msg.textContent = 'Loading…';
+  body.value = '';
+  overlay.style.display = 'flex';
+  const prac = S.clinicPractitionerId || '';
+  const url = '/api/dictation/vocab' + (prac ? ('?practitioner_id=' + encodeURIComponent(prac)) : '');
+  fetch(url)
+    .then(r => r.json())
+    .then(d => { body.value = d.body || ''; msg.textContent = ''; })
+    .catch(e => { msg.textContent = 'Error: ' + String(e); });
+}
+
+function pfVocabClose() {
+  document.getElementById('dictation-vocab-overlay').style.display = 'none';
+}
+
+async function pfVocabSave() {
+  const msg = document.getElementById('dictation-vocab-msg');
+  const body = document.getElementById('dictation-vocab-body').value;
+  msg.textContent = 'Saving…';
+  const prac = S.clinicPractitionerId || '';
+  const url = '/api/dictation/vocab' + (prac ? ('?practitioner_id=' + encodeURIComponent(prac)) : '');
+  try {
+    const r = await fetch(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'text/plain' },
+      body: body,
+    });
+    if (!r.ok) {
+      msg.textContent = 'Save failed: ' + await r.text();
+      return;
+    }
+    pfToast('Dictation vocab saved');
+    pfVocabClose();
+  } catch (e) {
+    msg.textContent = 'Save failed: ' + String(e);
+  }
+}
+
+// Cmd+Shift+M (or Ctrl+Shift+M on non-mac) toggles dictation from anywhere.
+document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.code === 'KeyM' || e.key === 'M' || e.key === 'm')) {
+    e.preventDefault();
+    pfDictateToggle();
+  }
+}, true);
+
+// ============================================================================
 // Init
 // ============================================================================
 fetch('/api/practice').then(r => r.json()).then(p => {
   if (p.name) document.getElementById('practice-name').textContent = p.name;
+  // `default_practitioner` drives per-practitioner features (e.g. the
+  // dictation vocab lookup) without a separate round-trip.
+  if (p.default_practitioner) S.clinicPractitionerId = p.default_practitioner;
+  pfDictateUpdateTitle();
 }).catch(() => {});
 
 document.querySelector(`input[name="keylayout"][value="${pfKeyLayout}"]`).checked = true;

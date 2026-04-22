@@ -99,6 +99,12 @@ pub fn build_router() -> Router {
         .route("/api/ai/model", post(handlers::set_ai_model))
         .route("/api/ai/setup", post(handlers::ai_setup))
         .route("/api/end-clinic", post(handlers::end_clinic))
+        // Dictation (on-device whisper.cpp)
+        .route("/api/dictate", get(handlers::dictate_ws))
+        .route(
+            "/api/dictation/vocab",
+            get(handlers::get_dictation_vocab).put(handlers::put_dictation_vocab),
+        )
 }
 
 /// Serves admin.html if authenticated, otherwise redirects to /login.

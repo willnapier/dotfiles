@@ -85,6 +85,10 @@ pub struct PracticeResponse {
     pub address: Option<String>,
     pub phone: Option<String>,
     pub session_notes_mirror: bool,
+    /// Current practitioner id from `[scheduling] default_practitioner`.
+    /// Surfaced so the admin UI can tag per-practitioner features
+    /// (notably the dictation vocab) without a separate round-trip.
+    pub default_practitioner: String,
 }
 
 #[derive(Serialize)]
@@ -993,6 +997,7 @@ pub struct SendReminderRequest {
 pub async fn practice_info() -> Result<Json<PracticeResponse>, (StatusCode, String)> {
     let reg_config = RegistryConfig::load();
     let practice_yaml_path = reg_config.config_dir().join("practice.yaml");
+    let default_practitioner = scheduling::SchedulingConfig::default().default_practitioner;
 
     if practice_yaml_path.exists() {
         let content = std::fs::read_to_string(&practice_yaml_path)
@@ -1005,6 +1010,7 @@ pub async fn practice_info() -> Result<Json<PracticeResponse>, (StatusCode, Stri
             address: config.address,
             phone: config.phone,
             session_notes_mirror: config.session_notes_mirror,
+            default_practitioner,
         }))
     } else {
         Ok(Json(PracticeResponse {
@@ -1012,6 +1018,7 @@ pub async fn practice_info() -> Result<Json<PracticeResponse>, (StatusCode, Stri
             address: None,
             phone: None,
             session_notes_mirror: false,
+            default_practitioner,
         }))
     }
 }
@@ -4114,5 +4121,300 @@ pub async fn ai_setup(
     }
 
     Ok(Json(serde_json::json!({ "ok": true, "backend": req.backend, "model": req.model })))
+}
+
+// ===========================================================================
+// Dictation (on-device whisper.cpp)
+// ===========================================================================
+//
+// Three endpoints:
+//   GET  /api/dictate                 (WebSocket)
+//   GET  /api/dictation/vocab?practitioner_id=…
+//   PUT  /api/dictation/vocab?practitioner_id=…   (text/plain body)
+//
+// The WebSocket protocol:
+//   1. Client sends a JSON text message: {"op":"init","practitioner_id":"…","sample_rate":16000}
+//      (unknown/missing practitioner_id → fallback vocab is used).
+//   2. Server ensures the whisper model is on disk, emitting
+//      {"type":"model_progress","pct":N} as it downloads (0…100).
+//   3. Server emits {"type":"ready"} once whisper is initialised.
+//   4. Client streams mono 16 kHz Float32 PCM as binary frames
+//      (little-endian). Each frame is any length; server buffers and
+//      re-decodes on a stride.
+//   5. On each decode, server emits {"type":"partial","text":"…"}
+//      containing the full cumulative transcript so far for this session.
+//   6. Client sends a JSON text message {"op":"finalize"} or closes the
+//      socket. Server flushes, emits {"type":"final","text":"…"}, and
+//      closes.
+//   7. Any error along the way emits {"type":"error","message":"…"} and
+//      closes the socket.
+
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::response::Response;
+
+#[derive(Deserialize)]
+pub struct DictationVocabQuery {
+    #[serde(default)]
+    pub practitioner_id: Option<String>,
+}
+
+/// GET /api/dictation/vocab — return the practitioner's vocab body.
+pub async fn get_dictation_vocab(
+    Query(params): Query<DictationVocabQuery>,
+) -> Json<serde_json::Value> {
+    let prac = params.practitioner_id.as_deref().and_then(|s| {
+        let t = s.trim();
+        if t.is_empty() { None } else { Some(t) }
+    });
+    // load_vocab reads from disk; it may block briefly on cold cache.
+    let body = tokio::task::spawn_blocking({
+        let prac = prac.map(str::to_owned);
+        move || crate::dictation::load_vocab(prac.as_deref())
+    })
+    .await
+    .unwrap_or_default();
+
+    Json(serde_json::json!({
+        "practitioner_id": params.practitioner_id,
+        "body": body,
+    }))
+}
+
+/// PUT /api/dictation/vocab — save a new vocab body.
+pub async fn put_dictation_vocab(
+    Query(params): Query<DictationVocabQuery>,
+    body: String,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let prac = params.practitioner_id.clone();
+    tokio::task::spawn_blocking(move || {
+        let prac_ref = prac.as_deref().and_then(|s| {
+            let t = s.trim();
+            if t.is_empty() { None } else { Some(t) }
+        });
+        crate::dictation::save_vocab(prac_ref, &body)
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("join: {e}")))?
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")))?;
+
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "op", rename_all = "lowercase")]
+enum DictateInit {
+    Init {
+        #[serde(default)]
+        practitioner_id: Option<String>,
+        /// Client's declared sample rate. Currently the server assumes the
+        /// wire format is always 16 kHz (per protocol) and the field is
+        /// parsed only so stricter contracts can be enforced in future.
+        #[serde(default = "default_sample_rate")]
+        #[allow(dead_code)]
+        sample_rate: u32,
+    },
+    #[serde(other)]
+    Unknown,
+}
+
+fn default_sample_rate() -> u32 {
+    crate::dictation::SAMPLE_RATE
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "op", rename_all = "lowercase")]
+enum DictateControl {
+    Finalize,
+    #[serde(other)]
+    Unknown,
+}
+
+/// GET /api/dictate — WebSocket entrypoint for streaming dictation.
+pub async fn dictate_ws(ws: WebSocketUpgrade) -> Response {
+    ws.on_upgrade(handle_dictate_socket)
+}
+
+async fn handle_dictate_socket(mut socket: WebSocket) {
+    // Keep the handler resilient: every failure path emits an error frame
+    // and returns cleanly, so the browser side can surface a useful toast.
+    if let Err(err) = run_dictate_socket(&mut socket).await {
+        let payload = serde_json::json!({
+            "type": "error",
+            "message": format!("{err:#}"),
+        });
+        let _ = socket.send(Message::Text(payload.to_string().into())).await;
+    }
+    let _ = socket.send(Message::Close(None)).await;
+}
+
+async fn run_dictate_socket(socket: &mut WebSocket) -> anyhow::Result<()> {
+    use anyhow::{anyhow, bail};
+
+    // --- Stage 1: wait for init message ------------------------------------
+    let init_msg = match tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        socket.recv(),
+    )
+    .await
+    {
+        Ok(Some(Ok(Message::Text(t)))) => t,
+        Ok(Some(Ok(Message::Close(_)))) => return Ok(()),
+        Ok(Some(Ok(_))) => bail!("expected JSON init message, got binary"),
+        Ok(Some(Err(e))) => return Err(e.into()),
+        Ok(None) => return Ok(()),
+        Err(_) => bail!("timed out waiting for init message"),
+    };
+
+    let practitioner_id: Option<String> = match serde_json::from_str::<DictateInit>(&init_msg) {
+        Ok(DictateInit::Init { practitioner_id, .. }) => practitioner_id
+            .and_then(|s| {
+                let t = s.trim().to_string();
+                if t.is_empty() { None } else { Some(t) }
+            }),
+        Ok(DictateInit::Unknown) => bail!("unknown op in init message"),
+        Err(e) => bail!("bad init JSON: {e}"),
+    };
+
+    // --- Stage 2: ensure whisper model is on disk --------------------------
+    // Run the download on a background task; stream progress through an
+    // mpsc channel and forward each update to the WebSocket. When the task
+    // finishes the channel drops, so rx.recv() returns None and we break.
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<u8>();
+    let download_task = tokio::spawn(async move {
+        let result = crate::dictation::ensure_model({
+            let tx = tx.clone();
+            move |pct| {
+                let _ = tx.send(pct);
+            }
+        })
+        .await;
+        drop(tx);
+        result
+    });
+
+    while let Some(pct) = rx.recv().await {
+        let payload = serde_json::json!({
+            "type": "model_progress",
+            "pct": pct,
+        });
+        socket
+            .send(Message::Text(payload.to_string().into()))
+            .await
+            .map_err(|e| anyhow!("ws send: {e}"))?;
+    }
+
+    let model_path = download_task
+        .await
+        .map_err(|e| anyhow!("model join error: {e}"))??;
+
+    // --- Stage 3: initialise whisper session --------------------------------
+    let prompt = tokio::task::spawn_blocking({
+        let prac = practitioner_id.clone();
+        move || crate::dictation::load_vocab(prac.as_deref())
+    })
+    .await
+    .map_err(|e| anyhow!("vocab join: {e}"))?;
+
+    let model_path_for_init = model_path.clone();
+    let mut session = tokio::task::spawn_blocking(move || {
+        crate::dictation::DictationSession::new(&model_path_for_init, prompt)
+    })
+    .await
+    .map_err(|e| anyhow!("session join: {e}"))??;
+
+    socket
+        .send(Message::Text(
+            serde_json::json!({ "type": "ready" }).to_string().into(),
+        ))
+        .await
+        .map_err(|e| anyhow!("ws send ready: {e}"))?;
+
+    // --- Stage 4: audio loop ------------------------------------------------
+    while let Some(msg) = socket.recv().await {
+        let msg = msg.map_err(|e| anyhow!("ws recv: {e}"))?;
+        match msg {
+            Message::Binary(bytes) => {
+                let chunk = decode_f32_le(&bytes);
+                // Whisper decode can take a few hundred ms — push it to a
+                // blocking thread to keep the ws reactor snappy.
+                let (new_session, partial) = tokio::task::spawn_blocking(move || {
+                    let mut s = session;
+                    let p = s.feed(&chunk);
+                    (s, p)
+                })
+                .await
+                .map_err(|e| anyhow!("feed join: {e}"))?;
+                session = new_session;
+
+                if let Some(text) = partial {
+                    let payload = serde_json::json!({
+                        "type": "partial",
+                        "text": text,
+                    });
+                    socket
+                        .send(Message::Text(payload.to_string().into()))
+                        .await
+                        .map_err(|e| anyhow!("ws send partial: {e}"))?;
+                }
+            }
+            Message::Text(t) => {
+                match serde_json::from_str::<DictateControl>(&t) {
+                    Ok(DictateControl::Finalize) => {
+                        // Session is consumed here — we're about to return.
+                        let text = tokio::task::spawn_blocking(move || {
+                            let mut s = session;
+                            s.finalize()
+                        })
+                        .await
+                        .map_err(|e| anyhow!("finalize join: {e}"))?;
+
+                        let payload = serde_json::json!({
+                            "type": "final",
+                            "text": text,
+                        });
+                        let _ = socket
+                            .send(Message::Text(payload.to_string().into()))
+                            .await;
+                        return Ok(());
+                    }
+                    Ok(DictateControl::Unknown) | Err(_) => {
+                        // Ignore unrecognised control frames. The only
+                        // documented control op is `finalize`.
+                    }
+                }
+            }
+            Message::Ping(p) => {
+                let _ = socket.send(Message::Pong(p)).await;
+            }
+            Message::Pong(_) => {}
+            Message::Close(_) => break,
+        }
+    }
+
+    // Client closed without an explicit finalize — emit one last final
+    // frame so whatever was said isn't lost. Best-effort: the socket may
+    // already be half-closed.
+    let final_text = tokio::task::spawn_blocking(move || session.finalize())
+        .await
+        .unwrap_or_default();
+    let payload = serde_json::json!({
+        "type": "final",
+        "text": final_text,
+    });
+    let _ = socket.send(Message::Text(payload.to_string().into())).await;
+
+    Ok(())
+}
+
+/// Decode a little-endian Float32 byte slice into a Vec<f32>.
+fn decode_f32_le(bytes: &[u8]) -> Vec<f32> {
+    let full = bytes.len() / 4;
+    let mut out = Vec::with_capacity(full);
+    for i in 0..full {
+        let j = i * 4;
+        let x = f32::from_le_bytes([bytes[j], bytes[j + 1], bytes[j + 2], bytes[j + 3]]);
+        out.push(x);
+    }
+    out
 }
 
