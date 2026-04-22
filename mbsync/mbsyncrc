@@ -6,23 +6,30 @@
 #   - mbsync (isync) built from upstream against Homebrew cyrus-sasl
 #     with the cyrus-sasl-xoauth2 plugin installed. Installed at
 #     ~/.local/bin/mbsync (takes PATH precedence over /opt/homebrew/bin).
-#   - cohs-oauth Python helper in ~/.local/bin/ — prints a fresh
-#     Outlook-scoped access token on stdout. Refresh handled by
-#     com.williamnapier.cohs-token-refresh launchd agent.
+#   - practiceforge binary in ~/.local/bin/, stable-codesigned with
+#     identifier `com.williamnapier.practiceforge` so the keychain ACL
+#     survives rebuilds. `email imap-token` prints a fresh Outlook IMAP
+#     OAuth bearer on stdout; refresh-on-read is handled internally, so
+#     no separate refresh timer is strictly required (though a periodic
+#     `m365-imap-refresh` can run as a keep-warm).
 #
-# On Linux (future Nimbini setup): distribution package
-# cyrus-sasl-xoauth2 drops the plugin into the system SASL dir; stock
-# mbsync from the distro works out of the box. Same mbsyncrc contents.
+# First-time setup (once per install, interactive device-code flow):
+#   practiceforge email imap-init --account cohs
+#
+# On Linux (nimbini): distribution package cyrus-sasl-xoauth2 drops the
+# plugin into the system SASL dir; stock mbsync from the distro works
+# out of the box. Same mbsyncrc contents. Same `imap-init` step.
 
 IMAPAccount cohs
 Host outlook.office365.com
 Port 993
 User will.napier@changeofharleystreet.com
 AuthMechs XOAUTH2
-# PassCmd output is used as the SASL XOAUTH2 token. The Python helper
-# runs a silent refresh via msal before printing, so the token is always
-# fresh at the moment of use.
-PassCmd "$HOME/.local/bin/cohs-oauth show"
+# PassCmd output is used as the SASL XOAUTH2 token. practiceforge's
+# refresh-on-read logic (KeychainOAuthTokenSource) silently mints a new
+# access token if the cached one is within 5 min of expiry, so the
+# printed token is always fresh at the moment of use.
+PassCmd "$HOME/.local/bin/practiceforge email imap-token --account cohs"
 SSLType IMAPS
 # macOS trust store is used implicitly; no CertificateFile needed.
 
