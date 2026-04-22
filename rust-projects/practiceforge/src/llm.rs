@@ -87,13 +87,19 @@ impl AnthropicBackend {
     }
 
     /// Streaming generation. Parses Anthropic's SSE `content_block_delta` events.
+    ///
+    /// `model_override` lets a single request pin a different model than the
+    /// backend's configured default — used by the A/B compare view to run
+    /// Haiku/Sonnet/Opus variants through the same subscription-free path.
     pub async fn generate_stream(
         &self,
         system: String,
         prompt: String,
+        model_override: Option<String>,
     ) -> Result<impl Stream<Item = String> + 'static> {
+        let model = model_override.as_deref().unwrap_or(self.model.as_str());
         let body = json!({
-            "model": self.model,
+            "model": model,
             "max_tokens": DEFAULT_MAX_TOKENS,
             "stream": true,
             "system": [{
@@ -205,17 +211,23 @@ impl ClaudeCliBackend {
     /// Streams stdout from `claude -p` as raw byte chunks. The CLI streams
     /// tokens progressively even when stdout is piped, so this gives near-token
     /// granularity without needing stream-json parsing.
+    ///
+    /// `model_override` wins over the backend's configured default; it's
+    /// threaded through by `/api/generate-stream` so the A/B compare view can
+    /// pit Haiku, Sonnet and Opus against each other in one session.
     pub async fn generate_stream(
         &self,
         system: String,
         prompt: String,
+        model_override: Option<String>,
     ) -> Result<BoxStream<'static, String>> {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
         let mut cmd = tokio::process::Command::new("claude");
         cmd.args(["-p", "--no-session-persistence", "--tools", ""])
             .arg("--system-prompt").arg(&system);
-        if let Some(m) = &self.model {
+        let effective_model = model_override.as_deref().or(self.model.as_deref());
+        if let Some(m) = effective_model {
             cmd.arg("--model").arg(m);
         }
         cmd.stdin(std::process::Stdio::piped())
@@ -282,10 +294,11 @@ impl AiBackend {
         &self,
         system: String,
         prompt: String,
+        model_override: Option<String>,
     ) -> Result<BoxStream<'static, String>> {
         match self {
-            AiBackend::Anthropic(b) => b.generate_stream(system, prompt).await.map(|s| s.boxed()),
-            AiBackend::ClaudeCli(b) => b.generate_stream(system, prompt).await,
+            AiBackend::Anthropic(b) => b.generate_stream(system, prompt, model_override).await.map(|s| s.boxed()),
+            AiBackend::ClaudeCli(b) => b.generate_stream(system, prompt, model_override).await,
         }
     }
 

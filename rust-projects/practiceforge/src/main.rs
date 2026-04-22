@@ -10,6 +10,7 @@ pub mod billing;
 pub mod config;
 pub mod dephi;
 pub mod llm;
+pub mod prompt_presets;
 mod admin_dashboard;
 mod dashboard;
 pub mod email;

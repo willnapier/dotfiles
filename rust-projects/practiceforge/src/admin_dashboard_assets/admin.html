@@ -267,21 +267,51 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
 
   .comp-clear-btn:hover { border-color: var(--red); color: var(--red); }
 
-  /* Side-by-side compare (Q4/Q8 parallel streaming) */
+  /* Side-by-side compare (variant-aware: model / rails / prompt) */
   #clinic-compare-wrap { margin-top: 14px; }
   .clinic-compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
   @media (max-width: 1100px) { .clinic-compare-grid { grid-template-columns: 1fr; } }
   .clinic-compare-pane { background: var(--bg-hl); border: 1px solid var(--border); border-radius: 4px; padding: 8px 10px; display: flex; flex-direction: column; min-width: 0; }
   .clinic-compare-pane[data-selected="true"] { border-color: var(--cyan); box-shadow: 0 0 0 1px var(--cyan); }
-  .clinic-compare-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .clinic-compare-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; gap: 8px; flex-wrap: wrap; }
   .clinic-compare-label { font-size: 14px; font-weight: 600; color: var(--cyan); text-transform: uppercase; letter-spacing: 0.5px; }
   .clinic-compare-status { font-size: 13px; color: var(--fg-dim); }
   .clinic-compare-status.streaming { color: var(--cyan); }
   .clinic-compare-status.complete { color: var(--fg-em); font-weight: 600; }
+  .clinic-compare-status.error { color: var(--red); font-weight: 600; }
   .clinic-compare-textarea { width: 100%; min-height: 650px; padding: 6px 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; color: var(--fg); font: inherit; font-size: 14px; resize: vertical; outline: none; }
   .clinic-compare-textarea:focus { border-color: var(--cyan); }
   .clinic-compare-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
-  .clinic-compare-global-actions { display: flex; gap: 8px; margin-top: 10px; justify-content: center; }
+  .clinic-compare-global-actions { display: flex; gap: 8px; margin-top: 10px; justify-content: center; flex-wrap: wrap; }
+
+  /* Variant selectors (per-column dropdowns: model / rails / prompt) */
+  .clinic-compare-variant { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; margin-bottom: 6px; align-items: center; }
+  .clinic-compare-variant label { font-size: 11px; color: var(--fg-dim); text-transform: uppercase; letter-spacing: 0.4px; }
+  .clinic-compare-variant select { padding: 3px 6px; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; color: var(--fg); font: inherit; font-size: 13px; outline: none; cursor: pointer; min-width: 0; }
+  .clinic-compare-variant select:focus { border-color: var(--cyan); }
+  .clinic-compare-variant select:disabled { opacity: 0.5; cursor: default; }
+
+  /* Analytics panel */
+  .clinic-compare-analytics { margin-top: 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-hl); }
+  .clinic-compare-analytics-head { padding: 6px 10px; display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; font-size: 12px; color: var(--fg-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+  .clinic-compare-analytics-head:hover { color: var(--cyan); }
+  .clinic-compare-analytics-head .caret { font-size: 10px; transition: transform 0.15s; }
+  .clinic-compare-analytics[data-open="true"] .clinic-compare-analytics-head .caret { transform: rotate(90deg); }
+  .clinic-compare-analytics-body { display: none; padding: 8px 10px; border-top: 1px solid var(--border); }
+  .clinic-compare-analytics[data-open="true"] .clinic-compare-analytics-body { display: block; }
+  .clinic-compare-analytics-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+  .clinic-compare-analytics-refresh { padding: 3px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; color: var(--fg-dim); cursor: pointer; font: inherit; font-size: 12px; }
+  .clinic-compare-analytics-refresh:hover { border-color: var(--cyan); color: var(--cyan); }
+  .clinic-compare-analytics-footer { font-size: 12px; color: var(--fg-dim); margin-top: 6px; }
+  .clinic-compare-analytics-msg { font-size: 12px; color: var(--fg-dim); padding: 4px 0; }
+  .clinic-compare-analytics table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .clinic-compare-analytics th { text-align: left; padding: 4px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--fg-dim); border-bottom: 1px solid var(--border); font-weight: 600; }
+  .clinic-compare-analytics td { padding: 4px 8px; border-bottom: 1px solid var(--border); color: var(--fg); }
+  .clinic-compare-analytics tr:last-child td { border-bottom: none; }
+
+  /* Toast (briefly shown on accept/reject confirmations) */
+  .pf-toast { position: fixed; bottom: 22px; right: 22px; background: var(--bg-hl); border: 1px solid var(--cyan); color: var(--fg-em); padding: 10px 14px; border-radius: 4px; font-size: 13px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); z-index: 200; opacity: 0; transform: translateY(6px); transition: opacity 0.15s, transform 0.15s; pointer-events: none; max-width: 360px; }
+  .pf-toast.visible { opacity: 1; transform: translateY(0); }
 
   .clinic-status-msg { font-size: 13px; color: var(--fg-dim); margin-top: 8px; min-height: 18px; }
 
@@ -655,36 +685,83 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
               <button class="clinic-action-btn btn-reject" onclick="clinicRejectNote()">Reject</button>
             </div>
           </div>
-          <!-- Side-by-side Q4/Q8 compare (parallel streaming) -->
+          <!-- Variant-aware compare (A vs B; parallel streaming) -->
+          <div class="clinic-compare-analytics" id="clinic-compare-analytics" data-open="false">
+            <div class="clinic-compare-analytics-head" onclick="clinicCompareAnalyticsToggle()">
+              <span class="caret">&#9654;</span>
+              <span>Compare analytics</span>
+            </div>
+            <div class="clinic-compare-analytics-body">
+              <div class="clinic-compare-analytics-bar">
+                <button class="clinic-compare-analytics-refresh" onclick="clinicCompareAnalyticsLoad()">Refresh</button>
+                <span class="clinic-compare-analytics-msg" id="clinic-compare-analytics-msg"></span>
+              </div>
+              <div id="clinic-compare-analytics-table"></div>
+              <div class="clinic-compare-analytics-footer" id="clinic-compare-analytics-footer"></div>
+            </div>
+          </div>
           <div id="clinic-compare-wrap" style="display:none">
-            <div class="section-head">Compare: Q4 &amp; Q8 (side-by-side)</div>
+            <div class="section-head">Compare variants (side-by-side)</div>
             <div class="clinic-compare-grid">
-              <div class="clinic-compare-pane" data-variant="q4">
+              <div class="clinic-compare-pane" data-variant="a">
                 <div class="clinic-compare-header">
-                  <span class="clinic-compare-label">Q4</span>
-                  <span class="clinic-compare-status" id="clinic-compare-status-q4"></span>
+                  <span class="clinic-compare-label">Variant A</span>
+                  <span class="clinic-compare-status" id="clinic-compare-status-a"></span>
                 </div>
-                <textarea class="clinic-compare-textarea" id="clinic-compare-text-q4" rows="30"></textarea>
-                <div class="clinic-compare-actions" id="clinic-compare-actions-q4" style="display:none">
-                  <button class="clinic-action-btn btn-accept" onclick="clinicCompareAccept('q4')">Accept Q4 &amp; Save</button>
+                <div class="clinic-compare-variant">
+                  <label for="clinic-compare-model-a">Model</label>
+                  <select id="clinic-compare-model-a" onchange="clinicCompareSavePrefs()">
+                    <option value="claude-haiku-4-5">Haiku 4.5</option>
+                    <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+                    <option value="claude-opus-4-7">Opus 4.7</option>
+                  </select>
+                  <label for="clinic-compare-rails-a">Rails</label>
+                  <select id="clinic-compare-rails-a" onchange="clinicCompareSavePrefs()">
+                    <option value="true">On</option>
+                    <option value="false">Off</option>
+                  </select>
+                  <label for="clinic-compare-prompt-a">Prompt</label>
+                  <select id="clinic-compare-prompt-a" onchange="clinicCompareSavePrefs()"></select>
+                </div>
+                <textarea class="clinic-compare-textarea" id="clinic-compare-text-a" rows="30"></textarea>
+                <div class="clinic-compare-actions" id="clinic-compare-actions-a">
+                  <button class="clinic-action-btn btn-accept" id="clinic-compare-accept-a" onclick="clinicCompareAccept('a')">Accept &amp; Save</button>
+                  <button class="clinic-action-btn btn-compare" id="clinic-compare-regen-a" onclick="clinicCompareRegenerate('a')">Regenerate</button>
                 </div>
               </div>
-              <div class="clinic-compare-pane" data-variant="q8">
+              <div class="clinic-compare-pane" data-variant="b">
                 <div class="clinic-compare-header">
-                  <span class="clinic-compare-label">Q8</span>
-                  <span class="clinic-compare-status" id="clinic-compare-status-q8"></span>
+                  <span class="clinic-compare-label">Variant B</span>
+                  <span class="clinic-compare-status" id="clinic-compare-status-b"></span>
                 </div>
-                <textarea class="clinic-compare-textarea" id="clinic-compare-text-q8" rows="30"></textarea>
-                <div class="clinic-compare-actions" id="clinic-compare-actions-q8" style="display:none">
-                  <button class="clinic-action-btn btn-accept" onclick="clinicCompareAccept('q8')">Accept Q8 &amp; Save</button>
+                <div class="clinic-compare-variant">
+                  <label for="clinic-compare-model-b">Model</label>
+                  <select id="clinic-compare-model-b" onchange="clinicCompareSavePrefs()">
+                    <option value="claude-haiku-4-5">Haiku 4.5</option>
+                    <option value="claude-sonnet-4-6">Sonnet 4.6</option>
+                    <option value="claude-opus-4-7">Opus 4.7</option>
+                  </select>
+                  <label for="clinic-compare-rails-b">Rails</label>
+                  <select id="clinic-compare-rails-b" onchange="clinicCompareSavePrefs()">
+                    <option value="true">On</option>
+                    <option value="false">Off</option>
+                  </select>
+                  <label for="clinic-compare-prompt-b">Prompt</label>
+                  <select id="clinic-compare-prompt-b" onchange="clinicCompareSavePrefs()"></select>
+                </div>
+                <textarea class="clinic-compare-textarea" id="clinic-compare-text-b" rows="30"></textarea>
+                <div class="clinic-compare-actions" id="clinic-compare-actions-b">
+                  <button class="clinic-action-btn btn-accept" id="clinic-compare-accept-b" onclick="clinicCompareAccept('b')">Accept &amp; Save</button>
+                  <button class="clinic-action-btn btn-compare" id="clinic-compare-regen-b" onclick="clinicCompareRegenerate('b')">Regenerate</button>
                 </div>
               </div>
             </div>
             <div class="clinic-compare-global-actions" id="clinic-compare-global-actions" style="display:none">
-              <button class="clinic-action-btn btn-reject" id="clinic-compare-reject-btn" onclick="clinicCompareRejectBoth()">Reject Both (log as rejected)</button>
+              <button class="clinic-action-btn btn-reject" id="clinic-compare-reject-btn" onclick="clinicCompareRejectBoth()">Reject both</button>
               <button class="clinic-action-btn btn-reject" onclick="clinicCompareCancel()">Cancel (don't log)</button>
             </div>
           </div>
+          <div class="pf-toast" id="pf-toast"></div>
 
           <div class="letter-panel" id="clinic-letter-panel" style="display:none">
             <div class="section-head">Letter Draft</div>

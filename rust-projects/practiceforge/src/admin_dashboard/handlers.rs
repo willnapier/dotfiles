@@ -1094,6 +1094,10 @@ pub struct GenerateRequest {
     /// Pass false to generate the no-rail variant for A/B analysis.
     #[serde(default = "default_true")]
     pub with_rail: bool,
+    /// Optional named preset from `~/.config/practiceforge/prompt-presets/*.md`.
+    /// Content is appended to the system prompt after practitioner additions.
+    #[serde(default)]
+    pub prompt_preset: Option<String>,
 }
 
 #[derive(Serialize)]
