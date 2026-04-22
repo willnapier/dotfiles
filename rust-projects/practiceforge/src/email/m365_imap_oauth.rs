@@ -19,11 +19,15 @@
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 
-/// Thunderbird's registered public client ID. Has IMAP.AccessAsUser.All +
-/// SMTP.Send on outlook.office.com. Widely used by mbsync/isync, neomutt,
-/// aerc, himalaya etc. for personal M365 IMAP access. Treat as a public
-/// constant — the value is in every OSS MUA's source tree.
-pub const IMAP_CLIENT_ID: &str = "08162f7c-0fd2-4200-a84a-f25a4db0b584";
+/// Thunderbird's msal-registered public client ID — the one the
+/// `cohs-oauth` Python helper used successfully against the COHS tenant
+/// before this migration, so it's already admin-consented there. A
+/// sibling Thunderbird registration (`08162f7c-0fd2-4200-a84a-f25a4db0b584`)
+/// also exists and is used by isync/neomutt but is a separately-registered
+/// public app that would need fresh tenant admin approval — which the COHS
+/// tenant declines. Staying with the msal-flavour Thunderbird ID avoids a
+/// tenant-admin round-trip.
+pub const IMAP_CLIENT_ID: &str = "9e5f94bc-e8a4-4e73-b8be-63364c29d753";
 
 const DEVICECODE_URL: &str = "https://login.microsoftonline.com/common/oauth2/v2.0/devicecode";
 const TOKEN_URL: &str = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
