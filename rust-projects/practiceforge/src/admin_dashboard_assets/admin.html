@@ -338,17 +338,69 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
 
 <div class="setup-overlay" id="setup-overlay" style="display:none">
   <div class="setup-panel" style="max-width:520px;max-height:85vh;overflow-y:auto">
-    <h2>Email Setup</h2>
-    <p style="font-size:12px;color:var(--fg-dim);margin-bottom:14px">Configure one identity per email address.</p>
+    <h2>Email identities</h2>
+    <p style="font-size:12px;color:var(--fg-dim);margin-bottom:14px">Each identity is one address you can send mail as. Add as many as you have; one can be marked primary.</p>
     <div id="email-identities-list"></div>
-    <button onclick="emailAddIdentity()" style="margin-top:4px;background:none;border:1px dashed var(--border);color:var(--fg-dim);padding:5px 14px;border-radius:4px;cursor:pointer;font-size:12px;width:100%">+ Add SMTP identity (needs password)</button>
-    <button onclick="m365Begin()" style="margin-top:6px;background:var(--blue);border:none;color:#fff;padding:7px 14px;border-radius:4px;cursor:pointer;font-size:12px;width:100%;font-weight:bold">+ Add Microsoft 365 account (via sign-in, no password)</button>
-    <button onclick="gmailBegin()" style="margin-top:6px;background:#d93025;border:none;color:#fff;padding:7px 14px;border-radius:4px;cursor:pointer;font-size:12px;width:100%;font-weight:bold">+ Add Gmail / Google Workspace (via sign-in, no password)</button>
+    <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+      <p style="font-size:11px;color:var(--fg-dim);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.6px">Add identity</p>
+      <button onclick="smtpBegin()" style="margin-top:4px;background:none;border:1px dashed var(--border);color:var(--fg-dim);padding:7px 14px;border-radius:4px;cursor:pointer;font-size:12px;width:100%">+ SMTP (password-based)</button>
+      <button onclick="m365Begin()" style="margin-top:6px;background:var(--blue);border:none;color:#fff;padding:7px 14px;border-radius:4px;cursor:pointer;font-size:12px;width:100%;font-weight:bold">+ Microsoft 365 (sign-in, no password)</button>
+      <button onclick="gmailBegin()" style="margin-top:6px;background:#d93025;border:none;color:#fff;padding:7px 14px;border-radius:4px;cursor:pointer;font-size:12px;width:100%;font-weight:bold">+ Gmail / Google Workspace (sign-in, no password)</button>
+    </div>
     <div class="setup-msg" id="setup-msg" style="margin-top:10px"></div>
-    <p style="font-size:11px;color:var(--fg-dim);margin-top:10px;margin-bottom:4px">Microsoft 365 and Gmail identities save automatically once you complete the sign-in flow. The Save button below only applies to SMTP identities filled in on this page.</p>
-    <div class="setup-actions" style="margin-top:6px">
-      <button class="clinic-action-btn btn-accept" onclick="setupSave()">Save</button>
+    <div class="setup-actions" style="margin-top:14px">
       <button class="clinic-action-btn btn-reject" onclick="setupSkip()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- SMTP identity modal — parallels M365 and Gmail modals. User fills in
+     host/port/credentials, clicks Save, identity persisted immediately. -->
+<div class="setup-overlay" id="smtp-overlay" style="display:none">
+  <div class="setup-panel" style="max-width:520px;max-height:85vh;overflow-y:auto">
+    <h2>Add SMTP identity</h2>
+    <p style="font-size:12px;color:var(--fg-dim);margin-bottom:10px">For Gmail: needs an App Password (not your login password). For custom-domain providers: use whatever credentials your mail host gave you.</p>
+
+    <label style="display:block;font-size:12px;color:var(--fg-dim);margin-top:6px">Label (short nickname, e.g. "Napier Psychology")</label>
+    <input type="text" id="smtp-label" style="width:100%;padding:6px 8px;background:var(--bg-dim);color:var(--fg);border:1px solid var(--border);border-radius:3px;font-size:13px" placeholder="Practice name">
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+      <div>
+        <label style="display:block;font-size:12px;color:var(--fg-dim)">From email</label>
+        <input type="email" id="smtp-email" style="width:100%;padding:6px 8px;background:var(--bg-dim);color:var(--fg);border:1px solid var(--border);border-radius:3px;font-size:13px" placeholder="you@example.com" oninput="smtpAutoDetect()">
+      </div>
+      <div>
+        <label style="display:block;font-size:12px;color:var(--fg-dim)">Display name</label>
+        <input type="text" id="smtp-name" style="width:100%;padding:6px 8px;background:var(--bg-dim);color:var(--fg);border:1px solid var(--border);border-radius:3px;font-size:13px" placeholder="Your Name">
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 72px;gap:8px;margin-top:10px">
+      <div>
+        <label style="display:block;font-size:12px;color:var(--fg-dim)">SMTP server</label>
+        <input type="text" id="smtp-host" style="width:100%;padding:6px 8px;background:var(--bg-dim);color:var(--fg);border:1px solid var(--border);border-radius:3px;font-size:13px" placeholder="smtp.example.com">
+      </div>
+      <div>
+        <label style="display:block;font-size:12px;color:var(--fg-dim)">Port</label>
+        <input type="number" id="smtp-port" value="465" style="width:100%;padding:6px 8px;background:var(--bg-dim);color:var(--fg);border:1px solid var(--border);border-radius:3px;font-size:13px">
+      </div>
+    </div>
+
+    <label style="display:block;font-size:12px;color:var(--fg-dim);margin-top:10px">Username (usually same as email)</label>
+    <input type="text" id="smtp-user" style="width:100%;padding:6px 8px;background:var(--bg-dim);color:var(--fg);border:1px solid var(--border);border-radius:3px;font-size:13px" placeholder="Same as from email">
+
+    <label style="display:block;font-size:12px;color:var(--fg-dim);margin-top:10px">Password</label>
+    <input type="password" id="smtp-password" style="width:100%;padding:6px 8px;background:var(--bg-dim);color:var(--fg);border:1px solid var(--border);border-radius:3px;font-size:13px" placeholder="SMTP password (or Gmail App Password)">
+
+    <label style="display:block;font-size:12px;color:var(--fg-dim);margin-top:10px">
+      <input type="checkbox" id="smtp-primary"> Make this my primary send identity
+    </label>
+
+    <div class="setup-msg" id="smtp-msg" style="margin-top:10px"></div>
+
+    <div class="setup-actions" style="margin-top:14px">
+      <button class="clinic-action-btn btn-accept" onclick="smtpSave()">Save identity</button>
+      <button class="clinic-action-btn btn-reject" onclick="smtpCancel()">Cancel</button>
     </div>
   </div>
 </div>
@@ -2422,8 +2474,6 @@ function aiSetupSkip() {
 // ============================================================================
 // Email setup wizard
 // ============================================================================
-let emailIdentityCount = 0;
-
 function checkEmailSetup() {
   fetch('/api/email/status').then(r => r.json()).then(data => {
     if (!data.configured) {
@@ -2432,16 +2482,65 @@ function checkEmailSetup() {
   }).catch(() => {});
 }
 
+/// Re-fetch identity status and open the overlay. Called on first-time
+/// setup (checkEmailSetup) and after any add/delete from within the
+/// overlay to reflect the latest state.
+function emailSetupRefresh() {
+  fetch('/api/email/status').then(r => r.json()).then(data => {
+    emailSetupOpen(data.identities || null);
+  });
+}
+
 function emailSetupOpen(existingIdentities) {
   const list = document.getElementById('email-identities-list');
   list.innerHTML = '';
-  emailIdentityCount = 0;
   if (existingIdentities && existingIdentities.length > 0) {
-    existingIdentities.forEach(id => emailAddIdentity(id));
+    existingIdentities.forEach(id => {
+      const card = document.createElement('div');
+      card.style.cssText = 'border:1px solid var(--border);border-radius:4px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:10px';
+      // Identity status handler didn't include backend shape pre-Phase-4
+      // refactor, so infer from what we have: smtp_server populated → SMTP,
+      // empty → OAuth. Cosmetic only.
+      const backendLabel = (id.smtp_server && id.smtp_server.length > 0) ? 'SMTP' : 'OAuth';
+      const badge = id.primary
+        ? '<span style="background:var(--green);color:#000;padding:1px 6px;border-radius:3px;font-size:10px;margin-right:6px">PRIMARY</span>'
+        : '';
+      card.innerHTML =
+        '<div style="min-width:0;flex:1">' +
+          '<div style="font-weight:600;font-size:13px">' + esc(id.label || id.from_email) + '</div>' +
+          '<div style="font-size:12px;color:var(--fg-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+            badge + esc(id.from_email) +
+            ' <span style="margin-left:8px;padding:1px 5px;background:var(--bg-dim);border-radius:3px;font-size:10px;color:var(--fg-dim)">' + backendLabel + '</span>' +
+          '</div>' +
+        '</div>' +
+        '<button onclick="identityDelete(\'' + esc(id.from_email) + '\')" style="background:none;border:1px solid var(--border);color:var(--fg-dim);padding:3px 10px;border-radius:3px;cursor:pointer;font-size:11px" title="Remove identity">Remove</button>';
+      list.appendChild(card);
+    });
   } else {
-    emailAddIdentity(null);
+    const empty = document.createElement('div');
+    empty.style.cssText = 'border:1px dashed var(--border);border-radius:4px;padding:16px;text-align:center;color:var(--fg-dim);font-size:12px';
+    empty.textContent = 'No identities configured yet. Add one below.';
+    list.appendChild(empty);
   }
   document.getElementById('setup-overlay').style.display = '';
+}
+
+function identityDelete(fromEmail) {
+  if (!confirm('Remove identity "' + fromEmail + '"?\n\nThis only removes it from PracticeForge. The Google/Microsoft account and any stored passwords on the underlying services are untouched.')) return;
+  fetch('/api/email/identity/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from_email: fromEmail })
+  })
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        emailSetupRefresh();
+      } else {
+        alert('Delete failed: ' + (d.error || 'unknown error'));
+      }
+    })
+    .catch(e => alert('Error: ' + e));
 }
 
 function emailSmtpFromDomain(email) {
@@ -2455,130 +2554,90 @@ function emailSmtpFromDomain(email) {
   return { server: 'mail.' + domain, port: 465 };
 }
 
-function emailAddIdentity(prefill) {
-  const idx = emailIdentityCount++;
-  const isPrimary = idx === 0;
-  const list = document.getElementById('email-identities-list');
-  const card = document.createElement('div');
-  card.id = 'email-id-card-' + idx;
-  card.style.cssText = 'border:1px solid var(--border);border-radius:4px;padding:12px;margin-bottom:10px;position:relative';
+// ---------------------------------------------------------------------------
+// SMTP identity modal — parallel to the M365 and Gmail modals. Opens fresh
+// on each click of "+ SMTP (password-based)", writes a single identity via
+// /api/email/smtp/setup on Save.
+// ---------------------------------------------------------------------------
 
-  const smtpHint = prefill ? { server: prefill.smtp_server, port: prefill.smtp_port }
-                            : { server: '', port: 465 };
-
-  card.innerHTML =
-    (idx > 0 ? '<button onclick="emailRemoveIdentity(' + idx + ')" style="position:absolute;top:8px;right:8px;background:none;border:none;color:var(--fg-dim);cursor:pointer;font-size:14px">✕</button>' : '') +
-    '<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--fg-dim);margin-bottom:8px">' +
-    (isPrimary ? 'Primary identity' : 'Identity ' + (idx + 1)) + '</div>' +
-    '<label>Label <span style="font-weight:normal;text-transform:none;letter-spacing:0;font-size:11px">(e.g. "Napier Psychology")</span></label>' +
-    '<input type="text" id="eid-label-' + idx + '" value="' + esc(prefill ? prefill.label : '') + '" placeholder="Practice name">' +
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' +
-      '<div><label>From email</label><input type="email" id="eid-email-' + idx + '" value="' + esc(prefill ? prefill.from_email : '') + '" placeholder="will@willnapier.com" oninput="emailAutoDetect(' + idx + ')"></div>' +
-      '<div><label>Display name</label><input type="text" id="eid-name-' + idx + '" value="' + esc(prefill ? prefill.from_name : '') + '" placeholder="Will Napier"></div>' +
-    '</div>' +
-    '<div style="display:grid;grid-template-columns:1fr auto;gap:8px">' +
-      '<div><label>SMTP server</label><input type="text" id="eid-smtp-' + idx + '" value="' + esc(smtpHint.server) + '" placeholder="mail.example.com"></div>' +
-      '<div><label>Port</label><input type="number" id="eid-port-' + idx + '" value="' + smtpHint.port + '" style="width:72px"></div>' +
-    '</div>' +
-    '<label>SMTP username <span style="font-weight:normal;text-transform:none;letter-spacing:0;font-size:11px">(usually same as email)</span></label>' +
-    '<input type="text" id="eid-user-' + idx + '" value="' + esc(prefill ? prefill.username : '') + '" placeholder="Same as from email">' +
-    '<label>Password <span id="eid-pw-hint-' + idx + '" style="font-weight:normal;text-transform:none;letter-spacing:0;font-size:11px;color:var(--fg-dim)">' + (prefill ? '(leave blank to keep existing)' : '') + '</span></label>' +
-    '<input type="password" id="eid-pw-' + idx + '" placeholder="SMTP password">' +
-    '<div style="margin-top:8px">' +
-      '<button onclick="emailTestIdentity(' + idx + ')" style="background:none;border:1px solid var(--border);color:var(--fg-dim);padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px">Test</button>' +
-      '<span id="eid-test-result-' + idx + '" style="font-size:11px;margin-left:8px"></span>' +
-    '</div>';
-
-  list.appendChild(card);
-}
-
-function emailRemoveIdentity(idx) {
-  const card = document.getElementById('email-id-card-' + idx);
-  if (card) card.remove();
-}
-
-function emailAutoDetect(idx) {
-  const email = document.getElementById('eid-email-' + idx).value;
-  const smtp = document.getElementById('eid-smtp-' + idx);
-  const port = document.getElementById('eid-port-' + idx);
-  if (!smtp.dataset.manual) {
-    const detected = emailSmtpFromDomain(email);
-    if (detected.server) {
-      smtp.value = detected.server;
-      port.value = detected.port;
-    }
+function smtpBegin() {
+  // Clear all fields; reset port default
+  for (const field of ['smtp-label', 'smtp-email', 'smtp-name', 'smtp-host', 'smtp-user', 'smtp-password']) {
+    document.getElementById(field).value = '';
   }
-  // Auto-fill username and name if empty
-  const user = document.getElementById('eid-user-' + idx);
-  if (!user.value) user.placeholder = email;
-  const name = document.getElementById('eid-name-' + idx);
+  document.getElementById('smtp-port').value = '465';
+  document.getElementById('smtp-primary').checked = false;
+  document.getElementById('smtp-msg').textContent = '';
+  document.getElementById('smtp-overlay').style.display = 'flex';
+  setTimeout(() => document.getElementById('smtp-email').focus(), 50);
+}
+
+/// Auto-fill SMTP server + port + placeholder name/username based on the
+/// domain of the entered email. Called on each keystroke in the email
+/// field. Doesn't overwrite manually-typed values.
+function smtpAutoDetect() {
+  const email = document.getElementById('smtp-email').value.trim();
+  const hostEl = document.getElementById('smtp-host');
+  const portEl = document.getElementById('smtp-port');
+  if (!hostEl.dataset.manual) {
+    const d = emailSmtpFromDomain(email);
+    if (d.server) { hostEl.value = d.server; portEl.value = d.port; }
+  }
+  const user = document.getElementById('smtp-user');
+  if (!user.value) user.placeholder = email || 'Same as from email';
+  const name = document.getElementById('smtp-name');
   if (!name.value && email.includes('@')) {
     const prefix = email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     name.placeholder = prefix;
   }
 }
 
-function emailCollectIdentities() {
-  const identities = [];
-  for (let i = 0; i < emailIdentityCount; i++) {
-    const card = document.getElementById('email-id-card-' + i);
-    if (!card) continue;
-    const fromEmail = (document.getElementById('eid-email-' + i) || {}).value || '';
-    if (!fromEmail) continue;
-    identities.push({
-      label: (document.getElementById('eid-label-' + i) || {}).value || '',
-      from_email: fromEmail,
-      from_name: (document.getElementById('eid-name-' + i) || {}).value || fromEmail.split('@')[0],
-      smtp_server: (document.getElementById('eid-smtp-' + i) || {}).value || '',
-      smtp_port: parseInt((document.getElementById('eid-port-' + i) || {}).value) || 465,
-      username: (document.getElementById('eid-user-' + i) || {}).value || fromEmail,
-      password: (document.getElementById('eid-pw-' + i) || {}).value || '',
-      primary: i === 0,
-    });
-  }
-  return identities;
-}
+function smtpSave() {
+  const label = document.getElementById('smtp-label').value.trim();
+  const email = document.getElementById('smtp-email').value.trim();
+  const name = document.getElementById('smtp-name').value.trim();
+  const host = document.getElementById('smtp-host').value.trim();
+  const port = parseInt(document.getElementById('smtp-port').value) || 465;
+  const user = document.getElementById('smtp-user').value.trim() || email;
+  const password = document.getElementById('smtp-password').value;
+  const primary = document.getElementById('smtp-primary').checked;
+  const msg = document.getElementById('smtp-msg');
 
-function emailTestIdentity(idx) {
-  const result = document.getElementById('eid-test-result-' + idx);
-  result.textContent = 'Saving first...';
-  result.style.color = 'var(--cyan)';
+  if (!email) { msg.textContent = 'Email address is required.'; msg.style.color = 'var(--red)'; return; }
+  if (!host) { msg.textContent = 'SMTP server is required.'; msg.style.color = 'var(--red)'; return; }
+  if (!password) { msg.textContent = 'Password is required.'; msg.style.color = 'var(--red)'; return; }
 
-  // Save first, then test that identity
-  const identities = emailCollectIdentities();
-  const fromEmail = identities[idx] ? identities[idx].from_email : '';
-
-  fetch('/api/email/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identities }) })
-    .then(() => fetch('/api/email/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from_email: fromEmail }) }))
-    .then(r => r.json())
-    .then(d => {
-      result.textContent = d.ok ? '✓ sent to ' + d.sent_to : '✗ failed';
-      result.style.color = d.ok ? 'var(--green)' : 'var(--red)';
-    })
-    .catch(e => { result.textContent = '✗ ' + e; result.style.color = 'var(--red)'; });
-}
-
-function setupSave() {
-  const identities = emailCollectIdentities();
-  if (!identities.length) {
-    document.getElementById('setup-msg').textContent = 'Add at least one identity';
-    return;
-  }
-  const msg = document.getElementById('setup-msg');
-  msg.textContent = 'Saving...';
+  msg.textContent = 'Saving…';
   msg.style.color = 'var(--cyan)';
-  fetch('/api/email/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identities }) })
+  fetch('/api/email/smtp/setup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      label: label || 'SMTP',
+      from_email: email,
+      from_name: name || email,
+      smtp_server: host,
+      smtp_port: port,
+      username: user,
+      password: password,
+      primary: primary,
+    })
+  })
     .then(r => r.json())
     .then(d => {
       if (d.ok) {
-        document.getElementById('setup-overlay').style.display = 'none';
-        emailIdentities = null; // force reload
+        smtpCancel();
+        emailSetupRefresh();
       } else {
-        msg.textContent = 'Save failed';
+        msg.textContent = 'Save failed: ' + (d.error || 'unknown error');
         msg.style.color = 'var(--red)';
       }
     })
     .catch(e => { msg.textContent = 'Error: ' + e; msg.style.color = 'var(--red)'; });
+}
+
+function smtpCancel() {
+  document.getElementById('smtp-overlay').style.display = 'none';
 }
 
 function setupSkip() { document.getElementById('setup-overlay').style.display = 'none'; }

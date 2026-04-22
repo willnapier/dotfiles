@@ -2960,6 +2960,204 @@ pub async fn email_gmail_setup(
     }))
 }
 
+// ---------------------------------------------------------------------------
+// SMTP identity — single-identity add endpoint (matches M365/Gmail shape).
+//
+// The older `/api/email/setup` takes a full array and overwrites. This one
+// appends a single SMTP identity, so the "add identity" UX can be uniform
+// across SMTP, M365, and Gmail: always open a modal, always immediate save.
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct SmtpSetupRequest {
+    pub label: String,
+    pub from_email: String,
+    pub from_name: String,
+    pub smtp_server: String,
+    #[serde(default = "default_smtp_port")]
+    pub smtp_port: u16,
+    pub username: String,
+    /// Password for keychain. Required for new SMTP identities.
+    pub password: String,
+    #[serde(default)]
+    pub primary: bool,
+}
+
+/// POST /api/email/smtp/setup — append one SMTP+password identity and
+/// store its password in the shared `clinical-email` keychain service.
+pub async fn email_smtp_setup(
+    Json(req): Json<SmtpSetupRequest>,
+) -> Json<serde_json::Value> {
+    if req.from_email.trim().is_empty() {
+        return Json(serde_json::json!({"ok": false, "error": "from_email is required"}));
+    }
+    if req.password.is_empty() {
+        return Json(serde_json::json!({"ok": false, "error": "password is required"}));
+    }
+
+    let encryption = if req.smtp_port == 465 {
+        crate::email::backends::Encryption::Tls
+    } else {
+        crate::email::backends::Encryption::StartTls
+    };
+
+    let entry = crate::email::wizard::IdentityEntry {
+        label: req.label.clone(),
+        from_email: req.from_email.clone(),
+        from_name: if req.from_name.is_empty() {
+            req.from_email.clone()
+        } else {
+            req.from_name.clone()
+        },
+        primary: req.primary,
+        backend: crate::email::backends::BackendConfig::Smtp(
+            crate::email::backends::SmtpConfig {
+                host: req.smtp_server.clone(),
+                port: req.smtp_port,
+                encryption,
+                username: req.username.clone(),
+                auth_mode: crate::email::backends::AuthMode::Password,
+            },
+        ),
+        auth: crate::email::backends::AuthConfig::Password {
+            keyring_service: "clinical-email".to_string(),
+            keyring_account: req.username.clone(),
+        },
+    };
+
+    // Store password in the secrets.toml used by legacy-path callers, so
+    // anything still using the old `secrets.email_password()` lookup keeps
+    // working. New callers via `KeychainPasswordSource` look it up under
+    // the "clinical-email" keychain service; we write there too for
+    // consistency with the wizard.
+    let mut secrets = match crate::billing::secrets::BillingSecrets::load() {
+        Ok(s) => s,
+        Err(e) => return Json(serde_json::json!({"ok": false, "error": e.to_string()})),
+    };
+    secrets.set_email_password(&req.username, &req.password);
+    if let Err(e) = secrets.save() {
+        return Json(serde_json::json!({"ok": false, "error": e.to_string()}));
+    }
+
+    // Also write to macOS/Linux keychain for the new `KeychainPasswordSource`
+    // lookup path. Delegated to a small helper that mirrors what the wizard
+    // does in `store_password`.
+    if let Err(e) = store_keychain_password("clinical-email", &req.username, &req.password) {
+        return Json(serde_json::json!({"ok": false, "error": format!("keychain write failed: {e}")}));
+    }
+
+    let config_path = crate::config::config_dir().join("config.toml");
+    if let Err(e) = std::fs::create_dir_all(crate::config::config_dir()) {
+        return Json(serde_json::json!({"ok": false, "error": e.to_string()}));
+    }
+    let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
+    let updated = match crate::email::wizard::append_identity(&existing, &entry) {
+        Ok(s) => s,
+        Err(e) => return Json(serde_json::json!({"ok": false, "error": e.to_string()})),
+    };
+    if let Err(e) = std::fs::write(&config_path, updated) {
+        return Json(serde_json::json!({"ok": false, "error": e.to_string()}));
+    }
+
+    Json(serde_json::json!({"ok": true, "from_email": req.from_email, "label": req.label}))
+}
+
+/// Write a password into the OS keychain under service/account.
+fn store_keychain_password(service: &str, account: &str, password: &str) -> Result<(), String> {
+    use std::process::Command;
+    if cfg!(target_os = "macos") {
+        // Delete existing entry (ignore failure)
+        let _ = Command::new("security")
+            .args(["delete-generic-password", "-s", service, "-a", account])
+            .output();
+        let status = Command::new("security")
+            .args([
+                "add-generic-password",
+                "-s", service, "-a", account, "-w", password, "-U",
+            ])
+            .status()
+            .map_err(|e| format!("spawn security: {e}"))?;
+        if !status.success() {
+            return Err(format!("security add-generic-password exited {status}"));
+        }
+    } else {
+        use std::io::Write;
+        let mut child = Command::new("secret-tool")
+            .args(["store", "--label", account, "service", service, "account", account])
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("spawn secret-tool: {e}"))?;
+        {
+            let stdin = child.stdin.as_mut().ok_or_else(|| "no stdin on secret-tool".to_string())?;
+            stdin.write_all(password.as_bytes()).map_err(|e| e.to_string())?;
+        }
+        let status = child.wait().map_err(|e| e.to_string())?;
+        if !status.success() {
+            return Err(format!("secret-tool exited {status}"));
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Delete an identity by from_email.
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct IdentityDeleteRequest {
+    pub from_email: String,
+}
+
+/// POST /api/email/identity/delete — remove one `[[email.identities]]`
+/// block from config.toml by `from_email`. Doesn't touch keychain entries
+/// or OAuth tokens (those may be shared / useful for re-adding later).
+pub async fn email_identity_delete(
+    Json(req): Json<IdentityDeleteRequest>,
+) -> Json<serde_json::Value> {
+    let config_path = crate::config::config_dir().join("config.toml");
+    let existing = match std::fs::read_to_string(&config_path) {
+        Ok(s) => s,
+        Err(e) => return Json(serde_json::json!({"ok": false, "error": e.to_string()})),
+    };
+
+    // Parse, filter, reserialize. We use the same Identity/IdentityEntry
+    // round-trip the wizard uses, so the output keeps the canonical tagged
+    // shape.
+    let parsed: toml::Value = match existing.parse() {
+        Ok(v) => v,
+        Err(e) => return Json(serde_json::json!({"ok": false, "error": e.to_string()})),
+    };
+    let mut root = match parsed.as_table() {
+        Some(t) => t.clone(),
+        None => return Json(serde_json::json!({"ok": false, "error": "config.toml top level is not a table"})),
+    };
+
+    if let Some(toml::Value::Table(email_tbl)) = root.get_mut("email") {
+        if let Some(toml::Value::Array(arr)) = email_tbl.get_mut("identities") {
+            let before = arr.len();
+            arr.retain(|item| {
+                item.as_table()
+                    .and_then(|t| t.get("from_email"))
+                    .and_then(|v| v.as_str())
+                    .map(|addr| addr != req.from_email)
+                    .unwrap_or(true)
+            });
+            if arr.len() == before {
+                return Json(serde_json::json!({"ok": false, "error": format!("no identity found with from_email={}", req.from_email)}));
+            }
+        }
+    }
+
+    let rewritten = match toml::to_string(&root) {
+        Ok(s) => s,
+        Err(e) => return Json(serde_json::json!({"ok": false, "error": e.to_string()})),
+    };
+    if let Err(e) = std::fs::write(&config_path, rewritten) {
+        return Json(serde_json::json!({"ok": false, "error": e.to_string()}));
+    }
+    Json(serde_json::json!({"ok": true}))
+}
+
 /// Minimal HTML escape for error-message display in the callback page.
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
