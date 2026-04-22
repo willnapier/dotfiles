@@ -244,7 +244,10 @@ fn main() -> Result<()> {
             for (name, _date, _time, tm3_id) in &unmapped {
                 eprintln!();
                 eprintln!("Auto-onboarding \"{}\"...", name);
-                let mut cmd = std::process::Command::new("clinical-product");
+                // Binary was renamed clinical-product → practiceforge in
+                // early 2026. The old command string was never updated;
+                // auto-onboarding has been silently failing since then.
+                let mut cmd = std::process::Command::new("practiceforge");
                 cmd.arg("onboard").arg(name.as_str());
                 if let Some(ref id) = tm3_id {
                     cmd.args(["--tm3-id", id]);
@@ -260,7 +263,7 @@ fn main() -> Result<()> {
                         any_onboarded = true;
                     }
                     Ok(s) => eprintln!("⚠ Onboard failed for \"{}\" (exit {})", name, s),
-                    Err(e) => eprintln!("⚠ Could not run clinical-product onboard: {}", e),
+                    Err(e) => eprintln!("⚠ Could not run practiceforge onboard: {}", e),
                 }
             }
 
