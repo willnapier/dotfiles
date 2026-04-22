@@ -60,7 +60,6 @@ jobs:
 
   test-all-informational:
     # Informational only — surfaces broader Windows-incompat failures
-    # (oauth_command.rs printf/echo/false/true tests, /tmp hardcode, etc.)
     # so Phase B has a live punch list. Does not gate the workflow status.
     name: "Test all (informational, allowed to fail)"
     runs-on: windows-latest
@@ -75,6 +74,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust-projects/practiceforge
+
+      # Registry tests do real `git commit`. The runner has no global
+      # identity by default — set one so registry tests are not blocked
+      # by unrelated environment config.
+      - name: Configure git identity for tests
+        working-directory: .
+        run: |
+          git config --global user.email "ci@practiceforge.test"
+          git config --global user.name "PracticeForge CI"
 
       - name: "cargo test (full suite)"
         run: "cargo test --bin practiceforge --target x86_64-pc-windows-msvc"
