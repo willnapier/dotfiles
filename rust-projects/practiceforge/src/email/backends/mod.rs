@@ -108,6 +108,7 @@ fn build_token_source(auth: &AuthConfig) -> Arc<dyn TokenSource> {
         AuthConfig::OAuth2Command { command } => {
             Arc::new(CommandTokenSource::new(command.clone()))
         }
+        AuthConfig::KeychainM365 => Arc::new(KeychainOAuthTokenSource::for_m365()),
     }
 }
 
@@ -160,5 +161,37 @@ mod tests {
         };
         let transport = transport_for(&identity).expect("dispatch should succeed");
         assert_eq!(transport.name(), "Microsoft Graph");
+    }
+
+    #[test]
+    fn dispatch_graph_keychain_m365() {
+        // Construction-only test — the KeychainM365 token source touches
+        // the OS keystore lazily on `access_token()`, so building the
+        // transport is side-effect-free and safe to run anywhere.
+        let identity = IdentityConfig {
+            backend: BackendConfig::Graph(GraphConfig::default()),
+            auth: AuthConfig::KeychainM365,
+        };
+        let transport = transport_for(&identity).expect("dispatch should succeed");
+        assert_eq!(transport.name(), "Microsoft Graph");
+    }
+
+    #[test]
+    fn auth_config_serializes_keychain_m365_with_tag_only() {
+        let auth = AuthConfig::KeychainM365;
+        let v = serde_json::to_value(&auth).unwrap();
+        // Tagged enum, snake_case rename — should be a single-field
+        // object: {"type": "keychain_m365"}.
+        assert_eq!(v, serde_json::json!({"type": "keychain_m365"}));
+    }
+
+    #[test]
+    fn auth_config_round_trips_keychain_m365_through_toml() {
+        // The dashboard writes config.toml; round-tripping is what
+        // matters in practice. Only the tag survives a round-trip.
+        let auth = AuthConfig::KeychainM365;
+        let toml_str = toml::to_string(&toml::Value::try_from(&auth).unwrap()).unwrap();
+        let back: AuthConfig = toml::from_str(&toml_str).unwrap();
+        assert!(matches!(back, AuthConfig::KeychainM365));
     }
 }

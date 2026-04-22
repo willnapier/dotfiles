@@ -3375,9 +3375,12 @@ pub async fn email_m365_setup(
         backend: crate::email::backends::BackendConfig::Graph(
             crate::email::backends::GraphConfig::default(),
         ),
-        auth: crate::email::backends::AuthConfig::OAuth2Command {
-            command: "cohs-oauth-graph show".to_string(),
-        },
+        // In-Rust refresh-on-read. Replaces the prior shell-out to
+        // `cohs-oauth-graph show`; works on Windows (no Python required)
+        // and saves the per-send subprocess hop on Mac/Linux. Old configs
+        // that still carry `OAuth2Command { command: "cohs-oauth-graph
+        // show" }` continue to dispatch through the legacy shim.
+        auth: crate::email::backends::AuthConfig::KeychainM365,
     };
     // Note: we delegate to the wizard's `append_identity` which already
     // handles legacy-flat promotion, primary flag juggling, and pretty
