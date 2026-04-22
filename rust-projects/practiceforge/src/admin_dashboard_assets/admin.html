@@ -2505,6 +2505,9 @@ function emailSetupOpen(existingIdentities) {
       const badge = id.primary
         ? '<span style="background:var(--green);color:#000;padding:1px 6px;border-radius:3px;font-size:10px;margin-right:6px">PRIMARY</span>'
         : '';
+      const makePrimaryBtn = id.primary
+        ? ''
+        : '<button onclick="identityMakePrimary(\'' + esc(id.from_email) + '\')" style="background:none;border:1px solid var(--border);color:var(--fg-dim);padding:3px 10px;border-radius:3px;cursor:pointer;font-size:11px;margin-right:6px" title="Make this the primary send identity">Make primary</button>';
       card.innerHTML =
         '<div style="min-width:0;flex:1">' +
           '<div style="font-weight:600;font-size:13px">' + esc(id.label || id.from_email) + '</div>' +
@@ -2513,7 +2516,10 @@ function emailSetupOpen(existingIdentities) {
             ' <span style="margin-left:8px;padding:1px 5px;background:var(--bg-dim);border-radius:3px;font-size:10px;color:var(--fg-dim)">' + backendLabel + '</span>' +
           '</div>' +
         '</div>' +
-        '<button onclick="identityDelete(\'' + esc(id.from_email) + '\')" style="background:none;border:1px solid var(--border);color:var(--fg-dim);padding:3px 10px;border-radius:3px;cursor:pointer;font-size:11px" title="Remove identity">Remove</button>';
+        '<div style="display:flex;align-items:center">' +
+          makePrimaryBtn +
+          '<button onclick="identityDelete(\'' + esc(id.from_email) + '\')" style="background:none;border:1px solid var(--border);color:var(--fg-dim);padding:3px 10px;border-radius:3px;cursor:pointer;font-size:11px" title="Remove identity">Remove</button>' +
+        '</div>';
       list.appendChild(card);
     });
   } else {
@@ -2523,6 +2529,23 @@ function emailSetupOpen(existingIdentities) {
     list.appendChild(empty);
   }
   document.getElementById('setup-overlay').style.display = '';
+}
+
+function identityMakePrimary(fromEmail) {
+  fetch('/api/email/identity/set-primary', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from_email: fromEmail })
+  })
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        emailSetupRefresh();
+      } else {
+        alert('Could not set primary: ' + (d.error || 'unknown error'));
+      }
+    })
+    .catch(e => alert('Error: ' + e));
 }
 
 function identityDelete(fromEmail) {

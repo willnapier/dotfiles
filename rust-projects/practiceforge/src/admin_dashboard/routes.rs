@@ -74,6 +74,8 @@ pub fn build_router() -> Router {
         .route("/api/email/smtp/setup", post(handlers::email_smtp_setup))
         // Remove an identity from config.toml by from_email
         .route("/api/email/identity/delete", post(handlers::email_identity_delete))
+        // Mark an identity as primary (demote all others)
+        .route("/api/email/identity/set-primary", post(handlers::email_identity_set_primary))
         // Letter workflow
         .route("/api/letter/draft", post(handlers::letter_draft))
         .route("/api/letter/build", post(handlers::letter_build))

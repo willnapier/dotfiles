@@ -3158,6 +3158,66 @@ pub async fn email_identity_delete(
     Json(serde_json::json!({"ok": true}))
 }
 
+// ---------------------------------------------------------------------------
+// Change which identity is primary.
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct IdentityPrimaryRequest {
+    pub from_email: String,
+}
+
+/// POST /api/email/identity/set-primary — mark one identity as primary
+/// and demote all others. Handles the case where no identity was ever
+/// explicitly primary (load-time "first one wins" fallback becomes an
+/// explicit `primary = true` flag after this call).
+pub async fn email_identity_set_primary(
+    Json(req): Json<IdentityPrimaryRequest>,
+) -> Json<serde_json::Value> {
+    let config_path = crate::config::config_dir().join("config.toml");
+    let existing = match std::fs::read_to_string(&config_path) {
+        Ok(s) => s,
+        Err(e) => return Json(serde_json::json!({"ok": false, "error": e.to_string()})),
+    };
+    let parsed: toml::Value = match existing.parse() {
+        Ok(v) => v,
+        Err(e) => return Json(serde_json::json!({"ok": false, "error": e.to_string()})),
+    };
+    let mut root = match parsed.as_table() {
+        Some(t) => t.clone(),
+        None => return Json(serde_json::json!({"ok": false, "error": "config.toml top level is not a table"})),
+    };
+
+    let mut found = false;
+    if let Some(toml::Value::Table(email_tbl)) = root.get_mut("email") {
+        if let Some(toml::Value::Array(arr)) = email_tbl.get_mut("identities") {
+            for item in arr.iter_mut() {
+                if let Some(t) = item.as_table_mut() {
+                    let addr = t.get("from_email").and_then(|v| v.as_str()).unwrap_or("");
+                    let should_be_primary = addr == req.from_email;
+                    if should_be_primary {
+                        found = true;
+                    }
+                    t.insert("primary".to_string(), toml::Value::Boolean(should_be_primary));
+                }
+            }
+        }
+    }
+
+    if !found {
+        return Json(serde_json::json!({"ok": false, "error": format!("no identity found with from_email={}", req.from_email)}));
+    }
+
+    let rewritten = match toml::to_string(&root) {
+        Ok(s) => s,
+        Err(e) => return Json(serde_json::json!({"ok": false, "error": e.to_string()})),
+    };
+    if let Err(e) = std::fs::write(&config_path, rewritten) {
+        return Json(serde_json::json!({"ok": false, "error": e.to_string()}));
+    }
+    Json(serde_json::json!({"ok": true}))
+}
+
 /// Minimal HTML escape for error-message display in the callback page.
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
