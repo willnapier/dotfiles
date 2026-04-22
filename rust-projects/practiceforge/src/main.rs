@@ -9,6 +9,7 @@ use std::io::{self, Read, Write};
 pub mod billing;
 pub mod config;
 pub mod dephi;
+pub mod keystore;
 pub mod llm;
 pub mod prompt_presets;
 mod admin_dashboard;
