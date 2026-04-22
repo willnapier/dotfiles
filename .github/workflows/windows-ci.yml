@@ -57,3 +57,24 @@ jobs:
 
       - name: "cargo test keystore::"
         run: "cargo test --bin practiceforge --target x86_64-pc-windows-msvc keystore::"
+
+  test-all-informational:
+    # Informational only — surfaces broader Windows-incompat failures
+    # (oauth_command.rs printf/echo/false/true tests, /tmp hardcode, etc.)
+    # so Phase B has a live punch list. Does not gate the workflow status.
+    name: "Test all (informational, allowed to fail)"
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust-projects/practiceforge
+
+      - name: "cargo test (full suite)"
+        run: "cargo test --bin practiceforge --target x86_64-pc-windows-msvc"
