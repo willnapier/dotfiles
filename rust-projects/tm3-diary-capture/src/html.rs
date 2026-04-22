@@ -123,9 +123,21 @@ fn resolve_dates(headers: &[String], month_year: &str) -> Result<Vec<NaiveDate>>
     // Find first index where day number drops (month boundary)
     let boundary_idx = day_nums.windows(2).position(|w| w[1] < w[0]);
 
-    // Case A: the day AT the boundary is invalid in the displayed month
+    // Case A: the week starts in the previous month. We detect this by
+    // checking whether any pre-boundary day number is INVALID in the
+    // displayed month. For a week like [29, 30, 31, 1, 2, 3, 4] labelled
+    // "April", day 31 is invalid in April → the pre-boundary run is in
+    // March.
+    //
+    // The earlier form checked only `day_nums[boundary_idx]` (which is the
+    // first post-drop day, always small and usually valid in any month), so
+    // it missed this case and produced "Invalid date: 2026 4 31" errors.
     let starts_in_prev_month = boundary_idx
-        .map(|b| NaiveDate::from_ymd_opt(current_year, month, day_nums[b]).is_none())
+        .map(|b| {
+            day_nums[..=b]
+                .iter()
+                .any(|&d| NaiveDate::from_ymd_opt(current_year, month, d).is_none())
+        })
         .unwrap_or(false);
 
     let (prev_year, prev_month) = if month == 1 {
