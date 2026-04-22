@@ -115,14 +115,21 @@ Path ~/Mail/gmail-imap/
 Inbox ~/Mail/gmail-imap/INBOX/
 SubFolders Verbatim
 
-# [Gmail]/All Mail holds every message exactly once (the canonical store);
-# INBOX/Sent/Drafts/Trash/Spam are convenience label-folders. Syncing
-# All Mail alone would work for content; adding the label-folders lets
-# notmuch see Gmail's own categorisation (useful for auto-tagging).
+# Pattern `*` matches lieer's full-mirror behaviour: pull everything
+# Gmail exposes over IMAP. A message with N labels shows up in N
+# folders (Gmail's IMAP label-as-folder emulation). notmuch dedupes
+# by Message-ID so search is unaffected, but disk use scales with
+# average labels per message. Expect ~2–3× the All-Mail size for a
+# heavily-labelled account. Narrow if disk becomes an issue:
+#   Patterns "[Gmail]/All Mail" "INBOX" "[Gmail]/Sent Mail" \
+#            "[Gmail]/Drafts" "[Gmail]/Trash" "[Gmail]/Spam"
+# (the bracketed namespace needs mbsync to see Gmail's hierarchy
+# delimiter; PathDelimiter "/" on IMAPAccount sets this explicitly if
+# the default probe doesn't pick it up).
 Channel gmail-all
 Far :gmail-remote:
 Near :gmail-local:
-Patterns "[Gmail]/All Mail" "INBOX" "[Gmail]/Sent Mail" "[Gmail]/Drafts" "[Gmail]/Trash" "[Gmail]/Spam"
+Patterns *
 Sync Pull
 Expunge None
 CopyArrivalDate yes
