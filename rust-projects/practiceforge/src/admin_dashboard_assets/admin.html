@@ -749,7 +749,10 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
             </div>
           </div>
           <div id="clinic-compare-wrap" style="display:none">
-            <div class="section-head">Compare variants (side-by-side)</div>
+            <div class="section-head" style="display:flex;align-items:center;gap:10px;">
+              <span>Compare variants (side-by-side)</span>
+              <button class="clinic-compare-analytics-refresh" onclick="clinicCompareResetVariants()" title="Clear stored variant choices for this client and reload defaults (matching the current Generate-line model)" style="margin-left:auto;font-size:11px;">Reset variants</button>
+            </div>
             <div class="clinic-compare-grid">
               <div class="clinic-compare-pane" data-variant="a">
                 <div class="clinic-compare-header">
@@ -1392,8 +1395,23 @@ function clinicFreshnessPoll(dateStr, force) {
           .then(r => r.json())
           .then(session => {
             if (dateStr !== clinicFreshnessDate) return;
+            // Preserve any in-flight observation drafts the practitioner is
+            // typing right now. Background refresh comes from
+            // tm3-diary-capture, which doesn't populate draft_observation,
+            // so a naive replace would clobber unsaved typing.
+            const oldDrafts = {};
+            if (S.clinicSession && S.clinicSession.clients) {
+              S.clinicSession.clients.forEach(c => {
+                if (c.draft_observation) oldDrafts[c.id] = c.draft_observation;
+              });
+            }
             S.clinicSession = session;
             if (!session.clients) S.clinicSession.clients = [];
+            S.clinicSession.clients.forEach(c => {
+              if (!c.draft_observation && oldDrafts[c.id]) {
+                c.draft_observation = oldDrafts[c.id];
+              }
+            });
             renderClinicList();
             checkEndClinicVisibility();
           })
@@ -1961,7 +1979,32 @@ function clinicCompareApplyVariant(col, v) {
   // Prompt is populated async — the caller (clinicCompareLoadPrefs) handles it
 }
 
+// Clear this client's stored variant picks and reload defaults. Useful when
+// the practitioner has changed the global [ai] model (via the Generate-line
+// picker) and wants the compare columns to catch up, OR when they want
+// a fresh start on the axis choices for this client.
+function clinicCompareResetVariants() {
+  if (!S.clinicSelectedId) {
+    pfToast('Select a client first');
+    return;
+  }
+  try {
+    localStorage.removeItem(clinicCompareStorageKey(S.clinicSelectedId));
+  } catch (e) { /* ignore */ }
+  clinicCompareLoadPrefs(S.clinicSelectedId);
+  pfToast('Variants reset to defaults');
+}
+
 async function clinicCompareLoadPrefs(clientId) {
+  // Defaults inherit the currently-configured global [ai] model so that
+  // flipping the top Generate-line picker to Haiku/Sonnet/Opus cascades
+  // into the compare columns for any client whose variants haven't yet
+  // been pinned in localStorage. Rails + preset defaults stay constant —
+  // the point of compare is to differ on *some* axis.
+  const globalModel = S.clinicGlobalModel || 'claude-sonnet-4-6';
+  CLINIC_COMPARE_DEFAULTS.a.model = globalModel;
+  CLINIC_COMPARE_DEFAULTS.b.model = globalModel;
+
   // Load defaults (then overlay localStorage if present)
   let prefs = {
     a: Object.assign({}, CLINIC_COMPARE_DEFAULTS.a),
@@ -2102,9 +2145,14 @@ async function clinicCompareStreamColumn(col) {
     }
     const elapsed = (performance.now() - start) / 1000;
     text.value = normalizeNoteSpacing(text.value);
-    if (S.clinicClientFirstName) {
-      text.value = text.value.replace(/\[CLIENT\]/g, S.clinicClientFirstName);
-    }
+    // Final revert pass catches any [CLIENT] placeholders that survived the
+    // per-chunk server-side revert (typically a chunk-boundary straddle
+    // "[CLI"+"ENT]"). Always runs with a fallback so we never ship raw
+    // placeholder syntax to the practitioner.
+    const clientDisplayName = S.clinicClientFirstName
+      || S.clinicSelectedId
+      || 'the client';
+    text.value = text.value.replace(/\[CLIENT\]/g, clientDisplayName);
     clinicCompareState[col] = { variant: variant, note: text.value, secs: elapsed, done: true };
     status.classList.remove('streaming');
     status.classList.add('complete');
@@ -2288,6 +2336,32 @@ function clinicCompareAnalyticsFmtNum(x, digits) {
   return Number(x).toFixed(digits == null ? 2 : digits);
 }
 
+let clinicCompareAnalyticsShowLegacy = false;
+
+function clinicCompareAnalyticsToggleLegacy() {
+  clinicCompareAnalyticsShowLegacy = !clinicCompareAnalyticsShowLegacy;
+  clinicCompareAnalyticsLoad();
+}
+
+function clinicCompareAnalyticsIsLegacy(v) {
+  // The backend tags pre-refactor (Gemma-era) rows as prompt_preset="legacy"
+  // or remaps their model to legacy-q4 / legacy-q8. Either flag qualifies.
+  return v.prompt_preset === 'legacy'
+    || (typeof v.model === 'string' && v.model.indexOf('legacy-') === 0);
+}
+
+function clinicCompareAnalyticsRenderRow(v) {
+  return '<tr>'
+    + '<td>' + esc(v.model || '') + '</td>'
+    + '<td>' + (v.with_rail ? 'On' : 'Off') + '</td>'
+    + '<td>' + esc(v.prompt_preset || '') + '</td>'
+    + '<td>' + esc(String(v.runs != null ? v.runs : '—')) + '</td>'
+    + '<td>' + clinicCompareAnalyticsFmtPct(v.accept_rate) + '</td>'
+    + '<td>' + clinicCompareAnalyticsFmtNum(v.avg_secs, 1) + '</td>'
+    + '<td>' + clinicCompareAnalyticsFmtNum(v.avg_hard_failures, 2) + '</td>'
+    + '</tr>';
+}
+
 async function clinicCompareAnalyticsLoad() {
   const tbl     = document.getElementById('clinic-compare-analytics-table');
   const msg     = document.getElementById('clinic-compare-analytics-msg');
@@ -2298,38 +2372,44 @@ async function clinicCompareAnalyticsLoad() {
     const resp = await fetch('/api/compare/analytics');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
-    const variants = Array.isArray(data.variants) ? data.variants.slice() : [];
-    variants.sort((x, y) => (y.runs || 0) - (x.runs || 0));
+    const all = Array.isArray(data.variants) ? data.variants.slice() : [];
+    all.sort((x, y) => (y.runs || 0) - (x.runs || 0));
 
-    if (variants.length === 0) {
-      tbl.innerHTML = '<div class="clinic-compare-analytics-msg">No comparison data yet.</div>';
+    const live = all.filter(v => !clinicCompareAnalyticsIsLegacy(v));
+    const legacy = all.filter(v => clinicCompareAnalyticsIsLegacy(v));
+
+    const header = '<table><thead><tr>'
+      + '<th>Model</th><th>Rails</th><th>Preset</th>'
+      + '<th>Runs</th><th>Accept %</th><th>Avg secs</th><th>Avg failures</th>'
+      + '</tr></thead><tbody>';
+
+    let html = '';
+    if (live.length === 0 && !clinicCompareAnalyticsShowLegacy) {
+      html = '<div class="clinic-compare-analytics-msg">No comparison data yet.</div>';
     } else {
-      let html = '<table><thead><tr>'
-        + '<th>Model</th><th>Rails</th><th>Preset</th>'
-        + '<th>Runs</th><th>Accept %</th><th>Avg secs</th><th>Avg failures</th>'
-        + '</tr></thead><tbody>';
-      variants.forEach(v => {
-        html += '<tr>'
-          + '<td>' + esc(v.model || '') + '</td>'
-          + '<td>' + (v.with_rail ? 'On' : 'Off') + '</td>'
-          + '<td>' + esc(v.prompt_preset || '') + '</td>'
-          + '<td>' + esc(String(v.runs != null ? v.runs : '—')) + '</td>'
-          + '<td>' + clinicCompareAnalyticsFmtPct(v.accept_rate) + '</td>'
-          + '<td>' + clinicCompareAnalyticsFmtNum(v.avg_secs, 1) + '</td>'
-          + '<td>' + clinicCompareAnalyticsFmtNum(v.avg_hard_failures, 2) + '</td>'
-          + '</tr>';
-      });
+      html = header;
+      live.forEach(v => { html += clinicCompareAnalyticsRenderRow(v); });
+      if (clinicCompareAnalyticsShowLegacy) {
+        legacy.forEach(v => { html += clinicCompareAnalyticsRenderRow(v); });
+      }
       html += '</tbody></table>';
-      tbl.innerHTML = html;
     }
+    tbl.innerHTML = html;
 
     const totalPairs      = data.total_pairs != null ? data.total_pairs : 0;
     const rejectBothPairs = data.reject_both_pairs != null ? data.reject_both_pairs : 0;
-    footer.textContent = 'Total pairs: ' + totalPairs + ' • Reject-both: ' + rejectBothPairs;
+    let footerHtml = 'Total pairs: ' + totalPairs + ' • Reject-both: ' + rejectBothPairs;
+    if (legacy.length > 0) {
+      const label = clinicCompareAnalyticsShowLegacy
+        ? 'Hide ' + legacy.length + ' legacy row' + (legacy.length === 1 ? '' : 's')
+        : 'Show ' + legacy.length + ' legacy row' + (legacy.length === 1 ? '' : 's') + ' (pre-refactor Gemma-era)';
+      footerHtml += ' • <a href="#" onclick="event.preventDefault();clinicCompareAnalyticsToggleLegacy();" style="color:var(--cyan);text-decoration:none;">' + esc(label) + '</a>';
+    }
+    footer.innerHTML = footerHtml;
     msg.textContent = '';
   } catch (e) {
     tbl.innerHTML = '';
-    footer.textContent = '';
+    footer.innerHTML = '';
     msg.textContent = 'Load failed: ' + String(e && e.message ? e.message : e);
   }
 }
@@ -2609,14 +2689,27 @@ function pollInferenceStatus() {
     .then(r => r.json())
     .then(data => {
       S.clinicInferenceAvailable = !!data.available;
+      // Cache the globally-configured model so compare columns can inherit
+      // it as their default (see clinicCompareLoadPrefs).
+      S.clinicGlobalModel = data.model || null;
       const dot = document.getElementById('clinic-inference-dot');
       const label = document.getElementById('clinic-inference-label');
+      const isFrontier = data.backend === 'anthropic' || data.backend === 'claude-cli';
       if (S.clinicInferenceAvailable) {
         dot.className = 'dot dot-green';
-        label.textContent = data.backend || 'connected';
-        label.style.color = 'var(--green)';
+        if (isFrontier) {
+          // Model-picker buttons (Haiku/Sonnet/Opus) signal "Claude is
+          // connected" far more clearly than the raw backend string —
+          // hide the label to de-clutter.
+          label.style.display = 'none';
+        } else {
+          label.style.display = '';
+          label.textContent = data.backend || 'connected';
+          label.style.color = 'var(--green)';
+        }
       } else {
         dot.className = 'dot dot-red';
+        label.style.display = '';
         label.textContent = 'disconnected';
         label.style.color = 'var(--red)';
       }
@@ -2627,6 +2720,7 @@ function pollInferenceStatus() {
       const dot = document.getElementById('clinic-inference-dot');
       const label = document.getElementById('clinic-inference-label');
       dot.className = 'dot dot-red';
+      label.style.display = '';
       label.textContent = 'disconnected';
       label.style.color = 'var(--red)';
       updateModelPicker('', '');
