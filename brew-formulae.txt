@@ -3,6 +3,8 @@ aribb24
 arm-none-eabi-binutils
 arm-none-eabi-gcc@8
 aspell
+autoconf
+automake
 avr-binutils
 avr-gcc@8
 avrdude
@@ -27,6 +29,7 @@ cliclick
 cmake
 confuse
 coreutils
+cyrus-sasl
 d2
 dav1d
 deno
@@ -85,6 +88,7 @@ jpeg-turbo
 jpeg-xl
 jq
 just
+krb5
 lame
 leptonica
 libarchive

@@ -32,6 +32,8 @@ com.user.zotero-watcher
 com.williamnapier.assistants-auto-pull
 com.williamnapier.assistants-auto-push
 com.williamnapier.bequest-heartbeat
+com.williamnapier.cohs-graph-token-refresh
+com.williamnapier.cohs-token-refresh
 com.williamnapier.continuum-dream
 com.williamnapier.continuum-sync-claude
 com.williamnapier.cross-machine-sync-check
@@ -39,8 +41,10 @@ com.williamnapier.dev-catchup
 com.williamnapier.ghostty-config-validate
 com.williamnapier.git-auto-pull-watcher
 com.williamnapier.git-auto-push-watcher
+com.williamnapier.gmail-token-refresh
 com.williamnapier.link-service
 com.williamnapier.linkmanager.plist.disabled
+com.williamnapier.mbsync-cohs
 com.williamnapier.practiceforge-dashboard
 com.williamnapier.practiceforge-maintain
 com.williamnapier.state-capture
