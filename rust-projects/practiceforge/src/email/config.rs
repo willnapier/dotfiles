@@ -173,9 +173,10 @@ fn parse_identities(s: &str) -> Result<Vec<Identity>> {
 }
 
 fn config_path() -> PathBuf {
-    dirs::config_dir()
-        .map(|d| d.join("practiceforge/config.toml"))
-        .unwrap_or_default()
+    // Use the crate-wide config_dir (which pins to ~/.config on macOS
+    // rather than ~/Library/Application Support) so the email module
+    // reads from the same path the rest of the crate writes to.
+    crate::config::config_dir().join("config.toml")
 }
 
 /// Load all identities from `~/.config/practiceforge/config.toml`.

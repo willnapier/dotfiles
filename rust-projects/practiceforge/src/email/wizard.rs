@@ -427,9 +427,10 @@ pub fn append_identity(existing_toml: &str, new_entry: &IdentityEntry) -> Result
 }
 
 fn config_path() -> PathBuf {
-    dirs::config_dir()
-        .map(|d| d.join("practiceforge/config.toml"))
-        .unwrap_or_default()
+    // Match the crate-wide config_dir (which pins to ~/.config on macOS
+    // rather than ~/Library/Application Support) so the wizard writes
+    // to the same path the email module and the rest of the crate read.
+    crate::config::config_dir().join("config.toml")
 }
 
 fn write_entry_to_config(entry: &IdentityEntry) -> Result<PathBuf> {
