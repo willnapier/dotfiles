@@ -68,15 +68,29 @@ else
     exit 1
 fi
 
-# Push local tag changes back to Gmail
-# gmi push is idempotent — if nothing to push, it's a fast no-op.
-# If it fails, we log and continue (don't exit 1) — pull+index already
-# succeeded, the push will retry on the next tick.
-log "START: gmi push"
-if "$GMI" push >> "$LOG" 2>&1; then
-    log "OK: gmi push complete"
+# Push local tag changes back to Gmail.
+#
+# 2026-04-22 migration: `gmi push` retired here in favour of the Rust
+# `practiceforge email gmail-push-tags --push` path, which runs as its
+# own launchd agent `com.williamnapier.gmail-push-tags` (15 min interval)
+# and queries notmuch's lastmod against the same ~/Mail/personal/ index
+# that lieer populates. The two scripts coexist cleanly: mail-sync pulls
+# + indexes, gmail-push-tags pushes.
+#
+# Leaving lieer's `gmi push` fallback disabled rather than deleting the
+# code because if push-tags is ever unloaded, we want a clear signal in
+# the log rather than silent non-syncing. To re-enable, flip PUSH_VIA_GMI
+# below.
+PUSH_VIA_GMI="${PUSH_VIA_GMI:-0}"
+if [ "$PUSH_VIA_GMI" = "1" ]; then
+    log "START: gmi push (fallback — push-tags via Rust is disabled)"
+    if "$GMI" push >> "$LOG" 2>&1; then
+        log "OK: gmi push complete"
+    else
+        log "WARN: gmi push failed (exit $?) — will retry next tick"
+    fi
 else
-    log "WARN: gmi push failed (exit $?) — will retry next tick"
+    log "SKIP: gmi push (handled by practiceforge gmail-push-tags agent)"
 fi
 
 log "DONE"

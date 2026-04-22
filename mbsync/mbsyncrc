@@ -75,66 +75,12 @@ SyncState *
 Group cohs
 Channel cohs-all
 
-# ---------------------------------------------------------------------------
-# Gmail (personal) via IMAP + XOAUTH2.
-#
-# This is the Phase-2 migration path: mbsync pulls Gmail via IMAP into
-# ~/Mail/gmail-imap/ in PARALLEL with the legacy lieer/gmi path that
-# pulls to ~/Mail/personal/. Keeping them separate during cutover means
-# a bad mbsync run cannot destroy lieer-indexed state. Once the new
-# path is verified (mail arrives, tags round-trip via the
-# practiceforge-email-gmail-push-tags tool), notmuch's index path is
-# swapped and lieer is retired.
-#
-# XOAUTH2 token is produced by `practiceforge email imap-token
-# --account gmail`, which delegates to gmail_oauth::show() (refresh-on-
-# read against Google's /token endpoint). The same OAuth tokens
-# himalaya uses — no separate consent required. Scope is the Gmail
-# full-access `https://mail.google.com/` which covers IMAP, SMTP, AND
-# modify-labels (needed for push-tags), so nothing further to consent.
-#
-# Gmail's IMAP emulates labels as folders. A message with N labels
-# appears in N folders. notmuch dedupes by Message-ID, so search stays
-# correct, but disk footprint scales with avg labels per message. To
-# keep that sane, we sync `[Gmail]/All Mail` + a curated subset of
-# useful label-folders, not every label.
-
-IMAPAccount gmail
-Host imap.gmail.com
-Port 993
-User will@willnapier.com
-AuthMechs XOAUTH2
-PassCmd "$HOME/.local/bin/practiceforge email imap-token --account gmail"
-SSLType IMAPS
-
-IMAPStore gmail-remote
-Account gmail
-
-MaildirStore gmail-local
-Path ~/Mail/gmail-imap/
-Inbox ~/Mail/gmail-imap/INBOX/
-SubFolders Verbatim
-
-# Pattern `*` matches lieer's full-mirror behaviour: pull everything
-# Gmail exposes over IMAP. A message with N labels shows up in N
-# folders (Gmail's IMAP label-as-folder emulation). notmuch dedupes
-# by Message-ID so search is unaffected, but disk use scales with
-# average labels per message. Expect ~2–3× the All-Mail size for a
-# heavily-labelled account. Narrow if disk becomes an issue:
-#   Patterns "[Gmail]/All Mail" "INBOX" "[Gmail]/Sent Mail" \
-#            "[Gmail]/Drafts" "[Gmail]/Trash" "[Gmail]/Spam"
-# (the bracketed namespace needs mbsync to see Gmail's hierarchy
-# delimiter; PathDelimiter "/" on IMAPAccount sets this explicitly if
-# the default probe doesn't pick it up).
-Channel gmail-all
-Far :gmail-remote:
-Near :gmail-local:
-Patterns *
-Sync Pull
-Expunge None
-CopyArrivalDate yes
-Create Near
-SyncState *
-
-Group gmail
-Channel gmail-all
+# (Gmail IMAP block was considered and rolled back 2026-04-22 23:40:
+# lieer already pulls Gmail into ~/Mail/personal/ and notmuch indexes
+# it. The push half — our goal — doesn't need its own maildir pull;
+# `practiceforge email gmail-push-tags` queries notmuch's existing
+# index by lastmod and pushes label diffs via Gmail's modify API.
+# Keeping lieer for pull + Rust for push is the minimum-viable pure-
+# Rust-push migration without a 24 GB re-download. If you ever want to
+# retire lieer entirely, add a Gmail IMAPAccount block here and mirror
+# the COHS Channel pattern.)
