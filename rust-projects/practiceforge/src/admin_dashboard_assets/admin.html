@@ -2110,10 +2110,9 @@ async function clinicCompareGenerate() {
   const rejectBtn = document.getElementById('clinic-compare-reject-btn');
   if (rejectBtn) rejectBtn.style.display = 'none';
 
-  // Stream sequentially (matches prior VRAM-friendly behaviour)
-  for (const col of CLINIC_COMPARE_COLUMNS) {
-    await clinicCompareStreamColumn(col);
-  }
+  // Stream both columns in parallel. Frontier backend is claude-cli /
+  // Anthropic API — no VRAM constraint, so A and B can race.
+  await Promise.all(CLINIC_COMPARE_COLUMNS.map(col => clinicCompareStreamColumn(col)));
 
   // Done — re-enable controls, expose reject-both
   CLINIC_COMPARE_COLUMNS.forEach(col => clinicCompareSetColumnEnabled(col, true));
