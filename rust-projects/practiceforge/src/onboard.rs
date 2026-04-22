@@ -435,7 +435,10 @@ fn populate_identity(client_id: &str, profile: &TM3Profile) -> Result<()> {
 
 /// Download all TM3 documents and import them into the client directory.
 fn download_and_import_docs(client_id: &str, tm3_id: &str) -> Result<usize> {
-    let tmp_dir = format!("/tmp/onboard-{}", client_id);
+    // Use the OS temp dir so this works on Mac, Linux and Windows. (Hardcoded
+    // /tmp would 404 on Windows.)
+    let tmp_path = std::env::temp_dir().join(format!("onboard-{client_id}"));
+    let tmp_dir = tmp_path.to_string_lossy().into_owned();
     std::fs::create_dir_all(&tmp_dir).ok();
 
     // Download all documents via tm3-download

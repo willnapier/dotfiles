@@ -5,12 +5,27 @@
 
 use std::path::PathBuf;
 
-/// The config directory: `~/.config/practiceforge/`
+/// The config directory.
+///
+/// On macOS and Linux: `~/.config/practiceforge/`. Kept as the literal
+/// `~/.config` subdirectory rather than `dirs::config_dir()` so existing
+/// installs (which all live there) don't have to migrate to
+/// `~/Library/Application Support` on macOS.
+///
+/// On Windows: `%APPDATA%\practiceforge\` via `dirs::config_dir()`. There
+/// are no existing Windows installs to migrate, and `%APPDATA%` is the
+/// idiomatic location a Windows user would look for application config.
 pub fn config_dir() -> PathBuf {
-    dirs::home_dir()
-        .expect("no home dir")
-        .join(".config")
-        .join("practiceforge")
+    if cfg!(target_os = "windows") {
+        dirs::config_dir()
+            .expect("no config dir")
+            .join("practiceforge")
+    } else {
+        dirs::home_dir()
+            .expect("no home dir")
+            .join(".config")
+            .join("practiceforge")
+    }
 }
 
 /// Path to the config file. Prefers `config.toml`, falls back to
@@ -53,7 +68,17 @@ pub fn clinical_root() -> PathBuf {
             }
         }
     }
-    dirs::home_dir().expect("no home dir").join("Clinical")
+    // Default fallback when no `[paths] clinical_root` is set. On Windows,
+    // prefer `~/Documents/Clinical` (the conventional location for user
+    // documents); on macOS/Linux keep the existing `~/Clinical`.
+    if cfg!(target_os = "windows") {
+        dirs::document_dir()
+            .or_else(dirs::home_dir)
+            .expect("no home dir")
+            .join("Clinical")
+    } else {
+        dirs::home_dir().expect("no home dir").join("Clinical")
+    }
 }
 
 /// Clients directory: `{clinical_root}/clients/`

@@ -33,8 +33,18 @@ pub async fn serve(port: u16, open_browser: bool) -> Result<()> {
 
     if open_browser {
         let url = format!("http://127.0.0.1:{actual_port}");
-        let _ = std::process::Command::new("open").arg(&url).spawn()
-            .or_else(|_| std::process::Command::new("xdg-open").arg(&url).spawn());
+        // Per-OS browser launcher. `open` (macOS), `cmd /c start` (Windows),
+        // `xdg-open` (Linux/BSD). The empty quoted arg after `start` is
+        // required so the URL isn't parsed as a window title.
+        let _ = if cfg!(target_os = "macos") {
+            std::process::Command::new("open").arg(&url).spawn()
+        } else if cfg!(target_os = "windows") {
+            std::process::Command::new("cmd")
+                .args(["/c", "start", "", &url])
+                .spawn()
+        } else {
+            std::process::Command::new("xdg-open").arg(&url).spawn()
+        };
     }
 
     axum::serve(listener, app).await?;

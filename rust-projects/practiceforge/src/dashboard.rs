@@ -151,10 +151,18 @@ pub async fn serve(port: u16, open_browser: bool) -> anyhow::Result<()> {
     eprintln!("Dashboard running at http://{addr}");
 
     if open_browser {
-        // Best-effort; ignore errors.
-        let _ = std::process::Command::new("xdg-open")
-            .arg(format!("http://{addr}"))
-            .spawn();
+        // Best-effort cross-platform open. See admin_dashboard::mod for
+        // rationale on the per-OS launcher choice.
+        let url = format!("http://{addr}");
+        let _ = if cfg!(target_os = "macos") {
+            std::process::Command::new("open").arg(&url).spawn()
+        } else if cfg!(target_os = "windows") {
+            std::process::Command::new("cmd")
+                .args(["/c", "start", "", &url])
+                .spawn()
+        } else {
+            std::process::Command::new("xdg-open").arg(&url).spawn()
+        };
     }
 
     axum::serve(listener, app).await?;
