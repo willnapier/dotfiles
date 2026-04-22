@@ -65,6 +65,11 @@ pub fn build_router() -> Router {
         .route("/api/email/m365/begin", post(handlers::email_m365_begin))
         .route("/api/email/m365/poll", post(handlers::email_m365_poll))
         .route("/api/email/m365/setup", post(handlers::email_m365_setup))
+        // Gmail OAuth auth-code flow (loopback redirect)
+        .route("/api/email/gmail/begin", post(handlers::email_gmail_begin))
+        .route("/api/email/gmail/callback", get(handlers::email_gmail_callback))
+        .route("/api/email/gmail/poll", post(handlers::email_gmail_poll))
+        .route("/api/email/gmail/setup", post(handlers::email_gmail_setup))
         // Letter workflow
         .route("/api/letter/draft", post(handlers::letter_draft))
         .route("/api/letter/build", post(handlers::letter_build))

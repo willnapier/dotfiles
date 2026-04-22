@@ -1,0 +1,8 @@
+[Unit]
+Description=Refresh Gmail OAuth access token (Google Workspace identities)
+After=network-online.target gnome-keyring-daemon.service
+Wants=network-online.target gnome-keyring-daemon.service
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/practiceforge email gmail-refresh

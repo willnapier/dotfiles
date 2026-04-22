@@ -343,10 +343,63 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
     <div id="email-identities-list"></div>
     <button onclick="emailAddIdentity()" style="margin-top:4px;background:none;border:1px dashed var(--border);color:var(--fg-dim);padding:5px 14px;border-radius:4px;cursor:pointer;font-size:12px;width:100%">+ Add SMTP identity (needs password)</button>
     <button onclick="m365Begin()" style="margin-top:6px;background:var(--blue);border:none;color:#fff;padding:7px 14px;border-radius:4px;cursor:pointer;font-size:12px;width:100%;font-weight:bold">+ Add Microsoft 365 account (via sign-in, no password)</button>
+    <button onclick="gmailBegin()" style="margin-top:6px;background:#d93025;border:none;color:#fff;padding:7px 14px;border-radius:4px;cursor:pointer;font-size:12px;width:100%;font-weight:bold">+ Add Gmail / Google Workspace (via sign-in, no password)</button>
     <div class="setup-msg" id="setup-msg" style="margin-top:10px"></div>
     <div class="setup-actions" style="margin-top:10px">
       <button class="clinic-action-btn btn-accept" onclick="setupSave()">Save SMTP identities</button>
       <button class="clinic-action-btn btn-reject" onclick="setupSkip()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Gmail / Google OAuth auth-code flow modal. Opens from the email-setup overlay.
+     User clicks button → dashboard opens Google auth URL in a new tab → user
+     signs in there → Google redirects back to /api/email/gmail/callback which
+     stores tokens → this modal polls /api/email/gmail/poll and advances to
+     the details form on completion. -->
+<div class="setup-overlay" id="gmail-overlay" style="display:none">
+  <div class="setup-panel" style="max-width:520px">
+    <h2>Add Gmail / Google Workspace account</h2>
+
+    <!-- Stage 1: waiting for browser sign-in -->
+    <div id="gmail-stage-wait" style="display:none">
+      <p style="font-size:13px;color:var(--fg-dim);margin-bottom:10px">
+        A new browser tab is opening for you to sign in to Google. Complete
+        the sign-in and consent screen there; this panel will update
+        automatically.
+      </p>
+      <p style="font-size:12px;color:var(--fg-dim);margin-bottom:6px">
+        If the tab didn't open (pop-up blocker?), click below:
+      </p>
+      <p><a id="gmail-manual-link" target="_blank" rel="noopener" style="color:var(--cyan);font-size:12px;word-break:break-all">(link appears here)</a></p>
+      <p style="font-size:12px;color:var(--fg-dim);margin-top:14px" id="gmail-poll-status">
+        Waiting for you to sign in…
+      </p>
+    </div>
+
+    <!-- Stage 2: details after successful auth -->
+    <div id="gmail-stage-details" style="display:none">
+      <p style="font-size:12px;color:var(--green);margin-bottom:12px">✓ Signed in to Google. A few final details:</p>
+      <label style="display:block;font-size:12px;color:var(--fg-dim);margin-top:6px">Email address (what you signed in as)</label>
+      <input type="text" id="gmail-email" style="width:100%;padding:6px 8px;background:var(--bg-dim);color:var(--fg);border:1px solid var(--border);border-radius:3px;font-size:13px" placeholder="you@example.com">
+      <label style="display:block;font-size:12px;color:var(--fg-dim);margin-top:10px">Display name</label>
+      <input type="text" id="gmail-name" style="width:100%;padding:6px 8px;background:var(--bg-dim);color:var(--fg);border:1px solid var(--border);border-radius:3px;font-size:13px" placeholder="Your Name">
+      <label style="display:block;font-size:12px;color:var(--fg-dim);margin-top:10px">Label (short nickname)</label>
+      <input type="text" id="gmail-label" style="width:100%;padding:6px 8px;background:var(--bg-dim);color:var(--fg);border:1px solid var(--border);border-radius:3px;font-size:13px" placeholder="Gmail">
+      <label style="display:block;font-size:12px;color:var(--fg-dim);margin-top:10px">
+        <input type="checkbox" id="gmail-primary"> Make this my primary send identity
+      </label>
+    </div>
+
+    <!-- Stage 3: error -->
+    <div id="gmail-stage-error" style="display:none">
+      <p style="color:var(--red);margin-bottom:10px">Sign-in failed</p>
+      <pre id="gmail-error-msg" style="font-size:12px;background:rgba(0,0,0,0.15);padding:8px;border-radius:4px;white-space:pre-wrap"></pre>
+    </div>
+
+    <div class="setup-actions" style="margin-top:14px">
+      <button id="gmail-save-btn" class="clinic-action-btn btn-accept" onclick="gmailSave()" style="display:none">Save identity</button>
+      <button class="clinic-action-btn btn-reject" onclick="gmailCancel()">Cancel</button>
     </div>
   </div>
 </div>
@@ -2651,6 +2704,112 @@ function m365ShowError(msg) {
   document.getElementById('m365-stage-details').style.display = 'none';
   document.getElementById('m365-stage-error').style.display = 'block';
   document.getElementById('m365-error-msg').textContent = msg;
+}
+
+// ============================================================================
+// Gmail / Google Workspace OAuth auth-code flow — "+ Add Gmail" button.
+// Opens Google's auth page in a new tab; dashboard's loopback callback
+// captures the code and stores tokens; we poll for completion.
+// ============================================================================
+
+let gmailState = null;
+let gmailPollTimer = null;
+
+function gmailBegin() {
+  const overlay = document.getElementById('gmail-overlay');
+  document.getElementById('gmail-stage-details').style.display = 'none';
+  document.getElementById('gmail-stage-error').style.display = 'none';
+  document.getElementById('gmail-save-btn').style.display = 'none';
+  document.getElementById('gmail-stage-wait').style.display = 'block';
+  document.getElementById('gmail-poll-status').textContent = 'Starting Google sign-in…';
+  document.getElementById('gmail-manual-link').textContent = '(link appears here)';
+  overlay.style.display = 'flex';
+
+  fetch('/api/email/gmail/begin', { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) { gmailShowError(data.error || 'unknown error from /begin'); return; }
+      gmailState = data.state;
+      // Open Google auth in a new tab, and also expose the link in case
+      // the pop-up was blocked.
+      const link = document.getElementById('gmail-manual-link');
+      link.href = data.auth_url;
+      link.textContent = 'Open Google sign-in';
+      window.open(data.auth_url, '_blank', 'noopener');
+      document.getElementById('gmail-poll-status').textContent = 'Waiting for you to sign in at Google…';
+      gmailPollTimer = setTimeout(gmailPoll, 3000);
+    })
+    .catch(e => gmailShowError('Network error: ' + e));
+}
+
+function gmailPoll() {
+  if (!gmailState) return;
+  fetch('/api/email/gmail/poll', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ state: gmailState })
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.status === 'complete') {
+        gmailPollTimer = null;
+        document.getElementById('gmail-stage-wait').style.display = 'none';
+        document.getElementById('gmail-stage-details').style.display = 'block';
+        document.getElementById('gmail-save-btn').style.display = 'inline-block';
+        document.getElementById('gmail-label').value = 'Gmail';
+      } else if (data.status === 'pending') {
+        gmailPollTimer = setTimeout(gmailPoll, 3000);
+      } else {
+        gmailShowError(data.message || 'Google reported an error');
+      }
+    })
+    .catch(() => {
+      // Transient network blip — retry
+      gmailPollTimer = setTimeout(gmailPoll, 3000);
+    });
+}
+
+function gmailSave() {
+  const email = document.getElementById('gmail-email').value.trim();
+  const name = document.getElementById('gmail-name').value.trim();
+  const label = document.getElementById('gmail-label').value.trim() || 'Gmail';
+  const primary = document.getElementById('gmail-primary').checked;
+  if (!email) { alert('Email address is required.'); return; }
+
+  fetch('/api/email/gmail/setup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ label: label, from_email: email, from_name: name || email, primary: primary })
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        gmailCancel();
+        const outer = document.getElementById('setup-overlay');
+        if (outer && outer.style.display !== 'none') {
+          fetch('/api/email/status').then(r => r.json()).then(s => emailSetupOpen(s.identities || null));
+        }
+        const msg = document.getElementById('setup-msg');
+        if (msg) { msg.textContent = '✓ Gmail identity saved.'; msg.style.color = 'var(--green)'; }
+      } else {
+        gmailShowError(data.error || 'Save failed');
+      }
+    })
+    .catch(e => gmailShowError('Network error saving identity: ' + e));
+}
+
+function gmailCancel() {
+  if (gmailPollTimer) { clearTimeout(gmailPollTimer); gmailPollTimer = null; }
+  gmailState = null;
+  document.getElementById('gmail-overlay').style.display = 'none';
+}
+
+function gmailShowError(msg) {
+  if (gmailPollTimer) { clearTimeout(gmailPollTimer); gmailPollTimer = null; }
+  document.getElementById('gmail-stage-wait').style.display = 'none';
+  document.getElementById('gmail-stage-details').style.display = 'none';
+  document.getElementById('gmail-stage-error').style.display = 'block';
+  document.getElementById('gmail-error-msg').textContent = msg;
 }
 
 // ============================================================================

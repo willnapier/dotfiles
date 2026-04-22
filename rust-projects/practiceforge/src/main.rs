@@ -355,6 +355,13 @@ enum EmailAction {
     /// Exit 0 on success; non-zero if refresh_token is missing or rejected
     /// (user must re-authorise via the dashboard or `cohs-oauth-graph init`).
     M365Refresh,
+    /// Refresh the Gmail OAuth access token using the stored refresh
+    /// token. For use in periodic timers (launchd/systemd).
+    GmailRefresh,
+    /// Print the current Gmail access token to stdout after a silent
+    /// refresh. Used as `send_mail`'s `OAuth2Command` for Gmail identities:
+    /// the token printed feeds SmtpTransport's XOAUTH2 mode.
+    GmailShow,
 }
 
 #[derive(Parser, Debug)]
@@ -1215,6 +1222,13 @@ async fn main() -> anyhow::Result<()> {
                 EmailAction::M365Refresh => {
                     crate::email::m365_oauth::refresh()?;
                     eprintln!("✓ M365 Graph access token refreshed.");
+                }
+                EmailAction::GmailRefresh => {
+                    crate::email::gmail_oauth::refresh()?;
+                    eprintln!("✓ Gmail access token refreshed.");
+                }
+                EmailAction::GmailShow => {
+                    crate::email::gmail_oauth::show()?;
                 }
                 EmailAction::GraphTest { to, subject, body } => {
                     use crate::email::backends::{

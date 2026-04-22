@@ -314,6 +314,7 @@ depends = ["shared"]
 "macos/launchd/com.williamnapier.cohs-token-refresh.plist" = "~/Library/LaunchAgents/com.williamnapier.cohs-token-refresh.plist"
 "macos/launchd/com.williamnapier.cohs-graph-token-refresh.plist" = "~/Library/LaunchAgents/com.williamnapier.cohs-graph-token-refresh.plist"
 "macos/launchd/com.williamnapier.mbsync-cohs.plist" = "~/Library/LaunchAgents/com.williamnapier.mbsync-cohs.plist"
+"macos/launchd/com.williamnapier.gmail-token-refresh.plist" = "~/Library/LaunchAgents/com.williamnapier.gmail-token-refresh.plist"
 "LaunchAgents/com.user.syncthing-sync-watchdog.plist" = "~/Library/LaunchAgents/com.user.syncthing-sync-watchdog.plist"
 "scripts/syncthing-sync-watchdog" = "~/.local/bin/syncthing-sync-watchdog"
 "macos/LaunchAgents/com.williamnapier.git-auto-pull-watcher.plist" = "~/Library/LaunchAgents/com.williamnapier.git-auto-pull-watcher.plist"

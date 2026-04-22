@@ -2777,6 +2777,198 @@ pub async fn email_m365_setup(
     }))
 }
 
+// ---------------------------------------------------------------------------
+// Gmail OAuth auth-code flow — colleague-friendly "Add Gmail account" path.
+//
+// Mirror of the M365 endpoints above, with a different flow shape:
+// Google's Desktop OAuth client doesn't support device-code, so we use
+// auth-code with a loopback redirect back to this dashboard. Flow:
+//
+//   1. Frontend POSTs /api/email/gmail/begin → dashboard returns an
+//      auth URL + state. Frontend opens the URL in a new browser tab.
+//   2. User signs in at Google, consents. Google redirects back to
+//      /api/email/gmail/callback?code=...&state=... on THIS dashboard
+//      (loopback redirect requires dashboard be on the user's machine
+//      or reachable at the configured redirect URI).
+//   3. Callback handler exchanges code for tokens, stores in keychain,
+//      serves a tiny HTML page that auto-closes the tab.
+//   4. Frontend polls /api/email/gmail/poll?state=... for completion.
+//   5. Once complete, user fills in label/display name; frontend posts
+//      /api/email/gmail/setup which writes the SMTP+XOAUTH2 identity.
+// ---------------------------------------------------------------------------
+
+/// Redirect URI used for Google's auth-code callback. Hard-coded to the
+/// admin-dashboard default port because that's what launchd serves. If
+/// the dashboard runs on a different port, callers need a way to override
+/// this (future work).
+const GMAIL_REDIRECT_URI: &str = "http://127.0.0.1:3457/api/email/gmail/callback";
+
+/// POST /api/email/gmail/begin — start the auth-code flow.
+pub async fn email_gmail_begin() -> Json<serde_json::Value> {
+    let result = tokio::task::spawn_blocking(|| {
+        crate::email::gmail_oauth::begin(GMAIL_REDIRECT_URI)
+    })
+    .await;
+    match result {
+        Ok(Ok(start)) => Json(serde_json::json!({
+            "ok": true,
+            "auth_url": start.auth_url,
+            "state": start.state,
+            "redirect_uri": start.redirect_uri,
+        })),
+        Ok(Err(e)) => Json(serde_json::json!({"ok": false, "error": e.to_string()})),
+        Err(e) => Json(serde_json::json!({"ok": false, "error": format!("join error: {e}")})),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct GmailCallbackQuery {
+    pub code: Option<String>,
+    pub state: Option<String>,
+    pub error: Option<String>,
+}
+
+/// GET /api/email/gmail/callback — Google redirects here after user signs
+/// in. Completes the token exchange and serves a tiny auto-closing HTML
+/// page so the browser tab cleans itself up.
+pub async fn email_gmail_callback(
+    axum::extract::Query(q): axum::extract::Query<GmailCallbackQuery>,
+) -> axum::response::Html<String> {
+    let body = if let Some(err) = q.error {
+        format!(
+            "<!doctype html><html><body style='font-family:sans-serif;padding:20px'>\
+             <h2 style='color:#c44'>Sign-in failed</h2>\
+             <pre style='background:#222;color:#eee;padding:10px;border-radius:4px'>{}</pre>\
+             <p>You can close this tab and return to PracticeForge.</p>\
+             </body></html>",
+            html_escape(&err)
+        )
+    } else if let (Some(code), Some(state)) = (q.code, q.state) {
+        let outcome = tokio::task::spawn_blocking(move || {
+            crate::email::gmail_oauth::handle_callback(&state, &code)
+        })
+        .await;
+        match outcome {
+            Ok(Ok(())) => String::from(
+                "<!doctype html><html><body style='font-family:sans-serif;padding:20px'>\
+                 <h2 style='color:#4a4'>Signed in</h2>\
+                 <p>You can close this tab and return to PracticeForge.</p>\
+                 <script>setTimeout(function(){window.close();},2000);</script>\
+                 </body></html>",
+            ),
+            Ok(Err(e)) => format!(
+                "<!doctype html><html><body style='font-family:sans-serif;padding:20px'>\
+                 <h2 style='color:#c44'>Token exchange failed</h2>\
+                 <pre style='background:#222;color:#eee;padding:10px;border-radius:4px'>{}</pre>\
+                 </body></html>",
+                html_escape(&e.to_string())
+            ),
+            Err(e) => format!(
+                "<!doctype html><html><body style='font-family:sans-serif;padding:20px'>\
+                 <h2 style='color:#c44'>Internal error</h2><pre>{}</pre></body></html>",
+                html_escape(&e.to_string())
+            ),
+        }
+    } else {
+        String::from(
+            "<!doctype html><html><body><h2>Missing code or state in callback</h2></body></html>",
+        )
+    };
+    axum::response::Html(body)
+}
+
+#[derive(Deserialize)]
+pub struct GmailPollRequest {
+    pub state: String,
+}
+
+/// POST /api/email/gmail/poll — frontend checks whether the callback has
+/// fired and stored tokens yet.
+pub async fn email_gmail_poll(
+    Json(req): Json<GmailPollRequest>,
+) -> Json<serde_json::Value> {
+    let status = tokio::task::spawn_blocking(move || {
+        crate::email::gmail_oauth::poll_status(&req.state)
+    })
+    .await
+    .unwrap_or(crate::email::gmail_oauth::FlowStatus::Error {
+        message: "join error".to_string(),
+    });
+    Json(serde_json::to_value(&status).unwrap_or_else(|_| serde_json::json!({"status": "error"})))
+}
+
+#[derive(Deserialize)]
+pub struct GmailSetupRequest {
+    pub label: String,
+    pub from_email: String,
+    pub from_name: String,
+    #[serde(default)]
+    pub primary: bool,
+}
+
+/// POST /api/email/gmail/setup — write a Gmail SMTP+XOAUTH2 identity to
+/// config.toml after a successful OAuth flow. Auth-command points at
+/// `practiceforge email gmail-show`, a subcommand that refreshes + prints
+/// the current access token (see src/email/gmail_oauth.rs::show()).
+pub async fn email_gmail_setup(
+    Json(req): Json<GmailSetupRequest>,
+) -> Json<serde_json::Value> {
+    if req.from_email.trim().is_empty() {
+        return Json(serde_json::json!({"ok": false, "error": "from_email is required"}));
+    }
+
+    let config_path = crate::config::config_dir().join("config.toml");
+    if let Err(e) = std::fs::create_dir_all(crate::config::config_dir()) {
+        return Json(serde_json::json!({"ok": false, "error": e.to_string()}));
+    }
+    let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
+
+    let entry = crate::email::wizard::IdentityEntry {
+        label: req.label.clone(),
+        from_email: req.from_email.clone(),
+        from_name: if req.from_name.is_empty() {
+            req.from_email.clone()
+        } else {
+            req.from_name.clone()
+        },
+        primary: req.primary,
+        backend: crate::email::backends::BackendConfig::Smtp(
+            crate::email::backends::SmtpConfig {
+                host: "smtp.gmail.com".to_string(),
+                port: 465,
+                encryption: crate::email::backends::Encryption::Tls,
+                username: req.from_email.clone(),
+                auth_mode: crate::email::backends::AuthMode::XOAuth2,
+            },
+        ),
+        auth: crate::email::backends::AuthConfig::OAuth2Command {
+            command: "practiceforge email gmail-show".to_string(),
+        },
+    };
+    let updated = match crate::email::wizard::append_identity(&existing, &entry) {
+        Ok(s) => s,
+        Err(e) => return Json(serde_json::json!({"ok": false, "error": e.to_string()})),
+    };
+    if let Err(e) = std::fs::write(&config_path, updated) {
+        return Json(serde_json::json!({"ok": false, "error": e.to_string()}));
+    }
+
+    Json(serde_json::json!({
+        "ok": true,
+        "from_email": req.from_email,
+        "label": req.label,
+    }))
+}
+
+/// Minimal HTML escape for error-message display in the callback page.
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#x27;")
+}
+
 fn esc_toml(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
