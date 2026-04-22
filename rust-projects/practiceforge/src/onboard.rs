@@ -501,12 +501,21 @@ fn download_and_import_docs(client_id: &str, tm3_id: &str) -> Result<usize> {
 /// Look up a TM3 client by name from the cached client data.
 ///
 /// Reads from `~/.local/share/practiceforge/tm3-clients.json`.
-/// If cache is missing or stale, refreshes it first (headless Chrome).
+///
+/// Two refresh triggers:
+/// 1. Time-based: cache older than 2 hours → refresh before lookup.
+/// 2. Miss-based: name not in cache → force a refresh and retry once.
+///    Catches the race where a brand-new client was booked in TM3 after
+///    our last cache snapshot, e.g. 10 minutes before their first
+///    appointment lands in the diary. Without this, the capture's
+///    auto-onboard path produces a `???` ID for new bookings until the
+///    next time-triggered refresh, which could be up to 2 hours away.
+///
 /// Returns (tm3_id, dob) if found.
 fn lookup_tm3_client(name: &str) -> Option<(String, Option<String>)> {
     eprintln!("[onboard] Looking up \"{}\" in TM3 client cache...", name);
 
-    // Ensure cache exists and is fresh (< 2 hours)
+    // First pass: time-based refresh if cache is old or missing.
     if !crate::tm3_clients::is_cache_fresh(Duration::from_secs(2 * 3600)) {
         eprintln!("[onboard] Cache stale or missing — refreshing...");
         match crate::tm3_clients::refresh_cache() {
@@ -516,17 +525,46 @@ fn lookup_tm3_client(name: &str) -> Option<(String, Option<String>)> {
     }
 
     let clients = crate::tm3_clients::load_cache()?;
-    let client = crate::tm3_clients::find_by_name(&clients, name)?;
+    if let Some(client) = crate::tm3_clients::find_by_name(&clients, name) {
+        return Some(extract_id_and_dob(client));
+    }
 
+    // Second pass: name wasn't in cache. Could be a new booking made
+    // since the last snapshot, OR a spelling mismatch. Force a fresh
+    // pull and try once more — if still not found, it's the latter.
+    eprintln!(
+        "[onboard] \"{}\" not in cache — forcing refresh (may be a new booking)...",
+        name
+    );
+    match crate::tm3_clients::refresh_cache() {
+        Ok(n) => eprintln!("[onboard] Cache force-refreshed: {} clients", n),
+        Err(e) => {
+            eprintln!("[onboard] Force-refresh failed: {}", e);
+            return None;
+        }
+    }
+
+    let clients = crate::tm3_clients::load_cache()?;
+    let client = crate::tm3_clients::find_by_name(&clients, name)?;
+    Some(extract_id_and_dob(client))
+}
+
+fn extract_id_and_dob(client: &crate::tm3_clients::TM3Client) -> (String, Option<String>) {
     let tm3_id = client.id.to_string();
-    let dob = client.date_of_birth.as_deref()
+    let dob = client
+        .date_of_birth
+        .as_deref()
         .map(crate::tm3_clients::clean_dob);
 
-    eprintln!("[onboard] Found: {} {} (TM3 ID: {}, DOB: {})",
-        client.forename, client.surname, tm3_id,
-        dob.as_deref().unwrap_or("unknown"));
+    eprintln!(
+        "[onboard] Found: {} {} (TM3 ID: {}, DOB: {})",
+        client.forename,
+        client.surname,
+        tm3_id,
+        dob.as_deref().unwrap_or("unknown")
+    );
 
-    Some((tm3_id, dob))
+    (tm3_id, dob)
 }
 
 /* BLOCK COMMENT START — dead code from diary click approach
