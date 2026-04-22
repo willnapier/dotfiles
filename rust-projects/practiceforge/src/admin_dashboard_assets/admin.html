@@ -345,8 +345,9 @@ var FullCalendar=function(e){"use strict";var t,n,r,i,s,o,a,l,c,d={},u=[],h=/aci
     <button onclick="m365Begin()" style="margin-top:6px;background:var(--blue);border:none;color:#fff;padding:7px 14px;border-radius:4px;cursor:pointer;font-size:12px;width:100%;font-weight:bold">+ Add Microsoft 365 account (via sign-in, no password)</button>
     <button onclick="gmailBegin()" style="margin-top:6px;background:#d93025;border:none;color:#fff;padding:7px 14px;border-radius:4px;cursor:pointer;font-size:12px;width:100%;font-weight:bold">+ Add Gmail / Google Workspace (via sign-in, no password)</button>
     <div class="setup-msg" id="setup-msg" style="margin-top:10px"></div>
-    <div class="setup-actions" style="margin-top:10px">
-      <button class="clinic-action-btn btn-accept" onclick="setupSave()">Save SMTP identities</button>
+    <p style="font-size:11px;color:var(--fg-dim);margin-top:10px;margin-bottom:4px">Microsoft 365 and Gmail identities save automatically once you complete the sign-in flow. The Save button below only applies to SMTP identities filled in on this page.</p>
+    <div class="setup-actions" style="margin-top:6px">
+      <button class="clinic-action-btn btn-accept" onclick="setupSave()">Save</button>
       <button class="clinic-action-btn btn-reject" onclick="setupSkip()">Close</button>
     </div>
   </div>
