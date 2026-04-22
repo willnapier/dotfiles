@@ -55,5 +55,5 @@ jobs:
         with:
           workspaces: rust-projects/practiceforge
 
-      - name: cargo test keystore::
-        run: cargo test --bin practiceforge --target x86_64-pc-windows-msvc keystore::
+      - name: "cargo test keystore::"
+        run: "cargo test --bin practiceforge --target x86_64-pc-windows-msvc keystore::"
