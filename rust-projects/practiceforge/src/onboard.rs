@@ -912,6 +912,109 @@ pub fn onboard(tm3_name: &str, tm3_id: Option<&str>) -> Result<OnboardResult> {
     })
 }
 
+/// Onboard with practitioner-supplied identifying info (name + DOB), skipping
+/// the TM3 cache lookup. Used from the dashboard when a `???` row didn't
+/// resolve via cache-refresh (e.g. TM3 not yet populated, or a spelling
+/// mismatch the practitioner wants to bypass manually). Documents are
+/// downloaded only if a TM3 numeric ID is supplied.
+pub fn onboard_manual(
+    name: &str,
+    dob: &str,
+    tm3_id: Option<&str>,
+) -> Result<OnboardResult> {
+    eprintln!("[onboard] Manual onboarding: {} (DOB: {})", name, dob);
+
+    let profile = TM3Profile {
+        tm3_id: tm3_id.unwrap_or_default().to_string(),
+        full_name: name.to_string(),
+        dob: Some(dob.to_string()),
+        referrer_name: None,
+        referrer_practice: None,
+        referrer_email: None,
+        funding_source: None,
+        policy_number: None,
+        address: None,
+        phone: None,
+        email: None,
+    };
+
+    let client_id = derive_client_id(&profile.full_name, profile.dob.as_deref());
+    eprintln!("[onboard] Derived client ID: {}", client_id);
+
+    let clients_dir = dirs::home_dir()
+        .unwrap_or_default()
+        .join("Clinical/clients");
+    if clients_dir.join(&client_id).exists() {
+        eprintln!("[onboard] {} already exists — adding name mapping only.", client_id);
+        let _ = Command::new("tm3-client-add")
+            .args([name, &client_id])
+            .output();
+        return Ok(OnboardResult {
+            client_id: client_id.clone(),
+            tm3_id: tm3_id.unwrap_or_default().to_string(),
+            name: profile.full_name,
+            docs_imported: 0,
+            skipped: true,
+        });
+    }
+
+    eprintln!("[onboard] Scaffolding {}...", client_id);
+    let scaffold = Command::new("clinical")
+        .args(["scaffold", &client_id])
+        .output()
+        .context("Failed to run clinical scaffold")?;
+    if !scaffold.status.success() {
+        let stderr = String::from_utf8_lossy(&scaffold.stderr);
+        bail!("Scaffold failed: {}", stderr.trim());
+    }
+
+    populate_identity(&client_id, &profile)?;
+
+    eprintln!("[onboard] Adding to tm3-client-map...");
+    let map_add = Command::new("tm3-client-add")
+        .args([name, &client_id])
+        .output();
+    match map_add {
+        Ok(output) if output.status.success() => {
+            eprintln!("[onboard] Added to tm3-client-map.toml");
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!("[onboard] Warning: tm3-client-add failed: {}", stderr.trim());
+        }
+        Err(e) => {
+            eprintln!("[onboard] Warning: tm3-client-add not available: {}", e);
+        }
+    }
+
+    let docs_imported = if let Some(id) = tm3_id {
+        download_and_import_docs(&client_id, id)?
+    } else {
+        0
+    };
+
+    let msg = if docs_imported > 0 {
+        format!(
+            "dev:: Manually onboarded {} as {} ({} doc{} imported)",
+            profile.full_name, client_id, docs_imported,
+            if docs_imported == 1 { "" } else { "s" }
+        )
+    } else {
+        format!("dev:: Manually onboarded {} as {}", profile.full_name, client_id)
+    };
+    let _ = Command::new("daypage-append").arg(&msg).output();
+
+    eprintln!("[onboard] ✓ Manual onboarding complete: {} → {}", profile.full_name, client_id);
+
+    Ok(OnboardResult {
+        client_id,
+        tm3_id: tm3_id.unwrap_or_default().to_string(),
+        name: profile.full_name,
+        docs_imported,
+        skipped: false,
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

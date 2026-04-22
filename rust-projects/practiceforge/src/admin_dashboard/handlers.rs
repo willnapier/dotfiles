@@ -218,6 +218,106 @@ pub async fn get_assignments(
     Ok(Json(response))
 }
 
+#[derive(Deserialize)]
+pub struct OnboardManualRequest {
+    pub name: String,
+    /// ISO-format DOB (YYYY-MM-DD).
+    pub dob: String,
+    /// Optional TM3 numeric ID. If present, docs are downloaded.
+    #[serde(default)]
+    pub tm3_id: Option<String>,
+    /// Session-file date whose `???` rows should be remapped to the new
+    /// client ID. Defaults to today.
+    #[serde(default)]
+    pub date: Option<String>,
+}
+
+/// POST /api/clients/onboard-manual — onboard a client using practitioner-
+/// supplied name + DOB, bypassing the TM3 cache lookup. Intended for clinic
+/// rows that didn't resolve via the automatic cache refresh.
+///
+/// After a successful onboard, any rows in the target date's session file
+/// where `id == "???"` and `client_name == name` have their `id` rewritten
+/// to the newly derived client ID, so the clinic view shows the correct
+/// mapping without requiring a full diary re-capture.
+pub async fn onboard_manual(
+    Json(req): Json<OnboardManualRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    if req.name.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "name is required".to_string()));
+    }
+    if req.dob.trim().is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "dob is required".to_string()));
+    }
+
+    let name = req.name.trim().to_string();
+    let dob = req.dob.trim().to_string();
+    let tm3_id = req.tm3_id.as_ref().and_then(|s| {
+        let t = s.trim();
+        if t.is_empty() { None } else { Some(t.to_string()) }
+    });
+
+    let name_for_task = name.clone();
+    let dob_for_task = dob.clone();
+    let tm3_id_for_task = tm3_id.clone();
+    let outcome = tokio::task::spawn_blocking(move || {
+        crate::onboard::onboard_manual(
+            &name_for_task,
+            &dob_for_task,
+            tm3_id_for_task.as_deref(),
+        )
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("join error: {e}")))?
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")))?;
+
+    let date = req
+        .date
+        .unwrap_or_else(|| Local::now().format("%Y-%m-%d").to_string());
+    let remapped = remap_session_unknowns(&date, &name, &outcome.client_id).unwrap_or(0);
+
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "client_id": outcome.client_id,
+        "name": outcome.name,
+        "docs_imported": outcome.docs_imported,
+        "skipped": outcome.skipped,
+        "rows_remapped": remapped,
+    })))
+}
+
+/// Rewrite `???` rows in the session file for `date` whose `client_name`
+/// matches `target_name` so their `id` becomes `new_id`. Returns the row
+/// count that was changed; 0 if the file doesn't exist or nothing matched.
+fn remap_session_unknowns(
+    date: &str,
+    target_name: &str,
+    new_id: &str,
+) -> std::io::Result<usize> {
+    let path = session_path(date);
+    if !path.exists() {
+        return Ok(0);
+    }
+
+    let content = std::fs::read_to_string(&path)?;
+    let mut session: ClinicSession = serde_json::from_str(&content)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+
+    let mut count = 0;
+    for c in session.clients.iter_mut() {
+        if c.id == "???" && c.client_name == target_name {
+            c.id = new_id.to_string();
+            count += 1;
+        }
+    }
+    if count > 0 {
+        let json = serde_json::to_string_pretty(&session)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        std::fs::write(&path, json)?;
+    }
+    Ok(count)
+}
+
 // ---------------------------------------------------------------------------
 // Calendar handler
 // ---------------------------------------------------------------------------

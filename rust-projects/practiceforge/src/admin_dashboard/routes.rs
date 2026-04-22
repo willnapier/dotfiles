@@ -30,6 +30,7 @@ pub fn build_router() -> Router {
         .route("/api/auth/status", get(auth_status))
         // Client management
         .route("/api/clients", get(handlers::list_clients))
+        .route("/api/clients/onboard-manual", post(handlers::onboard_manual))
         .route("/api/clients/{id}", get(handlers::get_client).post(handlers::update_client))
         .route("/api/clients/{id}/assignments", get(handlers::get_assignments))
         // Calendar
