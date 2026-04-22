@@ -448,6 +448,8 @@ depends = ["shared"]
 "systemd/cohs-graph-token-refresh.timer" = "~/.config/systemd/user/cohs-graph-token-refresh.timer"
 "systemd/mbsync-cohs.service" = "~/.config/systemd/user/mbsync-cohs.service"
 "systemd/mbsync-cohs.timer" = "~/.config/systemd/user/mbsync-cohs.timer"
+"systemd/gmail-token-refresh.service" = "~/.config/systemd/user/gmail-token-refresh.service"
+"systemd/gmail-token-refresh.timer" = "~/.config/systemd/user/gmail-token-refresh.timer"
 # Wayland compositor configuration - Niri + Waybar + WezTerm
 "niri/config.kdl" = "~/.config/niri/config.kdl"
 "waybar/config" = "~/.config/waybar/config"
