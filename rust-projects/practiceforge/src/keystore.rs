@@ -142,4 +142,67 @@ mod tests {
         let got = get("pf-keystore-test", "definitely-not-present-xyz").expect("get ok");
         assert_eq!(got, None);
     }
+
+    /// Proves apple-native keyring reads entries created by `security
+    /// add-generic-password` — the format our existing Rust code writes.
+    /// Required for Phase B: existing Mac keychain entries must survive
+    /// the migration.
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn reads_entries_from_security_cli() {
+        use std::process::Command;
+        let service = "pf-keystore-cli-compat";
+        let account = "security-cli-test";
+        let secret = "value-from-security-cli";
+
+        let _ = Command::new("security")
+            .args(["delete-generic-password", "-s", service, "-a", account])
+            .output();
+        let add = Command::new("security")
+            .args(["add-generic-password", "-U", "-s", service, "-a", account, "-w", secret])
+            .status()
+            .expect("security add-generic-password runs");
+        assert!(add.success(), "security add-generic-password failed");
+
+        let got = get(service, account).expect("keystore::get succeeds");
+        assert_eq!(got.as_deref(), Some(secret));
+
+        let _ = Command::new("security")
+            .args(["delete-generic-password", "-s", service, "-a", account])
+            .output();
+    }
+
+    /// Proves the secret-service backend reads entries created by
+    /// `secret-tool store ... service X account Y` — the schema our
+    /// existing Rust code writes. Required for Phase B: existing nimbini
+    /// libsecret entries must survive the migration.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn reads_entries_from_secret_tool_cli() {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+        let service = "pf-keystore-cli-compat";
+        let account = "secret-tool-cli-test";
+        let secret = "value-from-secret-tool";
+
+        let _ = Command::new("secret-tool")
+            .args(["clear", "service", service, "account", account])
+            .output();
+
+        let mut child = Command::new("secret-tool")
+            .args(["store", "--label", "pf-keystore-test", "service", service, "account", account])
+            .stdin(Stdio::piped())
+            .spawn()
+            .expect("secret-tool spawns");
+        child.stdin.as_mut().unwrap().write_all(secret.as_bytes()).unwrap();
+        let status = child.wait().expect("secret-tool waits");
+        assert!(status.success(), "secret-tool store failed");
+
+        let got = get(service, account).expect("keystore::get succeeds");
+        assert_eq!(got.as_deref(), Some(secret));
+
+        let _ = Command::new("secret-tool")
+            .args(["clear", "service", service, "account", account])
+            .output();
+    }
 }
