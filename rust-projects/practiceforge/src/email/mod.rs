@@ -26,6 +26,7 @@ pub mod m365_oauth;
 pub mod m365_imap_oauth;
 pub mod gmail_oauth;
 pub mod gmail_push_tags;
+pub mod gmail_pull;
 
 pub use transport::{Attachment, Body, Envelope, MailTransport, Mailbox};
 pub use auth::TokenSource;

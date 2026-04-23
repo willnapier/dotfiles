@@ -412,6 +412,13 @@ enum EmailAction {
         #[arg(long)]
         push: bool,
     },
+    /// Dev-only smoke test for the gmail-pull API client. Hits four
+    /// Gmail endpoints (profile, messages.list, batch.messages.get,
+    /// history.list) with minimal payloads and prints diagnostics.
+    /// No disk writes, no state changes. Used to validate Leg 1 of
+    /// the lieer-replacement work before maildir writing lands.
+    #[command(hide = true)]
+    GmailPullProbe,
 }
 
 #[derive(Parser, Debug)]
@@ -1309,6 +1316,59 @@ async fn main() -> anyhow::Result<()> {
                 }
                 EmailAction::GmailPushTags { push } => {
                     crate::email::gmail_push_tags::run(!push)?;
+                }
+                EmailAction::GmailPullProbe => {
+                    use crate::email::gmail_pull::GmailApi;
+
+                    eprintln!("Gmail pull API probe — constructing client…");
+                    let api = GmailApi::new()?;
+
+                    eprintln!("\n[1/4] GET /users/me/profile");
+                    let profile = api.get_profile()?;
+                    println!("  email:          {}", profile.email_address);
+                    println!("  messagesTotal:  {}", profile.messages_total);
+                    println!("  threadsTotal:   {}", profile.threads_total);
+                    println!("  historyId:      {}", profile.history_id);
+
+                    eprintln!("\n[2/4] GET /users/me/messages?maxResults=500 (one page)");
+                    let (ids, next) = api.list_message_ids("", None)?;
+                    println!("  ids returned:   {}", ids.len());
+                    println!("  nextPageToken:  {}", next.as_deref().unwrap_or("(none — this is the whole account)"));
+                    println!("  first ID:       {}", ids.first().map(String::as_str).unwrap_or("(empty)"));
+
+                    if ids.is_empty() {
+                        eprintln!("\nNo messages to probe batch-get against; aborting early.");
+                        return Ok(());
+                    }
+
+                    let probe_count = ids.len().min(3);
+                    let probe_refs: Vec<&str> = ids.iter().take(probe_count).map(String::as_str).collect();
+
+                    eprintln!("\n[3/4] POST /batch/gmail/v1 (first {probe_count} messages)");
+                    let batch = api.batch_get_raw(&probe_refs)?;
+                    for (i, result) in batch.iter().enumerate() {
+                        match result {
+                            Ok(msg) => println!(
+                                "  [{i}] gmail_id={}  raw_bytes={}  labels={}",
+                                msg.gmail_id,
+                                msg.raw_bytes.len(),
+                                msg.label_ids.len(),
+                            ),
+                            Err(e) => println!("  [{i}] ERROR: {e}"),
+                        }
+                    }
+
+                    eprintln!("\n[4/4] GET /users/me/history?startHistoryId={}", profile.history_id);
+                    match api.list_history(&profile.history_id, None) {
+                        Ok(h) => {
+                            println!("  events returned: {}", h.history.len());
+                            println!("  historyId now:   {}", h.history_id);
+                            println!("  nextPageToken:   {:?}", h.next_page_token);
+                        }
+                        Err(e) => println!("  ERROR (this is FYI — fresh historyId often returns empty): {e}"),
+                    }
+
+                    eprintln!("\n✓ Probe complete. No files written, no state changed.");
                 }
                 EmailAction::GraphTest { to, subject, body } => {
                     use crate::email::backends::{
