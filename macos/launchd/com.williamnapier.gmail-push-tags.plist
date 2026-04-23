@@ -16,10 +16,23 @@
          every 15 min. State file:
          ~/.local/share/practiceforge/gmail-push-state.json.
          First run bookmarks the current notmuch lastmod and does NO
-         API writes — subsequent runs push only deltas. Requires
-         com.user.mail-sync to be unloaded (lieer already handles this
-         job while it's loaded). Activation sequence in the 2026-04-22
-         morning note (MESSAGEBOARD.md). -->
+         API writes — subsequent runs push only deltas. Coexists with
+         lieer's mail-sync (which pulls and indexes); lieer's own
+         `gmi push` is disabled via PUSH_VIA_GMI=0 in mail-sync. -->
+    <!-- EnvironmentVariables is REQUIRED: practiceforge shells out
+         to `notmuch` to read tag state, and launchd processes don't
+         inherit the interactive PATH. Without this block, every tick
+         crashes with "No such file or directory" before any API call.
+         Discovered 2026-04-23 after ~20 silent-no-op ticks. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/Users/williamnapier/.local/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/williamnapier</string>
+        <key>NOTMUCH_CONFIG</key>
+        <string>/Users/williamnapier/Mail/.notmuch-config</string>
+    </dict>
     <key>StartInterval</key>
     <integer>900</integer>
     <key>RunAtLoad</key>
