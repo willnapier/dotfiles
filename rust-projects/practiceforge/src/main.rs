@@ -419,6 +419,18 @@ enum EmailAction {
     /// the lieer-replacement work before maildir writing lands.
     #[command(hide = true)]
     GmailPullProbe,
+    /// One-off: strip + delete Gmail labels that leaked up from
+    /// notmuch tag state (the `new` tag and all `curator-*-seen`
+    /// mail-curator bookkeeping tags). Dry-run by default; pass
+    /// `--execute` to perform the real modifications against Gmail.
+    /// Safe to re-run — idempotent.
+    #[command(hide = true)]
+    GmailCleanupLeakedLabels {
+        /// Execute the strip + delete for real. Default is dry-run
+        /// (reports counts without touching Gmail).
+        #[arg(long)]
+        execute: bool,
+    },
 }
 
 #[derive(Parser, Debug)]
@@ -1316,6 +1328,9 @@ async fn main() -> anyhow::Result<()> {
                 }
                 EmailAction::GmailPushTags { push } => {
                     crate::email::gmail_push_tags::run(!push)?;
+                }
+                EmailAction::GmailCleanupLeakedLabels { execute } => {
+                    crate::email::gmail_pull::cleanup::run(execute)?;
                 }
                 EmailAction::GmailPullProbe => {
                     use crate::email::gmail_pull::GmailApi;
