@@ -422,6 +422,180 @@ impl GmailApi {
             .context("parsing history.list JSON")
             .map_err(Into::into)
     }
+
+    // -----------------------------------------------------------------
+    // GET /users/me/labels
+    // -----------------------------------------------------------------
+
+    /// List every label in the account with its opaque ID + visible
+    /// name. Used by the cleanup tool to resolve "new" /
+    /// "curator-*-seen" strings to Gmail label IDs.
+    pub fn list_all_labels(&self) -> Result<Vec<GmailLabel>> {
+        let url = format!("{API_BASE}/users/me/labels");
+        let resp = retry_with_backoff(|| {
+            self.http
+                .get(&url)
+                .bearer_auth(&self.access_token)
+                .send()
+                .context("GET /users/me/labels")
+        })?;
+        let status = resp.status();
+        let body = resp.text().context("reading labels.list body")?;
+        if !status.is_success() {
+            return Err(http_error(status, &body).into());
+        }
+
+        #[derive(Deserialize)]
+        struct Resp {
+            #[serde(default)]
+            labels: Vec<GmailLabel>,
+        }
+        let parsed: Resp = serde_json::from_str(&body).context("parsing labels.list JSON")?;
+        Ok(parsed.labels)
+    }
+
+    // -----------------------------------------------------------------
+    // GET /users/me/messages?labelIds=X   (list by label ID)
+    // -----------------------------------------------------------------
+
+    /// Paginate `users.messages.list` by `labelIds` (not `q=`).
+    /// Returns all message IDs carrying the given label. `progress`
+    /// is called with the cumulative count after each page.
+    pub fn list_all_message_ids_by_label<F: FnMut(usize)>(
+        &self,
+        label_id: &str,
+        mut progress: F,
+    ) -> Result<Vec<String>> {
+        let mut out = Vec::new();
+        let mut page_token: Option<String> = None;
+        loop {
+            let mut url = format!(
+                "{API_BASE}/users/me/messages?maxResults=500&labelIds={}",
+                urlencoding::encode(label_id)
+            );
+            if let Some(t) = &page_token {
+                url.push_str(&format!("&pageToken={}", urlencoding::encode(t)));
+            }
+            let resp = retry_with_backoff(|| {
+                self.http
+                    .get(&url)
+                    .bearer_auth(&self.access_token)
+                    .send()
+                    .context("GET /users/me/messages?labelIds=")
+            })?;
+            let status = resp.status();
+            let body = resp.text().context("reading messages.list (by label) body")?;
+            if !status.is_success() {
+                return Err(http_error(status, &body).into());
+            }
+            let parsed: MessageListResponse =
+                serde_json::from_str(&body).context("parsing messages.list (by label) JSON")?;
+            out.extend(parsed.messages.into_iter().map(|m| m.id));
+            progress(out.len());
+            match parsed.next_page_token {
+                Some(t) => page_token = Some(t),
+                None => break,
+            }
+        }
+        Ok(out)
+    }
+
+    // -----------------------------------------------------------------
+    // POST /users/me/messages/batchModify
+    // -----------------------------------------------------------------
+
+    /// Add and/or remove labels from up to 1000 messages in a single
+    /// API call. `ids` is chunked if longer than 1000. 50 quota units
+    /// per sub-call regardless of `ids.len()`, so this is enormously
+    /// cheaper than per-message modify calls for bulk operations.
+    pub fn batch_modify(
+        &self,
+        ids: &[&str],
+        add_label_ids: &[&str],
+        remove_label_ids: &[&str],
+    ) -> Result<()> {
+        const BATCH_MODIFY_CHUNK: usize = 1000;
+        for chunk in ids.chunks(BATCH_MODIFY_CHUNK) {
+            self.batch_modify_chunk(chunk, add_label_ids, remove_label_ids)?;
+        }
+        Ok(())
+    }
+
+    fn batch_modify_chunk(
+        &self,
+        ids: &[&str],
+        add_label_ids: &[&str],
+        remove_label_ids: &[&str],
+    ) -> Result<()> {
+        #[derive(Serialize)]
+        struct Body<'a> {
+            ids: Vec<&'a str>,
+            #[serde(rename = "addLabelIds", skip_serializing_if = "Vec::is_empty")]
+            add: Vec<&'a str>,
+            #[serde(rename = "removeLabelIds", skip_serializing_if = "Vec::is_empty")]
+            remove: Vec<&'a str>,
+        }
+        let body = Body {
+            ids: ids.to_vec(),
+            add: add_label_ids.to_vec(),
+            remove: remove_label_ids.to_vec(),
+        };
+        let url = format!("{API_BASE}/users/me/messages/batchModify");
+        let resp = retry_with_backoff(|| {
+            self.http
+                .post(&url)
+                .bearer_auth(&self.access_token)
+                .json(&body)
+                .send()
+                .context("POST /users/me/messages/batchModify")
+        })?;
+        let status = resp.status();
+        if status.is_success() {
+            return Ok(());
+        }
+        let resp_body = resp.text().unwrap_or_default();
+        Err(http_error(status, &resp_body).into())
+    }
+
+    // -----------------------------------------------------------------
+    // DELETE /users/me/labels/{id}
+    // -----------------------------------------------------------------
+
+    /// Permanently delete a label from the account. Messages that
+    /// had the label simply lose it (they are NOT deleted). System
+    /// labels (INBOX, UNREAD, etc.) cannot be deleted — Gmail returns
+    /// 400 and this method bubbles that up.
+    pub fn delete_label(&self, label_id: &str) -> Result<()> {
+        let url = format!(
+            "{API_BASE}/users/me/labels/{}",
+            urlencoding::encode(label_id)
+        );
+        let resp = retry_with_backoff(|| {
+            self.http
+                .delete(&url)
+                .bearer_auth(&self.access_token)
+                .send()
+                .context("DELETE /users/me/labels/{id}")
+        })?;
+        let status = resp.status();
+        if status.is_success() {
+            return Ok(());
+        }
+        let body = resp.text().unwrap_or_default();
+        Err(http_error(status, &body).into())
+    }
+}
+
+/// A Gmail label record as returned by `users.labels.list`. We care
+/// about `id` (for API calls) and `name` (for human-readable
+/// matching); the rest of the schema (type, visibility hints, etc.)
+/// is ignored for now.
+#[derive(Debug, Deserialize, Clone)]
+pub struct GmailLabel {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "type", default)]
+    pub label_type: Option<String>,
 }
 
 // -----------------------------------------------------------------

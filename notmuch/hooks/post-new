@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# notmuch post-new hook
+# Runs automatically after every `notmuch new` (invoked by mail-sync every 15 min).
+#
+# Purpose: keep the inbox view self-maintaining by archiving messages that
+# have aged past the 6-month window. Messages aren't deleted — they just
+# lose the `inbox` tag, corresponding to Gmail's "Archive" action.
+#
+# Adding rules: drop `notmuch tag` lines below. Each is idempotent.
+# Effects propagate to Gmail on the next mail-sync tick (push phase).
+
+set -eu
+
+# --- Rule 0: tag messages from the COHS Maildir source ---
+# Any message under ~/Mail/cohs/ (mbsync from Microsoft 365) gets tagged `cohs`.
+notmuch tag +cohs -- 'path:"cohs/**" and not tag:cohs'
+
+# Per-folder tagging so Meli's cohs account can show them as separate mailboxes:
+notmuch tag +inbox -- 'path:"cohs/INBOX/**" and tag:new'
+notmuch tag +sent -- 'path:"cohs/Sent Items/**" and not tag:sent'
+notmuch tag +drafts -- 'path:"cohs/Drafts/**" and not tag:drafts'
+notmuch tag +archive -- 'path:"cohs/Archive/**" and not tag:archive'
+notmuch tag +trash -- 'path:"cohs/Deleted Items/**" and not tag:trash'
+notmuch tag +spam -- 'path:"cohs/Junk Email/**" and not tag:spam'
+
+# --- Rule 1: age-based inbox pruning ---
+# Any message still tagged `inbox` but older than 6 months leaves inbox.
+# Applies continuously: as messages cross the 6M threshold, they age out.
+notmuch tag -inbox -- 'tag:inbox and not date:6M..'
+
+# --- Rule 2: mailcurator (per-sender policies) ---
+# Runs the mailcurator Rust binary which reads ~/.config/mailcurator/policies.toml
+# and applies sender-specific lifecycle rules (tag on arrival, archive at N days,
+# trash at M days). Safe to fail — logs to stderr but doesn't break the hook.
+if command -v mailcurator >/dev/null 2>&1; then
+    mailcurator run 2>&1 | sed 's/^/[mailcurator] /' || true
+fi
+
+# --- Rule 3: strip the transient `new` tag ---
+# notmuch's [new] config applies `new;unread;inbox` to every newly-
+# indexed file. The `new` tag is supposed to be *transient* — used
+# by earlier rules in this hook to find unprocessed mail, then
+# stripped here so it doesn't accumulate forever. Without this step,
+# `tag:new` grows monotonically and (historically) got pushed to
+# Gmail by `gmi push` as a stray label. 2026-04-22 Gmail cleanup
+# discovered 40,275 messages had a leaked `new` Gmail label — rooted
+# in the absence of this line.
+notmuch tag -new -- tag:new

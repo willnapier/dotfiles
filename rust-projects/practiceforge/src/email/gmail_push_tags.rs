@@ -69,6 +69,11 @@ const SYSTEM_TAG_TO_LABEL: &[(&str, &str)] = &[
 /// pushed as Gmail labels. Contains notmuch internals + common
 /// auto-tagger outputs that aren't intended to become server-side
 /// labels.
+///
+/// See also [`is_local_only_tag`] which extends this list with
+/// prefix-matching for tag families like `curator-*-seen`
+/// (mail-curator's internal "already processed" markers — there can
+/// be an arbitrary number of them, one per sender policy).
 const LOCAL_ONLY_TAGS: &[&str] = &[
     "attachment",
     "signed",
@@ -77,6 +82,21 @@ const LOCAL_ONLY_TAGS: &[&str] = &[
     "passed",
     "new",
 ];
+
+/// True if `tag` should be filtered out of anything we push to Gmail.
+/// Combines the exact-match [`LOCAL_ONLY_TAGS`] list with prefix
+/// rules for tag families.
+fn is_local_only_tag(tag: &str) -> bool {
+    if LOCAL_ONLY_TAGS.contains(&tag) {
+        return true;
+    }
+    // mail-curator bookkeeping tags — purely local, must never
+    // become Gmail labels. Matches `curator-<anything>-seen`.
+    if tag.starts_with("curator-") && tag.ends_with("-seen") {
+        return true;
+    }
+    false
+}
 
 #[derive(Serialize, Deserialize, Default)]
 struct State {
@@ -472,7 +492,7 @@ fn local_tags_to_label_ids(
     let mut out = BTreeSet::new();
     let sys: BTreeMap<&str, &str> = SYSTEM_TAG_TO_LABEL.iter().copied().collect();
     for tag in tags {
-        if LOCAL_ONLY_TAGS.contains(&tag.as_str()) {
+        if is_local_only_tag(tag.as_str()) {
             continue;
         }
         if let Some(sys_id) = sys.get(tag.as_str()) {
@@ -518,6 +538,30 @@ mod tests {
         let tags = ids(&["attachment", "signed", "replied"]);
         let result = local_tags_to_label_ids(&tags, &BTreeMap::new());
         assert!(result.is_empty(), "got {result:?}");
+    }
+
+    #[test]
+    fn curator_seen_tags_never_propose() {
+        let tags = ids(&[
+            "curator-amazon-shipping-seen",
+            "curator-nicabm-seen",
+            "curator-uber-trips-seen",
+        ]);
+        let result = local_tags_to_label_ids(&tags, &BTreeMap::new());
+        assert!(result.is_empty(), "got {result:?}");
+    }
+
+    #[test]
+    fn tags_that_merely_contain_curator_still_propose_if_in_map() {
+        // e.g. a user-created Gmail label called `curator-style-notes`
+        // that does NOT end in `-seen` should still map if present
+        // in the label map — we aren't over-filtering.
+        let tags = ids(&["curator-style-notes"]);
+        let mut m = BTreeMap::new();
+        m.insert("curator-style-notes".to_string(), "Label_999".to_string());
+        let result = local_tags_to_label_ids(&tags, &m);
+        assert_eq!(result.len(), 1);
+        assert!(result.contains("Label_999"));
     }
 
     #[test]

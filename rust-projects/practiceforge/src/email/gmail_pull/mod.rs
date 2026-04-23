@@ -23,5 +23,7 @@
 pub mod api;
 
 pub use api::{
-    BatchMessage, GmailApi, GmailApiError, HistoryResponse, Profile,
+    BatchMessage, GmailApi, GmailApiError, GmailLabel, HistoryResponse, Profile,
 };
+
+pub mod cleanup;
