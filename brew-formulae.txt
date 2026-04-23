@@ -1,3 +1,4 @@
+actionlint
 aom
 aribb24
 arm-none-eabi-binutils
@@ -232,6 +233,7 @@ serpl
 sfsexp
 shaderc
 shared-mime-info
+shellcheck
 simdjson
 sk
 sketchybar
