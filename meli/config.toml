@@ -1,0 +1,161 @@
+# meli configuration
+# ~/.config/meli/config.toml
+#
+# STATUS 2026-04-21 00:00:
+# - Minimal starter config
+# - Reads existing notmuch database at ~/Mail (already populated via gmi/lieer, ~217k messages)
+# - Workspace account (will@willnapier.com) wired; Microsoft 365 / COHS deferred to tomorrow (OAuth2 dance)
+# - Sync continues via `gmi pull` in ~/Mail/personal — meli just reads the index
+
+[accounts.workspace]
+root_mailbox = "/Users/williamnapier/Mail"
+format = "notmuch"
+library_file_path = "/opt/homebrew/opt/notmuch/lib/libnotmuch.5.dylib"
+identity = "will@willnapier.com"
+display_name = "William Napier"
+subscribed_mailboxes = ["inbox", "unread", "sent", "archive", "all-mail"]
+default_mailbox = "inbox"
+send_mail = "msmtp --account=gmail --read-recipients --read-envelope-from"  # msmtp + pizauth XOAUTH2. passwordeval fetches fresh bearer from pizauth on each send; pizauth auto-refreshes.
+
+  [accounts.workspace.mailboxes."inbox"]
+  # Narrowed to 6 months — the full inbox (~83k messages) took ~6s to
+  # thread on launch. Older messages remain reachable via search (/).
+  # Widen the window here if you find recent-mail view too narrow.
+  query = "tag:inbox and not tag:archive and not tag:spam and not tag:trash and date:6M.."
+
+  [accounts.workspace.mailboxes."unread"]
+  query = "tag:unread"
+
+  [accounts.workspace.mailboxes."sent"]
+  query = "tag:sent"
+
+  [accounts.workspace.mailboxes."archive"]
+  query = "not tag:inbox and not tag:trash and not tag:spam and not tag:sent"
+
+  [accounts.workspace.mailboxes."all-mail"]
+  # Narrowed from "*" to last 90 days — the full archive (217k+ messages) is
+  # reachable via search (/), but building a threaded listing over it hangs
+  # meli on first render. Adjust the window here if 90d feels too narrow.
+  query = "date:90d.."
+
+# =====================================================================
+# COHS account (Microsoft 365, added 2026-04-21)
+# =====================================================================
+# Sync: mbsync pulls outlook.office365.com INBOX → ~/Mail/cohs/INBOX/
+#       via XOAUTH2 using ~/.local/bin/cohs-oauth as the PassCmd.
+#       Scheduled by com.williamnapier.mbsync-cohs launchd agent.
+# Index: same notmuch DB as Gmail (shared ~/Mail root). The post-new
+#        hook auto-tags anything under ~/Mail/cohs/** with `cohs`.
+# Send: himalaya `cohs` account handles outbound (SMTP XOAUTH2 when
+#       tenant allows; fallback to PracticeForge GraphTransport via
+#       /me/sendMail).
+
+[accounts.cohs]
+root_mailbox = "/Users/williamnapier/Mail"
+format = "notmuch"
+library_file_path = "/opt/homebrew/opt/notmuch/lib/libnotmuch.5.dylib"
+identity = "will.napier@changeofharleystreet.com"
+display_name = "Will Napier"
+subscribed_mailboxes = ["inbox", "unread", "sent", "drafts", "archive", "trash", "spam"]
+default_mailbox = "inbox"
+# Send via Microsoft Graph — tenant blocks SMTP AUTH (including XOAUTH2), so
+# himalaya SMTP send would fail. practiceforge's graph-send subcommand reads
+# MIME from stdin and POSTs to /me/sendMail via the MIME variant. Auth uses
+# cohs-oauth-graph token. See CLI-EMAIL-SYSTEM.md "PracticeForge Email Architecture".
+send_mail = "practiceforge email graph-send"
+
+  [accounts.cohs.mailboxes."inbox"]
+  query = "tag:cohs and tag:inbox and not tag:archive and not tag:spam and not tag:trash"
+
+  [accounts.cohs.mailboxes."unread"]
+  query = "tag:cohs and tag:unread and not tag:trash and not tag:spam"
+
+  [accounts.cohs.mailboxes."sent"]
+  query = "tag:cohs and tag:sent"
+
+  [accounts.cohs.mailboxes."drafts"]
+  query = "tag:cohs and tag:drafts"
+
+  [accounts.cohs.mailboxes."archive"]
+  query = "tag:cohs and tag:archive"
+
+  [accounts.cohs.mailboxes."trash"]
+  query = "tag:cohs and tag:trash"
+
+  [accounts.cohs.mailboxes."spam"]
+  query = "tag:cohs and tag:spam"
+
+# Identity details for composing (send path will be wired once msmtp/himalaya send is confirmed)
+#
+# [composing]
+# send_mail = "msmtp --read-recipients --read-envelope-from -t"
+# editor_command = "hx"
+
+[listing]
+# sidebar_ratio is the width of the RIGHT pane as a percentage of total
+# screen width. Default 90 (so sidebar is 10%). Counterintuitively,
+# LOWER values make the sidebar WIDER.
+# At 80, sidebar is 20% — enough room for mailbox names not to truncate
+# on a typical maximized window.
+sidebar_ratio = 80
+
+[pager]
+filter = "cat"
+html_filter = "w3m -T text/html"
+pager_context = 2
+
+[notifications]
+enable = true
+
+[terminal]
+theme = "dark"
+
+# ====================================================================
+# Colemak-DH "neio" navigation remap (added 2026-04-21)
+# ====================================================================
+# Right-hand home row: n / e / i / o = left / down / up / right
+# Mirrors vim's h / j / k / l convention for the equivalent physical
+# key positions under Colemak-DH.
+#
+# Uppercase shifts preserve meli's mailbox/account navigation convention
+# (NEXT on left-of-axis shift, PREV on right-of-axis shift, as per defaults).
+
+[shortcuts.general]
+scroll_left = 'n'
+scroll_down = 'e'
+scroll_up = 'i'
+scroll_right = 'o'
+# next_search_result was on 'n' — move to Meta to free it up.
+# previous_search_result stays at default 'N' (uppercase, uncontested).
+next_search_result = 'M-n'
+
+[shortcuts.listing]
+scroll_up = 'i'
+scroll_down = 'e'
+# Displaced bindings (conflicted with neio movement):
+set_seen = 's'                  # was 'n'
+exit_entry = 'Backspace'        # was 'i'. Not 'Esc' — meli has built-in Esc handlers in listing contexts (listing.rs:2148, :2625) that consume Esc before the shortcut dispatcher sees it, so custom Esc bindings on listing actions are unreliable. Backspace has no such precedence issue. Context-safe: text-input contexts (`:` cmd, `/` search, form fields) handle Backspace as delete-char via CmdInput/InsertInput events, falling through to exit_entry only when no text input is active.
+intersection_modifier = 'M-i'   # was 'i' (rarely used)
+# Mailbox / account navigation (uppercase shifts of neio):
+next_mailbox = 'E'              # was 'J'
+prev_mailbox = 'I'              # was 'K'
+next_account = 'N'              # was 'H'
+prev_account = 'O'              # was 'L'
+
+[shortcuts.pager]
+scroll_up = 'i'
+scroll_down = 'e'
+
+[shortcuts.thread-view]
+scroll_up = 'i'
+scroll_down = 'e'
+# thread-view.collapse_subtree default 'h' retained (doesn't conflict with neio)
+
+[shortcuts.contact-list]
+scroll_up = 'i'
+scroll_down = 'e'
+
+# Not remapped: [shortcuts.composing] and [shortcuts.envelope-view].
+# Both have 'e' bound to "edit" which is the correct primary action in those
+# contexts. Scroll-navigation within a composed message / envelope is
+# rare; keeping 'e' as edit avoids a trivial conflict.

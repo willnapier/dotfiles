@@ -318,6 +318,7 @@ depends = ["shared"]
 "scripts/pizauth-server-wrapper" = "~/.local/bin/pizauth-server-wrapper"
 "scripts/pizauth-dump" = "~/.local/bin/pizauth-dump"
 "msmtp/config" = "~/.config/msmtp/config"
+"meli/config.toml" = "~/.config/meli/config.toml"
 "LaunchAgents/com.user.syncthing-sync-watchdog.plist" = "~/Library/LaunchAgents/com.user.syncthing-sync-watchdog.plist"
 "scripts/syncthing-sync-watchdog" = "~/.local/bin/syncthing-sync-watchdog"
 "macos/LaunchAgents/com.williamnapier.git-auto-pull-watcher.plist" = "~/Library/LaunchAgents/com.williamnapier.git-auto-pull-watcher.plist"
