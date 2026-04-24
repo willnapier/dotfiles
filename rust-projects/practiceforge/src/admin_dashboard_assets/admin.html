@@ -1653,9 +1653,12 @@ function clinicSelectClient(clientId) {
   document.getElementById('clinic-generated-wrap').style.display = 'none';
   document.getElementById('clinic-generated-note').value = '';
 
-  // Reset compare panel + load per-client variant prefs (model/rails/prompt)
+  // Reset compare panel + load per-client variant prefs (model/rails/prompt).
+  // Show the compare wrap as soon as a client is selected so variant
+  // dropdowns + Reset-variants button are reachable before Generate.
   clinicCompareReset();
   clinicCompareLoadPrefs(clientId);
+  document.getElementById('clinic-compare-wrap').style.display = '';
 
   // Reset notes viewer
   S.clinicNotesVisible = false;
@@ -1681,6 +1684,9 @@ function clinicDeselectClient() {
   S.clinicSelectedId = null;
   document.getElementById('clinic-empty-msg').style.display = '';
   document.getElementById('clinic-client-content').style.display = 'none';
+  // Hide the compare wrap when no client is selected — the dropdowns
+  // would otherwise hang around showing stale state from the last client.
+  document.getElementById('clinic-compare-wrap').style.display = 'none';
   updateHints();
 }
 
@@ -2087,7 +2093,10 @@ function clinicCompareReset() {
     if (pane)   pane.removeAttribute('data-selected');
     clinicCompareSetColumnEnabled(col, true);
   });
-  document.getElementById('clinic-compare-wrap').style.display = 'none';
+  // NB: the compare wrap is NOT hidden here — its dropdowns (and the
+  // Reset variants button) must remain reachable before / between / after
+  // generation runs. Only the global "reject both" row and disabled state
+  // reset. The wrap itself is shown on client-select, hidden on deselect.
   document.getElementById('clinic-compare-global-actions').style.display = 'none';
   const gb = document.getElementById('clinic-compare-generate-btn'); if (gb) gb.disabled = false;
   const gb2 = document.getElementById('clinic-generate-btn');        if (gb2) gb2.disabled = false;
