@@ -4562,91 +4562,14 @@ def ftag [
     }
 }
 
-# ---- Email (himalaya) Wrappers ----
-# Thin workflow glue around himalaya CLI email client.
-# Requires: brew install himalaya, then himalaya account configure personal
-
-# List recent emails as structured data
-def hmail-list [
-    --folder (-f): string  # Folder/label to list (default: INBOX)
-    --limit (-n): int      # Number of envelopes to show
-] {
-    ^~/.local/bin/mail-sync-trigger
-    let folder_arg = if ($folder | default "" | is-empty) { [] } else { [--folder $folder] }
-    let limit_arg = if ($limit | default 0) > 0 { [--page-size $limit] } else { [] }
-    ^himalaya envelope list ...$folder_arg ...$limit_arg --output json | from json
-}
-
-# Read a single email by ID
-def hmail-read [
-    id: int                # Message ID to read
-    --html                 # Show HTML version instead of plain text
-] {
-    ^~/.local/bin/mail-sync-trigger
-    if $html {
-        ^himalaya message read $id --html
-    } else {
-        ^himalaya message read $id
-    }
-}
-
-# Search emails (uses himalaya's search/filter syntax)
-def hmail-search [
-    query: string          # Search query (IMAP search syntax)
-    --folder (-f): string  # Folder to search in
-] {
-    ^~/.local/bin/mail-sync-trigger
-    let folder_arg = if ($folder | default "" | is-empty) { [] } else { [--folder $folder] }
-    ^himalaya envelope list ...$folder_arg --output json $"--filter" $query | from json
-}
-
-# Send a quick email
-def hmail-send [
-    to: string             # Recipient address
-    subject: string        # Subject line
-    body: string           # Message body
-] {
-    $body | ^himalaya message write --to $to --subject $subject
-}
-
-# Extract email to markdown (pipes himalaya output through email-extract)
-# Useful for archiving email content into Forge
-def hmail-extract [
-    id: int                # Message ID to extract
-    --format (-f): string  # Output format: text, markdown, json (default: markdown)
-] {
-    let fmt = ($format | default "markdown")
-    let raw = (^himalaya message read $id --raw)
-    let tmp = $"/tmp/hmail-extract-($id).eml"
-    $raw | save -f $tmp
-    ^email-extract -f $fmt $tmp
-}
-
-# Reply to a message by envelope ID (opens $EDITOR)
-def hmail-reply [
-    id: int                # Envelope ID to reply to
-    --all (-A)             # Reply to all recipients
-] {
-    ^~/.local/bin/mail-sync-trigger
-    let all_arg = if $all { [--all] } else { [] }
-    ^himalaya message reply ...$all_arg $id
-}
-
-# Forward a message by envelope ID (opens $EDITOR)
-def hmail-forward [
-    id: int                # Envelope ID to forward
-] {
-    ^~/.local/bin/mail-sync-trigger
-    ^himalaya message forward $id
-}
-
-# Read full conversation thread for a message
-def hmail-thread [
-    id: int                # Envelope ID (any message in the thread)
-] {
-    ^~/.local/bin/mail-sync-trigger
-    ^himalaya message thread $id
-}
+# ---- Email CLI wrappers removed 2026-04-24 ----
+# The `hmail-*` functions (hmail-list, hmail-read, hmail-search, hmail-send,
+# hmail-extract, hmail-reply, hmail-forward, hmail-thread) have been removed
+# along with himalaya itself. The mail stack is now:
+#   - Reading/composing: meli (TUI). Launch with `meli`.
+#   - Sending: msmtp+pizauth (used internally by meli and any shell script).
+#   - Search: `nm-search` / `nm-read` below, backed by notmuch.
+#   - OAuth: owned by the pizauth daemon — `pizauth show <account>`.
 
 # Notmuch search wrapper (structured JSON output)
 def nm-search [
