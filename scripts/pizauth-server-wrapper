@@ -18,8 +18,10 @@ set -u  # no -e: we want to continue past a missing/broken restore
 DUMP_FILE="$HOME/.cache/pizauth-state.bin"
 PIZAUTH="$HOME/.local/bin/pizauth"
 
-# Start the daemon in the background.
-"$PIZAUTH" server &
+# Start the daemon in the background, foregrounded via -d (inverse-named
+# flag — `-d` = *don't* daemonise, i.e. stay in the foreground so launchd
+# can observe the process lifecycle and respawn on exit via KeepAlive).
+"$PIZAUTH" server -d &
 SERVER_PID=$!
 
 # Wait up to 5 s for the socket to be responsive.
