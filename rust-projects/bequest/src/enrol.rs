@@ -159,13 +159,13 @@ for his digital estate.
     eprintln!();
     eprintln!("Next: send each trustee their bundle (email, USB, etc.).");
     if config.trustees.iter().any(|t| !t.email.is_empty()) {
-        eprintln!("      Or run `bequest enrol --send` to email bundles via himalaya.");
+        eprintln!("      Or run `bequest enrol --send` to email bundles via msmtp (pizauth XOAUTH2).");
     }
 
     Ok(())
 }
 
-/// Send pre-created bundles to trustees via himalaya.
+/// Send pre-created bundles to trustees via msmtp (pizauth XOAUTH2).
 pub fn send_bundles() -> Result<()> {
     let config = Config::load()?;
     let bundles_dir = bequest_dir().join("bundles");

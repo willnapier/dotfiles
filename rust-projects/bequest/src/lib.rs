@@ -4,5 +4,6 @@ pub mod enrol;
 pub mod gf256;
 pub mod heartbeat;
 pub mod page;
+pub mod send;
 pub mod shamir;
 pub mod vault;
