@@ -1,0 +1,27 @@
+# msmtp — SMTP sender for mail clients (meli, etc.)
+#
+# Accounts: gmail only. COHS sends via `practiceforge email graph-send`
+# (Microsoft Graph /me/sendMail), because COHS's M365 tenant blocks SMTP
+# AUTH at the policy level — XOAUTH2 included.
+#
+# Auth model: pizauth owns the OAuth tokens. msmtp's passwordeval runs
+# `pizauth show gmail` on each send; pizauth auto-refreshes if needed.
+
+defaults
+auth           on
+logfile        ~/Library/Logs/msmtp.log
+# msmtp defaults to the system CA bundle; macOS resolves it correctly
+# without an explicit tls_trust_file on modern versions.
+tls            on
+
+account        gmail
+host           smtp.gmail.com
+port           465
+# Gmail on 465 uses implicit TLS from the first byte (SMTPS), not STARTTLS.
+tls_starttls   off
+from           will@willnapier.com
+user           will@willnapier.com
+auth           xoauth2
+passwordeval   "/Users/williamnapier/.local/bin/pizauth show gmail"
+
+account default : gmail
