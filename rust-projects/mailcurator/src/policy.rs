@@ -42,6 +42,12 @@ pub struct Policy {
     /// Trash (add `trash`, remove `inbox`) after this many days from message date.
     /// Omit to never trash based on age.
     pub delete_after_days: Option<u32>,
+
+    /// Karpathy-loop: which labelled categories this policy intends to match.
+    /// Used by `mailcurator eval` to compute precision/recall against the
+    /// labelled corpus. Omit for policies not yet part of the eval loop.
+    #[serde(default)]
+    pub intended_categories: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -28,6 +28,8 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 mod config;
+mod eval;
+mod llm;
 mod notmuch;
 mod policy;
 mod store;
@@ -77,6 +79,29 @@ enum Command {
         /// Maximum senders to list
         #[arg(short, long, default_value_t = 30)]
         limit: usize,
+    },
+    /// Sample messages from the inbox and classify via Claude, building the
+    /// labelled corpus used by `eval` and `improve`.
+    Label {
+        /// How many messages to sample + classify
+        #[arg(short, long, default_value_t = 50)]
+        sample: usize,
+        /// Date window (notmuch date: syntax)
+        #[arg(long, default_value = "6M")]
+        window: String,
+    },
+    /// Compute precision/recall for each policy against the labelled corpus.
+    /// Only policies with `intended_categories` set are scored.
+    Eval,
+    /// Run the Karpathy-loop on one policy: propose edits, test, keep-or-revert.
+    /// Writes successful edits to policies.toml; logs all attempts to
+    /// ~/.local/share/mailcurator/eval/tried_edits.jsonl.
+    Improve {
+        /// Policy name to improve
+        name: String,
+        /// Number of proposal/test rounds to attempt
+        #[arg(short, long, default_value_t = 5)]
+        rounds: usize,
     },
 }
 
@@ -190,6 +215,65 @@ fn main() -> Result<()> {
             if seens.len() > limit.min(10) {
                 println!("  ... and {} more", seens.len() - limit.min(10));
             }
+        }
+        Command::Label { sample, window } => {
+            eval::label(sample, &window)?;
+        }
+        Command::Eval => {
+            let cfg = config::load(&path)?;
+            let labels = eval::load_labels()?;
+            if labels.is_empty() {
+                println!("no labels found — run `mailcurator label --sample N` first");
+                return Ok(());
+            }
+            println!("labels: {}", labels.len());
+            let scores = eval::score_all(&cfg.policies, &labels)?;
+            if scores.is_empty() {
+                println!("no policies have `intended_categories` set — add the field to opt a policy into the eval loop");
+                return Ok(());
+            }
+            println!();
+            println!(
+                "{:<25}  {:>9}  {:>7}  {:>3}  {:>3}  {:>3}  {:>3}  {}",
+                "policy", "precision", "recall", "TP", "FP", "FN", "TN", "intended"
+            );
+            for s in &scores {
+                println!(
+                    "{:<25}  {:>9.3}  {:>7.3}  {:>3}  {:>3}  {:>3}  {:>3}  {}",
+                    s.policy_name,
+                    s.precision(),
+                    s.recall(),
+                    s.tp, s.fp, s.fn_count, s.tn,
+                    s.intended_categories.join(",")
+                );
+            }
+            // Show FPs/FNs inline for diagnosis.
+            for s in &scores {
+                if s.fp > 0 || s.fn_count > 0 {
+                    println!("\n--- {} ---", s.policy_name);
+                    if !s.fp_examples.is_empty() {
+                        println!("  false positives:");
+                        for e in &s.fp_examples {
+                            println!("    [{}] {} | {}",
+                                e.category,
+                                truncate(&e.from, 40),
+                                truncate(&e.subject, 80));
+                        }
+                    }
+                    if !s.fn_examples.is_empty() {
+                        println!("  false negatives:");
+                        for e in &s.fn_examples {
+                            println!("    [{}] {} | {}",
+                                e.category,
+                                truncate(&e.from, 40),
+                                truncate(&e.subject, 80));
+                        }
+                    }
+                }
+            }
+        }
+        Command::Improve { name, rounds } => {
+            eval::improve(&name, rounds)?;
         }
         Command::Unmatched { window, limit } => {
             let cfg = config::load(&path)?;
