@@ -42,13 +42,14 @@ send_mail = "msmtp --account=gmail --read-recipients --read-envelope-from"  # ms
 # COHS account (Microsoft 365, added 2026-04-21)
 # =====================================================================
 # Sync: mbsync pulls outlook.office365.com INBOX → ~/Mail/cohs/INBOX/
-#       via XOAUTH2 using ~/.local/bin/cohs-oauth as the PassCmd.
+#       via XOAUTH2 using `pizauth show cohs` as the PassCmd.
 #       Scheduled by com.williamnapier.mbsync-cohs launchd agent.
 # Index: same notmuch DB as Gmail (shared ~/Mail root). The post-new
 #        hook auto-tags anything under ~/Mail/cohs/** with `cohs`.
-# Send: himalaya `cohs` account handles outbound (SMTP XOAUTH2 when
-#       tenant allows; fallback to PracticeForge GraphTransport via
-#       /me/sendMail).
+# Send: `practiceforge email graph-send` uses Microsoft Graph
+#       `/me/sendMail` (tenant blocks SMTP AUTH so pure SMTP XOAUTH2
+#       is not an option). Token from pizauth via
+#       `CommandTokenSource::new("pizauth show cohs")`.
 
 [accounts.cohs]
 root_mailbox = "/Users/williamnapier/Mail"
@@ -58,10 +59,10 @@ identity = "will.napier@changeofharleystreet.com"
 display_name = "Will Napier"
 subscribed_mailboxes = ["inbox", "unread", "sent", "drafts", "archive", "trash", "spam"]
 default_mailbox = "inbox"
-# Send via Microsoft Graph — tenant blocks SMTP AUTH (including XOAUTH2), so
-# himalaya SMTP send would fail. practiceforge's graph-send subcommand reads
-# MIME from stdin and POSTs to /me/sendMail via the MIME variant. Auth uses
-# cohs-oauth-graph token. See CLI-EMAIL-SYSTEM.md "PracticeForge Email Architecture".
+# Send via Microsoft Graph — tenant blocks SMTP AUTH (including XOAUTH2).
+# practiceforge's graph-send subcommand reads MIME from stdin and POSTs to
+# /me/sendMail via the MIME variant. Auth uses `pizauth show cohs`.
+# See ~/Assistants/shared/CLI-EMAIL-SYSTEM.md for the full architecture.
 send_mail = "practiceforge email graph-send"
 
   [accounts.cohs.mailboxes."inbox"]
@@ -85,11 +86,8 @@ send_mail = "practiceforge email graph-send"
   [accounts.cohs.mailboxes."spam"]
   query = "tag:cohs and tag:spam"
 
-# Identity details for composing (send path will be wired once msmtp/himalaya send is confirmed)
-#
-# [composing]
-# send_mail = "msmtp --read-recipients --read-envelope-from -t"
-# editor_command = "hx"
+# Composing: no global override needed — each account's send_mail handles
+# its own path (Gmail: msmtp + pizauth; COHS: practiceforge graph-send).
 
 [listing]
 # sidebar_ratio is the width of the RIGHT pane as a percentage of total

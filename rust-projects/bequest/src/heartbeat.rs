@@ -147,63 +147,20 @@ fn most_recent_file_in(dir: &PathBuf, ext: &str) -> Option<SystemTime> {
 }
 
 fn last_sent_email() -> Option<SystemTime> {
-    // Query himalaya for the most recent sent email
-    let output = Command::new("himalaya")
-        .args([
-            "--quiet",
-            "envelope",
-            "list",
-            "-f",
-            "[Google Mail]/Sent Mail",
-            "-s",
-            "1",
-            "-o",
-            "json",
-        ])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
-    // Find the JSON array in the output (skip any non-JSON lines)
-    let json_start = text.find("[{")?;
-    let json_text = &text[json_start..];
-    // Extract the date field: "date":"2026-04-04 13:51+01:00"
-    let date_start = json_text.find("\"date\":\"")?;
-    let date_val = &json_text[date_start + 8..];
-    let date_end = date_val.find('"')?;
-    let date_str = &date_val[..date_end];
-    // Format: "2026-04-04 13:51+01:00" — normalize to RFC 3339
-    // Find the date/time split (space), and the timezone part
-    let space = date_str.find(' ')?;
-    let date_part = &date_str[..space];
-    let rest = &date_str[space + 1..];
-    // rest is "13:51+01:00" — find where time ends and tz begins
-    // Time is HH:MM or HH:MM:SS, tz starts with + or - after the time
-    let tz_start = rest[5..].find(['+', '-']).map(|i| i + 5)?;
-    let time_part = &rest[..tz_start];
-    let tz_part = &rest[tz_start..];
-    let time_with_secs = if time_part.len() == 5 {
-        format!("{}:00", time_part) // HH:MM → HH:MM:SS
-    } else {
-        time_part.to_string()
-    };
-    // humantime only accepts Z (UTC), so convert the offset to UTC
-    // Parse timezone offset like "+01:00" or "-05:00"
-    let tz_sign: i64 = if tz_part.starts_with('+') { 1 } else { -1 };
-    let tz_hours: i64 = tz_part[1..3].parse().ok()?;
-    let tz_mins: i64 = tz_part[4..6].parse().ok()?;
-    let tz_offset_secs = tz_sign * (tz_hours * 3600 + tz_mins * 60);
-    // Parse as UTC then adjust
-    let utc_str = format!("{}T{}Z", date_part, time_with_secs);
-    let t = humantime::parse_rfc3339(&utc_str).ok()?;
-    // Subtract the offset to get actual UTC
-    if tz_offset_secs >= 0 {
-        t.checked_sub(Duration::from_secs(tz_offset_secs as u64))
-    } else {
-        t.checked_add(Duration::from_secs((-tz_offset_secs) as u64))
-    }
+    // Signal: filesystem mtime of the Gmail Sent-Mail maildir's `cur/`
+    // directory. Maildir convention — `cur/` receives a new file every
+    // time a message is classified as "seen" (lieer pulls the sent copy
+    // from Gmail shortly after any outgoing send, regardless of which
+    // client sent it: msmtp, the Gmail web UI, phone, etc.). Folder
+    // mtime updates whenever a file is added or removed.
+    //
+    // This replaces an earlier himalaya subprocess path that parsed
+    // JSON envelope lists. Simpler, faster, works offline, covers all
+    // send channels (not just CLI). Returns None if the maildir isn't
+    // present on this machine — fine, heartbeat has other signals.
+    let sent_cur = dirs::home_dir()?
+        .join("Mail/personal/[Google Mail]/Sent Mail/cur");
+    fs::metadata(&sent_cur).ok()?.modified().ok()
 }
 
 fn last_login() -> Option<SystemTime> {

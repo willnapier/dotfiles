@@ -300,9 +300,9 @@ These cannot be automated — they require interactive authentication:
 2. **Tailscale**: `sudo tailscale up` — authenticate via browser
 3. **Syncthing**: Access web UI at `localhost:8384` — pair with Mac
 4. **Dropbox**: `dropbox start` — authenticate via browser
-5. **gnome-keyring**: Entries are created on first use:
+5. **gnome-keyring** (Linux) / **Keychain** (macOS): Entries on first use:
    - `gemini-api-key` / `forgepodium` — Gemini CLI API key
-   - Email credentials (himalaya) — see email setup docs
+   - Mail OAuth tokens no longer use the OS keystore — they live in the **pizauth** daemon's encrypted memory, snapshotted to `~/.cache/pizauth-state.bin`. See `~/Assistants/shared/CLI-EMAIL-SYSTEM.md` for the mail stack.
 6. **Git**: `git config --global user.name "William Napier"` + `git config --global user.email "..."`
 7. **Claude Code**: `claude login` — authenticate via browser
 8. **Gemini CLI**: API key stored in gnome-keyring (see handoff doc 2026-02-24)

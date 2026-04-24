@@ -24,8 +24,6 @@ depends = []
 "scripts/piper-preview" = "~/.local/bin/piper-preview"
 "scripts/lask" = "~/.local/bin/lask"
 "scripts/semantic-cron-wrapper" = "~/.local/bin/semantic-cron-wrapper"
-"scripts/cohs-oauth" = { target = "~/.local/bin/cohs-oauth", type = "symbolic" }
-"scripts/cohs-oauth-graph" = { target = "~/.local/bin/cohs-oauth-graph", type = "symbolic" }
 "mbsync/mbsyncrc" = { target = "~/.mbsyncrc", type = "symbolic" }
 "notmuch/hooks/post-new" = "~/Mail/.notmuch/hooks/post-new"
 

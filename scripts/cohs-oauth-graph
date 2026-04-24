@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-# Portable wrapper: invoke cohs-oauth-graph.py via the cohs-auth venv.
-# Works on macOS and Linux — $HOME resolves correctly on both.
-# Same venv as cohs-oauth (shares msal + keyring deps).
-exec "$HOME/.config/cohs-auth/venv/bin/python3" "$HOME/dotfiles/scripts/cohs-oauth-graph.py" "$@"
