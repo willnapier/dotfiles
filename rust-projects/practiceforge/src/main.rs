@@ -1234,7 +1234,12 @@ async fn main() -> anyhow::Result<()> {
 
                     let transport = GraphTransport::new(
                         GraphConfig::default(),
-                        Arc::new(CommandTokenSource::new("pizauth show cohs")),
+                        // pizauth `cohs-graph` account = Microsoft Graph CLI
+                        // public client + Mail.Send scope. Separate from the
+                        // `cohs` account (Thunderbird client, IMAP/SMTP only)
+                        // because COHS tenant admin-consents these two
+                        // clients separately.
+                        Arc::new(CommandTokenSource::new("pizauth show cohs-graph")),
                     );
                     transport.send_mime(&mime)?;
                     // sendmail-style tools are silent on stdout so the MUA
@@ -1310,10 +1315,11 @@ async fn main() -> anyhow::Result<()> {
                     let identity = IdentityConfig {
                         backend: BackendConfig::Graph(GraphConfig::default()),
                         auth: AuthConfig::OAuth2Command {
-                            // Graph access tokens come from pizauth (the COHS account
-                            // uses the same Thunderbird public client + scopes that
-                            // include Mail.Send / IMAP / SMTP).
-                            command: "pizauth show cohs".into(),
+                            // `cohs-graph` pizauth account = Microsoft Graph CLI
+                            // public client with Mail.Send scope. See the
+                            // graph-send handler above for why this is separate
+                            // from the `cohs` account.
+                            command: "pizauth show cohs-graph".into(),
                         },
                     };
 
