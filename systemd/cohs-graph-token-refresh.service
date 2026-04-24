@@ -1,8 +1,0 @@
-[Unit]
-Description=Refresh COHS M365 Graph-scope OAuth tokens (/me/sendMail)
-After=network-online.target gnome-keyring-daemon.service
-Wants=network-online.target gnome-keyring-daemon.service
-
-[Service]
-Type=oneshot
-ExecStart=%h/.local/bin/practiceforge email m365-refresh

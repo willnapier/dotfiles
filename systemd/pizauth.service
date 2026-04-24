@@ -1,0 +1,17 @@
+[Unit]
+Description=pizauth OAuth broker daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# pizauth-server-wrapper runs `pizauth server -d` foreground so systemd can
+# see the process, waits for the socket, restores from dump if present,
+# then waits on the server PID. Restart-on-failure handles crash recovery;
+# manual `pizauth shutdown` followed by `systemctl --user restart pizauth`
+# is the intended way to cycle the daemon.
+ExecStart=%h/.local/bin/pizauth-server-wrapper
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

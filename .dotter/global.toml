@@ -446,14 +446,11 @@ depends = ["shared"]
 # Dormant on macOS (launchd equivalents in [macos.files]); active on Linux.
 # Requires: isync, cyrus-sasl-xoauth2, libsecret (secret-tool). See
 # `~/Assistants/shared/CLI-EMAIL-SYSTEM.md` for new machine setup.
-"systemd/cohs-token-refresh.service" = "~/.config/systemd/user/cohs-token-refresh.service"
-"systemd/cohs-token-refresh.timer" = "~/.config/systemd/user/cohs-token-refresh.timer"
-"systemd/cohs-graph-token-refresh.service" = "~/.config/systemd/user/cohs-graph-token-refresh.service"
-"systemd/cohs-graph-token-refresh.timer" = "~/.config/systemd/user/cohs-graph-token-refresh.timer"
+"systemd/pizauth.service" = "~/.config/systemd/user/pizauth.service"
+"systemd/pizauth-dump.service" = "~/.config/systemd/user/pizauth-dump.service"
+"systemd/pizauth-dump.timer" = "~/.config/systemd/user/pizauth-dump.timer"
 "systemd/mbsync-cohs.service" = "~/.config/systemd/user/mbsync-cohs.service"
 "systemd/mbsync-cohs.timer" = "~/.config/systemd/user/mbsync-cohs.timer"
-"systemd/gmail-token-refresh.service" = "~/.config/systemd/user/gmail-token-refresh.service"
-"systemd/gmail-token-refresh.timer" = "~/.config/systemd/user/gmail-token-refresh.timer"
 # Wayland compositor configuration - Niri + Waybar + WezTerm
 "niri/config.kdl" = "~/.config/niri/config.kdl"
 "waybar/config" = "~/.config/waybar/config"

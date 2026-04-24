@@ -1,0 +1,8 @@
+[Unit]
+Description=pizauth state dump — atomic encrypted snapshot for reboot persistence
+After=pizauth.service
+Requires=pizauth.service
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/pizauth-dump
