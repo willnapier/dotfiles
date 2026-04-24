@@ -107,9 +107,10 @@
     "rust-analyzer-lsp@claude-plugins-official": true
   },
   "alwaysThinkingEnabled": true,
+  "effortLevel": "high",
   "voiceEnabled": true,
   "feedbackSurveyState": {
     "lastShownTime": 1754246159316
   },
-  "effortLevel": "high"
+  "agentPushNotifEnabled": true
 }
