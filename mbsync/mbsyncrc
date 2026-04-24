@@ -6,30 +6,27 @@
 #   - mbsync (isync) built from upstream against Homebrew cyrus-sasl
 #     with the cyrus-sasl-xoauth2 plugin installed. Installed at
 #     ~/.local/bin/mbsync (takes PATH precedence over /opt/homebrew/bin).
-#   - practiceforge binary in ~/.local/bin/, stable-codesigned with
-#     identifier `com.williamnapier.practiceforge` so the keychain ACL
-#     survives rebuilds. `email imap-token` prints a fresh Outlook IMAP
-#     OAuth bearer on stdout; refresh-on-read is handled internally, so
-#     no separate refresh timer is strictly required (though a periodic
-#     `m365-imap-refresh` can run as a keep-warm).
+#   - pizauth binary in ~/.local/bin/, stable-codesigned with identifier
+#     `com.williamnapier.pizauth`. Daemon runs via launchd and holds OAuth
+#     tokens in memory; `pizauth show cohs` prints a fresh access token
+#     on stdout, refreshing automatically if expired.
 #
-# First-time setup (once per install, interactive device-code flow):
-#   practiceforge email imap-init --account cohs
+# First-time setup (once per install):
+#   pizauth refresh cohs   # triggers browser OAuth flow
 #
 # On Linux (nimbini): distribution package cyrus-sasl-xoauth2 drops the
 # plugin into the system SASL dir; stock mbsync from the distro works
-# out of the box. Same mbsyncrc contents. Same `imap-init` step.
+# out of the box. Same mbsyncrc contents. Same `pizauth refresh` step.
 
 IMAPAccount cohs
 Host outlook.office365.com
 Port 993
 User will.napier@changeofharleystreet.com
 AuthMechs XOAUTH2
-# PassCmd output is used as the SASL XOAUTH2 token. practiceforge's
-# refresh-on-read logic (KeychainOAuthTokenSource) silently mints a new
-# access token if the cached one is within 5 min of expiry, so the
-# printed token is always fresh at the moment of use.
-PassCmd "$HOME/.local/bin/practiceforge email imap-token --account cohs"
+# PassCmd output is used as the SASL XOAUTH2 token. pizauth's daemon
+# handles refresh transparently; the printed token is always fresh at
+# the moment of use.
+PassCmd "$HOME/.local/bin/pizauth show cohs"
 SSLType IMAPS
 # macOS trust store is used implicitly; no CertificateFile needed.
 
