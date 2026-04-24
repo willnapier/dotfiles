@@ -18,9 +18,11 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Return the store directory (~/.local/share/mailcurator), creating it if missing.
+/// Uses XDG-style ~/.local/share explicitly (not dirs::data_local_dir, which
+/// returns macOS's ~/Library/Application Support).
 pub fn store_dir() -> Result<PathBuf> {
-    let base = dirs::data_local_dir().context("no XDG_DATA_HOME equivalent")?;
-    let dir = base.join("mailcurator");
+    let home = dirs::home_dir().context("couldn't resolve $HOME")?;
+    let dir = home.join(".local").join("share").join("mailcurator");
     create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
     Ok(dir)
 }

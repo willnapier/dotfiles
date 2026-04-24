@@ -15,7 +15,7 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fs::{create_dir_all, read_to_string, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
@@ -49,8 +49,10 @@ pub struct Label {
 }
 
 fn eval_dir() -> Result<PathBuf> {
-    let base = dirs::data_local_dir().context("no XDG_DATA_HOME equivalent")?;
-    let dir = base.join("mailcurator").join("eval");
+    // XDG-style ~/.local/share (not dirs::data_local_dir which returns macOS's
+    // ~/Library/Application Support).
+    let home = dirs::home_dir().context("couldn't resolve $HOME")?;
+    let dir = home.join(".local").join("share").join("mailcurator").join("eval");
     create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
     Ok(dir)
 }
