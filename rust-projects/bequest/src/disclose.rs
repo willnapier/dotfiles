@@ -76,36 +76,18 @@ This message was sent automatically.
             continue;
         }
 
-        let msg = format!(
-            "From: {}\r\nTo: {}\r\nSubject: Bequest — Disclosure Activated\r\n\
-             Content-Type: text/plain; charset=utf-8\r\n\r\n{}",
-            from, trustee.email, body
-        );
-
-        let mut child = std::process::Command::new("himalaya")
-            .args(["message", "send"])
-            .stdin(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .context("starting himalaya")?;
-
-        {
-            use std::io::Write;
-            let stdin = child.stdin.as_mut().unwrap();
-            stdin
-                .write_all(msg.as_bytes())
-                .context("writing to himalaya")?;
-        }
-        let result = child.wait_with_output().context("waiting for himalaya")?;
-
-        if result.status.success() {
-            eprintln!("Disclosure sent to {} <{}>", trustee.name, trustee.email);
-        } else {
-            let err = String::from_utf8_lossy(&result.stderr);
-            eprintln!(
-                "FAILED sending to {} <{}>: {}",
-                trustee.name, trustee.email, err
-            );
+        match crate::send::send_mail(
+            from,
+            &trustee.email,
+            "Bequest — Disclosure Activated",
+            &body,
+            &[],
+        ) {
+            Ok(()) => eprintln!("Disclosure sent to {} <{}>", trustee.name, trustee.email),
+            Err(e) => eprintln!(
+                "FAILED sending to {} <{}>: {e}",
+                trustee.name, trustee.email
+            ),
         }
     }
 
@@ -153,34 +135,15 @@ will be triggered automatically.
     );
 
     for email in &config.settings.warning_emails {
-        let msg = format!(
-            "From: {}\r\nTo: {}\r\nSubject: Bequest — Dead Man's Switch Warning\r\n\
-             Content-Type: text/plain; charset=utf-8\r\n\r\n{}",
-            from, email, body
-        );
-
-        let mut child = std::process::Command::new("himalaya")
-            .args(["message", "send"])
-            .stdin(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .context("starting himalaya")?;
-
-        {
-            use std::io::Write;
-            let stdin = child.stdin.as_mut().unwrap();
-            stdin.write_all(msg.as_bytes())?;
-        }
-        let result = child.wait_with_output()?;
-
-        if result.status.success() {
-            eprintln!("Warning sent to {}", email);
-        } else {
-            eprintln!(
-                "WARNING: failed to send to {}: {}",
-                email,
-                String::from_utf8_lossy(&result.stderr)
-            );
+        match crate::send::send_mail(
+            from,
+            email,
+            "Bequest — Dead Man's Switch Warning",
+            &body,
+            &[],
+        ) {
+            Ok(()) => eprintln!("Warning sent to {email}"),
+            Err(e) => eprintln!("WARNING: failed to send to {email}: {e}"),
         }
     }
 

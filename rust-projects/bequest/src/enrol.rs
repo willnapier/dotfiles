@@ -197,7 +197,8 @@ pub fn send_bundles() -> Result<()> {
         let instructions = fs::read_to_string(bundle_dir.join("instructions.md"))
             .context("reading instructions")?;
 
-        // Compose email (plain text with share inline; attachments via himalaya)
+        // Compose email. Plain-text body with share inline; two files
+        // (reconstruction.html + vault.age) become MIME attachments.
         let body = format!(
             "{}\n\n---\n\nYour share (keep this safe):\n{}\n\n---\n\n\
              The reconstruction page and vault archive are attached.\n\
@@ -206,45 +207,23 @@ pub fn send_bundles() -> Result<()> {
             instructions, share
         );
 
-        let msg = format!(
-            "From: {}\r\nTo: {}\r\nSubject: Bequest — Trustee Bundle for {}\r\n\
-             Content-Type: text/plain; charset=utf-8\r\n\r\n{}",
-            from, trustee.email, trustee.name, body
-        );
-
-        // Send via himalaya with attachments
         let html_path = bundle_dir.join("reconstruction.html");
         let vault_path = bundle_dir.join("vault.age");
-
-        let mut cmd = std::process::Command::new("himalaya");
-        cmd.args(["message", "send"]);
-        // himalaya reads the message from stdin
-        // For attachments, himalaya supports -a flag
+        let mut attachments = Vec::new();
         if html_path.exists() {
-            cmd.args(["-a", &html_path.to_string_lossy()]);
+            attachments.push(html_path.as_path());
         }
         if vault_path.exists() {
-            cmd.args(["-a", &vault_path.to_string_lossy()]);
+            attachments.push(vault_path.as_path());
         }
-        cmd.stdin(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
 
-        let mut child = cmd.spawn().context("starting himalaya")?;
-        {
-            use std::io::Write;
-            let stdin = child.stdin.as_mut().unwrap();
-            stdin.write_all(msg.as_bytes()).context("writing to himalaya")?;
-        }
-        let result = child.wait_with_output().context("waiting for himalaya")?;
-
-        if result.status.success() {
-            eprintln!("Sent bundle to {} <{}>", trustee.name, trustee.email);
-        } else {
-            let err = String::from_utf8_lossy(&result.stderr);
-            eprintln!(
-                "FAILED sending to {} <{}>: {}",
-                trustee.name, trustee.email, err
-            );
+        let subject = format!("Bequest — Trustee Bundle for {}", trustee.name);
+        match crate::send::send_mail(from, &trustee.email, &subject, &body, &attachments) {
+            Ok(()) => eprintln!("Sent bundle to {} <{}>", trustee.name, trustee.email),
+            Err(e) => eprintln!(
+                "FAILED sending to {} <{}>: {e}",
+                trustee.name, trustee.email
+            ),
         }
     }
 

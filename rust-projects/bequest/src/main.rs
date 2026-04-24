@@ -4,6 +4,7 @@ mod enrol;
 mod gf256;
 mod heartbeat;
 mod page;
+mod send;
 mod shamir;
 mod vault;
 
@@ -78,7 +79,7 @@ enum Commands {
         #[arg(short = 'n', long, default_value = "3")]
         shares: u8,
 
-        /// Email bundles to trustees via himalaya
+        /// Email bundles to trustees via msmtp (pizauth XOAUTH2)
         #[arg(long)]
         send: bool,
     },
