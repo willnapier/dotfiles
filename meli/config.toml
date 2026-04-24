@@ -106,7 +106,91 @@ pager_context = 2
 enable = true
 
 [terminal]
-theme = "dark"
+theme = "solarized_dark"
+
+# Solarized Dark (Ethan Schoonover). Mirrors ~/dotfiles/ghostty/themes/solarized-dark.
+# base0 on base03 is what the terminal renders — reads white-on-teal.
+# Only keys with hardcoded non-theme_default colors are overridden; the rest
+# inherit from the built-in `dark` theme via theme_default cascade.
+[terminal.themes."solarized_dark"]
+color_aliases = { base03 = "#002b36", base02 = "#073642", base01 = "#586e75", base00 = "#657b83", base0 = "#839496", base1 = "#93a1a1", base2 = "#eee8d5", base3 = "#fdf6e3", yellow = "#b58900", orange = "#cb4b16", red = "#dc322f", magenta = "#d33682", violet = "#6c71c4", blue = "#268bd2", cyan = "#2aa198", green = "#859900" }
+
+"theme_default"              = { fg = "$base0",  bg = "$base03", attrs = "Default" }
+"error_message"              = { fg = "$red",    bg = "theme_default", attrs = "theme_default" }
+"text.unfocused"             = { fg = "$base01", bg = "theme_default", attrs = "Dim" }
+"text.error"                 = { fg = "$red",    bg = "theme_default", attrs = "theme_default" }
+"text.highlight"             = { fg = "$blue",   bg = "theme_default", attrs = "Reverse" }
+"highlight"                  = { fg = "$base03", bg = "$base1",  attrs = "Bold" }
+
+"status.bar"                 = { fg = "$base2",  bg = "$blue",   attrs = "theme_default" }
+"status.command_bar"         = { fg = "$base03", bg = "$yellow", attrs = "theme_default" }
+"status.history"             = { fg = "$base0",  bg = "$base02", attrs = "theme_default" }
+"status.history.hints"       = { fg = "$base03", bg = "$yellow", attrs = "theme_default" }
+"status.notification"        = { fg = "$magenta", bg = "theme_default", attrs = "theme_default" }
+
+"tab.focused"                = { fg = "$base3",  bg = "theme_default", attrs = "Bold" }
+"tab.unfocused"              = { fg = "$base01", bg = "theme_default", attrs = "theme_default" }
+"tab.bar"                    = { fg = "theme_default", bg = "theme_default", attrs = "theme_default" }
+
+"widgets.list.header"        = { fg = "$base03", bg = "$base1",  attrs = "Bold" }
+"widgets.form.highlighted"   = { fg = "$base3",  bg = "$base02", attrs = "theme_default" }
+"widgets.options.highlighted" = { fg = "$base3", bg = "$base02", attrs = "theme_default" }
+
+"mail.sidebar_unread_count"  = { fg = "$base01", bg = "mail.sidebar", attrs = "mail.sidebar" }
+"mail.sidebar_index"         = { fg = "$base01", bg = "mail.sidebar", attrs = "mail.sidebar" }
+"mail.sidebar_highlighted"   = { fg = "$base03", bg = "$base1",  attrs = "mail.sidebar" }
+"mail.sidebar_highlighted_account" = { fg = "$base3", bg = "$base02", attrs = "mail.sidebar_highlighted" }
+
+"mail.listing.compact.even"           = { fg = "theme_default", bg = "$base02", attrs = "theme_default" }
+"mail.listing.compact.odd"            = { fg = "theme_default", bg = "theme_default", attrs = "theme_default" }
+"mail.listing.compact.even_unseen"    = { fg = "$base3",  bg = "$base02", attrs = "Bold" }
+"mail.listing.compact.odd_unseen"     = { fg = "$base3",  bg = "theme_default", attrs = "Bold" }
+"mail.listing.compact.even_selected"  = { fg = "$base3",  bg = "$blue",   attrs = "theme_default" }
+"mail.listing.compact.odd_selected"   = { fg = "$base3",  bg = "$blue",   attrs = "theme_default" }
+"mail.listing.compact.even_highlighted" = { fg = "theme_default", bg = "$base02", attrs = "Bold" }
+"mail.listing.compact.odd_highlighted"  = { fg = "theme_default", bg = "$base02", attrs = "Bold" }
+"mail.listing.compact.even_highlighted_selected" = { fg = "$base3", bg = "$blue", attrs = "Reverse" }
+"mail.listing.compact.odd_highlighted_selected"  = { fg = "$base3", bg = "$blue", attrs = "Reverse" }
+
+"mail.listing.plain.even"             = { fg = "theme_default", bg = "$base02", attrs = "theme_default" }
+"mail.listing.plain.odd"              = { fg = "theme_default", bg = "theme_default", attrs = "theme_default" }
+"mail.listing.plain.even_unseen"      = { fg = "$base3",  bg = "$base02", attrs = "Bold" }
+"mail.listing.plain.odd_unseen"       = { fg = "$base3",  bg = "theme_default", attrs = "Bold" }
+"mail.listing.plain.even_selected"    = { fg = "$base3",  bg = "$blue",   attrs = "theme_default" }
+"mail.listing.plain.odd_selected"     = { fg = "$base3",  bg = "$blue",   attrs = "theme_default" }
+"mail.listing.plain.even_highlighted" = { fg = "theme_default", bg = "$base02", attrs = "Bold" }
+"mail.listing.plain.odd_highlighted"  = { fg = "theme_default", bg = "$base02", attrs = "Bold" }
+"mail.listing.plain.even_highlighted_selected" = { fg = "$base3", bg = "$blue", attrs = "Reverse" }
+"mail.listing.plain.odd_highlighted_selected"  = { fg = "$base3", bg = "$blue", attrs = "Reverse" }
+
+"mail.listing.conversations"               = { fg = "$base01", bg = "theme_default", attrs = "theme_default" }
+"mail.listing.conversations.subject"       = { fg = "theme_default", bg = "theme_default", attrs = "theme_default" }
+"mail.listing.conversations.from"          = { fg = "$base01", bg = "theme_default", attrs = "theme_default" }
+"mail.listing.conversations.date"          = { fg = "$violet", bg = "theme_default", attrs = "theme_default" }
+"mail.listing.conversations.unseen"        = { fg = "$base3",  bg = "theme_default", attrs = "Bold" }
+"mail.listing.conversations.highlighted"   = { fg = "theme_default", bg = "$base02", attrs = "Bold" }
+"mail.listing.conversations.selected"      = { fg = "$base3",  bg = "$blue",   attrs = "theme_default" }
+"mail.listing.conversations.highlighted_selected" = { fg = "$base3", bg = "$blue", attrs = "Reverse" }
+
+"mail.view.headers"          = { fg = "$blue",   bg = "theme_default", attrs = "theme_default" }
+"mail.view.headers_names"    = { fg = "$cyan",   bg = "theme_default", attrs = "Bold" }
+"mail.view.headers_area"     = { fg = "theme_default", bg = "theme_default", attrs = "theme_default" }
+"mail.view.body"             = { fg = "theme_default", bg = "theme_default", attrs = "theme_default" }
+
+"mail.view.thread.indentation.a" = { fg = "theme_default", bg = "$blue",    attrs = "theme_default" }
+"mail.view.thread.indentation.b" = { fg = "theme_default", bg = "$red",     attrs = "theme_default" }
+"mail.view.thread.indentation.c" = { fg = "theme_default", bg = "$magenta", attrs = "theme_default" }
+"mail.view.thread.indentation.d" = { fg = "theme_default", bg = "$yellow",  attrs = "theme_default" }
+"mail.view.thread.indentation.e" = { fg = "theme_default", bg = "$orange",  attrs = "theme_default" }
+"mail.view.thread.indentation.f" = { fg = "theme_default", bg = "$cyan",    attrs = "theme_default" }
+
+"mail.listing.attachment_flag"    = { fg = "$cyan",    bg = "theme_default", attrs = "theme_default" }
+"mail.listing.thread_snooze_flag" = { fg = "$red",     bg = "theme_default", attrs = "theme_default" }
+"mail.listing.tag_default"        = { fg = "$base03",  bg = "$violet", attrs = "Bold" }
+"mail.listing.highlight_self"     = { fg = "$green",   bg = "theme_default", attrs = "Bold" }
+
+"pager.highlight_search"         = { fg = "$base03", bg = "$yellow", attrs = "Bold" }
+"pager.highlight_search_current" = { fg = "$base03", bg = "$orange", attrs = "Bold" }
 
 # ====================================================================
 # Colemak-DH "neio" navigation remap (added 2026-04-21)
