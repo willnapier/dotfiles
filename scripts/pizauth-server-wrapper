@@ -1,0 +1,44 @@
+#!/bin/bash
+# pizauth-server-wrapper — launchd entry point for the pizauth OAuth broker.
+#
+# Responsibilities:
+#   1. Start `pizauth server` in the background and capture its PID.
+#   2. Wait for the daemon socket to come up (up to 5 s).
+#   3. If a prior encrypted state dump exists at ~/.cache/pizauth-state.bin,
+#      pipe it into `pizauth restore` so refresh tokens survive across
+#      launchd restarts / reboots / logouts.
+#   4. `wait` on the server PID so launchd sees the process as long-lived.
+#      KeepAlive + RunAtLoad in the plist handle restart on crash/login.
+#
+# Periodic dumping is handled by a sibling launchd agent
+# (com.williamnapier.pizauth-dump), not here.
+
+set -u  # no -e: we want to continue past a missing/broken restore
+
+DUMP_FILE="$HOME/.cache/pizauth-state.bin"
+PIZAUTH="$HOME/.local/bin/pizauth"
+
+# Start the daemon in the background.
+"$PIZAUTH" server &
+SERVER_PID=$!
+
+# Wait up to 5 s for the socket to be responsive.
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+    if "$PIZAUTH" status >/dev/null 2>&1; then
+        break
+    fi
+    sleep 0.5
+done
+
+# Restore prior state if we have any. A failed restore should not block
+# the daemon — user can always re-auth accounts.
+if [ -f "$DUMP_FILE" ]; then
+    if "$PIZAUTH" restore < "$DUMP_FILE" 2>&1; then
+        echo "pizauth-wrapper: restored state from $DUMP_FILE"
+    else
+        echo "pizauth-wrapper: restore failed (continuing with empty daemon)" >&2
+    fi
+fi
+
+# Hand the process's lifetime back to launchd.
+wait "$SERVER_PID"

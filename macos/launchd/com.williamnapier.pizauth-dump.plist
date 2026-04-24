@@ -3,18 +3,18 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.williamnapier.pizauth</string>
+    <string>com.williamnapier.pizauth-dump</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/williamnapier/.local/bin/pizauth-server-wrapper</string>
+        <string>/Users/williamnapier/.local/bin/pizauth-dump</string>
     </array>
+    <key>StartInterval</key>
+    <integer>900</integer>
     <key>RunAtLoad</key>
     <true/>
-    <key>KeepAlive</key>
-    <true/>
     <key>StandardOutPath</key>
-    <string>/Users/williamnapier/Library/Logs/pizauth.log</string>
+    <string>/Users/williamnapier/Library/Logs/pizauth-dump.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/williamnapier/Library/Logs/pizauth.log</string>
+    <string>/Users/williamnapier/Library/Logs/pizauth-dump.log</string>
 </dict>
 </plist>

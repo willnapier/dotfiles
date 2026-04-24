@@ -1,0 +1,25 @@
+#!/bin/bash
+# pizauth-dump — write pizauth daemon state to disk atomically.
+#
+# Invoked on a timer by com.williamnapier.pizauth-dump. Dump contains
+# encrypted refresh + access tokens; written with mode 600 via mktemp
+# and mv, so readers never see a partial file.
+
+set -eu
+
+DUMP_FILE="$HOME/.cache/pizauth-state.bin"
+PIZAUTH="$HOME/.local/bin/pizauth"
+
+mkdir -p "$(dirname "$DUMP_FILE")"
+
+# tmpfile in same dir so mv is atomic
+TMPFILE=$(mktemp "${DUMP_FILE}.XXXXXX")
+chmod 600 "$TMPFILE"
+
+if "$PIZAUTH" dump > "$TMPFILE" 2>&1; then
+    mv "$TMPFILE" "$DUMP_FILE"
+else
+    rm -f "$TMPFILE"
+    echo "pizauth-dump: pizauth dump failed, leaving prior $DUMP_FILE untouched" >&2
+    exit 1
+fi
