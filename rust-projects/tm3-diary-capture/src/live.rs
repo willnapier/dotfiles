@@ -48,6 +48,11 @@ pub fn scrape_diary(weeks_back: u32) -> Result<Vec<DaySchedule>> {
             .args(vec![
                 std::ffi::OsStr::new("--password-store=basic"),
                 std::ffi::OsStr::new("--use-mock-keychain"),
+                // Suppress Chrome's MediaSession/hardware-media-key probes so
+                // macOS doesn't prompt for Apple Music / MediaLibrary access
+                // every time the binary's CDHash changes (i.e. every rebuild).
+                std::ffi::OsStr::new("--disable-features=MediaSessionService,HardwareMediaKeyHandling"),
+                std::ffi::OsStr::new("--mute-audio"),
             ])
             .build()
             .context("Failed to build launch options")?,

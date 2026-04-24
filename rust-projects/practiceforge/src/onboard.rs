@@ -65,6 +65,11 @@ fn launch_tm3_browser() -> Result<(Browser, std::sync::Arc<headless_chrome::Tab>
             .args(vec![
                 std::ffi::OsStr::new("--password-store=basic"),
                 std::ffi::OsStr::new("--use-mock-keychain"),
+                // Suppress Chrome's MediaSession/hardware-media-key probes so
+                // macOS doesn't prompt for Apple Music / MediaLibrary access
+                // every time the binary's CDHash changes (i.e. every rebuild).
+                std::ffi::OsStr::new("--disable-features=MediaSessionService,HardwareMediaKeyHandling"),
+                std::ffi::OsStr::new("--mute-audio"),
             ])
             .build()?,
     )

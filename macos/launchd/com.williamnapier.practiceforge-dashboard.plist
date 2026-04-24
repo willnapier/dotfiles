@@ -23,6 +23,13 @@
     <dict>
         <key>PATH</key>
         <string>/Users/williamnapier/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <!-- PF_DEV=1 makes the dashboard re-read admin.html from disk on
+             every request (src/admin_dashboard/routes.rs checks this var).
+             Frontend-only edits land without a rebuild → no new CDHash →
+             no TCC re-prompt storm. Safe in prod because admin.html is
+             served only to authenticated users on localhost:3457. -->
+        <key>PF_DEV</key>
+        <string>1</string>
     </dict>
 </dict>
 </plist>
