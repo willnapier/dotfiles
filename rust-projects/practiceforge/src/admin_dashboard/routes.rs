@@ -62,16 +62,12 @@ pub fn build_router() -> Router {
         .route("/api/email/status", get(handlers::email_status))
         .route("/api/email/setup", post(handlers::email_setup))
         .route("/api/email/test", post(handlers::email_test))
-        // Microsoft 365 OAuth device-flow (no password, colleague-friendly)
-        .route("/api/email/m365/begin", post(handlers::email_m365_begin))
-        .route("/api/email/m365/poll", post(handlers::email_m365_poll))
-        .route("/api/email/m365/setup", post(handlers::email_m365_setup))
-        // Gmail OAuth auth-code flow (loopback redirect)
-        .route("/api/email/gmail/begin", post(handlers::email_gmail_begin))
-        .route("/api/email/gmail/callback", get(handlers::email_gmail_callback))
-        .route("/api/email/gmail/poll", post(handlers::email_gmail_poll))
-        .route("/api/email/gmail/setup", post(handlers::email_gmail_setup))
-        // SMTP single-identity add (uniform with OAuth paths above)
+        // OAuth setup flows (M365, Gmail) removed 2026-04-24: OAuth is now
+        // handled by pizauth (separate daemon). To add a mail identity that
+        // uses OAuth, run `pizauth refresh <account>` in a terminal, then
+        // add the identity via `practiceforge email wizard` pointing its
+        // auth field at `pizauth show <account>`.
+        // SMTP single-identity add (password-based, kept for LoRA / non-OAuth accounts)
         .route("/api/email/smtp/setup", post(handlers::email_smtp_setup))
         // Remove an identity from config.toml by from_email
         .route("/api/email/identity/delete", post(handlers::email_identity_delete))

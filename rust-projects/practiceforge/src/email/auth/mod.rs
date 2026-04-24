@@ -17,11 +17,9 @@ use anyhow::Result;
 
 pub mod password;
 pub mod oauth_command;
-pub mod keychain_oauth;
 
 pub use password::KeychainPasswordSource;
 pub use oauth_command::CommandTokenSource;
-pub use keychain_oauth::KeychainOAuthTokenSource;
 
 /// Credential provider. The term "token" is used generically — for password
 /// backends it's a password, for OAuth backends it's an access token.

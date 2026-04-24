@@ -196,17 +196,25 @@ pub struct GmailApi {
 }
 
 impl GmailApi {
-    /// Build a new client. Refreshes the Gmail OAuth token on the way
-    /// in, so the constructor is the single "do we have working
-    /// credentials?" test point for the caller.
+    /// Build a new client. Tokens are fetched from the pizauth daemon on
+    /// each construction, which auto-refreshes via the stored refresh
+    /// token if the cached access token is near expiry.
     pub fn new() -> Result<Self> {
-        crate::email::gmail_oauth::refresh()
-            .context("refreshing Gmail OAuth before API client construction")?;
-        let access_token = crate::keystore::get("himalaya-cli", "gmail-pf-access")
-            .context("reading gmail-pf-access from keystore")?
-            .ok_or_else(|| {
-                anyhow!("no Gmail access token in keychain — run `practiceforge email init` first")
-            })?;
+        let output = std::process::Command::new("pizauth")
+            .args(["show", "gmail"])
+            .output()
+            .context("running `pizauth show gmail`")?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("pizauth show gmail failed: {}", stderr.trim());
+        }
+        let access_token = String::from_utf8(output.stdout)
+            .context("parsing pizauth output as UTF-8")?
+            .trim()
+            .to_string();
+        if access_token.is_empty() {
+            anyhow::bail!("pizauth show gmail returned empty token — run `pizauth refresh gmail`");
+        }
         let http = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
             .build()

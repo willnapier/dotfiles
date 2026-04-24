@@ -239,14 +239,25 @@ fn label_map_stale(state: &State) -> bool {
 }
 
 fn access_token() -> Result<String> {
-    // Delegate to gmail_oauth::show semantics: refresh-if-stale then
-    // read the cached access token. Direct call to refresh() keeps the
-    // token fresh and lets us read the keychain entry right after.
-    let _ = crate::email::gmail_oauth::refresh();
-    // The token is kept in the himalaya-cli keychain service under
-    // gmail-pf-access (matching gmail_oauth internals).
-    crate::keystore::get("himalaya-cli", "gmail-pf-access")?
-        .ok_or_else(|| anyhow!("no Gmail access token in keychain — run `practiceforge email init` or wait for next refresh"))
+    // Tokens are owned by the pizauth daemon. `pizauth show gmail` prints
+    // a fresh access token on stdout, auto-refreshing via the stored
+    // refresh token if the cached token is near expiry.
+    let output = std::process::Command::new("pizauth")
+        .args(["show", "gmail"])
+        .output()
+        .context("running `pizauth show gmail`")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("pizauth show gmail failed: {}", stderr.trim());
+    }
+    let token = String::from_utf8(output.stdout)
+        .context("parsing pizauth output as UTF-8")?
+        .trim()
+        .to_string();
+    if token.is_empty() {
+        anyhow::bail!("pizauth show gmail returned empty token — run `pizauth refresh gmail`");
+    }
+    Ok(token)
 }
 
 fn current_notmuch_lastmod() -> Result<u64> {

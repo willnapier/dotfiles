@@ -878,9 +878,6 @@ pub fn init_config() -> Result<()> {
         AuthConfig::OAuth2Command { command } => {
             println!("  Auth:   OAuth2 token via `{command}`");
         }
-        AuthConfig::KeychainM365 => {
-            println!("  Auth:   M365 OAuth (in-Rust refresh from keystore)");
-        }
     }
     println!("  Primary: {}", if entry.primary { "yes" } else { "no" });
     println!("  Config:  {}", path.display());

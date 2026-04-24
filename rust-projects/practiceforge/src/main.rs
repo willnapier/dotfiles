@@ -350,52 +350,6 @@ enum EmailAction {
     /// Auth via `cohs-oauth-graph show` — requires `cohs-oauth-graph init`
     /// to have run once to consent the Mail.Send scope.
     GraphSend,
-    /// Refresh the Microsoft Graph access token using the stored refresh
-    /// token. Replaces `cohs-oauth-graph refresh` — works for tokens
-    /// acquired via either the dashboard button OR the Python helper
-    /// (both store under the same keychain labels).
-    ///
-    /// Exit 0 on success; non-zero if refresh_token is missing or rejected
-    /// (user must re-authorise via the dashboard or `cohs-oauth-graph init`).
-    M365Refresh,
-    /// Refresh the Gmail OAuth access token using the stored refresh
-    /// token. For use in periodic timers (launchd/systemd).
-    GmailRefresh,
-    /// Print the current Gmail access token to stdout after a silent
-    /// refresh. Used as `send_mail`'s `OAuth2Command` for Gmail identities:
-    /// the token printed feeds SmtpTransport's XOAUTH2 mode.
-    GmailShow,
-    /// Print a fresh OAuth access token to stdout for IMAP/SMTP (XOAUTH2)
-    /// consumption by mbsync `PassCmd` or any other SASL-XOAUTH2 caller.
-    /// Silently refreshes first if the cached token is stale.
-    ///
-    ///  --account cohs  → Outlook/M365 IMAP scope (Thunderbird client ID)
-    ///  --account gmail → Gmail mail.google.com scope
-    ///
-    /// COHS needs a one-time `imap-init --account cohs` first to populate
-    /// the keystore; Gmail reuses the existing himalaya/practiceforge
-    /// Gmail OAuth tokens already in the keychain.
-    ImapToken {
-        /// "cohs" or "gmail"
-        #[arg(long)]
-        account: String,
-    },
-    /// First-time OAuth device-code flow for IMAP/SMTP access. Opens a
-    /// browser URL + code that the user enters to consent. On success
-    /// writes access + refresh + expires_at entries to the OS keystore.
-    /// Only needed once per account; thereafter `imap-token` refreshes
-    /// automatically.
-    ImapInit {
-        /// Currently only "cohs" is supported (Gmail uses the existing
-        /// `email init` wizard flow which registers a loopback OAuth).
-        #[arg(long)]
-        account: String,
-    },
-    /// Refresh the M365 IMAP/SMTP access token from the stored refresh
-    /// token. For use in periodic timers. Separate from `m365-refresh`
-    /// because IMAP and Graph live in different keystore slots with
-    /// different scopes.
-    M365ImapRefresh,
     /// Push local notmuch tag changes back to Gmail as label changes —
     /// the missing half of an IMAP + notmuch Gmail stack. Compares each
     /// recently-modified notmuch message's tag set against Gmail's
@@ -1280,51 +1234,13 @@ async fn main() -> anyhow::Result<()> {
 
                     let transport = GraphTransport::new(
                         GraphConfig::default(),
-                        Arc::new(CommandTokenSource::new("cohs-oauth-graph show")),
+                        Arc::new(CommandTokenSource::new("pizauth show cohs")),
                     );
                     transport.send_mime(&mime)?;
                     // sendmail-style tools are silent on stdout so the MUA
                     // doesn't mistake it for error output. Confirmation to
                     // stderr for interactive runs.
                     eprintln!("✓ Sent via Graph ({} bytes MIME)", mime.len());
-                }
-                EmailAction::M365Refresh => {
-                    crate::email::m365_oauth::refresh()?;
-                    eprintln!("✓ M365 Graph access token refreshed.");
-                }
-                EmailAction::GmailRefresh => {
-                    crate::email::gmail_oauth::refresh()?;
-                    eprintln!("✓ Gmail access token refreshed.");
-                }
-                EmailAction::GmailShow => {
-                    crate::email::gmail_oauth::show()?;
-                }
-                EmailAction::ImapToken { account } => {
-                    match account.as_str() {
-                        "cohs" => crate::email::m365_imap_oauth::show()?,
-                        "gmail" => crate::email::gmail_oauth::show()?,
-                        other => anyhow::bail!(
-                            "unknown --account {other:?}; expected \"cohs\" or \"gmail\""
-                        ),
-                    }
-                }
-                EmailAction::ImapInit { account } => {
-                    match account.as_str() {
-                        "cohs" => crate::email::m365_imap_oauth::run_device_flow_interactive()?,
-                        "gmail" => {
-                            anyhow::bail!(
-                                "Gmail first-run OAuth uses the loopback-redirect flow — run \
-                                 `practiceforge email init` and pick Gmail from the wizard."
-                            );
-                        }
-                        other => anyhow::bail!(
-                            "unknown --account {other:?}; expected \"cohs\" or \"gmail\""
-                        ),
-                    }
-                }
-                EmailAction::M365ImapRefresh => {
-                    crate::email::m365_imap_oauth::refresh()?;
-                    eprintln!("✓ M365 IMAP access token refreshed.");
                 }
                 EmailAction::GmailPushTags { push } => {
                     crate::email::gmail_push_tags::run(!push)?;
@@ -1394,10 +1310,10 @@ async fn main() -> anyhow::Result<()> {
                     let identity = IdentityConfig {
                         backend: BackendConfig::Graph(GraphConfig::default()),
                         auth: AuthConfig::OAuth2Command {
-                            // Graph-scoped tokens live in a separate msal cache + keychain
-                            // entries (distinct client ID registered for Graph). See
-                            // cohs-oauth-graph — a sibling of cohs-oauth.
-                            command: "cohs-oauth-graph show".into(),
+                            // Graph access tokens come from pizauth (the COHS account
+                            // uses the same Thunderbird public client + scopes that
+                            // include Mail.Send / IMAP / SMTP).
+                            command: "pizauth show cohs".into(),
                         },
                     };
 
