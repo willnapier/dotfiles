@@ -1,0 +1,118 @@
+# meli configuration — Linux (nimbini)
+# ~/.config/meli/config.toml  (deployed via dotter linux.files)
+#
+# Differences from config.toml (macOS):
+#   - root_mailbox uses /home/will/Mail
+#   - library_file_path points to system libnotmuch on Arch
+#   - msmtp logfile and passwordeval use Linux paths
+
+[accounts.workspace]
+root_mailbox = "/home/will/Mail"
+format = "notmuch"
+library_file_path = "/usr/lib/libnotmuch.so.5"
+identity = "will@willnapier.com"
+display_name = "William Napier"
+subscribed_mailboxes = ["inbox", "unread", "sent", "archive", "all-mail"]
+default_mailbox = "inbox"
+send_mail = "msmtp --account=gmail --read-recipients --read-envelope-from"
+
+  [accounts.workspace.mailboxes."inbox"]
+  query = "tag:inbox and not tag:archive and not tag:spam and not tag:trash and date:6M.."
+
+  [accounts.workspace.mailboxes."unread"]
+  query = "tag:unread"
+
+  [accounts.workspace.mailboxes."sent"]
+  query = "tag:sent"
+
+  [accounts.workspace.mailboxes."archive"]
+  query = "not tag:inbox and not tag:trash and not tag:spam and not tag:sent"
+
+  [accounts.workspace.mailboxes."all-mail"]
+  query = "date:90d.."
+
+# =====================================================================
+# COHS account (Microsoft 365)
+# =====================================================================
+# Sync: mbsync pulls outlook.office365.com → ~/Mail/cohs/ via XOAUTH2
+#       using `pizauth show cohs` as PassCmd.
+# Send: `practiceforge email graph-send` (tenant blocks SMTP AUTH).
+
+[accounts.cohs]
+root_mailbox = "/home/will/Mail"
+format = "notmuch"
+library_file_path = "/usr/lib/libnotmuch.so.5"
+identity = "will.napier@changeofharleystreet.com"
+display_name = "Will Napier"
+subscribed_mailboxes = ["inbox", "unread", "sent", "drafts", "archive", "trash", "spam"]
+default_mailbox = "inbox"
+send_mail = "practiceforge email graph-send"
+
+  [accounts.cohs.mailboxes."inbox"]
+  query = "tag:cohs and tag:inbox and not tag:archive and not tag:spam and not tag:trash"
+
+  [accounts.cohs.mailboxes."unread"]
+  query = "tag:cohs and tag:unread and not tag:trash and not tag:spam"
+
+  [accounts.cohs.mailboxes."sent"]
+  query = "tag:cohs and tag:sent"
+
+  [accounts.cohs.mailboxes."drafts"]
+  query = "tag:cohs and tag:drafts"
+
+  [accounts.cohs.mailboxes."archive"]
+  query = "tag:cohs and tag:archive"
+
+  [accounts.cohs.mailboxes."trash"]
+  query = "tag:cohs and tag:trash"
+
+  [accounts.cohs.mailboxes."spam"]
+  query = "tag:cohs and tag:spam"
+
+[listing]
+sidebar_ratio = 80
+
+[pager]
+filter = "cat"
+html_filter = "w3m -T text/html"
+pager_context = 2
+
+[notifications]
+enable = true
+
+[terminal]
+theme = "dark"
+
+# ====================================================================
+# Colemak-DH "neio" navigation remap
+# ====================================================================
+
+[shortcuts.general]
+scroll_left = 'n'
+scroll_down = 'e'
+scroll_up = 'i'
+scroll_right = 'o'
+next_search_result = 'M-n'
+
+[shortcuts.listing]
+scroll_up = 'i'
+scroll_down = 'e'
+set_seen = 's'
+exit_entry = 'Backspace'
+intersection_modifier = 'M-i'
+next_mailbox = 'E'
+prev_mailbox = 'I'
+next_account = 'N'
+prev_account = 'O'
+
+[shortcuts.pager]
+scroll_up = 'i'
+scroll_down = 'e'
+
+[shortcuts.thread-view]
+scroll_up = 'i'
+scroll_down = 'e'
+
+[shortcuts.contact-list]
+scroll_up = 'i'
+scroll_down = 'e'

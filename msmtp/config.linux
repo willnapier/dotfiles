@@ -1,0 +1,24 @@
+# msmtp — SMTP sender (Linux/nimbini)
+# ~/.config/msmtp/config  (deployed via dotter linux.files)
+#
+# Differences from config (macOS):
+#   - logfile uses ~/.local/share/ instead of ~/Library/Logs/
+#   - passwordeval calls pizauth by name (in PATH on Linux)
+#
+# COHS sends via `practiceforge email graph-send` — tenant blocks SMTP AUTH.
+
+defaults
+auth           on
+logfile        ~/.local/share/msmtp.log
+tls            on
+
+account        gmail
+host           smtp.gmail.com
+port           465
+tls_starttls   off
+from           will@willnapier.com
+user           will@willnapier.com
+auth           xoauth2
+passwordeval   "pizauth show gmail"
+
+account default : gmail

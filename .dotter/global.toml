@@ -455,6 +455,9 @@ depends = ["shared"]
 "waybar/config" = "~/.config/waybar/config"
 "waybar/style.css" = "~/.config/waybar/style.css"
 "mako/config" = "~/.config/mako/config"
+# Mail clients (Linux-specific paths — macOS variants in [macos.files])
+"meli/config.linux.toml" = "~/.config/meli/config.toml"
+"msmtp/config.linux" = "~/.config/msmtp/config"
 
 [linux.variables]
 opener_cmd = "xdg-open"
