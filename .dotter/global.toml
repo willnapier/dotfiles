@@ -317,6 +317,7 @@ depends = ["shared"]
 "macos/launchd/com.williamnapier.mbsync-cohs.plist" = "~/Library/LaunchAgents/com.williamnapier.mbsync-cohs.plist"
 "macos/launchd/com.williamnapier.gmail-push-tags.plist" = "~/Library/LaunchAgents/com.williamnapier.gmail-push-tags.plist"
 "macos/launchd/com.williamnapier.gmail-token-refresh.plist" = "~/Library/LaunchAgents/com.williamnapier.gmail-token-refresh.plist"
+"macos/launchd/com.williamnapier.pizauth.plist" = "~/Library/LaunchAgents/com.williamnapier.pizauth.plist"
 "LaunchAgents/com.user.syncthing-sync-watchdog.plist" = "~/Library/LaunchAgents/com.user.syncthing-sync-watchdog.plist"
 "scripts/syncthing-sync-watchdog" = "~/.local/bin/syncthing-sync-watchdog"
 "macos/LaunchAgents/com.williamnapier.git-auto-pull-watcher.plist" = "~/Library/LaunchAgents/com.williamnapier.git-auto-pull-watcher.plist"
