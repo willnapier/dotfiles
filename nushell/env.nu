@@ -63,32 +63,29 @@ if ($gcloud_root | path exists) {
     $env.GOOGLE_CLOUD_PROJECT = "forgepodium"
 }
 
-# --- Gemini API Key Retrieval (macOS Keychain / Linux gnome-keyring) ---
-$env.GEMINI_API_KEY = (try {
-    if $platform == "darwin" {
-        let result = (^security find-generic-password -s "gemini-api-key" -a "forgepodium" -w | complete)
-        if $result.exit_code == 0 { $result.stdout | str trim } else { "" }
-    } else if (which secret-tool | is-not-empty) {
-        let result = (^secret-tool lookup service gemini-api-key account forgepodium | complete)
-        if $result.exit_code == 0 { $result.stdout | str trim } else { "" }
-    } else {
-        ""
+# --- API Keys (cached from keychain) ---
+# Direct `security find-generic-password` calls cost ~8s each on this Mac
+# (permanent SEP IPC degradation from a removed VPN kernel extension).
+# Calling them at every shell startup made new windows hang for ~20s.
+# Instead, load from a TOML cache written by the `api-key-cache-refresh`
+# script. Regenerate the cache after rotating a key.
+let api_key_cache = ($env.HOME | path join ".cache" "shell" "api-keys.toml")
+$env.GEMINI_API_KEY = ""
+$env.OPENAI_API_KEY = ""
+if ($api_key_cache | path exists) {
+    let cached = (try { open $api_key_cache } catch { {} })
+    $env.GEMINI_API_KEY = ($cached | get -o gemini_api_key | default "")
+    $env.OPENAI_API_KEY = ($cached | get -o openai_api_key | default "")
+} else if (which api-key-cache-refresh | is-not-empty) {
+    # First run: populate the cache (slow, but only once). Swallow failures
+    # so a broken keychain never blocks shell startup.
+    try { ^api-key-cache-refresh out+err> /dev/null } catch { null }
+    if ($api_key_cache | path exists) {
+        let cached = (try { open $api_key_cache } catch { {} })
+        $env.GEMINI_API_KEY = ($cached | get -o gemini_api_key | default "")
+        $env.OPENAI_API_KEY = ($cached | get -o openai_api_key | default "")
     }
-} catch {
-    ""
-})
-
-# --- OpenAI Keychain Retrieval (macOS only) ---
-$env.OPENAI_API_KEY = (try {
-    if $platform == "darwin" {
-        let result = (^security find-generic-password -s "openai-api-key" -a "semantic-search" -w | complete)
-        if $result.exit_code == 0 { $result.stdout | str trim } else { "" }
-    } else {
-        ""
-    }
-} catch {
-    ""
-})
+}
 
 # --- Theme & Visuals ---
 $env.SYSTEM_THEME = if $platform == "darwin" {
