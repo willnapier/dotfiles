@@ -37,7 +37,7 @@ use std::time::Duration;
 const API_BASE: &str = "https://gmail.googleapis.com/gmail/v1";
 const BATCH_URL: &str = "https://gmail.googleapis.com/batch/gmail/v1";
 const BATCH_CHUNK_SIZE: usize = 50;
-const REQUEST_TIMEOUT_SECS: u64 = 60;
+const REQUEST_TIMEOUT_SECS: u64 = 180;
 
 // -----------------------------------------------------------------
 // Error type
@@ -458,9 +458,51 @@ impl GmailApi {
     // GET /users/me/messages?labelIds=X   (list by label ID)
     // -----------------------------------------------------------------
 
+    /// Fetch ONE page of message IDs by label. Returns (ids,
+    /// next_page_token). Caller is responsible for loop-until-
+    /// next=None. Kept as a public primitive so callers can stream
+    /// process-one-page-at-a-time rather than allocate the full
+    /// result up front — important for large labels (e.g. `new`
+    /// with 60k+ messages) where timeouts on a late page would
+    /// throw away the collected-so-far result.
+    pub fn list_message_ids_by_label_page(
+        &self,
+        label_id: &str,
+        page_token: Option<&str>,
+    ) -> Result<(Vec<String>, Option<String>)> {
+        let mut url = format!(
+            "{API_BASE}/users/me/messages?maxResults=500&labelIds={}",
+            urlencoding::encode(label_id)
+        );
+        if let Some(t) = page_token {
+            url.push_str(&format!("&pageToken={}", urlencoding::encode(t)));
+        }
+        let resp = retry_with_backoff(|| {
+            self.http
+                .get(&url)
+                .bearer_auth(&self.access_token)
+                .send()
+                .context("GET /users/me/messages?labelIds=")
+        })?;
+        let status = resp.status();
+        let body = resp.text().context("reading messages.list (by label) body")?;
+        if !status.is_success() {
+            return Err(http_error(status, &body).into());
+        }
+        let parsed: MessageListResponse =
+            serde_json::from_str(&body).context("parsing messages.list (by label) JSON")?;
+        let ids: Vec<String> = parsed.messages.into_iter().map(|m| m.id).collect();
+        Ok((ids, parsed.next_page_token))
+    }
+
     /// Paginate `users.messages.list` by `labelIds` (not `q=`).
     /// Returns all message IDs carrying the given label. `progress`
     /// is called with the cumulative count after each page.
+    ///
+    /// ⚠️ For large labels, prefer the streaming
+    /// [`list_message_ids_by_label_page`] + loop pattern: this
+    /// function holds every ID in memory and is not resumable if
+    /// a late page errors.
     pub fn list_all_message_ids_by_label<F: FnMut(usize)>(
         &self,
         label_id: &str,
@@ -469,30 +511,10 @@ impl GmailApi {
         let mut out = Vec::new();
         let mut page_token: Option<String> = None;
         loop {
-            let mut url = format!(
-                "{API_BASE}/users/me/messages?maxResults=500&labelIds={}",
-                urlencoding::encode(label_id)
-            );
-            if let Some(t) = &page_token {
-                url.push_str(&format!("&pageToken={}", urlencoding::encode(t)));
-            }
-            let resp = retry_with_backoff(|| {
-                self.http
-                    .get(&url)
-                    .bearer_auth(&self.access_token)
-                    .send()
-                    .context("GET /users/me/messages?labelIds=")
-            })?;
-            let status = resp.status();
-            let body = resp.text().context("reading messages.list (by label) body")?;
-            if !status.is_success() {
-                return Err(http_error(status, &body).into());
-            }
-            let parsed: MessageListResponse =
-                serde_json::from_str(&body).context("parsing messages.list (by label) JSON")?;
-            out.extend(parsed.messages.into_iter().map(|m| m.id));
+            let (ids, next) = self.list_message_ids_by_label_page(label_id, page_token.as_deref())?;
+            out.extend(ids);
             progress(out.len());
-            match parsed.next_page_token {
+            match next {
                 Some(t) => page_token = Some(t),
                 None => break,
             }

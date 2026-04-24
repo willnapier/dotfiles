@@ -84,25 +84,56 @@ pub fn run(execute: bool) -> Result<()> {
     for label in &targets {
         eprintln!("=== {} (id={}) ===", label.name, label.id);
 
-        // Collect every message that currently carries this label.
-        let ids = api.list_all_message_ids_by_label(&label.id, |n| {
-            if n % 2000 == 0 && n > 0 {
-                eprintln!("  collected {n} ids…");
+        // Stream pages: for each page, immediately either count it
+        // (dry-run) or strip it (execute). This avoids allocating
+        // all 60k+ ids up front — and gives natural resumability:
+        // on a mid-label network timeout, already-stripped pages
+        // stay stripped, and a re-run finds only what remains.
+        let mut label_stripped = 0usize;
+        let mut page_token: Option<String> = None;
+        let mut page_index = 0usize;
+        loop {
+            let (ids, next) = api.list_message_ids_by_label_page(&label.id, page_token.as_deref())?;
+            page_index += 1;
+            if ids.is_empty() && page_token.is_none() {
+                eprintln!("  (label is empty)");
+                break;
             }
-        })?;
-        eprintln!("  {} message(s) have this label.", ids.len());
+            if !ids.is_empty() {
+                if execute {
+                    let id_refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+                    let label_ref = label.id.as_str();
+                    api.batch_modify(&id_refs, &[], &[label_ref])?;
+                    label_stripped += ids.len();
+                    eprintln!(
+                        "  page {page_index}: stripped {} (cumulative for this label: {label_stripped})",
+                        ids.len()
+                    );
+                } else {
+                    label_stripped += ids.len();
+                    eprintln!(
+                        "  page {page_index}: [dry-run] would strip {} (cumulative: {label_stripped})",
+                        ids.len()
+                    );
+                }
+            }
+            match next {
+                Some(t) => page_token = Some(t),
+                None => break,
+            }
+        }
 
-        if ids.is_empty() {
-            eprintln!("  (skipping strip; label is empty)");
-        } else if !execute {
-            eprintln!("  [dry-run] would batchModify remove_label={} from {} message(s).", label.id, ids.len());
+        if execute {
+            total_stripped += label_stripped;
+            eprintln!(
+                "  → stripped {label_stripped} message(s) from {} total.",
+                label.name
+            );
         } else {
-            // batch_modify takes &[&str], but we have Vec<String>.
-            let id_refs: Vec<&str> = ids.iter().map(String::as_str).collect();
-            let label_ref = label.id.as_str();
-            api.batch_modify(&id_refs, &[], &[label_ref])?;
-            total_stripped += ids.len();
-            eprintln!("  stripped {} from {} message(s).", label.name, ids.len());
+            eprintln!(
+                "  → {} message(s) would be stripped from {}.",
+                label_stripped, label.name
+            );
         }
 
         if !execute {
