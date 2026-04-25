@@ -2348,18 +2348,11 @@ struct Accum {
     sum_soft: f64,
 }
 
-/// Map a legacy model name to a stable, visible analytics label.
-fn map_legacy_model(model: &str) -> String {
-    match model {
-        "clinical-voice-q4" => "legacy-q4".to_string(),
-        "clinical-voice-q8" => "legacy-q8".to_string(),
-        _ => model.to_string(),
-    }
-}
-
 /// GET /api/compare/analytics — aggregate `~/Clinical/comparisons.jsonl` into
-/// per-variant stats. Tolerates both v2 pair rows and legacy per-generation
-/// rows. Unreadable or malformed rows are skipped with a stderr warning.
+/// per-variant stats. Only v2 pair rows are counted; pre-v2 rows are skipped
+/// (they predate the multi-variant schema and are not comparable to current
+/// runs — they remain in the file as a historical artifact). Unreadable or
+/// malformed rows are skipped with a stderr warning.
 pub async fn compare_analytics()
     -> Result<Json<CompareAnalytics>, (StatusCode, String)>
 {
@@ -2407,8 +2400,11 @@ pub async fn compare_analytics()
             && val.get("variant_a").is_some()
             && val.get("variant_b").is_some();
 
-        if is_v2 {
-            total_pairs += 1;
+        if !is_v2 {
+            continue;
+        }
+        total_pairs += 1;
+        {
             // v2 pair rows store "which variant was accepted" via the
             // per-variant `accepted: bool` field — that's the authoritative
             // source (log_pair writes it from the request's `accepted` code).
@@ -2450,47 +2446,6 @@ pub async fn compare_analytics()
                     .map(|n| n as f64)
                     .unwrap_or(0.0);
             }
-        } else {
-            // Legacy row: one generation per row.
-            // {timestamp, client_id, model, observation, note, hard_failures,
-            //  soft_flags, flag_details, attempts, regen_reasons,
-            //  generation_secs, accepted, prompt_rail}
-            let Some(model_raw) = val.get("model").and_then(|v| v.as_str()) else {
-                eprintln!(
-                    "[compare_analytics] legacy row {} missing model; skipping",
-                    line_idx + 1
-                );
-                continue;
-            };
-            let model = map_legacy_model(model_raw);
-            // Per contract: legacy rows are grouped as {with_rail=true,
-            // prompt_preset="legacy"} regardless of their actual prompt_rail
-            // field — the legacy schema predates the multi-variant concept so
-            // treating them as a single grouping keeps the analytics stable.
-            let with_rail = true;
-            let prompt_preset = "legacy".to_string();
-
-            let accepted = val.get("accepted")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-
-            let key = (model, with_rail, prompt_preset);
-            let a = groups.entry(key).or_default();
-            a.runs += 1;
-            if accepted {
-                a.accepts += 1;
-            }
-            a.sum_secs += val.get("generation_secs")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0);
-            a.sum_hard += val.get("hard_failures")
-                .and_then(|v| v.as_u64())
-                .map(|n| n as f64)
-                .unwrap_or(0.0);
-            a.sum_soft += val.get("soft_flags")
-                .and_then(|v| v.as_u64())
-                .map(|n| n as f64)
-                .unwrap_or(0.0);
         }
     }
 

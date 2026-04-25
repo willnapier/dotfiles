@@ -2345,20 +2345,6 @@ function clinicCompareAnalyticsFmtNum(x, digits) {
   return Number(x).toFixed(digits == null ? 2 : digits);
 }
 
-let clinicCompareAnalyticsShowLegacy = false;
-
-function clinicCompareAnalyticsToggleLegacy() {
-  clinicCompareAnalyticsShowLegacy = !clinicCompareAnalyticsShowLegacy;
-  clinicCompareAnalyticsLoad();
-}
-
-function clinicCompareAnalyticsIsLegacy(v) {
-  // The backend tags pre-refactor (Gemma-era) rows as prompt_preset="legacy"
-  // or remaps their model to legacy-q4 / legacy-q8. Either flag qualifies.
-  return v.prompt_preset === 'legacy'
-    || (typeof v.model === 'string' && v.model.indexOf('legacy-') === 0);
-}
-
 function clinicCompareAnalyticsRenderRow(v) {
   return '<tr>'
     + '<td>' + esc(v.model || '') + '</td>'
@@ -2384,37 +2370,24 @@ async function clinicCompareAnalyticsLoad() {
     const all = Array.isArray(data.variants) ? data.variants.slice() : [];
     all.sort((x, y) => (y.runs || 0) - (x.runs || 0));
 
-    const live = all.filter(v => !clinicCompareAnalyticsIsLegacy(v));
-    const legacy = all.filter(v => clinicCompareAnalyticsIsLegacy(v));
-
     const header = '<table><thead><tr>'
       + '<th>Model</th><th>Rails</th><th>Preset</th>'
       + '<th>Runs</th><th>Accept %</th><th>Avg secs</th><th>Avg failures</th>'
       + '</tr></thead><tbody>';
 
-    let html = '';
-    if (live.length === 0 && !clinicCompareAnalyticsShowLegacy) {
+    let html;
+    if (all.length === 0) {
       html = '<div class="clinic-compare-analytics-msg">No comparison data yet.</div>';
     } else {
       html = header;
-      live.forEach(v => { html += clinicCompareAnalyticsRenderRow(v); });
-      if (clinicCompareAnalyticsShowLegacy) {
-        legacy.forEach(v => { html += clinicCompareAnalyticsRenderRow(v); });
-      }
+      all.forEach(v => { html += clinicCompareAnalyticsRenderRow(v); });
       html += '</tbody></table>';
     }
     tbl.innerHTML = html;
 
     const totalPairs      = data.total_pairs != null ? data.total_pairs : 0;
     const rejectBothPairs = data.reject_both_pairs != null ? data.reject_both_pairs : 0;
-    let footerHtml = 'Total pairs: ' + totalPairs + ' • Reject-both: ' + rejectBothPairs;
-    if (legacy.length > 0) {
-      const label = clinicCompareAnalyticsShowLegacy
-        ? 'Hide ' + legacy.length + ' legacy row' + (legacy.length === 1 ? '' : 's')
-        : 'Show ' + legacy.length + ' legacy row' + (legacy.length === 1 ? '' : 's') + ' (pre-refactor Gemma-era)';
-      footerHtml += ' • <a href="#" onclick="event.preventDefault();clinicCompareAnalyticsToggleLegacy();" style="color:var(--cyan);text-decoration:none;">' + esc(label) + '</a>';
-    }
-    footer.innerHTML = footerHtml;
+    footer.innerHTML = 'Total pairs: ' + totalPairs + ' • Reject-both: ' + rejectBothPairs;
     msg.textContent = '';
   } catch (e) {
     tbl.innerHTML = '';
