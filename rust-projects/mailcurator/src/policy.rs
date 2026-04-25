@@ -48,6 +48,48 @@ pub struct Policy {
     /// labelled corpus. Omit for policies not yet part of the eval loop.
     #[serde(default)]
     pub intended_categories: Vec<String>,
+
+    /// Content extractors. Each runs over messages this policy matches and
+    /// writes structured records to ~/.local/share/mailcurator/<category>.jsonl.
+    /// When extractors are present, `delete_after_days` is gated on the
+    /// `curator-<name>-extracted` tag so we never destroy unextracted data.
+    #[serde(default, rename = "extractor")]
+    pub extractors: Vec<Extractor>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Extractor {
+    /// JSONL file basename (without .jsonl). Records appended to
+    /// ~/.local/share/mailcurator/<category>.jsonl.
+    pub category: String,
+
+    /// Field-extraction rules. Each rule produces one named field in the
+    /// output JSON object. Order doesn't matter; missing fields are simply
+    /// omitted from the record (partial extraction is OK).
+    #[serde(default, rename = "field")]
+    pub fields: Vec<FieldRule>,
+}
+
+/// A single field-extraction rule. Exactly one of (literal, header,
+/// body_regex, subject_regex) should be set; validate() enforces this.
+#[derive(Debug, Deserialize)]
+pub struct FieldRule {
+    pub name: String,
+
+    /// Hard-coded value (e.g. {literal = "Royal Mail"} for the carrier field
+    /// in a Royal Mail extractor).
+    pub literal: Option<String>,
+
+    /// Pull from a named header (case-insensitive: "Subject", "From", "Date").
+    pub header: Option<String>,
+
+    /// Regex applied to the decoded, HTML-stripped message body.
+    /// First capture group becomes the field value; if no groups, the whole
+    /// match is used.
+    pub body_regex: Option<String>,
+
+    /// Regex applied to the Subject header. First capture group wins.
+    pub subject_regex: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
