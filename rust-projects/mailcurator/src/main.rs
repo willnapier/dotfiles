@@ -29,6 +29,7 @@ use std::path::PathBuf;
 
 mod config;
 mod eval;
+mod extract;
 mod llm;
 mod notmuch;
 mod policy;
@@ -154,9 +155,10 @@ fn main() -> Result<()> {
                 total_deleted += stats.deleted;
                 let quarantine_note = if pol.quarantine { "  [QUARANTINE]" } else { "" };
                 println!(
-                    "{:<30}  +arrival={:<4}  →archive={:<4}  →trash={:<4}{}",
+                    "{:<30}  +arrival={:<4}  ⤓extracted={:<4}  →archive={:<4}  →trash={:<4}{}",
                     pol.name,
                     stats.tagged_on_arrival,
+                    stats.extracted,
                     stats.archived,
                     stats.deleted,
                     quarantine_note

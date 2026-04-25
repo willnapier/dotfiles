@@ -121,6 +121,7 @@ pub struct OnArrival {
 #[derive(Debug, Default)]
 pub struct Stats {
     pub tagged_on_arrival: u64,
+    pub extracted: u64,
     pub archived: u64,
     pub deleted: u64,
 }
@@ -166,10 +167,30 @@ impl Policy {
         }
         if self.archive_after_days.is_none() && self.delete_after_days.is_none()
             && self.on_arrival.tags_add.is_empty() && self.on_arrival.tags_remove.is_empty()
+            && self.extractors.is_empty()
         {
-            anyhow::bail!("policy does nothing: no on_arrival tags and no lifecycle thresholds");
+            anyhow::bail!("policy does nothing: no on_arrival tags, no lifecycle thresholds, no extractors");
+        }
+        for ex in &self.extractors {
+            for f in &ex.fields {
+                let set_count = [
+                    f.literal.is_some(), f.header.is_some(),
+                    f.body_regex.is_some(), f.subject_regex.is_some(),
+                ].iter().filter(|b| **b).count();
+                if set_count != 1 {
+                    anyhow::bail!(
+                        "field '{}' in extractor '{}': must set exactly one of literal/header/body_regex/subject_regex (got {})",
+                        f.name, ex.category, set_count
+                    );
+                }
+            }
         }
         Ok(())
+    }
+
+    /// Tag marker for "this policy has run its extractors against this message."
+    pub fn extracted_tag(&self) -> String {
+        format!("curator-{}-extracted", self.name)
     }
 
     pub fn seen_tag(&self) -> String {
@@ -199,8 +220,9 @@ impl Policy {
     }
 }
 
-/// Apply a policy: handle on_arrival (new matches) + lifecycle transitions.
-/// When `dry_run` is true, nothing is modified; counts are still reported.
+/// Apply a policy: handle on_arrival (new matches), extraction, then
+/// lifecycle transitions. When `dry_run` is true, nothing is modified;
+/// counts are still reported.
 pub fn apply(pol: &Policy, dry_run: bool) -> Result<Stats> {
     let mut stats = Stats::default();
     let base = pol.base_query();
@@ -217,6 +239,13 @@ pub fn apply(pol: &Policy, dry_run: bool) -> Result<Stats> {
         if !dry_run {
             notmuch::apply_tag_changes(&arrival_query, &add, &remove)?;
         }
+    }
+
+    // --- extraction: per-message structured-data capture ---
+    // Runs over (base) and not extracted-tag. Independent of seen — extraction
+    // applies retroactively to existing matches that haven't been processed.
+    if !pol.extractors.is_empty() {
+        stats.extracted = crate::extract::run_extractors(pol, dry_run)?;
     }
 
     // Quarantine short-circuits archive/delete — observe only.
@@ -239,10 +268,17 @@ pub fn apply(pol: &Policy, dry_run: bool) -> Result<Stats> {
     }
 
     // --- delete: matching messages past the trash threshold ---
+    // If this policy declares extractors, gate deletion on the extracted-tag:
+    // we never destroy messages whose data hasn't been captured.
     if let Some(days) = pol.delete_after_days {
-        let q = format!(
-            "({base}) and not tag:trash and date:..{days}d"
-        );
+        let q = if pol.extractors.is_empty() {
+            format!("({base}) and not tag:trash and date:..{days}d")
+        } else {
+            let extracted = pol.extracted_tag();
+            format!(
+                "({base}) and not tag:trash and date:..{days}d and tag:{extracted}"
+            )
+        };
         let n = notmuch::count(&q)?;
         if n > 0 {
             stats.deleted = n;
