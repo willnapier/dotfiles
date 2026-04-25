@@ -1,59 +1,38 @@
-ai-export-watcher v0.1.0 (/Users/williamnapier/dotfiles/rust-projects/ai-export-watcher):
-    ai-export-watcher
-bequest v0.1.0 (/Users/williamnapier/dotfiles/rust-projects/bequest):
-    bequest
-chatgpt-to-continuum v0.1.0 (/Users/williamnapier/dotfiles/rust-projects/chatgpt-to-continuum):
-    chatgpt-to-continuum
-clinic-attendance-report v0.2.0 (/Users/williamnapier/dotfiles/rust-projects/clinic-attendance-report):
-    clinic-attendance-report
-clinical v0.1.0 (/Users/williamnapier/dotfiles/rust-projects/clinical/crates/notes):
-    clinical
-clinical-dashboard-iced v0.1.0 (/Users/williamnapier/dotfiles/rust-projects/clinical-dashboard-iced):
-    clinical-dashboard-iced
-clinical-portal v0.1.0 (/Users/williamnapier/dotfiles/rust-projects/clinical/crates/portal):
-    clinical-portal
-continuum-activity v0.1.0 (/Users/williamnapier/dotfiles/rust-projects/continuum-activity):
-    continuum-activity
-continuum-claude v0.1.0 (/Users/williamnapier/projects/continuum/continuum-claude):
-    continuum-claude
-continuum-dream v0.1.0 (/Users/williamnapier/dotfiles/rust-projects/continuum-dream):
-    continuum-dream
-cross-machine-sync-check v0.1.0 (/Users/williamnapier/dotfiles/rust-projects/cross-machine-sync-check):
-    cross-machine-sync-check
-dev-catchup v0.1.0 (/Users/williamnapier/dotfiles/rust-projects/dev-catchup):
-    dev-catchup
-diagram-lint v0.1.0 (/Users/williamnapier/dotfiles/rust-projects/diagram-lint):
-    diagram-lint
-easel v0.1.0 (/Users/williamnapier/dotfiles/rust-projects/easel):
-    ea
-email-extract v0.1.0 (/Users/williamnapier/dotfiles/rust-projects/email-extract):
-    email-extract
-grok-publish v0.1.0 (/Users/williamnapier/dotfiles/rust-projects/grok-publish):
-    grok-publish
-mailcurator v0.1.0 (/Users/williamnapier/dotfiles/rust-projects/mailcurator):
-    mailcurator
-mdcat v2.7.1:
-    mdcat
-module v0.1.0 (/Users/williamnapier/dotfiles/rust-projects/module):
-    module
-nu_plugin_skim v0.18.0:
-    nu_plugin_skim
-pizauth v1.0.11 (https://github.com/ltratt/pizauth?tag=pizauth-1.0.11#f58048fc):
-    pizauth
-practiceforge v0.1.0 (/Users/williamnapier/dotfiles/rust-projects/practiceforge):
-    diary_recon
-    healthcode_spike
-    practiceforge
-    tm3_discover
-    tm3_download
-    tm3_spike
-    tm3_upload
-skill-eval v0.1.0 (/Users/williamnapier/dotfiles/rust-projects/skill-eval):
-    skill-eval
-tauri-cli v2.10.1:
-    cargo-tauri
-tm3-diary-capture v0.1.0 (/Users/williamnapier/dotfiles/rust-projects/tm3-diary-capture):
-    tm3-client-add
-    tm3-diary-capture
-yt-transcript v0.1.0 (/Users/williamnapier/dotfiles/rust-projects/yt-transcript):
-    yt-transcript
+bat	0.25.0	crates.io
+bequest	0.1.0	/home/will/dotfiles/rust-projects/bequest
+chatgpt-to-continuum	0.1.0	/home/will/dotfiles/rust-projects/chatgpt-to-continuum
+clinic-attendance-report	0.1.0	/home/will/dotfiles/rust-projects/clinic-attendance-report
+clinical	0.1.0	/home/will/dotfiles/rust-projects/clinical/crates/notes
+clinical-portal	0.1.0	/home/will/dotfiles/rust-projects/clinical/crates/portal
+clinical-product	0.1.0	/home/will/dotfiles/rust-projects/clinical-product
+concert-capture	0.1.0	/home/will/dotfiles/rust-projects/concert-capture
+continuum-activity	0.1.0	/home/will/dotfiles/rust-projects/continuum-activity
+continuum-claude	0.1.0	/home/will/projects/continuum/continuum-claude
+continuum-dream	0.1.0	/home/will/dotfiles/rust-projects/continuum-dream
+cross-machine-sync-check	0.1.0	/home/will/dotfiles/rust-projects/cross-machine-sync-check
+dev-catchup	0.1.0	/home/will/dotfiles/rust-projects/dev-catchup
+dotter	0.13.4	crates.io
+dprint	0.50.2	crates.io
+easel	0.1.0	/home/will/dotfiles/rust-projects/easel
+email-extract	0.1.0	/home/will/dotfiles/rust-projects/email-extract
+fd-find	10.3.0	crates.io
+grok-publish	0.1.0	/home/will/dotfiles/rust-projects/grok-publish
+himalaya	1.1.0	https://github.com/pimalaya/himalaya.git#85988da4
+jaq	2.3.0	crates.io
+module	0.1.0	/home/will/dotfiles/rust-projects/module
+nu	0.107.0	crates.io
+pizauth	1.0.11	https://github.com/ltratt/pizauth?tag=pizauth-1.0.11#f58048fc
+practiceforge	0.1.0	/home/will/dotfiles/rust-projects/practiceforge
+ripgrep	14.1.1	crates.io
+sd	1.0.0	crates.io
+skill-eval	0.1.0	/home/will/dotfiles/rust-projects/skill-eval
+skim	0.20.5	crates.io
+sr	0.1.0	/home/will/dotfiles/rust-projects/sr
+starship	1.23.0	crates.io
+tm3-diary-capture	0.1.0	/home/will/dotfiles/rust-projects/tm3-diary-capture
+trashy	2.0.0	crates.io
+yazi-cli	25.5.31	crates.io
+yazi-fm	25.5.31	crates.io
+yt-transcript	0.1.0	/home/will/dotfiles/rust-projects/yt-transcript
+zellij	0.43.1	crates.io
+zoxide	0.9.8	crates.io

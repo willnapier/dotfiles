@@ -1,7 +1,9 @@
 claude-code
 clipvault-bin
+cyrus-sasl-xoauth2-git
 inlyne-bin
 mdcat
+meli
 paru
 paru-debug
 piper-tts-bin

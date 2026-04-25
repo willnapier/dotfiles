@@ -12,6 +12,7 @@ clang
 claude-code
 clipvault-bin
 cmake
+cyrus-sasl-xoauth2-git
 d2
 dmenu
 efibootmgr
@@ -31,6 +32,7 @@ inlyne-bin
 inotify-tools
 intel-media-driver
 intel-ucode
+isync
 iwd
 jq
 keyd
@@ -42,7 +44,9 @@ linux-firmware
 ly
 mako
 mdcat
+meli
 mosh
+msmtp
 nano
 network-manager-applet
 networkmanager
