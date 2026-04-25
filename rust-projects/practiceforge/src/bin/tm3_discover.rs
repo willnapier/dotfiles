@@ -225,6 +225,10 @@ fn main() -> Result<()> {
             .headless(false)
             .window_size(Some((1400, 900)))
             .idle_browser_timeout(Duration::from_secs(600))
+            .args(vec![
+                std::ffi::OsStr::new("--disable-features=MediaSessionService,HardwareMediaKeyHandling"),
+                std::ffi::OsStr::new("--mute-audio"),
+            ])
             .build()
             .context("Failed to build Chrome options")?,
     )

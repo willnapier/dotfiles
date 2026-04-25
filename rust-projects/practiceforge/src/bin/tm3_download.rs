@@ -732,6 +732,10 @@ fn launch_browser(headless: bool) -> Result<Browser> {
             .headless(headless)
             .window_size(Some((1280, 900)))
             .idle_browser_timeout(Duration::from_secs(600))
+            .args(vec![
+                std::ffi::OsStr::new("--disable-features=MediaSessionService,HardwareMediaKeyHandling"),
+                std::ffi::OsStr::new("--mute-audio"),
+            ])
             .build()
             .context("Failed to build launch options")?,
     )

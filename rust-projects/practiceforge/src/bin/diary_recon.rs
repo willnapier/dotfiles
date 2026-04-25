@@ -32,6 +32,10 @@ fn main() -> Result<()> {
             .headless(true)
             .window_size(Some((1280, 900)))
             .idle_browser_timeout(Duration::from_secs(120))
+            .args(vec![
+                std::ffi::OsStr::new("--disable-features=MediaSessionService,HardwareMediaKeyHandling"),
+                std::ffi::OsStr::new("--mute-audio"),
+            ])
             .build()?,
     )?;
 
