@@ -65,6 +65,10 @@ pub fn scrape_tm3_diary() -> Result<Vec<TM3Client>> {
             .args(vec![
                 std::ffi::OsStr::new("--password-store=basic"),
                 std::ffi::OsStr::new("--use-mock-keychain"),
+                // Suppress Apple Music / MediaLibrary TCC prompts on macOS —
+                // headless Chrome probes media-key handling on launch otherwise.
+                std::ffi::OsStr::new("--disable-features=MediaSessionService,HardwareMediaKeyHandling"),
+                std::ffi::OsStr::new("--mute-audio"),
             ])
             .build()?,
     )
