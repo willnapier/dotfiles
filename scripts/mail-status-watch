@@ -13,7 +13,10 @@
 #   cohs (mbsync, Darwin):   ~/Library/Logs/mbsync-cohs.log mtime — mbsync
 #                            has no embedded timestamps so file mtime is the
 #                            freshest signal of a successful sync run.
-#   cohs (mbsync, Linux):    systemctl --user show -p ActiveEnterTimestamp.
+#   cohs (mbsync, Linux):    systemctl --user show -p ExecMainStartTimestamp
+#                            (NOT ActiveEnterTimestamp — oneshot units that
+#                            fail never reach the "active" state, so that
+#                            property stays empty after a PassCmd failure).
 
 set -u
 
@@ -41,7 +44,7 @@ last_cohs() {
             ;;
         Linux)
             local ts
-            ts="$(systemctl --user show mbsync-cohs.service -p ActiveEnterTimestamp --value 2>/dev/null)"
+            ts="$(systemctl --user show mbsync-cohs.service -p ExecMainStartTimestamp --value 2>/dev/null)"
             # "Sun 2026-04-26 15:53:26 BST" → 15:53
             if [ -n "$ts" ] && [ "$ts" != "0" ] && [ "$ts" != "n/a" ]; then
                 echo "$ts" | awk '{print $3}' | cut -c1-5
