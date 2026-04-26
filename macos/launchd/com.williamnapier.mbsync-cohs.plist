@@ -10,6 +10,26 @@
         <string>-c</string>
         <string>/Users/williamnapier/.local/bin/mbsync cohs &amp;&amp; /opt/homebrew/bin/notmuch new</string>
     </array>
+    <!-- EnvironmentVariables is REQUIRED: `notmuch new` triggers the
+         post-new hook (~/Mail/.notmuch/hooks/post-new), which contains
+         several bare `notmuch tag` calls. Those inherit launchd's
+         PATH-less env and fail with "notmuch: command not found",
+         which `set -eu` in the hook converts into "Error: post-new
+         hook failed with status 127" — visible in
+         ~/Library/Logs/mbsync-cohs.log. Effect when broken: new COHS
+         mail lands on disk but never gets the `cohs`/per-folder tags,
+         so meli's `tag:cohs and tag:inbox ...` queries don't see it.
+         Same root cause and same fix as gmail-push-tags.plist (see
+         that file's comment block, 2026-04-23). -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/Users/williamnapier/.local/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/williamnapier</string>
+        <key>NOTMUCH_CONFIG</key>
+        <string>/Users/williamnapier/Mail/.notmuch-config</string>
+    </dict>
     <key>StartInterval</key>
     <integer>900</integer>
     <key>RunAtLoad</key>
