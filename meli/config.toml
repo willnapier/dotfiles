@@ -21,8 +21,11 @@ send_mail = "msmtp --account=gmail --read-recipients --read-envelope-from"  # ms
 # is the existing lieer wrapper script that does `gmi pull` + `notmuch new`,
 # so a refresh actively pulls new Gmail rather than just re-querying the
 # already-indexed DB. Falls through cleanly if invoked between scheduled
-# 15-min mail-sync ticks.
-refresh_command = "mail-sync"
+# 15-min mail-sync ticks. Absolute path because meli's spawn-environment
+# PATH is unreliable (bare `mail-sync` showed the "Running command" banner
+# but never reached the script's first log line — same class of issue as
+# launchd PATH stripping; absolute paths make spawn deterministic).
+refresh_command = "/Users/williamnapier/.local/bin/mail-sync"
 
   [accounts.workspace.mailboxes."inbox"]
   # Narrowed to 6 months — the full inbox (~83k messages) took ~6s to
