@@ -14,7 +14,13 @@
 # Short version: the email-meli layout backgrounds mail-status-watch,
 # which updates the zellij tab name with last sync timestamps.
 
-exec wezterm \
+# Absolute path to the homebrew wezterm — the CLI binary spawns a sibling
+# `wezterm-gui` from the same directory, so it must be invoked from a
+# location that has both. ~/.local/bin/wezterm exists as a symlink but
+# WITHOUT a wezterm-gui sibling, so a bare `wezterm` resolved by PATH
+# can fail with "No such file or directory" when launching the GUI
+# process. /opt/homebrew/bin/ has both symlinks and is brew-managed.
+exec /opt/homebrew/bin/wezterm \
   --config 'initial_cols=500' \
   --config 'initial_rows=200' \
   start \
