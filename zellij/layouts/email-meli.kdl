@@ -20,7 +20,13 @@ layout {
     tab name="📧 mail" focus=true {
         pane focus=true {
             command "bash"
-            args "-lc" "meli-with-status"
+            // -c (not -lc) — meli-with-status sets its own PATH, so we
+            // don't need ~/.profile loaded. $HOME is always set by the
+            // kernel, so bash expands it; this resolves the wrapper
+            // without depending on whatever PATH the parent terminal
+            // (WezTerm fresh process / Ghostty surface / Niri spawn)
+            // happened to have when it forked zellij.
+            args "-c" "exec $HOME/.local/bin/meli-with-status"
         }
     }
 }
