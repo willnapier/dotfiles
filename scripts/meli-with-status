@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# meli-with-status — entry command for the email-meli Zellij layout.
+# Runs mail-status-watch in the background (which polls last sync times and
+# updates the Zellij tab name every 30 s), then runs meli in the foreground.
+# When meli exits, the watcher is killed via the EXIT trap.
+set -u
+
+mail-status-watch &
+WATCHER=$!
+trap 'kill "$WATCHER" 2>/dev/null || true' EXIT INT TERM
+
+meli "$@"
