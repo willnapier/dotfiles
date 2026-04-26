@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# email-wez — open meli in a maximized WezTerm window (macOS)
+# email-wez — open meli (via zellij + email-meli layout) in a maximized
+# WezTerm window (macOS).
 #
 # WezTerm has no single --maximize flag, so we use the "huge initial
 # size" trick: set initial_cols and initial_rows absurdly high.
@@ -8,10 +9,14 @@
 #
 # --always-new-process ensures a fresh WezTerm instance rather than
 # routing the command into an existing window via the multiplexer.
+#
+# Why zellij? — see ~/dotfiles/scripts/email for the full rationale.
+# Short version: the email-meli layout backgrounds mail-status-watch,
+# which updates the zellij tab name with last sync timestamps.
 
 exec wezterm \
   --config 'initial_cols=500' \
   --config 'initial_rows=200' \
   start \
   --always-new-process \
-  -- meli
+  -- zellij --layout email-meli
