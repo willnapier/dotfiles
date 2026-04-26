@@ -16,6 +16,13 @@ display_name = "William Napier"
 subscribed_mailboxes = ["inbox", "unread", "sent", "archive", "all-mail"]
 default_mailbox = "inbox"
 send_mail = "msmtp --account=gmail --read-recipients --read-envelope-from"  # msmtp + pizauth XOAUTH2. passwordeval fetches fresh bearer from pizauth on each send; pizauth auto-refreshes.
+# Pressing the listing.refresh key (Ctrl+R, see [shortcuts.listing] below)
+# runs this command synchronously, then meli re-reads the notmuch DB. mail-sync
+# is the existing lieer wrapper script that does `gmi pull` + `notmuch new`,
+# so a refresh actively pulls new Gmail rather than just re-querying the
+# already-indexed DB. Falls through cleanly if invoked between scheduled
+# 15-min mail-sync ticks.
+refresh_command = "mail-sync"
 
   [accounts.workspace.mailboxes."inbox"]
   # Narrowed to 6 months — the full inbox (~83k messages) took ~6s to
@@ -64,6 +71,13 @@ default_mailbox = "inbox"
 # /me/sendMail via the MIME variant. Auth uses `pizauth show cohs`.
 # See ~/Assistants/shared/CLI-EMAIL-SYSTEM.md for the full architecture.
 send_mail = "practiceforge email graph-send"
+# Same role as workspace.refresh_command: Ctrl+R in the listing pulls
+# COHS via mbsync + reindexes via notmuch. `sh -c` wrapper because
+# meli's refresh_command spawn style is undocumented; this works whether
+# meli uses shell-exec or argv. Absolute paths mirror the launchd plist
+# so PATH-availability isn't a factor (meli inherits a richer interactive
+# PATH than launchd does, but explicit > implicit here).
+refresh_command = "sh -c '/Users/williamnapier/.local/bin/mbsync cohs && /opt/homebrew/bin/notmuch new'"
 
   [accounts.cohs.mailboxes."inbox"]
   query = "tag:cohs and tag:inbox and not tag:archive and not tag:spam and not tag:trash"
@@ -214,6 +228,15 @@ next_search_result = 'M-n'
 [shortcuts.listing]
 scroll_up = 'i'
 scroll_down = 'e'
+# Ctrl+R = refresh, the platform-conventional reload key. Runs each
+# account's refresh_command (defined per-account above) then meli
+# re-reads the notmuch DB. Cmd+R is intercepted by the terminal
+# emulator on macOS so isn't an option; meli's shortcut grammar
+# only knows C-/M- modifiers. C-r is unbound in the listing context;
+# the envelope-view (reply_to_author) and thread-view
+# (reverse_thread_order) defaults are unaffected because shortcut
+# sections are scoped.
+refresh = 'C-r'
 # Displaced bindings (conflicted with neio movement):
 set_seen = 's'                  # was 'n'
 exit_entry = 'Backspace'        # was 'i'. Not 'Esc' — meli has built-in Esc handlers in listing contexts (listing.rs:2148, :2625) that consume Esc before the shortcut dispatcher sees it, so custom Esc bindings on listing actions are unreliable. Backspace has no such precedence issue. Context-safe: text-input contexts (`:` cmd, `/` search, form fields) handle Backspace as delete-char via CmdInput/InsertInput events, falling through to exit_entry only when no text input is active.
