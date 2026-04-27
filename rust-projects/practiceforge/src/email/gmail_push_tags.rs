@@ -13,10 +13,18 @@
 //!    tag-modifying operation bumps it; we persist the last seen value
 //!    and query for messages with `lastmod:NN..`. No notmuch content
 //!    scraping; notmuch does the heavy lifting.
-//! 2. **Resolve RFC Message-ID → Gmail opaque ID** via Gmail's search
-//!    `q=rfc822msgid:<id>`. Gmail caches this; 1 API call per candidate
-//!    is acceptable. A local cache keyed by Message-ID could be added
-//!    later if call volume becomes a concern.
+//! 2. **Resolve RFC Message-ID → Gmail opaque ID** *locally* by reading
+//!    the maildir filename. lieer (and our gmail_pull) writes each
+//!    Gmail message to a file named `<gmail-id>:2,<flags>` — the opaque
+//!    Gmail ID is literally the basename. We ask notmuch for the file
+//!    path of the message (`notmuch search --output=files`) and parse
+//!    it. This eliminates a Gmail API round-trip per candidate that
+//!    used to dominate scan-phase wall time on large backlogs (the
+//!    previous one-API-call-per-candidate rate ceilinged at ~7
+//!    msg/sec). If the local parse fails for any reason — non-Gmail
+//!    maildir, weird filename, message not yet on disk — we fall back
+//!    to the original Gmail-search path so we never silently drop a
+//!    candidate.
 //! 3. **Diff read-then-write**: fetch Gmail's current label set for the
 //!    message, compute (add, remove) relative to notmuch's tags, and
 //!    only send the delta to `/messages/{id}/modify`. This is idempotent
@@ -228,9 +236,21 @@ pub fn run(dry_run: bool) -> Result<()> {
             continue;
         }
 
-        let Some(gmail_id) = resolve_gmail_id(&token, mid)? else {
-            skipped_unresolved += 1;
-            continue;
+        // Local resolve first: parse Gmail's opaque ID out of the maildir
+        // filename via notmuch's known file paths. Falls back to the
+        // Gmail-search API only if no Gmail-shaped filename is on disk
+        // for this Message-ID (rare: not-yet-mbsynced, non-Gmail account,
+        // weird basename). The fallback preserves correctness for the
+        // edge cases while the common path stays purely local.
+        let gmail_id = match resolve_gmail_id_local(mid)? {
+            Some(id) => id,
+            None => match resolve_gmail_id(&token, mid)? {
+                Some(id) => id,
+                None => {
+                    skipped_unresolved += 1;
+                    continue;
+                }
+            },
         };
 
         let gmail_labels = fetch_message_labels(&token, &gmail_id)?;
@@ -420,9 +440,86 @@ fn has_message_id(mid: &str) -> bool {
     !mid.trim().is_empty()
 }
 
+/// Parse a maildir filename and return the Gmail opaque ID if and only
+/// if the basename matches lieer/gmail_pull's `<gmail-id>:2,<flags>`
+/// shape — pure-hex prefix of 12–20 chars, optionally followed by a
+/// `:2,<flags>` maildir-info suffix. Returns None for any other shape
+/// (mbsync's `<unix-ts>.<pid>_<n>.<host>,U=<uid>:2,<flags>` for COHS,
+/// stray dots, non-hex prefix, etc.). Pulled out for testability —
+/// no I/O.
+fn parse_gmail_id_from_filename(name: &str) -> Option<String> {
+    // Strip the `:2,<flags>` maildir-info suffix if present. The Gmail
+    // ID never contains a `:` itself, so splitting on the first `:` is
+    // safe — anything to the left of it is the candidate ID.
+    let candidate = name.split(':').next().unwrap_or(name);
+
+    // Reject anything that isn't pure lowercase hex of a plausible
+    // length. Gmail IDs observed in the wild are 16 hex chars; allow
+    // 12–20 to leave headroom for past/future formats while still
+    // excluding mbsync-style names which always contain dots, commas,
+    // or `=`.
+    let len = candidate.len();
+    if !(12..=20).contains(&len) {
+        return None;
+    }
+    if !candidate.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    // Be even stricter: require lowercase. Rules out anything created
+    // by a different tool that happens to share the length and
+    // hex-charset constraints.
+    if candidate.bytes().any(|b| b.is_ascii_uppercase()) {
+        return None;
+    }
+    Some(candidate.to_string())
+}
+
+/// Resolve a Gmail opaque ID for an RFC Message-ID by inspecting
+/// notmuch's known file paths. Pure local I/O, no network. Returns
+/// None if no Gmail-shaped filename is found, in which case the caller
+/// is expected to fall back to the Gmail search API.
+fn resolve_gmail_id_local(rfc_message_id: &str) -> Result<Option<String>> {
+    let query = format!("id:{rfc_message_id}");
+    let out = std::process::Command::new("notmuch")
+        .args(["search", "--output=files", "--format=text"])
+        .arg(&query)
+        .output()
+        .context("invoking notmuch search --output=files")?;
+    if !out.status.success() {
+        return Err(anyhow!(
+            "notmuch search --output=files failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        ));
+    }
+    let stdout = String::from_utf8(out.stdout).context("decoding notmuch stdout")?;
+
+    // notmuch can return >1 file path when the same message is
+    // delivered to multiple maildirs (Gmail label-as-folder duplication).
+    // For Gmail messages, lieer/gmail_pull guarantee the same opaque ID
+    // is the basename of every copy — so taking the first match that
+    // parses cleanly is correct.
+    for line in stdout.lines() {
+        let path = line.trim();
+        if path.is_empty() {
+            continue;
+        }
+        let basename = std::path::Path::new(path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+        if let Some(id) = parse_gmail_id_from_filename(basename) {
+            return Ok(Some(id));
+        }
+    }
+    Ok(None)
+}
+
 /// Look up a Gmail opaque message ID for a given RFC Message-ID via
 /// Gmail's search API. Returns None if the message isn't in the
 /// account (or hasn't yet been indexed by Gmail server-side).
+///
+/// Used as a fallback when [`resolve_gmail_id_local`] can't recover
+/// the ID from a maildir filename.
 fn resolve_gmail_id(token: &str, rfc_message_id: &str) -> Result<Option<String>> {
     #[derive(Deserialize)]
     struct Hit {
@@ -724,5 +821,73 @@ mod tests {
         s.label_name_to_id.insert("x".into(), "y".into());
         s.label_map_fetched_at = chrono::Utc::now().timestamp() - 100;
         assert!(!label_map_stale(&s));
+    }
+
+    // ---- parse_gmail_id_from_filename: local-resolve happy paths ----
+
+    #[test]
+    fn parse_gmail_id_from_lieer_filename_with_flags() {
+        // The canonical shape lieer/gmail_pull writes for personal
+        // Gmail messages: `<16 hex>:2,<flags>`.
+        let got = parse_gmail_id_from_filename("19dca8d8c84f0f12:2,S");
+        assert_eq!(got.as_deref(), Some("19dca8d8c84f0f12"));
+    }
+
+    #[test]
+    fn parse_gmail_id_from_lieer_filename_no_flags() {
+        // Some maildir tooling writes `<id>:2,` with no trailing flags.
+        let got = parse_gmail_id_from_filename("19dca8d8c84f0f12:2,");
+        assert_eq!(got.as_deref(), Some("19dca8d8c84f0f12"));
+    }
+
+    #[test]
+    fn parse_gmail_id_from_bare_basename() {
+        // Defensive: even if the maildir-info suffix is absent the
+        // pure-hex basename should still parse.
+        let got = parse_gmail_id_from_filename("19dca8d8c84f0f12");
+        assert_eq!(got.as_deref(), Some("19dca8d8c84f0f12"));
+    }
+
+    // ---- parse_gmail_id_from_filename: rejection paths ----
+
+    #[test]
+    fn parse_gmail_id_rejects_mbsync_filename() {
+        // COHS messages are pulled by mbsync (IMAP) and use a totally
+        // different naming convention: dots, underscores, commas, `U=N`.
+        // Must NOT be mistaken for a Gmail ID.
+        assert_eq!(
+            parse_gmail_id_from_filename("1776807569.72695_932.Williams-MacBook-Air,U=932:2,S"),
+            None
+        );
+    }
+
+    #[test]
+    fn parse_gmail_id_rejects_non_hex() {
+        assert_eq!(parse_gmail_id_from_filename("notahex0123456789:2,S"), None);
+    }
+
+    #[test]
+    fn parse_gmail_id_rejects_short() {
+        assert_eq!(parse_gmail_id_from_filename("deadbeef:2,S"), None);
+    }
+
+    #[test]
+    fn parse_gmail_id_rejects_long() {
+        assert_eq!(
+            parse_gmail_id_from_filename("19dca8d8c84f0f1219dca8d8:2,S"),
+            None
+        );
+    }
+
+    #[test]
+    fn parse_gmail_id_rejects_uppercase_hex() {
+        // Uppercase hex would be a non-Gmail-tooling signature.
+        assert_eq!(parse_gmail_id_from_filename("19DCA8D8C84F0F12:2,S"), None);
+    }
+
+    #[test]
+    fn parse_gmail_id_rejects_empty() {
+        assert_eq!(parse_gmail_id_from_filename(""), None);
+        assert_eq!(parse_gmail_id_from_filename(":2,S"), None);
     }
 }
