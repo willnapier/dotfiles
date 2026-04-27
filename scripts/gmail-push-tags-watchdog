@@ -26,7 +26,11 @@ PLATFORM="$(uname -s)"
 NOW=$(date +%s)
 
 # Thresholds
-HUNG_THRESHOLD=300       # 5 min — oneshot service shouldn't take this long
+HUNG_THRESHOLD=900       # 15 min — process running with no log activity = wedged.
+                         # Original SENT-loop hung 3.5h, so 15 min catches it
+                         # within the next watchdog tick (30 min). Generous
+                         # enough for the long notmuch scan phase on a 173k+
+                         # message corpus.
 STALE_THRESHOLD=2700     # 45 min — timer fires every 15 min, 3 missed runs = problem
 
 case "$PLATFORM" in
