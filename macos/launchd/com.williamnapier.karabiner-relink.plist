@@ -16,6 +16,14 @@
     <array>
         <string>/Users/williamnapier/.config/karabiner/karabiner.json</string>
     </array>
+    <!-- Belt-and-braces fallback: WatchPaths sometimes misses atomic-
+         rename inode swaps (observed 2026-04-27 — Karabiner GUI write
+         did not trigger the watcher despite the file being replaced).
+         StartInterval polls every 60 s; the script bails immediately
+         when the path is already a symlink, so the polling cost is a
+         single stat() per minute. -->
+    <key>StartInterval</key>
+    <integer>60</integer>
     <!-- PATH must include /opt/homebrew/bin for `git` and `timeout` to
          resolve, plus ~/.local/bin in case the script ever shells out
          to other dotter-managed binaries. Same env-stripping issue as
