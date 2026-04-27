@@ -7,7 +7,7 @@ require("hs.ipc")
 -- Screenshot bindings for ZMK MEDIA layer (F13-F18)
 -- Matches Linux (Niri) screenshot shortcuts for same muscle memory
 
--- Cmd+Shift+Return = open email client (meli) in WezTerm.
+-- Cmd+Shift+Return = focus existing WezTerm/meli, or spawn one if none.
 -- Matches niri Mod+Shift+Return on Linux for cross-platform muscle memory.
 -- Why Shift in the chord: bare Cmd+Return is heavily used app-internally
 -- on macOS (Slack/Messages/Mail "send", form submit). Adding Shift sidesteps
@@ -17,8 +17,17 @@ require("hs.ipc")
 -- in WezTerm (Rust-coherent stack: WezTerm → meli). The `email` script
 -- targets Ghostty via AppleScript and is kept around but not the canonical
 -- launcher.
+-- Focus-or-spawn: muscle-memory bug if you're in Ghostty using Cmd+`
+-- to cycle windows — spawning a fresh WezTerm every time creates a
+-- pile of empty meli windows you can't see. Focusing brings the
+-- existing one to front instead.
 hs.hotkey.bind({"cmd", "shift"}, "return", function()
-    hs.execute(os.getenv("HOME") .. "/.local/bin/email-wez &")
+    local wez = hs.application.find("WezTerm")
+    if wez then
+        wez:activate()
+    else
+        hs.execute(os.getenv("HOME") .. "/.local/bin/email-wez &")
+    end
 end)
 
 local screenshotDir = os.getenv("HOME") .. "/Pictures/Screenshots/"
