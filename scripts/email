@@ -1,55 +1,28 @@
 #!/usr/bin/env bash
-# email — open meli in a maximized Ghostty window (macOS).
+# email — open meli in a fresh WezTerm window (macOS).
+# Linux equivalent (same name) lives at ~/dotfiles/scripts/email-linux,
+# which dotter deploys to the same ~/.local/bin/email path on nimbini.
 #
-# Uses Ghostty's native AppleScript dictionary to create a new window
-# running meli INSIDE the existing Ghostty process. This keeps the meli
-# window part of the same app/process as your other Ghostty terminals,
-# so Cmd+` window-cycling includes it.
+# Triggered by Karabiner's Cmd+Shift+Return rule (per
+# ~/dotfiles/karabiner/karabiner.json complex_modifications). May also
+# be invoked by hand at a shell prompt.
 #
-# Design history:
-# - v1: --maximize=true flag via open -na — flag didn't reach Ghostty reliably
-# - v2: drop -n, zoom via menu — meli didn't launch (existing Ghostty ignores -e)
-# - v3: restore -n, PID-diff for zoom — works, but spawns separate process
-#   so Cmd+` doesn't see the meli window
-# - v4 (this): Ghostty AppleScript API — creates a surface configuration with
-#   the meli command, opens new window in existing process, zooms via
-#   System Events targeting the (now unambiguous) ghostty process
+# Absolute path to /opt/homebrew/bin/wezterm: ~/.local/bin/wezterm is a
+# symlink to the .app's wezterm CLI, but the CLI spawns a sibling
+# `wezterm-gui` from the same directory and ~/.local/bin/ has no such
+# sibling. Always invoke the brew-managed location which has both.
 #
-# Requires Accessibility permission for AppleScript (one-time prompt).
-
-set -e
-
-# 1. Create a surface configuration with meli as the command, then open
-#    a new Ghostty window using it. This all happens inside the existing
-#    Ghostty process.
-osascript <<'EOF'
-tell application "Ghostty"
-  activate
-  set cfg to new surface configuration
-  set command of cfg to "/opt/homebrew/bin/meli"
-  new window with configuration cfg
-end tell
-EOF
-
-# 2. Wait for the window to appear and become frontmost
-sleep 1.0
-
-# 3. Zoom the frontmost Ghostty window by setting its bounds.
-#    Since there's only one Ghostty process now, "process ghostty" is
-#    unambiguous, and the newly-created window is the frontmost one.
-osascript <<'EOF'
-tell application "Finder"
-  set screenBounds to bounds of window of desktop
-end tell
-set screenWidth to item 3 of screenBounds
-set screenHeight to item 4 of screenBounds
-
-tell application "System Events"
-  tell process "ghostty"
-    tell window 1
-      set position to {0, 25}
-      set size to {screenWidth, screenHeight - 25}
-    end tell
-  end tell
-end tell
-EOF
+# `default_prog` override: wezterm.lua sets default_prog = nushell, so
+# the trailing `-- meli` arg after `start` is ignored (config-level
+# default wins). Setting default_prog per-invocation via --config
+# (Lua array syntax — curly braces, NOT JSON brackets) tells THIS
+# wezterm to launch meli as its default program.
+#
+# `--always-new-process` ensures a fresh wezterm process tree rather
+# than routing into an existing wezterm mux. The fresh process gives
+# the macOS Window Server a foreground requestor, so the new window
+# can come to front (per the Karabiner-spawn HID context).
+exec /opt/homebrew/bin/wezterm \
+  --config 'default_prog={"/opt/homebrew/bin/meli"}' \
+  start \
+  --always-new-process

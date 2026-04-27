@@ -317,7 +317,7 @@
                         ]
                     },
                     {
-                        "description": "Cmd+Shift+Return → email-wez (open meli in WezTerm)",
+                        "description": "Cmd+Shift+Return → email (open meli in WezTerm)",
                         "manipulators": [
                             {
                                 "from": {
@@ -326,7 +326,7 @@
                                 },
                                 "to": [
                                     {
-                                        "shell_command": "/Users/williamnapier/.local/bin/email-wez >/dev/null 2>&1"
+                                        "shell_command": "/Users/williamnapier/.local/bin/email >/dev/null 2>&1"
                                     }
                                 ],
                                 "type": "basic"
