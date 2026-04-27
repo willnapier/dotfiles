@@ -54,7 +54,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -222,6 +222,22 @@ pub fn run(dry_run: bool) -> Result<()> {
         );
     }
 
+    // Batched local resolution: ONE notmuch show call returns
+    // (msg-id → {gmail_id, tags}) for every candidate. This replaces
+    // two per-candidate subprocess forks (notmuch_tags_for +
+    // resolve_gmail_id_local) that were CPU-bound to ~zero throughput
+    // on large backlogs (176k candidates ≈ 352k fork+exec spawns,
+    // observed sustained 99% CPU with zero pushes for 36 min). Net
+    // effect: scan-phase wall time goes from O(N × fork_latency) to
+    // O(one notmuch_show + N × hashmap_lookup).
+    eprintln!("Building batched local resolution map…");
+    let info_map = batch_message_info_since(since)?;
+    eprintln!(
+        "Batched resolution map ready: {} entries covering {} candidate(s).",
+        info_map.len(),
+        candidates.len()
+    );
+
     let mut pushed = 0usize;
     let mut skipped_unresolved = 0usize;
 
@@ -231,25 +247,36 @@ pub fn run(dry_run: bool) -> Result<()> {
     let mut since_checkpoint = 0usize;
 
     for mid in to_check {
-        let local_tags = notmuch_tags_for(mid)?;
+        // Lookup tags + gmail-id in the pre-built batched map. Each
+        // lookup is O(1); falls through to the per-candidate subprocess
+        // path only for entries the batched query didn't cover (rare:
+        // a tag mutation arrived between the lastmod-snapshot and the
+        // show call, or notmuch's own indexer raced).
+        let (local_tags, batched_gmail_id) = match info_map.get(mid.as_str()) {
+            Some(info) => (info.tags.clone(), info.gmail_id.clone()),
+            None => (notmuch_tags_for(mid)?, None),
+        };
         if local_tags.is_empty() && !has_message_id(mid) {
             continue;
         }
 
-        // Local resolve first: parse Gmail's opaque ID out of the maildir
-        // filename via notmuch's known file paths. Falls back to the
-        // Gmail-search API only if no Gmail-shaped filename is on disk
-        // for this Message-ID (rare: not-yet-mbsynced, non-Gmail account,
-        // weird basename). The fallback preserves correctness for the
-        // edge cases while the common path stays purely local.
-        let gmail_id = match resolve_gmail_id_local(mid)? {
+        // Resolve Gmail's opaque ID. Prefer the batched-map value; if
+        // None (non-Gmail filename shape, or the message wasn't in the
+        // batched window), fall back to the per-candidate local lookup
+        // and then to the Gmail-search API. The API fallback preserves
+        // correctness for edge cases (not-yet-mbsynced messages, weird
+        // basenames) while keeping the common path purely in-memory.
+        let gmail_id = match batched_gmail_id {
             Some(id) => id,
-            None => match resolve_gmail_id(&token, mid)? {
+            None => match resolve_gmail_id_local(mid)? {
                 Some(id) => id,
-                None => {
-                    skipped_unresolved += 1;
-                    continue;
-                }
+                None => match resolve_gmail_id(&token, mid)? {
+                    Some(id) => id,
+                    None => {
+                        skipped_unresolved += 1;
+                        continue;
+                    }
+                },
             },
         };
 
@@ -472,6 +499,116 @@ fn parse_gmail_id_from_filename(name: &str) -> Option<String> {
         return None;
     }
     Some(candidate.to_string())
+}
+
+/// Per-message data harvested from one batched `notmuch show` call.
+/// Owning all the data we need for the per-candidate decision means
+/// no per-candidate subprocess fork.
+#[derive(Debug, Clone, Default)]
+pub struct MessageInfo {
+    /// Notmuch tag set for the message (already deduped via JSON
+    /// representation; turned back into a BTreeSet here for direct
+    /// reuse in [`compute_diff`]).
+    pub tags: BTreeSet<String>,
+    /// Gmail opaque ID parsed from any maildir filename whose basename
+    /// matches the lieer/gmail_pull `<gmail-id>:2,<flags>` shape.
+    /// `None` when no filename matches (non-Gmail account, message not
+    /// yet on disk, etc.) — the caller falls back to the API resolver.
+    pub gmail_id: Option<String>,
+}
+
+/// Build a `msg-id → MessageInfo` map for every notmuch message whose
+/// `lastmod` is greater than `since`. ONE subprocess call regardless of
+/// candidate count; per-candidate work in the main loop reduces to
+/// hashmap lookups.
+///
+/// Implementation: `notmuch show --format=json --body=false
+/// --entire-thread=false lastmod:NN..` returns the candidate set as
+/// nested thread arrays. Each leaf message object carries `id`,
+/// `filename` (a list — Gmail label-as-folder duplicates), and `tags`,
+/// which is exactly what we need. Tags from any of the duplicate
+/// records are unioned (notmuch reports the same tag set for every
+/// duplicate, so the union is degenerate; doing it explicitly is
+/// harmless and self-documenting).
+fn batch_message_info_since(since: u64) -> Result<HashMap<String, MessageInfo>> {
+    let query = format!("lastmod:{}..", since + 1);
+    let out = std::process::Command::new("notmuch")
+        .args([
+            "show",
+            "--format=json",
+            "--body=false",
+            "--entire-thread=false",
+        ])
+        .arg(&query)
+        .output()
+        .context("invoking notmuch show --format=json (batched)")?;
+    if !out.status.success() {
+        return Err(anyhow!(
+            "notmuch show (batched) failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        ));
+    }
+    let value: serde_json::Value = serde_json::from_slice(&out.stdout)
+        .context("parsing batched notmuch show output as JSON")?;
+    let mut out_map: HashMap<String, MessageInfo> = HashMap::new();
+    walk_show_value(&value, &mut out_map);
+    Ok(out_map)
+}
+
+/// Recursively walk the nested-array tree returned by
+/// `notmuch show --format=json`. The structure is:
+/// `[[[msg, [[msg, [...]] ...]] ...]]` — a thread is a list of
+/// `(message-object, replies-list)` pairs, and the top level is a
+/// list of threads. We don't care about thread structure, only about
+/// every leaf message object we encounter.
+fn walk_show_value(v: &serde_json::Value, out: &mut HashMap<String, MessageInfo>) {
+    match v {
+        serde_json::Value::Object(obj) => {
+            // A leaf message object has `id`, `tags`, and `filename`.
+            // Other objects (`headers`, `crypto`, …) lack `id` so the
+            // guard below filters them out.
+            if let (Some(serde_json::Value::String(id)), Some(serde_json::Value::Array(tags))) =
+                (obj.get("id"), obj.get("tags"))
+            {
+                let mut tag_set = BTreeSet::new();
+                for t in tags {
+                    if let Some(s) = t.as_str() {
+                        tag_set.insert(s.to_string());
+                    }
+                }
+                let gmail_id = obj
+                    .get("filename")
+                    .and_then(|f| f.as_array())
+                    .and_then(|files| {
+                        files.iter().find_map(|p| {
+                            p.as_str().and_then(|path| {
+                                let basename = std::path::Path::new(path)
+                                    .file_name()
+                                    .and_then(|n| n.to_str())
+                                    .unwrap_or("");
+                                parse_gmail_id_from_filename(basename)
+                            })
+                        })
+                    });
+                // Union with anything already recorded (defensive — if
+                // the same id appears twice via duplicate maildir
+                // copies, prefer non-None gmail_id and union tags).
+                let entry = out.entry(id.clone()).or_default();
+                entry.tags.extend(tag_set);
+                if entry.gmail_id.is_none() {
+                    entry.gmail_id = gmail_id;
+                }
+            }
+            // Don't recurse into the message object's own fields —
+            // headers/crypto can't contain other messages.
+        }
+        serde_json::Value::Array(arr) => {
+            for child in arr {
+                walk_show_value(child, out);
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Resolve a Gmail opaque ID for an RFC Message-ID by inspecting
@@ -926,5 +1063,117 @@ mod tests {
     fn parse_gmail_id_rejects_empty() {
         assert_eq!(parse_gmail_id_from_filename(""), None);
         assert_eq!(parse_gmail_id_from_filename(":2,S"), None);
+    }
+
+    // ---- batched walk_show_value: single-call resolution map ----
+
+    fn synth_msg(id: &str, files: &[&str], tags: &[&str]) -> serde_json::Value {
+        serde_json::json!({
+            "id": id,
+            "match": true,
+            "filename": files,
+            "tags": tags,
+            "headers": {"Subject": "x", "From": "x", "To": "x", "Date": "x"}
+        })
+    }
+
+    /// A representative slice of the nested structure notmuch emits:
+    /// `[ [ [<msg>, []], [<msg>, []] ], [ [<msg>, []] ] ]`. Two
+    /// "threads", three messages total — one with a Gmail-shaped
+    /// basename, one with an mbsync-shaped basename, one with no
+    /// filename at all (defensive: fields can be absent in odd
+    /// edge cases).
+    fn synth_show_output() -> serde_json::Value {
+        serde_json::json!([
+            [
+                [synth_msg("gmail-msg@example.com",
+                          &["/Users/x/Mail/personal/mail/cur/19dca8d8c84f0f12:2,S"],
+                          &["inbox", "unread"]), []],
+                [synth_msg("cohs-msg@example.com",
+                          &["/Users/x/Mail/cohs/INBOX/cur/1776807569.72695_932.host,U=932:2,S"],
+                          &["inbox"]), []]
+            ],
+            [
+                [synth_msg("no-files-msg@example.com", &[], &["important"]), []]
+            ]
+        ])
+    }
+
+    #[test]
+    fn batched_walk_extracts_gmail_id_from_lieer_filename() {
+        let mut map: HashMap<String, MessageInfo> = HashMap::new();
+        walk_show_value(&synth_show_output(), &mut map);
+        let info = map.get("gmail-msg@example.com").expect("missing gmail msg");
+        assert_eq!(info.gmail_id.as_deref(), Some("19dca8d8c84f0f12"));
+        assert!(info.tags.contains("inbox"));
+        assert!(info.tags.contains("unread"));
+    }
+
+    #[test]
+    fn batched_walk_returns_none_gmail_id_for_mbsync_filename() {
+        // COHS messages have an mbsync-shaped basename that
+        // parse_gmail_id_from_filename rejects. The walk must record
+        // tags but leave gmail_id as None — the main loop then falls
+        // back to the API resolver (or skips, for non-Gmail accounts).
+        let mut map: HashMap<String, MessageInfo> = HashMap::new();
+        walk_show_value(&synth_show_output(), &mut map);
+        let info = map.get("cohs-msg@example.com").expect("missing cohs msg");
+        assert_eq!(info.gmail_id, None);
+        assert!(info.tags.contains("inbox"));
+    }
+
+    #[test]
+    fn batched_walk_handles_message_with_no_filename_field() {
+        // Defensive: a message with no `filename` array (or an empty
+        // one) must not crash; gmail_id is None and tags are still
+        // captured so the API fallback can resolve and the diff path
+        // remains correct.
+        let mut map: HashMap<String, MessageInfo> = HashMap::new();
+        walk_show_value(&synth_show_output(), &mut map);
+        let info = map
+            .get("no-files-msg@example.com")
+            .expect("missing no-files msg");
+        assert_eq!(info.gmail_id, None);
+        assert!(info.tags.contains("important"));
+    }
+
+    #[test]
+    fn batched_walk_unions_duplicate_message_records() {
+        // Same message appearing twice (e.g. delivered into two
+        // label-as-folder maildirs) must produce a single map entry
+        // with merged tags and a non-None gmail_id even if only one
+        // duplicate carries the Gmail-shaped filename.
+        let val = serde_json::json!([[
+            [synth_msg("dup@example.com",
+                      &["/Users/x/Mail/cohs/Label/cur/1776807569.72695_932.host,U=932:2,S"],
+                      &["inbox"]), []],
+            [synth_msg("dup@example.com",
+                      &["/Users/x/Mail/personal/mail/cur/19dca8d8c84f0f12:2,S"],
+                      &["unread"]), []]
+        ]]);
+        let mut map: HashMap<String, MessageInfo> = HashMap::new();
+        walk_show_value(&val, &mut map);
+        let info = map.get("dup@example.com").expect("missing dup msg");
+        assert_eq!(info.gmail_id.as_deref(), Some("19dca8d8c84f0f12"));
+        assert!(info.tags.contains("inbox"));
+        assert!(info.tags.contains("unread"));
+    }
+
+    #[test]
+    fn batched_walk_skips_non_message_objects() {
+        // Sanity: a `headers` sub-object (no `id` field) must not
+        // accidentally be recorded as a message. The walk's guard
+        // requires both `id` and `tags` so headers is filtered out.
+        let mut map: HashMap<String, MessageInfo> = HashMap::new();
+        walk_show_value(&synth_show_output(), &mut map);
+        // Only the three top-level messages should be present.
+        assert_eq!(map.len(), 3);
+    }
+
+    #[test]
+    fn batched_walk_empty_array_yields_empty_map() {
+        let mut map: HashMap<String, MessageInfo> = HashMap::new();
+        walk_show_value(&serde_json::json!([]), &mut map);
+        assert!(map.is_empty());
     }
 }
