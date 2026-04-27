@@ -144,7 +144,7 @@ binds {
     Mod+Space      { spawn "fuzzel"; }  // Primary launcher (matches macOS Cmd+Space)
     Mod+Alt+D      { spawn "fuzzel"; }  // Backup binding
     Mod+Alt+Return { spawn "wezterm"; }
-    Mod+Return     { spawn "email"; }   // Open meli (matches macOS Cmd+Return via Hammerspoon)
+    Mod+Shift+Return { spawn "email"; }   // Open meli (matches macOS Cmd+Shift+Return via Hammerspoon)
 
     // Keyboard-driven mouse (wl-kbptr)
     Mod+Shift+M    { spawn "wl-kbptr"; }

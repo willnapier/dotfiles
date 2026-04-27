@@ -1,9 +1,18 @@
 -- Screenshot bindings for ZMK MEDIA layer (F13-F18)
 -- Matches Linux (Niri) screenshot shortcuts for same muscle memory
 
--- Cmd+Return = open email client (meli). Matches niri Mod+Return on Linux.
-hs.hotkey.bind({"cmd"}, "return", function()
-    hs.execute(os.getenv("HOME") .. "/.local/bin/email &")
+-- Cmd+Shift+Return = open email client (meli) in WezTerm.
+-- Matches niri Mod+Shift+Return on Linux for cross-platform muscle memory.
+-- Why Shift in the chord: bare Cmd+Return is heavily used app-internally
+-- on macOS (Slack/Messages/Mail "send", form submit). Adding Shift sidesteps
+-- those collisions while preserving the same mental model "<platform mod>
+-- +Shift+Return = email" on both OSes.
+-- Why email-wez and not email: today's settled architecture is bare meli
+-- in WezTerm (Rust-coherent stack: WezTerm → meli). The `email` script
+-- targets Ghostty via AppleScript and is kept around but not the canonical
+-- launcher.
+hs.hotkey.bind({"cmd", "shift"}, "return", function()
+    hs.execute(os.getenv("HOME") .. "/.local/bin/email-wez &")
 end)
 
 local screenshotDir = os.getenv("HOME") .. "/Pictures/Screenshots/"
