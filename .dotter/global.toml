@@ -87,6 +87,12 @@ depends = []
 # and re-symlinks. Mac-only because Linux has no Karabiner. The plist
 # itself goes in [macos.files].
 "scripts/karabiner-relink" = "~/.local/bin/karabiner-relink"
+# gmail-push-tags health watchdog — fires OS notification when the
+# gmail-push-tags service is hung, failed, or hasn't run recently.
+# Cross-platform script branches on uname; Mac uses osascript +
+# launchd, Linux uses notify-send + systemd. Built 2026-04-27 after
+# nimbini's gmail-push-tags hung silently for 3.5h.
+"scripts/gmail-push-tags-watchdog" = "~/.local/bin/gmail-push-tags-watchdog"
 # Zed editor configuration (added 2025-10-01)
 "zed/keymap.json" = "~/.config/zed/keymap.json"
 "zed/settings.json" = "~/.config/zed/settings.json"
@@ -318,6 +324,7 @@ depends = ["shared"]
 "macos/launchd/com.williamnapier.syncthing-monitor.plist" = "~/Library/LaunchAgents/com.williamnapier.syncthing-monitor.plist"
 "macos/launchd/com.williamnapier.mbsync-cohs.plist" = "~/Library/LaunchAgents/com.williamnapier.mbsync-cohs.plist"
 "macos/launchd/com.williamnapier.gmail-push-tags.plist" = "~/Library/LaunchAgents/com.williamnapier.gmail-push-tags.plist"
+"macos/launchd/com.williamnapier.gmail-push-tags-watchdog.plist" = "~/Library/LaunchAgents/com.williamnapier.gmail-push-tags-watchdog.plist"
 "macos/launchd/com.williamnapier.karabiner-relink.plist" = "~/Library/LaunchAgents/com.williamnapier.karabiner-relink.plist"
 "macos/launchd/com.williamnapier.pizauth.plist" = "~/Library/LaunchAgents/com.williamnapier.pizauth.plist"
 "macos/launchd/com.williamnapier.pizauth-dump.plist" = "~/Library/LaunchAgents/com.williamnapier.pizauth-dump.plist"
@@ -462,6 +469,8 @@ depends = ["shared"]
 "systemd/mbsync-cohs.timer" = "~/.config/systemd/user/mbsync-cohs.timer"
 "systemd/gmail-push-tags.service" = "~/.config/systemd/user/gmail-push-tags.service"
 "systemd/gmail-push-tags.timer" = "~/.config/systemd/user/gmail-push-tags.timer"
+"systemd/gmail-push-tags-watchdog.service" = "~/.config/systemd/user/gmail-push-tags-watchdog.service"
+"systemd/gmail-push-tags-watchdog.timer" = "~/.config/systemd/user/gmail-push-tags-watchdog.timer"
 # Wayland compositor configuration - Niri + Waybar + WezTerm
 "niri/config.kdl" = "~/.config/niri/config.kdl"
 "waybar/config" = "~/.config/waybar/config"

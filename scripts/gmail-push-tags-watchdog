@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# gmail-push-tags-watchdog — periodic health check for the gmail-push-tags
+# service. Fires an OS notification when the service is unhealthy, so a
+# silent-hang failure mode like the one observed 2026-04-27 (3.5h CPU
+# spinning on a Gmail SENT-label rejection, no operator awareness) gets
+# caught within the watchdog interval.
+#
+# Three failure modes detected:
+#   1. Stuck-in-activating: service has been launching for > HUNG_THRESHOLD
+#      seconds without completing. Most common sign of a retry loop.
+#   2. Exit non-zero: last completion was a failure.
+#   3. Last-run-too-old: timer should have fired but hasn't, suggesting
+#      the timer itself is broken or the service is wedged.
+#
+# Cross-platform: branches on uname. Mac path queries `launchctl list`
+# and the gmail-push-tags log mtime; Linux path queries systemd unit
+# state via `systemctl --user show`. Notifications fire via osascript
+# (Mac) or notify-send (Linux).
+#
+# Healthy state is silent — no notification, just a log entry. The
+# notifier only fires on actual problems, so banners stay meaningful.
+
+set -u
+
+PLATFORM="$(uname -s)"
+NOW=$(date +%s)
+
+# Thresholds
+HUNG_THRESHOLD=300       # 5 min — oneshot service shouldn't take this long
+STALE_THRESHOLD=2700     # 45 min — timer fires every 15 min, 3 missed runs = problem
+
+case "$PLATFORM" in
+    Darwin) LOG="$HOME/Library/Logs/gmail-push-tags-watchdog.log" ;;
+    Linux)  LOG="$HOME/.local/share/gmail-push-tags-watchdog.log" ;;
+    *)      LOG="/tmp/gmail-push-tags-watchdog.log" ;;
+esac
+
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG"
+}
+
+notify() {
+    local msg="$1"
+    log "ALERT: $msg"
+    case "$PLATFORM" in
+        Darwin)
+            # osascript NotificationCenter — fires regardless of foreground app
+            osascript -e "display notification \"$msg\" with title \"gmail-push-tags health\"" >/dev/null 2>&1 || true
+            ;;
+        Linux)
+            # libnotify via notify-send. Critical urgency keeps it on screen until dismissed.
+            notify-send -u critical "gmail-push-tags health" "$msg" 2>/dev/null || true
+            ;;
+    esac
+}
+
+check_mac() {
+    local raw exit_status pid
+    raw="$(launchctl list com.williamnapier.gmail-push-tags 2>/dev/null || true)"
+    if [ -z "$raw" ]; then
+        notify "launchd agent not loaded"
+        return
+    fi
+    exit_status="$(echo "$raw" | awk -F'=' '/LastExitStatus/{gsub(/[^0-9-]/,"",$2); print $2; exit}')"
+    pid="$(echo "$raw" | awk -F'=' '/^[ \t]*"PID"/{gsub(/[^0-9-]/,"",$2); print $2; exit}')"
+
+    local f="$HOME/Library/Logs/gmail-push-tags.log"
+    local log_age=999999
+    [ -f "$f" ] && log_age=$(( NOW - $(stat -f %m "$f") ))
+
+    # Wedged-while-running: PID present AND log not advancing for >5min.
+    # This is the SENT-loop signature — process alive but making no progress.
+    if [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$pid" != "-" ] && [ "$log_age" -gt "$HUNG_THRESHOLD" ]; then
+        notify "running but log unchanged for $((log_age / 60)) min — likely wedged"
+        return
+    fi
+
+    # Real failure: non-zero exit, but ignore signal-15 (SIGTERM) since
+    # launchd signals long-running catch-up runs when the next timer
+    # interval fires before completion. That's expected during heavy
+    # backlog processing, not a bug.
+    if [ -n "$exit_status" ] && [ "$exit_status" != "0" ] && [ "$exit_status" != "15" ]; then
+        notify "last run exited with status $exit_status"
+        return
+    fi
+
+    # Timer not firing: log untouched well past expected interval AND
+    # process not currently running.
+    if { [ -z "$pid" ] || [ "$pid" = "0" ] || [ "$pid" = "-" ]; } && [ "$log_age" -gt "$STALE_THRESHOLD" ]; then
+        notify "log not updated in $((log_age / 60)) min — timer may not be firing"
+        return
+    fi
+
+    log "ok: mac (pid=$pid last_exit=$exit_status log_age=${log_age}s)"
+}
+
+check_linux() {
+    local active main_pid
+    active="$(systemctl --user show gmail-push-tags.service -p ActiveState --value 2>/dev/null)"
+    main_pid="$(systemctl --user show gmail-push-tags.service -p MainPID --value 2>/dev/null)"
+
+    local f="$HOME/.local/share/gmail-push-tags.log"
+    local log_age=999999
+    [ -f "$f" ] && log_age=$(( NOW - $(stat -c %Y "$f") ))
+
+    # Wedged-while-running: service active+running AND log not advancing.
+    # Same SENT-loop signature as Mac.
+    if [ "$active" = "activating" ] && [ -n "$main_pid" ] && [ "$main_pid" != "0" ] && [ "$log_age" -gt "$HUNG_THRESHOLD" ]; then
+        notify "running but log unchanged for $((log_age / 60)) min — likely wedged"
+        return
+    fi
+
+    if [ "$active" = "failed" ]; then
+        local exit_code
+        exit_code="$(systemctl --user show gmail-push-tags.service -p ExecMainStatus --value 2>/dev/null)"
+        notify "service in failed state (exit $exit_code)"
+        return
+    fi
+
+    # Stale: log not updated and not currently running.
+    if { [ "$active" != "activating" ] || [ "$main_pid" = "0" ]; } && [ "$log_age" -gt "$STALE_THRESHOLD" ]; then
+        notify "log not updated in $((log_age / 60)) min — timer may not be firing"
+        return
+    fi
+    log "ok: linux (active=$active main_pid=$main_pid log_age=${log_age}s)"
+}
+
+case "$PLATFORM" in
+    Darwin) check_mac ;;
+    Linux)  check_linux ;;
+    *) log "unsupported platform: $PLATFORM"; exit 0 ;;
+esac

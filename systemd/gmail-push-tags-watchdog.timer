@@ -1,0 +1,10 @@
+[Unit]
+Description=Run gmail-push-tags-watchdog every 30 minutes
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

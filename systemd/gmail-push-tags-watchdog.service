@@ -1,0 +1,15 @@
+[Unit]
+Description=Health check for gmail-push-tags service (notify on hang/fail)
+
+[Service]
+Type=oneshot
+# Watchdog reads systemctl state and the gmail-push-tags log mtime; on
+# detected problems it shells out to notify-send for a desktop banner.
+# Needs DBUS_SESSION_BUS_ADDRESS for notify-send to reach the user's
+# notification daemon.
+Environment=PATH=/home/will/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=/home/will
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+ExecStart=/home/will/.local/bin/gmail-push-tags-watchdog
+StandardOutput=append:/home/will/.local/share/gmail-push-tags-watchdog.log
+StandardError=append:/home/will/.local/share/gmail-push-tags-watchdog.log
