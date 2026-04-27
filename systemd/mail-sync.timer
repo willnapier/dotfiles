@@ -1,9 +1,13 @@
 [Unit]
-Description=Run mail-sync every 15 minutes
+Description=Run mail-sync every 5 minutes
 
 [Timer]
-OnBootSec=2min
-OnUnitActiveSec=15min
+# 5 min cadence (was 15 min). Trade-off: 3× more "is there new mail?"
+# API calls, but Gmail's quota allowance is huge so the cost is
+# negligible (<0.001% of the per-user budget). Benefit: fresher mail
+# visible without manual Ctrl+r in meli.
+OnBootSec=1min
+OnUnitActiveSec=5min
 Persistent=true
 
 [Install]

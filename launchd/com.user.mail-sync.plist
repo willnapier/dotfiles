@@ -10,8 +10,13 @@
         <string>/Users/williamnapier/.local/bin/mail-sync</string>
     </array>
 
+    <!-- 5 min interval (was 900 = 15 min). Trade-off: 3× more "is there
+         new mail?" API calls, but Gmail's quota allowance is huge so the
+         cost is negligible (<0.001% of the per-user budget). Benefit:
+         fresher mail visible without manual Ctrl+r in meli. The 15-min
+         cadence is fine but felt sluggish for the active machine. -->
     <key>StartInterval</key>
-    <integer>900</integer>
+    <integer>300</integer>
 
     <key>StandardOutPath</key>
     <string>/Users/williamnapier/.local/share/mail-sync.log</string>
