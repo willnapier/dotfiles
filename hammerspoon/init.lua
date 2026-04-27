@@ -1,6 +1,11 @@
 -- Screenshot bindings for ZMK MEDIA layer (F13-F18)
 -- Matches Linux (Niri) screenshot shortcuts for same muscle memory
 
+-- Cmd+Return = open email client (meli). Matches niri Mod+Return on Linux.
+hs.hotkey.bind({"cmd"}, "return", function()
+    hs.execute(os.getenv("HOME") .. "/.local/bin/email &")
+end)
+
 local screenshotDir = os.getenv("HOME") .. "/Pictures/Screenshots/"
 hs.execute("mkdir -p '" .. screenshotDir .. "'")
 
