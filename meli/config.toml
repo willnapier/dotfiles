@@ -239,8 +239,15 @@ scroll_right = 'o'
 next_search_result = 'M-n'
 
 [shortcuts.listing]
-scroll_up = 'i'
-scroll_down = 'e'
+# Arrows for hold-repeat scrolling via the ZMK NAV layer (2026-04-27). Home-row
+# mods on i/e mean OS-level key-repeat-on-hold never fires (hold = modifier,
+# never letter), so the only way to traverse a long mailbox quickly is a key
+# without hold-mod behaviour. Helix retains both i/e (custom) and arrows
+# (Helix default) — meli is one-key-per-action (TOML rejects `['i','Up']`)
+# so we pick arrows here. i/e taps still scroll via [shortcuts.general]
+# as a generic fallback (rarely fires in listing context).
+scroll_up = 'Up'
+scroll_down = 'Down'
 # Ctrl+R = refresh, the platform-conventional reload key. Runs each
 # account's refresh_command (defined per-account above) then meli
 # re-reads the notmuch DB. Cmd+R is intercepted by the terminal
@@ -261,17 +268,18 @@ next_account = 'N'              # was 'H'
 prev_account = 'O'              # was 'L'
 
 [shortcuts.pager]
-scroll_up = 'i'
-scroll_down = 'e'
+# Arrows for hold-repeat scrolling (see [shortcuts.listing] note).
+scroll_up = 'Up'
+scroll_down = 'Down'
 
 [shortcuts.thread-view]
-scroll_up = 'i'
-scroll_down = 'e'
+scroll_up = 'Up'
+scroll_down = 'Down'
 # thread-view.collapse_subtree default 'h' retained (doesn't conflict with neio)
 
 [shortcuts.contact-list]
-scroll_up = 'i'
-scroll_down = 'e'
+scroll_up = 'Up'
+scroll_down = 'Down'
 
 # Not remapped: [shortcuts.composing] and [shortcuts.envelope-view].
 # Both have 'e' bound to "edit" which is the correct primary action in those
