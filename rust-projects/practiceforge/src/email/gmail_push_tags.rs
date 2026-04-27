@@ -30,9 +30,11 @@
 //! ## Tag ↔ Label mapping
 //!
 //! Notmuch system tags map to Gmail system labels by uppercase ID:
-//! `inbox`→`INBOX`, `unread`→`UNREAD`, `sent`→`SENT`, `draft`→`DRAFT`,
-//! `trash`→`TRASH`, `spam`→`SPAM`, `flagged`→`STARRED`, `important`→
-//! `IMPORTANT`. User tags map 1:1 by display name (which Gmail resolves
+//! `inbox`→`INBOX`, `unread`→`UNREAD`, `trash`→`TRASH`, `spam`→`SPAM`,
+//! `flagged`→`STARRED`, `important`→`IMPORTANT`. The `sent` and `draft`
+//! notmuch tags are intentionally NOT pushed — Gmail manages those
+//! system labels itself (see SYSTEM_TAG_TO_LABEL doc comment for full
+//! rationale). User tags map 1:1 by display name (which Gmail resolves
 //! to the stored `Label_<n>` ID via the cached map).
 //!
 //! ## Safety
@@ -54,11 +56,20 @@ const LABEL_MAP_MAX_AGE_SECS: i64 = 86_400; // 24h
 
 /// System-tag → system-label-ID mapping. These Gmail IDs are uppercase
 /// literals rather than opaque `Label_<n>` strings.
+///
+/// **Gmail API constraint:** `SENT`, `DRAFT`, `OUTBOX`, `CHAT` are
+/// auto-derived by Gmail from message state (drafts folder, sent folder,
+/// outbox folder, hangouts) and the `users.messages.modify` endpoint
+/// rejects attempts to add or remove them with HTTP 400 "Invalid label".
+/// They MUST NOT appear in this map. The corresponding notmuch tags
+/// (`sent`, `draft`) are still set locally by lieer when Gmail returns
+/// the labels, but they're read-only on the Gmail side — pushing local
+/// `sent`/`draft` changes is impossible regardless. Discovered 2026-04-27
+/// when nimbini's gmail-push-tags hung in a 3.5h retry loop on a `SENT`
+/// modify rejection.
 const SYSTEM_TAG_TO_LABEL: &[(&str, &str)] = &[
     ("inbox", "INBOX"),
     ("unread", "UNREAD"),
-    ("sent", "SENT"),
-    ("draft", "DRAFT"),
     ("trash", "TRASH"),
     ("spam", "SPAM"),
     ("flagged", "STARRED"),
