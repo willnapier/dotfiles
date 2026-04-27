@@ -19,24 +19,17 @@
 # bare `meli` isn't findable by wezterm at spawn time. Wezterm then opens
 # an empty window with meli failing to start (and possibly without
 # foreground activation, since the spawned program crashed).
-# --- diagnostic logging (temporary) ---
-LOG="$HOME/Library/Logs/email-wez.log"
-{
-    echo "=== invocation $(date '+%Y-%m-%d %H:%M:%S') ==="
-    echo "PPID: $PPID"
-    echo "PATH: $PATH"
-    echo "HOME: $HOME"
-    echo "TERM: $TERM"
-    echo "USER: $USER"
-    echo "PWD: $(pwd)"
-    echo "wezterm presence: $(ls -la /opt/homebrew/bin/wezterm 2>&1)"
-    echo "meli presence: $(ls -la /opt/homebrew/bin/meli 2>&1)"
-    echo "launching..."
-} >> "$LOG" 2>&1
-
+# Override `config.default_prog` for this invocation only. wezterm.lua
+# sets default_prog = nushell so all normal wezterm windows get a nu
+# shell. The `-- /opt/homebrew/bin/meli` argument after `start
+# --always-new-process` was being IGNORED because the config-level
+# default_prog won — wezterm spawned a nu shell window with no foreground
+# meli (which presented as "empty WezTerm appears, no meli inside").
+# Setting default_prog as a per-invocation `--config` override (Lua array
+# syntax: curly braces, NOT JSON brackets) tells this specific wezterm
+# instance to launch meli as its default program. Same outcome as
+# `-- meli` would have given on a stock wezterm config.
 exec /opt/homebrew/bin/wezterm \
-  --config 'initial_cols=500' \
-  --config 'initial_rows=200' \
+  --config 'default_prog={"/opt/homebrew/bin/meli"}' \
   start \
-  --always-new-process \
-  -- /opt/homebrew/bin/meli 2>>"$LOG"
+  --always-new-process
