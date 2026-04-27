@@ -1,17 +1,10 @@
 #!/usr/bin/env bash
-# email — open meli (via zellij + email-meli layout) in a maximized
-# Ghostty window (macOS).
+# email — open meli in a maximized Ghostty window (macOS).
 #
 # Uses Ghostty's native AppleScript dictionary to create a new window
-# running zellij INSIDE the existing Ghostty process. This keeps the meli
+# running meli INSIDE the existing Ghostty process. This keeps the meli
 # window part of the same app/process as your other Ghostty terminals,
 # so Cmd+` window-cycling includes it.
-#
-# Why zellij? — The `email-meli` layout backgrounds `mail-status-watch`
-# alongside meli; the watcher updates the zellij tab name every 30 s
-# with the most recent workspace + cohs sync timestamps. Without zellij
-# there's no in-tui place to surface that info (meli's status bar
-# content isn't user-configurable in 0.8.13).
 #
 # Design history:
 # - v1: --maximize=true flag via open -na — flag didn't reach Ghostty reliably
@@ -33,7 +26,7 @@ osascript <<'EOF'
 tell application "Ghostty"
   activate
   set cfg to new surface configuration
-  set command of cfg to "/opt/homebrew/bin/zellij --layout email-meli"
+  set command of cfg to "/opt/homebrew/bin/meli"
   new window with configuration cfg
 end tell
 EOF

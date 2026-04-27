@@ -293,16 +293,6 @@ depends = []
 # Ghostty config validation - fires on app update
 "scripts/ghostty-config-validate" = "~/.local/bin/ghostty-config-validate"
 
-# email-meli launcher stack — the `email`/`email-wez` (Mac) and `email`
-# (Linux, via email-linux below) launchers spawn `zellij --layout email-meli`,
-# which runs `meli-with-status`. That backgrounds `mail-status-watch`
-# (cross-platform Mac/Linux: stat-mtime on Darwin, systemctl on Linux)
-# which polls last-sync timestamps every 30 s and rewrites the zellij
-# tab name with them. Layout + watcher + wrapper are platform-neutral.
-"scripts/mail-status-watch" = "~/.local/bin/mail-status-watch"
-"scripts/meli-with-status" = "~/.local/bin/meli-with-status"
-"zellij/layouts/email-meli.kdl" = "~/.config/zellij/layouts/email-meli.kdl"
-
 # Semantic search system - managed separately (has virtual environment)
 
 [shared.variables]

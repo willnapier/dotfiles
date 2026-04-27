@@ -1,17 +1,5 @@
 #!/usr/bin/env bash
-# email — open meli (via zellij + email-meli layout) in a Ghostty window
-# on Linux/niri. Deployed to ~/.local/bin/email via [linux.files] so the
-# command name matches the macOS launcher.
-#
-# Why zellij? — see ~/dotfiles/scripts/email for the full rationale.
-# Short version: the email-meli layout backgrounds mail-status-watch,
-# which updates the zellij tab name every 30 s with the most recent
-# workspace + cohs sync timestamps.
-#
-# Niri/Wayland note: Ghostty under Wayland honours its own
-# `window-decoration` and `maximize` settings; we don't try to enforce
-# fullscreen from this script. If maximization is wanted, add
-# `keepaspect = false` and `window-decoration = false` plus a
-# Niri window-rule for the spawned ghostty surface.
-
-exec ghostty -e zellij --layout email-meli
+# email — open meli in a Ghostty window on Linux/niri. Deployed to
+# ~/.local/bin/email via [linux.files] so the command name matches
+# the macOS launcher.
+exec ghostty -e meli
