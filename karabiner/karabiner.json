@@ -324,11 +324,7 @@
                                     "key_code": "return_or_enter",
                                     "modifiers": { "mandatory": ["command", "shift"] }
                                 },
-                                "to": [
-                                    {
-                                        "shell_command": "/Users/williamnapier/.local/bin/email >/dev/null 2>&1"
-                                    }
-                                ],
+                                "to": [{ "shell_command": "/Users/williamnapier/.local/bin/email >/dev/null 2>&1" }],
                                 "type": "basic"
                             }
                         ]
@@ -752,13 +748,13 @@
                 },
                 {
                     "disable_built_in_keyboard_if_exists": true,
-                    "ignore": false,
                     "identifiers": {
                         "is_keyboard": true,
                         "is_pointing_device": true,
                         "product_id": 24926,
                         "vendor_id": 7504
-                    }
+                    },
+                    "ignore": false
                 }
             ],
             "name": "ColemakModDHMod",
