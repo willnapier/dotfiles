@@ -1,0 +1,17 @@
+[Unit]
+Description=Push local notmuch tag changes to Gmail as label changes
+After=network-online.target pizauth.service
+Wants=network-online.target pizauth.service
+
+[Service]
+Type=oneshot
+# practiceforge shells out to `notmuch` and `pizauth`. Both are in
+# ~/.local/bin/ which is absent from systemd's minimal PATH — must be
+# explicit. Mirrors the EnvironmentVariables fix from the Mac launchd
+# plist (discovered 2026-04-23 after ~20 silent-no-op ticks).
+Environment=PATH=/home/will/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=/home/will
+Environment=NOTMUCH_CONFIG=/home/will/Mail/.notmuch-config
+ExecStart=/home/will/.local/bin/practiceforge email gmail-push-tags --push
+StandardOutput=append:/home/will/.local/share/gmail-push-tags.log
+StandardError=append:/home/will/.local/share/gmail-push-tags.log

@@ -454,6 +454,8 @@ depends = ["shared"]
 "systemd/pizauth-dump.timer" = "~/.config/systemd/user/pizauth-dump.timer"
 "systemd/mbsync-cohs.service" = "~/.config/systemd/user/mbsync-cohs.service"
 "systemd/mbsync-cohs.timer" = "~/.config/systemd/user/mbsync-cohs.timer"
+"systemd/gmail-push-tags.service" = "~/.config/systemd/user/gmail-push-tags.service"
+"systemd/gmail-push-tags.timer" = "~/.config/systemd/user/gmail-push-tags.timer"
 # Wayland compositor configuration - Niri + Waybar + WezTerm
 "niri/config.kdl" = "~/.config/niri/config.kdl"
 "waybar/config" = "~/.config/waybar/config"
