@@ -3,6 +3,10 @@
 # ~/.local/bin/email via [linux.files] so the command name matches
 # the macOS launcher.
 #
-# --always-new-process: without this WezTerm routes the command to
-# the existing mux server which opens a shell, ignoring -- meli.
-exec wezterm start --always-new-process -- meli
+# Prefer IPC spawn (avoids gui-startup creating a spurious shell window).
+# Fall back to --always-new-process if no WezTerm mux is reachable.
+if wezterm cli list >/dev/null 2>&1; then
+    exec wezterm cli spawn --new-window -- meli
+else
+    exec wezterm start --always-new-process -- meli
+fi
