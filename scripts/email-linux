@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# email — open meli in a Ghostty window on Linux/niri. Deployed to
+# email — open meli in a WezTerm window on Linux/niri. Deployed to
 # ~/.local/bin/email via [linux.files] so the command name matches
 # the macOS launcher.
-exec ghostty -e meli
+exec wezterm start -- meli
