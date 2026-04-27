@@ -22,12 +22,18 @@ require("hs.ipc")
 -- pile of empty meli windows you can't see. Focusing brings the
 -- existing one to front instead.
 hs.hotkey.bind({"cmd", "shift"}, "return", function()
-    -- Helper: bring app + its window forward. Application:activate alone
-    -- is unreliable on fresh spawns (focuses the app in app-switcher terms
-    -- but the window may stay buried). Adding an explicit window:focus
-    -- step is the belt-and-braces fix.
+    -- Helper: bring app + its window forward. macOS only lets the
+    -- foreground app promote another app to foreground, so we use
+    -- AppleScript "activate" from inside Hammerspoon (which inherits
+    -- the activation context of the keypress that triggered us).
+    -- hs.application:activate alone is insufficient when the app was
+    -- spawned via hs.execute, because the spawned subprocess has no
+    -- HID context and macOS treats its window-server requests as
+    -- background. We follow up with explicit window:focus for windows
+    -- that are visible but on a different Space.
     local function focusWez(app)
-        app:activate(true)  -- true = also bring all windows to front
+        hs.osascript.applescript('tell application "WezTerm" to activate')
+        app:activate(true)
         local win = app:focusedWindow() or app:mainWindow() or app:allWindows()[1]
         if win then win:focus() end
     end
