@@ -117,6 +117,22 @@ struct State {
     label_name_to_id: BTreeMap<String, String>,
     #[serde(default)]
     label_map_fetched_at: i64,
+    /// Message-IDs already pushed within the current in-progress scan
+    /// window. Used to checkpoint partial progress when a single run is
+    /// killed mid-batch (e.g. macOS launchd `StartInterval=900` SIGTERMs
+    /// the process after 15 min on a multi-thousand-message backlog).
+    /// On restart, candidates whose ID is in this set are skipped, so
+    /// work doesn't repeat. Cleared and re-seeded each time the
+    /// `pushed_in_progress_since` anchor changes.
+    #[serde(default)]
+    pushed_in_progress: BTreeSet<String>,
+    /// The `since` (i.e. `last_notmuch_lastmod`) at the start of the
+    /// scan window that produced `pushed_in_progress`. If this no
+    /// longer matches the current `last_notmuch_lastmod`, the set is
+    /// stale (a previous run completed and advanced state) and gets
+    /// discarded.
+    #[serde(default)]
+    pushed_in_progress_since: u64,
 }
 
 /// CLI entry point. `dry_run=true` means: log what would change, don't
@@ -162,18 +178,51 @@ pub fn run(dry_run: bool) -> Result<()> {
     }
 
     let since = state.last_notmuch_lastmod;
+
+    // Reset the in-progress checkpoint set if it doesn't belong to the
+    // current scan window. (Either fresh state, or a previous run
+    // completed and advanced `last_notmuch_lastmod` past the old anchor.)
+    if state.pushed_in_progress_since != since {
+        state.pushed_in_progress.clear();
+        state.pushed_in_progress_since = since;
+        if !dry_run {
+            save_state(&state_path, &state)?;
+        }
+    }
+
     let candidates = notmuch_messages_since(since)?;
-    eprintln!(
-        "Checking {} candidate message(s) with lastmod >{} ≤{}.",
-        candidates.len(),
-        since,
-        current_lastmod
-    );
+    let already_done = state.pushed_in_progress.len();
+    let to_check: Vec<&String> = candidates
+        .iter()
+        .filter(|mid| !state.pushed_in_progress.contains(mid.as_str()))
+        .collect();
+    if already_done > 0 {
+        eprintln!(
+            "Resuming: {} candidate(s) total, {} already pushed in this window, {} to check (lastmod >{} ≤{}).",
+            candidates.len(),
+            already_done,
+            to_check.len(),
+            since,
+            current_lastmod
+        );
+    } else {
+        eprintln!(
+            "Checking {} candidate message(s) with lastmod >{} ≤{}.",
+            candidates.len(),
+            since,
+            current_lastmod
+        );
+    }
 
     let mut pushed = 0usize;
     let mut skipped_unresolved = 0usize;
 
-    for mid in &candidates {
+    // Checkpoint every N pushes — keeps disk write rate bounded while
+    // still bounding worst-case re-work to <N messages on SIGTERM.
+    const CHECKPOINT_EVERY: usize = 5;
+    let mut since_checkpoint = 0usize;
+
+    for mid in to_check {
         let local_tags = notmuch_tags_for(mid)?;
         if local_tags.is_empty() && !has_message_id(mid) {
             continue;
@@ -188,6 +237,18 @@ pub fn run(dry_run: bool) -> Result<()> {
         let (add, remove) = compute_diff(&local_tags, &gmail_labels, &state.label_name_to_id);
 
         if add.is_empty() && remove.is_empty() {
+            // Nothing to push, but record progress so we don't re-check
+            // this candidate next restart (its remote labels already
+            // match local tags — the most expensive ops on it were the
+            // resolve+fetch_labels Gmail calls, which we want to amortise).
+            if !dry_run {
+                state.pushed_in_progress.insert(mid.clone());
+                since_checkpoint += 1;
+                if since_checkpoint >= CHECKPOINT_EVERY {
+                    save_state(&state_path, &state)?;
+                    since_checkpoint = 0;
+                }
+            }
             continue;
         }
 
@@ -200,11 +261,27 @@ pub fn run(dry_run: bool) -> Result<()> {
                 .with_context(|| format!("modifying Gmail message {gmail_id}"))?;
             pushed += 1;
             eprintln!("pushed {mid} → gmail:{gmail_id}");
+            // Record this push immediately in the in-progress set, then
+            // checkpoint to disk every CHECKPOINT_EVERY pushes. If
+            // launchd SIGTERMs us before the run completes, the next
+            // run skips everything in `pushed_in_progress` and resumes
+            // from where we left off (modulo up to CHECKPOINT_EVERY
+            // re-pushes — idempotent on Gmail's side anyway).
+            state.pushed_in_progress.insert(mid.clone());
+            since_checkpoint += 1;
+            if since_checkpoint >= CHECKPOINT_EVERY {
+                save_state(&state_path, &state)?;
+                since_checkpoint = 0;
+            }
         }
     }
 
     if !dry_run {
+        // Run completed cleanly: advance the anchor and clear the
+        // in-progress set so the next tick starts fresh.
         state.last_notmuch_lastmod = current_lastmod;
+        state.pushed_in_progress.clear();
+        state.pushed_in_progress_since = current_lastmod;
         save_state(&state_path, &state)?;
         eprintln!(
             "Pushed changes to {pushed} message(s); {skipped_unresolved} unresolved; state advanced to lastmod={current_lastmod}."
