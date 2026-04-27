@@ -3,10 +3,7 @@
 # ~/.local/bin/email via [linux.files] so the command name matches
 # the macOS launcher.
 #
-# Prefer IPC spawn (avoids gui-startup creating a spurious shell window).
-# Fall back to --always-new-process if no WezTerm mux is reachable.
-if wezterm cli list >/dev/null 2>&1; then
-    exec wezterm cli spawn --new-window -- meli
-else
-    exec wezterm start --always-new-process -- meli
-fi
+# --always-new-process: ensures a fresh WezTerm GUI (not the mux daemon).
+# gui-startup skips its default shell window when cmd is non-nil (see
+# wezterm.lua), so only the meli window appears.
+exec wezterm start --always-new-process -- meli

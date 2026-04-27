@@ -796,7 +796,12 @@ wezterm.on('update-right-status', function(window, pane)
 end)
 
 -- Startup workspaces
-wezterm.on('gui-startup', function()
+wezterm.on('gui-startup', function(cmd)
+  -- When started with a specific program (e.g. `wezterm start -- meli`),
+  -- WezTerm creates that window automatically. Skip the default shell window
+  -- so only the requested program window appears.
+  if cmd then return end
+
   -- Default workspace
   local tab, pane, window = mux.spawn_window {
     workspace = 'main',
