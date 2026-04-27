@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# karabiner-relink — self-healing sync for ~/.config/karabiner/karabiner.json.
+#
+# Karabiner-Elements writes its config via atomic rename (write tmp, mv to
+# target), which replaces the dotter symlink with a real file. Without
+# intervention, GUI-side edits diverge silently from the dotter-managed
+# source-of-truth in ~/dotfiles/karabiner/karabiner.json.
+#
+# This script:
+#   1. Detects when the deployed file has become a real file (not a symlink)
+#   2. Copies its content into the dotfile (preserves any GUI-side changes)
+#   3. Replaces the real file with a fresh symlink to the dotfile
+#   4. Auto-commits the dotfile change so it flows into git
+#
+# Triggered by a launchd path-watcher (com.williamnapier.karabiner-relink.plist)
+# that fires whenever ~/.config/karabiner/karabiner.json is modified.
+#
+# Idempotent: bails early if the path is already a symlink.
+
+set -u
+
+DEPLOYED="$HOME/.config/karabiner/karabiner.json"
+DOTFILE="$HOME/dotfiles/karabiner/karabiner.json"
+LOG="$HOME/Library/Logs/karabiner-relink.log"
+
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG"
+}
+
+# If already a symlink, nothing to do — avoids ping-pong if we somehow
+# get re-fired between our own write and the kernel's notify.
+if [ -L "$DEPLOYED" ]; then
+    exit 0
+fi
+
+# If the path doesn't exist at all, nothing to recover.
+if [ ! -f "$DEPLOYED" ]; then
+    log "noop: deployed file missing"
+    exit 0
+fi
+
+# Capture GUI-side content into the dotfile (only if different — avoids
+# pointless commits when content is identical).
+if ! cmp -s "$DEPLOYED" "$DOTFILE"; then
+    log "capture: deployed file differs from dotfile, syncing"
+    cp "$DEPLOYED" "$DOTFILE"
+    DOTFILE_CHANGED=1
+else
+    DOTFILE_CHANGED=0
+fi
+
+# Replace real file with symlink.
+log "relink: replacing real file with symlink → $DOTFILE"
+rm "$DEPLOYED"
+ln -s "$DOTFILE" "$DEPLOYED"
+
+# Auto-commit the dotfile change (only if content actually changed).
+if [ "$DOTFILE_CHANGED" -eq 1 ]; then
+    cd "$HOME/dotfiles" || exit 0
+    git add karabiner/karabiner.json 2>>"$LOG"
+    if git commit -m "karabiner: auto-sync GUI-side changes via karabiner-relink" >>"$LOG" 2>&1; then
+        log "commit: pushed to local repo"
+        # Push with a generous timeout so a network hiccup doesn't leak the bash process.
+        # `timeout` is from coreutils (brew); no-op gracefully if unavailable.
+        if command -v timeout >/dev/null 2>&1; then
+            timeout 30 git push >>"$LOG" 2>&1 || log "push: timed out or failed (network?)"
+        else
+            git push >>"$LOG" 2>&1 || log "push: failed"
+        fi
+    else
+        log "commit: nothing to commit"
+    fi
+fi
+
+log "done"

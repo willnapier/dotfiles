@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.williamnapier.karabiner-relink</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/williamnapier/.local/bin/karabiner-relink</string>
+    </array>
+    <!-- Fire whenever Karabiner-Elements GUI replaces the dotter symlink
+         with a real file (atomic-rename writeback). The script captures
+         the new content into the dotfile, replaces the real file with a
+         fresh symlink, and auto-commits. See script for full rationale. -->
+    <key>WatchPaths</key>
+    <array>
+        <string>/Users/williamnapier/.config/karabiner/karabiner.json</string>
+    </array>
+    <!-- PATH must include /opt/homebrew/bin for `git` and `timeout` to
+         resolve, plus ~/.local/bin in case the script ever shells out
+         to other dotter-managed binaries. Same env-stripping issue as
+         the gmail-push-tags / mbsync-cohs plists. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/Users/williamnapier/.local/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/williamnapier</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/williamnapier/Library/Logs/karabiner-relink.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/williamnapier/Library/Logs/karabiner-relink.log</string>
+</dict>
+</plist>
