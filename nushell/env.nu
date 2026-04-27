@@ -50,6 +50,13 @@ let base_paths = if $platform == "darwin" {
 let current_paths = ($env.PATH | split row (char esep))
 $env.PATH = ($base_paths | append $current_paths | uniq)
 
+# --- MANPATH (include user-local man pages) ---
+# `~/.local/share/man` is where dotter installs custom man pages (e.g.
+# meli-mine(1)). macOS's `manpath` doesn't auto-derive this from
+# ~/.local/bin's parent, so set it explicitly. Trailing colon preserves
+# system defaults.
+$env.MANPATH = $"($env.HOME)/.local/share/man:"
+
 # --- Google Cloud & ForgePodium Integration ---
 let gcloud_root = $"($env.HOME)/google-cloud-sdk"
 if ($gcloud_root | path exists) {
