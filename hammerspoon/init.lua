@@ -1,3 +1,9 @@
+-- Enable IPC so `hs -c "..."` can talk to the running Hammerspoon
+-- process. Lets remote/programmatic reloads work via `hs -c hs.reload()`
+-- instead of needing to click the menu-bar icon. No behaviour change for
+-- the user — purely an automation surface.
+require("hs.ipc")
+
 -- Screenshot bindings for ZMK MEDIA layer (F13-F18)
 -- Matches Linux (Niri) screenshot shortcuts for same muscle memory
 
