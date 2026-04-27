@@ -45,6 +45,11 @@
             "type": "command",
             "command": "bash ~/.claude/hooks/prior-art-check.sh",
             "statusMessage": "Checking prior-art research..."
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/memory-platform-check.sh",
+            "statusMessage": "Checking memory platform scope..."
           }
         ]
       },
