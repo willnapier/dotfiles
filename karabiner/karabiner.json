@@ -752,6 +752,7 @@
                 },
                 {
                     "disable_built_in_keyboard_if_exists": true,
+                    "ignore": false,
                     "identifiers": {
                         "is_keyboard": true,
                         "is_pointing_device": true,
