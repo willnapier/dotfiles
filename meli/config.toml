@@ -20,6 +20,9 @@ default_mailbox = "inbox"
 # command for envelopes, only :go N for sidebar mailboxes). Conversations
 # style was tried 2026-04-27 and rejected — thread-grouping was disliked.
 listing.index_style = "Plain"
+# Relative row numbers (vim's relativenumber). Pairs with meli's existing
+# cmd_buf count machinery — `5 Down` jumps 5 rows, `12 Up` jumps 12.
+# Confirmed working 2026-04-27. No source patching needed.
 listing.relative_list_indices = true
 send_mail = "msmtp --account=gmail --read-recipients --read-envelope-from"  # msmtp + pizauth XOAUTH2. passwordeval fetches fresh bearer from pizauth on each send; pizauth auto-refreshes.
 # Pressing the listing.refresh key (Ctrl+R, see [shortcuts.listing] below)
@@ -76,6 +79,9 @@ display_name = "Will Napier"
 subscribed_mailboxes = ["inbox", "unread", "sent", "drafts", "archive", "trash", "spam"]
 default_mailbox = "inbox"
 listing.index_style = "Plain"
+# Relative row numbers (vim's relativenumber). Pairs with meli's existing
+# cmd_buf count machinery — `5 Down` jumps 5 rows, `12 Up` jumps 12.
+# Confirmed working 2026-04-27. No source patching needed.
 listing.relative_list_indices = true
 # Send via Microsoft Graph — tenant blocks SMTP AUTH (including XOAUTH2).
 # practiceforge's graph-send subcommand reads MIME from stdin and POSTs to
