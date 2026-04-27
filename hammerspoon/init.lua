@@ -22,27 +22,35 @@ require("hs.ipc")
 -- pile of empty meli windows you can't see. Focusing brings the
 -- existing one to front instead.
 hs.hotkey.bind({"cmd", "shift"}, "return", function()
+    -- Helper: bring app + its window forward. Application:activate alone
+    -- is unreliable on fresh spawns (focuses the app in app-switcher terms
+    -- but the window may stay buried). Adding an explicit window:focus
+    -- step is the belt-and-braces fix.
+    local function focusWez(app)
+        app:activate(true)  -- true = also bring all windows to front
+        local win = app:focusedWindow() or app:mainWindow() or app:allWindows()[1]
+        if win then win:focus() end
+    end
     local wez = hs.application.find("WezTerm")
-    if wez then
-        wez:activate()
+    if wez and #wez:allWindows() > 0 then
+        focusWez(wez)
         return
     end
-    -- No WezTerm yet — spawn it, then poll for the app to register with
-    -- macOS Launch Services and activate it as soon as it appears.
-    -- Bounded retry: max 3 s (30 ticks × 100 ms) so a failed launch
-    -- doesn't leave a polling timer running indefinitely.
+    -- No WezTerm (or it has no windows) — spawn it, then poll for the
+    -- app to register AND have at least one window before activating.
+    -- Bounded retry: max 3 s (30 ticks × 100 ms).
     hs.execute(os.getenv("HOME") .. "/.local/bin/email-wez &")
     local attempts = 0
-    local function tryActivate()
+    local function tryFocus()
         attempts = attempts + 1
         local app = hs.application.find("WezTerm")
-        if app then
-            app:activate()
+        if app and #app:allWindows() > 0 then
+            focusWez(app)
         elseif attempts < 30 then
-            hs.timer.doAfter(0.1, tryActivate)
+            hs.timer.doAfter(0.1, tryFocus)
         end
     end
-    hs.timer.doAfter(0.1, tryActivate)
+    hs.timer.doAfter(0.1, tryFocus)
 end)
 
 local screenshotDir = os.getenv("HOME") .. "/Pictures/Screenshots/"
