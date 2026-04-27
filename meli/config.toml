@@ -121,6 +121,16 @@ pager_context = 2
 
 [notifications]
 enable = true
+# Hide the in-UI overlay that pops up on refresh_command runs and other
+# events. The overlay is full-width, persistent until dismissed, and
+# only fires on manual Ctrl+r — not on the 15-min background syncs —
+# so it doesn't actually deliver ambient "last sync" visibility. The
+# notification log is preserved: press `<` (info_message_previous) to
+# read the most recent entry on demand. Reasoning: a Ctrl+r keypress
+# already provides fresher information (it actively pulls + reindexes)
+# than any "show last sync time" widget could, so the cost of the
+# overlay outweighs its signal.
+ui_notifications = "hide"
 
 [terminal]
 theme = "solarized_dark"
