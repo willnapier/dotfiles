@@ -25,9 +25,24 @@ hs.hotkey.bind({"cmd", "shift"}, "return", function()
     local wez = hs.application.find("WezTerm")
     if wez then
         wez:activate()
-    else
-        hs.execute(os.getenv("HOME") .. "/.local/bin/email-wez &")
+        return
     end
+    -- No WezTerm yet — spawn it, then poll for the app to register with
+    -- macOS Launch Services and activate it as soon as it appears.
+    -- Bounded retry: max 3 s (30 ticks × 100 ms) so a failed launch
+    -- doesn't leave a polling timer running indefinitely.
+    hs.execute(os.getenv("HOME") .. "/.local/bin/email-wez &")
+    local attempts = 0
+    local function tryActivate()
+        attempts = attempts + 1
+        local app = hs.application.find("WezTerm")
+        if app then
+            app:activate()
+        elseif attempts < 30 then
+            hs.timer.doAfter(0.1, tryActivate)
+        end
+    end
+    hs.timer.doAfter(0.1, tryActivate)
 end)
 
 local screenshotDir = os.getenv("HOME") .. "/Pictures/Screenshots/"
