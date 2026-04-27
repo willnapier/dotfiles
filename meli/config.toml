@@ -15,12 +15,11 @@ identity = "will@willnapier.com"
 display_name = "William Napier"
 subscribed_mailboxes = ["inbox", "unread", "sent", "archive", "all-mail"]
 default_mailbox = "inbox"
-# Thread-grouped listing — drops the per-row index column (the row numbers
-# weren't addressable: meli has no :goto-row command for envelopes, only
-# :go N for sidebar mailboxes). Conversations also matches how Gmail/web
-# inbox is conventionally read. Revert to "Compact" for a one-line-per-
-# message dense view if threading proves noisy.
-listing.index_style = "Conversations"
+# Plain listing — one-line-per-message, drops the per-row index column
+# from Compact (those numbers weren't addressable: meli has no :goto-row
+# command for envelopes, only :go N for sidebar mailboxes). Conversations
+# style was tried 2026-04-27 and rejected — thread-grouping was disliked.
+listing.index_style = "Plain"
 send_mail = "msmtp --account=gmail --read-recipients --read-envelope-from"  # msmtp + pizauth XOAUTH2. passwordeval fetches fresh bearer from pizauth on each send; pizauth auto-refreshes.
 # Pressing the listing.refresh key (Ctrl+R, see [shortcuts.listing] below)
 # runs this command synchronously, then meli re-reads the notmuch DB. mail-sync
@@ -75,7 +74,7 @@ identity = "will.napier@changeofharleystreet.com"
 display_name = "Will Napier"
 subscribed_mailboxes = ["inbox", "unread", "sent", "drafts", "archive", "trash", "spam"]
 default_mailbox = "inbox"
-listing.index_style = "Conversations"
+listing.index_style = "Plain"
 # Send via Microsoft Graph — tenant blocks SMTP AUTH (including XOAUTH2).
 # practiceforge's graph-send subcommand reads MIME from stdin and POSTs to
 # /me/sendMail via the MIME variant. Auth uses `pizauth show cohs`.
