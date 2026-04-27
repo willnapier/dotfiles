@@ -670,6 +670,21 @@ pub fn compute_diff(
     for (_, sys_id) in SYSTEM_TAG_TO_LABEL {
         manageable_universe.insert((*sys_id).to_string());
     }
+    // Belt-and-braces guard for the same Gmail API constraint that
+    // SYSTEM_TAG_TO_LABEL enforces on the *add* side: SENT, DRAFT,
+    // OUTBOX and CHAT are auto-derived by Gmail and the modify endpoint
+    // rejects them with HTTP 400 "Invalid label" on either side. The
+    // add side is already covered by their absence from
+    // SYSTEM_TAG_TO_LABEL, but they leak into manageable_universe via
+    // `label_name_to_id` (Gmail's `/labels` endpoint returns them with
+    // `name == id`, so they show up in the cached map). Without this
+    // filter, a Gmail message that has SENT applied server-side but no
+    // matching local `sent` tag would propose `removeLabelIds: ["SENT"]`
+    // and crash the run, halting backlog drain on that one message.
+    const PROTECTED_LABEL_IDS: &[&str] = &["SENT", "DRAFT", "OUTBOX", "CHAT"];
+    for protected in PROTECTED_LABEL_IDS {
+        manageable_universe.remove(*protected);
+    }
     let mut remove: Vec<String> = remote_label_ids
         .iter()
         .filter(|id| !local_ids.contains(*id))
@@ -789,6 +804,28 @@ mod tests {
         let (add, remove) = compute_diff(&local, &remote, &name_map());
         assert!(add.is_empty());
         assert!(!remove.contains(&"CATEGORY_PERSONAL".to_string()));
+    }
+
+    #[test]
+    fn diff_never_proposes_removing_protected_system_labels() {
+        // SENT/DRAFT/OUTBOX/CHAT are Gmail-managed and the modify
+        // endpoint rejects modify requests that touch them. They show
+        // up in `label_name_to_id` via Gmail's `/labels` endpoint
+        // (name == id == "SENT" etc.), so we have to filter them out
+        // of the manageable universe explicitly.
+        let mut m = BTreeMap::new();
+        m.insert("SENT".into(), "SENT".into());
+        m.insert("DRAFT".into(), "DRAFT".into());
+        m.insert("OUTBOX".into(), "OUTBOX".into());
+        m.insert("CHAT".into(), "CHAT".into());
+        let local = ids(&[]); // no local tags at all
+        let remote = ids(&["SENT", "DRAFT", "OUTBOX", "CHAT"]);
+        let (add, remove) = compute_diff(&local, &remote, &m);
+        assert!(add.is_empty(), "got add={add:?}");
+        assert!(
+            remove.is_empty(),
+            "must not propose removing protected labels; got {remove:?}"
+        );
     }
 
     #[test]
