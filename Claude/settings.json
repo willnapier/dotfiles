@@ -71,6 +71,11 @@
           {
             "type": "command",
             "command": "jq -r '.tool_input.file_path // .tool_input.filePath // empty' | { read file_path; if [[ \"$file_path\" == *\"MESSAGEBOARD.md\" ]]; then API_KEY=$(syncthing cli config gui apikey get 2>/dev/null) && curl -s -X POST \"http://127.0.0.1:8384/rest/db/scan?folder=Assistants\" -H \"X-API-Key: $API_KEY\" >/dev/null 2>&1; fi; }"
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/meli-mine-build.sh",
+            "statusMessage": "Regenerating meli-mine man page..."
           }
         ]
       }
