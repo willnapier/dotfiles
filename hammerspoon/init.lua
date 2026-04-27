@@ -7,57 +7,14 @@ require("hs.ipc")
 -- Screenshot bindings for ZMK MEDIA layer (F13-F18)
 -- Matches Linux (Niri) screenshot shortcuts for same muscle memory
 
--- Cmd+Shift+Return = focus existing WezTerm/meli, or spawn one if none.
--- Matches niri Mod+Shift+Return on Linux for cross-platform muscle memory.
--- Why Shift in the chord: bare Cmd+Return is heavily used app-internally
--- on macOS (Slack/Messages/Mail "send", form submit). Adding Shift sidesteps
--- those collisions while preserving the same mental model "<platform mod>
--- +Shift+Return = email" on both OSes.
--- Why email-wez and not email: today's settled architecture is bare meli
--- in WezTerm (Rust-coherent stack: WezTerm → meli). The `email` script
--- targets Ghostty via AppleScript and is kept around but not the canonical
--- launcher.
--- Focus-or-spawn: muscle-memory bug if you're in Ghostty using Cmd+`
--- to cycle windows — spawning a fresh WezTerm every time creates a
--- pile of empty meli windows you can't see. Focusing brings the
--- existing one to front instead.
-hs.hotkey.bind({"cmd", "shift"}, "return", function()
-    -- Helper: bring app + its window forward. macOS only lets the
-    -- foreground app promote another app to foreground, so we use
-    -- AppleScript "activate" from inside Hammerspoon (which inherits
-    -- the activation context of the keypress that triggered us).
-    -- hs.application:activate alone is insufficient when the app was
-    -- spawned via hs.execute, because the spawned subprocess has no
-    -- HID context and macOS treats its window-server requests as
-    -- background. We follow up with explicit window:focus for windows
-    -- that are visible but on a different Space.
-    local function focusWez(app)
-        hs.osascript.applescript('tell application "WezTerm" to activate')
-        app:activate(true)
-        local win = app:focusedWindow() or app:mainWindow() or app:allWindows()[1]
-        if win then win:focus() end
-    end
-    local wez = hs.application.find("WezTerm")
-    if wez and #wez:allWindows() > 0 then
-        focusWez(wez)
-        return
-    end
-    -- No WezTerm (or it has no windows) — spawn it, then poll for the
-    -- app to register AND have at least one window before activating.
-    -- Bounded retry: max 3 s (30 ticks × 100 ms).
-    hs.execute(os.getenv("HOME") .. "/.local/bin/email-wez &")
-    local attempts = 0
-    local function tryFocus()
-        attempts = attempts + 1
-        local app = hs.application.find("WezTerm")
-        if app and #app:allWindows() > 0 then
-            focusWez(app)
-        elseif attempts < 30 then
-            hs.timer.doAfter(0.1, tryFocus)
-        end
-    end
-    hs.timer.doAfter(0.1, tryFocus)
-end)
+-- Cmd+Shift+Return → email-wez moved to Karabiner (2026-04-27).
+-- Karabiner's IOHIDSystem-level event tap is more reliable than
+-- Hammerspoon's user-space hotkey hooks, which wedged 4 times in a
+-- single session of intensive programmatic use. The rule lives in
+-- ~/dotfiles/karabiner/karabiner.json under
+-- complex_modifications.rules → "Cmd+Shift+Return → email-wez ...".
+-- Hammerspoon retains the screenshot bindings (F13–F18) where its
+-- ergonomics are still the right fit.
 
 local screenshotDir = os.getenv("HOME") .. "/Pictures/Screenshots/"
 hs.execute("mkdir -p '" .. screenshotDir .. "'")
