@@ -19,9 +19,24 @@
 # bare `meli` isn't findable by wezterm at spawn time. Wezterm then opens
 # an empty window with meli failing to start (and possibly without
 # foreground activation, since the spawned program crashed).
+# --- diagnostic logging (temporary) ---
+LOG="$HOME/Library/Logs/email-wez.log"
+{
+    echo "=== invocation $(date '+%Y-%m-%d %H:%M:%S') ==="
+    echo "PPID: $PPID"
+    echo "PATH: $PATH"
+    echo "HOME: $HOME"
+    echo "TERM: $TERM"
+    echo "USER: $USER"
+    echo "PWD: $(pwd)"
+    echo "wezterm presence: $(ls -la /opt/homebrew/bin/wezterm 2>&1)"
+    echo "meli presence: $(ls -la /opt/homebrew/bin/meli 2>&1)"
+    echo "launching..."
+} >> "$LOG" 2>&1
+
 exec /opt/homebrew/bin/wezterm \
   --config 'initial_cols=500' \
   --config 'initial_rows=200' \
   start \
   --always-new-process \
-  -- /opt/homebrew/bin/meli
+  -- /opt/homebrew/bin/meli 2>>"$LOG"
