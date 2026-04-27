@@ -14,9 +14,14 @@
 # symlink but WITHOUT a wezterm-gui sibling, so a bare `wezterm` resolved
 # by PATH can fail with "No such file or directory" when launching the
 # GUI process. /opt/homebrew/bin/ has both symlinks and is brew-managed.
+# Absolute path to meli too — when this script is invoked from Hammerspoon
+# via hs.execute, the calling /bin/sh has only a minimal launchd PATH, so
+# bare `meli` isn't findable by wezterm at spawn time. Wezterm then opens
+# an empty window with meli failing to start (and possibly without
+# foreground activation, since the spawned program crashed).
 exec /opt/homebrew/bin/wezterm \
   --config 'initial_cols=500' \
   --config 'initial_rows=200' \
   start \
   --always-new-process \
-  -- meli
+  -- /opt/homebrew/bin/meli
