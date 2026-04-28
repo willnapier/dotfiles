@@ -119,7 +119,22 @@ fn extract_one(pol: &Policy, path: &str) -> Result<()> {
         // `policy` and `message_id` slots. For all other categories,
         // retain the historical {message_id, policy, extracted_at} shape.
         if ex.category == "subscriptions" {
-            record.insert("ts".into(), Value::String(now.clone()));
+            // For subscription events, `ts` is the time the underlying event
+            // happened — i.e. the email's Date header — not the extraction
+            // run time. This matters for backfills: extracting 298 old Apple
+            // receipts in one batch must NOT collapse to a single "most
+            // recent" timestamp, or synthesis can't tell what's genuinely
+            // latest. `extracted_at` records the run time separately.
+            let ts = parsed
+                .headers
+                .get_first_value("Date")
+                .and_then(|d| {
+                    chrono::DateTime::parse_from_rfc2822(&d)
+                        .ok()
+                        .map(|dt| dt.with_timezone(&chrono::Utc).to_rfc3339())
+                })
+                .unwrap_or_else(|| now.clone());
+            record.insert("ts".into(), Value::String(ts));
             record.insert("source".into(), Value::String(message_id.clone()));
             record.insert("extracted_at".into(), Value::String(now));
         } else {

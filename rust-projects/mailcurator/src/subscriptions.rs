@@ -127,6 +127,22 @@ pub fn load_events() -> Result<Vec<SubscriptionEvent>> {
     Ok(out)
 }
 
+/// Normalise a raw frequency string to the canonical schema enum value.
+/// Vendors emit varied forms (`year`, `Yearly`, `Monthly`, `weekly`); this
+/// maps them to the canonical `annual` / `monthly` / `weekly` / `quarterly`.
+/// Unrecognised input is preserved as-is (lowercased) so downstream code
+/// can still display it; the report multiplier table treats unknown strings
+/// as "unparseable frequency" and counts them separately.
+fn normalise_frequency(raw: &str) -> String {
+    match raw.trim().to_lowercase().as_str() {
+        "year" | "yearly" | "annual" | "annually" | "1y" => "annual".to_string(),
+        "month" | "monthly" | "1m" => "monthly".to_string(),
+        "week" | "weekly" | "1w" => "weekly".to_string(),
+        "quarter" | "quarterly" | "3m" => "quarterly".to_string(),
+        other => other.to_string(),
+    }
+}
+
 /// Group events by service and synthesise current state per service.
 /// See SUBSCRIPTIONS.md for the synthesis rules.
 pub fn synthesise(events: &[SubscriptionEvent]) -> Vec<SubscriptionStatus> {
@@ -186,8 +202,13 @@ pub fn synthesise(events: &[SubscriptionEvent]) -> Vec<SubscriptionStatus> {
 
         // amount / frequency / cancellation_notice_days: most recent populated
         // value across any event for this service.
+        // Frequency is normalised at the synthesis boundary because extractors
+        // emit raw vendor strings (Apple uses "Monthly"/"Yearly"/"year" etc.)
+        // while the canonical schema is monthly/annual/quarterly/weekly.
+        // Normalising here means `report` and other downstream code can rely
+        // on canonical values.
         let amount = evs.iter().rev().find_map(|e| e.amount.clone());
-        let frequency = evs.iter().rev().find_map(|e| e.frequency.clone());
+        let frequency = evs.iter().rev().find_map(|e| e.frequency.clone()).map(|f| normalise_frequency(&f));
         let cancellation_notice_days = evs.iter().rev().find_map(|e| e.cancellation_notice_days);
 
         out.push(SubscriptionStatus {
