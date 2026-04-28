@@ -188,8 +188,8 @@ color_aliases = { base03 = "#002b36", base02 = "#073642", base01 = "#586e75", ba
 "mail.listing.compact.odd_unseen"     = { fg = "$base3",  bg = "theme_default", attrs = "Bold" }
 "mail.listing.compact.even_selected"  = { fg = "$base3",  bg = "$blue",   attrs = "theme_default" }
 "mail.listing.compact.odd_selected"   = { fg = "$base3",  bg = "$blue",   attrs = "theme_default" }
-"mail.listing.compact.even_highlighted" = { fg = "theme_default", bg = "$base02", attrs = "Bold" }
-"mail.listing.compact.odd_highlighted"  = { fg = "theme_default", bg = "$base02", attrs = "Bold" }
+"mail.listing.compact.even_highlighted" = { fg = "$base3",        bg = "$base01", attrs = "Bold" }
+"mail.listing.compact.odd_highlighted"  = { fg = "$base3",        bg = "$base01", attrs = "Bold" }
 "mail.listing.compact.even_highlighted_selected" = { fg = "$base3", bg = "$blue", attrs = "Reverse" }
 "mail.listing.compact.odd_highlighted_selected"  = { fg = "$base3", bg = "$blue", attrs = "Reverse" }
 
@@ -199,8 +199,8 @@ color_aliases = { base03 = "#002b36", base02 = "#073642", base01 = "#586e75", ba
 "mail.listing.plain.odd_unseen"       = { fg = "$base3",  bg = "theme_default", attrs = "Bold" }
 "mail.listing.plain.even_selected"    = { fg = "$base3",  bg = "$blue",   attrs = "theme_default" }
 "mail.listing.plain.odd_selected"     = { fg = "$base3",  bg = "$blue",   attrs = "theme_default" }
-"mail.listing.plain.even_highlighted" = { fg = "theme_default", bg = "$base02", attrs = "Bold" }
-"mail.listing.plain.odd_highlighted"  = { fg = "theme_default", bg = "$base02", attrs = "Bold" }
+"mail.listing.plain.even_highlighted" = { fg = "$base3",        bg = "$base01", attrs = "Bold" }
+"mail.listing.plain.odd_highlighted"  = { fg = "$base3",        bg = "$base01", attrs = "Bold" }
 "mail.listing.plain.even_highlighted_selected" = { fg = "$base3", bg = "$blue", attrs = "Reverse" }
 "mail.listing.plain.odd_highlighted_selected"  = { fg = "$base3", bg = "$blue", attrs = "Reverse" }
 
@@ -209,7 +209,7 @@ color_aliases = { base03 = "#002b36", base02 = "#073642", base01 = "#586e75", ba
 "mail.listing.conversations.from"          = { fg = "$base01", bg = "theme_default", attrs = "theme_default" }
 "mail.listing.conversations.date"          = { fg = "$violet", bg = "theme_default", attrs = "theme_default" }
 "mail.listing.conversations.unseen"        = { fg = "$base3",  bg = "theme_default", attrs = "Bold" }
-"mail.listing.conversations.highlighted"   = { fg = "theme_default", bg = "$base02", attrs = "Bold" }
+"mail.listing.conversations.highlighted"   = { fg = "$base3",        bg = "$base01", attrs = "Bold" }
 "mail.listing.conversations.selected"      = { fg = "$base3",  bg = "$blue",   attrs = "theme_default" }
 "mail.listing.conversations.highlighted_selected" = { fg = "$base3", bg = "$blue", attrs = "Reverse" }
 
