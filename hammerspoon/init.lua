@@ -7,14 +7,17 @@ require("hs.ipc")
 -- Screenshot bindings for ZMK MEDIA layer (F13-F18)
 -- Matches Linux (Niri) screenshot shortcuts for same muscle memory
 
--- Cmd+Shift+Return → email-wez moved to Karabiner (2026-04-27).
--- Karabiner's IOHIDSystem-level event tap is more reliable than
--- Hammerspoon's user-space hotkey hooks, which wedged 4 times in a
--- single session of intensive programmatic use. The rule lives in
--- ~/dotfiles/karabiner/karabiner.json under
--- complex_modifications.rules → "Cmd+Shift+Return → email-wez ...".
--- Hammerspoon retains the screenshot bindings (F13–F18) where its
--- ergonomics are still the right fit.
+-- ARCHITECTURE: this file owns "global keyboard chord → shell command".
+-- Karabiner owns "per-device key remapping" (built-in keyboard Colemak,
+-- Piantor "disable built-in when connected" gate). ZMK firmware owns
+-- the Piantor's layout. Three layers, three responsibilities, no overlap.
+--
+-- Why not put global hotkeys in Karabiner: complex_modifications only
+-- fire for devices with Modify events ON. The Piantor needs Modify
+-- events OFF (otherwise Karabiner's virtual-keyboard injection breaks
+-- macOS's Cmd+` window cycling — discovered 2026-04-27). So Karabiner
+-- can't host Piantor-originating global chords. Hammerspoon receives
+-- the chord at the OS hotkey layer, regardless of source device.
 
 local screenshotDir = os.getenv("HOME") .. "/Pictures/Screenshots/"
 hs.execute("mkdir -p '" .. screenshotDir .. "'")
@@ -52,4 +55,16 @@ end)
 -- F18 = Window to clipboard (MEDIA + ?)
 hs.hotkey.bind({}, "F18", function()
     hs.execute("screencapture -wc")
+end)
+
+-- Cmd+Shift+Return → open meli in WezTerm.
+-- Anti-wedge: hs.task spawns asynchronously, so the callback returns
+-- without blocking Hammerspoon's main thread on `wezterm start`. Earlier
+-- wedging (4 incidents in a 2026-04-26 intensive session) was observed
+-- with synchronous patterns under load; fire-and-forget keeps the main
+-- thread responsive. The screenshot bindings above use hs.execute because
+-- screencapture returns near-instantly; if any of them ever wedge under
+-- load, port to hs.task on the same pattern.
+hs.hotkey.bind({"cmd", "shift"}, "return", function()
+    hs.task.new("/Users/williamnapier/.local/bin/email", function() end):start()
 end)
