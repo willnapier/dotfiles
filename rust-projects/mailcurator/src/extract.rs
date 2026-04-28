@@ -111,12 +111,22 @@ fn extract_one(pol: &Policy, path: &str) -> Result<()> {
 
     for ex in &pol.extractors {
         let mut record = Map::new();
-        record.insert("message_id".into(), Value::String(message_id.clone()));
-        record.insert("policy".into(), Value::String(pol.name.clone()));
-        record.insert(
-            "extracted_at".into(),
-            Value::String(chrono::Utc::now().to_rfc3339()),
-        );
+        let now = chrono::Utc::now().to_rfc3339();
+
+        // Schema-aware metadata: subscriptions.jsonl has a strict schema
+        // (ts/event/service/source) defined in SUBSCRIPTIONS.md. Map our
+        // generic extractor metadata to those keys and drop the redundant
+        // `policy` and `message_id` slots. For all other categories,
+        // retain the historical {message_id, policy, extracted_at} shape.
+        if ex.category == "subscriptions" {
+            record.insert("ts".into(), Value::String(now.clone()));
+            record.insert("source".into(), Value::String(message_id.clone()));
+            record.insert("extracted_at".into(), Value::String(now));
+        } else {
+            record.insert("message_id".into(), Value::String(message_id.clone()));
+            record.insert("policy".into(), Value::String(pol.name.clone()));
+            record.insert("extracted_at".into(), Value::String(now));
+        }
 
         for f in &ex.fields {
             if let Some(v) = apply_rule(f, &parsed, &subject, &body_text)? {
