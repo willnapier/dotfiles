@@ -112,6 +112,18 @@ enum Command {
         #[command(subcommand)]
         action: SubscriptionsAction,
     },
+    /// Show messages each policy with `delete_after_days` set would trash on
+    /// the next live run. Helpful before enabling destruction on a policy:
+    /// see exactly which messages are caught by the age + extracted gate
+    /// before flipping the flag.
+    DestroyPreview {
+        /// Optionally limit to one named policy
+        #[arg(short, long)]
+        only: Option<String>,
+        /// Max messages to show per policy
+        #[arg(short, long, default_value_t = 30)]
+        limit: usize,
+    },
 }
 
 #[derive(Subcommand)]
@@ -314,6 +326,60 @@ fn main() -> Result<()> {
         }
         Command::Improve { name, rounds } => {
             eval::improve(&name, rounds)?;
+        }
+        Command::DestroyPreview { only, limit } => {
+            let cfg = config::load(&path)?;
+            let mut total_caught = 0u64;
+            let mut policies_with_delete = 0u64;
+            for pol in &cfg.policies {
+                let Some(delete_days) = pol.delete_after_days else {
+                    continue;
+                };
+                if let Some(name) = &only {
+                    if &pol.name != name {
+                        continue;
+                    }
+                }
+                policies_with_delete += 1;
+                let base = pol.base_query();
+                let seen = pol.seen_tag();
+                let mut parts: Vec<String> =
+                    vec![format!("({base})"), format!("tag:{seen}")];
+                if !pol.extractors.is_empty() {
+                    parts.push(format!("tag:{}", pol.extracted_tag()));
+                }
+                parts.push(format!("date:..-{}d", delete_days));
+                parts.push("not tag:trash".to_string());
+                let query = parts.join(" and ");
+                let messages = store::list_messages(&query)?;
+                println!(
+                    "=== {} (delete_after_days={}) ===",
+                    pol.name, delete_days
+                );
+                println!("query: {query}");
+                println!("would trash: {} messages", messages.len());
+                for m in messages.iter().take(limit) {
+                    println!(
+                        "  {:<12}  {:<40}  {}",
+                        truncate(&m.date, 12),
+                        truncate(&m.from, 40),
+                        truncate(&m.subject, 100)
+                    );
+                }
+                if messages.len() > limit {
+                    println!("  ... and {} more", messages.len() - limit);
+                }
+                println!();
+                total_caught += messages.len() as u64;
+            }
+            if policies_with_delete == 0 {
+                println!("no policies with delete_after_days set");
+            } else {
+                println!(
+                    "TOTAL across {} delete-enabled policies: {} messages would trash",
+                    policies_with_delete, total_caught
+                );
+            }
         }
         Command::Subscriptions { action } => match action {
             SubscriptionsAction::List => subscriptions::list()?,
