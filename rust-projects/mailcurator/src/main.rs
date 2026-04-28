@@ -34,6 +34,7 @@ mod llm;
 mod notmuch;
 mod policy;
 mod store;
+mod subscriptions;
 
 #[derive(Parser)]
 #[command(name = "mailcurator")]
@@ -103,6 +104,43 @@ enum Command {
         /// Number of proposal/test rounds to attempt
         #[arg(short, long, default_value_t = 5)]
         rounds: usize,
+    },
+    /// Subscription monitoring: list known subscriptions, alert on upcoming
+    /// renewals approaching their cancellation window, discover new ones.
+    /// Schema and module contract: see SUBSCRIPTIONS.md.
+    Subscriptions {
+        #[command(subcommand)]
+        action: SubscriptionsAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum SubscriptionsAction {
+    /// Print all known subscriptions sorted by next_renewal.
+    List,
+    /// Flag subscriptions approaching their cancellation window.
+    Check {
+        /// Write actionable alerts to today's DayPage via daypage-append.
+        #[arg(long)]
+        alert: bool,
+        /// Extra buffer days beyond cancellation_notice_days.
+        #[arg(long, default_value_t = 7)]
+        buffer_days: i64,
+    },
+    /// Periodic hygiene digest: totals by frequency, dormant services.
+    Report {
+        /// Date window for activity (notmuch date: syntax).
+        #[arg(long, default_value = "30d")]
+        period: String,
+    },
+    /// Heuristic scan for new subscription candidates (Track A).
+    Discover {
+        /// Persist candidates to subscriptions.jsonl. Without this flag, prints only.
+        #[arg(long)]
+        commit: bool,
+        /// Date window to scan.
+        #[arg(long, default_value = "6M")]
+        window: String,
     },
 }
 
@@ -277,6 +315,16 @@ fn main() -> Result<()> {
         Command::Improve { name, rounds } => {
             eval::improve(&name, rounds)?;
         }
+        Command::Subscriptions { action } => match action {
+            SubscriptionsAction::List => subscriptions::list()?,
+            SubscriptionsAction::Check { alert, buffer_days } => {
+                subscriptions::check(alert, buffer_days)?
+            }
+            SubscriptionsAction::Report { period } => subscriptions::report(&period)?,
+            SubscriptionsAction::Discover { commit, window } => {
+                subscriptions::discover(commit, &window)?
+            }
+        },
         Command::Unmatched { window, limit } => {
             let cfg = config::load(&path)?;
             // Build the big OR of all policy base queries.
