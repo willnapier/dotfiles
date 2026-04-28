@@ -363,6 +363,16 @@ depends = ["shared"]
 "macos/launchd/com.williamnapier.dev-catchup.plist" = "~/Library/LaunchAgents/com.williamnapier.dev-catchup.plist"
 "macos/launchd/com.williamnapier.bequest-heartbeat.plist" = "~/Library/LaunchAgents/com.williamnapier.bequest-heartbeat.plist"
 "macos/LaunchAgents/com.williamnapier.ghostty-config-validate.plist" = "~/Library/LaunchAgents/com.williamnapier.ghostty-config-validate.plist"
+# Caught by orphan detector 2026-04-28 — three files that were in
+# the dotfiles tree but not dotter-tracked. All Mac-only:
+# - tm3-diary-live.plist: launchd plist (.plist extension, Mac-only)
+# - surfshark-kill.nu: panic-button script for the kitchen-sink VPN's
+#   processes; kept after Surfshark uninstall as a one-off recovery
+#   tool in case the app ever reappears in some future install
+# - clinical-watch: fswatch wrapper at /opt/homebrew/bin/fswatch (Mac path)
+"macos/launchd/com.williamnapier.tm3-diary-live.plist" = "~/Library/LaunchAgents/com.williamnapier.tm3-diary-live.plist"
+"nushell/scripts/surfshark-kill.nu" = "~/.config/nushell/scripts/surfshark-kill.nu"
+"scripts/clinical-watch" = "~/.local/bin/clinical-watch"
 # NOTE: Individual files managed in [shared.files] for better reliability
 # Removed directory symlinks that were causing orphan detection issues
 
