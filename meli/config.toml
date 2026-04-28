@@ -227,7 +227,7 @@ color_aliases = { base03 = "#002b36", base02 = "#073642", base01 = "#586e75", ba
 
 "mail.listing.attachment_flag"    = { fg = "$cyan",    bg = "theme_default", attrs = "theme_default" }
 "mail.listing.thread_snooze_flag" = { fg = "$red",     bg = "theme_default", attrs = "theme_default" }
-"mail.listing.tag_default"        = { fg = "$base03",  bg = "$violet", attrs = "Bold" }
+"mail.listing.tag_default"        = { fg = "$base1",   bg = "$base02", attrs = "theme_default" }
 "mail.listing.highlight_self"     = { fg = "$green",   bg = "theme_default", attrs = "Bold" }
 
 "pager.highlight_search"         = { fg = "$base03", bg = "$yellow", attrs = "Bold" }
