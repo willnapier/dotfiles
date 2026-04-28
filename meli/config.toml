@@ -13,7 +13,7 @@ format = "notmuch"
 library_file_path = "/opt/homebrew/opt/notmuch/lib/libnotmuch.5.dylib"
 identity = "will@willnapier.com"
 display_name = "William Napier"
-subscribed_mailboxes = ["inbox", "unread", "sent", "archive", "all-mail"]
+subscribed_mailboxes = ["inbox", "promotions", "unread", "sent", "archive", "all-mail"]
 default_mailbox = "inbox"
 # Plain listing — one-line-per-message, drops the per-row index column
 # from Compact (those numbers weren't addressable: meli has no :goto-row
@@ -40,9 +40,19 @@ refresh_command = "/Users/williamnapier/.local/bin/mail-sync"
   # Narrowed to 6 months — the full inbox (~83k messages) took ~6s to
   # thread on launch. Older messages remain reachable via search (/).
   # Widen the window here if you find recent-mail view too narrow.
-  # Excludes cohs-tagged messages — those belong in the cohs account
-  # view, not workspace inbox (saves ~190 messages from current view).
-  query = "tag:inbox and not tag:archive and not tag:spam and not tag:trash and not tag:cohs and date:6M.."
+  # Excludes:
+  #   - cohs (those belong in cohs account view)
+  #   - promotions (siphoned to dedicated promotions mailbox below;
+  #     Gmail's CATEGORY_PROMOTIONS tag pulled in by lieer after the
+  #     2026-04-28 .gmailieer.json change removing it from
+  #     ignore_remote_labels)
+  query = "tag:inbox and not tag:archive and not tag:spam and not tag:trash and not tag:cohs and not tag:promotions and date:6M.."
+
+  [accounts.workspace.mailboxes."promotions"]
+  # Gmail's Promotions tab content. Triage at leisure rather than
+  # auto-archiving (preserves signal-spotting in commercial mail).
+  # Same date constraint as inbox so the view stays bounded.
+  query = "tag:inbox and tag:promotions and not tag:archive and not tag:spam and not tag:trash and not tag:cohs and date:6M.."
 
   [accounts.workspace.mailboxes."unread"]
   query = "tag:unread"
