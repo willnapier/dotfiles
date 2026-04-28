@@ -35,7 +35,8 @@ work with **hold-repeat** via the ZMK NAV layer. Use whichever fits the moment.
   Page up / page down             `PageUp` / `PageDown`
   Jump N rows                     digit then `Up`/`Down` (e.g. `5 Down`)
   Open selected                   `Enter`
-  Back / exit current view        `Backspace` (NOT `Esc`, NOT `i`)
+  Back / exit current view        `Backspace` (NOT `Esc`, NOT `i`) — works in both listing and envelope-view
+  Cancel command mode (`:` prompt) `Esc` — if you brush the colon key and a small prompt appears top-of-screen, this dismisses it
   Next / previous mailbox         `E` / `I`
   Next / previous account         `N` / `O`
   Jump to mailbox by sidebar #    `:go N` ↵

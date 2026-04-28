@@ -295,7 +295,16 @@ scroll_down = 'Down'
 scroll_up = 'Up'
 scroll_down = 'Down'
 
-# Not remapped: [shortcuts.composing] and [shortcuts.envelope-view].
-# Both have 'e' bound to "edit" which is the correct primary action in those
-# contexts. Scroll-navigation within a composed message / envelope is
-# rare; keeping 'e' as edit avoids a trivial conflict.
+[shortcuts.envelope-view]
+# exit_entry default 'i' conflicts with neio scroll-up. Rebind to
+# Backspace for consistency with listing.exit_entry and to give a
+# unified "back one level" key. Plus: when accidental command-mode
+# entry happens (e.g. brushing the colon_semi key on the right pinky),
+# pressing Backspace once exits command mode and a second press exits
+# the envelope — predictable recovery from a stuck-feeling state.
+exit_entry = 'Backspace'
+
+# Not remapped: [shortcuts.composing].
+# Has 'e' bound to "edit" which is the correct primary action in that
+# context. Scroll-navigation within a composed message is rare;
+# keeping 'e' as edit avoids a trivial conflict.
