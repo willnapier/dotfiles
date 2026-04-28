@@ -356,8 +356,17 @@ pub fn check(alert: bool, buffer_days: i64) -> Result<()> {
     }
 
     if alert {
+        let mut queued = 0usize;
         for (s, nr, db) in &flagged {
             let entry = format!("subs:: {} renews {}, decide by {}", s.service, nr, db);
+            // Dedup: skip if today's pending queue OR today's actual DayPage
+            // already contains this exact line. Otherwise the daily cron
+            // would queue 14 duplicates over the 14-day notice window.
+            // Both files are checked: pending catches "queued today, not yet
+            // flushed"; the DayPage catches "already flushed and merged".
+            if alert_already_present_today(&entry)? {
+                continue;
+            }
             let status = Command::new("daypage-append")
                 .arg(&entry)
                 .status()
@@ -369,8 +378,13 @@ pub fn check(alert: bool, buffer_days: i64) -> Result<()> {
                     s.service
                 );
             }
+            queued += 1;
         }
-        println!("\nqueued {} alert(s) to today's DayPage", flagged.len());
+        println!(
+            "\nqueued {} alert(s) to today's DayPage ({} skipped as already-present)",
+            queued,
+            flagged.len() - queued
+        );
     }
 
     Ok(())
@@ -707,6 +721,42 @@ fn service_from_from(from: &str) -> String {
     } else {
         format!("unknown:{}", ascii.to_lowercase())
     }
+}
+
+/// Return true if `entry` appears verbatim in either today's daypage-append
+/// pending queue or today's actual DayPage file. Used by `check --alert` to
+/// suppress duplicate `subs::` queueing across daily cron runs over the
+/// notice window.
+///
+/// Both files checked: pending catches alerts queued earlier today and not
+/// yet flushed (Space+U in Helix). DayPage proper catches alerts already
+/// flushed and merged. Either presence means "you've already been told."
+fn alert_already_present_today(entry: &str) -> Result<bool> {
+    let today = Utc::now().format("%Y-%m-%d").to_string();
+    let home = dirs::home_dir().context("couldn't resolve $HOME")?;
+    let candidates = [
+        home.join(".local")
+            .join("share")
+            .join("daypage-pending")
+            .join(format!("{today}.md")),
+        home.join("Forge")
+            .join("NapierianLogs")
+            .join("DayPages")
+            .join(format!("{today}.md")),
+    ];
+    for path in &candidates {
+        if !path.exists() {
+            continue;
+        }
+        let body = match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        if body.lines().any(|line| line.trim() == entry.trim()) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn truncate_local(s: &str, n: usize) -> String {
