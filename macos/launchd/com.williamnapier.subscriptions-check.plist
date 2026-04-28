@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.williamnapier.subscriptions-check</string>
+
+    <!-- Daily 09:00: check whether any monitored subscription is approaching
+         its cancellation-decision window (next_renewal minus
+         cancellation_notice_days minus buffer_days, default 7+7 = 14 days
+         lead). With --alert, flagged subscriptions get queued to today's
+         DayPage via daypage-append as `subs::` entries. William sees them
+         in the morning DayPage review and decides to keep or cancel. -->
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/williamnapier/.local/bin/mailcurator</string>
+        <string>subscriptions</string>
+        <string>check</string>
+        <string>--alert</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>9</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/williamnapier/.local/share/subscriptions-check.stdout</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/williamnapier/.local/share/subscriptions-check.stderr</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- daypage-append lives in ~/.local/bin; mailcurator needs notmuch
+             to load events (none today, but defensively keep it). -->
+        <key>PATH</key>
+        <string>/Users/williamnapier/.local/bin:/Users/williamnapier/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/williamnapier</string>
+        <key>NOTMUCH_CONFIG</key>
+        <string>/Users/williamnapier/Mail/.notmuch-config</string>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>Nice</key>
+    <integer>15</integer>
+</dict>
+</plist>
