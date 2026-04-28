@@ -40,7 +40,9 @@ refresh_command = "/Users/williamnapier/.local/bin/mail-sync"
   # Narrowed to 6 months — the full inbox (~83k messages) took ~6s to
   # thread on launch. Older messages remain reachable via search (/).
   # Widen the window here if you find recent-mail view too narrow.
-  query = "tag:inbox and not tag:archive and not tag:spam and not tag:trash and date:6M.."
+  # Excludes cohs-tagged messages — those belong in the cohs account
+  # view, not workspace inbox (saves ~190 messages from current view).
+  query = "tag:inbox and not tag:archive and not tag:spam and not tag:trash and not tag:cohs and date:6M.."
 
   [accounts.workspace.mailboxes."unread"]
   query = "tag:unread"
@@ -52,10 +54,12 @@ refresh_command = "/Users/williamnapier/.local/bin/mail-sync"
   query = "not tag:inbox and not tag:trash and not tag:spam and not tag:sent"
 
   [accounts.workspace.mailboxes."all-mail"]
-  # Narrowed from "*" to last 90 days — the full archive (217k+ messages) is
-  # reachable via search (/), but building a threaded listing over it hangs
-  # meli on first render. Adjust the window here if 90d feels too narrow.
-  query = "date:90d.."
+  # Narrowed to 30 days. Use case is "where did I just send/receive that?"
+  # — recent everything-search. Older content reachable via `/` search
+  # which has no date constraint. (Was 90d; tightened 2026-04-28 after
+  # bulk-deleting 36k Promotions made the all-mail view unnecessarily
+  # noisy across longer windows.)
+  query = "date:30d.."
 
 # =====================================================================
 # COHS account (Microsoft 365, added 2026-04-21)
