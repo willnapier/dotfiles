@@ -22,6 +22,11 @@ Two accounts share one notmuch database at `~/Mail`:
 Listing style is `Plain` with `relative_list_indices = true` -- one-line-per-message,
 vim-style relative row numbers (selected row keeps its absolute index).
 
+**Workspace inbox excludes cohs-tagged messages** (tagged via the post-new hook
+on path under ~/Mail/cohs/) -- those appear only in the cohs account view.
+
+**All-mail window is 30 days**. Older content reachable via `/` search.
+
 # NAVIGATION
 
 Two-tier navigation: `i`/`e`/`n`/`o` work on **tap** (Colemak-DH neio remap), arrow keys
