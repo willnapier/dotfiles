@@ -127,6 +127,24 @@ pub fn load_events() -> Result<Vec<SubscriptionEvent>> {
     Ok(out)
 }
 
+/// Parse a `next_renewal` string into a NaiveDate. Tries ISO format first
+/// (YYYY-MM-DD) since the schema canon is ISO; falls back to common human
+/// formats for vendor extractors that emit raw text (Apple uses
+/// "12 May 2026"). Returns None if no format matches.
+fn parse_next_renewal(s: &str) -> Option<NaiveDate> {
+    // ISO first
+    if let Ok(d) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+        return Some(d);
+    }
+    // Common human formats
+    for fmt in &["%d %B %Y", "%d %b %Y", "%B %d, %Y", "%b %d, %Y"] {
+        if let Ok(d) = NaiveDate::parse_from_str(s, fmt) {
+            return Some(d);
+        }
+    }
+    None
+}
+
 /// Normalise a raw frequency string to the canonical schema enum value.
 /// Vendors emit varied forms (`year`, `Yearly`, `Monthly`, `weekly`); this
 /// maps them to the canonical `annual` / `monthly` / `weekly` / `quarterly`.
@@ -279,12 +297,17 @@ pub fn check(alert: bool, buffer_days: i64) -> Result<()> {
         let Some(nr_str) = s.next_renewal.as_deref() else {
             continue;
         };
-        let Some(notice_days) = s.cancellation_notice_days else {
+        // If the vendor didn't tell us how much notice they require, assume a
+        // conservative 7 days. Better to surface a renewal too early than to
+        // miss it entirely. Override per-policy by populating
+        // cancellation_notice_days in the source event.
+        let notice_days = s.cancellation_notice_days.unwrap_or(7);
+        // next_renewal may be ISO (YYYY-MM-DD) or human-format (e.g.
+        // "12 May 2026") depending on the source extractor — Apple emits the
+        // human form. Try both before giving up.
+        let next_renewal = parse_next_renewal(nr_str);
+        let Some(next_renewal) = next_renewal else {
             continue;
-        };
-        let next_renewal = match NaiveDate::parse_from_str(nr_str, "%Y-%m-%d") {
-            Ok(d) => d,
-            Err(_) => continue,
         };
 
         let decide_by = next_renewal - Duration::days(notice_days) - Duration::days(buffer_days);

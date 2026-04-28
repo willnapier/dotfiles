@@ -63,6 +63,22 @@ Every line is one event. Required fields apply to all event types; optional fiel
 - Special case: Apple App Store subscriptions for individual apps can use the form `apple:<app-bundle-or-name>` if the Apple extractor can parse out the underlying app — otherwise group all under `apple.com`.
 - Don't put display names (capitalisation, punctuation) in `service`. That information belongs in `subject` or `from`.
 
+## Implementation notes (added 2026-04-28 after first integration)
+
+**Timestamps (`ts`)**: For backfilled extraction of historical emails, `ts` is set from the email's `Date` header (RFC 2822 parsed → RFC 3339 UTC), NOT the extraction run time. This was load-bearing: with all events sharing extraction time, synthesis can't tell which is genuinely most recent. `extracted_at` records the run time separately. Live extractors (running in the post-new hook) get `ts` ≈ `extracted_at` naturally — there's only one Date for incoming mail.
+
+**Frequency normalisation**: Extractors emit raw vendor strings (Apple uses `year`/`Yearly`/`Monthly`); the synthesis layer normalises to canonical (`annual`/`monthly`/`weekly`/`quarterly`) via `normalise_frequency()`. Unrecognised values pass through lowercased. Downstream code (`report` multipliers, `check` filtering) reads only canonical values — extractors don't need to know what canonical is.
+
+**Date parsing in `next_renewal`**: ISO `YYYY-MM-DD` is preferred but synthesis tolerates human formats (`12 May 2026`, `May 12, 2026`) for extractors that pass through vendor text. See `parse_next_renewal()`.
+
+**Default cancellation notice**: When `cancellation_notice_days` is unknown (vendor didn't tell us), `check` defaults to 7 days. Plus the user-controllable `--buffer-days` (default 7) gives a 14-day total lead time before renewal. Override per-policy by populating the field in extractor output.
+
+**Apple per-app subscription collapse**: All Apple receipts/renewal-reminders use `service = "apple.com"` for v1. Apple's emails bundle multiple subscription line items in one body, so per-app extraction is harder than per-vendor. Per-event detail is preserved in `subscriptions.jsonl` — query via `jq '.event == "renewal_reminder"'` for individual renewal records. Synthesis collapses to one state record per service. Future: per-app extractor that parses the bundled body and emits one event per line item with `service = "apple:<app-name>"`.
+
+**Apple `charged` false positives**: The `apple-subscription-charges` policy matches all "invoice from Apple" emails, which includes ad-hoc App Store purchases, not just subscriptions. These emit `charged` events without `frequency` populated. Filter via `select(.event == "charged" and .frequency != null)` for true subscription charges.
+
+**Discover heuristic produces duplicates**: Track A runs over the inbox and generates one candidate per matching thread, so a recurring sender appears N times (e.g. 11 UK2 renewal-success emails → 11 candidates). Synthesis groups by `service`, so the duplication is harmless at read time. Future: dedupe-on-write in `discover --commit` if the noise becomes annoying.
+
 ## Reading patterns
 
 The state-model code in `subscriptions.rs` exposes a synthesis function that scans `subscriptions.jsonl` and produces one record per `service` representing current state:
