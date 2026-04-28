@@ -55,6 +55,7 @@ niri
 notmuch
 npm
 oculante
+pandoc-bin
 paru
 paru-debug
 pavucontrol

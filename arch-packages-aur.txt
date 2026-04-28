@@ -4,6 +4,7 @@ cyrus-sasl-xoauth2-git
 inlyne-bin
 mdcat
 meli
+pandoc-bin
 paru
 paru-debug
 piper-tts-bin

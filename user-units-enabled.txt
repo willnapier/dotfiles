@@ -16,6 +16,7 @@ forge-link-manager.service
 frecency-daemon.timer
 git-auto-pull-watcher.service
 git-auto-push-watcher.service
+gmail-push-tags-watchdog.timer
 gnome-keyring-daemon.socket
 helix-undo-cleanup.timer
 link-service.service
