@@ -210,13 +210,33 @@ pub fn synthesise(events: &[SubscriptionEvent]) -> Vec<SubscriptionStatus> {
             }
         };
 
-        // next_renewal: from the most recent RenewalReminder for this service
-        // that has a populated next_renewal field.
-        let next_renewal = evs
+        // next_renewal: prefer the most recent RenewalReminder with an explicit
+        // date. If none, fall back to computing from the most recent event's
+        // ts + frequency period — useful for subscription_started events
+        // where the vendor didn't include a renewal date in the welcome email
+        // (Apple Developer Program does this), so we estimate from enrolment
+        // date + 1y. The estimate is replaced as soon as a real reminder
+        // arrives.
+        let explicit_renewal = evs
             .iter()
             .rev()
             .find(|e| e.event == EventType::RenewalReminder && e.next_renewal.is_some())
             .and_then(|e| e.next_renewal.clone());
+        let next_renewal = explicit_renewal.or_else(|| {
+            // Fallback: latest event's ts + canonical frequency.
+            let latest = evs.iter().rev().next()?;
+            let freq = latest.frequency.as_deref().map(normalise_frequency)?;
+            let base_dt = chrono::DateTime::parse_from_rfc3339(&latest.ts).ok()?;
+            let base = base_dt.with_timezone(&Utc).date_naive();
+            let projected = match freq.as_str() {
+                "annual" => base + Duration::days(365),
+                "monthly" => base + Duration::days(30),
+                "quarterly" => base + Duration::days(91),
+                "weekly" => base + Duration::days(7),
+                _ => return None,
+            };
+            Some(projected.format("%Y-%m-%d").to_string())
+        });
 
         // amount / frequency / cancellation_notice_days: most recent populated
         // value across any event for this service.
