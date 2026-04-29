@@ -323,14 +323,21 @@ scroll_down = 'Down'
 scroll_up = 'Up'
 scroll_down = 'Down'
 
-[shortcuts.envelope-view]
-# exit_entry default 'i' conflicts with neio scroll-up. Rebind to
-# Backspace for consistency with listing.exit_entry and to give a
-# unified "back one level" key. Plus: when accidental command-mode
-# entry happens (e.g. brushing the colon_semi key on the right pinky),
-# pressing Backspace once exits command mode and a second press exits
-# the envelope — predictable recovery from a stuck-feeling state.
-exit_entry = 'Backspace'
+# [shortcuts.envelope-view] block removed 2026-04-29.
+#
+# An earlier attempt added `exit_entry = 'Backspace'` here. That was a
+# no-op at best — `exit_entry` is NOT a valid envelope-view setting per
+# the meli.conf manpage (it lives only in [shortcuts.listing]). At
+# worst, the unknown-setting may have caused meli to silently skip
+# loading other envelope-view shortcuts entirely, breaking `Esc`, `r`,
+# and other expected exits. With the block removed, envelope-view uses
+# pure defaults and exits should fire as documented.
+#
+# How to exit envelope view back to listing: investigation in progress
+# — meli's envelope-view shortcut list (per manpage) doesn't actually
+# expose an exit binding. Likely relies on the listing's `exit_entry`
+# (your Backspace) propagating in. If not, will need a different
+# mechanism (e.g. pager-shortcut `q` if the body pager has focus).
 
 # Not remapped: [shortcuts.composing].
 # Has 'e' bound to "edit" which is the correct primary action in that
