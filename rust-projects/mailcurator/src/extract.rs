@@ -28,8 +28,55 @@ use std::fs;
 use std::process::Command;
 
 use crate::extractors;
+use crate::llm;
+use crate::llm_cache::Cache;
 use crate::policy::{FieldRule, Policy};
 use crate::store;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::OnceLock;
+
+/// Process-wide LLM fallback budget. Bumped per LLM call; once it hits the
+/// cap (set via `set_llm_budget`), further fallbacks short-circuit.
+/// Default cap of 100 catches both runaway loops (a deterministic
+/// regression that suddenly leaves every message missing fields would
+/// burn through the cap and stop, surfacing the issue) and steady-state
+/// quotas (legitimate fallback for ~10–20 messages/run).
+static LLM_BUDGET: OnceLock<AtomicUsize> = OnceLock::new();
+static LLM_USED: AtomicUsize = AtomicUsize::new(0);
+static LLM_DISABLED: AtomicUsize = AtomicUsize::new(0); // 1 = disabled
+
+pub fn set_llm_budget(cap: usize) {
+    let _ = LLM_BUDGET.set(AtomicUsize::new(cap));
+}
+
+pub fn disable_llm_fallback() {
+    LLM_DISABLED.store(1, Ordering::Relaxed);
+}
+
+fn llm_budget_remaining() -> usize {
+    let cap = LLM_BUDGET
+        .get_or_init(|| AtomicUsize::new(100))
+        .load(Ordering::Relaxed);
+    let used = LLM_USED.load(Ordering::Relaxed);
+    cap.saturating_sub(used)
+}
+
+fn llm_enabled() -> bool {
+    LLM_DISABLED.load(Ordering::Relaxed) == 0
+}
+
+pub fn llm_calls_made() -> usize {
+    LLM_USED.load(Ordering::Relaxed)
+}
+
+/// Reset the per-run counters — call from the run subcommand before each
+/// invocation. (Currently unused: the process exits after one run, so
+/// the AtomicUsize starts at 0 anyway.)
+#[allow(dead_code)]
+pub fn reset_llm_counters() {
+    LLM_USED.store(0, Ordering::Relaxed);
+    LLM_DISABLED.store(0, Ordering::Relaxed);
+}
 
 /// Run a policy's extractors over every matching message not yet tagged
 /// `curator-<name>-extracted`. For each:
@@ -59,9 +106,14 @@ pub fn run_extractors(pol: &Policy, dry_run: bool) -> Result<u64> {
         return Ok(files.len() as u64);
     }
 
+    // Build the LLM cache once per policy run, then thread it through
+    // each extraction. A miss + actual LLM call writes through to disk
+    // immediately so a crash mid-run preserves earlier work.
+    let mut cache = Cache::load()?;
+
     let mut count = 0u64;
     for path in &files {
-        match extract_one(pol, path) {
+        match extract_one(pol, path, &mut cache) {
             Ok(()) => count += 1,
             Err(e) => {
                 eprintln!(
@@ -83,6 +135,26 @@ pub fn run_extractors(pol: &Policy, dry_run: bool) -> Result<u64> {
     Ok(count)
 }
 
+fn is_populated(v: Option<&Value>) -> bool {
+    match v {
+        None | Some(Value::Null) => false,
+        Some(Value::String(s)) => !s.is_empty(),
+        Some(Value::Array(a)) => !a.is_empty(),
+        Some(Value::Object(o)) => !o.is_empty(),
+        _ => true,
+    }
+}
+
+fn pretty_vendor_label(module_name: &str) -> &'static str {
+    match module_name {
+        "amazon_orders" => "Amazon order",
+        "trainline_journeys" => "Trainline journey",
+        "airbnb_bookings" => "Airbnb booking",
+        "tesla" => "Tesla",
+        _ => "vendor",
+    }
+}
+
 fn list_files(query: &str) -> Result<Vec<String>> {
     let output = Command::new("notmuch")
         .args(["search", "--output=files", query])
@@ -101,7 +173,7 @@ fn list_files(query: &str) -> Result<Vec<String>> {
         .collect())
 }
 
-fn extract_one(pol: &Policy, path: &str) -> Result<()> {
+fn extract_one(pol: &Policy, path: &str, cache: &mut Cache) -> Result<()> {
     let raw = fs::read(path).with_context(|| format!("reading {path}"))?;
     let parsed = parse_mail(&raw).with_context(|| format!("parsing RFC822 from {path}"))?;
 
@@ -153,20 +225,95 @@ fn extract_one(pol: &Policy, path: &str) -> Result<()> {
         // same name overrides them — gives policies an escape hatch when
         // a vendor module gets a field wrong (set the FieldRule to the
         // correct literal/regex; module value is then displaced).
+        let mut provenance: Map<String, Value> = Map::new();
         if let Some(name) = vendor_name {
             if let Some(extractor) = extractors::dispatch(name) {
-                match extractor.extract(&parsed, &html_body) {
-                    Ok(fields) => {
-                        for (k, v) in fields {
-                            record.insert(k, v);
-                        }
-                    }
+                let mut det_fields: Map<String, Value> = match extractor.extract(&parsed, &html_body) {
+                    Ok(f) => f,
                     Err(e) => {
                         eprintln!(
                             "  [{}] vendor module '{}' failed (continuing with FieldRules): {}",
                             pol.name, name, e
                         );
+                        Map::new()
                     }
+                };
+
+                // Tier-2: LLM fallback for required fields the
+                // deterministic pass missed. Cache per (msg_id, module);
+                // budget-capped to prevent runaway loops; provenance
+                // tracked so downstream queries can spot LLM-derived
+                // fields.
+                let required = extractor.required_fields();
+                let missing: Vec<&str> = required
+                    .iter()
+                    .copied()
+                    .filter(|f| !is_populated(det_fields.get(*f)))
+                    .collect();
+
+                if !missing.is_empty() && llm_enabled() {
+                    if let Some(schema) = extractor.llm_schema() {
+                        // Cache key includes the module name so a future
+                        // module rename (or addition of a different
+                        // module to the same vendor) doesn't read stale
+                        // entries.
+                        let llm_fields = if let Some(cached) = cache.get(&message_id, name) {
+                            cached.clone()
+                        } else if llm_budget_remaining() > 0 {
+                            match llm::extract_structured(
+                                &format!("{} email", pretty_vendor_label(name)),
+                                schema,
+                                &html_body,
+                            ) {
+                                Ok(f) => {
+                                    LLM_USED.fetch_add(1, Ordering::Relaxed);
+                                    let _ = cache.put(
+                                        message_id.clone(),
+                                        name.to_string(),
+                                        f.clone(),
+                                    );
+                                    f
+                                }
+                                Err(e) => {
+                                    eprintln!(
+                                        "  [{}] LLM fallback failed: {}",
+                                        pol.name, e
+                                    );
+                                    Map::new()
+                                }
+                            }
+                        } else {
+                            // Budget exhausted; log on first hit per
+                            // invocation. Subsequent skips silent.
+                            Map::new()
+                        };
+
+                        // Merge — only fields missing from det_fields,
+                        // and only if the value passes per-field
+                        // validation (catches hallucinations).
+                        for (k, v) in &llm_fields {
+                            if is_populated(det_fields.get(k)) {
+                                continue;
+                            }
+                            if !extractor.validate_field(k, v) {
+                                continue;
+                            }
+                            det_fields.insert(k.clone(), v.clone());
+                            provenance.insert(k.clone(), Value::String("llm".into()));
+                        }
+                    }
+                }
+
+                // Mark deterministic fields' provenance for any field we
+                // didn't already mark as llm.
+                for k in det_fields.keys() {
+                    provenance
+                        .entry(k.clone())
+                        .or_insert(Value::String("deterministic".into()));
+                }
+
+                for (k, v) in det_fields {
+                    record.insert(k, v);
                 }
             } else {
                 eprintln!(
@@ -176,6 +323,9 @@ fn extract_one(pol: &Policy, path: &str) -> Result<()> {
                     extractors::known_extractors().join(", ")
                 );
             }
+        }
+        if !provenance.is_empty() {
+            record.insert("_provenance".into(), Value::Object(provenance));
         }
 
         for f in &ex.fields {

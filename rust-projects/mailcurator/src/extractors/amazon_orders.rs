@@ -24,6 +24,16 @@ use std::sync::OnceLock;
 
 use super::VendorExtractor;
 
+/// JSON-schema-shaped string the LLM is asked to fill. Field names match
+/// the deterministic extractor so cached LLM output merges cleanly.
+const AMAZON_LLM_SCHEMA: &str = r#"{
+  "order_id": "string|null — canonical Amazon order ID, either 3-digit form like 202-1234567-1234567 (physical) or D-prefix form like D01-1234567-1234567 (digital). Null if not present.",
+  "total": "string|null — Grand Total / Order Total in pounds as a decimal, e.g. \"3.49\". Null if not present. Do NOT use subtotal or pre-tax figures.",
+  "subtotal": "string|null — Item Subtotal in pounds as decimal. Null if not present.",
+  "items": ["string"] ,
+  "eta": "string|null — arrival/delivery date if mentioned (e.g. \"Tuesday\", \"25 March\"). Null if not present."
+}"#;
+
 pub struct AmazonOrders;
 
 impl VendorExtractor for AmazonOrders {
@@ -37,6 +47,43 @@ impl VendorExtractor for AmazonOrders {
         // coverage truthfully than 60% with items dragging the average.
         // Revisit when items extraction is more robust.
         &["order_id", "total"]
+    }
+
+    fn llm_schema(&self) -> Option<&'static str> {
+        Some(AMAZON_LLM_SCHEMA)
+    }
+
+    fn validate_field(&self, field: &str, value: &Value) -> bool {
+        match (field, value) {
+            // Reject hallucinated order IDs that don't match the
+            // canonical 3-digit-or-D-prefix form. This is the most
+            // common LLM hallucination — it'll happily produce
+            // "ORDER-12345" or similar plausible-looking strings.
+            ("order_id", Value::String(s)) => {
+                static R: OnceLock<Regex> = OnceLock::new();
+                let re = R.get_or_init(|| {
+                    Regex::new(r"^(?:20[2-5]|D\d{2})-\d{7}-\d{7}$").unwrap()
+                });
+                re.is_match(s)
+            }
+            // Total / subtotal must be parseable as a decimal pound
+            // amount — reject plain text or impossible values.
+            ("total" | "subtotal", Value::String(s)) => {
+                s.parse::<f64>().map(|f| f >= 0.0 && f < 100_000.0).unwrap_or(false)
+            }
+            // Items: array of non-empty strings.
+            ("items", Value::Array(a)) => {
+                a.iter().any(|v| matches!(v, Value::String(s) if !s.is_empty()))
+            }
+            // ETA: any non-empty string. Hallucination risk lower here.
+            ("eta", Value::String(s)) => !s.is_empty(),
+            // Unknown field: fall through to the trait default.
+            _ => match value {
+                Value::String(s) => !s.is_empty(),
+                Value::Null => false,
+                _ => true,
+            },
+        }
     }
 
     fn extract(&self, parsed: &ParsedMail, html: &str) -> Result<Map<String, Value>> {

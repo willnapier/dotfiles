@@ -41,11 +41,14 @@ pub fn ask(prompt: &str) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-/// Truncate HTML to a safe input size for the LLM. Anthropic's context
-/// is generous but most extraction signal is in the first chunk anyway,
-/// and large HTML inflates cost + latency. 8KB ≈ 2000 tokens which is
-/// plenty for an order-summary table or a booking confirmation.
-const MAX_HTML_BYTES: usize = 8192;
+/// Truncate HTML to a safe input size for the LLM. Email HTML is
+/// frequently 50KB+ of styles + tracking pixels + dark-mode CSS variants
+/// before any actual content. We use a target window of 16KB centered
+/// on signal-bearing tokens (£, Total, Order, Reservation, Check-in)
+/// rather than just the first N bytes — that early-truncation strategy
+/// missed Amazon's order-summary tables which sit at byte 90KB+ in some
+/// templates.
+const MAX_HTML_BYTES: usize = 16_384;
 
 /// Ask Claude to extract structured data per `schema`, returning a JSON
 /// object. The prompt constrains the model to JSON-only output; we still
@@ -64,16 +67,8 @@ pub fn extract_structured(
     schema: &str,
     html: &str,
 ) -> Result<Map<String, Value>> {
-    let truncated = if html.len() > MAX_HTML_BYTES {
-        // Cut at a UTF-8 char boundary to avoid mid-codepoint splits.
-        let mut end = MAX_HTML_BYTES;
-        while end > 0 && !html.is_char_boundary(end) {
-            end -= 1;
-        }
-        &html[..end]
-    } else {
-        html
-    };
+    let truncated = signal_window(html, MAX_HTML_BYTES);
+    let truncated = truncated.as_str();
 
     let prompt = format!(
         "You are extracting structured data from a {vendor_label} email. \
@@ -91,6 +86,44 @@ Email HTML (truncated to {} bytes):
 
     let raw = ask(&prompt)?;
     parse_json_object(&raw)
+}
+
+/// Find the byte offset of the first signal token (£, Total, Order,
+/// Reservation, etc.) and return a window of `target_bytes` centered on
+/// it. Falls back to a leading-window slice if no signal is found.
+/// Always cuts at UTF-8 char boundaries.
+fn signal_window(html: &str, target_bytes: usize) -> String {
+    if html.len() <= target_bytes {
+        return html.to_string();
+    }
+    // Signals ranked by specificity. We pick the EARLIEST occurrence of
+    // any of these as the anchor — typically that's the order summary
+    // (which usually appears once, near the relevant data).
+    let signals = [
+        "Grand Total", "Order Total", "Total Before Tax", "£", "Total:",
+        "Reservation", "Check-in", "Confirmation",
+    ];
+    let earliest = signals
+        .iter()
+        .filter_map(|s| html.find(s))
+        .min()
+        .unwrap_or(0);
+
+    // Center the window: half before anchor, half after.
+    let half = target_bytes / 2;
+    let start_raw = earliest.saturating_sub(half);
+    let end_raw = (earliest + half).min(html.len());
+
+    // Snap to UTF-8 boundaries.
+    let mut start = start_raw;
+    while start > 0 && !html.is_char_boundary(start) {
+        start -= 1;
+    }
+    let mut end = end_raw;
+    while end < html.len() && !html.is_char_boundary(end) {
+        end += 1;
+    }
+    html[start..end].to_string()
 }
 
 /// Strip common LLM output cruft (code fences, leading/trailing prose)

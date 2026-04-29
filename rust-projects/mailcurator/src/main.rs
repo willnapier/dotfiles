@@ -33,6 +33,7 @@ mod eval;
 mod extract;
 mod extractors;
 mod llm;
+mod llm_cache;
 mod notmuch;
 mod orders_cli;
 mod policy;
@@ -62,6 +63,21 @@ enum Command {
         /// Only run this named policy (match by .name field)
         #[arg(long)]
         only: Option<String>,
+
+        /// Disable LLM fallback for this run. Vendor modules that would
+        /// normally call Claude when their deterministic extractor leaves
+        /// a required field missing will simply skip that field instead.
+        #[arg(long)]
+        llm_disable: bool,
+
+        /// Cap on total LLM calls in this run, across all policies.
+        /// Default 100 — enough for steady-state and a reasonable
+        /// backfill chunk; protects against runaway loops where a
+        /// regressed deterministic extractor leaves every message
+        /// needing LLM. Set higher (e.g. 5000) when doing a one-shot
+        /// historical backfill.
+        #[arg(long, default_value_t = 100)]
+        llm_budget: usize,
     },
     /// Validate the config file without running
     Validate,
@@ -255,8 +271,12 @@ fn main() -> Result<()> {
                 println!("- {} ({})", p.name, p.summary());
             }
         }
-        Command::Run { dry_run, only } => {
+        Command::Run { dry_run, only, llm_disable, llm_budget } => {
             let cfg = config::load(&path)?;
+            extract::set_llm_budget(llm_budget);
+            if llm_disable {
+                extract::disable_llm_fallback();
+            }
             let mut total_tagged = 0u64;
             let mut total_archived = 0u64;
             let mut total_deleted = 0u64;
@@ -285,12 +305,21 @@ fn main() -> Result<()> {
             }
 
             println!();
+            let llm_used = extract::llm_calls_made();
+            let llm_note = if llm_used > 0 {
+                format!("  llm-calls={} (budget={})", llm_used, llm_budget)
+            } else if llm_disable {
+                "  [llm fallback disabled]".to_string()
+            } else {
+                String::new()
+            };
             println!(
-                "TOTAL  tagged-on-arrival={}  archived={}  trashed={}{}",
+                "TOTAL  tagged-on-arrival={}  archived={}  trashed={}{}{}",
                 total_tagged,
                 total_archived,
                 total_deleted,
-                if dry_run { "  [DRY RUN — no changes made]" } else { "" }
+                if dry_run { "  [DRY RUN — no changes made]" } else { "" },
+                llm_note
             );
         }
         Command::Preview { name, limit } => {
