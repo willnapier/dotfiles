@@ -27,6 +27,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::process::Command;
 
+use crate::extractors;
 use crate::policy::{FieldRule, Policy};
 use crate::store;
 
@@ -107,7 +108,12 @@ fn extract_one(pol: &Policy, path: &str) -> Result<()> {
     // Cache derived data so multi-rule extractors don't re-do work.
     let subject = parsed.headers.get_first_value("Subject").unwrap_or_default();
     let body_text = decode_body_to_text(&parsed)?;
+    let html_body = decode_body_to_html(&parsed);
     let message_id = parsed.headers.get_first_value("Message-ID").unwrap_or_else(|| path.to_string());
+
+    // Resolve vendor module once per message (Box<dyn> can't be cloned, so
+    // we fetch a fresh instance per extractor in the inner loop below).
+    let vendor_name = pol.vendor_module.as_deref();
 
     for ex in &pol.extractors {
         let mut record = Map::new();
@@ -141,6 +147,35 @@ fn extract_one(pol: &Policy, path: &str) -> Result<()> {
             record.insert("message_id".into(), Value::String(message_id.clone()));
             record.insert("policy".into(), Value::String(pol.name.clone()));
             record.insert("extracted_at".into(), Value::String(now));
+        }
+
+        // Vendor module fields land first so that any FieldRule with the
+        // same name overrides them — gives policies an escape hatch when
+        // a vendor module gets a field wrong (set the FieldRule to the
+        // correct literal/regex; module value is then displaced).
+        if let Some(name) = vendor_name {
+            if let Some(extractor) = extractors::dispatch(name) {
+                match extractor.extract(&parsed, &html_body) {
+                    Ok(fields) => {
+                        for (k, v) in fields {
+                            record.insert(k, v);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "  [{}] vendor module '{}' failed (continuing with FieldRules): {}",
+                            pol.name, name, e
+                        );
+                    }
+                }
+            } else {
+                eprintln!(
+                    "  [{}] unknown vendor_module '{}' — skipping (known: {})",
+                    pol.name,
+                    name,
+                    extractors::known_extractors().join(", ")
+                );
+            }
         }
 
         for f in &ex.fields {

@@ -55,6 +55,14 @@ pub struct Policy {
     /// `curator-<name>-extracted` tag so we never destroy unextracted data.
     #[serde(default, rename = "extractor")]
     pub extractors: Vec<Extractor>,
+
+    /// Optional vendor-specific Rust extractor module. When set, fields
+    /// returned by the module are merged into the extracted record before
+    /// the generic FieldRule loop runs. Use for HTML emails where structural
+    /// CSS selectors give cleaner results than regex on stripped text. The
+    /// module name must match a known extractor in `crate::extractors`. See
+    /// `extractors::dispatch` for the registry.
+    pub vendor_module: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
