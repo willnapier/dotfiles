@@ -2,6 +2,31 @@
 # Git Auto-Push Watcher for macOS - Automatically pushes local dotfiles changes to GitHub
 # Symmetric with Linux git-auto-push-watcher for cross-platform parity
 
+# Returns list of dirty rust-projects/<crate> paths that have a Cargo.toml.
+# Skips paths that aren't crate roots (e.g. shared subdirs).
+def rust_crates_dirty [] {
+    git status --porcelain
+    | lines
+    | each { |l| $l | str substring 3.. }
+    | where { |p| $p | str starts-with 'rust-projects/' }
+    | each { |p|
+        let parts = ($p | split row '/')
+        if ($parts | length) >= 2 { $"($parts.0)/($parts.1)" } else { '' }
+    }
+    | where { |c| $c != '' and ($"($c)/Cargo.toml" | path exists) }
+    | uniq
+}
+
+# Returns list of crate paths that fail `cargo check`. Empty list = all clean.
+def rust_crates_failing [crates: list<string>] {
+    $crates
+    | each { |c|
+        let result = (do { cd $c; cargo check --quiet --message-format=short } | complete)
+        if $result.exit_code != 0 { $c } else { null }
+    }
+    | compact
+}
+
 def main [] {
     let dotfiles_dir = $"($env.HOME)/dotfiles"
     let log_file = $"($env.HOME)/.local/share/git-auto-push-watcher-macos.log"
@@ -59,6 +84,18 @@ def main [] {
                 let message = $"[($timestamp)] Local changes detected - auto-pushing"
                 $message | save --append $log_file
                 print $message
+
+                # Compile-gate: if any rust crate with dirty files fails to build,
+                # skip this cycle. Don't update last_push so we retry on the next
+                # 2-min tick once the user finishes their edit.
+                let dirty = (rust_crates_dirty)
+                let failing = (rust_crates_failing $dirty)
+                if not ($failing | is-empty) {
+                    let skip_msg = $"[($timestamp)] ⏸ Skipping push — broken rust crates: ($failing | str join ', ')"
+                    $skip_msg | save --append $log_file
+                    print $skip_msg
+                    continue
+                }
 
                 # Auto-commit and push changes
                 print "📤 Auto-committing and pushing changes..."
