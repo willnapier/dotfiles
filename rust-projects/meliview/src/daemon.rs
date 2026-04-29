@@ -28,14 +28,20 @@ const CSP_RELAXED: &str = "default-src 'self'; img-src 'self' data: https:; \
 
 #[derive(Debug, Default, Deserialize)]
 struct ViewQuery {
-    /// `?images=1` opts in to loading external images for this view.
+    /// `?images=0` blocks external images for this view; default is to load
+    /// them. The trust posture: by the time the user pressed `2m` to escalate
+    /// an email to meliview, they've already decided the sender is benign at
+    /// the listing-level triage step. Forcing them to click-to-allow images
+    /// for every render adds friction without meaningful safety benefit.
+    /// The block-images toggle remains available for the rare suspicious case.
     #[serde(default)]
     images: Option<u8>,
 }
 
 impl ViewQuery {
+    /// External images are loaded by default; only `?images=0` blocks them.
     fn images_allowed(&self) -> bool {
-        self.images.unwrap_or(0) != 0
+        self.images.unwrap_or(1) != 0
     }
 }
 
@@ -91,7 +97,9 @@ async fn render(
 }
 
 fn wrapper_html(id: &str, m: &Manifest, images_allowed: bool) -> String {
-    let body_query = if images_allowed { "?images=1" } else { "" };
+    // Iframe inherits the wrapper's view-state. Default is images on; only
+    // pass ?images=0 explicitly when the user has chosen to block.
+    let body_query = if images_allowed { "" } else { "?images=0" };
     let (subject, from, date, body) = match m {
         Manifest::Html(h) => (
             h.subject.as_deref(),
@@ -111,22 +119,24 @@ fn wrapper_html(id: &str, m: &Manifest, images_allowed: bool) -> String {
         ),
     };
     // For HTML mode, show a small banner with the toggle. PDFs don't load
-    // external images so the toggle is meaningless there.
+    // external images so the toggle is meaningless there. Default is
+    // images-allowed (you've already vetted the sender by escalating to
+    // meliview); the toggle blocks them for sus messages.
     let images_banner = match (m, images_allowed) {
-        (Manifest::Html(_), false) => format!(
+        (Manifest::Html(_), true) => format!(
             r#"<div class="img-banner">
-                External images blocked (privacy default).
+                External images loaded.
                 <form method="get" action="/v/{id}" style="display:inline;">
-                  <input type="hidden" name="images" value="1">
-                  <button type="submit" class="img-toggle">Load external images</button>
+                  <input type="hidden" name="images" value="0">
+                  <button type="submit" class="img-toggle">Block external images</button>
                 </form>
             </div>"#
         ),
-        (Manifest::Html(_), true) => format!(
+        (Manifest::Html(_), false) => format!(
             r#"<div class="img-banner img-banner-active">
-                External images loaded for this view.
+                External images blocked for this view.
                 <form method="get" action="/v/{id}" style="display:inline;">
-                  <button type="submit" class="img-toggle">Block external images</button>
+                  <button type="submit" class="img-toggle">Load external images</button>
                 </form>
             </div>"#
         ),
