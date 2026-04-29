@@ -4064,3 +4064,222 @@ fn decode_f32_le(bytes: &[u8]) -> Vec<f32> {
     out
 }
 
+// ---------------------------------------------------------------------------
+// OAuth setup handlers (pizauth bootstrap)
+//
+// Mirror the CLI flow in `crate::email::wizard::wizard_m365` and the Gmail
+// branch above it: ensure pizauth.conf has the right account block, reload
+// the daemon, and kick off the device-code flow. The HTTP endpoints expose
+// each step so the dashboard frontend can drive the flow without dropping
+// users to a terminal.
+//
+// Why split init from status: the device-code flow takes anywhere from a
+// few seconds to several minutes (user has to open a URL and sign in). We
+// must not block the HTTP request on `wait_for_token` — instead `init`
+// returns immediately and the frontend polls `status` until a token is
+// available, then calls the existing identity-save endpoint with the
+// OAuth2Command pointing at `pizauth show <account>`.
+//
+// Audit context: the CLI wizard previously assumed pizauth was bootstrapped
+// out-of-band; colleagues running the wizard fresh saw "setup complete"
+// then silent send failures at first use because no token had ever been
+// minted. These endpoints close that gap for the dashboard surface.
+// ---------------------------------------------------------------------------
+
+/// POST /api/email/oauth/preflight — is pizauth installed and on PATH?
+///
+/// Returns 200 with `{pizauth_installed, install_help}`. `install_help`
+/// is `Some(...)` when pizauth is missing or broken so the dashboard can
+/// surface the install command directly.
+pub async fn email_oauth_preflight() -> Json<serde_json::Value> {
+    match crate::email::pizauth::check_installed() {
+        Ok(()) => Json(serde_json::json!({
+            "pizauth_installed": true,
+            "install_help": serde_json::Value::Null,
+        })),
+        Err(e) => Json(serde_json::json!({
+            "pizauth_installed": false,
+            "install_help": e.to_string(),
+        })),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct OAuthInitRequest {
+    /// "m365" or "gmail".
+    pub provider: String,
+    pub email: String,
+    /// Required for "gmail"; ignored for "m365".
+    #[serde(default)]
+    pub client_id: Option<String>,
+    /// Required for "gmail"; ignored for "m365".
+    #[serde(default)]
+    pub client_secret: Option<String>,
+}
+
+/// POST /api/email/oauth/init — bootstrap a pizauth account and start the
+/// device-code flow. Returns immediately; frontend polls `/api/email/oauth/status`.
+///
+/// Response shape on success (200):
+///   {
+///     "account": "<pizauth account name>",
+///     "conf_path": "<absolute path to pizauth.conf>",
+///     "status": "ready" | "device_code_pending"
+///   }
+///
+/// "ready" means a valid token already exists (re-running setup, or pizauth
+/// was bootstrapped out-of-band). "device_code_pending" means the device-code
+/// flow has been kicked off and the user must complete browser auth — frontend
+/// should poll the status endpoint.
+///
+/// Errors return 400 with `{"error": "..."}` so the frontend can show a
+/// user-friendly message.
+pub async fn email_oauth_init(
+    Json(req): Json<OAuthInitRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    use crate::email::pizauth;
+
+    if req.email.trim().is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "email is required"})),
+        ));
+    }
+
+    // Pre-flight: fail fast with a helpful message if pizauth is missing.
+    if let Err(e) = pizauth::check_installed() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": e.to_string()})),
+        ));
+    }
+
+    // Build the account template per provider.
+    let template = match req.provider.as_str() {
+        "m365" => pizauth::PizauthAccount::cohs_graph_template(&req.email),
+        "gmail" => {
+            let client_id = req.client_id.clone().unwrap_or_default();
+            let client_secret = req.client_secret.clone().unwrap_or_default();
+            if client_id.trim().is_empty() || client_secret.trim().is_empty() {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({
+                        "error": "client_id and client_secret are required for gmail. \
+                                  Create a Google Cloud OAuth client (Desktop app) and \
+                                  paste its credentials here."
+                    })),
+                ));
+            }
+            pizauth::PizauthAccount::gmail_template(&req.email, client_id, client_secret)
+        }
+        other => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": format!("unknown provider '{}': expected 'm365' or 'gmail'", other)
+                })),
+            ));
+        }
+    };
+
+    let account_name = template.name.clone();
+    let conf_path = match pizauth::pizauth_conf_path() {
+        Ok(p) => p,
+        Err(e) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": e.to_string()})),
+            ));
+        }
+    };
+
+    // Ensure the account block exists (idempotent: AlreadyPresent | Appended).
+    if let Err(e) = pizauth::ensure_account_at(&conf_path, &template) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": format!("failed to write pizauth.conf: {}", e)
+            })),
+        ));
+    }
+
+    // Tell the running daemon to re-read the config so the (possibly new)
+    // block is reachable via `pizauth refresh`.
+    if let Err(e) = pizauth::reload_daemon() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": format!("pizauth reload failed: {}", e)
+            })),
+        ));
+    }
+
+    // If a token already exists (re-running setup, or pizauth was set up
+    // out-of-band) skip the device-code flow entirely.
+    if pizauth::validate_account(&account_name).is_ok() {
+        return Ok(Json(serde_json::json!({
+            "account": account_name,
+            "conf_path": conf_path.display().to_string(),
+            "status": "ready",
+        })));
+    }
+
+    // Kick off the device-code flow. Returns quickly — the daemon prints the
+    // verification URL to its log; the frontend polls /status until a token
+    // appears. Crucially we do NOT call wait_for_token here (would hang the
+    // HTTP request for up to 5 minutes).
+    if let Err(e) = pizauth::refresh_account(&account_name) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": format!("pizauth refresh failed: {}", e)
+            })),
+        ));
+    }
+
+    Ok(Json(serde_json::json!({
+        "account": account_name,
+        "conf_path": conf_path.display().to_string(),
+        "status": "device_code_pending",
+    })))
+}
+
+#[derive(Deserialize)]
+pub struct OAuthStatusQuery {
+    pub account: String,
+}
+
+/// GET /api/email/oauth/status?account=NAME — poll for token availability.
+///
+/// Returns `{account, has_token, error}`. `has_token: true` means the
+/// frontend can proceed to call the existing identity-save endpoint with
+/// `auth.command = "pizauth show <account>"`. `error` carries the
+/// underlying pizauth error string for diagnostic display while polling
+/// (e.g. "no token available yet" while the user is still in the browser).
+pub async fn email_oauth_status(
+    Query(params): Query<OAuthStatusQuery>,
+) -> Json<serde_json::Value> {
+    use crate::email::pizauth;
+
+    if params.account.trim().is_empty() {
+        return Json(serde_json::json!({
+            "account": "",
+            "has_token": false,
+            "error": "account query parameter is required",
+        }));
+    }
+
+    match pizauth::validate_account(&params.account) {
+        Ok(()) => Json(serde_json::json!({
+            "account": params.account,
+            "has_token": true,
+            "error": serde_json::Value::Null,
+        })),
+        Err(e) => Json(serde_json::json!({
+            "account": params.account,
+            "has_token": false,
+            "error": e.to_string(),
+        })),
+    }
+}
+

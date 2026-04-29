@@ -62,11 +62,16 @@ pub fn build_router() -> Router {
         .route("/api/email/status", get(handlers::email_status))
         .route("/api/email/setup", post(handlers::email_setup))
         .route("/api/email/test", post(handlers::email_test))
-        // OAuth setup flows (M365, Gmail) removed 2026-04-24: OAuth is now
-        // handled by pizauth (separate daemon). To add a mail identity that
-        // uses OAuth, run `pizauth refresh <account>` in a terminal, then
-        // add the identity via `practiceforge email wizard` pointing its
-        // auth field at `pizauth show <account>`.
+        // OAuth setup flow (M365, Gmail) — pizauth bootstrap exposed over HTTP
+        // so the dashboard can drive it without dropping users to a terminal.
+        // Frontend flow: POST /preflight -> POST /init -> poll GET /status
+        // until has_token=true -> POST existing /api/email/setup (or
+        // /api/email/smtp/setup) with auth.command="pizauth show <account>".
+        // See handlers::email_oauth_* for design notes; the CLI flow this
+        // mirrors is wizard::wizard_m365 (and the Gmail branch above it).
+        .route("/api/email/oauth/preflight", post(handlers::email_oauth_preflight))
+        .route("/api/email/oauth/init", post(handlers::email_oauth_init))
+        .route("/api/email/oauth/status", get(handlers::email_oauth_status))
         // SMTP single-identity add (password-based, kept for LoRA / non-OAuth accounts)
         .route("/api/email/smtp/setup", post(handlers::email_smtp_setup))
         // Remove an identity from config.toml by from_email
