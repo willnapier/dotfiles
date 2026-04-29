@@ -47,6 +47,7 @@ refresh_command = "/Users/williamnapier/.local/bin/mail-sync"
   #     2026-04-28 .gmailieer.json change removing it from
   #     ignore_remote_labels)
   query = "tag:inbox and not tag:archive and not tag:spam and not tag:trash and not tag:cohs and not tag:promotions and date:6M.."
+  tags.ignore_tags = ["inbox"]
 
   [accounts.workspace.mailboxes."promotions"]
   # Gmail's Promotions tab content. Triage at leisure rather than
@@ -117,7 +118,7 @@ refresh_command = "sh -c '/Users/williamnapier/.local/bin/mbsync cohs && /opt/ho
 
   [accounts.cohs.mailboxes."inbox"]
   query = "tag:cohs and tag:inbox and not tag:archive and not tag:spam and not tag:trash"
-  tags.ignore_tags = ["cohs"]
+  tags.ignore_tags = ["cohs", "inbox"]
 
   [accounts.cohs.mailboxes."unread"]
   query = "tag:cohs and tag:unread and not tag:trash and not tag:spam"
