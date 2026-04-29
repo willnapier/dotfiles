@@ -89,30 +89,46 @@ Email HTML (truncated to {} bytes):
 }
 
 /// Find the byte offset of the first signal token (£, Total, Order,
-/// Reservation, etc.) and return a window of `target_bytes` centered on
-/// it. Falls back to a leading-window slice if no signal is found.
-/// Always cuts at UTF-8 char boundaries.
+/// Reservation, HH:MM time, etc.) and return a window of `target_bytes`
+/// centered on it. Falls back to a leading-window slice if no signal is
+/// found. Always cuts at UTF-8 char boundaries.
 fn signal_window(html: &str, target_bytes: usize) -> String {
     if html.len() <= target_bytes {
         return html.to_string();
     }
-    // Signals ranked by specificity. We pick the EARLIEST occurrence of
-    // any of these as the anchor — typically that's the order summary
-    // (which usually appears once, near the relevant data).
-    let signals = [
+
+    // Phase 1: literal signal tokens. Cheap, pick earliest. These cover
+    // Amazon (£/Grand Total), Airbnb (Reservation/Check-in), and
+    // generic invoice-shaped emails.
+    let literal_signals = [
         "Grand Total", "Order Total", "Total Before Tax", "£", "Total:",
         "Reservation", "Check-in", "Confirmation",
+        "Depart", "Arrive", "Journey", "Trainline",
     ];
-    let earliest = signals
+    let earliest_literal = literal_signals
         .iter()
         .filter_map(|s| html.find(s))
-        .min()
-        .unwrap_or(0);
+        .min();
+
+    // Phase 2: regex-based signals for vendors whose templates don't
+    // use the literal tokens above. HH:MM is a strong signal for
+    // Trainline journey blocks.
+    static TIME_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let time_re = TIME_RE.get_or_init(|| regex::Regex::new(r"\b\d{2}:\d{2}\b").unwrap());
+    let earliest_time = time_re.find(html).map(|m| m.start());
+
+    // Pick the earliest of all candidates.
+    let anchor = match (earliest_literal, earliest_time) {
+        (Some(a), Some(b)) => a.min(b),
+        (Some(a), None) => a,
+        (None, Some(b)) => b,
+        (None, None) => 0,
+    };
 
     // Center the window: half before anchor, half after.
     let half = target_bytes / 2;
-    let start_raw = earliest.saturating_sub(half);
-    let end_raw = (earliest + half).min(html.len());
+    let start_raw = anchor.saturating_sub(half);
+    let end_raw = (anchor + half).min(html.len());
 
     // Snap to UTF-8 boundaries.
     let mut start = start_raw;

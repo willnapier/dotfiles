@@ -43,8 +43,12 @@ impl VendorExtractor for TrainlineJourneys {
     }
 
     fn required_fields(&self) -> &'static [&'static str] {
-        // Destination is the most reliable; time/date are nice-to-have.
-        &["destination"]
+        // Destination + time captures "where + when" — the minimum
+        // useful journey record. Fare and date are nice-to-have but
+        // missing them doesn't render a row useless. Honest health
+        // metric: a journey with destination but no time isn't yet
+        // "complete", so LLM should fire to fill the gap.
+        &["destination", "journey_time"]
     }
 
     fn llm_schema(&self) -> Option<&'static str> {
