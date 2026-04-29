@@ -50,6 +50,7 @@ com.williamnapier.pizauth-dump
 com.williamnapier.practiceforge-dashboard
 com.williamnapier.practiceforge-maintain
 com.williamnapier.state-capture
+com.williamnapier.subscriptions-check
 com.williamnapier.syncthing-monitor
 com.williamnapier.system-health-check
 com.williamnapier.tm3-diary-live
