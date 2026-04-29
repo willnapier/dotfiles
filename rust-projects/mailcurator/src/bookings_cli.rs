@@ -339,20 +339,30 @@ fn print_bookings(items: &[(&Booking, usize)], emails_in_store: usize, unique_bo
         return;
     }
     println!(
-        "{:<22}  {:<22}  {:<22}  {:<10}  {:>5}",
+        "{:<24}  {:<28}  {:<28}  {:<10}  {:>5}",
         "property", "checkin", "checkout", "guests", "msgs"
     );
-    println!("{}", "─".repeat(88));
+    println!("{}", "─".repeat(102));
     for (b, n) in items {
         let property = b.property.as_deref().unwrap_or("—");
-        let checkin = compound_when(b.checkin.as_deref(), b.checkin_time.as_deref());
-        let checkout = compound_when(b.checkout.as_deref(), b.checkout_time.as_deref());
+        let checkin_raw = compound_when(b.checkin.as_deref(), b.checkin_time.as_deref());
+        let checkout_raw = compound_when(b.checkout.as_deref(), b.checkout_time.as_deref());
+        let checkin = if checkin_raw == "—" {
+            checkin_raw
+        } else {
+            ensure_year(&checkin_raw, b.received)
+        };
+        let checkout = if checkout_raw == "—" {
+            checkout_raw
+        } else {
+            ensure_year(&checkout_raw, b.received)
+        };
         let guests = b.guests.as_deref().unwrap_or("—");
         println!(
-            "{:<22}  {:<22}  {:<22}  {:<10}  {n:>5}",
-            truncate(property, 22),
-            truncate(&checkin, 22),
-            truncate(&checkout, 22),
+            "{:<24}  {:<28}  {:<28}  {:<10}  {n:>5}",
+            truncate(property, 24),
+            truncate(&checkin, 28),
+            truncate(&checkout, 28),
             truncate(guests, 10)
         );
     }
@@ -373,6 +383,23 @@ fn compound_when(date: Option<&str>, time: Option<&str>) -> String {
         (Some(d), _) => d.to_string(),
         (None, Some(t)) => t.to_string(),
         (None, None) => "—".to_string(),
+    }
+}
+
+/// Append the received-email's year to a date string when the date
+/// doesn't already include a 4-digit year. Reservations get sent close
+/// to the booking date, so received-year is a reliable fallback. If
+/// `date` is already qualified (e.g. "Friday 24 April 2026") it's
+/// returned unchanged.
+fn ensure_year(date: &str, received: Option<DateTime<Utc>>) -> String {
+    static YEAR_RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+    let year_re = YEAR_RE.get_or_init(|| Regex::new(r"\b\d{4}\b").unwrap());
+    if year_re.is_match(date) {
+        return date.to_string();
+    }
+    match received {
+        Some(d) => format!("{date} {}", d.year()),
+        None => date.to_string(),
     }
 }
 

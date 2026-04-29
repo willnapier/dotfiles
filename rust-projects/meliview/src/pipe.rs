@@ -12,15 +12,27 @@ pub fn run(port: u16, no_open: bool) -> Result<()> {
         bail!("no input on stdin (run via `meli :pipe-message meliview pipe`)");
     }
 
-    let msg = MessageParser::default()
-        .parse(&bytes[..])
-        .context("parsing RFC822 message")?;
-
     let id = uuid::Uuid::new_v4().to_string();
     let dir = manifest::cache_root()?.join(&id);
     std::fs::create_dir_all(&dir).with_context(|| format!("mkdir {}", dir.display()))?;
 
-    let m = build_manifest(&msg, &dir)?;
+    // Try parsing the input as-is first (the patched-meli + x-meli-pipe-message
+    // path delivers a complete RFC822 message). If parsing yields nothing
+    // useful — typically because we got bare HTML bytes from a vanilla MUA
+    // that doesn't honour x-meli-pipe-message — fall back to wrapping the
+    // input in a minimal RFC822 envelope and re-parsing. cid: assets won't
+    // resolve in the fallback path (sibling parts aren't in scope) but at
+    // least the HTML body renders without a hard error.
+    let m = match MessageParser::default().parse(&bytes[..]) {
+        Some(msg) if has_renderable_part(&msg) => build_manifest(&msg, &dir)?,
+        _ => {
+            let wrapped = wrap_bare_html(&bytes);
+            let msg = MessageParser::default()
+                .parse(&wrapped[..])
+                .context("parsing RFC822 message (after bare-HTML envelope wrap)")?;
+            build_manifest(&msg, &dir)?
+        }
+    };
     manifest::write(&dir, &m)?;
 
     let url = format!("http://127.0.0.1:{port}/v/{id}");
@@ -29,6 +41,35 @@ pub fn run(port: u16, no_open: bool) -> Result<()> {
         let _ = open::that_detached(&url);
     }
     Ok(())
+}
+
+/// True when the parsed message has at least one HTML body or a PDF
+/// attachment — i.e. something `build_manifest` can render.
+fn has_renderable_part(msg: &Message<'_>) -> bool {
+    if msg.html_body_count() > 0 {
+        return true;
+    }
+    msg.attachments().any(|p| {
+        p.content_type()
+            .map(|ct| {
+                ct.ctype().eq_ignore_ascii_case("application")
+                    && ct.subtype().is_some_and(|s| s.eq_ignore_ascii_case("pdf"))
+            })
+            .unwrap_or(false)
+    })
+}
+
+/// Wrap bare HTML (or anything resembling it) in a minimal RFC822 envelope so
+/// mail-parser produces a Message with one html_body. Used as the fallback
+/// path when the upstream MUA gave us part-only bytes rather than the full
+/// envelope. No cid: resolution possible from this path because sibling
+/// parts are not in scope.
+fn wrap_bare_html(body: &[u8]) -> Vec<u8> {
+    const HEADERS: &[u8] = b"Content-Type: text/html; charset=utf-8\r\nSubject: (HTML part)\r\n\r\n";
+    let mut out = Vec::with_capacity(HEADERS.len() + body.len());
+    out.extend_from_slice(HEADERS);
+    out.extend_from_slice(body);
+    out
 }
 
 fn build_manifest(msg: &Message<'_>, dir: &std::path::Path) -> Result<Manifest> {
