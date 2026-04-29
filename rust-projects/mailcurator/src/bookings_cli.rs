@@ -81,21 +81,27 @@ fn opt_string(obj: &Value, key: &str) -> Option<String> {
 /// Without normalisation, "Friday 24 April 2026", "Fri 24 Apr", and
 /// "24 Apr" all looked like distinct bookings.
 fn identity_key(b: &Booking) -> Option<String> {
-    if let Some(r) = &b.booking_ref {
-        if !r.is_empty() {
-            return Some(format!("ref:{r}"));
-        }
-    }
+    // Prefer (property, parsed-date) over booking_ref because the same
+    // physical stay may have ref extracted on some emails (LLM) and not
+    // others (deterministic only) — keying on ref first split a single
+    // stay across multiple groups. Property + normalised date is stable
+    // across all emails about a booking.
     match (&b.property, &b.checkin) {
         (Some(p), Some(c)) if !p.is_empty() && !c.is_empty() => {
             let prop = normalise_property(p);
             let date = parse_checkin(c)
                 .map(|d| d.format("%Y-%m-%d").to_string())
                 .unwrap_or_else(|| c.to_lowercase());
-            Some(format!("pc:{prop}|{date}"))
+            return Some(format!("pc:{prop}|{date}"));
         }
-        _ => None,
+        _ => {}
     }
+    if let Some(r) = &b.booking_ref {
+        if !r.is_empty() {
+            return Some(format!("ref:{r}"));
+        }
+    }
+    None
 }
 
 /// Lowercase + collapse whitespace + strip emoji-ish chars so
@@ -110,20 +116,56 @@ fn normalise_property(s: &str) -> String {
     cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// Collapse rows that refer to the same booking. Returns one canonical
-/// row per identity (the most-information-rich, then most-recent), plus
-/// a count of how many source emails were collapsed. Orphans (no
-/// identity_key) pass through individually with count=1.
+/// Collapse rows that refer to the same booking. Two-pass:
+///   1. Group by primary key (property+checkin preferred, ref as fallback).
+///      Track which refs appear within property-keyed groups.
+///   2. Merge any ref-keyed group into its property-keyed parent if a
+///      member of the property-keyed group has the same ref. Handles
+///      the case where some emails have ref extracted (LLM) and others
+///      don't, but they're all the same physical stay.
+///
+/// Singletons (no identifying fields at all) pass through with count=1.
 fn dedupe_by_booking(rows: Vec<Booking>) -> Vec<(Booking, usize)> {
     use std::collections::HashMap;
     let mut groups: HashMap<String, Vec<Booking>> = HashMap::new();
     let mut singletons: Vec<Booking> = Vec::new();
+    // ref → property-keyed group it belongs to (populated from records
+    // whose primary key is property+checkin AND who have a booking_ref).
+    let mut ref_to_pc_group: HashMap<String, String> = HashMap::new();
+
     for b in rows {
         match identity_key(&b) {
-            Some(k) => groups.entry(k).or_default().push(b),
+            Some(k) => {
+                if k.starts_with("pc:") {
+                    if let Some(r) = b.booking_ref.as_deref() {
+                        if !r.is_empty() {
+                            ref_to_pc_group.insert(r.to_string(), k.clone());
+                        }
+                    }
+                }
+                groups.entry(k).or_default().push(b);
+            }
             None => singletons.push(b),
         }
     }
+
+    // Second pass: merge ref-keyed groups into matching property-keyed groups.
+    let ref_keys: Vec<String> = groups
+        .keys()
+        .filter(|k| k.starts_with("ref:"))
+        .cloned()
+        .collect();
+    for ref_key in ref_keys {
+        let r = ref_key.strip_prefix("ref:").unwrap();
+        if let Some(target) = ref_to_pc_group.get(r).cloned() {
+            if target != ref_key {
+                if let Some(members) = groups.remove(&ref_key) {
+                    groups.entry(target).or_default().extend(members);
+                }
+            }
+        }
+    }
+
     let mut out: Vec<(Booking, usize)> = Vec::new();
     for (_, mut group) in groups {
         let count = group.len();
@@ -139,7 +181,6 @@ fn dedupe_by_booking(rows: Vec<Booking>) -> Vec<(Booking, usize)> {
     for s in singletons {
         out.push((s, 1));
     }
-    // Sort newest-first by canonical's received date.
     out.sort_by(|a, b| b.0.received.cmp(&a.0.received));
     out
 }
