@@ -163,10 +163,13 @@ pub enum EnsureResult {
 ///
 /// Returns a helpful error with install instructions if not. Doesn't
 /// check whether the daemon is running — that's a separate concern,
-/// surfaced by the first command that needs it.
+/// surfaced by the first command that needs it. (We use `pizauth info`
+/// rather than `--version` — pizauth doesn't support `--version`, and
+/// `info` is a fast no-arg command that returns 0 when the binary is
+/// reachable, regardless of whether the daemon is running.)
 pub fn check_installed() -> Result<()> {
     let out = Command::new("pizauth")
-        .arg("--version")
+        .arg("info")
         .output()
         .map_err(|e| {
             anyhow!(
@@ -177,10 +180,23 @@ pub fn check_installed() -> Result<()> {
                  \nFull setup: ~/Assistants/shared/CLI-EMAIL-SYSTEM.md"
             )
         })?;
-    if !out.status.success() {
-        bail!("pizauth --version exited non-zero — installation may be broken");
+    // `info` returns 0 if the binary is found AND can talk to the daemon.
+    // If the daemon isn't running, exit code is non-zero with a "no
+    // daemon" message — but the binary IS installed. Distinguish:
+    if out.status.success() {
+        return Ok(());
     }
-    Ok(())
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    // "no pizauth-server" or "connection refused" means the binary is
+    // present but the daemon isn't running. That's a separate issue
+    // we let downstream operations (refresh, show) surface.
+    if stderr.contains("pizauth-server") || stderr.contains("Connection refused") {
+        return Ok(());
+    }
+    bail!(
+        "pizauth info failed unexpectedly: {}",
+        stderr.trim()
+    )
 }
 
 /// Path to pizauth.conf. Honours `PIZAUTH_CONF` env override (handy for tests).
