@@ -130,12 +130,28 @@ enum Command {
     /// Report extractor field-population rates per policy. When a policy
     /// declares a `vendor_module`, the module's required_fields drive a
     /// "health" % — sustained drops in this number indicate a vendor
-    /// changed their email template (drift detection feeds Session 3's
-    /// `improve-extractor` Karpathy loop).
+    /// changed their email template.
+    ///
+    /// Each run also appends a snapshot to coverage-history.jsonl so that
+    /// `--drift` can compare current rates to the previous snapshot and
+    /// flag regressions. Drop the `--drift` flag while iterating on a new
+    /// extractor — first snapshot for a policy is always silent.
     Coverage {
         /// Limit to one policy
         #[arg(short, long)]
         policy: Option<String>,
+        /// Compare current coverage to the most recent prior snapshot per
+        /// policy and flag drops >= --threshold pp. Exits with non-zero
+        /// status when drift is detected (cron-friendly).
+        #[arg(long)]
+        drift: bool,
+        /// Drift threshold in percentage points. Default 10.
+        #[arg(long, default_value_t = 10.0)]
+        threshold: f64,
+        /// Skip writing today's snapshot to coverage-history.jsonl. Useful
+        /// when you're spot-checking and don't want to pollute the history.
+        #[arg(long)]
+        no_snapshot: bool,
     },
     /// Query the orders.jsonl extracted store. The point of
     /// extract-and-destroy is that this becomes the authoritative source
@@ -434,10 +450,21 @@ fn main() -> Result<()> {
                 );
             }
         }
-        Command::Coverage { policy } => {
+        Command::Coverage { policy, drift, threshold, no_snapshot } => {
             let cfg = config::load(&path)?;
             let reports = coverage::report_all(&cfg.policies, policy.as_deref())?;
             coverage::print_reports(&reports);
+            if drift {
+                println!();
+                let d = coverage::drift(&reports, threshold)?;
+                coverage::print_drift(&d);
+                if !d.findings.is_empty() {
+                    std::process::exit(1);
+                }
+            }
+            if !no_snapshot {
+                coverage::snapshot(&reports)?;
+            }
         }
         Command::Orders { action } => match action {
             OrdersAction::List { year, limit } => orders_cli::list(year, limit)?,

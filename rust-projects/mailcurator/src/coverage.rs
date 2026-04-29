@@ -9,6 +9,8 @@
 //! --policy amazon-orders` (one policy).
 
 use anyhow::{Context, Result};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -29,6 +31,10 @@ pub struct Report {
     pub required_fields: Vec<String>,
     /// Records where ALL required_fields are populated.
     pub fully_covered: usize,
+    /// Vendor module name (if any), separate from required_fields so the
+    /// "no vendor module" header can be distinguished from "vendor module
+    /// with empty required_fields" (e.g. tesla).
+    pub vendor_module: Option<String>,
 }
 
 impl Report {
@@ -128,6 +134,7 @@ fn build_report(pol: &Policy, category: &str) -> Result<Report> {
         field_population,
         required_fields,
         fully_covered,
+        vendor_module: pol.vendor_module.clone(),
     })
 }
 
@@ -146,22 +153,199 @@ fn is_populated(v: &Value) -> bool {
 const BOOKKEEPING_FIELDS: &[&str] =
     &["extracted_at", "message_id", "policy", "ts", "source"];
 
+/// One row in coverage-history.jsonl. Captured once per `coverage` run so
+/// `coverage --drift` can compare current rates to the most recent prior
+/// snapshot and flag vendor template-change regressions.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Snapshot {
+    pub ts: String, // RFC3339
+    pub policy: String,
+    pub category: String,
+    pub records: usize,
+    pub fully_covered: usize,
+    pub health_pct: Option<f64>,
+    pub field_pct: BTreeMap<String, f64>,
+}
+
+impl Snapshot {
+    fn from_report(r: &Report) -> Self {
+        let mut field_pct = BTreeMap::new();
+        for (k, v) in &r.field_population {
+            if r.records > 0 {
+                field_pct.insert(k.clone(), 100.0 * (*v as f64) / (r.records as f64));
+            }
+        }
+        Self {
+            ts: Utc::now().to_rfc3339(),
+            policy: r.policy_name.clone(),
+            category: r.category.clone(),
+            records: r.records,
+            fully_covered: r.fully_covered,
+            health_pct: r.health_pct(),
+            field_pct,
+        }
+    }
+}
+
+/// Append one row per report to coverage-history.jsonl.
+pub fn snapshot(reports: &[Report]) -> Result<()> {
+    let path = store::store_dir()?.join("coverage-history.jsonl");
+    use std::fs::OpenOptions;
+    use std::io::Write;
+    let mut f = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .with_context(|| format!("opening {}", path.display()))?;
+    for r in reports {
+        let s = Snapshot::from_report(r);
+        let line = serde_json::to_string(&s)?;
+        writeln!(f, "{line}")?;
+    }
+    Ok(())
+}
+
+/// Read the entire snapshot history.
+fn read_history() -> Result<Vec<Snapshot>> {
+    let path = store::store_dir()?.join("coverage-history.jsonl");
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let f = File::open(&path)?;
+    let mut out = Vec::new();
+    for line in BufReader::new(f).lines() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        if let Ok(s) = serde_json::from_str::<Snapshot>(&line) {
+            out.push(s);
+        }
+    }
+    Ok(out)
+}
+
+/// Compare current reports against the most recent prior snapshot per
+/// policy (last snapshot strictly older than the current run's timestamp).
+/// Reports policies whose `health_pct` dropped by `threshold_pp` percentage
+/// points or more, or where any required field's coverage dropped by that
+/// margin. Exit code intent: caller propagates 1 if any drift detected, 0
+/// otherwise — useful for cron + alerting.
+pub fn drift(reports: &[Report], threshold_pp: f64) -> Result<DriftReport> {
+    let history = read_history()?;
+    let now = Utc::now();
+    let mut findings = Vec::new();
+
+    for current_report in reports {
+        let current = Snapshot::from_report(current_report);
+        // Find latest historical snapshot for this policy that's strictly older.
+        let prior = history
+            .iter()
+            .filter(|s| s.policy == current.policy)
+            .filter(|s| {
+                DateTime::parse_from_rfc3339(&s.ts)
+                    .ok()
+                    .map(|t| t.with_timezone(&Utc) < now)
+                    .unwrap_or(false)
+            })
+            .max_by_key(|s| s.ts.clone()); // RFC3339 sort is lexicographic = chronological
+
+        let Some(prior) = prior else {
+            continue; // first snapshot for this policy
+        };
+
+        // Health drop?
+        if let (Some(h_now), Some(h_prev)) = (current.health_pct, prior.health_pct) {
+            let drop = h_prev - h_now;
+            if drop >= threshold_pp {
+                findings.push(Finding {
+                    policy: current.policy.clone(),
+                    field: "<health>".into(),
+                    prev: h_prev,
+                    current: h_now,
+                    drop,
+                    prev_ts: prior.ts.clone(),
+                });
+            }
+        }
+
+        // Per-field drops on required fields.
+        for f in &current_report.required_fields {
+            let now_v = current.field_pct.get(f).copied().unwrap_or(0.0);
+            let prev_v = prior.field_pct.get(f).copied();
+            if let Some(prev_v) = prev_v {
+                let drop = prev_v - now_v;
+                if drop >= threshold_pp {
+                    findings.push(Finding {
+                        policy: current.policy.clone(),
+                        field: f.clone(),
+                        prev: prev_v,
+                        current: now_v,
+                        drop,
+                        prev_ts: prior.ts.clone(),
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(DriftReport { findings })
+}
+
+#[derive(Debug)]
+pub struct DriftReport {
+    pub findings: Vec<Finding>,
+}
+
+#[derive(Debug)]
+pub struct Finding {
+    pub policy: String,
+    pub field: String,
+    pub prev: f64,
+    pub current: f64,
+    pub drop: f64,
+    pub prev_ts: String,
+}
+
+pub fn print_drift(d: &DriftReport) {
+    if d.findings.is_empty() {
+        println!("no drift detected");
+        return;
+    }
+    println!("DRIFT DETECTED in {} field/policy combination(s):", d.findings.len());
+    println!();
+    println!(
+        "{:<25}  {:<15}  {:>9}  {:>9}  {:>6}  {}",
+        "policy", "field", "previous", "current", "drop", "prev snapshot"
+    );
+    for f in &d.findings {
+        println!(
+            "{:<25}  {:<15}  {:>8.1}%  {:>8.1}%  {:>5.1}%  {}",
+            f.policy, f.field, f.prev, f.current, f.drop, f.prev_ts
+        );
+    }
+    println!();
+    println!("Likely causes:");
+    println!("  - Vendor changed their email template (CSS classes, table structure)");
+    println!("  - New email type from this sender that the extractor doesn't yet handle");
+    println!("Next: `mailcurator preview <policy>` to sample messages for the failing field.");
+}
+
 pub fn print_reports(reports: &[Report]) {
     if reports.is_empty() {
         println!("no policies with extractors found");
         return;
     }
     for r in reports {
-        let header = match r.health_pct() {
-            Some(h) => format!(
-                "=== {} (jsonl: {}, records: {}, health: {:.1}% required-coverage) ===",
-                r.policy_name, r.category, r.records, h
-            ),
-            None => format!(
-                "=== {} (jsonl: {}, records: {}, no vendor module) ===",
-                r.policy_name, r.category, r.records
-            ),
+        let suffix = match (r.health_pct(), &r.vendor_module) {
+            (Some(h), _) => format!("health: {h:.1}% required-coverage"),
+            (None, Some(m)) => format!("vendor module: {m} (no required_fields declared)"),
+            (None, None) => "no vendor module".to_string(),
         };
+        let header = format!(
+            "=== {} (jsonl: {}, records: {}, {}) ===",
+            r.policy_name, r.category, r.records, suffix
+        );
         println!("{header}");
         if r.records == 0 {
             println!("  (no records yet — run `mailcurator run` first)");
