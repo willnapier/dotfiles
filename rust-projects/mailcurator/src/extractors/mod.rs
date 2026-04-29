@@ -47,6 +47,33 @@ pub trait VendorExtractor {
     /// HTML parser, etc.) — extractor batches must not stop on one bad
     /// message.
     fn extract(&self, parsed: &ParsedMail, html: &str) -> Result<Map<String, Value>>;
+
+    /// JSON Schema describing the LLM-fallback output shape for this
+    /// vendor. When `Some`, the extractor framework will call
+    /// `llm::extract_structured` with this schema for any required field
+    /// that the deterministic `extract` left missing. Must align with the
+    /// field names returned by `extract` so the cached LLM output merges
+    /// cleanly into the same record.
+    ///
+    /// Default `None` = no LLM fallback for this vendor.
+    fn llm_schema(&self) -> Option<&'static str> {
+        None
+    }
+
+    /// Per-field validator. Called on every value the LLM proposes for a
+    /// field belonging to this extractor; if it returns false, the field
+    /// is rejected (treated as if the LLM hadn't returned it). Use this
+    /// to catch hallucinations — e.g. for `order_id`, accept only the
+    /// canonical `\d{3}-\d{7}-\d{7}` form. Default accepts any
+    /// non-empty string.
+    #[allow(unused_variables)] // default impl ignores both args
+    fn validate_field(&self, field: &str, value: &Value) -> bool {
+        match value {
+            Value::String(s) => !s.is_empty(),
+            Value::Null => false,
+            _ => true,
+        }
+    }
 }
 
 /// Dispatch a vendor module by name. Returns None for unknown names —
