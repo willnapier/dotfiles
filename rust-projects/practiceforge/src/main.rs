@@ -1211,37 +1211,6 @@ async fn main() -> anyhow::Result<()> {
                     )?;
                     println!("✓ Email sent to {}", to);
                 }
-                EmailAction::GraphSend => {
-                    use anyhow::Context as _;
-                    use crate::email::auth::CommandTokenSource;
-                    use crate::email::backends::{graph::GraphTransport, GraphConfig};
-                    use std::io::Read;
-                    use std::sync::Arc;
-
-                    // Read full MIME from stdin — whatever Meli/mutt/etc pipe in.
-                    let mut mime = Vec::new();
-                    std::io::stdin()
-                        .read_to_end(&mut mime)
-                        .context("reading MIME message from stdin")?;
-                    if mime.is_empty() {
-                        anyhow::bail!("empty MIME message on stdin — nothing to send");
-                    }
-
-                    let transport = GraphTransport::new(
-                        GraphConfig::default(),
-                        // pizauth `cohs-graph` account = Microsoft Graph CLI
-                        // public client + Mail.Send scope. Separate from the
-                        // `cohs` account (Thunderbird client, IMAP/SMTP only)
-                        // because COHS tenant admin-consents these two
-                        // clients separately.
-                        Arc::new(CommandTokenSource::new("pizauth show cohs-graph")),
-                    );
-                    transport.send_mime(&mime)?;
-                    // sendmail-style tools are silent on stdout so the MUA
-                    // doesn't mistake it for error output. Confirmation to
-                    // stderr for interactive runs.
-                    eprintln!("✓ Sent via Graph ({} bytes MIME)", mime.len());
-                }
                 EmailAction::GmailPushTags { push } => {
                     crate::email::gmail_push_tags::run(!push)?;
                 }
@@ -1311,9 +1280,10 @@ async fn main() -> anyhow::Result<()> {
                         backend: BackendConfig::Graph(GraphConfig::default()),
                         auth: AuthConfig::OAuth2Command {
                             // `cohs-graph` pizauth account = Microsoft Graph CLI
-                            // public client with Mail.Send scope. See the
-                            // graph-send handler above for why this is separate
-                            // from the `cohs` account.
+                            // public client with Mail.Send scope. Separate from
+                            // the `cohs` account (Thunderbird client, IMAP/SMTP
+                            // only) because COHS tenant admin-consents these
+                            // two client apps independently.
                             command: "pizauth show cohs-graph".into(),
                         },
                     };
