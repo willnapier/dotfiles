@@ -22,6 +22,15 @@
 # than routing into an existing wezterm mux. The fresh process gives
 # the macOS Window Server a foreground requestor, so the new window
 # can come to front (per the Karabiner-spawn HID context).
+#
+# Idempotency: pkill any existing meli first. meli's notmuch backend
+# caches per-row tag state at query time and doesn't refresh tags on
+# already-listed rows when Ctrl+R fires — only new arrivals get fresh
+# tags. So a long-lived meli accumulates stale tag chips. Pre-killing
+# means one keypress = one fresh meli, regardless of prior state.
+# WezTerm's default exit_behavior=CloseOnCleanExit closes the old
+# window automatically once meli has exited.
+pkill -x meli 2>/dev/null
 exec /opt/homebrew/bin/wezterm \
   --config 'default_prog={"/opt/homebrew/bin/meli"}' \
   start \

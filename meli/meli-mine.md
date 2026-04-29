@@ -86,6 +86,14 @@ internally before the shortcut dispatcher sees it.
 There is no in-app last-refreshed indicator. Diagnostic logs:
 `~/.local/share/mail-sync.log`, `~/Library/Logs/mbsync-cohs.log`.
 
+**Tag staleness caveat.** meli's notmuch backend caches per-row tag state at
+query time. `Ctrl+R` re-runs the query and surfaces new arrivals, but does NOT
+refresh tag chips on already-listed rows. Tags applied to existing messages by
+the post-new hook, mailcurator, or label-sync processes won't appear in a
+long-lived meli session even after `Ctrl+R`. The `email` launcher mitigates
+this by `pkill`-ing any existing meli before spawning a fresh one — the
+convention is **one keypress = one fresh meli**, not "keep meli open all day".
+
 # READING
 
 `Enter` on a row opens the envelope view. `Up`/`Down` (NAV layer) scroll the body —

@@ -139,6 +139,18 @@ cohs: \f[CR]mbsync cohs && notmuch new\f[R]
 There is no in\-app last\-refreshed indicator.
 Diagnostic logs: \f[CR]\(ti/.local/share/mail\-sync.log\f[R],
 \f[CR]\(ti/Library/Logs/mbsync\-cohs.log\f[R].
+.PP
+\f[B]Tag staleness caveat.\f[R] meli\(cqs notmuch backend caches
+per\-row tag state at query time.
+\f[CR]Ctrl+R\f[R] re\-runs the query and surfaces new arrivals, but does
+NOT refresh tag chips on already\-listed rows.
+Tags applied to existing messages by the post\-new hook, mailcurator, or
+label\-sync processes won\(cqt appear in a long\-lived meli session even
+after \f[CR]Ctrl+R\f[R].
+The \f[CR]email\f[R] launcher mitigates this by \f[CR]pkill\f[R]\-ing
+any existing meli before spawning a fresh one \(em the convention is
+\f[B]one keypress = one fresh meli\f[R], not \(lqkeep meli open all
+day\(rq.
 .SH READING
 \f[CR]Enter\f[R] on a row opens the envelope view.
 \f[CR]Up\f[R]/\f[CR]Down\f[R] (NAV layer) scroll the body \(em
