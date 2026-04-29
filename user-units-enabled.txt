@@ -17,6 +17,7 @@ frecency-daemon.timer
 git-auto-pull-watcher.service
 git-auto-push-watcher.service
 gmail-push-tags-watchdog.timer
+gmail-push-tags.timer
 gnome-keyring-daemon.socket
 helix-undo-cleanup.timer
 link-service.service
