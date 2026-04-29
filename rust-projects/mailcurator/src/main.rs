@@ -28,10 +28,13 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 mod config;
+mod coverage;
 mod eval;
 mod extract;
+mod extractors;
 mod llm;
 mod notmuch;
+mod orders_cli;
 mod policy;
 mod store;
 mod subscriptions;
@@ -123,6 +126,56 @@ enum Command {
         /// Max messages to show per policy
         #[arg(short, long, default_value_t = 30)]
         limit: usize,
+    },
+    /// Report extractor field-population rates per policy. When a policy
+    /// declares a `vendor_module`, the module's required_fields drive a
+    /// "health" % — sustained drops in this number indicate a vendor
+    /// changed their email template (drift detection feeds Session 3's
+    /// `improve-extractor` Karpathy loop).
+    Coverage {
+        /// Limit to one policy
+        #[arg(short, long)]
+        policy: Option<String>,
+    },
+    /// Query the orders.jsonl extracted store. The point of
+    /// extract-and-destroy is that this becomes the authoritative source
+    /// of truth for past Amazon orders — reach for `mailcurator orders`
+    /// before grepping email.
+    Orders {
+        #[command(subcommand)]
+        action: OrdersAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum OrdersAction {
+    /// List orders, newest first.
+    List {
+        /// Filter to a specific year.
+        #[arg(long)]
+        year: Option<i32>,
+        /// Maximum rows.
+        #[arg(short, long, default_value_t = 30)]
+        limit: usize,
+    },
+    /// Find orders whose subject, order_id, or items contain a substring.
+    Find {
+        /// Substring to search (case-insensitive).
+        query: String,
+        #[arg(short, long, default_value_t = 30)]
+        limit: usize,
+    },
+    /// Show orders received in the last N days.
+    Recent {
+        #[arg(long, default_value_t = 30)]
+        days: i64,
+        #[arg(short, long, default_value_t = 30)]
+        limit: usize,
+    },
+    /// Sum totals (where populated). Useful for tax-year aggregation.
+    Total {
+        #[arg(long)]
+        year: Option<i32>,
     },
 }
 
@@ -381,6 +434,17 @@ fn main() -> Result<()> {
                 );
             }
         }
+        Command::Coverage { policy } => {
+            let cfg = config::load(&path)?;
+            let reports = coverage::report_all(&cfg.policies, policy.as_deref())?;
+            coverage::print_reports(&reports);
+        }
+        Command::Orders { action } => match action {
+            OrdersAction::List { year, limit } => orders_cli::list(year, limit)?,
+            OrdersAction::Find { query, limit } => orders_cli::find(&query, limit)?,
+            OrdersAction::Recent { days, limit } => orders_cli::recent(days, limit)?,
+            OrdersAction::Total { year } => orders_cli::total(year)?,
+        },
         Command::Subscriptions { action } => match action {
             SubscriptionsAction::List => subscriptions::list()?,
             SubscriptionsAction::Check { alert, buffer_days } => {

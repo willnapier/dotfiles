@@ -94,7 +94,12 @@ fn order_id_re() -> &'static Regex {
 
 fn eta_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
-    R.get_or_init(|| Regex::new(r"(?i)arriving\s+([\w\s,]+?)(?:[,\.]|$)").unwrap())
+    // 1–3 words of letters after "arriving". Bounded length stops the lazy
+    // match from greedy-eating the whole subject; alphabetic-only avoids
+    // running into "Tuesday: 2 items" style separators or numeric dates.
+    R.get_or_init(|| {
+        Regex::new(r"(?i)arriving\s+([A-Za-z][a-zA-Z]*(?:\s+[A-Za-z][a-zA-Z]*){0,2})").unwrap()
+    })
 }
 
 /// Find a `<th>` cell whose text matches one of the labels, return the

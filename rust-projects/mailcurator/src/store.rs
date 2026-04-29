@@ -27,11 +27,16 @@ pub fn store_dir() -> Result<PathBuf> {
     Ok(dir)
 }
 
+/// Path to the jsonl file for a category — `<store>/<category>.jsonl`.
+/// Returned regardless of whether the file currently exists.
+pub fn category_path(category: &str) -> Result<PathBuf> {
+    Ok(store_dir()?.join(format!("{category}.jsonl")))
+}
+
 /// Append a single record as one JSON line to <store_dir>/<category>.jsonl.
 #[allow(dead_code)] // v2+ extractors will use this
 pub fn append_record<T: Serialize>(category: &str, record: &T) -> Result<()> {
-    let dir = store_dir()?;
-    let file = dir.join(format!("{category}.jsonl"));
+    let file = category_path(category)?;
     append_record_at(&file, record)
 }
 

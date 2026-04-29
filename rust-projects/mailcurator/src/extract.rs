@@ -226,6 +226,16 @@ fn apply_regex(pattern: &str, text: &str) -> Result<Option<String>> {
     }).flatten())
 }
 
+/// Decode message body to raw HTML if a text/html part exists; empty
+/// string otherwise. Used by vendor extractor modules that need the DOM
+/// structure (CSS selectors) rather than HTML-stripped plain text.
+/// Quoted-printable / base64 transfer encodings are decoded by mailparse.
+fn decode_body_to_html(parsed: &mailparse::ParsedMail) -> String {
+    let mut bodies: HashMap<String, String> = HashMap::new();
+    collect_bodies(parsed, &mut bodies);
+    bodies.remove("text/html").unwrap_or_default()
+}
+
 /// Decode message body to plain text. For multipart messages, prefer
 /// text/plain; fall back to HTML-stripped text/html. Walks all parts.
 fn decode_body_to_text(parsed: &mailparse::ParsedMail) -> Result<String> {
