@@ -1,0 +1,234 @@
+//! Generic hotel booking extractor for vendors with similar structure.
+//!
+//! Used by Marriott, Premier Inn, Travelodge, Hotels.com, Agoda, Expedia.
+//! Covers most chain-hotel email layouts where the data is reasonably
+//! standardised across the industry: check-in / check-out / property /
+//! confirmation number / total. Vendors with distinctive layouts get
+//! their own dedicated module (booking_com, airbnb).
+//!
+//! The vendor name is set per-policy via a `[[policy.extractor.field]]`
+//! literal field — extractor itself is vendor-agnostic.
+
+use anyhow::Result;
+use mailparse::{MailHeaderMap, ParsedMail};
+use regex::Regex;
+use scraper::Html;
+use serde_json::{Map, Value};
+use std::sync::OnceLock;
+
+use super::VendorExtractor;
+
+const GENERIC_HOTEL_LLM_SCHEMA: &str = r#"{
+  "checkin": "string|null — check-in date as written, e.g. \"24 April 2026\" or \"Saturday, 4 July 2026\"",
+  "checkin_time": "string|null — check-in time HH:MM if shown",
+  "checkout": "string|null — check-out date in the same format",
+  "checkout_time": "string|null — check-out time HH:MM if shown",
+  "guests": "string|null — guest count, e.g. \"2 adults\", \"1 adult, 2 children\"",
+  "nights": "string|null — number of nights as integer",
+  "rooms": "string|null — number of rooms as integer",
+  "property": "string|null — hotel/inn name (often in subject)",
+  "location": "string|null — city/town",
+  "booking_ref": "string|null — confirmation / reservation / itinerary number",
+  "total": "string|null — total cost in pounds as decimal"
+}"#;
+
+pub struct GenericHotel;
+
+impl VendorExtractor for GenericHotel {
+    fn name(&self) -> &'static str {
+        "generic_hotel"
+    }
+
+    fn required_fields(&self) -> &'static [&'static str] {
+        &["checkin", "checkout"]
+    }
+
+    fn llm_schema(&self) -> Option<&'static str> {
+        Some(GENERIC_HOTEL_LLM_SCHEMA)
+    }
+
+    fn validate_field(&self, field: &str, value: &Value) -> bool {
+        match (field, value) {
+            ("booking_ref", Value::String(s)) => {
+                // Hotel reservation numbers vary widely (Marriott uses
+                // 9-digit numerics, others alphanumeric). Just bound length.
+                !s.is_empty() && s.len() <= 30 && s.chars().any(|c| c.is_alphanumeric())
+            }
+            ("total", Value::String(s)) => {
+                s.parse::<f64>().map(|f| (0.0..=100_000.0).contains(&f)).unwrap_or(false)
+            }
+            ("checkin_time" | "checkout_time", Value::String(s)) => {
+                static R: OnceLock<Regex> = OnceLock::new();
+                let re = R.get_or_init(|| Regex::new(r"^\d{2}:\d{2}$").unwrap());
+                re.is_match(s)
+            }
+            ("property" | "location", Value::String(s)) => {
+                !s.is_empty() && s.len() < 120 && s.chars().any(|c| c.is_alphabetic())
+            }
+            _ => match value {
+                Value::String(s) => !s.is_empty(),
+                Value::Null => false,
+                _ => true,
+            },
+        }
+    }
+
+    fn extract(&self, parsed: &ParsedMail, html: &str) -> Result<Map<String, Value>> {
+        let mut out = Map::new();
+        let subject = parsed.headers.get_first_value("Subject").unwrap_or_default();
+
+        // Property name is often "<Hotel Name> - <Subject suffix>" or
+        // just appears at the start of the subject for chain hotels.
+        if let Some(p) = property_from_subject(&subject) {
+            out.insert("property".into(), Value::String(p));
+        }
+
+        if !html.is_empty() {
+            let text = strip_to_text(html);
+
+            // Check-in / Check-out variations:
+            //   "Check-in: Friday, 24 April 2026"
+            //   "Arriving 24 April 2026"
+            //   "Check in 24 Apr 2026, 15:00"
+            if let Some(d) = first_capture(&checkin_re(), &text) {
+                out.insert("checkin".into(), Value::String(d));
+            }
+            if let Some(d) = first_capture(&checkout_re(), &text) {
+                out.insert("checkout".into(), Value::String(d));
+            }
+            if let Some(t) = first_capture(&total_re(), &text) {
+                out.insert("total".into(), Value::String(t));
+            }
+            if let Some(c) = first_capture(&confirmation_re(), &text) {
+                out.insert("booking_ref".into(), Value::String(c));
+            }
+            if let Some(g) = first_capture(&guests_re(), &text) {
+                out.insert("guests".into(), Value::String(g));
+            }
+            if let Some(n) = first_capture(&nights_re(), &text) {
+                out.insert("nights".into(), Value::String(n));
+            }
+        }
+
+        Ok(out)
+    }
+}
+
+fn property_from_subject(subject: &str) -> Option<String> {
+    static R: OnceLock<Regex> = OnceLock::new();
+    let re = R.get_or_init(|| {
+        // Common chain-hotel subject patterns:
+        //   "Leeds Marriott Hotel Copy of Stay Folio for 21-12-23"  → Leeds Marriott Hotel
+        //   "Booking confirmation: <Hotel>"                          → <Hotel>
+        //   "Your reservation at <Hotel>"                            → <Hotel>
+        //   "<Hotel>: Your stay confirmation"                        → <Hotel>
+        Regex::new(r"(?i)(?:reservation at|booking at|confirmation:|stay at|your stay at|booking confirmation for|confirmed at)\s+(.+?)(?:\s*$|[,\.])")
+            .unwrap()
+    });
+    if let Some(m) = re.captures(subject).and_then(|c| c.get(1)) {
+        return Some(m.as_str().trim().to_string());
+    }
+    // Fallback heuristic: subject starts with hotel name followed by
+    // "Hotel" and a colon/dash separator.
+    static FALLBACK_RE: OnceLock<Regex> = OnceLock::new();
+    let fb = FALLBACK_RE.get_or_init(|| {
+        Regex::new(r"^([\w\s'&]+?(?:Hotel|Inn|Lodge|Resort|Suites|Manor|House|B&B))\b")
+            .unwrap()
+    });
+    fb.captures(subject)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str().trim().to_string())
+}
+
+fn checkin_re() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| {
+        Regex::new(
+            r"(?i)(?:Check[\-\s]?in|Arrival|Arriving)[:\s]+([\w\s,]+?\d{4})",
+        )
+        .unwrap()
+    })
+}
+
+fn checkout_re() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| {
+        Regex::new(
+            r"(?i)(?:Check[\-\s]?out|Departure|Departing|Leaving)[:\s]+([\w\s,]+?\d{4})",
+        )
+        .unwrap()
+    })
+}
+
+fn total_re() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| {
+        Regex::new(r"(?i)(?:Total|Grand Total|Total cost|Total price|You paid)[:\s]+£\s*(\d+(?:\.\d{2})?)")
+            .unwrap()
+    })
+}
+
+fn confirmation_re() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| {
+        // "Confirmation: ABC123", "Reservation 12345678", "Itinerary #12345",
+        // "Booking ref ABC123"
+        Regex::new(
+            r"(?i)(?:Confirmation\s*[#:]?|Reservation\s*[#:]?|Itinerary\s*[#:]?|Booking\s+(?:ref(?:erence)?|number)\s*[:#]?)\s*([A-Z0-9-]{6,20})",
+        )
+        .unwrap()
+    })
+}
+
+fn guests_re() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| {
+        Regex::new(r"(\d+\s+(?:adult|guest)s?(?:[,\s]+\d+\s+(?:child|children))?)").unwrap()
+    })
+}
+
+fn nights_re() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| Regex::new(r"(\d+)\s+nights?\b").unwrap())
+}
+
+fn first_capture(re: &Regex, text: &str) -> Option<String> {
+    re.captures(text)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str().trim().to_string())
+}
+
+fn strip_to_text(html: &str) -> String {
+    let doc = Html::parse_document(html);
+    let mut out = String::new();
+    for node in doc.root_element().text() {
+        let t = node.trim();
+        if !t.is_empty() {
+            if !out.is_empty() {
+                out.push(' ');
+            }
+            out.push_str(t);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_test(raw: &str) -> ParsedMail<'_> {
+        mailparse::parse_mail(raw.as_bytes()).unwrap()
+    }
+
+    #[test]
+    fn property_from_marriott_subject() {
+        let raw = "Subject: Leeds Marriott Hotel Copy of Stay Folio for 21-12-23\n\n";
+        let parsed = parse_test(raw);
+        let r = GenericHotel.extract(&parsed, "").unwrap();
+        assert_eq!(
+            r.get("property").and_then(|v| v.as_str()),
+            Some("Leeds Marriott Hotel")
+        );
+    }
+}

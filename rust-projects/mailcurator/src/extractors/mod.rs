@@ -21,6 +21,7 @@ use serde_json::{Map, Value};
 pub mod airbnb_bookings;
 pub mod amazon_orders;
 pub mod booking_com_bookings;
+pub mod generic_hotel;
 pub mod tesla;
 pub mod trainline_journeys;
 
@@ -118,6 +119,7 @@ pub fn dispatch(name: &str) -> Option<Box<dyn VendorExtractor>> {
         "airbnb_bookings" => Some(Box::new(airbnb_bookings::AirbnbBookings)),
         "tesla" => Some(Box::new(tesla::Tesla)),
         "booking_com_bookings" => Some(Box::new(booking_com_bookings::BookingComBookings)),
+        "generic_hotel" => Some(Box::new(generic_hotel::GenericHotel)),
         _ => None,
     }
 }
@@ -130,5 +132,6 @@ pub fn known_extractors() -> &'static [&'static str] {
         "airbnb_bookings",
         "tesla",
         "booking_com_bookings",
+        "generic_hotel",
     ]
 }
