@@ -270,8 +270,8 @@ fn send_verification(entry: &IdentityEntry) -> Result<String> {
 /// implied by the backend variant and the user's story. Gmail with an
 /// app-password attempt that fails is almost always 2FA-not-enabled or
 /// the wrong app-password. SMTP against M365 is tenant policy. Graph
-/// needs `cohs-oauth-graph init` done first (Graph scope, distinct from
-/// `cohs-oauth` which covers the Outlook/IMAP scopes).
+/// needs the relevant pizauth account initialized first (Graph scope,
+/// distinct from any Outlook/IMAP-scoped token pool).
 fn failure_hint(entry: &IdentityEntry) -> &'static str {
     match (&entry.backend, &entry.auth) {
         (BackendConfig::Smtp(smtp), AuthConfig::Password { .. })
@@ -290,9 +290,9 @@ fn failure_hint(entry: &IdentityEntry) -> &'static str {
         }
         (BackendConfig::Graph(_), _) => {
             "Graph sends require a valid Graph-scoped OAuth token (distinct \
-             from Outlook-scoped tokens). Run `cohs-oauth-graph init` in \
-             another terminal to complete the device-code flow with the \
-             Microsoft Graph CLI public client, then retry."
+             from Outlook-scoped tokens). Run `pizauth refresh <account>` in \
+             another terminal to complete the device-code flow against the \
+             Microsoft Graph public client, then retry."
         }
         (BackendConfig::Smtp(_), _) => {
             "Double-check host, port, and credentials. Port 465 → TLS; port 587 \
@@ -521,13 +521,15 @@ fn wizard_gmail(initial_email: Option<&str>) -> Result<IdentityEntry> {
         }
         "b" => {
             eprintln!(
-                "\nNote: PracticeForge does not ship a Gmail OAuth helper yet. You will \
-                 need to supply a command that prints a fresh access token to stdout \
-                 (e.g. a wrapper around `oauth2l` or `oauth2ms`)."
+                "\nNote: PracticeForge consumes OAuth tokens via an external broker. \
+                 The recommended setup is pizauth (https://github.com/ltratt/pizauth): \
+                 add a `gmail` account block to ~/.config/pizauth/pizauth.conf, run \
+                 `pizauth refresh gmail` once for the device-code flow, then accept \
+                 the default below. Any other token-printer command also works."
             );
             let command = prompt(
                 "OAuth token command",
-                Some("oauth2ms-gmail show"),
+                Some("pizauth show gmail"),
             )?;
             (
                 AuthMode::XOAuth2,
@@ -574,26 +576,29 @@ fn wizard_m365(initial_email: Option<&str>) -> Result<IdentityEntry> {
 
     // Graph sendMail needs the Mail.Send scope. Microsoft's OAuth2 won't
     // issue a single token spanning both outlook.office.com and
-    // graph.microsoft.com resources, AND Thunderbird's public client app
-    // isn't registered for Graph resources anyway. So the Graph send path
-    // uses a *separate* OAuth flow with Microsoft Graph CLI's public
-    // client ID — handled by the `cohs-oauth-graph` helper. The IMAP/SMTP
-    // side (if the tenant ever re-enables it) continues to use plain
-    // `cohs-oauth`, which is Thunderbird-client + Outlook scopes.
+    // graph.microsoft.com resources, AND many tenants admin-consent
+    // separate client apps for IMAP/SMTP vs Graph. So the Graph send
+    // path uses a *separate* pizauth account (conventionally named
+    // <tenant>-graph) with the Microsoft Graph public client ID and
+    // Mail.Send scope. The IMAP/SMTP side, if the tenant ever re-enables
+    // SMTP AUTH, would use a different pizauth account (Thunderbird
+    // client + Outlook scopes).
     eprintln!(
-        "\nBefore this identity can send mail, you must have completed the \
-         Graph-scope device-code flow at least once. If you haven't, open \
-         another terminal and run `cohs-oauth-graph init` now, then return \
-         here."
+        "\nBefore this identity can send mail, the corresponding pizauth \
+         account must be initialized. Add a Graph-scoped account block to \
+         ~/.config/pizauth/pizauth.conf (Mail.Send scope, offline_access, \
+         Microsoft Graph public client), then run `pizauth refresh <account>` \
+         once to complete the device-code flow. The default below assumes \
+         the account is named `cohs-graph`."
     );
     eprintln!(
-        "If you also want COHS IMAP access (not needed for Graph send), run \
-         `cohs-oauth init` separately — it's a distinct token pool."
+        "If you also want IMAP access (separate token pool), configure a \
+         second pizauth account with Outlook scopes."
     );
 
     let command = prompt(
         "OAuth token command (Graph-scope)",
-        Some("cohs-oauth-graph show"),
+        Some("pizauth show cohs-graph"),
     )?;
 
     Ok(IdentityEntry {
@@ -1009,7 +1014,7 @@ mod tests {
             primary: false,
             backend: BackendConfig::Graph(GraphConfig::default()),
             auth: AuthConfig::OAuth2Command {
-                command: "cohs-oauth-graph show".to_string(),
+                command: "pizauth show cohs-graph".to_string(),
             },
         }
     }
@@ -1087,7 +1092,7 @@ signature = ""
         assert_eq!(graph_row["auth"]["type"].as_str().unwrap(), "oauth2_command");
         assert_eq!(
             graph_row["auth"]["command"].as_str().unwrap(),
-            "cohs-oauth-graph show"
+            "pizauth show cohs-graph"
         );
     }
 

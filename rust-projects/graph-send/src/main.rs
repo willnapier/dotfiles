@@ -7,16 +7,39 @@
 //!
 //! Usage:
 //!     <mua produces MIME on stdout> | graph-send
+//!     <mua produces MIME on stdout> | graph-send --account my-other-graph
 //!
 //! Token source: `pizauth show <account>`. Defaults to `cohs-graph`.
 //! Override with --account or GRAPH_SEND_ACCOUNT env var.
 //!
-//! Why this is its own binary (not part of practiceforge): practiceforge
-//! is a clinical practice product that happens to send mail. Generic
-//! mail sending — for meli, scripts, the Helix-driven compose flow —
-//! shouldn't depend on a clinical app. Practiceforge's own mail (invoice
-//! emails, letters to GPs, dashboard OTP) still calls its in-tree Graph
-//! transport directly; this binary serves the rest of the system.
+//! Scope of this binary
+//! --------------------
+//! Generic, non-clinical mail. Used by:
+//!   - meli's COHS send_mail line (~/dotfiles/meli/config.toml)
+//!   - any future Helix-driven compose pipeline
+//!   - any script piping MIME for COHS or other Graph-only tenants
+//!
+//! NOT used by practiceforge for its own outbound mail (invoice emails,
+//! GP letters, dashboard OTP). Practiceforge has its own in-tree Graph
+//! transport (`crates/.../email/backends/graph.rs`) — sibling, not child.
+//! Both consume `pizauth show <account>` for tokens; both POST to the
+//! same `/me/sendMail` endpoint. The duplication is intentional: the
+//! standalone binary's typed-stdin API is wrong for practiceforge's
+//! programmatic structured-Envelope sends.
+//!
+//! Multi-practitioner deployment
+//! -----------------------------
+//! The default account name `cohs-graph` is a *convention*, not a
+//! William-specific value — any COHS practitioner who follows the
+//! convention can install this binary unchanged and have it work. For
+//! personal/non-COHS Graph identities (e.g. a colleague's own M365
+//! tenant), use `--account <their-account-name>`.
+//!
+//! Colleagues using practiceforge as a deployed clinical product DO NOT
+//! need this binary on their machine. Their clinical mail flows through
+//! practiceforge's in-tree transport. This binary is part of an
+//! optional generic mail stack (meli + msmtp + graph-send) that lives
+//! alongside practiceforge for users who also want a TUI mail reader.
 
 use anyhow::{anyhow, bail, Context, Result};
 use data_encoding::BASE64;
