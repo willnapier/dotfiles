@@ -54,14 +54,20 @@ refresh_command = "/Users/williamnapier/.local/bin/mail-sync"
   # auto-archiving (preserves signal-spotting in commercial mail).
   # Same date constraint as inbox so the view stays bounded.
   query = "tag:inbox and tag:promotions and not tag:archive and not tag:spam and not tag:trash and not tag:cohs and date:6M.."
+  tags.ignore_tags = ["inbox", "promotions"]
 
   [accounts.workspace.mailboxes."unread"]
   query = "tag:unread"
+  tags.ignore_tags = ["unread"]
 
   [accounts.workspace.mailboxes."sent"]
   query = "tag:sent"
+  tags.ignore_tags = ["sent"]
 
   [accounts.workspace.mailboxes."archive"]
+  # Note: no tag:archive in the query (defined as the absence of inbox/
+  # trash/spam/sent), so messages here don't carry an "archive" tag —
+  # nothing to hide. ignore_tags omitted intentionally.
   query = "not tag:inbox and not tag:trash and not tag:spam and not tag:sent"
 
   [accounts.workspace.mailboxes."all-mail"]
@@ -122,27 +128,27 @@ refresh_command = "sh -c '/Users/williamnapier/.local/bin/mbsync cohs && /opt/ho
 
   [accounts.cohs.mailboxes."unread"]
   query = "tag:cohs and tag:unread and not tag:trash and not tag:spam"
-  tags.ignore_tags = ["cohs"]
+  tags.ignore_tags = ["cohs", "unread"]
 
   [accounts.cohs.mailboxes."sent"]
   query = "tag:cohs and tag:sent"
-  tags.ignore_tags = ["cohs"]
+  tags.ignore_tags = ["cohs", "sent"]
 
   [accounts.cohs.mailboxes."drafts"]
   query = "tag:cohs and tag:drafts"
-  tags.ignore_tags = ["cohs"]
+  tags.ignore_tags = ["cohs", "drafts"]
 
   [accounts.cohs.mailboxes."archive"]
   query = "tag:cohs and tag:archive"
-  tags.ignore_tags = ["cohs"]
+  tags.ignore_tags = ["cohs", "archive"]
 
   [accounts.cohs.mailboxes."trash"]
   query = "tag:cohs and tag:trash"
-  tags.ignore_tags = ["cohs"]
+  tags.ignore_tags = ["cohs", "trash"]
 
   [accounts.cohs.mailboxes."spam"]
   query = "tag:cohs and tag:spam"
-  tags.ignore_tags = ["cohs"]
+  tags.ignore_tags = ["cohs", "spam"]
 
 # Composing: no global override needed — each account's send_mail handles
 # its own path (Gmail: msmtp + pizauth; COHS: practiceforge graph-send).
