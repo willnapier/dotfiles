@@ -13,6 +13,15 @@ use std::sync::OnceLock;
 
 use super::VendorExtractor;
 
+const AIRBNB_LLM_SCHEMA: &str = r#"{
+  "checkin": "string|null — check-in date as written in the email, e.g. \"24 Apr 2026\" or \"April 24, 2026\"",
+  "checkout": "string|null — check-out date in the same format",
+  "host": "string|null — host's first name",
+  "property": "string|null — listing name (e.g. \"Brook Cottage\", \"Carninney Lane\")",
+  "booking_ref": "string|null — Airbnb confirmation code, typically HMxxxxxxxx",
+  "total": "string|null — total paid in pounds as decimal, e.g. \"450.00\""
+}"#;
+
 pub struct AirbnbBookings;
 
 impl VendorExtractor for AirbnbBookings {
@@ -24,6 +33,34 @@ impl VendorExtractor for AirbnbBookings {
         // Subjects with date ranges are the most reliable signal; everything
         // else is supplementary.
         &["checkin", "checkout"]
+    }
+
+    fn llm_schema(&self) -> Option<&'static str> {
+        Some(AIRBNB_LLM_SCHEMA)
+    }
+
+    fn validate_field(&self, field: &str, value: &Value) -> bool {
+        match (field, value) {
+            ("booking_ref", Value::String(s)) => {
+                static R: OnceLock<Regex> = OnceLock::new();
+                let re = R.get_or_init(|| Regex::new(r"^HM[A-Z0-9]{6,10}$").unwrap());
+                re.is_match(s)
+            }
+            ("total", Value::String(s)) => {
+                s.parse::<f64>().map(|f| (0.0..=100_000.0).contains(&f)).unwrap_or(false)
+            }
+            ("host" | "property", Value::String(s)) => {
+                !s.is_empty() && s.len() < 80 && s.chars().any(|c| c.is_alphabetic())
+            }
+            ("checkin" | "checkout", Value::String(s)) => {
+                !s.is_empty() && s.chars().any(|c| c.is_ascii_digit())
+            }
+            _ => match value {
+                Value::String(s) => !s.is_empty(),
+                Value::Null => false,
+                _ => true,
+            },
+        }
     }
 
     fn extract(&self, parsed: &ParsedMail, html: &str) -> Result<Map<String, Value>> {
