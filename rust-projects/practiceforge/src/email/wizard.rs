@@ -520,20 +520,77 @@ fn wizard_gmail(initial_email: Option<&str>) -> Result<IdentityEntry> {
             )
         }
         "b" => {
+            use crate::email::pizauth;
+            use std::time::Duration;
+
+            pizauth::check_installed()?;
+
             eprintln!(
-                "\nNote: PracticeForge consumes OAuth tokens via an external broker. \
-                 The recommended setup is pizauth (https://github.com/ltratt/pizauth): \
-                 add a `gmail` account block to ~/.config/pizauth/pizauth.conf, run \
-                 `pizauth refresh gmail` once for the device-code flow, then accept \
-                 the default below. Any other token-printer command also works."
+                "\nGmail OAuth requires a Google Cloud OAuth client (PracticeForge \
+                 doesn't ship a shared client yet — colleagues each set up their own \
+                 in https://console.cloud.google.com/apis/credentials). The wizard \
+                 will write the pizauth account block for you; you supply the \
+                 client_id and client_secret from your Google Cloud project."
             );
-            let command = prompt(
-                "OAuth token command",
-                Some("pizauth show gmail"),
-            )?;
+
+            // Skip the credential prompts if the account block is already
+            // present — the user already configured pizauth before, and
+            // re-prompting risks them entering different (and wrong) values.
+            let account_name = "gmail";
+            let conf_path = pizauth::pizauth_conf_path()?;
+            if !pizauth::account_exists_at(&conf_path, account_name)? {
+                let client_id = prompt("Google OAuth client_id", None)?;
+                let client_secret = prompt_password("Google OAuth client_secret")?;
+                if client_id.trim().is_empty() || client_secret.trim().is_empty() {
+                    bail!("client_id and client_secret are both required");
+                }
+                let template = pizauth::PizauthAccount::gmail_template(
+                    &email,
+                    client_id,
+                    client_secret,
+                );
+                match pizauth::ensure_account_at(&conf_path, &template)? {
+                    pizauth::EnsureResult::AlreadyPresent => unreachable!(
+                        "checked existence above"
+                    ),
+                    pizauth::EnsureResult::Appended => {
+                        eprintln!(
+                            "✓ Appended `{account_name}` block to {}",
+                            conf_path.display()
+                        );
+                    }
+                }
+            } else {
+                eprintln!(
+                    "✓ pizauth account `{account_name}` already configured at {}",
+                    conf_path.display()
+                );
+            }
+
+            pizauth::reload_daemon()?;
+
+            if pizauth::validate_account(account_name).is_ok() {
+                eprintln!("✓ pizauth `{account_name}` already has a valid token");
+            } else {
+                eprintln!(
+                    "\nLaunching device-code flow. Pizauth will print a verification URL \
+                     — open it in your browser, sign in as `{email}`, and approve the \
+                     mail.google.com scope. The wizard will continue automatically \
+                     once a token is available."
+                );
+                pizauth::refresh_account(account_name)?;
+                pizauth::wait_for_token(
+                    account_name,
+                    Duration::from_secs(300),
+                    Duration::from_secs(2),
+                )?;
+            }
+
             (
                 AuthMode::XOAuth2,
-                AuthConfig::OAuth2Command { command },
+                AuthConfig::OAuth2Command {
+                    command: format!("pizauth show {account_name}"),
+                },
             )
         }
         _ => bail!("Invalid choice: {}", choice),
@@ -560,11 +617,17 @@ fn wizard_gmail(initial_email: Option<&str>) -> Result<IdentityEntry> {
 // ---------------------------------------------------------------------------
 
 fn wizard_m365(initial_email: Option<&str>) -> Result<IdentityEntry> {
+    use crate::email::pizauth;
+    use std::time::Duration;
+
     eprintln!(
         "\nM365 tenants commonly block SMTP AUTH. This wizard configures \
          Microsoft Graph for sending (no SMTP), which works regardless of \
          tenant SMTP policy."
     );
+
+    // Phase 1: pre-flight — fail early if pizauth isn't installed.
+    pizauth::check_installed()?;
 
     let email = match initial_email {
         Some(e) => e.to_string(),
@@ -574,32 +637,55 @@ fn wizard_m365(initial_email: Option<&str>) -> Result<IdentityEntry> {
     let from_name = prompt("Display name", Some(&default_name))?;
     let label = prompt("Label (short nickname for this identity)", Some("Microsoft 365"))?;
 
-    // Graph sendMail needs the Mail.Send scope. Microsoft's OAuth2 won't
-    // issue a single token spanning both outlook.office.com and
-    // graph.microsoft.com resources, AND many tenants admin-consent
-    // separate client apps for IMAP/SMTP vs Graph. So the Graph send
-    // path uses a *separate* pizauth account (conventionally named
-    // <tenant>-graph) with the Microsoft Graph public client ID and
-    // Mail.Send scope. The IMAP/SMTP side, if the tenant ever re-enables
-    // SMTP AUTH, would use a different pizauth account (Thunderbird
-    // client + Outlook scopes).
-    eprintln!(
-        "\nBefore this identity can send mail, the corresponding pizauth \
-         account must be initialized. Add a Graph-scoped account block to \
-         ~/.config/pizauth/pizauth.conf (Mail.Send scope, offline_access, \
-         Microsoft Graph public client), then run `pizauth refresh <account>` \
-         once to complete the device-code flow. The default below assumes \
-         the account is named `cohs-graph`."
-    );
-    eprintln!(
-        "If you also want IMAP access (separate token pool), configure a \
-         second pizauth account with Outlook scopes."
-    );
+    // Phase 2: bootstrap pizauth.conf with the COHS Graph block (idempotent).
+    // Convention: account name `cohs-graph`. The Thunderbird msal public
+    // client `9e5f94bc-...` is admin-consented in the COHS tenant; non-COHS
+    // tenants would need their own admin-consented client app (deferred —
+    // see Tenancy Posture in architecture.md).
+    let template = pizauth::PizauthAccount::cohs_graph_template(&email);
+    let account_name = template.name.clone();
+    let conf_path = pizauth::pizauth_conf_path()?;
 
-    let command = prompt(
-        "OAuth token command (Graph-scope)",
-        Some("pizauth show cohs-graph"),
-    )?;
+    match pizauth::ensure_account_at(&conf_path, &template)? {
+        pizauth::EnsureResult::AlreadyPresent => {
+            eprintln!(
+                "✓ pizauth account `{account_name}` already configured at {}",
+                conf_path.display()
+            );
+        }
+        pizauth::EnsureResult::Appended => {
+            eprintln!(
+                "✓ Appended `{account_name}` block to {}",
+                conf_path.display()
+            );
+        }
+    }
+
+    // Tell the daemon to re-read pizauth.conf so the new block is live.
+    pizauth::reload_daemon()?;
+
+    // Phase 3: device-code flow. If a token already exists (re-running the
+    // wizard, or pizauth was already set up out-of-band), skip the flow.
+    // Otherwise kick it off and poll until the user completes auth in
+    // their browser.
+    if pizauth::validate_account(&account_name).is_ok() {
+        eprintln!("✓ pizauth `{account_name}` already has a valid token");
+    } else {
+        eprintln!(
+            "\nLaunching device-code flow. Pizauth will print a verification URL \
+             to its log — open it in your browser, sign in as `{email}`, and \
+             approve the Microsoft Graph Mail.Send scope. The wizard will \
+             continue automatically once a token is available."
+        );
+        pizauth::refresh_account(&account_name)?;
+        pizauth::wait_for_token(
+            &account_name,
+            Duration::from_secs(300),
+            Duration::from_secs(2),
+        )?;
+    }
+
+    let command = format!("pizauth show {account_name}");
 
     Ok(IdentityEntry {
         label,
@@ -850,6 +936,25 @@ pub fn init_config() -> Result<()> {
         Err(e) => {
             eprintln!("\n✗ Failed to send verification code: {e}");
             eprintln!("\nHint: {}", failure_hint(&entry));
+
+            // For OAuth identities, refusing to save is the correct
+            // default — the failure here almost always means the
+            // pizauth account isn't configured properly, and saving
+            // a config that points at a broken token source produces
+            // silent send failures later. SMTP+password identities
+            // get the soft "save anyway" path because their failure
+            // modes are usually credential-typos (recoverable by
+            // editing config later).
+            let is_oauth = matches!(entry.auth, AuthConfig::OAuth2Command { .. });
+            if is_oauth {
+                bail!(
+                    "OAuth identity failed verification — refusing to save \
+                     a broken config. Fix the underlying issue (re-run \
+                     `pizauth refresh <account>` or check the OAuth client \
+                     setup) and run the wizard again."
+                );
+            }
+
             if !prompt_yes_no(
                 "\nSave the identity anyway? (you can fix credentials and re-test later)",
                 false,
