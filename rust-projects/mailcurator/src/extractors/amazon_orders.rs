@@ -89,7 +89,13 @@ impl VendorExtractor for AmazonOrders {
 
 fn order_id_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
-    R.get_or_init(|| Regex::new(r"\b(20[2-5]-\d{7}-\d{7})\b").unwrap())
+    // Two Amazon order-ID forms:
+    //   - 20{2..5}-XXXXXXX-XXXXXXX  physical orders (most common)
+    //   - D{nn}-XXXXXXX-XXXXXXX     digital orders (Kindle, MP3, video)
+    // The digital form discovered 2026-04-29: modern "Amazon.co.uk order
+    // of <book>" emails for Kindle purchases use D01-style IDs, embedded
+    // only in URLs (orderID query parameter), not in the subject line.
+    R.get_or_init(|| Regex::new(r"\b((?:20[2-5]|D\d{2})-\d{7}-\d{7})\b").unwrap())
 }
 
 fn eta_re() -> &'static Regex {
