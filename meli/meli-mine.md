@@ -94,6 +94,13 @@ long-lived meli session even after `Ctrl+R`. The `email` launcher mitigates
 this by `pkill`-ing any existing meli before spawning a fresh one — the
 convention is **one keypress = one fresh meli**, not "keep meli open all day".
 
+The launcher also kickstarts both sync agents (`com.user.mail-sync` and
+`com.williamnapier.mbsync-cohs` on Mac; `mail-sync.service` and
+`mbsync-cohs.service` on Linux) at relaunch time, so a fresh meli sees mail
+that's nearly current rather than up-to-5-min stale-from-last-tick. The pulls
+run in parallel with meli init; notmuch indexing is available by the time
+you'd next press `Ctrl+R`.
+
 # READING
 
 `Enter` on a row opens the envelope view. `Up`/`Down` (NAV layer) scroll the body —

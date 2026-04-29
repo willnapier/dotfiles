@@ -14,4 +14,11 @@
 # prior state. WezTerm's default exit_behavior=CloseOnCleanExit closes
 # the old window once meli has exited.
 pkill -x meli 2>/dev/null
+
+# Kickstart both sync units in parallel with meli launch.
+# --no-block returns immediately; units run in their own systemd env.
+# notmuch is updated by the time the user gets to the first Ctrl+R
+# inside meli (or by the next launch).
+systemctl --user start --no-block mail-sync.service mbsync-cohs.service 2>/dev/null
+
 exec wezterm start --always-new-process -- meli

@@ -151,6 +151,15 @@ The \f[CR]email\f[R] launcher mitigates this by \f[CR]pkill\f[R]\-ing
 any existing meli before spawning a fresh one \(em the convention is
 \f[B]one keypress = one fresh meli\f[R], not \(lqkeep meli open all
 day\(rq.
+.PP
+The launcher also kickstarts both sync agents
+(\f[CR]com.user.mail\-sync\f[R] and
+\f[CR]com.williamnapier.mbsync\-cohs\f[R] on Mac;
+\f[CR]mail\-sync.service\f[R] and \f[CR]mbsync\-cohs.service\f[R] on
+Linux) at relaunch time, so a fresh meli sees mail that\(cqs nearly
+current rather than up\-to\-5\-min stale\-from\-last\-tick.
+The pulls run in parallel with meli init; notmuch indexing is available
+by the time you\(cqd next press \f[CR]Ctrl+R\f[R].
 .SH READING
 \f[CR]Enter\f[R] on a row opens the envelope view.
 \f[CR]Up\f[R]/\f[CR]Down\f[R] (NAV layer) scroll the body \(em

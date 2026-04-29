@@ -31,6 +31,17 @@
 # WezTerm's default exit_behavior=CloseOnCleanExit closes the old
 # window automatically once meli has exited.
 pkill -x meli 2>/dev/null
+
+# Kickstart both sync agents in parallel with meli launch. launchctl
+# kickstart is async (fire-and-forget) — the agents run on their
+# launchd-configured env/PATH, and notmuch is updated by the time the
+# user gets to the first Ctrl+R inside meli (or by the next launch).
+# This gives "fresh meli" near-real-time mail without blocking the
+# launch itself; meli queries the existing notmuch DB while the syncs
+# proceed in the background.
+launchctl kickstart "gui/$UID/com.user.mail-sync" 2>/dev/null
+launchctl kickstart "gui/$UID/com.williamnapier.mbsync-cohs" 2>/dev/null
+
 exec /opt/homebrew/bin/wezterm \
   --config 'default_prog={"/opt/homebrew/bin/meli"}' \
   start \
