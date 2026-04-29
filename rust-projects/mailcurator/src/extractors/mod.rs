@@ -74,6 +74,38 @@ pub trait VendorExtractor {
             _ => true,
         }
     }
+
+    /// Decide whether to invoke the LLM fallback for this message,
+    /// given the deterministic fields already extracted. Default impl
+    /// fires when any `required_fields` entry is missing — the standard
+    /// case for vendors like Amazon (orders) and Trainline (journeys)
+    /// where a single set of required fields applies to every matched
+    /// message.
+    ///
+    /// Override for vendors with heterogeneous email mixes (e.g. Tesla:
+    /// auth codes, service appointments, supercharger receipts) where
+    /// the relevant fields differ per email-type. Tesla overrides this
+    /// to fire only on service/supercharger/subscription kinds when
+    /// amount is missing.
+    fn wants_llm_fallback(&self, deterministic_fields: &Map<String, Value>) -> bool {
+        let required = self.required_fields();
+        if required.is_empty() {
+            return false;
+        }
+        required.iter().any(|f| {
+            !is_populated(deterministic_fields.get(*f))
+        })
+    }
+}
+
+fn is_populated(v: Option<&Value>) -> bool {
+    match v {
+        None | Some(Value::Null) => false,
+        Some(Value::String(s)) => !s.is_empty(),
+        Some(Value::Array(a)) => !a.is_empty(),
+        Some(Value::Object(o)) => !o.is_empty(),
+        _ => true,
+    }
 }
 
 /// Dispatch a vendor module by name. Returns None for unknown names —

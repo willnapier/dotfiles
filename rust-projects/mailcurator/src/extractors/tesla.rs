@@ -19,6 +19,17 @@ use std::sync::OnceLock;
 
 use super::VendorExtractor;
 
+/// LLM fallback schema. The Tesla email mix is heterogeneous (auth,
+/// service, supercharger, software, marketing) so we don't gate on any
+/// single field — the LLM is asked to populate whichever apply.
+const TESLA_LLM_SCHEMA: &str = r#"{
+  "amount": "string|null — pound amount as decimal e.g. \"24.99\". For supercharger receipts, service charges, subscription renewals.",
+  "service_date": "string|null — appointment / scheduled date as written in the email",
+  "location": "string|null — service centre or supercharger station name and city",
+  "kwh": "string|null — energy delivered in kWh (supercharger sessions only)",
+  "vehicle": "string|null — vehicle name or model identifier if mentioned"
+}"#;
+
 pub struct Tesla;
 
 impl VendorExtractor for Tesla {
@@ -32,6 +43,48 @@ impl VendorExtractor for Tesla {
         // than fail-bait. Drift detection (Session 3) keys off any field's
         // population rate trend instead.
         &[]
+    }
+
+    fn llm_schema(&self) -> Option<&'static str> {
+        // Even though required_fields is empty, the LLM fallback CAN still
+        // fire — but only when the deterministic extractor produces a
+        // record with all required fields missing (which is vacuously
+        // true here). We gate on `kind`-being-non-trivial in extract()
+        // so the LLM only triggers for service/supercharger/subscription
+        // emails where there's something to extract.
+        Some(TESLA_LLM_SCHEMA)
+    }
+
+    fn validate_field(&self, field: &str, value: &Value) -> bool {
+        match (field, value) {
+            ("amount", Value::String(s)) => {
+                s.parse::<f64>().map(|f| (0.0..=100_000.0).contains(&f)).unwrap_or(false)
+            }
+            ("kwh", Value::String(s)) => {
+                s.parse::<f64>().map(|f| (0.0..=200.0).contains(&f)).unwrap_or(false)
+            }
+            (_, Value::String(s)) => !s.is_empty() && s.len() < 200,
+            (_, Value::Null) => false,
+            _ => true,
+        }
+    }
+
+    /// Tesla's email mix is heterogeneous; required_fields is empty.
+    /// Fire LLM fallback selectively: only on service appointments,
+    /// supercharger receipts, and subscription events where there's
+    /// a financial or scheduling fact to capture. Auth codes /
+    /// access-changes / software releases / "other" are skipped — the
+    /// classifier-derived `kind` is sufficient for those.
+    fn wants_llm_fallback(&self, det: &Map<String, Value>) -> bool {
+        let kind = det.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+        let high_value_kind = matches!(kind, "service" | "supercharger" | "subscription");
+        if !high_value_kind {
+            return false;
+        }
+        // Already populated by deterministic? skip.
+        let amount_known = det.get("amount").and_then(|v| v.as_str()).is_some_and(|s| !s.is_empty());
+        let date_known = det.get("service_date").and_then(|v| v.as_str()).is_some_and(|s| !s.is_empty());
+        !(amount_known && date_known)
     }
 
     fn extract(&self, parsed: &ParsedMail, html: &str) -> Result<Map<String, Value>> {

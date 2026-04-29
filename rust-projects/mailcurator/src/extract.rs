@@ -265,19 +265,13 @@ fn extract_one(
                     }
                 };
 
-                // Tier-2: LLM fallback for required fields the
-                // deterministic pass missed. Cache per (msg_id, module);
-                // budget-capped to prevent runaway loops; provenance
-                // tracked so downstream queries can spot LLM-derived
-                // fields.
-                let required = extractor.required_fields();
-                let missing: Vec<&str> = required
-                    .iter()
-                    .copied()
-                    .filter(|f| !is_populated(det_fields.get(*f)))
-                    .collect();
-
-                if !missing.is_empty() && llm_enabled() {
+                // Tier-2: LLM fallback when the extractor opts in.
+                // Default opt-in: any required_field missing. Vendors
+                // with heterogeneous email mixes (e.g. Tesla: auth +
+                // service + supercharger) override `wants_llm_fallback`
+                // to fire conditionally based on what the deterministic
+                // pass already found.
+                if extractor.wants_llm_fallback(&det_fields) && llm_enabled() {
                     if let Some(schema) = extractor.llm_schema() {
                         // Cache key includes the module name so a future
                         // module rename (or addition of a different

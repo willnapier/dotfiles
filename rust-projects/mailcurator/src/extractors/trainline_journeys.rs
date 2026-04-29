@@ -24,6 +24,17 @@ use std::sync::OnceLock;
 
 use super::VendorExtractor;
 
+/// JSON schema for the LLM fallback. Field names match the deterministic
+/// extractor so cached output merges cleanly.
+const TRAINLINE_LLM_SCHEMA: &str = r#"{
+  "destination": "string|null — destination station name (e.g. \"London Paddington\", \"Taunton\")",
+  "origin": "string|null — origin station name",
+  "journey_date": "string|null — date of travel as written in the email, e.g. \"25 March 2026\"",
+  "journey_time": "string|null — departure time HH:MM, e.g. \"19:04\"",
+  "fare": "string|null — total fare in pounds as decimal, e.g. \"42.50\". No currency symbol.",
+  "booking_ref": "string|null — Trainline booking reference / order number"
+}"#;
+
 pub struct TrainlineJourneys;
 
 impl VendorExtractor for TrainlineJourneys {
@@ -34,6 +45,45 @@ impl VendorExtractor for TrainlineJourneys {
     fn required_fields(&self) -> &'static [&'static str] {
         // Destination is the most reliable; time/date are nice-to-have.
         &["destination"]
+    }
+
+    fn llm_schema(&self) -> Option<&'static str> {
+        Some(TRAINLINE_LLM_SCHEMA)
+    }
+
+    fn validate_field(&self, field: &str, value: &Value) -> bool {
+        match (field, value) {
+            // Times must be HH:MM.
+            ("journey_time", Value::String(s)) => {
+                static R: OnceLock<Regex> = OnceLock::new();
+                let re = R.get_or_init(|| Regex::new(r"^\d{2}:\d{2}$").unwrap());
+                re.is_match(s)
+            }
+            // Fares must parse as decimal pounds.
+            ("fare", Value::String(s)) => {
+                s.parse::<f64>().map(|f| (0.0..=10_000.0).contains(&f)).unwrap_or(false)
+            }
+            // Station names must be non-empty alphabetic-ish strings (no
+            // pure numbers or HTML cruft). Reject "0", "<br>", etc.
+            ("destination" | "origin", Value::String(s)) => {
+                !s.is_empty() && s.chars().any(|c| c.is_alphabetic()) && s.len() < 80
+            }
+            // Booking ref: short alphanumeric.
+            ("booking_ref", Value::String(s)) => {
+                static R: OnceLock<Regex> = OnceLock::new();
+                let re = R.get_or_init(|| Regex::new(r"^[A-Z0-9-]{4,15}$").unwrap());
+                re.is_match(s)
+            }
+            // Date: any non-empty string with at least one digit (year).
+            ("journey_date", Value::String(s)) => {
+                !s.is_empty() && s.chars().any(|c| c.is_ascii_digit())
+            }
+            _ => match value {
+                Value::String(s) => !s.is_empty(),
+                Value::Null => false,
+                _ => true,
+            },
+        }
     }
 
     fn extract(&self, parsed: &ParsedMail, html: &str) -> Result<Map<String, Value>> {
