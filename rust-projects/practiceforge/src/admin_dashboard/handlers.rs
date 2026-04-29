@@ -4283,3 +4283,95 @@ pub async fn email_oauth_status(
     }
 }
 
+#[derive(Deserialize)]
+pub struct OAuthSaveRequest {
+    /// "m365" or "gmail" — determines the backend variant written.
+    pub provider: String,
+    pub label: String,
+    pub from_email: String,
+    pub from_name: String,
+    /// pizauth account name (e.g. "cohs-graph", "gmail").
+    pub account: String,
+    #[serde(default)]
+    pub primary: bool,
+}
+
+/// POST /api/email/oauth/save — persist a pizauth-backed identity to
+/// config.toml after the device-code flow has minted a token.
+///
+/// Frontend flow: after `/oauth/status` returns has_token=true, the
+/// modal collects display-name + label + primary flag and posts here.
+/// We construct an IdentityEntry with the right backend (Graph for
+/// m365, SMTP+XOAUTH2 for gmail) and append via wizard::append_identity
+/// — same code path as the CLI wizard, so config shape stays uniform.
+pub async fn email_oauth_save(
+    Json(req): Json<OAuthSaveRequest>,
+) -> Json<serde_json::Value> {
+    use crate::email::backends::{
+        AuthConfig, AuthMode, BackendConfig, Encryption, GraphConfig, SmtpConfig,
+    };
+    use crate::email::wizard::{append_identity, IdentityEntry};
+
+    if req.from_email.trim().is_empty() {
+        return Json(serde_json::json!({"ok": false, "error": "from_email is required"}));
+    }
+    if req.account.trim().is_empty() {
+        return Json(serde_json::json!({"ok": false, "error": "account is required"}));
+    }
+
+    let from_name = if req.from_name.trim().is_empty() {
+        req.from_email.clone()
+    } else {
+        req.from_name.clone()
+    };
+
+    let auth = AuthConfig::OAuth2Command {
+        command: format!("pizauth show {}", req.account),
+    };
+
+    let backend = match req.provider.as_str() {
+        "m365" => BackendConfig::Graph(GraphConfig::default()),
+        "gmail" => BackendConfig::Smtp(SmtpConfig {
+            host: "smtp.gmail.com".to_string(),
+            port: 465,
+            encryption: Encryption::Tls,
+            username: req.from_email.clone(),
+            auth_mode: AuthMode::XOAuth2,
+        }),
+        other => {
+            return Json(serde_json::json!({
+                "ok": false,
+                "error": format!("unknown provider '{}': expected 'm365' or 'gmail'", other),
+            }));
+        }
+    };
+
+    let entry = IdentityEntry {
+        label: req.label.clone(),
+        from_email: req.from_email.clone(),
+        from_name,
+        primary: req.primary,
+        backend,
+        auth,
+    };
+
+    let config_path = crate::config::config_dir().join("config.toml");
+    if let Err(e) = std::fs::create_dir_all(crate::config::config_dir()) {
+        return Json(serde_json::json!({"ok": false, "error": e.to_string()}));
+    }
+    let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
+    let updated = match append_identity(&existing, &entry) {
+        Ok(s) => s,
+        Err(e) => return Json(serde_json::json!({"ok": false, "error": e.to_string()})),
+    };
+    if let Err(e) = std::fs::write(&config_path, updated) {
+        return Json(serde_json::json!({"ok": false, "error": e.to_string()}));
+    }
+
+    Json(serde_json::json!({
+        "ok": true,
+        "from_email": req.from_email,
+        "label": req.label,
+    }))
+}
+

@@ -1,0 +1,25 @@
+[package]
+name = "meliview"
+version = "0.1.0"
+edition = "2021"
+description = "Browser-handoff viewer for HTML and PDF mail parts. Pairs with meli (or any MUA via mailcap)."
+license = "AGPL-3.0-only"
+
+[dependencies]
+anyhow = "1"
+axum = "0.7"
+clap = { version = "4", features = ["derive"] }
+mail-parser = "0.10"
+mime_guess = "2"
+open = "5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net", "fs"] }
+tower-http = { version = "0.5", features = ["fs"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4"] }
+
+[profile.release]
+strip = true
+lto = "thin"

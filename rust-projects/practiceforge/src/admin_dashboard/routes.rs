@@ -72,6 +72,7 @@ pub fn build_router() -> Router {
         .route("/api/email/oauth/preflight", post(handlers::email_oauth_preflight))
         .route("/api/email/oauth/init", post(handlers::email_oauth_init))
         .route("/api/email/oauth/status", get(handlers::email_oauth_status))
+        .route("/api/email/oauth/save", post(handlers::email_oauth_save))
         // SMTP single-identity add (password-based, kept for LoRA / non-OAuth accounts)
         .route("/api/email/smtp/setup", post(handlers::email_smtp_setup))
         // Remove an identity from config.toml by from_email
