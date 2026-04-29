@@ -35,7 +35,8 @@ const BOOKING_COM_LLM_SCHEMA: &str = r#"{
   "location": "string|null — city/town/region (e.g. \"Mullion, United Kingdom\")",
   "booking_ref": "string|null — Booking.com confirmation number, typically 10 digits",
   "pin": "string|null — 4-digit PIN if shown",
-  "total": "string|null — total in pounds as decimal, e.g. \"319.80\""
+  "total": "string|null — total in pounds as decimal, e.g. \"319.80\"",
+  "property_url": "string|null — direct link to the hotel page on Booking.com, e.g. \"https://www.booking.com/hotel/gb/the-mounts-bay-inn.html\". Strip query parameters."
 }"#;
 
 pub struct BookingComBookings;
@@ -96,6 +97,10 @@ impl VendorExtractor for BookingComBookings {
         }
 
         if !html.is_empty() {
+            // Property URL from raw HTML (href attribute, not text).
+            if let Some(url) = first_capture(&booking_com_property_url_re(), html) {
+                out.insert("property_url".into(), Value::String(url));
+            }
             let text = strip_to_text(html);
 
             // Check-in / Check-out compound pattern with time window:
@@ -218,6 +223,14 @@ fn confirmation_re() -> &'static Regex {
 fn pin_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     R.get_or_init(|| Regex::new(r"PIN:\s*(\d{4})").unwrap())
+}
+
+fn booking_com_property_url_re() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    // Hotel page URL: https://www.booking.com/hotel/gb/the-mounts-bay-inn.html
+    R.get_or_init(|| {
+        Regex::new(r"(https?://(?:www\.|secure\.)?booking\.com/hotel/[a-z]+/[a-z0-9\-]+\.[a-z\-]+\.html)").unwrap()
+    })
 }
 
 fn property_body_re() -> &'static Regex {

@@ -22,6 +22,7 @@ const AIRBNB_LLM_SCHEMA: &str = r#"{
   "nights": "string|null — number of nights stayed if mentioned, just the integer e.g. \"3\"",
   "host": "string|null — host's first name",
   "property": "string|null — listing name (e.g. \"Brook Cottage\", \"Carninney Lane\")",
+  "property_url": "string|null — direct link to the listing page on Airbnb, e.g. \"https://www.airbnb.co.uk/rooms/12345678\". Strip query parameters.",
   "booking_ref": "string|null — Airbnb confirmation code, typically HMxxxxxxxx",
   "total": "string|null — total paid in pounds as decimal, e.g. \"450.00\"",
   "cleaning_fee": "string|null — cleaning fee as decimal pounds if itemised separately",
@@ -85,6 +86,11 @@ impl VendorExtractor for AirbnbBookings {
         }
 
         if !html.is_empty() {
+            // Extract property URL from raw HTML (before strip) since
+            // the URL is in href attributes, not text content.
+            if let Some(url) = first_capture(&airbnb_property_url_re(), html) {
+                out.insert("property_url".into(), Value::String(url));
+            }
             let text = strip_to_text(html);
             if let Some(host) = first_capture(&host_re(), &text) {
                 out.insert("host".into(), Value::String(host));
@@ -161,6 +167,15 @@ fn property_from_subject(subject: &str) -> Option<String> {
     re.captures(subject)
         .and_then(|c| c.get(1))
         .map(|m| m.as_str().trim().to_string())
+}
+
+fn airbnb_property_url_re() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    // Capture group 1 = full URL (no query params). Listing URLs look
+    // like https://www.airbnb.co.uk/rooms/12345678.
+    R.get_or_init(|| {
+        Regex::new(r"(https?://(?:www\.)?airbnb\.[a-z\.]+/rooms/\d+)").unwrap()
+    })
 }
 
 fn host_re() -> &'static Regex {

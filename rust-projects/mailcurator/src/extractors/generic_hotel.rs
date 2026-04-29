@@ -29,7 +29,8 @@ const GENERIC_HOTEL_LLM_SCHEMA: &str = r#"{
   "property": "string|null — hotel/inn name (often in subject)",
   "location": "string|null — city/town",
   "booking_ref": "string|null — confirmation / reservation / itinerary number",
-  "total": "string|null — total cost in pounds as decimal"
+  "total": "string|null — total cost in pounds as decimal",
+  "property_url": "string|null — direct link to the hotel page (any URL in the email that points at the hotel/listing on the vendor site, with no query params if possible)"
 }"#;
 
 pub struct GenericHotel;

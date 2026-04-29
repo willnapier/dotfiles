@@ -19,6 +19,7 @@ struct Booking {
     received: Option<DateTime<Utc>>,
     subject: String,
     property: Option<String>,
+    property_url: Option<String>,
     checkin: Option<String>,
     checkin_time: Option<String>,
     checkout: Option<String>,
@@ -27,6 +28,10 @@ struct Booking {
     guests: Option<String>,
     total: Option<String>,
     booking_ref: Option<String>,
+    /// Raw json so `show` can display every field including ones the
+    /// CLI struct doesn't model explicitly (location, pin, nights,
+    /// rooms, cleaning_fee, etc.).
+    raw: Value,
 }
 
 fn load_bookings() -> Result<Vec<Booking>> {
@@ -57,6 +62,7 @@ fn load_bookings() -> Result<Vec<Booking>> {
             received,
             subject,
             property: opt_string(&obj, "property"),
+            property_url: opt_string(&obj, "property_url"),
             checkin: opt_string(&obj, "checkin"),
             checkin_time: opt_string(&obj, "checkin_time"),
             checkout: opt_string(&obj, "checkout"),
@@ -65,6 +71,7 @@ fn load_bookings() -> Result<Vec<Booking>> {
             guests: opt_string(&obj, "guests"),
             total: opt_string(&obj, "total"),
             booking_ref: opt_string(&obj, "booking_ref"),
+            raw: obj,
         });
     }
     out.sort_by(|a, b| b.received.cmp(&a.received));
