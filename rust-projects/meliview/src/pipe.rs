@@ -6,11 +6,26 @@ use std::io::Read;
 use crate::manifest::{self, HtmlManifest, Manifest, PdfManifest};
 
 pub fn run(port: u16, no_open: bool) -> Result<()> {
+    // Watchdog: meli's mailcap dispatch waits synchronously for this process
+    // to exit. If anything in the pipeline hangs (transient races with mbsync
+    // mid-writing the maildir file, browser-launch handle weirdness on macOS,
+    // unforeseen edge cases), meli freezes indefinitely. Hard-bound the
+    // entire operation so the worst case is "browser doesn't open and meli
+    // unfreezes after 15s with an error notification" rather than a freeze
+    // that requires ^kill -TERM to recover.
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_secs(15));
+        log_step("15s timeout exceeded; aborting to unblock caller");
+        std::process::exit(124);
+    });
+
+    log_step("reading stdin");
     let mut bytes = Vec::new();
     std::io::stdin().read_to_end(&mut bytes).context("reading stdin")?;
     if bytes.is_empty() {
         bail!("no input on stdin (run via `meli :pipe-message meliview pipe`)");
     }
+    log_step(&format!("read {} bytes", bytes.len()));
 
     let id = uuid::Uuid::new_v4().to_string();
     let dir = manifest::cache_root()?.join(&id);
@@ -23,9 +38,14 @@ pub fn run(port: u16, no_open: bool) -> Result<()> {
     // input in a minimal RFC822 envelope and re-parsing. cid: assets won't
     // resolve in the fallback path (sibling parts aren't in scope) but at
     // least the HTML body renders without a hard error.
+    log_step("parsing");
     let m = match MessageParser::default().parse(&bytes[..]) {
-        Some(msg) if has_renderable_part(&msg) => build_manifest(&msg, &dir)?,
+        Some(msg) if has_renderable_part(&msg) => {
+            log_step("building manifest from full RFC822");
+            build_manifest(&msg, &dir)?
+        }
         _ => {
+            log_step("falling back to bare-HTML wrap");
             let wrapped = wrap_bare_html(&bytes);
             let msg = MessageParser::default()
                 .parse(&wrapped[..])
@@ -33,14 +53,45 @@ pub fn run(port: u16, no_open: bool) -> Result<()> {
             build_manifest(&msg, &dir)?
         }
     };
+    log_step("writing manifest");
     manifest::write(&dir, &m)?;
 
     let url = format!("http://127.0.0.1:{port}/v/{id}");
-    eprintln!("meliview: {url}");
+    log_step(&format!("opening URL {url}"));
+    // Print URL once to stdout so callers (e.g. ad-hoc CLI invocations) see
+    // it. meli's mailcap dispatch ignores child stdout when copiousoutput is
+    // unset, so this doesn't pollute meli's TUI.
+    println!("meliview: {url}");
     if !no_open {
+        log_step("opening browser");
         let _ = open::that_detached(&url);
     }
+    log_step("done");
     Ok(())
+}
+
+/// Append a timestamped diagnostic step to ~/.cache/meliview/pipe.log.
+/// Step-by-step trace makes future hangs diagnosable: when meli's mailcap
+/// dispatch wedges, the last log line tells us exactly which phase blocked.
+/// Fails silently to avoid escalating logging issues into pipeline failures.
+fn log_step(msg: &str) {
+    use std::io::Write;
+    let Ok(cache) = manifest::cache_root() else { return };
+    let _ = std::fs::create_dir_all(&cache);
+    let log_path = cache.join("pipe.log");
+    let Ok(mut f) = std::fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(&log_path)
+    else {
+        return;
+    };
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let pid = std::process::id();
+    let _ = writeln!(f, "{ts} pid={pid} {msg}");
 }
 
 /// True when the parsed message has at least one HTML body or a PDF
