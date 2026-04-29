@@ -14,12 +14,18 @@ use std::sync::OnceLock;
 use super::VendorExtractor;
 
 const AIRBNB_LLM_SCHEMA: &str = r#"{
-  "checkin": "string|null — check-in date as written in the email, e.g. \"24 Apr 2026\" or \"April 24, 2026\"",
-  "checkout": "string|null — check-out date in the same format",
+  "checkin": "string|null — check-in date as written, e.g. \"Friday 24 April 2026\" or \"24 Apr 2026\"",
+  "checkin_time": "string|null — arrive-after time on checkin day, HH:MM e.g. \"16:00\". Often shown as \"After 16:00\" or \"4:00 PM\".",
+  "checkout": "string|null — check-out date, same format as checkin",
+  "checkout_time": "string|null — depart-by time, HH:MM e.g. \"10:00\". Often shown as \"Before 10:00\" or \"10:00 AM\".",
+  "guests": "string|null — guest count summary, e.g. \"5 adults\", \"2 adults, 1 child\"",
+  "nights": "string|null — number of nights stayed if mentioned, just the integer e.g. \"3\"",
   "host": "string|null — host's first name",
   "property": "string|null — listing name (e.g. \"Brook Cottage\", \"Carninney Lane\")",
   "booking_ref": "string|null — Airbnb confirmation code, typically HMxxxxxxxx",
-  "total": "string|null — total paid in pounds as decimal, e.g. \"450.00\""
+  "total": "string|null — total paid in pounds as decimal, e.g. \"450.00\"",
+  "cleaning_fee": "string|null — cleaning fee as decimal pounds if itemised separately",
+  "service_fee": "string|null — Airbnb service fee as decimal pounds if itemised separately"
 }"#;
 
 pub struct AirbnbBookings;
@@ -89,7 +95,33 @@ impl VendorExtractor for AirbnbBookings {
             if let Some(total) = first_capture(&total_re(), &text) {
                 out.insert("total".into(), Value::String(total));
             }
-            // Long-form check-in / check-out lines (if subject didn't yield).
+            if let Some(g) = first_capture(&guests_re(), &text) {
+                out.insert("guests".into(), Value::String(g));
+            }
+            // Body has the canonical compound check-in/checkout lines:
+            //   "Check-in Friday 24 April 2026 16:00"
+            //   "Checkout Monday 27 April 2026 10:00"
+            // Extract date and time separately so the CLI can render
+            // both. If subject already populated checkin (the compact
+            // "DD–DD Mmm" form), prefer the body's richer form when
+            // available.
+            if let Some(caps) = checkin_compound_re().captures(&text) {
+                if let Some(date) = caps.get(1).map(|m| m.as_str().trim().to_string()) {
+                    out.insert("checkin".into(), Value::String(date));
+                }
+                if let Some(time) = caps.get(2).map(|m| m.as_str().to_string()) {
+                    out.insert("checkin_time".into(), Value::String(time));
+                }
+            }
+            if let Some(caps) = checkout_compound_re().captures(&text) {
+                if let Some(date) = caps.get(1).map(|m| m.as_str().trim().to_string()) {
+                    out.insert("checkout".into(), Value::String(date));
+                }
+                if let Some(time) = caps.get(2).map(|m| m.as_str().to_string()) {
+                    out.insert("checkout_time".into(), Value::String(time));
+                }
+            }
+            // Long-form check-in / check-out lines (legacy fallback).
             if !out.contains_key("checkin") {
                 if let Some(d) = first_capture(&checkin_re(), &text) {
                     out.insert("checkin".into(), Value::String(d));
@@ -161,6 +193,37 @@ fn checkout_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     R.get_or_init(|| {
         Regex::new(r"(?i)Check[\-\s]?out[:\s]+([\w\s,]+?\d{4})").unwrap()
+    })
+}
+
+/// Modern Airbnb body has compound lines:
+///   "Check-in Friday 24 April 2026 16:00"
+/// Captures (date, time) — date includes day-of-week + day + month + year.
+fn checkin_compound_re() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| {
+        Regex::new(
+            r"(?i)Check[\-\s]?in\s+((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*\s+\d{1,2}\s+\w+\s+\d{4})\s+(\d{2}:\d{2})",
+        )
+        .unwrap()
+    })
+}
+
+fn checkout_compound_re() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| {
+        Regex::new(
+            r"(?i)Check[\-\s]?out\s+((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*\s+\d{1,2}\s+\w+\s+\d{4})\s+(\d{2}:\d{2})",
+        )
+        .unwrap()
+    })
+}
+
+fn guests_re() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    // "Guests 5 adults", "Guests 2 adults, 1 child", "Guests 4 adults, 2 children"
+    R.get_or_init(|| {
+        Regex::new(r"Guests\s+(\d+\s+[\w,\s]+?)(?:\s+Get\s+the\s+app|\s+Airbnb|$|\s{2,})").unwrap()
     })
 }
 
