@@ -122,6 +122,11 @@ fn build_manifest(msg: &Message<'_>, dir: &std::path::Path) -> Result<Manifest> 
 
         // Rewrite cid: references in the HTML to relative URLs.
         let rewritten = rewrite_cid_refs(&html, &assets);
+        // Collapse anchors whose visible text is the URL itself (or otherwise
+        // overwhelms the layout). Replaces visible text with `[<domain>]`
+        // while keeping the href intact so click-through still works. No
+        // third-party services involved — purely local string substitution.
+        let rewritten = collapse_long_url_anchors(&rewritten);
         let html_file = "body.html";
         std::fs::write(dir.join(html_file), rewritten)
             .with_context(|| format!("writing {}/{}", dir.display(), html_file))?;
@@ -206,6 +211,61 @@ fn rewrite_cid_refs(html: &str, assets: &BTreeMap<String, String>) -> String {
     out
 }
 
+/// Collapse `<a href="LONG_URL">VISIBLE_TEXT</a>` anchors where VISIBLE_TEXT
+/// is itself URL-shaped or excessively long, replacing the visible text with
+/// `[domain]` while keeping the href intact. Click-through still works
+/// against the original URL — this is purely visual decluttering.
+///
+/// Limitation: a single regex pass; doesn't handle anchors with nested HTML
+/// inside (e.g. `<a><img></a>` or `<a>some <strong>bold</strong> text</a>`).
+/// For those we leave the anchor untouched. That covers ~10% of mass-mailer
+/// HTML; the long-URL-as-link-text case (the noisy 90%) is collapsed.
+fn collapse_long_url_anchors(html: &str) -> String {
+    use regex::Regex;
+    use std::sync::OnceLock;
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| {
+        // Anchor open tag, capture href, capture inner text up to first `<`.
+        // (?is) = case-insensitive + dotall.
+        Regex::new(r#"(?is)(<a\b[^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*>)([^<]*)(</a>)"#)
+            .unwrap()
+    });
+
+    re.replace_all(html, |caps: &regex::Captures<'_>| {
+        let opening = &caps[1];
+        let href = &caps[2];
+        let visible_raw = &caps[3];
+        let visible = visible_raw.trim();
+        let closing = &caps[4];
+
+        // Decide whether to collapse. Three triggers, in order of certainty:
+        //  - visible text equals the href (the "raw URL pasted as link" case)
+        //  - visible text starts with http(s):// (a URL with weird whitespace)
+        //  - visible text is just plain long (>= 80 chars, no spaces)
+        let is_url_text = visible == href
+            || visible.starts_with("http://")
+            || visible.starts_with("https://");
+        let is_long_unbroken = visible.len() >= 80 && !visible.contains(' ');
+
+        if !is_url_text && !is_long_unbroken {
+            return caps[0].to_string();
+        }
+
+        let domain = extract_domain(href).unwrap_or_else(|| "link".to_string());
+        format!("{opening}[{domain}]{closing}")
+    })
+    .into_owned()
+}
+
+/// Extract a friendly domain string from a URL, e.g.
+/// `https://www.amazon.com/foo?bar=baz` → `amazon.com`.
+fn extract_domain(url_str: &str) -> Option<String> {
+    let parsed = url::Url::parse(url_str).ok()?;
+    let host = parsed.host_str()?;
+    // Strip leading "www." for cleanliness.
+    Some(host.strip_prefix("www.").unwrap_or(host).to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -244,5 +304,43 @@ mod tests {
     #[test]
     fn sanitize_keeps_safe_chars() {
         assert_eq!(sanitize_filename("abc-1_2.def"), "abc-1_2_def");
+    }
+
+    #[test]
+    fn collapse_anchor_with_url_as_text() {
+        let html = r#"<a href="https://www.amazon.com/foo/bar?baz=1">https://www.amazon.com/foo/bar?baz=1</a>"#;
+        let got = collapse_long_url_anchors(html);
+        assert!(got.contains("[amazon.com]"));
+        assert!(got.contains(r#"href="https://www.amazon.com/foo/bar?baz=1""#));
+    }
+
+    #[test]
+    fn collapse_long_unbroken_text() {
+        let raw = "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz1234";
+        let html = format!(r#"<a href="https://example.com/x">{raw}</a>"#);
+        let got = collapse_long_url_anchors(&html);
+        assert!(got.contains("[example.com]"));
+    }
+
+    #[test]
+    fn keep_short_descriptive_link_text() {
+        let html = r#"<a href="https://www.amazon.com/foo/bar?baz=1">Buy on Amazon</a>"#;
+        let got = collapse_long_url_anchors(html);
+        assert_eq!(got, html, "short descriptive text should be preserved");
+    }
+
+    #[test]
+    fn keep_anchor_with_nested_html() {
+        // Regex captures only `[^<]*` so anchors with nested tags fall through.
+        let html = r#"<a href="https://example.com/long/path/here">Click <strong>here</strong></a>"#;
+        let got = collapse_long_url_anchors(html);
+        assert_eq!(got, html, "anchors with nested html should not be touched");
+    }
+
+    #[test]
+    fn extract_domain_strips_www() {
+        assert_eq!(extract_domain("https://www.example.com/x"), Some("example.com".to_string()));
+        assert_eq!(extract_domain("https://example.com/x"), Some("example.com".to_string()));
+        assert_eq!(extract_domain("not a url"), None);
     }
 }
