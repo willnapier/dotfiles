@@ -145,8 +145,10 @@ Combine with `and`, `or`, `not`. notmuch documentation: `man notmuch-search-term
 Per-account, no global override:
 
 - **workspace** -- `msmtp --account=gmail` -- XOAUTH2 via `pizauth show gmail`
-- **cohs** -- `practiceforge email graph-send` -- Microsoft Graph `/me/sendMail`
-  (the COHS tenant blocks SMTP AUTH including XOAUTH2)
+- **cohs** -- `graph-send` (standalone Rust tool, ~/.local/bin/graph-send)
+  -- Microsoft Graph `/me/sendMail`. Token via `pizauth show cohs-graph`.
+  COHS tenant blocks SMTP AUTH including XOAUTH2, so Graph is the only
+  working send path. Source: ~/dotfiles/rust-projects/graph-send/.
 
 # CONFIG SOURCE OF TRUTH
 

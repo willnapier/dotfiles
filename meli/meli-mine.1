@@ -299,9 +299,13 @@ Per\-account, no global override:
 \f[B]workspace\f[R] \(en \f[CR]msmtp \-\-account=gmail\f[R] \(en XOAUTH2
 via \f[CR]pizauth show gmail\f[R]
 .IP \(bu 2
-\f[B]cohs\f[R] \(en \f[CR]practiceforge email graph\-send\f[R] \(en
-Microsoft Graph \f[CR]/me/sendMail\f[R] (the COHS tenant blocks SMTP
-AUTH including XOAUTH2)
+\f[B]cohs\f[R] \(en \f[CR]graph\-send\f[R] (standalone Rust tool,
+\(ti/.local/bin/graph\-send) \(en Microsoft Graph
+\f[CR]/me/sendMail\f[R].
+Token via \f[CR]pizauth show cohs\-graph\f[R].
+COHS tenant blocks SMTP AUTH including XOAUTH2, so Graph is the only
+working send path.
+Source: \(ti/dotfiles/rust\-projects/graph\-send/.
 .SH CONFIG SOURCE OF TRUTH
 Edit \f[CR]\(ti/dotfiles/meli/config.toml\f[R].
 The active config at \f[CR]\(ti/.config/meli/config.toml\f[R] is a

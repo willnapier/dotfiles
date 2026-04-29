@@ -105,10 +105,19 @@ listing.index_style = "Plain"
 # Confirmed working 2026-04-27. No source patching needed.
 listing.relative_list_indices = true
 # Send via Microsoft Graph — tenant blocks SMTP AUTH (including XOAUTH2).
-# practiceforge's graph-send subcommand reads MIME from stdin and POSTs to
-# /me/sendMail via the MIME variant. Auth uses `pizauth show cohs`.
+# `graph-send` is a standalone Rust tool (~/dotfiles/rust-projects/graph-send)
+# that reads MIME from stdin and POSTs to /me/sendMail via the MIME variant.
+# Auth: `pizauth show cohs-graph` (the Microsoft Graph CLI client, separate
+# from the IMAP/SMTP-only `cohs` pizauth account).
+#
+# Decoupled from practiceforge 2026-04-29: meli should not depend on a
+# clinical practice product. Practiceforge's own outbound mail (invoice
+# emails, GP letters, dashboard OTP) still calls its in-tree Graph
+# transport directly — that's a clinical-internal path. This is the
+# generic non-clinical path.
+#
 # See ~/Assistants/shared/CLI-EMAIL-SYSTEM.md for the full architecture.
-send_mail = "practiceforge email graph-send"
+send_mail = "graph-send"
 # Same role as workspace.refresh_command: Ctrl+R in the listing pulls
 # COHS via mbsync + reindexes via notmuch. `sh -c` wrapper because
 # meli's refresh_command spawn style is undocumented; this works whether

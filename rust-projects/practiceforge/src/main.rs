@@ -340,16 +340,11 @@ enum EmailAction {
         #[arg(long, default_value = "End-to-end via MailTransport → GraphTransport → /me/sendMail.")]
         body: String,
     },
-    /// sendmail-compatible Graph send: reads an RFC 5322 MIME message from
-    /// stdin and submits it via Graph's /me/sendMail (MIME variant). Meli
-    /// and any mail client that pipes MIME to a sendmail-style command
-    /// uses this as its send path for the COHS identity.
-    ///
-    /// Example (Meli config):  send_mail = "practiceforge email graph-send"
-    ///
-    /// Auth via `cohs-oauth-graph show` — requires `cohs-oauth-graph init`
-    /// to have run once to consent the Mail.Send scope.
-    GraphSend,
+    // graph-send subcommand removed 2026-04-29 — extracted into standalone
+    // ~/dotfiles/rust-projects/graph-send/. Practiceforge no longer needs
+    // to expose a generic sendmail-style adapter; meli and other generic
+    // consumers use the standalone binary. Practiceforge's own mail still
+    // calls the in-tree GraphTransport directly (clinical-internal path).
     /// Push local notmuch tag changes back to Gmail as label changes —
     /// the missing half of an IMAP + notmuch Gmail stack. Compares each
     /// recently-modified notmuch message's tag set against Gmail's
