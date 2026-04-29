@@ -42,7 +42,12 @@ pkill -x meli 2>/dev/null
 launchctl kickstart "gui/$UID/com.user.mail-sync" 2>/dev/null
 launchctl kickstart "gui/$UID/com.williamnapier.mbsync-cohs" 2>/dev/null
 
+# meli binary: ~/.local/bin/meli is the patched fork (envelope-open ENOENT
+# fix, command-bar redraw fix, x-meli-pipe-message mailcap extension).
+# /opt/homebrew/bin/meli is brew's vanilla 0.8.13 — keep available as a
+# fallback but prefer the fork because the mailcap flag silently no-ops
+# without it.
 exec /opt/homebrew/bin/wezterm \
-  --config 'default_prog={"/opt/homebrew/bin/meli"}' \
+  --config 'default_prog={"'"$HOME"'/.local/bin/meli"}' \
   start \
   --always-new-process
