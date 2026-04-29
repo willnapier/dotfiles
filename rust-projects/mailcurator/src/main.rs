@@ -27,11 +27,13 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+mod bookings_cli;
 mod config;
 mod coverage;
 mod eval;
 mod extract;
 mod extractors;
+mod journeys_cli;
 mod llm;
 mod llm_cache;
 mod notmuch;
@@ -39,6 +41,7 @@ mod orders_cli;
 mod policy;
 mod store;
 mod subscriptions;
+mod tesla_cli;
 
 #[derive(Parser)]
 #[command(name = "mailcurator")]
@@ -176,6 +179,91 @@ enum Command {
     Orders {
         #[command(subcommand)]
         action: OrdersAction,
+    },
+    /// Query the journeys.jsonl extracted store (Trainline + future
+    /// rail/coach vendors).
+    Journeys {
+        #[command(subcommand)]
+        action: JourneysAction,
+    },
+    /// Query the bookings.jsonl extracted store (Airbnb + future
+    /// hotel/villa vendors).
+    Bookings {
+        #[command(subcommand)]
+        action: BookingsAction,
+    },
+    /// Query the tesla.jsonl extracted store. Tesla emails span auth,
+    /// service appointments, supercharger receipts, software releases —
+    /// most useful queries filter on the `kind` field.
+    Tesla {
+        #[command(subcommand)]
+        action: TeslaAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum JourneysAction {
+    List {
+        #[arg(long)]
+        year: Option<i32>,
+        #[arg(short, long, default_value_t = 30)]
+        limit: usize,
+    },
+    Find {
+        query: String,
+        #[arg(short, long, default_value_t = 30)]
+        limit: usize,
+    },
+    Recent {
+        #[arg(long, default_value_t = 30)]
+        days: i64,
+        #[arg(short, long, default_value_t = 30)]
+        limit: usize,
+    },
+    Total {
+        #[arg(long)]
+        year: Option<i32>,
+    },
+}
+
+#[derive(Subcommand)]
+enum BookingsAction {
+    /// Bookings whose check-in date is in the future. The most-useful
+    /// daily query — answers "what's coming up?".
+    Upcoming {
+        #[arg(short, long, default_value_t = 20)]
+        limit: usize,
+    },
+    List {
+        #[arg(long)]
+        year: Option<i32>,
+        #[arg(short, long, default_value_t = 30)]
+        limit: usize,
+    },
+    Find {
+        query: String,
+        #[arg(short, long, default_value_t = 30)]
+        limit: usize,
+    },
+}
+
+#[derive(Subcommand)]
+enum TeslaAction {
+    /// Filtered list — e.g. --kind service, --kind supercharger.
+    List {
+        #[arg(long)]
+        year: Option<i32>,
+        #[arg(long)]
+        kind: Option<String>,
+        #[arg(short, long, default_value_t = 30)]
+        limit: usize,
+    },
+    /// Per-kind summary + total amount captured.
+    Summary,
+    Find {
+        query: String,
+        #[arg(short, long, default_value_t = 30)]
+        limit: usize,
     },
 }
 
@@ -500,6 +588,24 @@ fn main() -> Result<()> {
             OrdersAction::Find { query, limit } => orders_cli::find(&query, limit)?,
             OrdersAction::Recent { days, limit } => orders_cli::recent(days, limit)?,
             OrdersAction::Total { year } => orders_cli::total(year)?,
+        },
+        Command::Journeys { action } => match action {
+            JourneysAction::List { year, limit } => journeys_cli::list(year, limit)?,
+            JourneysAction::Find { query, limit } => journeys_cli::find(&query, limit)?,
+            JourneysAction::Recent { days, limit } => journeys_cli::recent(days, limit)?,
+            JourneysAction::Total { year } => journeys_cli::total(year)?,
+        },
+        Command::Bookings { action } => match action {
+            BookingsAction::Upcoming { limit } => bookings_cli::upcoming(limit)?,
+            BookingsAction::List { year, limit } => bookings_cli::list(year, limit)?,
+            BookingsAction::Find { query, limit } => bookings_cli::find(&query, limit)?,
+        },
+        Command::Tesla { action } => match action {
+            TeslaAction::List { year, kind, limit } => {
+                tesla_cli::list(year, kind.as_deref(), limit)?
+            }
+            TeslaAction::Summary => tesla_cli::summary()?,
+            TeslaAction::Find { query, limit } => tesla_cli::find(&query, limit)?,
         },
         Command::Subscriptions { action } => match action {
             SubscriptionsAction::List => subscriptions::list()?,

@@ -337,10 +337,20 @@ pub fn print_reports(reports: &[Report]) {
         return;
     }
     for r in reports {
-        let suffix = match (r.health_pct(), &r.vendor_module) {
-            (Some(h), _) => format!("health: {h:.1}% required-coverage"),
-            (None, Some(m)) => format!("vendor module: {m} (no required_fields declared)"),
-            (None, None) => "no vendor module".to_string(),
+        // Distinguish "vendor module declared no required_fields" from
+        // "module IS declared but records=0 so health is undefined yet".
+        let suffix = match &r.vendor_module {
+            None => "no vendor module".to_string(),
+            Some(m) if r.required_fields.is_empty() => {
+                format!("vendor module: {m} (no required_fields declared)")
+            }
+            Some(m) if r.records == 0 => {
+                format!("vendor module: {m} (no records yet — run `mailcurator run` first)")
+            }
+            Some(_) => {
+                let h = r.health_pct().unwrap_or(0.0);
+                format!("health: {h:.1}% required-coverage")
+            }
         };
         let header = format!(
             "=== {} (jsonl: {}, records: {}, {}) ===",
