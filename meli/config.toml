@@ -372,7 +372,19 @@ scroll_down = 'Down'
 # (your Backspace) propagating in. If not, will need a different
 # mechanism (e.g. pager-shortcut `q` if the body pager has focus).
 
-# Not remapped: [shortcuts.composing].
-# Has 'e' bound to "edit" which is the correct primary action in that
-# context. Scroll-navigation within a composed message is rare;
-# keeping 'e' as edit avoids a trivial conflict.
+[shortcuts.composing]
+# Field-focus navigation in the compose tab. Defaults are k/j (vim);
+# overridden to i/e to match the rest of the neio scheme. The on-screen
+# help string at the top of the compose tab still says "j/k" — that's a
+# hardcoded compile-time string in meli, not a config read; ignore it.
+#
+# `edit` (open body in $EDITOR / Helix) relocated from 'e' to 'o' to
+# resolve the conflict with scroll_down. Mnemonic: "open editor". `o`
+# has no meaning in compose otherwise (no horizontal scroll in a 6-line
+# header). meli source confirms this section accepts four keys: edit,
+# send_mail, scroll_up, scroll_down (codeberg.org/meli/meli, conf/
+# shortcuts.rs::ComposingShortcuts).
+scroll_up = 'i'
+scroll_down = 'e'
+edit = 'o'
+# send_mail = 's'  # default, kept
