@@ -1,0 +1,15 @@
+[Unit]
+Description=Move trash-tagged COHS messages to Deleted Items maildir (mbsync propagates to M365)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# notmuch is at /usr/bin/notmuch on Arch; the script invokes it via PATH.
+# DELETED Items path uses $HOME so works for the will user.
+Environment=PATH=/home/will/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=/home/will
+Environment=NOTMUCH_CONFIG=/home/will/Mail/.notmuch-config
+ExecStart=/home/will/.local/bin/cohs-trash-mover
+StandardOutput=append:/home/will/.local/share/cohs-trash-mover.log
+StandardError=append:/home/will/.local/share/cohs-trash-mover.log

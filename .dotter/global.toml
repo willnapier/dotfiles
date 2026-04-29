@@ -93,6 +93,11 @@ depends = []
 # launchd, Linux uses notify-send + systemd. Built 2026-04-27 after
 # nimbini's gmail-push-tags hung silently for 3.5h.
 "scripts/gmail-push-tags-watchdog" = "~/.local/bin/gmail-push-tags-watchdog"
+# COHS trash propagator — bridges meli's tag-based trash op (Gmail
+# pipeline native) to mbsync's folder-based IMAP sync. Moves trash-
+# tagged COHS messages from cohs/INBOX/cur to cohs/Deleted Items/cur
+# every 5 min so mbsync's next tick replicates to M365 server.
+"scripts/cohs-trash-mover" = "~/.local/bin/cohs-trash-mover"
 # Zed editor configuration (added 2025-10-01)
 "zed/keymap.json" = "~/.config/zed/keymap.json"
 "zed/settings.json" = "~/.config/zed/settings.json"
@@ -325,6 +330,7 @@ depends = ["shared"]
 "macos/launchd/com.williamnapier.mbsync-cohs.plist" = "~/Library/LaunchAgents/com.williamnapier.mbsync-cohs.plist"
 "macos/launchd/com.williamnapier.gmail-push-tags.plist" = "~/Library/LaunchAgents/com.williamnapier.gmail-push-tags.plist"
 "macos/launchd/com.williamnapier.gmail-push-tags-watchdog.plist" = "~/Library/LaunchAgents/com.williamnapier.gmail-push-tags-watchdog.plist"
+"macos/launchd/com.williamnapier.cohs-trash-mover.plist" = "~/Library/LaunchAgents/com.williamnapier.cohs-trash-mover.plist"
 "macos/launchd/com.williamnapier.karabiner-relink.plist" = "~/Library/LaunchAgents/com.williamnapier.karabiner-relink.plist"
 "macos/launchd/com.williamnapier.pizauth.plist" = "~/Library/LaunchAgents/com.williamnapier.pizauth.plist"
 "macos/launchd/com.williamnapier.pizauth-dump.plist" = "~/Library/LaunchAgents/com.williamnapier.pizauth-dump.plist"
@@ -483,6 +489,8 @@ depends = ["shared"]
 "systemd/gmail-push-tags.timer" = "~/.config/systemd/user/gmail-push-tags.timer"
 "systemd/gmail-push-tags-watchdog.service" = "~/.config/systemd/user/gmail-push-tags-watchdog.service"
 "systemd/gmail-push-tags-watchdog.timer" = "~/.config/systemd/user/gmail-push-tags-watchdog.timer"
+"systemd/cohs-trash-mover.service" = "~/.config/systemd/user/cohs-trash-mover.service"
+"systemd/cohs-trash-mover.timer" = "~/.config/systemd/user/cohs-trash-mover.timer"
 # Wayland compositor configuration - Niri + Waybar + WezTerm
 "niri/config.kdl" = "~/.config/niri/config.kdl"
 "waybar/config" = "~/.config/waybar/config"

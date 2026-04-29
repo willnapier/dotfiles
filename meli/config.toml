@@ -295,6 +295,20 @@ prev_mailbox = 'I'              # was 'K'
 next_account = 'N'              # was 'H'
 prev_account = 'O'              # was 'L'
 
+# `D` → trash (tag-based, works for both Gmail and COHS).
+# Default `send_to_trash` is folder-based and effectively no-op on
+# notmuch backends. Custom command tags `trash` + strips `inbox` so
+# the message disappears from inbox view immediately.
+# Server-side propagation differs per account:
+# - Gmail: gmail-push-tags pushes the tags as Gmail labels
+#   (adds TRASH, removes INBOX) on its 15-min tick.
+# - COHS:  cohs-trash-mover (launchd/systemd timer, every 5 min)
+#   moves the maildir file to cohs/Deleted Items/cur; mbsync's
+#   next tick replicates to M365 server. End-to-end latency 0–20 min.
+commands = [
+    { command = ["tag add trash", "tag remove inbox"], shortcut = "D" },
+]
+
 [shortcuts.pager]
 # Arrows for hold-repeat scrolling (see [shortcuts.listing] note).
 scroll_up = 'Up'

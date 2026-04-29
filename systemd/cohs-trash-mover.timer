@@ -1,0 +1,11 @@
+[Unit]
+Description=Run cohs-trash-mover every 5 minutes
+
+[Timer]
+# Fire 1 min after boot, then every 5 min. Same cadence as Mac launchd.
+OnBootSec=1min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

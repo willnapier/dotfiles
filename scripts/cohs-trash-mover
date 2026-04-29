@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# cohs-trash-mover — reconcile notmuch trash-tag with cohs maildir layout.
+#
+# Background: meli's `D` shortcut applies notmuch tag operations
+# (`tag add trash, tag remove inbox`) regardless of backend. For
+# Gmail messages this is enough — gmail-push-tags propagates the
+# tags to Gmail's labels via the API. For COHS messages (synced
+# via mbsync from M365 IMAP), tag-only operations don't trigger
+# server-side trashing because mbsync mirrors maildir FOLDERS to
+# IMAP folders, not notmuch tags.
+#
+# This script bridges the gap: any message tagged `cohs and trash`
+# whose maildir file is still in `~/Mail/cohs/INBOX/cur/` gets
+# moved to `~/Mail/cohs/Deleted Items/cur/`. mbsync's next tick
+# detects the file move and replicates it to the M365 server,
+# producing the user-visible "Outlook web shows it in Deleted
+# Items" outcome.
+#
+# Idempotent: messages already in Deleted Items stay there.
+# Cross-platform: works on Mac (launchd) and Linux/nimbini (systemd).
+# Runs every 5 min via the respective platform's timer.
+
+set -eu
+
+DELETED="$HOME/Mail/cohs/Deleted Items/cur"
+mkdir -p "$DELETED"
+
+moved=0
+while IFS= read -r f; do
+    [ -f "$f" ] || continue
+    # Skip files already in Deleted Items (defensive — query should
+    # exclude them via folder:"cohs/INBOX", but belt-and-braces).
+    case "$f" in
+        */cohs/Deleted\ Items/*) continue ;;
+    esac
+    mv "$f" "$DELETED/$(basename "$f")"
+    moved=$((moved + 1))
+done < <(notmuch search --output=files 'tag:cohs and tag:trash and folder:"cohs/INBOX"' 2>/dev/null || true)
+
+if [ "$moved" -gt 0 ]; then
+    # Reindex so notmuch sees the new file paths. Quiet on success.
+    notmuch new >/dev/null 2>&1 || true
+    # Optional log line for diagnostic. Stderr because launchd/systemd
+    # captures both, and Mac launchd's log path conventions prefer
+    # stderr for status messages.
+    echo "$(date '+%Y-%m-%d %H:%M:%S') moved $moved cohs message(s) to Deleted Items" >&2
+fi

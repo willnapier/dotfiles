@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.williamnapier.cohs-trash-mover</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/williamnapier/.local/bin/cohs-trash-mover</string>
+    </array>
+    <!-- 5 min cadence — meli `D` does the tag op locally, this then
+         migrates COHS file location to Deleted Items so mbsync
+         propagates to M365 server on its next 15-min tick. Total
+         end-to-end latency: 0–20 min. -->
+    <key>StartInterval</key>
+    <integer>300</integer>
+    <key>RunAtLoad</key>
+    <false/>
+    <!-- PATH must include /opt/homebrew/bin for `notmuch`. NOTMUCH_CONFIG
+         points at the canonical config so the search runs against the
+         same DB meli uses. Same env as the other notmuch-touching plists. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/Users/williamnapier/.local/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/williamnapier</string>
+        <key>NOTMUCH_CONFIG</key>
+        <string>/Users/williamnapier/Mail/.notmuch-config</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/williamnapier/Library/Logs/cohs-trash-mover.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/williamnapier/Library/Logs/cohs-trash-mover.log</string>
+</dict>
+</plist>
