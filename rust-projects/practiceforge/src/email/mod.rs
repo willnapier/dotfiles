@@ -22,6 +22,7 @@ pub mod auth;
 pub mod backends;
 pub mod config;
 pub mod wizard;
+pub mod pizauth;
 pub mod gmail_push_tags;
 pub mod gmail_pull;
 
