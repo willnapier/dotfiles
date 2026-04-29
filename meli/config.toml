@@ -306,7 +306,12 @@ prev_account = 'O'              # was 'L'
 #   moves the maildir file to cohs/Deleted Items/cur; mbsync's
 #   next tick replicates to M365 server. End-to-end latency 0–20 min.
 commands = [
-    { command = ["tag add trash", "tag remove inbox"], shortcut = "D" },
+    # Lowercase `d` — capital `D` is bound to meli's built-in
+    # `send_to_trash`, which is folder-based and a silent no-op on
+    # notmuch backends. The default consumed the keystroke without
+    # firing our custom command. Switching to `d` (matching meli's
+    # own docs example for tag-based trashing) sidesteps the conflict.
+    { command = ["tag add trash", "tag remove inbox"], shortcut = "d" },
     # Backspace → close current tab. meli's `Enter` on a message opens the
     # envelope in a NEW TAB (not a modal layer), so the way back to the
     # listing is `:close`. exit_entry doesn't fire from envelope context
