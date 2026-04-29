@@ -19,10 +19,14 @@ const CSP_STRICT: &str = "default-src 'self'; img-src 'self' data:; \
     style-src 'self' 'unsafe-inline'; script-src 'none'; \
     frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
 
-/// Relaxed CSP allowing external images (HTTPS only) for emails the user
-/// has clicked "Load external images" on. Still blocks scripts, frames,
-/// and form submission to keep most tracker categories inert.
-const CSP_RELAXED: &str = "default-src 'self'; img-src 'self' data: https:; \
+/// Relaxed CSP allowing external images for emails the user has decided
+/// are worth rendering. Both HTTP and HTTPS are allowed because real-world
+/// email image URLs use both schemes — sendgrid's CDN serves over HTTP for
+/// example. The user already trusts the sender enough to escalate to
+/// meliview; demanding HTTPS-only here just produces broken images on
+/// otherwise-fine emails. Scripts, frames, and form submission stay blocked
+/// to keep the dangerous categories inert.
+const CSP_RELAXED: &str = "default-src 'self'; img-src 'self' data: http: https:; \
     style-src 'self' 'unsafe-inline'; script-src 'none'; \
     frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
 
