@@ -445,17 +445,14 @@ account "cohs-graph" {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("pizauth.conf");
         fs::write(&path, "// existing\naccount \"existing\" {\n}\n").unwrap();
-        unsafe { std::env::set_var("PIZAUTH_CONF", &path); }
 
         let acc = PizauthAccount::cohs_graph_template("u@cohs.example");
-        let result = ensure_account(&acc).unwrap();
+        let result = ensure_account_at(&path, &acc).unwrap();
         assert_eq!(result, EnsureResult::Appended);
 
         let final_content = fs::read_to_string(&path).unwrap();
         assert!(final_content.contains("account \"existing\""));
         assert!(final_content.contains("account \"cohs-graph\""));
-
-        unsafe { std::env::remove_var("PIZAUTH_CONF"); }
     }
 
     #[test]
@@ -463,32 +460,26 @@ account "cohs-graph" {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("pizauth.conf");
         fs::write(&path, "account \"cohs-graph\" {\n}\n").unwrap();
-        unsafe { std::env::set_var("PIZAUTH_CONF", &path); }
 
         let acc = PizauthAccount::cohs_graph_template("u@cohs.example");
-        let result = ensure_account(&acc).unwrap();
+        let result = ensure_account_at(&path, &acc).unwrap();
         assert_eq!(result, EnsureResult::AlreadyPresent);
 
         // No backup file should have been created.
         let entries: Vec<_> = fs::read_dir(dir.path()).unwrap().collect();
         assert_eq!(entries.len(), 1, "expected only pizauth.conf, no backup");
-
-        unsafe { std::env::remove_var("PIZAUTH_CONF"); }
     }
 
     #[test]
     fn ensure_account_creates_file_when_missing() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("pizauth.conf");
-        unsafe { std::env::set_var("PIZAUTH_CONF", &path); }
 
         let acc = PizauthAccount::cohs_graph_template("u@cohs.example");
-        let result = ensure_account(&acc).unwrap();
+        let result = ensure_account_at(&path, &acc).unwrap();
         assert_eq!(result, EnsureResult::Appended);
         assert!(path.exists());
         let content = fs::read_to_string(&path).unwrap();
         assert!(content.contains("account \"cohs-graph\""));
-
-        unsafe { std::env::remove_var("PIZAUTH_CONF"); }
     }
 }
