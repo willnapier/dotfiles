@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.williamnapier.mailcurator-drift</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/williamnapier/.local/bin/mailcurator-drift-check</string>
+    </array>
+    <!-- Weekly schedule: Sunday 09:00. Vendor template changes are slow-
+         moving (weeks-to-months between revs), so daily checks would just
+         be noise. Sunday morning hits while inbox is quiet, before the
+         working week's mail starts arriving. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>0</integer>
+        <key>Hour</key>
+        <integer>9</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <!-- Run on load so first install gets a snapshot baseline; subsequent
+         loads (after laptop reboot) re-check, harmless if recent run was
+         silent. -->
+    <key>RunAtLoad</key>
+    <true/>
+    <!-- PATH must include osascript (/usr/bin) for the notification path,
+         and ~/.local/bin for the mailcurator binary. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/Users/williamnapier/.local/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/williamnapier</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/williamnapier/Library/Logs/mailcurator-drift.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/williamnapier/Library/Logs/mailcurator-drift.log</string>
+</dict>
+</plist>

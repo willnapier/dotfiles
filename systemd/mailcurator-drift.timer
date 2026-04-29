@@ -1,0 +1,11 @@
+[Unit]
+Description=Run mailcurator-drift-check weekly (Sunday 09:00)
+
+[Timer]
+# Sunday 09:00 local time — same cadence as the Mac launchd plist.
+# Vendor template changes are slow-moving; daily would be noise.
+OnCalendar=Sun *-*-* 09:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

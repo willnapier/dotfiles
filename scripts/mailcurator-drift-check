@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# mailcurator-drift-check — weekly health check for vendor extractors.
+#
+# Runs `mailcurator coverage --drift` and fires an OS notification when
+# any policy's required-field coverage has dropped by >= THRESHOLD pp
+# since the previous snapshot. The drift output identifies which policy
+# and which field regressed, suggesting a vendor changed their email
+# template; the human (or future improve-extractor loop) refines the
+# failing module against fresh samples.
+#
+# Quiet on healthy runs (no findings, no notification, just a log entry).
+# Banners only fire on actual regressions.
+#
+# Cross-platform: osascript on Darwin, notify-send on Linux.
+# Same wrapper deployed to both Mac launchd and Linux systemd.
+
+set -u
+
+PLATFORM="$(uname -s)"
+NOW=$(date '+%Y-%m-%dT%H:%M:%S')
+
+# Threshold: drop in percentage points to flag. 10pp matches mailcurator's
+# default; can override here.
+THRESHOLD=10.0
+
+case "$PLATFORM" in
+    Darwin) LOG="$HOME/Library/Logs/mailcurator-drift.log" ;;
+    Linux)  LOG="$HOME/.local/share/mailcurator-drift.log" ;;
+    *)      LOG="/tmp/mailcurator-drift.log" ;;
+esac
+
+# Make sure the log dir exists.
+mkdir -p "$(dirname "$LOG")"
+
+# Run mailcurator coverage --drift, capturing both output and exit code.
+# Coverage runs against ~/.config/mailcurator/policies.toml (the default).
+OUT=$(mailcurator coverage --drift --threshold "$THRESHOLD" 2>&1)
+RC=$?
+
+{
+    echo "==========================================================="
+    echo "[$NOW] mailcurator-drift-check (threshold=${THRESHOLD}pp)"
+    echo "exit=$RC"
+    echo "$OUT"
+} >> "$LOG"
+
+# Exit 0 = no drift, silent.
+if [[ $RC -eq 0 ]]; then
+    exit 0
+fi
+
+# Drift detected. Extract the line count of findings so the notification
+# message is actionable. The DRIFT DETECTED header looks like:
+#   DRIFT DETECTED in N field/policy combination(s):
+COUNT=$(echo "$OUT" | grep -oE 'DRIFT DETECTED in [0-9]+' | grep -oE '[0-9]+' | head -1)
+if [[ -z "$COUNT" ]]; then
+    COUNT="?"
+fi
+
+# First-line preview: the first finding row gives a meaningful summary.
+# Format: "policy field prev current drop prev_ts"
+FIRST=$(echo "$OUT" | awk '/^[a-z][a-z-]+ +<?[a-z_>]+ +[0-9]/ { print; exit }' | tr -s ' ')
+
+TITLE="mailcurator: $COUNT extractor drift(s) detected"
+BODY="$FIRST"
+[[ -z "$BODY" ]] && BODY="Run \`mailcurator coverage --drift\` to investigate."
+
+case "$PLATFORM" in
+    Darwin)
+        # macOS native notification. Use a single-line title to avoid
+        # truncation; full detail is in the log.
+        osascript -e "display notification \"$BODY\" with title \"$TITLE\"" 2>/dev/null || true
+        ;;
+    Linux)
+        # notify-send works in most desktop sessions; if there's no
+        # session bus it silently fails.
+        notify-send --urgency=normal "$TITLE" "$BODY" 2>/dev/null || true
+        ;;
+esac
+
+# Always exit 0 from the wrapper so launchd/systemd doesn't repeatedly
+# alert on the same drift via their own failure-restart loops. The
+# notification is the user-facing signal; the log is the audit trail.
+exit 0
