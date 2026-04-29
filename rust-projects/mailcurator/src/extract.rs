@@ -111,10 +111,23 @@ pub fn run_extractors(pol: &Policy, dry_run: bool) -> Result<u64> {
     // immediately so a crash mid-run preserves earlier work.
     let mut cache = Cache::load()?;
 
+    // Deduplicate by Message-ID. notmuch's --output=files returns one
+    // line per maildir file, but Gmail's label model produces multiple
+    // files per logical message (e.g. INBOX + Sent both contain the
+    // same outbound message). Without dedup, every duplicate file
+    // generated a duplicate jsonl row + a duplicate LLM call. The
+    // extracted-tag is applied per message-id (notmuch's `id:"..."`
+    // query matches all files for that message), so processing one
+    // file is sufficient to mark the message done — the second file
+    // would just be wasted work.
+    use std::collections::HashSet;
+    let mut seen_message_ids: HashSet<String> = HashSet::new();
+
     let mut count = 0u64;
     for path in &files {
-        match extract_one(pol, path, &mut cache) {
-            Ok(()) => count += 1,
+        match extract_one(pol, path, &mut cache, &mut seen_message_ids) {
+            Ok(true) => count += 1,
+            Ok(false) => {} // duplicate message-id, skipped
             Err(e) => {
                 eprintln!(
                     "  [{}] extract failed for {}: {}",
@@ -173,7 +186,15 @@ fn list_files(query: &str) -> Result<Vec<String>> {
         .collect())
 }
 
-fn extract_one(pol: &Policy, path: &str, cache: &mut Cache) -> Result<()> {
+/// Process one maildir file. Returns Ok(true) if extraction happened,
+/// Ok(false) if the file was a duplicate of a message already processed
+/// in this run.
+fn extract_one(
+    pol: &Policy,
+    path: &str,
+    cache: &mut Cache,
+    seen_message_ids: &mut std::collections::HashSet<String>,
+) -> Result<bool> {
     let raw = fs::read(path).with_context(|| format!("reading {path}"))?;
     let parsed = parse_mail(&raw).with_context(|| format!("parsing RFC822 from {path}"))?;
 
@@ -182,6 +203,11 @@ fn extract_one(pol: &Policy, path: &str, cache: &mut Cache) -> Result<()> {
     let body_text = decode_body_to_text(&parsed)?;
     let html_body = decode_body_to_html(&parsed);
     let message_id = parsed.headers.get_first_value("Message-ID").unwrap_or_else(|| path.to_string());
+
+    if !seen_message_ids.insert(message_id.clone()) {
+        // Already processed in this run — Gmail label dupe.
+        return Ok(false);
+    }
 
     // Resolve vendor module once per message (Box<dyn> can't be cloned, so
     // we fetch a fresh instance per extractor in the inner loop below).
@@ -344,7 +370,7 @@ fn extract_one(pol: &Policy, path: &str, cache: &mut Cache) -> Result<()> {
         &[],
     )?;
 
-    Ok(())
+    Ok(true)
 }
 
 fn apply_rule(
