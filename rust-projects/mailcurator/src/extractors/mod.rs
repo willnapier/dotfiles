@@ -18,7 +18,10 @@ use anyhow::Result;
 use mailparse::ParsedMail;
 use serde_json::{Map, Value};
 
+pub mod airbnb_bookings;
 pub mod amazon_orders;
+pub mod tesla;
+pub mod trainline_journeys;
 
 /// Trait every vendor extractor implements.
 ///
@@ -51,11 +54,14 @@ pub trait VendorExtractor {
 pub fn dispatch(name: &str) -> Option<Box<dyn VendorExtractor>> {
     match name {
         "amazon_orders" => Some(Box::new(amazon_orders::AmazonOrders)),
+        "trainline_journeys" => Some(Box::new(trainline_journeys::TrainlineJourneys)),
+        "airbnb_bookings" => Some(Box::new(airbnb_bookings::AirbnbBookings)),
+        "tesla" => Some(Box::new(tesla::Tesla)),
         _ => None,
     }
 }
 
 /// All known extractor names, for `coverage --list` and validation.
 pub fn known_extractors() -> &'static [&'static str] {
-    &["amazon_orders"]
+    &["amazon_orders", "trainline_journeys", "airbnb_bookings", "tesla"]
 }
