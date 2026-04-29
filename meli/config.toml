@@ -307,6 +307,17 @@ prev_account = 'O'              # was 'L'
 #   next tick replicates to M365 server. End-to-end latency 0–20 min.
 commands = [
     { command = ["tag add trash", "tag remove inbox"], shortcut = "D" },
+    # Backspace → close current tab. meli's `Enter` on a message opens the
+    # envelope in a NEW TAB (not a modal layer), so the way back to the
+    # listing is `:close`. exit_entry doesn't fire from envelope context
+    # because it's a separate tab. Bind the muscle-memory key to do the
+    # right thing.
+    #
+    # Safe in other contexts: meli's text-input modes (composer, search,
+    # `:` cmd bar) consume Backspace as delete-char before the shortcut
+    # dispatcher sees it. On the listing tab itself, `:close` is likely
+    # a no-op (main tab is non-closeable) — to verify in practice.
+    { command = ["close"], shortcut = "Backspace" },
 ]
 
 [shortcuts.pager]
