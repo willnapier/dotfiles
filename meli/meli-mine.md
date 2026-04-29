@@ -29,13 +29,18 @@ on path under ~/Mail/cohs/) -- those appear only in the cohs account view.
 
 # NAVIGATION
 
-Two-tier navigation: `i`/`e`/`n`/`o` work on **tap** (Colemak-DH neio remap), arrow keys
-work with **hold-repeat** via the ZMK NAV layer. Use whichever fits the moment.
+Vertical navigation is via **arrow keys** on the ZMK NAV layer (hold-repeat
+friendly). `i`/`e` taps do **not** scroll up/down: meli's `[shortcuts.listing]`,
+`[shortcuts.pager]`, and `[shortcuts.thread-view]` blocks override `scroll_up`/
+`scroll_down` to `Up`/`Down`, shadowing the `i`/`e` defined in
+`[shortcuts.general]`. `n`/`o` taps **do** fire as left/right scroll because
+those contexts do not override `scroll_left`/`scroll_right`, so the general
+bindings fall through.
 
   Action                          Key
   ------------------------------- -----------------------------------
-  Up / Down (one row)             `i` / `e`  (tap) or `Up` / `Down` (NAV)
-  Left / Right                    `n` / `o` (general scroll)
+  Up / Down (one row)             `Up` / `Down` (NAV layer)
+  Left / Right (horizontal scroll) `n` / `o` (general scroll, falls through)
   Top / bottom of listing         `Home` / `End`
   Page up / page down             `PageUp` / `PageDown`
   Jump N rows                     digit then `Up`/`Down` (e.g. `5 Down`)
@@ -69,7 +74,8 @@ There is no in-app last-refreshed indicator. Diagnostic logs:
 
 # READING
 
-`Enter` on a row opens the envelope view. `i`/`e` (tap) or `Up`/`Down` scroll the body.
+`Enter` on a row opens the envelope view. `Up`/`Down` (NAV layer) scroll the body —
+`i`/`e` taps don't fire here for the same reason as in the listing (see NAVIGATION).
 `Backspace` returns to the listing.
 
 The flag column on each row uses single-character maildir flags:

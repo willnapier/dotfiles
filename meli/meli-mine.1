@@ -31,11 +31,18 @@ the cohs account view.
 \f[B]All\-mail window is 30 days\f[R].
 Older content reachable via \f[CR]/\f[R] search.
 .SH NAVIGATION
-Two\-tier navigation:
-\f[CR]i\f[R]/\f[CR]e\f[R]/\f[CR]n\f[R]/\f[CR]o\f[R] work on
-\f[B]tap\f[R] (Colemak\-DH neio remap), arrow keys work with
-\f[B]hold\-repeat\f[R] via the ZMK NAV layer.
-Use whichever fits the moment.
+Vertical navigation is via \f[B]arrow keys\f[R] on the ZMK NAV layer
+(hold\-repeat friendly).
+\f[CR]i\f[R]/\f[CR]e\f[R] taps do \f[B]not\f[R] scroll up/down:
+meli\(cqs \f[CR][shortcuts.listing]\f[R], \f[CR][shortcuts.pager]\f[R],
+and \f[CR][shortcuts.thread\-view]\f[R] blocks override
+\f[CR]scroll_up\f[R]/ \f[CR]scroll_down\f[R] to
+\f[CR]Up\f[R]/\f[CR]Down\f[R], shadowing the \f[CR]i\f[R]/\f[CR]e\f[R]
+defined in \f[CR][shortcuts.general]\f[R].
+\f[CR]n\f[R]/\f[CR]o\f[R] taps \f[B]do\f[R] fire as left/right scroll
+because those contexts do not override
+\f[CR]scroll_left\f[R]/\f[CR]scroll_right\f[R], so the general bindings
+fall through.
 .PP
 .TS
 tab(@);
@@ -49,13 +56,12 @@ _
 T{
 Up / Down (one row)
 T}@T{
-\f[CR]i\f[R] / \f[CR]e\f[R] (tap) or \f[CR]Up\f[R] / \f[CR]Down\f[R]
-(NAV)
+\f[CR]Up\f[R] / \f[CR]Down\f[R] (NAV layer)
 T}
 T{
-Left / Right
+Left / Right (horizontal scroll)
 T}@T{
-\f[CR]n\f[R] / \f[CR]o\f[R] (general scroll)
+\f[CR]n\f[R] / \f[CR]o\f[R] (general scroll, falls through)
 T}
 T{
 Top / bottom of listing
@@ -160,8 +166,9 @@ Diagnostic logs: \f[CR]\(ti/.local/share/mail\-sync.log\f[R],
 \f[CR]\(ti/Library/Logs/mbsync\-cohs.log\f[R].
 .SH READING
 \f[CR]Enter\f[R] on a row opens the envelope view.
-\f[CR]i\f[R]/\f[CR]e\f[R] (tap) or \f[CR]Up\f[R]/\f[CR]Down\f[R] scroll
-the body.
+\f[CR]Up\f[R]/\f[CR]Down\f[R] (NAV layer) scroll the body \(em
+\f[CR]i\f[R]/\f[CR]e\f[R] taps don\(cqt fire here for the same reason as
+in the listing (see NAVIGATION).
 \f[CR]Backspace\f[R] returns to the listing.
 .PP
 The flag column on each row uses single\-character maildir flags:

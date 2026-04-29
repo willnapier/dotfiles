@@ -269,9 +269,21 @@ color_aliases = { base03 = "#002b36", base02 = "#073642", base01 = "#586e75", ba
 # ====================================================================
 # Colemak-DH "neio" navigation remap (added 2026-04-21)
 # ====================================================================
-# Right-hand home row: n / e / i / o = left / down / up / right
-# Mirrors vim's h / j / k / l convention for the equivalent physical
-# key positions under Colemak-DH.
+# Intent was: n / e / i / o = left / down / up / right (Colemak-DH
+# equivalent of vim's h/j/k/l physical positions).
+#
+# Reality (verified 2026-04-29): only `n` and `o` fire on tap. The
+# [shortcuts.listing], [shortcuts.pager], and [shortcuts.thread-view]
+# blocks below override scroll_up/scroll_down to Up/Down (arrows),
+# which shadows the `i`/`e` defined in [shortcuts.general]. They do
+# NOT override scroll_left/scroll_right, so `n`/`o` fall through to
+# the general bindings and work as horizontal scroll. Vertical
+# navigation is therefore arrows-only — fine because the ZMK NAV
+# layer makes hold-repeat on arrows ergonomic.
+#
+# Kept here unchanged: the per-context `scroll_up = 'Up'` overrides
+# are load-bearing for hold-repeat scrolling on long mailboxes (home-
+# row mods on i/e prevent OS-level key-repeat from firing on tap).
 #
 # Uppercase shifts preserve meli's mailbox/account navigation convention
 # (NEXT on left-of-axis shift, PREV on right-of-axis shift, as per defaults).
