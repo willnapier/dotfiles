@@ -5,7 +5,7 @@
 //! before grepping email.
 
 use anyhow::{Context, Result};
-use chrono::{DateTime, Datelike, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use serde_json::Value;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -71,46 +71,128 @@ fn parse_rfc2822(s: &str) -> Option<DateTime<Utc>> {
         .map(|dt| dt.with_timezone(&Utc))
 }
 
+/// Identity key for grouping. Journey emails about one trip arrive
+/// over weeks (booking → reminder → delay-repay), so we can't use a
+/// simple date key. Use (destination, journey_time) plus the ISO-week
+/// of the received date — that groups the day-before reminder + same-
+/// hour disruption alert together, while keeping the post-trip
+/// delay-repay (typically arriving the next week) as a separate row
+/// because it carries different info (the fare).
+fn identity_key(j: &Journey) -> Option<String> {
+    let d = j.destination.as_deref()?.trim();
+    if d.is_empty() {
+        return None;
+    }
+    let t = j.journey_time.as_deref().unwrap_or("");
+    let recv = j.received?;
+    let iso = recv.iso_week();
+    Some(format!("{}|{}|{}-W{:02}", d.to_lowercase(), t, iso.year(), iso.week()))
+}
+
+fn dedupe_journeys(rows: Vec<Journey>) -> Vec<(Journey, usize)> {
+    use std::collections::HashMap;
+    let mut groups: HashMap<String, Vec<Journey>> = HashMap::new();
+    let mut orphans: Vec<Journey> = Vec::new();
+    for j in rows {
+        match identity_key(&j) {
+            Some(k) => groups.entry(k).or_default().push(j),
+            None => orphans.push(j),
+        }
+    }
+    let mut out: Vec<(Journey, usize)> = Vec::new();
+    for (_, mut group) in groups {
+        let count = group.len();
+        // Pick the canonical row: most populated fields, then most recent.
+        group.sort_by(|a, b| {
+            let pa = populated_count(a);
+            let pb = populated_count(b);
+            pb.cmp(&pa).then_with(|| b.received.cmp(&a.received))
+        });
+        let canonical = group.into_iter().next().unwrap();
+        out.push((canonical, count));
+    }
+    for o in orphans {
+        out.push((o, 1));
+    }
+    out.sort_by(|a, b| b.0.received.cmp(&a.0.received));
+    out
+}
+
+fn populated_count(j: &Journey) -> usize {
+    [
+        j.destination.is_some(),
+        j.journey_date.is_some(),
+        j.journey_time.is_some(),
+        j.fare.is_some(),
+        j.booking_ref.is_some(),
+    ]
+    .iter()
+    .filter(|x| **x)
+    .count()
+}
+
+/// Filter row that has zero useful data (no destination, no time, no
+/// fare) — these are typically "Thanks for booking" emails where every
+/// extracted field is null and the row is just noise.
+fn has_useful_data(j: &Journey) -> bool {
+    j.destination.is_some() || j.journey_time.is_some() || j.fare.is_some()
+}
+
 pub fn list(year: Option<i32>, limit: usize) -> Result<()> {
     let all = load_journeys()?;
-    let filtered: Vec<&Journey> = all
+    let total_emails = all.len();
+    let useful: Vec<Journey> = all.into_iter().filter(has_useful_data).collect();
+    let deduped = dedupe_journeys(useful);
+    let unique_count = deduped.len();
+    let filtered: Vec<(&Journey, usize)> = deduped
         .iter()
-        .filter(|j| match (year, j.received) {
+        .filter(|(j, _)| match (year, j.received) {
             (Some(y), Some(d)) => d.year() == y,
             (Some(_), None) => false,
             (None, _) => true,
         })
         .take(limit)
+        .map(|(j, n)| (j, *n))
         .collect();
-    print_journeys(&filtered, all.len());
+    print_journeys(&filtered, total_emails, unique_count);
     Ok(())
 }
 
 pub fn find(query: &str, limit: usize) -> Result<()> {
     let q = query.to_lowercase();
     let all = load_journeys()?;
-    let filtered: Vec<&Journey> = all
+    let total_emails = all.len();
+    let useful: Vec<Journey> = all.into_iter().filter(has_useful_data).collect();
+    let deduped = dedupe_journeys(useful);
+    let unique_count = deduped.len();
+    let filtered: Vec<(&Journey, usize)> = deduped
         .iter()
-        .filter(|j| {
+        .filter(|(j, _)| {
             j.subject.to_lowercase().contains(&q)
                 || j.destination.as_deref().is_some_and(|s| s.to_lowercase().contains(&q))
                 || j.journey_date.as_deref().is_some_and(|s| s.to_lowercase().contains(&q))
         })
         .take(limit)
+        .map(|(j, n)| (j, *n))
         .collect();
-    print_journeys(&filtered, all.len());
+    print_journeys(&filtered, total_emails, unique_count);
     Ok(())
 }
 
 pub fn recent(days: i64, limit: usize) -> Result<()> {
     let cutoff = Utc::now() - chrono::Duration::days(days);
     let all = load_journeys()?;
-    let filtered: Vec<&Journey> = all
+    let total_emails = all.len();
+    let useful: Vec<Journey> = all.into_iter().filter(has_useful_data).collect();
+    let deduped = dedupe_journeys(useful);
+    let unique_count = deduped.len();
+    let filtered: Vec<(&Journey, usize)> = deduped
         .iter()
-        .filter(|j| j.received.map(|d| d > cutoff).unwrap_or(false))
+        .filter(|(j, _)| j.received.map(|d| d > cutoff).unwrap_or(false))
         .take(limit)
+        .map(|(j, n)| (j, *n))
         .collect();
-    print_journeys(&filtered, all.len());
+    print_journeys(&filtered, total_emails, unique_count);
     Ok(())
 }
 
@@ -140,17 +222,19 @@ pub fn total(year: Option<i32>) -> Result<()> {
     Ok(())
 }
 
-fn print_journeys(items: &[&Journey], total_in_store: usize) {
+fn print_journeys(items: &[(&Journey, usize)], total_emails: usize, unique_count: usize) {
     if items.is_empty() {
-        println!("no journeys matching filter (store has {total_in_store} total)");
+        println!(
+            "no journeys matching filter ({total_emails} email records, {unique_count} unique trips)"
+        );
         return;
     }
     println!(
-        "{:<10}  {:<22}  {:>5}  {:>6}  {}",
-        "received", "destination", "time", "fare £", "subject"
+        "{:<10}  {:<22}  {:>5}  {:>6}  {:>5}  {}",
+        "received", "destination", "time", "fare £", "msgs", "subject"
     );
-    println!("{}", "─".repeat(90));
-    for j in items {
+    println!("{}", "─".repeat(96));
+    for (j, n) in items {
         let date_s = j
             .received
             .map(|d| d.format("%Y-%m-%d").to_string())
@@ -159,10 +243,16 @@ fn print_journeys(items: &[&Journey], total_in_store: usize) {
         let time = j.journey_time.as_deref().unwrap_or("—");
         let fare = j.fare.as_deref().unwrap_or("—");
         let subj = truncate(&j.subject, 40);
-        println!("{date_s:<10}  {:<22}  {time:>5}  {fare:>6}  {subj}", truncate(dest, 22));
+        println!(
+            "{date_s:<10}  {:<22}  {time:>5}  {fare:>6}  {n:>5}  {subj}",
+            truncate(dest, 22)
+        );
     }
     println!();
-    println!("{} matching / {} in store", items.len(), total_in_store);
+    println!(
+        "{} unique trip(s) shown / {unique_count} unique / {total_emails} email records",
+        items.len()
+    );
 }
 
 fn truncate(s: &str, n: usize) -> String {
