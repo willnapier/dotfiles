@@ -1,0 +1,12 @@
+# meli mailcap — controls what meli does when you press `m` on an attachment.
+# Format: see mailcap(5). Simplest form is `mime/type; command %s; flags`.
+#
+# Deployed to ~/.config/meli/mailcap on both Mac and Linux.
+
+# HTML body parts → render via meliview (Axum daemon on 127.0.0.1:8765 → browser).
+text/html; meliview-html %s; copiousoutput=false
+
+# PDF attachments → open with system default (Preview on macOS, default PDF
+# viewer on Linux). Faster than routing through meliview for PDFs since
+# the system viewer is already what we'd hand off to.
+application/pdf; open %s; copiousoutput=false

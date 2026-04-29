@@ -1,0 +1,25 @@
+#!/bin/sh
+# meliview-html — mailcap target for text/html parts.
+#
+# meli's mailcap dispatch passes a temp file containing just the HTML body
+# (no surrounding RFC822 headers). meliview's `pipe` subcommand expects a
+# full RFC822 message, so we wrap the HTML in a minimal envelope.
+#
+# Usage (from mailcap):
+#   text/html; meliview-html %s; copiousoutput=false
+#
+# For full multipart/related rendering with cid: image resolution, use
+# `meliview pipe` directly with the whole RFC822 message via stdin.
+set -e
+
+if [ -z "$1" ]; then
+    echo "usage: meliview-html <html-file>" >&2
+    exit 1
+fi
+
+{
+    printf 'Content-Type: text/html; charset=utf-8\n'
+    printf 'Subject: (HTML part)\n'
+    printf '\n'
+    cat "$1"
+} | meliview pipe
