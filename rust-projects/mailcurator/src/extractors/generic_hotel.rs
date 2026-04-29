@@ -85,6 +85,13 @@ impl VendorExtractor for GenericHotel {
         }
 
         if !html.is_empty() {
+            // Property URL extraction works on raw HTML (href values).
+            // Hotel-page URLs vary per vendor but reliably contain
+            // /hotel /hotels /property /rooms /stays in the path AND
+            // exclude tracking subdomains (click, link, e, t, mail).
+            if let Some(url) = find_hotel_url(html) {
+                out.insert("property_url".into(), Value::String(url));
+            }
             let text = strip_to_text(html);
 
             // Check-in / Check-out variations:
@@ -191,6 +198,66 @@ fn guests_re() -> &'static Regex {
 fn nights_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     R.get_or_init(|| Regex::new(r"(\d+)\s+nights?\b").unwrap())
+}
+
+/// Find the most likely hotel-page URL in raw HTML. Strategy:
+/// 1. Extract all URLs from href attributes.
+/// 2. Filter out tracking/promotional/asset URLs (click., link., e., t.,
+///    mail., utm_*, .png, .gif, .jpg, mailto:, tel:).
+/// 3. Prefer URLs whose path contains hotel-shaped tokens
+///    (`/hotel/`, `/hotels/`, `/property/`, `/rooms/`, `/stays/`,
+///    `/lodging/`, `/inn/`, `/resort/`).
+/// 4. Among matches, prefer the shortest (typically the canonical
+///    listing URL without tracking parameters).
+fn find_hotel_url(html: &str) -> Option<String> {
+    static HREF_RE: OnceLock<Regex> = OnceLock::new();
+    let href = HREF_RE.get_or_init(|| {
+        Regex::new(r#"href\s*=\s*["']([^"']+)["']"#).unwrap()
+    });
+    static HOTEL_PATH_RE: OnceLock<Regex> = OnceLock::new();
+    let hotel_path = HOTEL_PATH_RE.get_or_init(|| {
+        Regex::new(r"(?i)/(hotel|hotels|property|properties|rooms?|stays?|lodging|inn|resort|listing)s?/").unwrap()
+    });
+    static TRACKING_HOST_RE: OnceLock<Regex> = OnceLock::new();
+    let tracking_host = TRACKING_HOST_RE.get_or_init(|| {
+        Regex::new(r"^https?://(?:click|link|t|e|mail|track|tracking|email|mailer|m|news|notify|comms|broadcast)\.").unwrap()
+    });
+
+    let mut candidates: Vec<&str> = Vec::new();
+    for caps in href.captures_iter(html) {
+        if let Some(m) = caps.get(1) {
+            let url = m.as_str();
+            // Reject obvious non-page URLs.
+            if !url.starts_with("http") {
+                continue;
+            }
+            if tracking_host.is_match(url) {
+                continue;
+            }
+            // Reject image/asset URLs.
+            if url.ends_with(".png")
+                || url.ends_with(".gif")
+                || url.ends_with(".jpg")
+                || url.ends_with(".jpeg")
+                || url.ends_with(".svg")
+                || url.ends_with(".css")
+                || url.ends_with(".js")
+            {
+                continue;
+            }
+            if !hotel_path.is_match(url) {
+                continue;
+            }
+            candidates.push(url);
+        }
+    }
+    // Prefer the shortest candidate (typically canonical, no tracking
+    // query params).
+    candidates.sort_by_key(|u| u.len());
+    candidates.first().map(|s| {
+        // Strip query params for cleanliness.
+        s.split('?').next().unwrap_or(s).to_string()
+    })
 }
 
 fn first_capture(re: &Regex, text: &str) -> Option<String> {
