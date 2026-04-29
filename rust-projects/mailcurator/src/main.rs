@@ -245,6 +245,13 @@ enum BookingsAction {
         #[arg(short, long, default_value_t = 30)]
         limit: usize,
     },
+    /// Show ALL extracted fields for a booking matching the query.
+    /// Default groups by identity; --all shows every email's record.
+    Show {
+        query: String,
+        #[arg(long)]
+        all: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -599,6 +606,7 @@ fn main() -> Result<()> {
             BookingsAction::Upcoming { limit } => bookings_cli::upcoming(limit)?,
             BookingsAction::List { year, limit } => bookings_cli::list(year, limit)?,
             BookingsAction::Find { query, limit } => bookings_cli::find(&query, limit)?,
+            BookingsAction::Show { query, all } => bookings_cli::show(&query, all)?,
         },
         Command::Tesla { action } => match action {
             TeslaAction::List { year, kind, limit } => {

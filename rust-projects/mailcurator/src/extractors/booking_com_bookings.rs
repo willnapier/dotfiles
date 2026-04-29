@@ -227,9 +227,12 @@ fn pin_re() -> &'static Regex {
 
 fn booking_com_property_url_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
-    // Hotel page URL: https://www.booking.com/hotel/gb/the-mounts-bay-inn.html
+    // Hotel page URL — handles both bare `.html` and locale-suffixed
+    // `.en-gb.html` forms:
+    //   https://www.booking.com/hotel/gb/the-mounts-bay-inn.html
+    //   https://www.booking.com/hotel/gb/the-mounts-bay-inn.en-gb.html
     R.get_or_init(|| {
-        Regex::new(r"(https?://(?:www\.|secure\.)?booking\.com/hotel/[a-z]+/[a-z0-9\-]+\.[a-z\-]+\.html)").unwrap()
+        Regex::new(r"(https?://(?:www\.)?booking\.com/hotel/[a-z]+/[a-z0-9\-]+(?:\.[a-z\-]+)?\.html)").unwrap()
     })
 }
 

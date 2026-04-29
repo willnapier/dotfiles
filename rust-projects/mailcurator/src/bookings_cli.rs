@@ -319,6 +319,106 @@ pub fn list(year: Option<i32>, limit: usize) -> Result<()> {
     Ok(())
 }
 
+/// Show ALL extracted fields for a single booking. Substring-match
+/// against property + booking_ref + subject; if multiple match, picks
+/// the most-recent. The `--all` flag shows every email's raw record;
+/// default shows the canonical (most-populated) record + a "msgs from"
+/// list of received-dates.
+pub fn show(query: &str, all: bool) -> Result<()> {
+    let q = query.to_lowercase();
+    let rows = load_bookings()?;
+    let matches: Vec<&Booking> = rows
+        .iter()
+        .filter(|b| {
+            b.subject.to_lowercase().contains(&q)
+                || b.property.as_deref().is_some_and(|s| s.to_lowercase().contains(&q))
+                || b.booking_ref.as_deref().is_some_and(|s| s.to_lowercase().contains(&q))
+        })
+        .collect();
+    if matches.is_empty() {
+        println!("no booking matching {query:?}");
+        return Ok(());
+    }
+    if all {
+        for (i, m) in matches.iter().enumerate() {
+            println!("─── record {} of {} ───", i + 1, matches.len());
+            print_full_record(m);
+            println!();
+        }
+        return Ok(());
+    }
+    // Group matches by booking identity, then pick canonical for each
+    // group. Show one full-detail block per unique stay.
+    let owned: Vec<Booking> = matches.into_iter().cloned().collect();
+    let groups = dedupe_by_booking(owned);
+    for (b, n) in &groups {
+        println!("─── {} email(s) about this booking ───", n);
+        print_full_record(b);
+        println!();
+    }
+    Ok(())
+}
+
+fn print_full_record(b: &Booking) {
+    let obj = b.raw.as_object();
+    let recv = b
+        .received
+        .map(|d| d.format("%Y-%m-%d %H:%M UTC").to_string())
+        .unwrap_or_else(|| "?".to_string());
+    println!("subject:        {}", b.subject);
+    println!("received:       {recv}");
+    // Print all data fields in a sensible order, falling back to raw
+    // map for fields the struct doesn't model.
+    let display_order = [
+        "vendor", "policy", "property", "property_url", "location",
+        "checkin", "checkin_time", "checkout", "checkout_time",
+        "nights", "rooms", "guests", "host",
+        "booking_ref", "pin", "total", "subtotal", "cleaning_fee", "service_fee",
+    ];
+    if let Some(map) = obj {
+        let mut shown = std::collections::HashSet::new();
+        for k in &display_order {
+            if let Some(v) = map.get(*k) {
+                if let Some(s) = v.as_str() {
+                    if !s.is_empty() {
+                        println!("{:<14}  {}", format!("{}:", k), s);
+                    }
+                }
+                shown.insert(*k);
+            }
+        }
+        // Show any other useful fields the display_order missed.
+        for (k, v) in map.iter() {
+            if shown.contains(&k.as_str()) {
+                continue;
+            }
+            // Skip framework/bookkeeping fields.
+            if matches!(
+                k.as_str(),
+                "extracted_at" | "message_id" | "received" | "subject" | "_provenance"
+            ) {
+                continue;
+            }
+            if let Some(s) = v.as_str() {
+                if !s.is_empty() {
+                    println!("{:<14}  {}", format!("{}:", k), s);
+                }
+            }
+        }
+        // Provenance summary at end.
+        if let Some(prov) = map.get("_provenance").and_then(|v| v.as_object()) {
+            let llm_fields: Vec<&str> = prov
+                .iter()
+                .filter(|(_, v)| v.as_str() == Some("llm"))
+                .map(|(k, _)| k.as_str())
+                .collect();
+            if !llm_fields.is_empty() {
+                println!("provenance:     {} field(s) from LLM: {}", llm_fields.len(), llm_fields.join(", "));
+            }
+        }
+    }
+}
+
 pub fn find(query: &str, limit: usize) -> Result<()> {
     let q = query.to_lowercase();
     let all = load_bookings()?;
