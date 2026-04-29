@@ -29,18 +29,32 @@ on path under ~/Mail/cohs/) -- those appear only in the cohs account view.
 
 # NAVIGATION
 
-Vertical navigation is via **arrow keys** on the ZMK NAV layer (hold-repeat
-friendly). `i`/`e` taps do **not** scroll up/down: meli's `[shortcuts.listing]`,
-`[shortcuts.pager]`, and `[shortcuts.thread-view]` blocks override `scroll_up`/
-`scroll_down` to `Up`/`Down`, shadowing the `i`/`e` defined in
-`[shortcuts.general]`. `n`/`o` taps **do** fire as left/right scroll because
-those contexts do not override `scroll_left`/`scroll_right`, so the general
-bindings fall through.
+In the **listing, pager, and thread-view** the `[shortcuts.listing|pager|
+thread-view]` blocks override `scroll_up`/`scroll_down` to `Up`/`Down` (arrows),
+which shadows the `i`/`e` defined in `[shortcuts.general]`. Use the **ZMK NAV
+layer** for vertical movement there (hold-repeat friendly). `n`/`o` taps still
+fire as horizontal scroll because those contexts don't override
+`scroll_left`/`scroll_right`, so the general bindings fall through.
+
+In **modal dialogues and forms** (send confirmation, account picker, compose
+field forms) `i`/`e` taps **do** work as up/down selectors — those widgets
+don't override the general scroll bindings.
 
   Action                          Key
   ------------------------------- -----------------------------------
-  Up / Down (one row)             `Up` / `Down` (NAV layer)
+  Up / Down (listing/pager)       `Up` / `Down` (NAV layer)
+  Up / Down (dialogues / forms)   `i` / `e` (tap) or `Up` / `Down`
   Left / Right (horizontal scroll) `n` / `o` (general scroll, falls through)
+
+# AVAILABLE KEYS
+
+Currently unbound and free for new shortcuts:
+
+- **`n`** — taps only fire horizontal scroll (rarely useful in a one-line-per-
+  message listing). Strong candidate for **archive** (`tag remove inbox`),
+  filling the biggest gap in the triage triad alongside `d` (trash).
+- **`o`** — same status as `n`. Candidates: toggle flagged (`tag add flagged`),
+  mark unread (`tag add unread`), or save until a real need surfaces.
   Top / bottom of listing         `Home` / `End`
   Page up / page down             `PageUp` / `PageDown`
   Jump N rows                     digit then `Up`/`Down` (e.g. `5 Down`)
@@ -75,8 +89,9 @@ There is no in-app last-refreshed indicator. Diagnostic logs:
 # READING
 
 `Enter` on a row opens the envelope view. `Up`/`Down` (NAV layer) scroll the body —
-`i`/`e` taps don't fire here for the same reason as in the listing (see NAVIGATION).
-`Backspace` returns to the listing.
+`i`/`e` taps don't fire in the pager for the same reason as in the listing (see
+NAVIGATION). They **do** work in the send-confirmation dialogue and other modal
+forms. `Backspace` returns to the listing.
 
 The flag column on each row uses single-character maildir flags:
 

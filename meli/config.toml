@@ -272,14 +272,20 @@ color_aliases = { base03 = "#002b36", base02 = "#073642", base01 = "#586e75", ba
 # Intent was: n / e / i / o = left / down / up / right (Colemak-DH
 # equivalent of vim's h/j/k/l physical positions).
 #
-# Reality (verified 2026-04-29): only `n` and `o` fire on tap. The
-# [shortcuts.listing], [shortcuts.pager], and [shortcuts.thread-view]
-# blocks below override scroll_up/scroll_down to Up/Down (arrows),
-# which shadows the `i`/`e` defined in [shortcuts.general]. They do
-# NOT override scroll_left/scroll_right, so `n`/`o` fall through to
-# the general bindings and work as horizontal scroll. Vertical
-# navigation is therefore arrows-only — fine because the ZMK NAV
-# layer makes hold-repeat on arrows ergonomic.
+# Reality (verified 2026-04-29):
+# - In listing / pager / thread-view: only `n` and `o` fire on tap.
+#   Those blocks override scroll_up/scroll_down to Up/Down (arrows),
+#   shadowing `i`/`e` from [shortcuts.general]. They do NOT override
+#   scroll_left/scroll_right, so `n`/`o` fall through and work as
+#   horizontal scroll. Vertical nav in these contexts is arrows-only,
+#   which is fine — the ZMK NAV layer makes hold-repeat ergonomic.
+# - In modal dialogues / forms (send confirmation, account picker,
+#   compose field navigation): `i`/`e` taps DO fire as up/down because
+#   those widgets don't override the general scroll bindings.
+#
+# `n` and `o` are otherwise unbound and available for new shortcuts.
+# Strongest candidate: `n` = archive (`tag remove inbox`), filling the
+# triage triad alongside `d` = trash.
 #
 # Kept here unchanged: the per-context `scroll_up = 'Up'` overrides
 # are load-bearing for hold-repeat scrolling on long mailboxes (home-

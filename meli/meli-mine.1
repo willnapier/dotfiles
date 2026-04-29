@@ -31,18 +31,22 @@ the cohs account view.
 \f[B]All\-mail window is 30 days\f[R].
 Older content reachable via \f[CR]/\f[R] search.
 .SH NAVIGATION
-Vertical navigation is via \f[B]arrow keys\f[R] on the ZMK NAV layer
+In the \f[B]listing, pager, and thread\-view\f[R] the
+\f[CR][shortcuts.listing|pager| thread\-view]\f[R] blocks override
+\f[CR]scroll_up\f[R]/\f[CR]scroll_down\f[R] to
+\f[CR]Up\f[R]/\f[CR]Down\f[R] (arrows), which shadows the
+\f[CR]i\f[R]/\f[CR]e\f[R] defined in \f[CR][shortcuts.general]\f[R].
+Use the \f[B]ZMK NAV layer\f[R] for vertical movement there
 (hold\-repeat friendly).
-\f[CR]i\f[R]/\f[CR]e\f[R] taps do \f[B]not\f[R] scroll up/down:
-meli\(cqs \f[CR][shortcuts.listing]\f[R], \f[CR][shortcuts.pager]\f[R],
-and \f[CR][shortcuts.thread\-view]\f[R] blocks override
-\f[CR]scroll_up\f[R]/ \f[CR]scroll_down\f[R] to
-\f[CR]Up\f[R]/\f[CR]Down\f[R], shadowing the \f[CR]i\f[R]/\f[CR]e\f[R]
-defined in \f[CR][shortcuts.general]\f[R].
-\f[CR]n\f[R]/\f[CR]o\f[R] taps \f[B]do\f[R] fire as left/right scroll
-because those contexts do not override
+\f[CR]n\f[R]/\f[CR]o\f[R] taps still fire as horizontal scroll because
+those contexts don\(cqt override
 \f[CR]scroll_left\f[R]/\f[CR]scroll_right\f[R], so the general bindings
 fall through.
+.PP
+In \f[B]modal dialogues and forms\f[R] (send confirmation, account
+picker, compose field forms) \f[CR]i\f[R]/\f[CR]e\f[R] taps \f[B]do\f[R]
+work as up/down selectors \(em those widgets don\(cqt override the
+general scroll bindings.
 .PP
 .TS
 tab(@);
@@ -54,73 +58,44 @@ Key
 T}
 _
 T{
-Up / Down (one row)
+Up / Down (listing/pager)
 T}@T{
 \f[CR]Up\f[R] / \f[CR]Down\f[R] (NAV layer)
+T}
+T{
+Up / Down (dialogues / forms)
+T}@T{
+\f[CR]i\f[R] / \f[CR]e\f[R] (tap) or \f[CR]Up\f[R] / \f[CR]Down\f[R]
 T}
 T{
 Left / Right (horizontal scroll)
 T}@T{
 \f[CR]n\f[R] / \f[CR]o\f[R] (general scroll, falls through)
 T}
-T{
-Top / bottom of listing
-T}@T{
-\f[CR]Home\f[R] / \f[CR]End\f[R]
-T}
-T{
-Page up / page down
-T}@T{
-\f[CR]PageUp\f[R] / \f[CR]PageDown\f[R]
-T}
-T{
-Jump N rows
-T}@T{
-digit then \f[CR]Up\f[R]/\f[CR]Down\f[R] (e.g.\ \f[CR]5 Down\f[R])
-T}
-T{
-Open selected
-T}@T{
-\f[CR]Enter\f[R]
-T}
-T{
-Back / exit current view
-T}@T{
-\f[CR]Backspace\f[R] (NOT \f[CR]Esc\f[R], NOT \f[CR]i\f[R]) \(em works
-in both listing and envelope\-view
-T}
-T{
-Cancel command mode (\f[CR]:\f[R] prompt)
-T}@T{
-\f[CR]Esc\f[R] \(em if you brush the colon key and a small prompt
-appears top\-of\-screen, this dismisses it
-T}
-T{
-Next / previous mailbox
-T}@T{
-\f[CR]E\f[R] / \f[CR]I\f[R]
-T}
-T{
-Next / previous account
-T}@T{
-\f[CR]N\f[R] / \f[CR]O\f[R]
-T}
-T{
-Jump to mailbox by sidebar #
-T}@T{
-\f[CR]:go N\f[R] ↵
-T}
-T{
-Mark seen
-T}@T{
-\f[CR]s\f[R]
-T}
-T{
-Toggle help / shortcuts
-T}@T{
-\f[CR]?\f[R] (contextual; differs per pane)
-T}
 .TE
+.SH AVAILABLE KEYS
+Currently unbound and free for new shortcuts:
+.IP \(bu 2
+\f[B]\f[CB]n\f[B]\f[R] \(em taps only fire horizontal scroll (rarely
+useful in a one\-line\-per\- message listing).
+Strong candidate for \f[B]archive\f[R] (\f[CR]tag remove inbox\f[R]),
+filling the biggest gap in the triage triad alongside \f[CR]d\f[R]
+(trash).
+.IP \(bu 2
+\f[B]\f[CB]o\f[B]\f[R] \(em same status as \f[CR]n\f[R].
+Candidates: toggle flagged (\f[CR]tag add flagged\f[R]), mark unread
+(\f[CR]tag add unread\f[R]), or save until a real need surfaces.
+Top / bottom of listing \f[CR]Home\f[R] / \f[CR]End\f[R] Page up / page
+down \f[CR]PageUp\f[R] / \f[CR]PageDown\f[R] Jump N rows digit then
+\f[CR]Up\f[R]/\f[CR]Down\f[R] (e.g.\ \f[CR]5 Down\f[R]) Open selected
+\f[CR]Enter\f[R] Back / exit current view \f[CR]Backspace\f[R] (NOT
+\f[CR]Esc\f[R], NOT \f[CR]i\f[R]) \(em works in both listing and
+envelope\-view Cancel command mode (\f[CR]:\f[R] prompt) \f[CR]Esc\f[R]
+\(em if you brush the colon key and a small prompt appears
+top\-of\-screen, this dismisses it Next / previous mailbox \f[CR]E\f[R]
+/ \f[CR]I\f[R] Next / previous account \f[CR]N\f[R] / \f[CR]O\f[R] Jump
+to mailbox by sidebar # \f[CR]:go N\f[R] ↵ Mark seen \f[CR]s\f[R] Toggle
+help / shortcuts \f[CR]?\f[R] (contextual; differs per pane)
 .PP
 \f[CR]Backspace\f[R] is the rebound \f[CR]exit_entry\f[R] because
 meli\(cqs listing widgets consume \f[CR]Esc\f[R] internally before the
@@ -167,8 +142,10 @@ Diagnostic logs: \f[CR]\(ti/.local/share/mail\-sync.log\f[R],
 .SH READING
 \f[CR]Enter\f[R] on a row opens the envelope view.
 \f[CR]Up\f[R]/\f[CR]Down\f[R] (NAV layer) scroll the body \(em
-\f[CR]i\f[R]/\f[CR]e\f[R] taps don\(cqt fire here for the same reason as
-in the listing (see NAVIGATION).
+\f[CR]i\f[R]/\f[CR]e\f[R] taps don\(cqt fire in the pager for the same
+reason as in the listing (see NAVIGATION).
+They \f[B]do\f[R] work in the send\-confirmation dialogue and other
+modal forms.
 \f[CR]Backspace\f[R] returns to the listing.
 .PP
 The flag column on each row uses single\-character maildir flags:
