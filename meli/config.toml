@@ -110,26 +110,38 @@ send_mail = "practiceforge email graph-send"
 # PATH than launchd does, but explicit > implicit here).
 refresh_command = "sh -c '/Users/williamnapier/.local/bin/mbsync cohs && /opt/homebrew/bin/notmuch new'"
 
+  # Hide the `cohs` tag chip in every mailbox view: every message under
+  # this account has it by construction (the queries above all gate on
+  # `tag:cohs`), so showing it is pure noise. notmuch DB keeps the tag —
+  # this is UI-only and load-bearing for the queries themselves.
+
   [accounts.cohs.mailboxes."inbox"]
   query = "tag:cohs and tag:inbox and not tag:archive and not tag:spam and not tag:trash"
+  tags.ignore_tags = ["cohs"]
 
   [accounts.cohs.mailboxes."unread"]
   query = "tag:cohs and tag:unread and not tag:trash and not tag:spam"
+  tags.ignore_tags = ["cohs"]
 
   [accounts.cohs.mailboxes."sent"]
   query = "tag:cohs and tag:sent"
+  tags.ignore_tags = ["cohs"]
 
   [accounts.cohs.mailboxes."drafts"]
   query = "tag:cohs and tag:drafts"
+  tags.ignore_tags = ["cohs"]
 
   [accounts.cohs.mailboxes."archive"]
   query = "tag:cohs and tag:archive"
+  tags.ignore_tags = ["cohs"]
 
   [accounts.cohs.mailboxes."trash"]
   query = "tag:cohs and tag:trash"
+  tags.ignore_tags = ["cohs"]
 
   [accounts.cohs.mailboxes."spam"]
   query = "tag:cohs and tag:spam"
+  tags.ignore_tags = ["cohs"]
 
 # Composing: no global override needed — each account's send_mail handles
 # its own path (Gmail: msmtp + pizauth; COHS: practiceforge graph-send).
