@@ -338,9 +338,9 @@ table.listing {
   bottom: 0;
   background: var(--bg-elevated);
   border-top: 1px solid var(--rule);
-  padding: var(--sp-1) var(--sp-3);
-  font-size: var(--text-xs);
-  color: var(--fg-faint);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--text-base);
+  color: var(--fg-muted);
   display: flex;
   gap: var(--sp-3);
   flex-wrap: wrap;
