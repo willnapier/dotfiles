@@ -228,9 +228,14 @@
   const msgPageUp = () => scrollBody(-window.innerHeight * 0.9);
 
   function currentMessageId() {
+    // Templates stamp `data-msg-id` (→ dataset.msgId); legacy code paths
+    // also accept `data-message-id` (→ dataset.messageId). Body comes
+    // first because the page-level attribute wins over deeply nested ones.
+    if (document.body.dataset.msgId) return document.body.dataset.msgId;
     if (document.body.dataset.messageId) return document.body.dataset.messageId;
-    const el = document.querySelector("[data-message-id]");
-    return el ? el.dataset.messageId : null;
+    const el = document.querySelector("[data-msg-id], [data-message-id]");
+    if (!el) return null;
+    return el.dataset.msgId || el.dataset.messageId || null;
   }
 
   function msgGoto(qs) {

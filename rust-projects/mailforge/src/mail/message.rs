@@ -263,7 +263,7 @@ fn render_body(msg: &Message) -> Markup {
                 @if msg.text_html.is_some() {
                     p class="message-body__html-hint" {
                         "An HTML version is available — press "
-                        kbd { "m" }
+                        kbd { "v" }
                         " to open it in the dedicated viewer."
                     }
                 }
