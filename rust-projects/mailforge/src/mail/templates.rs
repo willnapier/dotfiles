@@ -228,9 +228,14 @@ pub fn envelope_row_indexed(env: &Envelope, row_index: usize) -> Markup {
         .collect();
 
     // Choose subject link target: message URL for single-message threads,
-    // thread URL otherwise.
+    // thread URL otherwise. Encode the id segment — GitHub notification
+    // ids contain `/` (e.g. owner/repo/check-suites/...@github.com) which
+    // would otherwise eat the route's `:id` matcher.
     let (link, link_id_attr) = if let Some(msg_id) = env.message_id() {
-        (format!("/mail/m/{}", msg_id), Some(msg_id.to_string()))
+        (
+            format!("/mail/m/{}", crate::mail::notmuch_db::encode_id(msg_id)),
+            Some(msg_id.to_string()),
+        )
     } else {
         (format!("/mail/t/{}", env.thread), None)
     };
@@ -551,7 +556,7 @@ mod tests {
         let html = envelope_row(&env).into_string();
         assert!(html.contains("class=\"envelope-row unread\""));
         assert!(html.contains(r#"data-msg-id="abc@example.com""#));
-        assert!(html.contains(r#"href="/mail/m/abc@example.com""#));
+        assert!(html.contains(r#"href="/mail/m/abc%40example.com""#));
     }
 
     #[test]
