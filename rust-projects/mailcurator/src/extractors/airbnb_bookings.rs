@@ -11,6 +11,7 @@ use scraper::Html;
 use serde_json::{Map, Value};
 use std::sync::OnceLock;
 
+use super::currency;
 use super::VendorExtractor;
 
 const AIRBNB_LLM_SCHEMA: &str = r#"{
@@ -24,9 +25,10 @@ const AIRBNB_LLM_SCHEMA: &str = r#"{
   "property": "string|null — listing name (e.g. \"Brook Cottage\", \"Carninney Lane\")",
   "property_url": "string|null — direct link to the listing page on Airbnb, e.g. \"https://www.airbnb.co.uk/rooms/12345678\". Strip query parameters.",
   "booking_ref": "string|null — Airbnb confirmation code, typically HMxxxxxxxx",
-  "total": "string|null — total paid in pounds as decimal, e.g. \"450.00\"",
-  "cleaning_fee": "string|null — cleaning fee as decimal pounds if itemised separately",
-  "service_fee": "string|null — Airbnb service fee as decimal pounds if itemised separately"
+  "total": "string|null — total paid as decimal e.g. \"450.00\". DO NOT include currency symbol — populate `currency` separately.",
+  "currency": "string|null — ISO 4217 currency code: GBP, EUR, USD, etc. Detect from £/€/$ markers in the email; default GBP for UK hosts.",
+  "cleaning_fee": "string|null — cleaning fee as decimal if itemised separately (same currency as total)",
+  "service_fee": "string|null — Airbnb service fee as decimal if itemised separately"
 }"#;
 
 pub struct AirbnbBookings;
@@ -98,8 +100,12 @@ impl VendorExtractor for AirbnbBookings {
             if let Some(refn) = first_capture(&booking_ref_re(), &text) {
                 out.insert("booking_ref".into(), Value::String(refn));
             }
-            if let Some(total) = first_capture(&total_re(), &text) {
-                out.insert("total".into(), Value::String(total));
+            // Currency-aware money extraction (replaces the GBP-only
+            // total_re path). Falls back to free-text find_money when
+            // no Total/Total cost label is found.
+            if let Some((c, v)) = currency::find_money(&text) {
+                out.insert("total".into(), Value::String(v));
+                out.insert("currency".into(), Value::String(c));
             }
             if let Some(g) = first_capture(&guests_re(), &text) {
                 out.insert("guests".into(), Value::String(g));

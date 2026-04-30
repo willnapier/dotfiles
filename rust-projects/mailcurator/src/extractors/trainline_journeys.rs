@@ -92,6 +92,8 @@ impl VendorExtractor for TrainlineJourneys {
 
     fn extract(&self, parsed: &ParsedMail, html: &str) -> Result<Map<String, Value>> {
         let mut out = Map::new();
+        // Trainline UK — always GBP.
+        out.insert("currency".into(), Value::String("GBP".into()));
         let subject = parsed.headers.get_first_value("Subject").unwrap_or_default();
 
         if let Some(dest) = destination_from_subject(&subject) {

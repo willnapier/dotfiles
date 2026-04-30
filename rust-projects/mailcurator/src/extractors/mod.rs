@@ -21,6 +21,7 @@ use serde_json::{Map, Value};
 pub mod airbnb_bookings;
 pub mod amazon_orders;
 pub mod booking_com_bookings;
+pub mod currency;
 pub mod generic_hotel;
 pub mod tesla;
 pub mod trainline_journeys;

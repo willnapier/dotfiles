@@ -18,6 +18,7 @@ struct Order {
     subject: String,
     order_id: Option<String>,
     total: Option<String>,
+    currency: Option<String>,
     eta: Option<String>,
     items: Vec<String>,
     raw: Value,
@@ -79,11 +80,13 @@ fn load_orders() -> Result<Vec<Order>> {
             .and_then(|v| v.as_str())
             .map(str::to_string)
             .unwrap_or_default();
+        let currency = opt_string_obj(&obj, "currency");
         let new_record = Order {
             received,
             subject,
             order_id,
             total,
+            currency,
             eta,
             items,
             raw: obj,
@@ -124,6 +127,10 @@ fn parse_date(s: &str) -> Option<DateTime<Utc>> {
     DateTime::parse_from_rfc2822(s)
         .ok()
         .map(|dt| dt.with_timezone(&Utc))
+}
+
+fn opt_string_obj(obj: &Value, key: &str) -> Option<String> {
+    obj.get(key).and_then(|v| v.as_str()).map(str::to_string)
 }
 
 pub fn list(year: Option<i32>, limit: usize) -> Result<()> {
@@ -170,35 +177,40 @@ pub fn recent(days: i64, limit: usize) -> Result<()> {
 }
 
 pub fn total(year: Option<i32>) -> Result<()> {
+    use std::collections::BTreeMap;
     let orders = load_orders()?;
-    let mut sum = 0.0_f64;
-    let mut counted = 0usize;
+    // Sum per-currency to avoid mixing pounds + euros into a meaningless
+    // total. Records lacking a currency field default to GBP — that
+    // matches the historical assumption in these extractors.
+    let mut sums: BTreeMap<String, (f64, usize)> = BTreeMap::new();
     let mut missing_total = 0usize;
-    let mut missing_year = 0usize;
     for o in &orders {
         if let Some(y) = year {
             match o.received {
                 Some(d) if d.year() == y => {}
-                _ => {
-                    missing_year += 1;
-                    continue;
-                }
+                _ => continue,
             }
         }
-        match o.total.as_deref().and_then(|t| t.replace(',', "").parse::<f64>().ok()) {
+        let amount = o.total.as_deref().and_then(|t| t.replace(',', "").parse::<f64>().ok());
+        match amount {
             Some(v) => {
-                sum += v;
-                counted += 1;
+                let code = o.currency.clone().unwrap_or_else(|| "GBP".to_string());
+                let entry = sums.entry(code).or_insert((0.0, 0));
+                entry.0 += v;
+                entry.1 += 1;
             }
             None => missing_total += 1,
         }
     }
     let label = year.map(|y| format!("year {y}")).unwrap_or_else(|| "all years".to_string());
-    println!("orders {label}: counted={counted}  missing-total={missing_total}");
-    if year.is_none() {
-        println!("(records skipped due to year filter: {missing_year})");
+    println!("orders {label}: missing-total={missing_total}");
+    if sums.is_empty() {
+        println!("(no totals captured)");
+    } else {
+        for (code, (sum, count)) in &sums {
+            println!("  {code}  {sum:>10.2}  ({count} records)");
+        }
     }
-    println!("sum (£): {sum:.2}");
     Ok(())
 }
 
@@ -208,8 +220,8 @@ fn print_orders(orders: &[&Order], total_in_store: usize) {
         return;
     }
     println!(
-        "{:<10}  {:<19}  {:>8}  {}",
-        "date", "order_id", "total £", "subject"
+        "{:<10}  {:<19}  {:>10}  {}",
+        "date", "order_id", "total", "subject"
     );
     println!("{}", "─".repeat(80));
     for o in orders {
@@ -218,9 +230,9 @@ fn print_orders(orders: &[&Order], total_in_store: usize) {
             .map(|d| d.format("%Y-%m-%d").to_string())
             .unwrap_or_else(|| "?".to_string());
         let order_id = o.order_id.as_deref().unwrap_or("—");
-        let total = o.total.as_deref().unwrap_or("—");
+        let total = format_money(o.total.as_deref(), o.currency.as_deref());
         let subj = truncate(&o.subject, 50);
-        println!("{date_s:<10}  {order_id:<19}  {total:>8}  {subj}");
+        println!("{date_s:<10}  {order_id:<19}  {total:>10}  {subj}");
         if !o.items.is_empty() {
             for item in o.items.iter().take(3) {
                 println!("            └─ {}", truncate(item, 60));
@@ -233,6 +245,25 @@ fn print_orders(orders: &[&Order], total_in_store: usize) {
     let _ = &orders[0].raw; // silence unused-field warning if `raw` not referenced elsewhere
     println!();
     println!("{} matching / {} in store", orders.len(), total_in_store);
+}
+
+/// Format an amount with currency code (or symbol) for display.
+/// Returns "—" if amount missing. Defaults currency to GBP if absent.
+fn format_money(amount: Option<&str>, currency: Option<&str>) -> String {
+    let Some(a) = amount else { return "—".to_string() };
+    let code = currency.unwrap_or("GBP");
+    let symbol = match code {
+        "GBP" => "£",
+        "EUR" => "€",
+        "USD" => "$",
+        "JPY" => "¥",
+        _ => "",
+    };
+    if symbol.is_empty() {
+        format!("{a} {code}")
+    } else {
+        format!("{symbol}{a}")
+    }
 }
 
 fn truncate(s: &str, n: usize) -> String {

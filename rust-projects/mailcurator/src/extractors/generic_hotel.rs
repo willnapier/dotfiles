@@ -16,6 +16,7 @@ use scraper::Html;
 use serde_json::{Map, Value};
 use std::sync::OnceLock;
 
+use super::currency;
 use super::VendorExtractor;
 
 const GENERIC_HOTEL_LLM_SCHEMA: &str = r#"{
@@ -29,7 +30,8 @@ const GENERIC_HOTEL_LLM_SCHEMA: &str = r#"{
   "property": "string|null — hotel/inn name (often in subject)",
   "location": "string|null — city/town",
   "booking_ref": "string|null — confirmation / reservation / itinerary number",
-  "total": "string|null — total cost in pounds as decimal",
+  "total": "string|null — total cost as decimal. DO NOT include currency symbol — populate `currency` separately.",
+  "currency": "string|null — ISO 4217 currency code: GBP, EUR, USD, etc. Detect from £/€/$ markers; default GBP for UK chains.",
   "property_url": "string|null — direct link to the hotel page (any URL in the email that points at the hotel/listing on the vendor site, with no query params if possible)"
 }"#;
 
@@ -104,8 +106,9 @@ impl VendorExtractor for GenericHotel {
             if let Some(d) = first_capture(&checkout_re(), &text) {
                 out.insert("checkout".into(), Value::String(d));
             }
-            if let Some(t) = first_capture(&total_re(), &text) {
-                out.insert("total".into(), Value::String(t));
+            if let Some((c, v)) = currency::find_money(&text) {
+                out.insert("total".into(), Value::String(v));
+                out.insert("currency".into(), Value::String(c));
             }
             if let Some(c) = first_capture(&confirmation_re(), &text) {
                 out.insert("booking_ref".into(), Value::String(c));

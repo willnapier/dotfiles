@@ -88,6 +88,8 @@ impl VendorExtractor for AmazonOrders {
 
     fn extract(&self, parsed: &ParsedMail, html: &str) -> Result<Map<String, Value>> {
         let mut out = Map::new();
+        // amazon-orders policy is gated to @amazon.co.uk — always GBP.
+        out.insert("currency".into(), Value::String("GBP".into()));
 
         let subject = parsed.headers.get_first_value("Subject").unwrap_or_default();
 

@@ -89,6 +89,8 @@ impl VendorExtractor for Tesla {
 
     fn extract(&self, parsed: &ParsedMail, html: &str) -> Result<Map<String, Value>> {
         let mut out = Map::new();
+        // Tesla UK — payment receipts and supercharger charges in GBP.
+        out.insert("currency".into(), Value::String("GBP".into()));
         let subject = parsed.headers.get_first_value("Subject").unwrap_or_default();
 
         // Classify the email by subject — gives downstream queries a

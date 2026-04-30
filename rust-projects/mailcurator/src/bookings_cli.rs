@@ -27,6 +27,7 @@ struct Booking {
     host: Option<String>,
     guests: Option<String>,
     total: Option<String>,
+    currency: Option<String>,
     booking_ref: Option<String>,
     /// Raw json so `show` can display every field including ones the
     /// CLI struct doesn't model explicitly (location, pin, nights,
@@ -70,6 +71,7 @@ fn load_bookings() -> Result<Vec<Booking>> {
             host: opt_string(&obj, "host"),
             guests: opt_string(&obj, "guests"),
             total: opt_string(&obj, "total"),
+            currency: opt_string(&obj, "currency"),
             booking_ref: opt_string(&obj, "booking_ref"),
             raw: obj,
         });

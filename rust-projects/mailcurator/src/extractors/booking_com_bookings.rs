@@ -21,6 +21,7 @@ use scraper::Html;
 use serde_json::{Map, Value};
 use std::sync::OnceLock;
 
+use super::currency;
 use super::VendorExtractor;
 
 const BOOKING_COM_LLM_SCHEMA: &str = r#"{
@@ -35,7 +36,8 @@ const BOOKING_COM_LLM_SCHEMA: &str = r#"{
   "location": "string|null — city/town/region (e.g. \"Mullion, United Kingdom\")",
   "booking_ref": "string|null — Booking.com confirmation number, typically 10 digits",
   "pin": "string|null — 4-digit PIN if shown",
-  "total": "string|null — total in pounds as decimal, e.g. \"319.80\"",
+  "total": "string|null — total amount as decimal, e.g. \"319.80\". DO NOT include currency symbol — populate `currency` separately.",
+  "currency": "string|null — ISO 4217 currency code: GBP, EUR, USD, JPY, etc. Default GBP for UK stays; check email for €/EUR markers on continental Europe stays.",
   "property_url": "string|null — direct link to the hotel page on Booking.com, e.g. \"https://www.booking.com/hotel/gb/the-mounts-bay-inn.html\". Strip query parameters."
 }"#;
 
@@ -131,8 +133,20 @@ impl VendorExtractor for BookingComBookings {
             if let Some(r) = first_capture(&rooms_re(), &text) {
                 out.insert("rooms".into(), Value::String(r));
             }
-            if let Some(t) = first_capture(&total_re(), &text) {
-                out.insert("total".into(), Value::String(t));
+            // Currency-aware money extraction: tries to find the total
+            // near the "Total price" label, but falls back to any
+            // money-shaped token in the body if the labelled form
+            // isn't present.
+            if let Some(caps) = total_labelled_re().captures(&text) {
+                if let Some(amount) = caps.get(1).map(|m| m.as_str()) {
+                    if let Some((c, v)) = currency::find_money(amount) {
+                        out.insert("total".into(), Value::String(v));
+                        out.insert("currency".into(), Value::String(c));
+                    }
+                }
+            } else if let Some((c, v)) = currency::find_money(&text) {
+                out.insert("total".into(), Value::String(v));
+                out.insert("currency".into(), Value::String(c));
             }
             if let Some(c) = first_capture(&confirmation_re(), &text) {
                 out.insert("booking_ref".into(), Value::String(c));
@@ -210,7 +224,20 @@ fn rooms_re() -> &'static Regex {
 fn total_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     R.get_or_init(|| {
+        // Legacy GBP-only regex retained only because dead-code might
+        // be removed; the live path uses total_labelled_re + the shared
+        // currency helper.
         Regex::new(r"Total\s+price\s+£\s*(\d+(?:[,\d]+)?(?:\.\d{2})?)")
+            .unwrap()
+    })
+}
+
+fn total_labelled_re() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    // Capture the chunk near the "Total price" label; the currency
+    // helper extracts both code + value from that chunk.
+    R.get_or_init(|| {
+        Regex::new(r"Total\s+price\s+([£€$¥]?\s*[\d.,]+(?:\s*(?:GBP|EUR|USD|JPY|CHF|CAD|AUD)?)?)")
             .unwrap()
     })
 }
