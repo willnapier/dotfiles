@@ -258,6 +258,13 @@
   const msgNext = () => clickSel("[data-nav=next-message]");
   const msgPrev = () => clickSel("[data-nav=prev-message]");
   function msgHtmlView() {
+    // Prefer clicking the visible "HTML view" link — guarantees the same
+    // navigation as a pointer click, which is the path the user has
+    // already verified works. Falls back to URL synthesis only if the
+    // link isn't on the page (e.g. action toolbar suppressed for some
+    // reason).
+    const link = document.querySelector('a[data-action="open-viewer"]');
+    if (link) { link.click(); return; }
     const id = currentMessageId();
     if (id) window.location.href = "/mail/m/" + encodeURIComponent(id) + "?view=full";
   }
