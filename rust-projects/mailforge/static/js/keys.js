@@ -393,7 +393,7 @@
       " ": msgPageDown, "Shift+ ": msgPageUp,
       r: msgReply, R: msgReplyAll, f: msgForward,
       d: msgTrash, a: msgArchive,
-      J: msgNext, K: msgPrev,
+      n: msgPrev, o: msgNext,
       v: msgHtmlView,
       "Ctrl+r": msgReload, "Ctrl+R": msgReload,
     },
@@ -405,7 +405,6 @@
       o: threadToggle,
       r: msgReply, R: msgReplyAll, f: msgForward,
       d: msgTrash, a: msgArchive,
-      J: msgNext, K: msgPrev,
     },
 
     compose: {

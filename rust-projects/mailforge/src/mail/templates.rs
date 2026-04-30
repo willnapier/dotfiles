@@ -398,7 +398,7 @@ pub fn helpbar(ctx: PageContext) -> Markup {
             ("d", "trash"),
             ("a", "archive"),
             ("v", "HTML view"),
-            ("J/K", "next/prev"),
+            ("n/o", "prev/next"),
             ("?", "help"),
         ],
         PageContext::Thread => &[
