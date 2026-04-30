@@ -35,7 +35,9 @@
 //! enough that running them on the tokio runtime threads is acceptable.
 
 use anyhow::{Context, Result};
+use mail_parser::MessageParser;
 use serde::{Deserialize, Serialize};
+use std::process::{Command, Stdio};
 
 use crate::mail::accounts::Account;
 
@@ -149,8 +151,38 @@ pub struct Message {
 ///
 /// Implementation hint: a static `match (account.slug, mailbox)` block is
 /// fine. The total count of valid (slug, mailbox) pairs is ~15.
-pub fn mailbox_query(_account: &Account, _mailbox: &str) -> Option<String> {
-    todo!("implement query mapping per the doc comment above")
+pub fn mailbox_query(account: &Account, mailbox: &str) -> Option<String> {
+    let q = match (account.slug, mailbox) {
+        // ---------------- Personal (Gmail / no cohs tag) ----------------
+        ("personal", "inbox") => {
+            "tag:inbox and not tag:archive and not tag:spam and not tag:trash \
+             and not tag:cohs and not tag:promotions and date:6M.."
+        }
+        ("personal", "promotions") => {
+            "tag:inbox and tag:promotions and not tag:archive and not tag:spam \
+             and not tag:trash and not tag:cohs and date:6M.."
+        }
+        ("personal", "unread") => "tag:unread and not tag:cohs",
+        ("personal", "sent") => "tag:sent and not tag:cohs",
+        ("personal", "archive") => {
+            "not tag:inbox and not tag:trash and not tag:spam and not tag:sent and not tag:cohs"
+        }
+        ("personal", "all-mail") => "date:30d.. and not tag:cohs",
+
+        // ---------------- COHS (M365, gated by tag:cohs) ----------------
+        ("cohs", "inbox") => {
+            "tag:cohs and tag:inbox and not tag:archive and not tag:spam and not tag:trash"
+        }
+        ("cohs", "unread") => "tag:cohs and tag:unread and not tag:trash and not tag:spam",
+        ("cohs", "sent") => "tag:cohs and tag:sent",
+        ("cohs", "drafts") => "tag:cohs and tag:drafts",
+        ("cohs", "archive") => "tag:cohs and tag:archive",
+        ("cohs", "trash") => "tag:cohs and tag:trash",
+        ("cohs", "spam") => "tag:cohs and tag:spam",
+
+        _ => return None,
+    };
+    Some(q.to_string())
 }
 
 // ------------------------------------------------------------------
@@ -179,16 +211,63 @@ pub fn mailbox_query(_account: &Account, _mailbox: &str) -> Option<String> {
 ///     .output()?;
 /// let envs: Vec<Envelope> = serde_json::from_slice(&output.stdout)?;
 /// ```
-pub fn search(_query: &str, _offset: usize, _limit: usize) -> Result<Vec<Envelope>> {
-    todo!("shell out to `notmuch search` and parse JSON")
+pub fn search(query: &str, offset: usize, limit: usize) -> Result<Vec<Envelope>> {
+    let output = Command::new("notmuch")
+        .args([
+            "search",
+            "--format=json",
+            "--output=summary",
+            &format!("--offset={offset}"),
+            &format!("--limit={limit}"),
+            query,
+        ])
+        .stderr(Stdio::null())
+        .output()
+        .with_context(|| format!("spawning `notmuch search ... {query}`"))?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "notmuch search failed (exit {:?}): {}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    parse_search_json(&output.stdout)
+        .with_context(|| format!("parsing `notmuch search` JSON for query: {query}"))
+}
+
+/// Parse notmuch search JSON output into a `Vec<Envelope>`.
+///
+/// Split out so the parsing layer can be unit-tested without touching
+/// the subprocess.
+fn parse_search_json(bytes: &[u8]) -> Result<Vec<Envelope>> {
+    let envs: Vec<Envelope> = serde_json::from_slice(bytes)
+        .context("deserializing notmuch search JSON output")?;
+    Ok(envs)
 }
 
 /// Total count of messages matching the query. Used by paginator.
 ///
 /// `notmuch count <query>` returns a single integer on stdout. mailcurator
 /// has the canonical implementation; copy from there.
-pub fn count(_query: &str) -> Result<u64> {
-    todo!("shell out to `notmuch count`")
+pub fn count(query: &str) -> Result<u64> {
+    let output = Command::new("notmuch")
+        .args(["count", query])
+        .stderr(Stdio::null())
+        .output()
+        .with_context(|| format!("spawning `notmuch count {query}`"))?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "notmuch count failed (exit {:?}): {}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let s = String::from_utf8_lossy(&output.stdout);
+    let n = s
+        .trim()
+        .parse::<u64>()
+        .with_context(|| format!("parsing notmuch count output: {s:?}"))?;
+    Ok(n)
 }
 
 // ------------------------------------------------------------------
@@ -210,16 +289,180 @@ pub fn count(_query: &str) -> Result<u64> {
 /// Fallback for missing files (e.g. mbsync just deleted the file but
 /// notmuch hasn't run): return Err with a clear message; handler can
 /// 404 or render a stub.
-pub fn show(_id: &str) -> Result<Message> {
-    todo!("notmuch search --output=files + mail-parser parse")
+pub fn show(id: &str) -> Result<Message> {
+    let query = format!("id:{id}");
+
+    // 1. Find the on-disk path(s). A single Message-ID can have multiple
+    //    backing files (Gmail's All Mail + label folders); we pick the
+    //    first that exists.
+    let path = first_existing_file(&query)
+        .with_context(|| format!("locating files for {query}"))?
+        .ok_or_else(|| anyhow::anyhow!("no on-disk file found for {query}"))?;
+
+    // 2. Read raw bytes.
+    let bytes = std::fs::read(&path)
+        .with_context(|| format!("reading message file {}", path.display()))?;
+
+    // 3. Parse with mail-parser.
+    let parsed = MessageParser::default()
+        .parse(&bytes[..])
+        .ok_or_else(|| anyhow::anyhow!("mail-parser failed to parse {}", path.display()))?;
+
+    // 4. Pull tags via a separate `notmuch search --output=tags` call.
+    //    Cheap (single Xapian lookup); avoids re-parsing the message-level
+    //    JSON which would also require parsing all the body parts twice.
+    let tags = fetch_tags(&query).unwrap_or_default();
+
+    // 5. Build Message.
+    let subject = parsed.subject().map(|s| s.to_string());
+    let from = parsed
+        .from()
+        .and_then(|a| a.first())
+        .and_then(|a| a.address().map(|s| s.to_string()));
+    let to = parsed
+        .to()
+        .map(|addr| {
+            addr.iter()
+                .filter_map(|a| a.address().map(|s| s.to_string()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let cc = parsed
+        .cc()
+        .map(|addr| {
+            addr.iter()
+                .filter_map(|a| a.address().map(|s| s.to_string()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let date = parsed.date().map(|d| d.to_rfc3339());
+    let text_plain = if parsed.text_body_count() > 0 {
+        parsed.body_text(0).map(|c| c.into_owned())
+    } else {
+        None
+    };
+    let text_html = if parsed.html_body_count() > 0 {
+        parsed.body_html(0).map(|c| c.into_owned())
+    } else {
+        None
+    };
+
+    Ok(Message {
+        id: id.to_string(),
+        subject,
+        from,
+        to,
+        cc,
+        date,
+        tags,
+        filename: Some(path.to_string_lossy().into_owned()),
+        text_plain,
+        text_html,
+    })
 }
 
 /// Fetch all messages in a thread, in chronological order.
 ///
 /// `thread_id` is the bare thread id (no `thread:` prefix). The query is
 /// `thread:<id>`.
-pub fn show_thread(_thread_id: &str) -> Result<Vec<Message>> {
-    todo!("notmuch show + mail-parser per-message")
+pub fn show_thread(thread_id: &str) -> Result<Vec<Message>> {
+    let query = format!("thread:{thread_id}");
+
+    // Get the per-message id list, oldest-first for chronological order.
+    let output = Command::new("notmuch")
+        .args([
+            "search",
+            "--format=json",
+            "--output=messages",
+            "--sort=oldest-first",
+            &query,
+        ])
+        .stderr(Stdio::null())
+        .output()
+        .with_context(|| format!("spawning `notmuch search --output=messages {query}`"))?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "notmuch search (thread) failed (exit {:?}): {}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let ids: Vec<String> = serde_json::from_slice(&output.stdout)
+        .context("parsing notmuch --output=messages JSON")?;
+
+    let mut messages = Vec::with_capacity(ids.len());
+    for raw in ids {
+        // notmuch returns "id:<x>" entries; strip the prefix.
+        let bare = raw.strip_prefix("id:").unwrap_or(&raw);
+        match show(bare) {
+            Ok(m) => messages.push(m),
+            Err(e) => {
+                // Log and continue; one missing file shouldn't drop the
+                // whole thread render.
+                tracing::warn!(
+                    "show_thread: skipping {bare} in thread:{thread_id}: {e:#}"
+                );
+            }
+        }
+    }
+    Ok(messages)
+}
+
+/// Fetch the on-disk file path for the first matching message file.
+/// Returns None if notmuch finds no files. Returns Err only on subprocess
+/// failure (not on no-results).
+fn first_existing_file(query: &str) -> Result<Option<std::path::PathBuf>> {
+    let output = Command::new("notmuch")
+        .args(["search", "--output=files", query])
+        .stderr(Stdio::null())
+        .output()
+        .with_context(|| format!("spawning `notmuch search --output=files {query}`"))?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "notmuch search --output=files failed (exit {:?}): {}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        let p = std::path::PathBuf::from(line);
+        if p.exists() {
+            return Ok(Some(p));
+        }
+    }
+    Ok(None)
+}
+
+/// Fetch the tag list for a single-message query.
+fn fetch_tags(query: &str) -> Result<Vec<String>> {
+    let output = Command::new("notmuch")
+        .args(["search", "--format=json", "--output=tags", query])
+        .stderr(Stdio::null())
+        .output()
+        .with_context(|| format!("spawning `notmuch search --output=tags {query}`"))?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "notmuch search --output=tags failed (exit {:?}): {}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let tags: Vec<String> = serde_json::from_slice(&output.stdout)
+        .context("parsing notmuch --output=tags JSON")?;
+    Ok(tags)
+}
+
+/// Read the raw RFC822 bytes for a single message id. Used by handlers
+/// that hand off to the existing `pipe::run` HTML-render pipeline.
+///
+/// Returns the full message including all MIME parts, exactly as on disk.
+pub fn raw_bytes(id: &str) -> Result<Vec<u8>> {
+    let query = format!("id:{id}");
+    let path = first_existing_file(&query)
+        .with_context(|| format!("locating files for {query}"))?
+        .ok_or_else(|| anyhow::anyhow!("no on-disk file found for {query}"))?;
+    std::fs::read(&path).with_context(|| format!("reading {}", path.display()))
 }
 
 // ------------------------------------------------------------------
@@ -238,12 +481,48 @@ pub fn show_thread(_thread_id: &str) -> Result<Vec<Message>> {
 /// caller folds `or` between the selected ids.
 ///
 /// Implementation: copy from `mailcurator::notmuch::apply_tag_changes`.
-pub fn apply_tag_changes(
-    _query: &str,
-    _add: &[&str],
-    _remove: &[&str],
-) -> Result<()> {
-    todo!("shell out to `notmuch tag`; see mailcurator/src/notmuch.rs")
+pub fn apply_tag_changes(query: &str, add: &[&str], remove: &[&str]) -> Result<()> {
+    if add.is_empty() && remove.is_empty() {
+        return Ok(());
+    }
+    let mut changes: Vec<String> = Vec::with_capacity(add.len() + remove.len());
+    for t in add {
+        changes.push(format!("+{t}"));
+    }
+    for t in remove {
+        changes.push(format!("-{t}"));
+    }
+    let mut cmd = Command::new("notmuch");
+    cmd.arg("tag");
+    for ch in &changes {
+        cmd.arg(ch);
+    }
+    cmd.arg("--");
+    cmd.arg(query);
+    cmd.stderr(Stdio::null());
+    let status = cmd.status().with_context(|| {
+        format!("spawning `notmuch tag {changes:?} -- {query}`")
+    })?;
+    if !status.success() {
+        anyhow::bail!("notmuch tag failed (exit {:?})", status.code());
+    }
+    Ok(())
+}
+
+/// Convenience: add a single tag to messages matching `query`.
+pub fn add_tag(query: &str, tag: &str) -> Result<()> {
+    apply_tag_changes(query, &[tag], &[])
+}
+
+/// Convenience: remove a single tag from messages matching `query`.
+pub fn remove_tag(query: &str, tag: &str) -> Result<()> {
+    apply_tag_changes(query, &[], &[tag])
+}
+
+/// Replace tags atomically: for each (add, remove) pair this is a single
+/// `notmuch tag` invocation. Useful for "move to trash" = add trash + remove inbox.
+pub fn set_tag(query: &str, add: &[&str], remove: &[&str]) -> Result<()> {
+    apply_tag_changes(query, add, remove)
 }
 
 // ------------------------------------------------------------------
@@ -268,10 +547,228 @@ pub fn encode_id(id: &str) -> String {
     url::form_urlencoded::byte_serialize(id.as_bytes()).collect()
 }
 
-#[allow(dead_code)]
-fn _force_anyhow_in_scope() -> Result<()> {
-    // Kept so `anyhow::Context` doesn't get flagged unused before the
-    // todo!() bodies are filled. Remove when the first impl lands.
-    let r: std::io::Result<()> = Ok(());
-    r.context("placeholder")
+// ------------------------------------------------------------------
+// Tests
+// ------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mail::accounts::{find, ACCOUNTS};
+
+    /// Sanity: every static account has at least one valid mailbox.
+    #[test]
+    fn every_account_has_inbox_query() {
+        for acc in ACCOUNTS {
+            let q = mailbox_query(acc, "inbox");
+            assert!(
+                q.is_some(),
+                "account {} has no inbox query mapping",
+                acc.slug
+            );
+            let q = q.unwrap();
+            assert!(
+                q.contains("tag:inbox") || q.contains("tag:cohs"),
+                "inbox query for {} doesn't reference inbox or cohs tag: {q}",
+                acc.slug
+            );
+        }
+    }
+
+    #[test]
+    fn personal_inbox_excludes_cohs_and_promotions() {
+        let acc = find("personal").expect("personal account exists");
+        let q = mailbox_query(acc, "inbox").expect("inbox mapping exists");
+        assert!(q.contains("not tag:cohs"), "got: {q}");
+        assert!(q.contains("not tag:promotions"), "got: {q}");
+        assert!(q.contains("date:6M.."), "got: {q}");
+    }
+
+    #[test]
+    fn cohs_inbox_requires_cohs_tag() {
+        let acc = find("cohs").expect("cohs account exists");
+        let q = mailbox_query(acc, "inbox").expect("inbox mapping exists");
+        assert!(q.starts_with("tag:cohs"), "got: {q}");
+        assert!(q.contains("tag:inbox"), "got: {q}");
+    }
+
+    #[test]
+    fn unknown_mailbox_returns_none() {
+        let acc = find("personal").expect("personal account exists");
+        assert!(mailbox_query(acc, "no-such-mailbox").is_none());
+        assert!(mailbox_query(acc, "drafts").is_none()); // personal has no drafts
+    }
+
+    #[test]
+    fn cohs_specific_mailboxes() {
+        let acc = find("cohs").expect("cohs account exists");
+        for mbox in &["inbox", "unread", "sent", "drafts", "archive", "trash", "spam"] {
+            assert!(
+                mailbox_query(acc, mbox).is_some(),
+                "cohs/{mbox} mapping missing"
+            );
+        }
+        // Personal-only mailboxes don't apply to cohs:
+        assert!(mailbox_query(acc, "promotions").is_none());
+        assert!(mailbox_query(acc, "all-mail").is_none());
+    }
+
+    // ---------------- search JSON parser ----------------
+
+    #[test]
+    fn parse_search_json_typical_row() {
+        // Real-shape sample (from `notmuch search --format=json` output).
+        let raw = br#"[
+            {
+              "thread": "0000000000031458",
+              "timestamp": 1777537591,
+              "date_relative": "16 mins. ago",
+              "matched": 1,
+              "total": 1,
+              "authors": "Avigilon Alta",
+              "subject": "Camera offline alert",
+              "query": ["id:foo@example.com", null],
+              "tags": ["inbox", "unread"]
+            }
+        ]"#;
+        let envs = parse_search_json(raw).expect("parse should succeed");
+        assert_eq!(envs.len(), 1);
+        let e = &envs[0];
+        assert_eq!(e.thread, "0000000000031458");
+        assert_eq!(e.timestamp, 1777537591);
+        assert_eq!(e.matched, 1);
+        assert_eq!(e.total, 1);
+        assert_eq!(e.authors, "Avigilon Alta");
+        assert_eq!(e.subject, "Camera offline alert");
+        assert_eq!(e.tags, vec!["inbox".to_string(), "unread".to_string()]);
+        assert_eq!(e.message_id(), Some("foo@example.com"));
+    }
+
+    #[test]
+    fn parse_search_json_empty_array() {
+        let envs = parse_search_json(b"[]").expect("empty array parses");
+        assert!(envs.is_empty());
+    }
+
+    #[test]
+    fn parse_search_json_multi_message_thread() {
+        // Multi-matched threads have query[0] = id:... but matched > 1
+        // so message_id() should return None.
+        let raw = br#"[
+            {
+              "thread": "deadbeef",
+              "timestamp": 1700000000,
+              "date_relative": "2 days ago",
+              "matched": 3,
+              "total": 5,
+              "authors": "Alice, Bob, Carol",
+              "subject": "Re: project",
+              "query": ["id:msg1@x.com", null],
+              "tags": ["inbox"]
+            }
+        ]"#;
+        let envs = parse_search_json(raw).expect("parse");
+        assert_eq!(envs.len(), 1);
+        assert_eq!(envs[0].matched, 3);
+        // message_id() refuses multi-message threads (the URL would be
+        // ambiguous — handler should use thread-view instead).
+        assert_eq!(envs[0].message_id(), None);
+    }
+
+    #[test]
+    fn parse_search_json_invalid_input_errors() {
+        assert!(parse_search_json(b"not json").is_err());
+        assert!(parse_search_json(b"{}").is_err()); // expected array
+    }
+
+    // ---------------- helpers ----------------
+
+    #[test]
+    fn ids_to_query_empty() {
+        let q = ids_to_query(&[]);
+        assert_eq!(q, "");
+    }
+
+    #[test]
+    fn ids_to_query_single() {
+        let q = ids_to_query(&["a@b.com".to_string()]);
+        assert_eq!(q, "id:a@b.com");
+    }
+
+    #[test]
+    fn ids_to_query_multiple() {
+        let q = ids_to_query(&[
+            "a@b.com".to_string(),
+            "c@d.com".to_string(),
+            "e@f.com".to_string(),
+        ]);
+        assert_eq!(q, "id:a@b.com or id:c@d.com or id:e@f.com");
+    }
+
+    #[test]
+    fn encode_id_handles_at_sign() {
+        // `@` survives form-urlencoded byte_serialize as %40 — that's fine
+        // for path components.
+        let encoded = encode_id("foo@bar.com");
+        assert!(
+            encoded.contains("%40") || encoded.contains('@'),
+            "encoded form must represent @: {encoded}"
+        );
+    }
+
+    #[test]
+    fn encode_id_escapes_angle_brackets() {
+        let encoded = encode_id("<foo@bar.com>");
+        assert!(!encoded.starts_with('<'), "got: {encoded}");
+        assert!(!encoded.ends_with('>'), "got: {encoded}");
+    }
+
+    #[test]
+    fn envelope_message_id_strips_prefix() {
+        let env = Envelope {
+            thread: "tid".into(),
+            timestamp: 0,
+            date_relative: String::new(),
+            matched: 1,
+            total: 1,
+            authors: String::new(),
+            subject: String::new(),
+            query: [Some("id:abc@example.com".to_string()), None],
+            tags: vec![],
+        };
+        assert_eq!(env.message_id(), Some("abc@example.com"));
+    }
+
+    #[test]
+    fn envelope_message_id_returns_none_when_query_missing() {
+        let env = Envelope {
+            thread: "tid".into(),
+            timestamp: 0,
+            date_relative: String::new(),
+            matched: 1,
+            total: 1,
+            authors: String::new(),
+            subject: String::new(),
+            query: [None, None],
+            tags: vec![],
+        };
+        assert_eq!(env.message_id(), None);
+    }
+
+    #[test]
+    fn envelope_message_id_returns_none_when_no_id_prefix() {
+        let env = Envelope {
+            thread: "tid".into(),
+            timestamp: 0,
+            date_relative: String::new(),
+            matched: 1,
+            total: 1,
+            authors: String::new(),
+            subject: String::new(),
+            // notmuch should always produce id:..., but be defensive.
+            query: [Some("not-an-id-term".to_string()), None],
+            tags: vec![],
+        };
+        assert_eq!(env.message_id(), None);
+    }
 }

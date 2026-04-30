@@ -70,6 +70,45 @@ pub fn run(port: u16, no_open: bool) -> Result<()> {
     Ok(())
 }
 
+/// In-process variant of [`run`]: takes raw RFC822 bytes, builds a cache
+/// entry, and returns the UUID. The mailforge message-view handler uses
+/// this to embed `<iframe src="/v/<uuid>">` for HTML email bodies — the
+/// iframe then hits the existing `/v/<uuid>` viewer route in `daemon.rs`,
+/// reusing the strict CSP / asset machinery without code duplication.
+///
+/// Differs from [`run`]:
+///   - no stdin read (bytes are passed in),
+///   - no watchdog (the caller is an HTTP request handler with its own
+///     timeout posture; killing the process here would be catastrophic),
+///   - no browser open,
+///   - no stdout println.
+///
+/// Returns the UUID of the new cache directory. The caller embeds it as
+/// `/v/<uuid>` in the iframe src.
+pub fn cache_html_message(bytes: &[u8]) -> Result<String> {
+    if bytes.is_empty() {
+        bail!("cache_html_message: empty input");
+    }
+
+    let id = uuid::Uuid::new_v4().to_string();
+    let dir = manifest::cache_root()?.join(&id);
+    std::fs::create_dir_all(&dir).with_context(|| format!("mkdir {}", dir.display()))?;
+
+    // Same parse-with-fallback strategy as `run`. Documented there.
+    let m = match MessageParser::default().parse(bytes) {
+        Some(msg) if has_renderable_part(&msg) => build_manifest(&msg, &dir)?,
+        _ => {
+            let wrapped = wrap_bare_html(bytes);
+            let msg = MessageParser::default()
+                .parse(&wrapped[..])
+                .context("parsing RFC822 message (after bare-HTML envelope wrap)")?;
+            build_manifest(&msg, &dir)?
+        }
+    };
+    manifest::write(&dir, &m)?;
+    Ok(id)
+}
+
 /// Append a timestamped diagnostic step to ~/.cache/mailforge/pipe.log.
 /// Step-by-step trace makes future hangs diagnosable: when meli's mailcap
 /// dispatch wedges, the last log line tells us exactly which phase blocked.

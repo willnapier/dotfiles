@@ -25,14 +25,20 @@
 //! viewport, small enough that notmuch search stays fast. `?page=0` is
 //! the first page; offset = page * PER_PAGE.
 
-#[allow(unused_imports)]
 use axum::{
     extract::{Path, Query},
-    response::{IntoResponse, Redirect, Response},
+    http::StatusCode,
+    response::{Html, IntoResponse, Redirect, Response},
 };
+use maud::html;
 use serde::Deserialize;
 
-#[allow(dead_code)]
+use crate::mail::accounts;
+use crate::mail::notmuch_db;
+use crate::mail::templates::{
+    self, envelope_row_indexed, paginator_with_query, status_banner, PageContext,
+};
+
 const PER_PAGE: usize = 50;
 
 /// Query string parameters for `/mail/<account>/<mailbox>`.
@@ -48,7 +54,7 @@ pub struct ListingQuery {
 
 /// GET `/mail` → 302 to `/mail/<default>/inbox`.
 pub async fn inbox_redirect() -> Redirect {
-    let acc = crate::mail::accounts::default_account();
+    let acc = accounts::default_account();
     Redirect::to(&format!("/mail/{}/inbox", acc.slug))
 }
 
@@ -59,14 +65,183 @@ pub async fn inbox_redirect() -> Redirect {
 /// Renders the mailbox table plus pagination. Returns 404 for unknown
 /// account or mailbox.
 pub async fn list_mailbox(
-    Path((_account, _mailbox)): Path<(String, String)>,
-    Query(_q): Query<ListingQuery>,
+    Path((account_slug, mailbox)): Path<(String, String)>,
+    Query(q): Query<ListingQuery>,
 ) -> Response {
-    todo!(
-        "1. resolve account via accounts::find (return 404 NOT_FOUND if missing)\n\
-         2. translate to query via notmuch_db::mailbox_query (404 if missing)\n\
-         3. AND in user query if q.q.is_some()\n\
-         4. notmuch_db::search(query, page * PER_PAGE, PER_PAGE) + notmuch_db::count\n\
-         5. render via templates::page(PageContext::Listing, ...)"
-    )
+    // 1. Resolve account.
+    let Some(account) = accounts::find(&account_slug) else {
+        return (
+            StatusCode::NOT_FOUND,
+            format!("unknown account: {account_slug}"),
+        )
+            .into_response();
+    };
+
+    // 2. Build mailbox query.
+    let Some(mailbox_q) = notmuch_db::mailbox_query(account, &mailbox) else {
+        return (
+            StatusCode::NOT_FOUND,
+            format!("unknown mailbox: {account_slug}/{mailbox}"),
+        )
+            .into_response();
+    };
+
+    // 3. AND the user filter onto the mailbox query, parenthesised so
+    //    notmuch's parser treats them as discrete sub-expressions.
+    let user_filter = q.q.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let final_query = match user_filter {
+        Some(uq) => format!("({mailbox_q}) and ({uq})"),
+        None => mailbox_q,
+    };
+
+    let page = q.page.unwrap_or(0);
+    let offset = page.saturating_mul(PER_PAGE);
+
+    // 4. Run search + count. We accept whatever the notmuch_db layer
+    //    returns; on error we render an empty page with an error banner
+    //    rather than 500ing.
+    let envelopes_result = notmuch_db::search(&final_query, offset, PER_PAGE);
+    let total_result = notmuch_db::count(&final_query);
+
+    let (envelopes, fetch_error) = match envelopes_result {
+        Ok(envs) => (envs, None),
+        Err(e) => (Vec::new(), Some(format!("search failed: {e}"))),
+    };
+    let total = total_result.unwrap_or(0);
+
+    let base_url = format!("/mail/{}/{}", account.slug, mailbox);
+    let extra_query = user_filter.map(|q| format!("q={}", url::form_urlencoded::byte_serialize(q.as_bytes()).collect::<String>()));
+
+    let mailbox_label = mailbox_label_for(&mailbox);
+    let banner_subtitle = match (envelopes.is_empty(), total) {
+        (true, 0) => "No messages.".to_string(),
+        (_, n) => format!("{n} messages — page {} of {}", page + 1, total_pages(n, PER_PAGE)),
+    };
+
+    let body = html! {
+        (status_banner(
+            &format!("{} — {}", mailbox_label, account.display_name),
+            Some(&banner_subtitle),
+        ))
+
+        // In-mailbox search/filter form. The keyboard JS focuses this
+        // when the user presses `/`.
+        form class="mailbox-filter" method="get" action=(base_url) {
+            input type="text"
+                name="q"
+                value=[user_filter.as_deref()]
+                placeholder="Filter this mailbox (notmuch syntax)…"
+                aria-label="Filter mailbox"
+                id="mailbox-filter-input";
+            button type="submit" { "Filter" }
+            @if user_filter.is_some() {
+                a class="mailbox-filter__clear" href=(base_url) { "Clear" }
+            }
+        }
+
+        @if let Some(err) = &fetch_error {
+            div class="banner banner--error" role="alert" {
+                strong { "Search error: " }
+                (err)
+            }
+        }
+
+        @if envelopes.is_empty() && fetch_error.is_none() {
+            div class="empty-state panel" {
+                h2 { "Empty mailbox" }
+                p { "No messages match this view." }
+            }
+        } @else {
+            table class="listing" role="grid" aria-label="Messages" {
+                thead {
+                    tr {
+                        th class="col-from"    { "From" }
+                        th class="col-subject" { "Subject" }
+                        th class="col-tags"    { "Tags" }
+                        th class="col-date"    { "Date" }
+                    }
+                }
+                tbody {
+                    @for (idx, env) in envelopes.iter().enumerate() {
+                        (envelope_row_indexed(env, idx))
+                    }
+                }
+            }
+
+            (paginator_with_query(
+                page,
+                total,
+                PER_PAGE,
+                &base_url,
+                extra_query.as_deref(),
+            ))
+        }
+    };
+
+    let title = format!(
+        "{} ({}) — MailForge",
+        mailbox_label, account.display_name
+    );
+    let doc = templates::page(
+        &title,
+        PageContext::Listing,
+        Some(account.slug),
+        Some(&mailbox),
+        body,
+    );
+    Html(doc).into_response()
+}
+
+/// Display label for a mailbox slug. Mirrors templates::mailbox_label
+/// but kept here so the listing handler doesn't need to reach into the
+/// templates module's privates.
+fn mailbox_label_for(slug: &str) -> String {
+    match slug {
+        "all-mail" => "All Mail".to_string(),
+        other => {
+            let mut chars = other.chars();
+            match chars.next() {
+                Some(c) => c.to_uppercase().chain(chars).collect(),
+                None => String::new(),
+            }
+        }
+    }
+}
+
+fn total_pages(total: u64, per_page: usize) -> u64 {
+    let per_page = per_page.max(1) as u64;
+    if total == 0 {
+        1
+    } else {
+        ((total - 1) / per_page) + 1
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pages_math_handles_empty() {
+        assert_eq!(total_pages(0, 50), 1);
+    }
+
+    #[test]
+    fn pages_math_handles_exact_multiples() {
+        assert_eq!(total_pages(50, 50), 1);
+        assert_eq!(total_pages(100, 50), 2);
+    }
+
+    #[test]
+    fn pages_math_handles_partial_last_page() {
+        assert_eq!(total_pages(51, 50), 2);
+        assert_eq!(total_pages(101, 50), 3);
+    }
+
+    #[test]
+    fn mailbox_label_capitalises() {
+        assert_eq!(mailbox_label_for("inbox"), "Inbox");
+        assert_eq!(mailbox_label_for("sent"), "Sent");
+        assert_eq!(mailbox_label_for("all-mail"), "All Mail");
+    }
 }

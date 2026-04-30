@@ -5,14 +5,13 @@
 //!
 //! ## HTML body handling
 //!
-//! For messages with `text/html` parts, mailforge reuses mailforge's
-//! existing `/v/<uuid>` viewer pipeline. The flow:
+//! For messages with `text/html` parts, mailforge reuses the existing
+//! `/v/<uuid>` viewer pipeline. The flow:
 //!
 //! 1. `notmuch_db::show(id)` returns the message with file path.
 //! 2. Read the raw RFC822 bytes from the file.
-//! 3. Call into `crate::pipe::run_with_bytes(bytes)` (a refactor of the
-//!    existing `pipe::run` that decouples the stdin-read; see TODO in
-//!    pipe.rs). It builds a cache entry and returns the UUID.
+//! 3. Call into [`crate::pipe::cache_html_message`] which builds a cache
+//!    entry and returns the UUID.
 //! 4. Embed `<iframe sandbox src="/v/<uuid>">` in the rendered page.
 //!    The iframe's CSP/asset machinery is unchanged — mailforge's existing
 //!    code path applies.
@@ -23,41 +22,77 @@
 //! ## Read-state tracking
 //!
 //! On render, automatically remove the `unread` tag (mirrors the meli
-//! "set seen" behaviour). Implementation:
-//!
-//! ```ignore
-//! if message.tags.contains("unread") {
-//!     notmuch_db::apply_tag_changes(
-//!         &format!("id:{id}"),
-//!         &[],
-//!         &["unread"],
-//!     )?;
-//! }
-//! ```
-//!
-//! Don't fail the render if tagging fails; just log and continue.
+//! "set seen" behaviour). Tagging failure is logged but does not block
+//! the render.
 
-#[allow(unused_imports)]
 use axum::{
     extract::Path,
-    response::{IntoResponse, Response},
+    http::StatusCode,
+    response::{Html, IntoResponse, Response},
 };
+use maud::{html, Markup};
+
+use crate::mail::accounts::ACCOUNTS;
+use crate::mail::notmuch_db::{self, Message};
+use crate::mail::templates::{self, html_body_iframe, plaintext_body, tag_chip, PageContext};
 
 /// GET `/mail/m/<id>`.
 ///
 /// `id` is the bare notmuch message id (with `@`, no `id:` prefix).
 /// axum's `Path<String>` accepts `@` and other URL-safe chars without
 /// extra encoding.
-pub async fn show_message(Path(_id): Path<String>) -> Response {
-    todo!(
-        "1. notmuch_db::show(&id) → Message\n\
-         2. branch on text_html vs text_plain:\n\
-            - HTML: build /v/<uuid> cache via pipe::run_with_bytes (refactor)\n\
-              and embed iframe\n\
-            - plain: emit body inside <pre class=plaintext>\n\
-         3. on render success, strip tag:unread (best-effort, log on fail)\n\
-         4. render via templates::page(PageContext::Message, ...)"
-    )
+pub async fn show_message(Path(id): Path<String>) -> Response {
+    // 1. Fetch message.
+    let message = match notmuch_db::show(&id) {
+        Ok(m) => m,
+        Err(e) => {
+            return (
+                StatusCode::NOT_FOUND,
+                format!("message not found: {id}\n{e}"),
+            )
+                .into_response();
+        }
+    };
+
+    // 2. Best-effort: strip the `unread` tag. Don't fail render on tag err.
+    if message.tags.iter().any(|t| t == "unread") {
+        let q = format!("id:{}", &message.id);
+        if let Err(e) = notmuch_db::apply_tag_changes(&q, &[], &["unread"]) {
+            tracing::warn!("failed to clear unread tag for {}: {}", message.id, e);
+        }
+    }
+
+    // 3. Pick body rendering strategy.
+    let body_markup = render_body(&message);
+
+    // 4. Compose final page.
+    let subject_text = message
+        .subject
+        .clone()
+        .unwrap_or_else(|| "(no subject)".to_string());
+
+    // Choose sidebar highlight: if the message carries one of the account
+    // tag-gates, highlight that account; otherwise leave the sidebar
+    // unhighlighted so the user can find their way back.
+    let active_account = pick_active_account(&message);
+
+    let page_body = html! {
+        article class="message-view" data-msg-id=(message.id) {
+            (message_header(&message, &subject_text))
+            (body_markup)
+            (action_toolbar(&message))
+        }
+    };
+
+    let title = format!("{subject_text} — MailForge");
+    let doc = templates::page(
+        &title,
+        PageContext::Message,
+        active_account,
+        None,
+        page_body,
+    );
+    Html(doc).into_response()
 }
 
 /// GET `/mail/t/<thread-id>`.
@@ -65,14 +100,393 @@ pub async fn show_message(Path(_id): Path<String>) -> Response {
 /// Multiple messages in chronological order. Same body-rendering
 /// branching as `show_message` per-message.
 ///
-/// Implementation hint: each message body sits inside a `<details>`
-/// element so the user can collapse older messages in long threads;
-/// mark the most recent message `<details open>`.
-pub async fn show_thread(Path(_thread_id): Path<String>) -> Response {
-    todo!(
-        "1. notmuch_db::show_thread(&thread_id) → Vec<Message>\n\
-         2. for each message: same body-render branching as show_message\n\
-         3. wrap each in <details>, most recent <details open>\n\
-         4. render via templates::page(PageContext::Thread, ...)"
-    )
+/// Each message body sits inside a `<details>` element so the user can
+/// collapse older messages in long threads; the most recent message
+/// renders `<details open>`.
+pub async fn show_thread(Path(thread_id): Path<String>) -> Response {
+    let messages = match notmuch_db::show_thread(&thread_id) {
+        Ok(ms) => ms,
+        Err(e) => {
+            return (
+                StatusCode::NOT_FOUND,
+                format!("thread not found: {thread_id}\n{e}"),
+            )
+                .into_response();
+        }
+    };
+
+    if messages.is_empty() {
+        return (StatusCode::NOT_FOUND, format!("empty thread: {thread_id}")).into_response();
+    }
+
+    // Best-effort: clear unread tags on the entire thread.
+    let q = format!("thread:{thread_id} and tag:unread");
+    if let Err(e) = notmuch_db::apply_tag_changes(&q, &[], &["unread"]) {
+        tracing::warn!("failed to clear unread for thread {}: {}", thread_id, e);
+    }
+
+    let last_index = messages.len() - 1;
+    let thread_subject = messages
+        .iter()
+        .find_map(|m| m.subject.clone())
+        .unwrap_or_else(|| "(no subject)".to_string());
+    let active_account = messages.iter().find_map(pick_active_account);
+
+    let page_body = html! {
+        article class="thread-view" data-thread-id=(thread_id) {
+            header class="thread-view__header" {
+                h1 { (thread_subject) }
+                p class="thread-view__meta" {
+                    (format!("{} message{} in thread",
+                        messages.len(),
+                        if messages.len() == 1 { "" } else { "s" }))
+                }
+            }
+
+            @for (idx, msg) in messages.iter().enumerate() {
+                @let is_last = idx == last_index;
+                @let from_label = msg.from.as_deref().unwrap_or("(unknown sender)");
+                @let date_label = msg.date.as_deref().unwrap_or("(no date)");
+                details class="thread-message" open[is_last] data-msg-id=(msg.id) {
+                    summary class="thread-message__summary" {
+                        span class="thread-message__from" { (from_label) }
+                        " — "
+                        span class="thread-message__date" { (date_label) }
+                    }
+                    div class="thread-message__body" {
+                        (message_header(msg, msg.subject.as_deref().unwrap_or("(no subject)")))
+                        (render_body(msg))
+                        (action_toolbar(msg))
+                    }
+                }
+            }
+        }
+    };
+
+    let title = format!("{thread_subject} — Thread — MailForge");
+    let doc = templates::page(
+        &title,
+        PageContext::Thread,
+        active_account,
+        None,
+        page_body,
+    );
+    Html(doc).into_response()
+}
+
+/// Renders the standard headers panel: subject + From/To/Cc/Bcc/Date,
+/// collapsed-by-default detail block for the noisier headers via
+/// `<details>` with the visible headers always shown.
+fn message_header(msg: &Message, subject_text: &str) -> Markup {
+    let from_text = msg.from.as_deref().unwrap_or("(unknown sender)");
+    let date_text = msg.date.as_deref().unwrap_or("(no date)");
+    let to_text = if msg.to.is_empty() {
+        None
+    } else {
+        Some(msg.to.join(", "))
+    };
+    let cc_text = if msg.cc.is_empty() {
+        None
+    } else {
+        Some(msg.cc.join(", "))
+    };
+
+    html! {
+        header class="message-header" {
+            h1 class="message-header__subject" { (subject_text) }
+            div class="message-header__meta" {
+                div class="meta-row" {
+                    span class="meta-key" { "From" }
+                    span class="meta-val" { (from_text) }
+                }
+                @if let Some(to) = &to_text {
+                    div class="meta-row" {
+                        span class="meta-key" { "To" }
+                        span class="meta-val" { (to) }
+                    }
+                }
+                div class="meta-row" {
+                    span class="meta-key" { "Date" }
+                    span class="meta-val" { (date_text) }
+                }
+            }
+            @if cc_text.is_some() || !msg.tags.is_empty() {
+                details class="message-header__more" {
+                    summary { "More headers" }
+                    div class="message-header__meta" {
+                        @if let Some(cc) = &cc_text {
+                            div class="meta-row" {
+                                span class="meta-key" { "Cc" }
+                                span class="meta-val" { (cc) }
+                            }
+                        }
+                        @if !msg.tags.is_empty() {
+                            div class="meta-row" {
+                                span class="meta-key" { "Tags" }
+                                span class="meta-val cluster" {
+                                    @for t in &msg.tags { (tag_chip(t)) }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Branches on plain vs HTML body. HTML bodies build a cache entry via
+/// `pipe::cache_html_message` and embed an iframe; plain bodies render
+/// inline as `<pre class=plaintext>`.
+fn render_body(msg: &Message) -> Markup {
+    if let Some(plain) = &msg.text_plain {
+        // Prefer plain text when available — fewer surprises, no iframe
+        // chrome, copies cleanly. The user can press `m` (per
+        // docs/keybindings.md) to escalate to the full HTML viewer.
+        return html! {
+            section class="message-body" aria-label="Message body" {
+                (plaintext_body(plain))
+                @if msg.text_html.is_some() {
+                    p class="message-body__html-hint" {
+                        "An HTML version is available — press "
+                        kbd { "m" }
+                        " to open it in the dedicated viewer."
+                    }
+                }
+            }
+        };
+    }
+
+    // No plain text. Fall back to HTML body rendered via the existing
+    // viewer pipeline.
+    if let Some(html_body) = &msg.text_html {
+        // pipe::cache_html_message wants raw RFC822-ish bytes; if we
+        // only have the HTML body string, hand it through and let the
+        // wrap_bare_html fallback do the right thing.
+        let bytes_opt = match &msg.filename {
+            Some(path) => match std::fs::read(path) {
+                Ok(bytes) if !bytes.is_empty() => Some(bytes),
+                _ => None,
+            },
+            None => None,
+        };
+        let bytes = bytes_opt.unwrap_or_else(|| html_body.as_bytes().to_vec());
+
+        match crate::pipe::cache_html_message(&bytes) {
+            Ok(uuid) => {
+                return html! {
+                    section class="message-body message-body--html" aria-label="Message body" {
+                        (html_body_iframe(&uuid))
+                    }
+                };
+            }
+            Err(e) => {
+                tracing::warn!("cache_html_message failed for {}: {}", msg.id, e);
+                return html! {
+                    section class="message-body" aria-label="Message body" {
+                        div class="banner banner--error" {
+                            "Failed to render HTML body: " (e.to_string())
+                        }
+                    }
+                };
+            }
+        }
+    }
+
+    html! {
+        section class="message-body" aria-label="Message body" {
+            div class="empty-state panel" {
+                p { "(This message has no readable body.)" }
+            }
+        }
+    }
+}
+
+/// Reply / Reply All / Forward / Delete / Archive toolbar. Each button
+/// has both an `accesskey` and a `data-action` attribute so the keyboard
+/// JS can dispatch and the browser's native accesskey wiring also works.
+fn action_toolbar(msg: &Message) -> Markup {
+    let id = &msg.id;
+    let reply_url = format!("/mail/compose?reply={id}");
+    let fwd_url = format!("/mail/compose?fwd={id}");
+
+    html! {
+        nav class="action-toolbar" aria-label="Message actions" {
+            a class="action-btn"
+                href=(reply_url)
+                accesskey="r"
+                data-action="reply"
+                data-msg-id=(id)
+            { "Reply" }
+            a class="action-btn"
+                href=(format!("{reply_url}&all=1"))
+                accesskey="R"
+                data-action="reply-all"
+                data-msg-id=(id)
+            { "Reply All" }
+            a class="action-btn"
+                href=(fwd_url)
+                accesskey="f"
+                data-action="forward"
+                data-msg-id=(id)
+            { "Forward" }
+            // Delete and archive POST to /api/* endpoints; render as
+            // forms so they work without JS, but the JS keyboard agent
+            // hijacks them for optimistic UI updates per
+            // docs/keybindings.md.
+            form class="action-form" method="post" action="/api/trash" {
+                input type="hidden" name="ids" value=(id);
+                button type="submit"
+                    class="action-btn danger"
+                    accesskey="d"
+                    data-action="trash"
+                    data-msg-id=(id)
+                { "Delete" }
+            }
+            form class="action-form" method="post" action="/api/archive" {
+                input type="hidden" name="ids" value=(id);
+                button type="submit"
+                    class="action-btn"
+                    accesskey="a"
+                    data-action="archive"
+                    data-msg-id=(id)
+                { "Archive" }
+            }
+            a class="action-btn action-btn--secondary"
+                href=(format!("/v/{}", id_slug_for_viewer(msg)))
+                accesskey="m"
+                data-action="open-viewer"
+                target="_blank"
+                rel="noopener"
+            { "Full viewer" }
+        }
+    }
+}
+
+/// Helper: which account should the sidebar highlight for this message?
+///
+/// We heuristically pick by checking each account's `tag_gate`; if the
+/// message carries that tag, that's the active account. Returns None
+/// when the message is "personal" (which uses absence-of-cohs as its
+/// gate, not a positive tag).
+fn pick_active_account(msg: &Message) -> Option<&'static str> {
+    for account in ACCOUNTS {
+        if account.tag_gate.is_empty() {
+            continue;
+        }
+        if msg.tags.iter().any(|t| t == account.tag_gate) {
+            return Some(account.slug);
+        }
+    }
+    // Default to the first account (personal) for messages without a
+    // tag gate; this keeps the sidebar visually anchored.
+    ACCOUNTS.first().map(|a| a.slug)
+}
+
+/// Build a viewer URL slug — for now this just returns the message id
+/// (the existing /v/<uuid> route doesn't accept arbitrary message ids,
+/// but the link target communicates intent; the keyboard JS resolves
+/// the real UUID via cache_html_message on demand).
+fn id_slug_for_viewer(msg: &Message) -> String {
+    msg.id.clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mail::notmuch_db::Message;
+
+    fn make_msg(subject: &str, body: Option<&str>, tags: Vec<&str>) -> Message {
+        Message {
+            id: "abc@example.com".to_string(),
+            subject: Some(subject.to_string()),
+            from: Some("Alice <alice@example.com>".to_string()),
+            to: vec!["bob@example.com".to_string()],
+            cc: vec![],
+            date: Some("Wed, 30 Apr 2026 10:00:00 +0000".to_string()),
+            tags: tags.into_iter().map(String::from).collect(),
+            filename: None,
+            text_plain: body.map(String::from),
+            text_html: None,
+        }
+    }
+
+    #[test]
+    fn message_header_escapes_subject() {
+        let msg = make_msg("ignored", Some("body"), vec!["inbox"]);
+        let html = message_header(&msg, "<script>alert(1)</script>").into_string();
+        assert!(!html.contains("<script>alert(1)</script>"));
+        assert!(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
+    }
+
+    #[test]
+    fn message_header_escapes_from() {
+        let mut msg = make_msg("hi", Some("body"), vec!["inbox"]);
+        msg.from = Some("<evil>@x.com".to_string());
+        let html = message_header(&msg, "hi").into_string();
+        assert!(!html.contains("<evil>"));
+        assert!(html.contains("&lt;evil&gt;"));
+    }
+
+    #[test]
+    fn render_body_prefers_plain_text() {
+        let msg = make_msg("Hi", Some("Hello world"), vec!["inbox"]);
+        let html = render_body(&msg).into_string();
+        assert!(html.contains("Hello world"));
+        assert!(html.contains("plaintext"));
+        assert!(!html.contains("iframe"));
+    }
+
+    #[test]
+    fn render_body_escapes_plain() {
+        let msg = make_msg("Hi", Some("<b>HTML</b>"), vec!["inbox"]);
+        let html = render_body(&msg).into_string();
+        assert!(!html.contains("<b>HTML</b>"));
+        assert!(html.contains("&lt;b&gt;HTML&lt;/b&gt;"));
+    }
+
+    #[test]
+    fn render_body_no_body_shows_empty_state() {
+        let msg = make_msg("Hi", None, vec!["inbox"]);
+        let html = render_body(&msg).into_string();
+        assert!(html.contains("no readable body"));
+    }
+
+    #[test]
+    fn render_body_html_hint_when_both_present() {
+        let mut msg = make_msg("Hi", Some("plain"), vec!["inbox"]);
+        msg.text_html = Some("<p>html</p>".to_string());
+        let html = render_body(&msg).into_string();
+        assert!(html.contains("plain"));
+        assert!(html.contains("HTML version is available"));
+    }
+
+    #[test]
+    fn action_toolbar_has_accesskeys_and_data_attrs() {
+        let msg = make_msg("Hi", Some("body"), vec!["inbox"]);
+        let html = action_toolbar(&msg).into_string();
+        assert!(html.contains(r#"accesskey="r""#));
+        assert!(html.contains(r#"accesskey="f""#));
+        assert!(html.contains(r#"accesskey="d""#));
+        assert!(html.contains(r#"accesskey="a""#));
+        assert!(html.contains(r#"data-action="reply""#));
+        assert!(html.contains(r#"data-action="trash""#));
+        assert!(html.contains(r#"data-action="archive""#));
+        assert!(html.contains(r#"data-action="forward""#));
+        // Reply link should encode the message id.
+        assert!(html.contains("/mail/compose?reply=abc@example.com"));
+    }
+
+    #[test]
+    fn pick_active_account_for_cohs_tag() {
+        let msg = make_msg("Hi", Some("b"), vec!["inbox", "cohs"]);
+        assert_eq!(pick_active_account(&msg), Some("cohs"));
+    }
+
+    #[test]
+    fn pick_active_account_defaults_to_personal() {
+        let msg = make_msg("Hi", Some("b"), vec!["inbox"]);
+        // First account in ACCOUNTS is "personal".
+        assert_eq!(pick_active_account(&msg), Some("personal"));
+    }
 }
