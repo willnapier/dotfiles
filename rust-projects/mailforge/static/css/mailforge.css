@@ -69,7 +69,7 @@ main.main {
 table.listing {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   /* Without table-layout:fixed the browser ignores per-column widths and
      auto-fits to content — produces a "From column eats everything" look
      when content lengths vary. Fixed layout respects the width hints below. */
@@ -123,7 +123,7 @@ table.listing {
   grid-template-columns: max-content 1fr;
   column-gap: var(--sp-3);
   row-gap: 2px;
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   color: var(--fg-muted);
 }
 
@@ -134,7 +134,7 @@ table.listing {
 .meta-key {
   color: var(--fg-faint);
   text-transform: uppercase;
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   letter-spacing: 0.04em;
   padding-top: 2px;
 }
@@ -147,7 +147,7 @@ table.listing {
 
 .message-header__more {
   margin-top: var(--sp-2);
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
 }
 
 .message-header__more summary {
@@ -188,7 +188,7 @@ table.listing {
   white-space: pre-wrap;
   word-wrap: break-word;
   font-family: var(--font-mono);
-  font-size: var(--text-base);
+  font-size: var(--text-lg);
   line-height: 1.5;
   color: var(--fg);
   margin: 0;
@@ -199,7 +199,7 @@ table.listing {
   padding: var(--sp-2);
   border-left: 2px solid var(--info);
   color: var(--fg-muted);
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
 }
 
 .message-body__html-hint kbd {
@@ -227,7 +227,7 @@ table.listing {
   display: inline-block;
   padding: var(--sp-1) var(--sp-3);
   font: inherit;
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   color: var(--fg);
   background: transparent;
   border: 1px solid var(--rule);
@@ -276,7 +276,7 @@ table.listing {
   margin: 0 2px;
   border: 1px solid var(--rule);
   border-radius: var(--radius-sm);
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   color: var(--fg-muted);
   background: var(--bg-elevated);
 }
@@ -296,7 +296,7 @@ table.listing {
   background: var(--bg-elevated);
   border-left: 3px solid var(--accent);
   border-radius: var(--radius-sm);
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   color: var(--fg-muted);
 }
 
@@ -316,7 +316,7 @@ table.listing {
   margin: var(--sp-4) 0 var(--sp-2);
   padding: var(--sp-2) 0;
   border-top: 1px solid var(--rule);
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   color: var(--fg-muted);
 }
 
@@ -372,7 +372,7 @@ table.listing {
 .compose label {
   color: var(--fg-faint);
   text-transform: uppercase;
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   letter-spacing: 0.04em;
 }
 

@@ -252,7 +252,7 @@
   const msgArchive = () => msgMutate("/api/archive", "Archive");
   const msgNext = () => clickSel("[data-nav=next-message]");
   const msgPrev = () => clickSel("[data-nav=prev-message]");
-  function msgFullscreen() {
+  function msgHtmlView() {
     const id = currentMessageId();
     if (id) window.location.href = "/mail/m/" + encodeURIComponent(id) + "?view=full";
   }
@@ -387,7 +387,7 @@
       r: msgReply, R: msgReplyAll, f: msgForward,
       d: msgTrash, a: msgArchive,
       J: msgNext, K: msgPrev,
-      m: msgFullscreen,
+      v: msgHtmlView,
       "Ctrl+r": msgReload, "Ctrl+R": msgReload,
     },
 

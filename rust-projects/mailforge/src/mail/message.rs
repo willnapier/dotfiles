@@ -406,9 +406,9 @@ fn action_toolbar(msg: &Message) -> Markup {
             }
             a class="action-btn action-btn--secondary"
                 href=(format!("/mail/m/{}?view=full", crate::mail::notmuch_db::encode_id(&msg.id)))
-                accesskey="m"
+                accesskey="v"
                 data-action="open-viewer"
-            { "Full viewer" }
+            { "HTML view" }
         }
     }
 }

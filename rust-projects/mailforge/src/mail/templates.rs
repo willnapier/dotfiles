@@ -397,6 +397,7 @@ pub fn helpbar(ctx: PageContext) -> Markup {
             ("f", "fwd"),
             ("d", "trash"),
             ("a", "archive"),
+            ("v", "HTML view"),
             ("J/K", "next/prev"),
             ("?", "help"),
         ],
