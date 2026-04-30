@@ -17,6 +17,7 @@ depends = []
 "scripts/claude-voice" = "~/.local/bin/claude-voice"
 "scripts/email-attachments" = "~/.local/bin/email-attachments"
 "scripts/meliview-html" = "~/.local/bin/meliview-html"
+"scripts/meli-html-auto" = "~/.local/bin/meli-html-auto"
 "meli/mailcap" = "~/.config/meli/mailcap"
 "scripts/forge-batch-classifier" = "~/.local/bin/forge-batch-classifier"
 "scripts/forge-sync-conflict-cleaner" = "~/.local/bin/forge-sync-conflict-cleaner"

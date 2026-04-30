@@ -1,0 +1,58 @@
+#!/bin/sh
+# meli-html-auto — html_filter target that auto-launches meliview.
+#
+# Designed for use with the meli fork's pager.html_filter_pipe_message
+# flag: when that flag is true, meli pipes the *full* RFC822 envelope
+# bytes to stdin (instead of just the decoded text/html part), so
+# `meliview pipe` gets enough context to resolve cid: assets in
+# sibling multipart/related parts.
+#
+# Wiring (~/dotfiles/meli/config.toml):
+#   [pager]
+#   html_filter = "meli-html-auto"
+#   html_filter_pipe_message = true
+#
+# Behaviour:
+#   1. Read the whole RFC822 message from stdin.
+#   2. Hand the bytes to `meliview pipe` in the background. meliview
+#      caches the message and opens it in the system default browser
+#      (default `meliview pipe` behaviour).
+#   3. Print a one-line placeholder to stdout for meli's pager.
+#
+# The background dispatch is critical: meli waits synchronously on the
+# filter's stdout, so blocking here would freeze the UI for as long as
+# the browser takes to spin up. We disown the meliview job so meli
+# only waits for the placeholder echo.
+#
+# To revert to in-terminal HTML rendering, set `html_filter_pipe_message
+# = false` and either drop `html_filter` (defaults to w3m) or point it
+# back at `w3m -T text/html`.
+set -e
+
+# Capture stdin to a temp file so we can fan out to background safely.
+# `mktemp -t` keeps the file in $TMPDIR so the OS reclaims it.
+tmp=$(mktemp -t meli-html-auto.XXXXXX)
+trap 'rm -f "$tmp"' EXIT
+cat > "$tmp"
+
+# Hand off in the background. `nohup` + redirected I/O detaches the
+# meliview job from this shell, so meli's wait-for-stdout returns as
+# soon as we print the placeholder below — the browser launches
+# asynchronously without holding meli's UI thread.
+#
+# Note: if meliview itself is unavailable (PATH missing or broken),
+# the failure surfaces only in the user's notifications/log, not in
+# meli. That is intentional — we don't want a missing helper to
+# block the pager from showing the placeholder.
+nohup sh -c "meliview pipe < '$tmp'; rm -f '$tmp'" \
+    >/dev/null 2>&1 </dev/null &
+
+# Emit the placeholder for meli's pager. Disable the EXIT trap so the
+# tmpfile survives long enough for the background job to consume it
+# (the background job does its own cleanup).
+trap - EXIT
+printf 'Opening in browser via meliview...\n'
+printf '\n'
+printf 'Press `v` to re-launch in the system default if the browser\n'
+printf 'tab did not open. To revert to in-terminal HTML rendering,\n'
+printf 'set `html_filter_pipe_message = false` in ~/.config/meli/config.toml.\n'
