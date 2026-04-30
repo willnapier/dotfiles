@@ -41,7 +41,10 @@ use crate::mail::templates::{self, html_body_iframe, plaintext_body, tag_chip, P
 /// `id` is the bare notmuch message id (with `@`, no `id:` prefix).
 /// axum's `Path<String>` accepts `@` and other URL-safe chars without
 /// extra encoding.
-pub async fn show_message(Path(id): Path<String>) -> Response {
+pub async fn show_message(
+    Path(id): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Response {
     // 1. Fetch message.
     let message = match notmuch_db::show(&id) {
         Ok(m) => m,
@@ -63,7 +66,18 @@ pub async fn show_message(Path(id): Path<String>) -> Response {
     }
 
     // 3. Pick body rendering strategy.
-    let body_markup = render_body(&message);
+    // `?view=full` overrides the plain-text-preferred default and forces
+    // the HTML iframe view (the keyboard-shortcut `m` from message-view
+    // navigates here; the in-page hint says "press m to open the
+    // dedicated viewer"). When `?view=full` is set AND there's an HTML
+    // part, skip the plaintext-preferred branch and fall through to
+    // the HTML iframe path. Falls back gracefully if no HTML part.
+    let force_full = q.get("view").map(|v| v == "full").unwrap_or(false);
+    let body_markup = if force_full && message.text_html.is_some() {
+        render_body_html_only(&message)
+    } else {
+        render_body(&message)
+    };
 
     // 4. Compose final page.
     let subject_text = message
@@ -297,6 +311,44 @@ fn render_body(msg: &Message) -> Markup {
         section class="message-body" aria-label="Message body" {
             div class="empty-state panel" {
                 p { "(This message has no readable body.)" }
+            }
+        }
+    }
+}
+
+/// Force-render the HTML body via the iframe pipeline, ignoring any
+/// available plain-text alternative. Triggered by `?view=full` query
+/// param (the `m` keystroke from message-view). Falls back to plain
+/// text or the empty state if no HTML body is present, so the call
+/// site never crashes on absent HTML.
+fn render_body_html_only(msg: &Message) -> Markup {
+    let Some(html_body) = &msg.text_html else {
+        return render_body(msg);
+    };
+
+    let bytes_opt = match &msg.filename {
+        Some(path) => match std::fs::read(path) {
+            Ok(bytes) if !bytes.is_empty() => Some(bytes),
+            _ => None,
+        },
+        None => None,
+    };
+    let bytes = bytes_opt.unwrap_or_else(|| html_body.as_bytes().to_vec());
+
+    match crate::pipe::cache_html_message(&bytes) {
+        Ok(uuid) => html! {
+            section class="message-body message-body--html" aria-label="Message body" {
+                (html_body_iframe(&uuid))
+            }
+        },
+        Err(e) => {
+            tracing::warn!("cache_html_message failed for {}: {}", msg.id, e);
+            html! {
+                section class="message-body" aria-label="Message body" {
+                    div class="banner banner--error" {
+                        "Failed to render HTML body: " (e.to_string())
+                    }
+                }
             }
         }
     }
