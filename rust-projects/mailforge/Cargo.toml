@@ -1,5 +1,5 @@
 [package]
-name = "meliview"
+name = "mailforge"
 version = "0.1.0"
 edition = "2021"
 description = "Browser-handoff viewer for HTML and PDF mail parts. Pairs with meli (or any MUA via mailcap)."
