@@ -85,12 +85,22 @@ pub async fn run(port: u16) -> Result<()> {
         // matching practiceforge's admin_dashboard_assets pattern).
         .nest_service(
             "/static",
-            tower_http::services::ServeDir::new(
-                std::env::var("MAILFORGE_STATIC_DIR")
-                    .unwrap_or_else(|_| {
-                        format!("{}/static", env!("CARGO_MANIFEST_DIR"))
-                    }),
-            ),
+            tower::ServiceBuilder::new()
+                // Local-only dev daemon: never let the browser cache static
+                // assets. Without this, edits to mailforge.css/keys.js
+                // require manual cache-busting (DevTools "Disable cache" or
+                // a Cmd+Shift+R hard reload that sometimes still misses
+                // because Chrome cached the previous 404).
+                .layer(tower_http::set_header::SetResponseHeaderLayer::overriding(
+                    axum::http::header::CACHE_CONTROL,
+                    axum::http::HeaderValue::from_static("no-cache, no-store, must-revalidate"),
+                ))
+                .service(tower_http::services::ServeDir::new(
+                    std::env::var("MAILFORGE_STATIC_DIR")
+                        .unwrap_or_else(|_| {
+                            format!("{}/static", env!("CARGO_MANIFEST_DIR"))
+                        }),
+                )),
         );
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
