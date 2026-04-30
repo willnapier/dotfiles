@@ -2,8 +2,8 @@ bat	0.25.0	crates.io
 bequest	0.1.0	/home/will/dotfiles/rust-projects/bequest
 chatgpt-to-continuum	0.1.0	/home/will/dotfiles/rust-projects/chatgpt-to-continuum
 clinic-attendance-report	0.1.0	/home/will/dotfiles/rust-projects/clinic-attendance-report
-clinical	0.1.0	/home/will/dotfiles/rust-projects/clinical/crates/notes
-clinical-portal	0.1.0	/home/will/dotfiles/rust-projects/clinical/crates/portal
+clinical	0.1.0	/home/will/Code/practiceforge/clinical-notes
+clinical-portal	0.1.0	/home/will/Code/practiceforge/clinical-portal
 clinical-product	0.1.0	/home/will/dotfiles/rust-projects/clinical-product
 concert-capture	0.1.0	/home/will/dotfiles/rust-projects/concert-capture
 continuum-activity	0.1.0	/home/will/dotfiles/rust-projects/continuum-activity
@@ -25,14 +25,14 @@ meliview	0.1.0	/home/will/dotfiles/rust-projects/meliview
 module	0.1.0	/home/will/dotfiles/rust-projects/module
 nu	0.107.0	crates.io
 pizauth	1.0.11	https://github.com/ltratt/pizauth?tag=pizauth-1.0.11#f58048fc
-practiceforge	0.1.0	/home/will/dotfiles/rust-projects/practiceforge
+practiceforge	0.1.0	/home/will/Code/practiceforge/practiceforge
 ripgrep	14.1.1	crates.io
 sd	1.0.0	crates.io
 skill-eval	0.1.0	/home/will/dotfiles/rust-projects/skill-eval
 skim	0.20.5	crates.io
 sr	0.1.0	/home/will/dotfiles/rust-projects/sr
 starship	1.23.0	crates.io
-tm3-diary-capture	0.1.0	/home/will/dotfiles/rust-projects/tm3-diary-capture
+tm3-diary-capture	0.1.0	/home/will/Code/tm3-diary-capture
 trashy	2.0.0	crates.io
 yazi-cli	25.5.31	crates.io
 yazi-fm	25.5.31	crates.io

@@ -31,9 +31,9 @@ The palette is canonical Solarized — verified consistent across:
 
 | Source | Path | Confirms |
 |---|---|---|
-| PracticeForge admin dashboard | `~/dotfiles/rust-projects/practiceforge/src/admin_dashboard_assets/admin.html` (L14-23) | `--base03..base3`, all accents |
-| PracticeForge login | `~/dotfiles/rust-projects/practiceforge/src/admin_dashboard_assets/login.html` (L9-12) | dark surfaces + cyan/green/red |
-| PracticeForge portal (public) | `~/dotfiles/rust-projects/practiceforge/src/portal_assets/portal.html` (L9-11) | Solarized **light** equivalents |
+| PracticeForge admin dashboard | `~/Code/practiceforge/practiceforge/src/admin_dashboard_assets/admin.html` (L14-23) | `--base03..base3`, all accents |
+| PracticeForge login | `~/Code/practiceforge/practiceforge/src/admin_dashboard_assets/login.html` (L9-12) | dark surfaces + cyan/green/red |
+| PracticeForge portal (public) | `~/Code/practiceforge/practiceforge/src/portal_assets/portal.html` (L9-11) | Solarized **light** equivalents |
 | meli config | `~/dotfiles/meli/config.toml` (L214) | identical hex aliases |
 | Ghostty terminal theme | `~/dotfiles/ghostty/themes/solarized-dark` | identical hex anchors |
 
