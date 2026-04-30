@@ -41,6 +41,13 @@
 //! here as `MailState` and pass via `Router::with_state(...)`. Until then
 //! the simpler global-CLI shape wins.
 
+// Scaffold-only allow: the public types and functions in this module tree
+// are referenced by `router()` (so they're reachable) but their bodies are
+// `todo!()` placeholders. Without this allow, every Envelope/Message/handler
+// generates a "never used" warning that drowns the real signal. Remove this
+// once the first wave of implementation agents fills in the handler bodies.
+#![allow(dead_code)]
+
 pub mod accounts;
 pub mod compose;
 pub mod listing;

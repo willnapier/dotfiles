@@ -51,6 +51,7 @@
 //! Add this endpoint when implementing the compose flow; keeping it out
 //! of `mod.rs::router()` for now since it's optional.
 
+#[allow(unused_imports)]
 use axum::{
     extract::{Path, Query},
     response::{IntoResponse, Response},
