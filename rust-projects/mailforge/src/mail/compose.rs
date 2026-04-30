@@ -165,6 +165,42 @@ pub struct EscalateRequest {
     pub body: String,
 }
 
+/// Response shape for GET `/api/escalate-helix/status`.
+#[derive(Debug, Serialize)]
+pub struct EscalateStatus {
+    /// True once the user has saved a change in Helix (tempfile content
+    /// differs from the seed). Once true, the JS poller stops and copies
+    /// `body` back into the textarea.
+    pub complete: bool,
+    /// Current tempfile contents — only set when `complete` is true so the
+    /// no-op poll path is cheap.
+    pub body: Option<String>,
+    /// Diagnostic. Set when no active session, or when reading the
+    /// tempfile fails.
+    pub error: Option<String>,
+}
+
+/// Response shape for POST `/api/escalate-helix/abort`.
+#[derive(Debug, Serialize)]
+pub struct EscalateAbort {
+    pub ok: bool,
+}
+
+/// Active Helix escalation session. Single global slot — multiple compose
+/// tabs would step on each other but the typical workflow has one
+/// composer at a time. If that limitation bites, switch to a HashMap
+/// keyed by an id returned in the initial response.
+struct EscalateSession {
+    tempfile_path: PathBuf,
+    seed_content: String,
+}
+
+fn current_escalation() -> &'static std::sync::Mutex<Option<EscalateSession>> {
+    use std::sync::{Mutex, OnceLock};
+    static SLOT: OnceLock<Mutex<Option<EscalateSession>>> = OnceLock::new();
+    SLOT.get_or_init(|| Mutex::new(None))
+}
+
 // ------------------------------------------------------------------
 // Filesystem layout
 // ------------------------------------------------------------------
@@ -1092,6 +1128,13 @@ pub async fn escalate_helix(Json(req): Json<EscalateRequest>) -> Response {
             .into_response();
     }
 
+    // Record the session so /status can read the tempfile and detect
+    // changes. Drop the previous session if any (single-slot semantics).
+    *current_escalation().lock().unwrap() = Some(EscalateSession {
+        tempfile_path: path.clone(),
+        seed_content: req.body.clone(),
+    });
+
     Json(EscalateResponse {
         ok: true,
         tempfile_path: Some(path_str),
@@ -1099,6 +1142,46 @@ pub async fn escalate_helix(Json(req): Json<EscalateRequest>) -> Response {
         error: None,
     })
     .into_response()
+}
+
+/// GET `/api/escalate-helix/status`. Polled by the composer JS after a
+/// successful escalation. Returns `complete: true` and the new body once
+/// the tempfile content differs from the seed (i.e. the user has saved
+/// at least one change in Helix). Until then returns `complete: false`
+/// so the JS keeps polling.
+pub async fn escalate_helix_status() -> Json<EscalateStatus> {
+    let guard = current_escalation().lock().unwrap();
+    let Some(s) = guard.as_ref() else {
+        return Json(EscalateStatus {
+            complete: false,
+            body: None,
+            error: Some("no active session".into()),
+        });
+    };
+    match std::fs::read_to_string(&s.tempfile_path) {
+        Ok(current) if current != s.seed_content => Json(EscalateStatus {
+            complete: true,
+            body: Some(current),
+            error: None,
+        }),
+        Ok(_) => Json(EscalateStatus { complete: false, body: None, error: None }),
+        Err(e) => Json(EscalateStatus {
+            complete: false,
+            body: None,
+            error: Some(format!("read tempfile: {e}")),
+        }),
+    }
+}
+
+/// POST `/api/escalate-helix/abort`. Clears the active session and
+/// removes its tempfile. Doesn't kill Helix — `wezterm cli spawn` returns
+/// once the tab is opened so we have no handle on the editor process.
+/// The user closes the Helix tab manually.
+pub async fn escalate_helix_abort() -> Json<EscalateAbort> {
+    if let Some(s) = current_escalation().lock().unwrap().take() {
+        let _ = std::fs::remove_file(&s.tempfile_path);
+    }
+    Json(EscalateAbort { ok: true })
 }
 
 // Marker so PreEscaped (re-exported by maud) doesn't get flagged as unused

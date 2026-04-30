@@ -93,6 +93,8 @@ pub fn router() -> Router {
         .route("/api/draft", post(compose::draft_save))
         .route("/api/draft/:id", get(compose::draft_get_api))
         .route("/api/escalate-helix", post(compose::escalate_helix))
+        .route("/api/escalate-helix/status", get(compose::escalate_helix_status))
+        .route("/api/escalate-helix/abort", post(compose::escalate_helix_abort))
         // Static assets (CSS, JS) — ServeDir registered in daemon.rs
         // because tower_http's ServeDir is easier to compose at the
         // outer Router level. Path: /static/*.

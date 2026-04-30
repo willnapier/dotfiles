@@ -302,10 +302,13 @@
   function composeEscalateHelix() {
     const f = composeForm();
     if (!f) return;
-    postForm("/api/escalate-helix", f)
-      .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); })
-      .then(() => {
-        showToast("Helix opened — Ctrl+Shift+E to abort", "info");
+    const ta = f.querySelector("textarea[name=body]");
+    const body = ta ? ta.value : "";
+    postJSON("/api/escalate-helix", { body })
+      .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(j => {
+        if (!j.ok) throw new Error(j.error || "escalation rejected");
+        showToast("Helix opened — save in Helix to return; Ctrl+Shift+E to abort", "info");
         window.__helixPoll = setInterval(() => {
           fetch("/api/escalate-helix/status", { credentials: "same-origin" })
             .then(r => r.json())
@@ -313,7 +316,6 @@
               if (j && j.complete) {
                 clearInterval(window.__helixPoll);
                 window.__helixPoll = null;
-                const ta = document.querySelector("form.compose textarea[name=body], form#compose textarea[name=body]");
                 if (ta && typeof j.body === "string") ta.value = j.body;
                 showToast("Helix returned", "success");
               }
