@@ -30,6 +30,12 @@ fn load_orders() -> Result<Vec<Order>> {
     }
     let f = File::open(&path).with_context(|| format!("opening {}", path.display()))?;
     let mut out = Vec::new();
+    // Defensive dedup-by-message-id at load time. Gmail label-pull
+    // (Inbox + Sent + All Mail) can produce 3x duplicates per message
+    // in some accounts; the extract-time dedup handles it for fresh
+    // runs but historical jsonl may still have legacy dups. Keeping
+    // the most-information-rich record per message-id.
+    let mut seen_mids: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     for line in BufReader::new(f).lines() {
         let line = line?;
         if line.trim().is_empty() {
@@ -68,7 +74,12 @@ fn load_orders() -> Result<Vec<Order>> {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
-        out.push(Order {
+        let mid = obj
+            .get("message_id")
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .unwrap_or_default();
+        let new_record = Order {
             received,
             subject,
             order_id,
@@ -76,11 +87,36 @@ fn load_orders() -> Result<Vec<Order>> {
             eta,
             items,
             raw: obj,
-        });
+        };
+        if !mid.is_empty() {
+            if let Some(&idx) = seen_mids.get(&mid) {
+                // Replace existing if new record is more populated.
+                let new_score = order_populated(&new_record);
+                let old_score = order_populated(&out[idx]);
+                if new_score > old_score {
+                    out[idx] = new_record;
+                }
+                continue;
+            }
+            seen_mids.insert(mid, out.len());
+        }
+        out.push(new_record);
     }
     // Newest first.
     out.sort_by(|a, b| b.received.cmp(&a.received));
     Ok(out)
+}
+
+fn order_populated(o: &Order) -> usize {
+    [
+        o.order_id.is_some(),
+        o.total.is_some(),
+        o.eta.is_some(),
+        !o.items.is_empty(),
+    ]
+    .iter()
+    .filter(|x| **x)
+    .count()
 }
 
 fn parse_date(s: &str) -> Option<DateTime<Utc>> {
