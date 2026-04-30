@@ -18,10 +18,10 @@ the tokens; do not hard-code colors, spacings, or font stacks.
 static/css/
   theme.css   — design tokens (variables only). Two themes via prefers-color-scheme.
   base.css    — reset, document defaults, typography, forms, layout primitives.
-  mailpost.css (TODO) — component-specific styles added by impl agents.
+  mailforge.css (TODO) — component-specific styles added by impl agents.
 ```
 
-`<head>` order: `theme.css` first, then `base.css`, then `mailpost.css`.
+`<head>` order: `theme.css` first, then `base.css`, then `mailforge.css`.
 
 ---
 
@@ -239,7 +239,7 @@ interactive elements without providing an equivalent visual focus cue.
 
 - Overlay: `position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center;`.
 - `.modal`: `--shadow-md`, `--radius-lg`, max-width 420px.
-- Implementation agents add `.overlay` and `.modal` modifiers in `mailpost.css`.
+- Implementation agents add `.overlay` and `.modal` modifiers in `mailforge.css`.
 
 ---
 
@@ -271,7 +271,7 @@ These are intentionally left to the implementation agents who know the HTML stru
 - Iframe sandbox styling for the HTML body viewer
 - Any keyboard-cursor styling beyond `.selected`
 
-Add those in `mailpost.css`. They should compose the primitives here, not
+Add those in `mailforge.css`. They should compose the primitives here, not
 redefine the palette or scale.
 
 ---

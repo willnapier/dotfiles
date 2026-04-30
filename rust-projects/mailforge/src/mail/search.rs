@@ -18,7 +18,7 @@
 //!
 //! ## Future: saved searches
 //!
-//! If the user wants to save searches, add a `~/.config/meliview/saved-searches.toml`
+//! If the user wants to save searches, add a `~/.config/mailforge/saved-searches.toml`
 //! file. Each entry would be (name, query). Render in the sidebar under a
 //! "Saved" heading. Out of scope for the first build.
 

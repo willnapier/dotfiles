@@ -107,12 +107,12 @@ pub struct Message {
     pub date: Option<String>,
     pub tags: Vec<String>,
     /// File path on disk (under `~/Mail/.../cur/`). Useful for reading
-    /// raw bytes when piping into the meliview viewer.
+    /// raw bytes when piping into the mailforge viewer.
     pub filename: Option<String>,
     /// Plain-text body parts (joined). None if the message has no
     /// text/plain alternative.
     pub text_plain: Option<String>,
-    /// Raw HTML body, if any. Renderable via meliview's existing pipeline.
+    /// Raw HTML body, if any. Renderable via mailforge's existing pipeline.
     pub text_html: Option<String>,
 }
 

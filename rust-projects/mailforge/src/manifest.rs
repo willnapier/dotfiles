@@ -34,7 +34,7 @@ pub fn cache_root() -> Result<PathBuf> {
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
         .context("HOME unset, cannot determine cache directory")?;
-    Ok(base.join("meliview"))
+    Ok(base.join("mailforge"))
 }
 
 pub fn write(dir: &Path, m: &Manifest) -> Result<()> {

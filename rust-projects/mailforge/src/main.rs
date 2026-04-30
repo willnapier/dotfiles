@@ -17,7 +17,7 @@ struct Cli {
 enum Cmd {
     /// Read RFC822 from stdin, cache + open in browser.
     Pipe {
-        /// Daemon port (default 8765, override via $MELIVIEW_PORT).
+        /// Daemon port (default 8765, override via $MAILFORGE_PORT).
         #[arg(long)]
         port: Option<u16>,
         /// Don't actually open the browser (for tests).
@@ -26,14 +26,14 @@ enum Cmd {
     },
     /// Run the Axum daemon.
     Daemon {
-        /// Listen port (default 8765, override via $MELIVIEW_PORT).
+        /// Listen port (default 8765, override via $MAILFORGE_PORT).
         #[arg(long)]
         port: Option<u16>,
     },
 }
 
 fn port_from(arg: Option<u16>) -> u16 {
-    arg.or_else(|| std::env::var("MELIVIEW_PORT").ok().and_then(|s| s.parse().ok()))
+    arg.or_else(|| std::env::var("MAILFORGE_PORT").ok().and_then(|s| s.parse().ok()))
         .unwrap_or(8765)
 }
 

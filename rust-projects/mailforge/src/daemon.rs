@@ -23,7 +23,7 @@ const CSP_STRICT: &str = "default-src 'self'; img-src 'self' data:; \
 /// are worth rendering. Both HTTP and HTTPS are allowed because real-world
 /// email image URLs use both schemes — sendgrid's CDN serves over HTTP for
 /// example. The user already trusts the sender enough to escalate to
-/// meliview; demanding HTTPS-only here just produces broken images on
+/// mailforge; demanding HTTPS-only here just produces broken images on
 /// otherwise-fine emails. Scripts, frames, and form submission stay blocked
 /// to keep the dangerous categories inert.
 const CSP_RELAXED: &str = "default-src 'self'; img-src 'self' data: http: https:; \
@@ -34,7 +34,7 @@ const CSP_RELAXED: &str = "default-src 'self'; img-src 'self' data: http: https:
 struct ViewQuery {
     /// `?images=0` blocks external images for this view; default is to load
     /// them. The trust posture: by the time the user pressed `2m` to escalate
-    /// an email to meliview, they've already decided the sender is benign at
+    /// an email to mailforge, they've already decided the sender is benign at
     /// the listing-level triage step. Forcing them to click-to-allow images
     /// for every render adds friction without meaningful safety benefit.
     /// The block-images toggle remains available for the rare suspicious case.
@@ -62,12 +62,12 @@ pub async fn run(port: u16) -> Result<()> {
         .with_context(|| format!("mkdir {}", cache.display()))?;
     let state = AppState { cache: Arc::new(cache) };
 
-    // mailpost subrouter: the browser-native MUA UI (listing, message,
+    // mailforge subrouter: the browser-native MUA UI (listing, message,
     // compose, send, tag, search). Lives under /mail/* and /api/* — no
     // overlap with the existing /v/* viewer routes. The mail subrouter
     // is stateless (notmuch CLI subprocesses, on-disk drafts), so it
     // merges cleanly into the stateful viewer Router. See
-    // ~/Assistants/shared/mailpost-design.md for the full design.
+    // ~/Assistants/shared/mailforge-design.md for the full design.
     let app = Router::new()
         .route("/healthz", get(|| async { "ok" }))
         .route("/v/:id", get(render))
@@ -76,17 +76,17 @@ pub async fn run(port: u16) -> Result<()> {
         .route("/v/:id/cid/:filename", get(serve_asset))
         .with_state(state)
         .merge(crate::mail::router())
-        // Static assets for the mailpost UI (CSS + JS). ServeDir is
+        // Static assets for the mailforge UI (CSS + JS). ServeDir is
         // resolved relative to CARGO_MANIFEST_DIR at build time so the
         // installed binary still finds its assets — for a release
-        // install the user must `cp -r static/ ~/.local/share/meliview/`
-        // and set MELIVIEW_STATIC_DIR=~/.local/share/meliview/static
+        // install the user must `cp -r static/ ~/.local/share/mailforge/`
+        // and set MAILFORGE_STATIC_DIR=~/.local/share/mailforge/static
         // (or the impl agent introduces include_dir!-based embedding,
         // matching practiceforge's admin_dashboard_assets pattern).
         .nest_service(
             "/static",
             tower_http::services::ServeDir::new(
-                std::env::var("MELIVIEW_STATIC_DIR")
+                std::env::var("MAILFORGE_STATIC_DIR")
                     .unwrap_or_else(|_| {
                         format!("{}/static", env!("CARGO_MANIFEST_DIR"))
                     }),
@@ -94,7 +94,7 @@ pub async fn run(port: u16) -> Result<()> {
         );
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    tracing::info!("meliview listening on http://{addr}");
+    tracing::info!("mailforge listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
@@ -148,7 +148,7 @@ fn wrapper_html(id: &str, m: &Manifest, images_allowed: bool) -> String {
     // For HTML mode, show a small banner with the toggle. PDFs don't load
     // external images so the toggle is meaningless there. Default is
     // images-allowed (you've already vetted the sender by escalating to
-    // meliview); the toggle blocks them for sus messages.
+    // mailforge); the toggle blocks them for sus messages.
     let images_banner = match (m, images_allowed) {
         (Manifest::Html(_), true) => format!(
             r#"<div class="img-banner">

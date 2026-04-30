@@ -5,15 +5,15 @@
 #
 # Custom flag (meli fork extension):
 #   x-meli-pipe-message — meli pipes the parent envelope's FULL RFC822 bytes
-#   to the helper on stdin instead of just the decoded part. Lets meliview
+#   to the helper on stdin instead of just the decoded part. Lets mailforge
 #   resolve cid: inline images in multipart/related messages. Requires the
 #   patched meli at ~/.local/bin/meli; vanilla meli logs the flag as unknown
 #   and falls through to default part-bytes behaviour.
 
-# HTML body parts → meliview pipe (full envelope so cid: assets resolve).
-text/html; meliview pipe; x-meli-pipe-message
+# HTML body parts → mailforge pipe (full envelope so cid: assets resolve).
+text/html; mailforge pipe; x-meli-pipe-message
 
 # PDF attachments → open with system default (Preview on macOS, default PDF
-# viewer on Linux). Faster than routing through meliview for PDFs since
+# viewer on Linux). Faster than routing through mailforge for PDFs since
 # the system viewer is already what we'd hand off to.
 application/pdf; open %s; copiousoutput=false

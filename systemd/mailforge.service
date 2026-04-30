@@ -1,0 +1,15 @@
+[Unit]
+Description=mailforge — Axum daemon for browser-handoff mail rendering
+After=default.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/mailforge daemon
+Restart=on-failure
+RestartSec=5
+Environment=RUST_LOG=info
+StandardOutput=append:%h/.local/share/mailforge.log
+StandardError=append:%h/.local/share/mailforge.log
+
+[Install]
+WantedBy=default.target

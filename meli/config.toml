@@ -172,15 +172,15 @@ sidebar_ratio = 80
 
 [pager]
 filter = "cat"
-# Pressing Enter on an HTML email auto-launches meliview in a browser
-# tab via meli-html-auto (which background-dispatches to `meliview pipe`
+# Pressing Enter on an HTML email auto-launches mailforge in a browser
+# tab via meli-html-auto (which background-dispatches to `mailforge pipe`
 # and prints a placeholder for meli's pager). The pager view becomes
 # essentially a status indicator; the real rendering happens externally.
 #
 # `html_filter_pipe_message = true` is a fork-only flag (see meli commit
 # b057de1e). It tells meli to pipe the *full* RFC822 envelope bytes to
 # the filter instead of just the decoded HTML part — required so that
-# meliview can resolve cid: assets in sibling multipart/related parts.
+# mailforge can resolve cid: assets in sibling multipart/related parts.
 #
 # To revert to in-terminal HTML rendering (manual `Nm` to launch
 # externally), flip the flag to false and switch html_filter back to

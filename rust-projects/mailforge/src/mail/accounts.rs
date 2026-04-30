@@ -6,11 +6,11 @@
 //! the transport differs).
 //!
 //! This module deliberately doesn't read from `~/.config/meli/config.toml`
-//! or any other live config file: mailpost's account list is small, stable,
+//! or any other live config file: mailforge's account list is small, stable,
 //! and changes infrequently enough that compile-time encoding beats a config
 //! parse. If/when this grows beyond ~5 accounts or the install is
 //! distributed to colleagues, lift to a config-driven approach (TOML next
-//! to mailpost's other state).
+//! to mailforge's other state).
 //!
 //! Cross-references:
 //! - notmuch tag prefix: each account's messages carry a `tag:<prefix>` so

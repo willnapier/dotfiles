@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.williamnapier.meliview</string>
+    <string>com.williamnapier.mailforge</string>
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/williamnapier/.local/bin/meliview</string>
+        <string>/Users/williamnapier/.local/bin/mailforge</string>
         <string>daemon</string>
     </array>
 
@@ -18,10 +18,10 @@
     <true/>
 
     <key>StandardOutPath</key>
-    <string>/Users/williamnapier/Library/Logs/meliview.log</string>
+    <string>/Users/williamnapier/Library/Logs/mailforge.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/williamnapier/Library/Logs/meliview.log</string>
+    <string>/Users/williamnapier/Library/Logs/mailforge.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>

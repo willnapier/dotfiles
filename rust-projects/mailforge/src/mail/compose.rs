@@ -6,7 +6,7 @@
 //! GET `/mail/compose?draft=<id>` → resume saved draft.
 //! GET `/mail/draft/<id>` → same as ?draft=<id> (cleaner URL for bookmarks).
 //! POST `/api/send` → build MIME, dispatch to msmtp / graph-send, redirect to sent.
-//! POST `/api/draft` → save draft to `~/.cache/meliview/drafts/<uuid>.json`.
+//! POST `/api/draft` → save draft to `~/.cache/mailforge/drafts/<uuid>.json`.
 //!
 //! ## Send pipeline
 //!
@@ -112,7 +112,7 @@ pub async fn compose_form(Query(_q): Query<ComposeQuery>) -> Response {
               quoted body = '> ' prefix per line\n\
             - fwd:   To = empty, Subject = 'Fwd: ' + original,\n\
               quoted body = full original headers + body\n\
-         3. for draft: read JSON from ~/.cache/meliview/drafts/<id>.json\n\
+         3. for draft: read JSON from ~/.cache/mailforge/drafts/<id>.json\n\
          4. render form via templates::page(PageContext::Compose, ...)"
     )
 }

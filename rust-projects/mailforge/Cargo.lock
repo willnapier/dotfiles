@@ -670,6 +670,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "mailforge"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "clap",
+ "lettre",
+ "mail-parser",
+ "maud",
+ "mime_guess",
+ "open",
+ "regex",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "matchers"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -704,29 +727,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "meliview"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "clap",
- "lettre",
- "mail-parser",
- "maud",
- "mime_guess",
- "open",
- "regex",
- "serde",
- "serde_json",
- "tokio",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid",
 ]
 
 [[package]]

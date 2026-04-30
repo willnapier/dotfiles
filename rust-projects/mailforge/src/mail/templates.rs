@@ -24,7 +24,7 @@
 //!
 //! The function signatures and PageContext shape are stable; bodies are
 //! `todo!()`. The implementation agent should fill them following the
-//! design notes in `~/Assistants/shared/mailpost-design.md`.
+//! design notes in `~/Assistants/shared/mailforge-design.md`.
 
 use maud::{html, Markup, DOCTYPE};
 
@@ -82,7 +82,7 @@ pub fn page(
 ) -> String {
     todo!(
         "build the full HTML doc using maud's html! macro;\n\
-         include <link rel=stylesheet href=/static/css/mailpost.css>;\n\
+         include <link rel=stylesheet href=/static/css/mailforge.css>;\n\
          include <script defer src=/static/js/keys.js>;\n\
          set <body data-context=ctx.as_str()>;\n\
          emit sidebar() at the start of <body>, then body fragment, then helpbar()."

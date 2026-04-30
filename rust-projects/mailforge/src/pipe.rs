@@ -23,7 +23,7 @@ pub fn run(port: u16, no_open: bool) -> Result<()> {
     let mut bytes = Vec::new();
     std::io::stdin().read_to_end(&mut bytes).context("reading stdin")?;
     if bytes.is_empty() {
-        bail!("no input on stdin (run via `meli :pipe-message meliview pipe`)");
+        bail!("no input on stdin (run via `meli :pipe-message mailforge pipe`)");
     }
     log_step(&format!("read {} bytes", bytes.len()));
 
@@ -61,7 +61,7 @@ pub fn run(port: u16, no_open: bool) -> Result<()> {
     // Print URL once to stdout so callers (e.g. ad-hoc CLI invocations) see
     // it. meli's mailcap dispatch ignores child stdout when copiousoutput is
     // unset, so this doesn't pollute meli's TUI.
-    println!("meliview: {url}");
+    println!("mailforge: {url}");
     if !no_open {
         log_step("opening browser");
         let _ = open::that_detached(&url);
@@ -70,7 +70,7 @@ pub fn run(port: u16, no_open: bool) -> Result<()> {
     Ok(())
 }
 
-/// Append a timestamped diagnostic step to ~/.cache/meliview/pipe.log.
+/// Append a timestamped diagnostic step to ~/.cache/mailforge/pipe.log.
 /// Step-by-step trace makes future hangs diagnosable: when meli's mailcap
 /// dispatch wedges, the last log line tells us exactly which phase blocked.
 /// Fails silently to avoid escalating logging issues into pipeline failures.

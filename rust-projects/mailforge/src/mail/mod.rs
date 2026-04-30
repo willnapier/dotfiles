@@ -1,13 +1,13 @@
-//! mailpost — browser-native mail client UI.
+//! mailforge — browser-native mail client UI.
 //!
-//! A bolted-on submodule of the `meliview` daemon. Adds full mailbox listing,
+//! A bolted-on submodule of the `mailforge` daemon. Adds full mailbox listing,
 //! message reading, composing, sending, and tagging via Axum routes under
 //! `/mail/...` and `/api/...`. Renders HTML on the server using maud
 //! templates. Minimal client-side JS (vanilla, no framework) handles
 //! keyboard shortcuts and a small set of XHR-driven actions (tag, trash,
 //! send, autosave).
 //!
-//! See `~/Assistants/shared/mailpost-design.md` for the full design doc
+//! See `~/Assistants/shared/mailforge-design.md` for the full design doc
 //! (architecture decisions, URL scheme, data flow, migration plan, scope
 //! estimate per phase).
 //!
@@ -60,7 +60,7 @@ pub mod templates;
 use axum::Router;
 use axum::routing::{get, post};
 
-/// Build the mailpost subrouter.
+/// Build the mailforge subrouter.
 ///
 /// All handlers currently `todo!()`; this function returns a real Router so
 /// route registration in [`crate::daemon`] compiles even before the

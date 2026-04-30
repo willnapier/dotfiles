@@ -5,7 +5,7 @@
 //!
 //! ## HTML body handling
 //!
-//! For messages with `text/html` parts, mailpost reuses meliview's
+//! For messages with `text/html` parts, mailforge reuses mailforge's
 //! existing `/v/<uuid>` viewer pipeline. The flow:
 //!
 //! 1. `notmuch_db::show(id)` returns the message with file path.
@@ -14,7 +14,7 @@
 //!    existing `pipe::run` that decouples the stdin-read; see TODO in
 //!    pipe.rs). It builds a cache entry and returns the UUID.
 //! 4. Embed `<iframe sandbox src="/v/<uuid>">` in the rendered page.
-//!    The iframe's CSP/asset machinery is unchanged — meliview's existing
+//!    The iframe's CSP/asset machinery is unchanged — mailforge's existing
 //!    code path applies.
 //!
 //! For messages with only `text/plain`, render the body directly inside

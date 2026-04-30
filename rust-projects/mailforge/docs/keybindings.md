@@ -1,9 +1,9 @@
-# mailpost keybindings spec
+# mailforge keybindings spec
 
 This is the **authoritative spec** for the keyboard JS implementation
 agent. It maps William's existing meli keybindings (verified against
 `~/.config/meli/config.toml`, last modified 2026-04-29) to the
-equivalent action in mailpost's browser context.
+equivalent action in mailforge's browser context.
 
 ## Layout assumption
 
@@ -85,7 +85,7 @@ Mirrors William's meli `[shortcuts.listing]` and `[shortcuts.general]`.
 | `r` | Reply to highlighted (`/mail/compose?reply=<id>`) | `reply` (envelope-view); promoting to listing gives one-keystroke reply from the list |
 | `R` | Reply-all (TODO: not yet implemented) | meli `reply_to_all` |
 | `f` | Forward highlighted (`/mail/compose?fwd=<id>`) | meli `forward` |
-| `c` | Compose new (`/mail/compose`) | meli `new_message` (default `m` clashes with meliview convention — use `c` for compose) |
+| `c` | Compose new (`/mail/compose`) | meli `new_message` (default `m` clashes with mailforge convention — use `c` for compose) |
 | `Ctrl+R` | Refresh (re-fetch mailbox) | `refresh = 'C-r'` (listing) — runs an XHR to a small `/api/refresh` endpoint that triggers `mail-sync` server-side, then reloads the page |
 | `E` | Next mailbox (sidebar down) | `next_mailbox = 'E'` (listing) |
 | `I` | Prev mailbox (sidebar up) | `prev_mailbox = 'I'` (listing) |
@@ -96,7 +96,7 @@ Mirrors William's meli `[shortcuts.listing]` and `[shortcuts.general]`.
 
 ### Multi-select (deferred)
 
-meli has multi-select via `Space`/`v`. mailpost can defer this to a v2 — most
+meli has multi-select via `Space`/`v`. mailforge can defer this to a v2 — most
 trash/archive operations are per-message and per-keystroke is fine. If
 needed, add `Space` to toggle row selection, `Ctrl+A` to select all
 visible, with bulk operations applying to the selection set.
@@ -117,7 +117,7 @@ Mirrors meli's envelope-view + pager.
 | `a` | Archive and go back to listing |
 | `J` | Next message in mailbox (or thread) |
 | `K` | Previous message in mailbox (or thread) |
-| `m` | Open in meliview viewer (forces full-render of HTML body in fullscreen iframe — the original meliview escalation path; useful for messages where the inline iframe is too cramped) |
+| `m` | Open in mailforge viewer (forces full-render of HTML body in fullscreen iframe — the original mailforge escalation path; useful for messages where the inline iframe is too cramped) |
 | `Ctrl+R` | Reload the message (re-fetch from notmuch) |
 
 ## Thread (`/mail/t/<thread-id>`)
@@ -160,7 +160,7 @@ expected. Only the modified shortcuts and Tab fire.
 
 - **Multi-select**: see Listing section. Defer to v2.
 - **Drag-and-drop attachments**: future composer enhancement.
-- **Vim-style command mode (`:`)**: meli has it; mailpost browser context
+- **Vim-style command mode (`:`)**: meli has it; mailforge browser context
   doesn't translate cleanly. URL bar serves the equivalent role
   ("`/mail/cohs/sent`" is just typed in the address bar).
 - **Sticky modifiers / leader keys**: William's ZMK firmware handles
@@ -210,5 +210,5 @@ For each context above, the agent should manually verify:
    composer fields.
 
 Browser parity: test in Chrome (William's primary) and Safari (macOS
-default). Skip Firefox unless mailpost ever needs to ship beyond William's
+default). Skip Firefox unless mailforge ever needs to ship beyond William's
 own use.

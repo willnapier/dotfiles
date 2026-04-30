@@ -10,7 +10,7 @@
 //!
 //! ## Server-side propagation
 //!
-//! mailpost touches the local notmuch DB only. Server-side mirroring
+//! mailforge touches the local notmuch DB only. Server-side mirroring
 //! happens via existing infrastructure:
 //! - Personal (Gmail): `gmail-push-tags` (15-min launchd timer) translates
 //!   notmuch tags to Gmail label changes.
@@ -18,7 +18,7 @@
 //!   messages to the M365 Deleted Items folder; mbsync replicates back.
 //!
 //! End-to-end latency: 0-20 minutes per existing meli config docs. No
-//! change needed for mailpost.
+//! change needed for mailforge.
 //!
 //! ## Concurrency
 //!
@@ -83,7 +83,7 @@ pub async fn tag_post(Json(_req): Json<TagRequest>) -> impl IntoResponse {
 ///
 /// Implementation note: meli's config also sets `flag set trash` on the
 /// maildir file; that's a meli-specific UI cue (forces a refresh of the
-/// row). mailpost doesn't need it because the client-side keyboard
+/// row). mailforge doesn't need it because the client-side keyboard
 /// handler removes the row from the DOM optimistically. The maildir T
 /// flag will be set by the next `gmail-push-tags` run for Gmail; for
 /// COHS, `cohs-trash-mover` handles the file relocation directly.

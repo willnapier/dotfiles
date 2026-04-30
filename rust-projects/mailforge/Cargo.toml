@@ -22,7 +22,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
 url = "2"
 
-# === mailpost (browser-native MUA layer) deps ===
+# === mailforge (browser-native MUA layer) deps ===
 #
 # notmuch: not a Rust crate. We shell out to the `notmuch` CLI per the
 # mailcurator/src/notmuch.rs pattern — no libnotmuch headers needed at build
