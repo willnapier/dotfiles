@@ -388,6 +388,14 @@
 
   // ----- Main handler -----
   function handleKeydown(ev) {
+    // Always let Cmd/Meta-modified events through to the browser. Without
+    // this, Cmd+R (reload), Cmd+T (new tab), Cmd+S (save), Cmd+F (find in
+    // page), Cmd+Shift+R (hard reload) all collide with our `r`, `t`, `s`,
+    // `f`, `R` bindings — formatKey() ignores metaKey, so Cmd+R formats
+    // as plain "r" and msgReply fires, eating the reload. Native browser
+    // shortcuts must always win on macOS.
+    if (ev.metaKey) return;
+
     const ctx = (document.body && document.body.dataset.context) || "";
     const key = formatKey(ev);
 
