@@ -373,7 +373,7 @@ pub fn build_forward(parent_raw: &[u8]) -> (String, String) {
     let date_str = msg
         .date()
         .map(|d| d.to_rfc822())
-        .unwrap_or_else(|| String::new());
+        .unwrap_or_default();
     let subj_orig_str = msg.subject().unwrap_or("");
 
     let body = msg.body_text(0).map(|c| c.to_string()).unwrap_or_default();
