@@ -26,8 +26,10 @@
 //! safe. notmuch's lock-retry mechanism (the `built_with.retry_lock=true`
 //! flag from `notmuch config list`) handles concurrent writers.
 
-use axum::{response::IntoResponse, Json};
+use axum::{http::StatusCode, response::IntoResponse, Json};
 use serde::{Deserialize, Serialize};
+
+use crate::mail::notmuch_db;
 
 /// Body of POST `/api/tag`.
 #[derive(Debug, Deserialize)]
@@ -60,55 +62,79 @@ pub struct TagResponse {
     pub error: Option<String>,
 }
 
+/// Shared implementation for all tag-mutating endpoints. Folds the ids
+/// into a notmuch query, atomically applies the add/remove sets via
+/// `notmuch tag`, and returns a TagResponse with the appropriate HTTP
+/// status: 200 OK on success (so the client's `r.ok` check works
+/// unambiguously), 500 on notmuch failure with the error string in the
+/// JSON body for diagnostics. Empty `ids` short-circuits to a no-op
+/// success — `notmuch_db::ids_to_query(&[])` would otherwise produce
+/// notmuch-illegal empty query string.
+fn run_tag_changes(
+    ids: &[String],
+    add: &[&str],
+    remove: &[&str],
+) -> (StatusCode, Json<TagResponse>) {
+    if ids.is_empty() {
+        return (
+            StatusCode::OK,
+            Json(TagResponse { ok: true, affected: 0, error: None }),
+        );
+    }
+    let query = notmuch_db::ids_to_query(ids);
+    match notmuch_db::apply_tag_changes(&query, add, remove) {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(TagResponse {
+                ok: true,
+                affected: ids.len(),
+                error: None,
+            }),
+        ),
+        Err(e) => {
+            tracing::warn!("tag op failed (add={add:?} remove={remove:?}): {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(TagResponse {
+                    ok: false,
+                    affected: 0,
+                    error: Some(e.to_string()),
+                }),
+            )
+        }
+    }
+}
+
 /// POST `/api/tag` — apply arbitrary add/remove to a list of ids.
-pub async fn tag_post(Json(_req): Json<TagRequest>) -> impl IntoResponse {
-    todo!(
-        "1. if req.ids.is_empty(): return ok=true, affected=0\n\
-         2. query = notmuch_db::ids_to_query(&req.ids)\n\
-         3. apply_tag_changes(&query, &req.add.iter().map(|s| s.as_str()).collect::<Vec<_>>(),\n\
-                                       &req.remove.iter().map(|s| s.as_str()).collect::<Vec<_>>())\n\
-         4. on err: return ok=false, error=Some(e.to_string())\n\
-         5. on ok: return ok=true, affected=req.ids.len()"
-    );
-    #[allow(unreachable_code)]
-    Json(TagResponse {
-        ok: false,
-        affected: 0,
-        error: None,
-    })
+pub async fn tag_post(Json(req): Json<TagRequest>) -> impl IntoResponse {
+    let add: Vec<&str> = req.add.iter().map(|s| s.as_str()).collect();
+    let remove: Vec<&str> = req.remove.iter().map(|s| s.as_str()).collect();
+    run_tag_changes(&req.ids, &add, &remove)
 }
 
 /// POST `/api/trash`. Sugar for `+trash -inbox` (matches meli config
 /// trash command in `~/.config/meli/config.toml`).
 ///
 /// Implementation note: meli's config also sets `flag set trash` on the
-/// maildir file; that's a meli-specific UI cue (forces a refresh of the
-/// row). mailforge doesn't need it because the client-side keyboard
-/// handler removes the row from the DOM optimistically. The maildir T
-/// flag will be set by the next `gmail-push-tags` run for Gmail; for
-/// COHS, `cohs-trash-mover` handles the file relocation directly.
-pub async fn trash_post(Json(_req): Json<IdsRequest>) -> impl IntoResponse {
-    todo!(
-        "delegate to apply_tag_changes(query, &[\"trash\"], &[\"inbox\"])"
-    );
-    #[allow(unreachable_code)]
-    Json(TagResponse {
-        ok: false,
-        affected: 0,
-        error: None,
-    })
+/// maildir file; that's a meli-specific UI cue. mailforge doesn't need it
+/// because the client-side keyboard handler removes the row from the DOM
+/// optimistically. The maildir T flag will be set by the next
+/// `gmail-push-tags` run for Gmail; for COHS, `cohs-trash-mover` handles
+/// the file relocation directly.
+pub async fn trash_post(Json(req): Json<IdsRequest>) -> impl IntoResponse {
+    run_tag_changes(&req.ids, &["trash"], &["inbox"])
 }
 
 /// POST `/api/archive`. Sugar for `-inbox` (no add — archive is just the
 /// absence of inbox). Equivalent to meli's archive workflow.
-pub async fn archive_post(Json(_req): Json<IdsRequest>) -> impl IntoResponse {
-    todo!(
-        "delegate to apply_tag_changes(query, &[], &[\"inbox\"])"
-    );
-    #[allow(unreachable_code)]
-    Json(TagResponse {
-        ok: false,
-        affected: 0,
-        error: None,
-    })
+pub async fn archive_post(Json(req): Json<IdsRequest>) -> impl IntoResponse {
+    run_tag_changes(&req.ids, &[], &["inbox"])
+}
+
+/// POST `/api/seen`. Sugar for `-unread`. Marks message(s) as read locally.
+/// Server-side propagation: `gmail-push-tags` translates `-unread` to
+/// removing the Gmail UNREAD label; mbsync replicates the maildir Seen
+/// flag for COHS via mbsync's own flag-tracking on next sync.
+pub async fn seen_post(Json(req): Json<IdsRequest>) -> impl IntoResponse {
+    run_tag_changes(&req.ids, &[], &["unread"])
 }

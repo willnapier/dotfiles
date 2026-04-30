@@ -95,10 +95,15 @@
 
   function rowId(r) {
     if (!r) return null;
+    // The template stamps `data-msg-id` on each <tr.envelope-row>; check
+    // that first. The other two fallbacks are kept for future template
+    // variants without forcing churn here.
+    if (r.dataset.msgId) return r.dataset.msgId;
     if (r.dataset.id) return r.dataset.id;
     if (r.dataset.messageId) return r.dataset.messageId;
-    const a = r.querySelector("a[data-id]");
-    return a ? a.dataset.id : null;
+    const a = r.querySelector("a[data-msg-id], a[data-id]");
+    if (!a) return null;
+    return a.dataset.msgId || a.dataset.id || null;
   }
 
   function rowHref(r) {
@@ -120,6 +125,9 @@
     if (href) window.location.href = href;
   }
 
+  // Server expects `{ ids: [...] }` (bulk-friendly API). Single-row mutations
+  // wrap the one id in a one-element array. Future multi-select can reuse
+  // the same shape without API changes.
   function rowMutate(url, label) {
     const row = currentRow();
     if (!row) return;
@@ -127,7 +135,7 @@
     if (!id) { showToast("No message id on row", "error"); return; }
     row.style.transition = "opacity 0.15s";
     row.style.opacity = "0.4";
-    postJSON(url, { id })
+    postJSON(url, { ids: [id] })
       .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); row.remove(); showToast(label + "d", "success"); paintCursor(); })
       .catch(err => { row.style.opacity = ""; showToast(label + " failed: " + err.message, "error"); });
   }
@@ -138,7 +146,7 @@
     const row = currentRow();
     const id = rowId(row);
     if (!id) return;
-    postJSON("/api/seen", { id })
+    postJSON("/api/seen", { ids: [id] })
       .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); row.classList.remove("unread"); showToast("Marked seen", "success"); })
       .catch(err => showToast("Seen failed: " + err.message, "error"));
   }
@@ -148,7 +156,7 @@
     if (!id) return;
     const tag = window.prompt("Tag:");
     if (!tag) return;
-    postJSON("/api/tag", { id, add: [tag] })
+    postJSON("/api/tag", { ids: [id], add: [tag] })
       .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); showToast("Tagged " + tag, "success"); })
       .catch(err => showToast("Tag failed: " + err.message, "error"));
   }
