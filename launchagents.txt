@@ -32,6 +32,7 @@ com.user.zotero-watcher
 com.williamnapier.assistants-auto-pull
 com.williamnapier.assistants-auto-push
 com.williamnapier.bequest-heartbeat
+com.williamnapier.cohs-trash-mover
 com.williamnapier.continuum-dream
 com.williamnapier.continuum-sync-claude
 com.williamnapier.cross-machine-sync-check
@@ -44,7 +45,9 @@ com.williamnapier.gmail-push-tags-watchdog
 com.williamnapier.karabiner-relink
 com.williamnapier.link-service
 com.williamnapier.linkmanager.plist.disabled
+com.williamnapier.mailcurator-drift
 com.williamnapier.mbsync-cohs
+com.williamnapier.meliview
 com.williamnapier.pizauth
 com.williamnapier.pizauth-dump
 com.williamnapier.practiceforge-dashboard
