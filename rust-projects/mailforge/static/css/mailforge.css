@@ -173,6 +173,7 @@ table.listing {
 
 .message-body--html {
   max-width: none;
+  margin: 0;
 }
 
 .message-body iframe {
@@ -181,6 +182,15 @@ table.listing {
   border: 1px solid var(--rule);
   border-radius: var(--radius-md);
   background: var(--bg-elevated);
+}
+
+/* HTML view (`?view=full`): hide the subject/meta header (subject is in
+   the browser tab title) and stretch the iframe to fill the viewport.
+   Action toolbar stays in flow below; helpbar is already sticky-bottom. */
+.message-view:has(.message-body--html) .message-header { display: none; }
+.message-body--html iframe {
+  height: calc(100vh - 9rem);
+  min-height: 70vh;
 }
 
 .message-body pre.plaintext,
