@@ -70,6 +70,10 @@ table.listing {
   width: 100%;
   border-collapse: collapse;
   font-size: var(--text-sm);
+  /* Without table-layout:fixed the browser ignores per-column widths and
+     auto-fits to content — produces a "From column eats everything" look
+     when content lengths vary. Fixed layout respects the width hints below. */
+  table-layout: fixed;
 }
 
 .envelope-row {
@@ -79,6 +83,9 @@ table.listing {
 .envelope-row td {
   padding: var(--sp-1) var(--sp-2);
   vertical-align: top;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .envelope-row a {
@@ -92,10 +99,10 @@ table.listing {
 
 .envelope-row.kb-current { background: var(--selected); }
 
-.col-from { width: 18ch; color: var(--fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.col-subject { }
-.col-date { width: 12ch; color: var(--fg-faint); white-space: nowrap; text-align: right; }
-.col-tags { width: auto; }
+.col-from { width: 22ch; color: var(--fg-muted); }
+.col-subject { width: auto; white-space: normal; } /* Subject can wrap; takes remaining space */
+.col-tags { width: 14ch; }
+.col-date { width: 11ch; color: var(--fg-faint); text-align: right; }
 
 /* ===== Message header ===== */
 .message-header {
