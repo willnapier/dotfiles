@@ -469,6 +469,19 @@
     document.addEventListener("keydown", handleKeydown, false);
     const ctx = document.body && document.body.dataset.context;
     if (ctx === "listing" || ctx === "search") paintCursor();
+
+    // Intercept native form submit on the compose form so pressing Enter
+    // (or clicking Send) goes through composeSend's XHR + post-success
+    // redirect, instead of letting the browser navigate to /api/send and
+    // render its JSON response.
+    const cf = composeForm();
+    if (cf) {
+      cf.addEventListener("submit", (ev) => { ev.preventDefault(); composeSend(); }, false);
+      const sd = document.getElementById("save-draft-now");
+      if (sd) sd.addEventListener("click", (ev) => { ev.preventDefault(); composeSaveDraft(); }, false);
+      const oh = document.getElementById("open-helix");
+      if (oh) oh.addEventListener("click", (ev) => { ev.preventDefault(); composeEscalateHelix(); }, false);
+    }
   }
 
   if (document.readyState === "loading") {
