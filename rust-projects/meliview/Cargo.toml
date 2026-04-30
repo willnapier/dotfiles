@@ -22,6 +22,25 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
 url = "2"
 
+# === mailpost (browser-native MUA layer) deps ===
+#
+# notmuch: not a Rust crate. We shell out to the `notmuch` CLI per the
+# mailcurator/src/notmuch.rs pattern — no libnotmuch headers needed at build
+# time, CLI is stable across the 0.39+ versions that ship in homebrew/apt,
+# and the call pattern (search → render page → done) makes subprocess
+# overhead negligible. See src/mail/notmuch_db.rs.
+#
+# lettre: MIME construction only (NOT the SMTP transport). Bequest already
+# uses this pattern (src/send.rs): lettre builds the RFC5322 message bytes,
+# msmtp / graph-send do the wire transport. Pizauth handles OAuth tokens.
+#
+# maud: compile-time HTML templates with inline Rust. Chosen over askama
+# because we have no separate designer, the templates ship with the binary,
+# and call-site type-checking beats external-template ergonomics for our
+# scope. See mail/templates.rs.
+lettre = { version = "0.11", default-features = false, features = ["builder"] }
+maud = "0.26"
+
 [profile.release]
 strip = true
 lto = "thin"

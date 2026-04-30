@@ -62,13 +62,36 @@ pub async fn run(port: u16) -> Result<()> {
         .with_context(|| format!("mkdir {}", cache.display()))?;
     let state = AppState { cache: Arc::new(cache) };
 
+    // mailpost subrouter: the browser-native MUA UI (listing, message,
+    // compose, send, tag, search). Lives under /mail/* and /api/* — no
+    // overlap with the existing /v/* viewer routes. The mail subrouter
+    // is stateless (notmuch CLI subprocesses, on-disk drafts), so it
+    // merges cleanly into the stateful viewer Router. See
+    // ~/Assistants/shared/mailpost-design.md for the full design.
     let app = Router::new()
         .route("/healthz", get(|| async { "ok" }))
         .route("/v/:id", get(render))
         .route("/v/:id/body.html", get(serve_body))
         .route("/v/:id/raw.pdf", get(serve_pdf))
         .route("/v/:id/cid/:filename", get(serve_asset))
-        .with_state(state);
+        .with_state(state)
+        .merge(crate::mail::router())
+        // Static assets for the mailpost UI (CSS + JS). ServeDir is
+        // resolved relative to CARGO_MANIFEST_DIR at build time so the
+        // installed binary still finds its assets — for a release
+        // install the user must `cp -r static/ ~/.local/share/meliview/`
+        // and set MELIVIEW_STATIC_DIR=~/.local/share/meliview/static
+        // (or the impl agent introduces include_dir!-based embedding,
+        // matching practiceforge's admin_dashboard_assets pattern).
+        .nest_service(
+            "/static",
+            tower_http::services::ServeDir::new(
+                std::env::var("MELIVIEW_STATIC_DIR")
+                    .unwrap_or_else(|_| {
+                        format!("{}/static", env!("CARGO_MANIFEST_DIR"))
+                    }),
+            ),
+        );
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     tracing::info!("meliview listening on http://{addr}");

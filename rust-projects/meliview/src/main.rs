@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 mod daemon;
+mod mail;
 mod manifest;
 mod pipe;
 
