@@ -405,11 +405,9 @@ fn action_toolbar(msg: &Message) -> Markup {
                 { "Archive" }
             }
             a class="action-btn action-btn--secondary"
-                href=(format!("/v/{}", id_slug_for_viewer(msg)))
+                href=(format!("/mail/m/{}?view=full", crate::mail::notmuch_db::encode_id(&msg.id)))
                 accesskey="m"
                 data-action="open-viewer"
-                target="_blank"
-                rel="noopener"
             { "Full viewer" }
         }
     }
