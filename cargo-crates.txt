@@ -16,10 +16,12 @@ dprint	0.50.2	crates.io
 easel	0.1.0	/home/will/dotfiles/rust-projects/easel
 email-extract	0.1.0	/home/will/dotfiles/rust-projects/email-extract
 fd-find	10.3.0	crates.io
+graph-send	0.1.0	/home/will/dotfiles/rust-projects/graph-send
 grok-publish	0.1.0	/home/will/dotfiles/rust-projects/grok-publish
 himalaya	1.1.0	https://github.com/pimalaya/himalaya.git#85988da4
 jaq	2.3.0	crates.io
 mailcurator	0.1.0	/home/will/dotfiles/rust-projects/mailcurator
+meliview	0.1.0	/home/will/dotfiles/rust-projects/meliview
 module	0.1.0	/home/will/dotfiles/rust-projects/module
 nu	0.107.0	crates.io
 pizauth	1.0.11	https://github.com/ltratt/pizauth?tag=pizauth-1.0.11#f58048fc
