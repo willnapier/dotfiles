@@ -2,6 +2,7 @@ ai-export-watcher.service
 assistants-docs-watcher.service
 bequest-heartbeat.timer
 claude-code-nightly-cleanup.timer
+cohs-trash-mover.timer
 collect-projects-watcher.service
 collect-projects.timer
 continuum-auto-import.timer
@@ -22,7 +23,9 @@ gnome-keyring-daemon.socket
 helix-undo-cleanup.timer
 link-service.service
 mail-sync.timer
+mailcurator-drift.timer
 mbsync-cohs.timer
+meliview.service
 nushell-env.service
 p11-kit-server.socket
 pipewire-pulse.service
