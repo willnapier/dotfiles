@@ -213,13 +213,19 @@ pub fn sidebar(
 /// on whether the thread is single-message (use message URL) or
 /// multi-message (thread URL).
 pub fn envelope_row(env: &Envelope) -> Markup {
-    envelope_row_indexed(env, 0)
+    envelope_row_indexed(env, 0, None)
 }
 
 /// Same as [`envelope_row`] but stamps `data-row-index="<n>"` for keyboard
 /// nav. The listing handler iterates with enumerate() and passes the
 /// 0-based index in.
-pub fn envelope_row_indexed(env: &Envelope, row_index: usize) -> Markup {
+///
+/// `from_ctx` is the `<account>/<mailbox>` slug pair the row is being
+/// rendered inside. When set, the message link gets `?from=<ctx>` so
+/// `show_message` can resolve prev/next siblings without a referer
+/// header. Pass None from contexts that don't have a single anchoring
+/// mailbox (search results across mailboxes, tests).
+pub fn envelope_row_indexed(env: &Envelope, row_index: usize, from_ctx: Option<&str>) -> Markup {
     let unread = env.tags.iter().any(|t| t == "unread");
     let visible_tags: Vec<&String> = env
         .tags
@@ -231,13 +237,19 @@ pub fn envelope_row_indexed(env: &Envelope, row_index: usize) -> Markup {
     // thread URL otherwise. Encode the id segment — GitHub notification
     // ids contain `/` (e.g. owner/repo/check-suites/...@github.com) which
     // would otherwise eat the route's `:id` matcher.
+    let from_qs = from_ctx
+        .map(|ctx| format!(
+            "?from={}",
+            url::form_urlencoded::byte_serialize(ctx.as_bytes()).collect::<String>()
+        ))
+        .unwrap_or_default();
     let (link, link_id_attr) = if let Some(msg_id) = env.message_id() {
         (
-            format!("/mail/m/{}", crate::mail::notmuch_db::encode_id(msg_id)),
+            format!("/mail/m/{}{}", crate::mail::notmuch_db::encode_id(msg_id), from_qs),
             Some(msg_id.to_string()),
         )
     } else {
-        (format!("/mail/t/{}", env.thread), None)
+        (format!("/mail/t/{}{}", env.thread, from_qs), None)
     };
 
     let subject = if env.subject.is_empty() {

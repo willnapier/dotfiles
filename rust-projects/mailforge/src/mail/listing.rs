@@ -110,6 +110,7 @@ pub async fn list_mailbox(
     let total = total_result.unwrap_or(0);
 
     let base_url = format!("/mail/{}/{}", account.slug, mailbox);
+    let from_ctx = format!("{}/{}", account.slug, mailbox);
     let extra_query = user_filter.map(|q| format!("q={}", url::form_urlencoded::byte_serialize(q.as_bytes()).collect::<String>()));
 
     let mailbox_label = mailbox_label_for(&mailbox);
@@ -163,7 +164,7 @@ pub async fn list_mailbox(
                 }
                 tbody {
                     @for (idx, env) in envelopes.iter().enumerate() {
-                        (envelope_row_indexed(env, idx))
+                        (envelope_row_indexed(env, idx, Some(&from_ctx)))
                     }
                 }
             }

@@ -90,11 +90,25 @@ pub async fn show_message(
     // unhighlighted so the user can find their way back.
     let active_account = pick_active_account(&message);
 
+    // Resolve prev/next siblings if the link came from a listing context
+    // (`?from=<account>/<mailbox>`). When absent, the keys silently
+    // no-op — same as before.
+    let from_ctx = q.get("from").cloned();
+    let (prev_id, next_id) = match from_ctx.as_deref() {
+        Some(ctx) => siblings_for_message(ctx, &message.id),
+        None => (None, None),
+    };
+    let nav_links = match from_ctx.as_deref() {
+        Some(ctx) => sibling_nav_links(prev_id.as_deref(), next_id.as_deref(), ctx),
+        None => html! {},
+    };
+
     let page_body = html! {
         article class="message-view" data-msg-id=(message.id) {
             (message_header(&message, &subject_text))
             (body_markup)
             (action_toolbar(&message))
+            (nav_links)
         }
     };
 
@@ -409,6 +423,70 @@ fn action_toolbar(msg: &Message) -> Markup {
                 accesskey="v"
                 data-action="open-viewer"
             { "HTML view" }
+        }
+    }
+}
+
+/// Resolve the prev/next message ids for a given mailbox context. Returns
+/// `(prev_id, next_id)` ordered as the user reads the listing top-to-bottom
+/// — `prev` is the row above (newer message in newest-first order), `next`
+/// is the row below (older).
+///
+/// The cap of 500 envelopes is a deliberate trade-off: searching the full
+/// inbox would parse a multi-MB JSON blob on every message render. 500
+/// covers virtually all in-session reading sessions; if the user is
+/// reading a message that's deeper than the 500th, prev/next anchors
+/// silently disappear and the keys no-op (acceptable degradation).
+fn siblings_for_message(
+    from_ctx: &str,
+    current_id: &str,
+) -> (Option<String>, Option<String>) {
+    let mut parts = from_ctx.splitn(2, '/');
+    let (Some(account_slug), Some(mailbox)) = (parts.next(), parts.next()) else {
+        return (None, None);
+    };
+    let Some(account) = crate::mail::accounts::find(account_slug) else {
+        return (None, None);
+    };
+    let Some(query) = notmuch_db::mailbox_query(account, mailbox) else {
+        return (None, None);
+    };
+    let envelopes = match notmuch_db::search(&query, 0, 500) {
+        Ok(e) => e,
+        Err(_) => return (None, None),
+    };
+    let ids: Vec<&str> = envelopes
+        .iter()
+        .filter_map(|e| e.message_id())
+        .collect();
+    let Some(pos) = ids.iter().position(|&id| id == current_id) else {
+        return (None, None);
+    };
+    let prev = if pos > 0 { Some(ids[pos - 1].to_string()) } else { None };
+    let next = ids.get(pos + 1).map(|s| s.to_string());
+    (prev, next)
+}
+
+/// Render a `<a hidden data-nav=…>` for prev/next siblings. The keyboard
+/// JS clicks these via `n`/`o`. Hidden anchors stay accessible to
+/// `clickSel()` but don't take screen real estate.
+fn sibling_nav_links(
+    prev_id: Option<&str>,
+    next_id: Option<&str>,
+    from_ctx: &str,
+) -> Markup {
+    let from_qs = format!(
+        "?from={}",
+        url::form_urlencoded::byte_serialize(from_ctx.as_bytes()).collect::<String>()
+    );
+    html! {
+        @if let Some(p) = prev_id {
+            a hidden data-nav="prev-message"
+                href=(format!("/mail/m/{}{}", notmuch_db::encode_id(p), from_qs)) {}
+        }
+        @if let Some(n) = next_id {
+            a hidden data-nav="next-message"
+                href=(format!("/mail/m/{}{}", notmuch_db::encode_id(n), from_qs)) {}
         }
     }
 }
