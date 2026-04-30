@@ -225,23 +225,31 @@ fn sanitize_filename(s: &str) -> String {
 
 /// Rewrite `cid:NAME` references in HTML to `cid/<sanitized>.<ext>` relative URLs.
 /// Handles both src="cid:..." and src='cid:...' forms (and background, href, etc.).
+///
+/// Operates on raw bytes through a Vec<u8> rather than a String. Critical:
+/// `out.push(c as char)` where `c: u8` would convert each non-ASCII byte to
+/// its codepoint-as-Latin-1 equivalent and then UTF-8-re-encode it, double-
+/// encoding every multi-byte UTF-8 sequence in the input (smart quotes,
+/// accented characters, emoji, etc.) and producing mojibake. Byte-level
+/// passthrough is correct because UTF-8 guarantees that `"`, `'`, and the
+/// ASCII chars in `cid:` never appear inside multi-byte sequences — so
+/// matching on those bytes won't false-positive mid-codepoint, and copying
+/// through the surrounding bytes preserves whatever multi-byte content
+/// happens to lie there.
 fn rewrite_cid_refs(html: &str, assets: &BTreeMap<String, String>) -> String {
     if assets.is_empty() {
         return html.to_string();
     }
-    // Cheap approach: scan for "cid:" preceded by a quote, replace through the closing quote.
-    let mut out = String::with_capacity(html.len());
     let bytes = html.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(html.len());
     let mut i = 0;
     while i < bytes.len() {
-        // Look for a quote followed by cid:
         let c = bytes[i];
         if (c == b'"' || c == b'\'') && bytes[i + 1..].starts_with(b"cid:") {
             let quote = c;
             let start = i + 1 + 4; // past the cid:
-            // Find closing quote
             let Some(end_off) = bytes[start..].iter().position(|&b| b == quote) else {
-                out.push(c as char);
+                out.push(c);
                 i += 1;
                 continue;
             };
@@ -252,14 +260,21 @@ fn rewrite_cid_refs(html: &str, assets: &BTreeMap<String, String>) -> String {
                 Some(filename) => format!("{}cid/{}{}", quote as char, filename, quote as char),
                 None => format!("{}cid:{}{}", quote as char, raw, quote as char),
             };
-            out.push_str(&replaced);
+            out.extend_from_slice(replaced.as_bytes());
             i = end + 1;
         } else {
-            out.push(c as char);
+            // Copy raw byte; multi-byte UTF-8 sequences pass through intact.
+            out.push(c);
             i += 1;
         }
     }
-    out
+    // Safety: input was &str (valid UTF-8). The scanner only matches on ASCII
+    // bytes (which never appear in multi-byte UTF-8 sequences), copies all
+    // non-match bytes verbatim, and inserts only valid UTF-8 (format!
+    // strings). So `out` is valid UTF-8 by construction.
+    String::from_utf8(out).expect(
+        "rewrite_cid_refs preserves UTF-8: input was &str, byte ops only on ASCII",
+    )
 }
 
 /// Collapse `<a href="LONG_URL">VISIBLE_TEXT</a>` anchors where VISIBLE_TEXT
@@ -355,6 +370,22 @@ mod tests {
     #[test]
     fn sanitize_keeps_safe_chars() {
         assert_eq!(sanitize_filename("abc-1_2.def"), "abc-1_2_def");
+    }
+
+    #[test]
+    fn rewrite_cid_refs_preserves_utf8() {
+        // Regression: smart apostrophe (U+2019, UTF-8 0xE2 0x80 0x99) and
+        // other multi-byte UTF-8 must pass through rewrite_cid_refs unchanged.
+        // Earlier code path did `out.push(c as char)` which double-encoded
+        // each byte and produced mojibake (Confucius' → Confucius'\u{80}\u{99}).
+        let mut assets = BTreeMap::new();
+        assets.insert("img1".into(), "img1.png".into());
+        let html = r#"Confucius’ philosophy "von Müller" 日本語 <img src="cid:img1">"#;
+        let got = rewrite_cid_refs(html, &assets);
+        assert!(got.contains("Confucius’"), "smart apostrophe must survive");
+        assert!(got.contains("Müller"), "Latin-1 ü must survive");
+        assert!(got.contains("日本語"), "CJK must survive");
+        assert!(got.contains(r#"src="cid/img1.png""#), "cid rewrite must still fire");
     }
 
     #[test]
