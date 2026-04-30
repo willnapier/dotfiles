@@ -173,10 +173,40 @@
   const compose = () => { window.location.href = "/mail/compose"; };
 
   const clickSel = (sel) => { const el = document.querySelector(sel); if (el) el.click(); };
-  const nextMailbox = () => clickSel("[data-nav=next-mailbox]");
-  const prevMailbox = () => clickSel("[data-nav=prev-mailbox]");
-  const nextAccount = () => clickSel("[data-nav=next-account]");
-  const prevAccount = () => clickSel("[data-nav=prev-account]");
+  // Sidebar walking: navigate by walking the actual data-account /
+  // data-mailbox anchors instead of looking for data-nav attributes
+  // (which the templates don't currently emit). Wraps at edges.
+  function navMailbox(dir) {
+    const links = Array.from(document.querySelectorAll("aside.sidebar a[data-mailbox]"));
+    if (!links.length) return;
+    let idx = links.findIndex((a) => a.classList.contains("active"));
+    if (idx < 0) idx = 0;
+    const next = (idx + dir + links.length) % links.length;
+    const target = links[next].href;
+    if (target) window.location.href = target;
+  }
+  function navAccount(dir) {
+    const links = Array.from(document.querySelectorAll("aside.sidebar a[data-mailbox]"));
+    if (!links.length) return;
+    const accounts = [];
+    let activeAccount = null;
+    for (const a of links) {
+      const acct = a.dataset.account;
+      if (!acct) continue;
+      if (!accounts.includes(acct)) accounts.push(acct);
+      if (a.classList.contains("active")) activeAccount = acct;
+    }
+    if (accounts.length < 2 || !activeAccount) return;
+    const cur = accounts.indexOf(activeAccount);
+    const nextAcct = accounts[(cur + dir + accounts.length) % accounts.length];
+    // Land on the first mailbox of the next account.
+    const target = links.find((a) => a.dataset.account === nextAcct);
+    if (target && target.href) window.location.href = target.href;
+  }
+  const nextMailbox = () => navMailbox(+1);
+  const prevMailbox = () => navMailbox(-1);
+  const nextAccount = () => navAccount(+1);
+  const prevAccount = () => navAccount(-1);
 
   // ----- Message-view actions -----
   function scrollBody(delta) {
