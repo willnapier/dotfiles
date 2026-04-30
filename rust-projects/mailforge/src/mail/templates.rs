@@ -250,6 +250,11 @@ pub fn envelope_row_indexed(env: &Envelope, row_index: usize) -> Markup {
             data-msg-id=[link_id_attr.as_deref()]
         {
             td class="col-from" { (env.authors) }
+            td class="col-tags" {
+                @for tag in &visible_tags {
+                    (tag_chip(tag))
+                }
+            }
             td class="col-subject" {
                 a href=(link)
                     data-row-index=(row_index)
@@ -262,11 +267,6 @@ pub fn envelope_row_indexed(env: &Envelope, row_index: usize) -> Markup {
                     span class="thread-count" title=(format!("{} messages in thread", env.total)) {
                         " (" (env.total) ")"
                     }
-                }
-            }
-            td class="col-tags" {
-                @for tag in &visible_tags {
-                    (tag_chip(tag))
                 }
             }
             td class="col-date" { (env.date_relative) }

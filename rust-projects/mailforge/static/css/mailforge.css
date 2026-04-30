@@ -100,9 +100,9 @@ table.listing {
 .envelope-row.kb-current { background: var(--selected); }
 
 .col-from { width: 22ch; color: var(--fg-muted); }
-.col-subject { width: auto; white-space: normal; } /* Subject can wrap; takes remaining space */
 .col-tags { width: 14ch; }
-.col-date { width: 11ch; color: var(--fg-faint); text-align: right; }
+.col-subject { width: auto; white-space: normal; } /* Subject can wrap; takes remaining space */
+.col-date { width: 18ch; color: var(--fg-faint); text-align: right; } /* full date "X days ago" or "2026-04-30" */
 
 /* ===== Message header ===== */
 .message-header {

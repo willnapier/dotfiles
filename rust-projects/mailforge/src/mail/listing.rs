@@ -156,8 +156,8 @@ pub async fn list_mailbox(
                 thead {
                     tr {
                         th class="col-from"    { "From" }
-                        th class="col-subject" { "Subject" }
                         th class="col-tags"    { "Tags" }
+                        th class="col-subject" { "Subject" }
                         th class="col-date"    { "Date" }
                     }
                 }
