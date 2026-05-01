@@ -61,7 +61,22 @@
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : "{}",
   });
-  const postForm = (url, f) => fetch(url, { method: "POST", credentials: "same-origin", body: new FormData(f) });
+  // Send a form's fields as application/x-www-form-urlencoded.
+  // `new FormData(f)` would produce multipart/form-data, but the
+  // server's compose handler uses axum's Form<SendForm> extractor
+  // which only accepts urlencoded — sending multipart returned 415.
+  const postForm = (url, f) => {
+    const params = new URLSearchParams();
+    for (const [k, v] of new FormData(f).entries()) {
+      params.append(k, typeof v === "string" ? v : "");
+    }
+    return fetch(url, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params.toString(),
+    });
+  };
 
   // ----- Mailcurator sweep -----
   // "Sweep like this" — scopes to the policy of the row's message. Reads
@@ -447,9 +462,29 @@
   function composeSend() {
     const f = composeForm();
     if (!f) return;
+    // Disable the Send button immediately so multiple clicks during the
+    // (multi-second) SMTP+OAuth round-trip can't fire multiple sends.
+    // Re-enable only on error — on success we navigate away anyway.
+    const sendBtn = f.querySelector('button[type="submit"]');
+    if (sendBtn) {
+      if (sendBtn.dataset.sending === "true") return; // already in flight
+      sendBtn.dataset.sending = "true";
+      sendBtn.disabled = true;
+    }
+    showToast("Sending…", "info");
     postForm(f.getAttribute("action") || "/api/send", f)
-      .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); showToast("Sent", "success"); setTimeout(() => { window.location.href = "/mail"; }, 600); })
-      .catch(err => showToast("Send failed: " + err.message, "error"));
+      .then(r => {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        showToast("Sent", "success");
+        setTimeout(() => { window.location.href = "/mail"; }, 600);
+      })
+      .catch(err => {
+        showToast("Send failed: " + err.message, "error");
+        if (sendBtn) {
+          sendBtn.disabled = false;
+          delete sendBtn.dataset.sending;
+        }
+      });
   }
 
   function composeSaveDraft() {
