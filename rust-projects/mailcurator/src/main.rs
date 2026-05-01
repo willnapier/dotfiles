@@ -63,6 +63,15 @@ enum Command {
         #[arg(long)]
         dry_run: bool,
 
+        /// Ignore each policy's age thresholds — process all matching
+        /// messages immediately, regardless of `archive_after_days` /
+        /// `delete_after_days`. Useful for "I've seen these, destroy
+        /// them now" sweeps (e.g. clearing accumulated OTP codes the
+        /// moment they've been used). The extractor gate is preserved
+        /// — uncaptured data is still never destroyed.
+        #[arg(long)]
+        now: bool,
+
         /// Only run this named policy (match by .name field)
         #[arg(long)]
         only: Option<String>,
@@ -366,7 +375,7 @@ fn main() -> Result<()> {
                 println!("- {} ({})", p.name, p.summary());
             }
         }
-        Command::Run { dry_run, only, llm_disable, llm_budget } => {
+        Command::Run { dry_run, now, only, llm_disable, llm_budget } => {
             let cfg = config::load(&path)?;
             extract::set_llm_budget(llm_budget);
             if llm_disable {
@@ -382,7 +391,7 @@ fn main() -> Result<()> {
                         continue;
                     }
                 }
-                let stats = policy::apply(pol, dry_run)
+                let stats = policy::apply(pol, dry_run, now)
                     .with_context(|| format!("policy '{}' failed", pol.name))?;
                 total_tagged += stats.tagged_on_arrival;
                 total_archived += stats.archived;

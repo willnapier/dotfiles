@@ -231,7 +231,13 @@ impl Policy {
 /// Apply a policy: handle on_arrival (new matches), extraction, then
 /// lifecycle transitions. When `dry_run` is true, nothing is modified;
 /// counts are still reported.
-pub fn apply(pol: &Policy, dry_run: bool) -> Result<Stats> {
+///
+/// `now`: when true, lifecycle transitions ignore their age thresholds
+/// (the `date:..{days}d` clause is dropped). Use for "I've seen these,
+/// destroy them now" overrides — e.g. clearing accumulated PracticeForge
+/// OTP codes the moment they've been used. The extracted-tag gate is
+/// preserved (we never destroy uncaptured data).
+pub fn apply(pol: &Policy, dry_run: bool, now: bool) -> Result<Stats> {
     let mut stats = Stats::default();
     let base = pol.base_query();
     let seen = pol.seen_tag();
@@ -263,8 +269,9 @@ pub fn apply(pol: &Policy, dry_run: bool) -> Result<Stats> {
 
     // --- archive: matching messages past the age threshold, still in inbox ---
     if let Some(days) = pol.archive_after_days {
+        let age_clause = if now { String::new() } else { format!(" and date:..{days}d") };
         let q = format!(
-            "({base}) and tag:inbox and date:..{days}d and not tag:trash"
+            "({base}) and tag:inbox{age_clause} and not tag:trash"
         );
         let n = notmuch::count(&q)?;
         if n > 0 {
@@ -277,14 +284,17 @@ pub fn apply(pol: &Policy, dry_run: bool) -> Result<Stats> {
 
     // --- delete: matching messages past the trash threshold ---
     // If this policy declares extractors, gate deletion on the extracted-tag:
-    // we never destroy messages whose data hasn't been captured.
+    // we never destroy messages whose data hasn't been captured. The
+    // extracted-tag gate is preserved even with `now=true` — only the
+    // age threshold is bypassed.
     if let Some(days) = pol.delete_after_days {
+        let age_clause = if now { String::new() } else { format!(" and date:..{days}d") };
         let q = if pol.extractors.is_empty() {
-            format!("({base}) and not tag:trash and date:..{days}d")
+            format!("({base}) and not tag:trash{age_clause}")
         } else {
             let extracted = pol.extracted_tag();
             format!(
-                "({base}) and not tag:trash and date:..{days}d and tag:{extracted}"
+                "({base}) and not tag:trash{age_clause} and tag:{extracted}"
             )
         };
         let n = notmuch::count(&q)?;
