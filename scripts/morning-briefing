@@ -29,14 +29,15 @@ else
 fi
 
 # --- Clippy sweep ---
+clippy_count() { grep -cE "$1" "$CLIPPY_LOG" 2>/dev/null | tr -dc '0-9'; }
 if [ -f "$CLIPPY_LOG" ]; then
-  clippy_finished=$(grep -c '^=== clippy sweep finished' "$CLIPPY_LOG" 2>/dev/null || echo 0)
-  warnings=$(grep -cE '^warning:' "$CLIPPY_LOG" 2>/dev/null || echo 0)
-  errors=$(grep -cE '^error(\[|:)' "$CLIPPY_LOG" 2>/dev/null || echo 0)
-  if [ "$clippy_finished" = "0" ]; then
+  clippy_finished=$(clippy_count '^=== clippy sweep finished')
+  warnings=$(clippy_count '^warning:')
+  errors=$(clippy_count '^error(\[|:)')
+  if [ "${clippy_finished:-0}" = "0" ]; then
     clippy_section="- Sweep STILL RUNNING — see $CLIPPY_LOG"
   else
-    clippy_section=$(printf -- "- Finished. **%s warnings**, **%s errors** across 4 workspaces.\n- Full log: \`%s\`" "$warnings" "$errors" "$CLIPPY_LOG")
+    clippy_section=$(printf -- "- Finished. **%s warnings**, **%s errors** across 4 workspaces.\n- Full log: \`%s\`" "${warnings:-?}" "${errors:-?}" "$CLIPPY_LOG")
   fi
 else
   clippy_section="- Sweep log not found at $CLIPPY_LOG"
@@ -48,10 +49,13 @@ if command -v gh >/dev/null 2>&1; then
   for repo in willnapier/practiceforge willnapier/tm3-diary-capture; do
     line=$(gh run list --repo "$repo" --limit 1 --json conclusion,name,createdAt,headBranch \
       -q '.[0] | "- '"$repo"': \(.conclusion // "running") — \(.name) (\(.headBranch), \(.createdAt))"' 2>/dev/null)
-    [ -n "$line" ] && ci_lines="${ci_lines}${line}\n"
+    [ -n "$line" ] && ci_lines="${ci_lines}${line}"$'\n'
   done
-  ci_section=$(printf "$ci_lines" | sed 's/\\n$//')
-  [ -z "$ci_section" ] && ci_section="- gh CLI returned nothing (auth?)"
+  if [ -n "$ci_lines" ]; then
+    ci_section=$(printf '%s' "$ci_lines")
+  else
+    ci_section="- gh CLI returned nothing (auth or no recent runs)"
+  fi
 else
   ci_section="- gh not on PATH"
 fi
