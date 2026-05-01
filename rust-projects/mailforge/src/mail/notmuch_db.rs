@@ -152,37 +152,45 @@ pub struct Message {
 /// Implementation hint: a static `match (account.slug, mailbox)` block is
 /// fine. The total count of valid (slug, mailbox) pairs is ~15.
 pub fn mailbox_query(account: &Account, mailbox: &str) -> Option<String> {
-    let q = match (account.slug, mailbox) {
+    // Inbox queries hide `tag:sent` clutter (Gmail labels self-addressed
+    // mail as both Inbox and Sent) EXCEPT when `from:` is the account's
+    // own identity — that keeps useful self-sent items visible (PracticeForge
+    // OTP login codes, GitHub notifications addressed back to your own
+    // account, etc.) while still excluding any other sent-tagged stragglers.
+    let self_from = account.identity;
+    let q: String = match (account.slug, mailbox) {
         // ---------------- Personal (Gmail / no cohs tag) ----------------
-        ("personal", "inbox") => {
-            "tag:inbox and not tag:archive and not tag:spam and not tag:trash \
+        ("personal", "inbox") => format!(
+            "tag:inbox and (not tag:sent or from:{self_from}) \
+             and not tag:archive and not tag:spam and not tag:trash \
              and not tag:cohs and not tag:promotions and date:6M.."
-        }
+        ),
         ("personal", "promotions") => {
             "tag:inbox and tag:promotions and not tag:archive and not tag:spam \
-             and not tag:trash and not tag:cohs and date:6M.."
+             and not tag:trash and not tag:cohs and date:6M..".to_string()
         }
-        ("personal", "unread") => "tag:unread and not tag:cohs",
-        ("personal", "sent") => "tag:sent and not tag:cohs",
+        ("personal", "unread") => "tag:unread and not tag:cohs".to_string(),
+        ("personal", "sent") => "tag:sent and not tag:cohs".to_string(),
         ("personal", "archive") => {
-            "not tag:inbox and not tag:trash and not tag:spam and not tag:sent and not tag:cohs"
+            "not tag:inbox and not tag:trash and not tag:spam and not tag:sent and not tag:cohs".to_string()
         }
-        ("personal", "all-mail") => "date:30d.. and not tag:cohs",
+        ("personal", "all-mail") => "date:30d.. and not tag:cohs".to_string(),
 
         // ---------------- COHS (M365, gated by tag:cohs) ----------------
-        ("cohs", "inbox") => {
-            "tag:cohs and tag:inbox and not tag:archive and not tag:spam and not tag:trash"
-        }
-        ("cohs", "unread") => "tag:cohs and tag:unread and not tag:trash and not tag:spam",
-        ("cohs", "sent") => "tag:cohs and tag:sent",
-        ("cohs", "drafts") => "tag:cohs and tag:drafts",
-        ("cohs", "archive") => "tag:cohs and tag:archive",
-        ("cohs", "trash") => "tag:cohs and tag:trash",
-        ("cohs", "spam") => "tag:cohs and tag:spam",
+        ("cohs", "inbox") => format!(
+            "tag:cohs and tag:inbox and (not tag:sent or from:{self_from}) \
+             and not tag:archive and not tag:spam and not tag:trash"
+        ),
+        ("cohs", "unread") => "tag:cohs and tag:unread and not tag:trash and not tag:spam".to_string(),
+        ("cohs", "sent") => "tag:cohs and tag:sent".to_string(),
+        ("cohs", "drafts") => "tag:cohs and tag:drafts".to_string(),
+        ("cohs", "archive") => "tag:cohs and tag:archive".to_string(),
+        ("cohs", "trash") => "tag:cohs and tag:trash".to_string(),
+        ("cohs", "spam") => "tag:cohs and tag:spam".to_string(),
 
         _ => return None,
     };
-    Some(q.to_string())
+    Some(q)
 }
 
 // ------------------------------------------------------------------
@@ -597,6 +605,37 @@ mod tests {
         let acc = find("personal").expect("personal account exists");
         assert!(mailbox_query(acc, "no-such-mailbox").is_none());
         assert!(mailbox_query(acc, "drafts").is_none()); // personal has no drafts
+    }
+
+    #[test]
+    fn personal_inbox_hides_sent_unless_from_self() {
+        let acc = find("personal").expect("personal account exists");
+        let q = mailbox_query(acc, "inbox").expect("inbox mapping exists");
+        // The clause must contain both halves: hide sent items in general,
+        // but exempt those whose from-address is this account's identity.
+        assert!(q.contains("not tag:sent"), "got: {q}");
+        assert!(
+            q.contains(&format!("from:{}", acc.identity)),
+            "expected from:{} clause, got: {q}",
+            acc.identity
+        );
+        // Order matters for notmuch — verify the OR groups correctly
+        assert!(
+            q.contains(&format!("(not tag:sent or from:{})", acc.identity)),
+            "from-self exception must be parenthesised correctly, got: {q}"
+        );
+    }
+
+    #[test]
+    fn cohs_inbox_hides_sent_unless_from_self() {
+        let acc = find("cohs").expect("cohs account exists");
+        let q = mailbox_query(acc, "inbox").expect("inbox mapping exists");
+        assert!(q.contains("not tag:sent"), "got: {q}");
+        assert!(
+            q.contains(&format!("from:{}", acc.identity)),
+            "expected from:{} clause, got: {q}",
+            acc.identity
+        );
     }
 
     #[test]
