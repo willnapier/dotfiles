@@ -225,6 +225,28 @@ fn wrapper_html(id: &str, m: &Manifest, images_allowed: bool) -> String {
 </header>
 {images_banner}
 {body}
+<script>
+  // Backspace / Escape return to the previous view (the message list in
+  // MailForge, or the referring tab from any other entry point). The
+  // sandboxed iframe below is cross-origin (NULL origin from sandbox),
+  // so its keydown events can't bubble up to this script — that's fine.
+  // The wrapper area (header, banner, body margins) keeps keyboard focus
+  // until the user clicks INTO the iframe content, at which point this
+  // handler stops firing for that focus context. Clicking back on any
+  // wrapper element (or pressing Tab off the iframe) restores it.
+  document.addEventListener('keydown', function (e) {{
+    if (e.key === 'Backspace' || e.key === 'Escape') {{
+      // Don't hijack typing inside any visible input/textarea (none today,
+      // but defensive against future banner inputs).
+      var t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) {{
+        return;
+      }}
+      e.preventDefault();
+      history.back();
+    }}
+  }});
+</script>
 </body>
 </html>
 "#
