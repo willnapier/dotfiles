@@ -97,7 +97,7 @@ fn mailbox_label(slug: &str) -> String {
 fn is_ignored_tag(tag: &str) -> bool {
     matches!(
         tag,
-        "inbox" | "unread" | "attachment" | "signed" | "encrypted" | "replied" | "passed"
+        "inbox" | "unread" | "attachment" | "signed" | "encrypted" | "replied" | "passed" | "sent"
     )
 }
 
