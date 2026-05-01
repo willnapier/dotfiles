@@ -72,12 +72,50 @@ SyncState *
 Group cohs
 Channel cohs-all
 
-# (Gmail IMAP block was considered and rolled back 2026-04-22 23:40:
-# lieer already pulls Gmail into ~/Mail/personal/ and notmuch indexes
-# it. The push half — our goal — doesn't need its own maildir pull;
-# `practiceforge email gmail-push-tags` queries notmuch's existing
-# index by lastmod and pushes label diffs via Gmail's modify API.
-# Keeping lieer for pull + Rust for push is the minimum-viable pure-
-# Rust-push migration without a 24 GB re-download. If you ever want to
-# retire lieer entirely, add a Gmail IMAPAccount block here and mirror
-# the COHS Channel pattern.)
+# --- Gmail spike (Oxidise Lieer project, restarted 2026-05-01) ---
+#
+# Parallel pull into ~/Mail/gmail-mb/ — does NOT touch lieer's
+# ~/Mail/personal/. Initial Patterns is INBOX-only to bound the spike
+# (Gmail's INBOX label, not All Mail — tens of MB, not 24 GB).
+#
+# Once the spike confirms (a) pizauth XOAUTH2 negotiates cleanly,
+# (b) folder structure under [Gmail]/ is sane, (c) notmuch indexes
+# the parallel maildir without confusing tags between lieer- and
+# mbsync-sourced copies — the next iteration expands Patterns to
+# `[Gmail]/All Mail` (the canonically-correct Gmail-IMAP source,
+# avoiding the per-label-folder duplication footgun) and we plan
+# the lieer→mbsync flip.
+#
+# First-time setup (once per install):
+#   pizauth refresh gmail
+# (already done on this machine — pizauth status shows Active.)
+IMAPAccount gmail
+Host imap.gmail.com
+Port 993
+User will@willnapier.com
+AuthMechs XOAUTH2
+PassCmd "$HOME/.local/bin/pizauth show gmail"
+SSLType IMAPS
+
+IMAPStore gmail-remote
+Account gmail
+
+MaildirStore gmail-local
+Path ~/Mail/gmail-mb/
+Inbox ~/Mail/gmail-mb/INBOX/
+SubFolders Verbatim
+
+Channel gmail-spike
+Far :gmail-remote:
+Near :gmail-local:
+# Spike scope: INBOX only. Expand to "[Gmail]/All Mail" once auth +
+# folder mechanics are confirmed.
+Patterns "INBOX"
+Sync Pull
+Expunge None
+CopyArrivalDate yes
+Create Near
+SyncState *
+
+Group gmail
+Channel gmail-spike
