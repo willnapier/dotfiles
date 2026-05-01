@@ -131,7 +131,8 @@ pub async fn list_mailbox(
             input type="text"
                 name="q"
                 value=[user_filter.as_deref()]
-                placeholder="Filter this mailbox (notmuch syntax)…"
+                placeholder="Filter this mailbox…"
+                title="notmuch query syntax — e.g. tag:unread, from:alice, subject:invoice"
                 aria-label="Filter mailbox"
                 id="mailbox-filter-input";
             button type="submit" { "Filter" }

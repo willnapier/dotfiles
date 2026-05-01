@@ -412,6 +412,18 @@ table.listing {
   margin-top: var(--sp-3);
 }
 
+/* ===== Mailbox filter form (listing toolbar) ===== */
+.mailbox-filter {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0 var(--sp-3) 0;
+}
+.mailbox-filter input[type="text"] {
+  flex: 1;
+  min-width: 0;
+}
+
 /* ===== Empty state ===== */
 .empty-state {
   text-align: center;
