@@ -217,6 +217,11 @@ fn build_manifest(msg: &Message<'_>, dir: &std::path::Path) -> Result<Manifest> 
         // while keeping the href intact so click-through still works. No
         // third-party services involved — purely local string substitution.
         let rewritten = collapse_long_url_anchors(&rewritten);
+        // Inject `<base target="_blank">` so unscoped <a href> clicks open
+        // in a new browser tab instead of being swallowed by the sandboxed
+        // iframe. Modern browsers auto-apply rel="noopener" on target="_blank"
+        // so the new tab can't reach window.opener of the mail viewer.
+        let rewritten = inject_base_target(&rewritten);
         let html_file = "body.html";
         std::fs::write(dir.join(html_file), rewritten)
             .with_context(|| format!("writing {}/{}", dir.display(), html_file))?;
@@ -362,6 +367,44 @@ fn collapse_long_url_anchors(html: &str) -> String {
     .into_owned()
 }
 
+/// Inject `<base target="_blank">` into the HTML so unscoped `<a href>`
+/// clicks open in a new browser tab — necessary because the wrapper
+/// renders the body inside a sandboxed iframe whose default sandbox
+/// would otherwise swallow link navigation. Modern browsers auto-apply
+/// `rel="noopener"` for `target="_blank"` so the new tab can't reach
+/// `window.opener` of the mail viewer.
+///
+/// If the email already includes a `<base>` tag, this is a no-op (the
+/// first `<base>` in document order wins per HTML spec, and double-
+/// inserting could trigger the browser's "ignored base element" warning).
+///
+/// Insertion strategy:
+///   - If `<head>` is present: insert immediately after the opening tag.
+///   - Otherwise: prepend a minimal `<head>` with the base tag at the start.
+///
+/// Comparison is case-insensitive (HTML tag names aren't case-sensitive).
+fn inject_base_target(html: &str) -> String {
+    const BASE_TAG: &str = r#"<base target="_blank">"#;
+
+    let lower = html.to_lowercase();
+    if lower.contains("<base ") || lower.contains("<base>") {
+        return html.to_string();
+    }
+
+    if let Some(head_open) = lower.find("<head") {
+        if let Some(rel_close) = lower[head_open..].find('>') {
+            let insert_at = head_open + rel_close + 1;
+            let mut out = String::with_capacity(html.len() + BASE_TAG.len());
+            out.push_str(&html[..insert_at]);
+            out.push_str(BASE_TAG);
+            out.push_str(&html[insert_at..]);
+            return out;
+        }
+    }
+
+    format!("<head>{BASE_TAG}</head>{html}")
+}
+
 /// Extract a friendly domain string from a URL, e.g.
 /// `https://www.amazon.com/foo?bar=baz` → `amazon.com`.
 fn extract_domain(url_str: &str) -> Option<String> {
@@ -463,5 +506,51 @@ mod tests {
         assert_eq!(extract_domain("https://www.example.com/x"), Some("example.com".to_string()));
         assert_eq!(extract_domain("https://example.com/x"), Some("example.com".to_string()));
         assert_eq!(extract_domain("not a url"), None);
+    }
+
+    #[test]
+    fn inject_base_into_existing_head() {
+        let html = r#"<html><head><meta charset="utf-8"></head><body><a href="https://example.com/">x</a></body></html>"#;
+        let got = inject_base_target(html);
+        assert!(
+            got.contains(r#"<head><base target="_blank">"#),
+            "base tag should sit immediately after <head>, got: {got}"
+        );
+        assert!(got.contains(r#"<meta charset="utf-8">"#), "existing head children must survive");
+    }
+
+    #[test]
+    fn inject_base_with_no_head_prepends_minimal_head() {
+        let html = r#"<a href="https://example.com/">click</a>"#;
+        let got = inject_base_target(html);
+        assert!(got.starts_with(r#"<head><base target="_blank"></head>"#));
+        assert!(got.contains(r#"<a href="https://example.com/">click</a>"#));
+    }
+
+    #[test]
+    fn inject_base_skips_when_already_present() {
+        let html = r#"<html><head><base target="_self"></head><body>x</body></html>"#;
+        let got = inject_base_target(html);
+        assert_eq!(got, html, "must not double-inject when <base> exists");
+    }
+
+    #[test]
+    fn inject_base_skips_when_empty_base_present() {
+        let html = "<html><head><base></head><body>x</body></html>";
+        assert_eq!(inject_base_target(html), html);
+    }
+
+    #[test]
+    fn inject_base_handles_uppercase_head() {
+        let html = "<HTML><HEAD></HEAD><BODY>x</BODY></HTML>";
+        let got = inject_base_target(html);
+        assert!(got.contains(r#"<HEAD><base target="_blank">"#));
+    }
+
+    #[test]
+    fn inject_base_with_attributes_on_head() {
+        let html = r#"<head data-foo="bar"><title>x</title></head>"#;
+        let got = inject_base_target(html);
+        assert!(got.contains(r#"<head data-foo="bar"><base target="_blank"><title>x</title></head>"#));
     }
 }

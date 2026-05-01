@@ -471,11 +471,15 @@ pub fn safe_text(s: &str) -> Markup {
 
 /// Render an iframe-embedded HTML body via the existing `/v/<uuid>`
 /// viewer pipeline. The `uuid` is whatever `pipe::run_with_bytes`
-/// returned. `sandbox=""` is preserved (matches daemon::wrapper_html).
+/// returned. Sandbox config matches daemon::wrapper_html: scripts/forms/
+/// same-origin still blocked, but `target="_blank"` links can escape
+/// to a new tab so users can click through. The body's `<base>` tag
+/// (injected by `pipe::inject_base_target`) makes all unscoped links
+/// open in a new tab by default.
 pub fn html_body_iframe(uuid: &str) -> Markup {
     html! {
         iframe class="message-body__iframe"
-            sandbox=""
+            sandbox="allow-popups allow-popups-to-escape-sandbox"
             src=(format!("/v/{}", uuid))
             title="Message body"
         {}
