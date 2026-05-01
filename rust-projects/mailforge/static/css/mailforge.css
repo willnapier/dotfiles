@@ -99,10 +99,15 @@ table.listing {
 
 .envelope-row.kb-current { background: var(--selected); }
 
-.col-from { width: 22ch; color: var(--fg-muted); position: relative; }
+.col-from { width: 22ch; color: var(--fg-muted); }
 .col-tags { width: 14ch; }
 .col-subject { width: auto; white-space: normal; } /* Subject can wrap; takes remaining space */
 .col-date { width: 18ch; color: var(--fg-faint); text-align: right; } /* full date "X days ago" or "2026-04-30" */
+/* Dedicated rightmost column for per-row hover-reveal action icons
+ * (sweep / unsubscribe). 8ch is enough for two short text labels at
+ * 11px size with internal padding; rows without affordances render
+ * an empty cell in this width, keeping all rows aligned. */
+.col-actions { width: 8ch; text-align: right; }
 
 /* ===== Per-row hover-reveal action icons =====
  * Visual parsimony: rows without a relevant affordance render zero icons.

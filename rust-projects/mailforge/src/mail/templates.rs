@@ -290,31 +290,6 @@ pub fn envelope_row_indexed(env: &Envelope, row_index: usize, from_ctx: Option<&
         {
             td class="col-from" {
                 span class="from-name" { (env.authors) }
-                // Per-row hover-reveal action icons. Visibility is gated
-                // by the row's data-* attrs in CSS so visually-parsimonious
-                // rows (no policy match, no List-Unsubscribe) stay
-                // completely clean. Buttons are type=button so they don't
-                // accidentally trigger any wrapping form submit.
-                span class="row-actions" {
-                    @if curator_policies_attr.is_some() {
-                        button type="button"
-                            class="row-action row-action--sweep"
-                            data-action="sweep-row"
-                            tabindex="-1"
-                            aria-label="Sweep messages like this one"
-                            title="Sweep all messages matched by this row's mailcurator policy (S)"
-                        { "broom" }
-                    }
-                    @if env.has_unsubscribe {
-                        button type="button"
-                            class="row-action row-action--unsubscribe"
-                            data-action="unsubscribe-row"
-                            tabindex="-1"
-                            aria-label="Unsubscribe from this sender"
-                            title="Unsubscribe from this sender (U)"
-                        { "unsub" }
-                    }
-                }
             }
             td class="col-tags" {
                 @for tag in &visible_tags {
@@ -336,6 +311,35 @@ pub fn envelope_row_indexed(env: &Envelope, row_index: usize, from_ctx: Option<&
                 }
             }
             td class="col-date" { (env.date_relative) }
+            // Per-row hover-reveal action icons. Now in their own
+            // dedicated rightmost column (was inside col-from but
+            // crowded the sender name on hover). Visibility is gated
+            // by the row's data-* attrs in CSS so visually-parsimonious
+            // rows (no policy match, no List-Unsubscribe) render an
+            // empty cell. Buttons are type=button so they don't
+            // accidentally trigger any wrapping form submit.
+            td class="col-actions" {
+                span class="row-actions" {
+                    @if curator_policies_attr.is_some() {
+                        button type="button"
+                            class="row-action row-action--sweep"
+                            data-action="sweep-row"
+                            tabindex="-1"
+                            aria-label="Sweep messages like this one"
+                            title="Sweep all messages matched by this row's mailcurator policy (S)"
+                        { "broom" }
+                    }
+                    @if env.has_unsubscribe {
+                        button type="button"
+                            class="row-action row-action--unsubscribe"
+                            data-action="unsubscribe-row"
+                            tabindex="-1"
+                            aria-label="Unsubscribe from this sender"
+                            title="Unsubscribe from this sender (U)"
+                        { "unsub" }
+                    }
+                }
+            }
         }
     }
 }
@@ -445,6 +449,7 @@ pub fn helpbar(ctx: PageContext) -> Markup {
         PageContext::Listing => &[
             ("e/i", "nav"),
             ("Enter", "open"),
+            ("Backspace", "back"),
             ("r", "reply"),
             ("d", "trash"),
             ("a", "archive"),

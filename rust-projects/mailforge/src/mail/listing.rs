@@ -196,6 +196,11 @@ pub async fn list_mailbox(
                         th class="col-tags"    { "Tags" }
                         th class="col-subject" { "Subject" }
                         th class="col-date"    { "Date" }
+                        // Empty header for the per-row hover-reveal
+                        // actions column (sweep / unsubscribe icons).
+                        // 8ch wide; rows without actions render an
+                        // empty cell, preserving visual alignment.
+                        th class="col-actions" aria-hidden="true" { "" }
                     }
                 }
                 tbody {
