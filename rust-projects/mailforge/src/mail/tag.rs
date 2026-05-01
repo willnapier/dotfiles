@@ -138,3 +138,16 @@ pub async fn archive_post(Json(req): Json<IdsRequest>) -> impl IntoResponse {
 pub async fn seen_post(Json(req): Json<IdsRequest>) -> impl IntoResponse {
     run_tag_changes(&req.ids, &[], &["unread"])
 }
+
+/// POST `/api/unarchive`. Inverse of [`archive_post`]. Adds `inbox` and
+/// removes `archive` so the message reappears in its account's inbox view.
+///
+/// Both tag changes are applied even on messages that already lack the
+/// archive tag (personal archives use absence-of-inbox, not an explicit
+/// archive tag, so `-archive` is a harmless no-op there). For COHS
+/// archives that DO carry an explicit `archive` tag, the removal is
+/// what clears them out of the archive view; the `+inbox` is what
+/// restores them to the inbox view. One handler covers both conventions.
+pub async fn unarchive_post(Json(req): Json<IdsRequest>) -> impl IntoResponse {
+    run_tag_changes(&req.ids, &["inbox"], &["archive"])
+}

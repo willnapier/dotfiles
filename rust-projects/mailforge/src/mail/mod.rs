@@ -90,6 +90,7 @@ pub fn router() -> Router {
         .route("/api/tag", post(tag::tag_post))
         .route("/api/trash", post(tag::trash_post))
         .route("/api/archive", post(tag::archive_post))
+        .route("/api/unarchive", post(tag::unarchive_post))
         .route("/api/seen", post(tag::seen_post))
         .route("/api/send", post(compose::send_post))
         .route("/api/draft", post(compose::draft_save))

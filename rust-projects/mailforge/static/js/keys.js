@@ -246,6 +246,7 @@
   }
   const trashCurrent = () => rowMutate("/api/trash", "Trashe");
   const archiveCurrent = () => rowMutate("/api/archive", "Archive");
+  const unarchiveCurrent = () => rowMutate("/api/unarchive", "Unarchive");
 
   function setSeenCurrent() {
     const row = currentRow();
@@ -360,6 +361,7 @@
   }
   const msgTrash = () => msgMutate("/api/trash", "Trash");
   const msgArchive = () => msgMutate("/api/archive", "Archive");
+  const msgUnarchive = () => msgMutate("/api/unarchive", "Unarchive");
   const msgNext = () => clickSel("[data-nav=next-message]");
   const msgPrev = () => clickSel("[data-nav=prev-message]");
   function msgHtmlView() {
@@ -501,7 +503,7 @@
       Enter: openCurrent,
       s: setSeenCurrent,
       d: trashCurrent, D: trashCurrent,
-      a: archiveCurrent,
+      a: archiveCurrent, A: unarchiveCurrent,
       "/": focusSearchInput,
       r: replyCurrent, f: forwardCurrent, c: compose,
       t: tagCurrent,
@@ -520,7 +522,7 @@
       ArrowDown: msgScrollDown, ArrowUp: msgScrollUp,
       " ": msgPageDown, "Shift+ ": msgPageUp,
       r: msgReply, R: msgReplyAll, f: msgForward,
-      d: msgTrash, a: msgArchive,
+      d: msgTrash, a: msgArchive, A: msgUnarchive,
       n: msgPrev, o: msgNext,
       v: msgHtmlView,
       "Ctrl+r": msgReload, "Ctrl+R": msgReload,
@@ -532,7 +534,7 @@
       Tab: threadNext, "Shift+Tab": threadPrev,
       o: threadToggle,
       r: msgReply, R: msgReplyAll, f: msgForward,
-      d: msgTrash, a: msgArchive,
+      d: msgTrash, a: msgArchive, A: msgUnarchive,
     },
 
     compose: {
