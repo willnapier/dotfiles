@@ -5,7 +5,9 @@ After=graphical-session.target
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/pkill -TERM firefox
+SuccessExitStatus=1
 # Firefox saves session on SIGTERM, so tabs will restore on next launch
+# pkill exits 1 when no process matched — that's fine, not a failure
 
 [Install]
 WantedBy=default.target

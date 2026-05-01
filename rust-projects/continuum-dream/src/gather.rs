@@ -170,7 +170,7 @@ fn read_session(
                             let trimmed = msg.content.trim();
                             if trimmed.len() > 20 {
                                 assistant_first_reply = if trimmed.len() > 300 {
-                                    format!("{}...", &trimmed[..300])
+                                    format!("{}...", trimmed.chars().take(300).collect::<String>())
                                 } else {
                                     trimmed.to_string()
                                 };
