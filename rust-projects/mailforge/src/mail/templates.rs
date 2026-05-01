@@ -278,14 +278,44 @@ pub fn envelope_row_indexed(env: &Envelope, row_index: usize, from_ctx: Option<&
 
     let row_class = if unread { "envelope-row unread" } else { "envelope-row" };
 
+    let has_unsub_attr = if env.has_unsubscribe { Some("true") } else { None };
+
     html! {
         tr class=(row_class)
             data-row-index=(row_index)
             data-thread-id=(env.thread)
             data-msg-id=[link_id_attr.as_deref()]
             data-curator-policies=[curator_policies_attr.as_deref()]
+            data-has-unsubscribe=[has_unsub_attr]
         {
-            td class="col-from" { (env.authors) }
+            td class="col-from" {
+                span class="from-name" { (env.authors) }
+                // Per-row hover-reveal action icons. Visibility is gated
+                // by the row's data-* attrs in CSS so visually-parsimonious
+                // rows (no policy match, no List-Unsubscribe) stay
+                // completely clean. Buttons are type=button so they don't
+                // accidentally trigger any wrapping form submit.
+                span class="row-actions" {
+                    @if curator_policies_attr.is_some() {
+                        button type="button"
+                            class="row-action row-action--sweep"
+                            data-action="sweep-row"
+                            tabindex="-1"
+                            aria-label="Sweep messages like this one"
+                            title="Sweep all messages matched by this row's mailcurator policy (S)"
+                        { "broom" }
+                    }
+                    @if env.has_unsubscribe {
+                        button type="button"
+                            class="row-action row-action--unsubscribe"
+                            data-action="unsubscribe-row"
+                            tabindex="-1"
+                            aria-label="Unsubscribe from this sender"
+                            title="Unsubscribe from this sender (U)"
+                        { "unsub" }
+                    }
+                }
+            }
             td class="col-tags" {
                 @for tag in &visible_tags {
                     (tag_chip(tag))
@@ -418,6 +448,8 @@ pub fn helpbar(ctx: PageContext) -> Markup {
             ("r", "reply"),
             ("d", "trash"),
             ("a", "archive"),
+            ("S", "sweep"),
+            ("U", "unsub"),
             ("c", "compose"),
             ("/", "search"),
             ("?", "help"),
@@ -547,6 +579,7 @@ mod tests {
             subject: subject.to_string(),
             query: [Some("id:abc@example.com".to_string()), None],
             tags: tags.into_iter().map(String::from).collect(),
+            has_unsubscribe: false,
         }
     }
 

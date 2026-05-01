@@ -57,6 +57,7 @@ pub mod notmuch_db;
 pub mod search;
 pub mod tag;
 pub mod templates;
+pub mod unsubscribe;
 
 use axum::Router;
 use axum::routing::{get, post};
@@ -97,6 +98,8 @@ pub fn router() -> Router {
         .route("/api/escalate-helix/status", get(compose::escalate_helix_status))
         .route("/api/escalate-helix/abort", post(compose::escalate_helix_abort))
         .route("/api/mailcurator/sweep", post(curator::sweep_post))
+        .route("/api/unsubscribe/probe", get(unsubscribe::probe_get))
+        .route("/api/unsubscribe/execute", post(unsubscribe::execute_post))
         // Static assets (CSS, JS) — ServeDir registered in daemon.rs
         // because tower_http's ServeDir is easier to compose at the
         // outer Router level. Path: /static/*.

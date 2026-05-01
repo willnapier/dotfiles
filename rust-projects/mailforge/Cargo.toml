@@ -42,6 +42,14 @@ url = "2"
 lettre = { version = "0.11", default-features = false, features = ["builder"] }
 maud = "0.26"
 
+# reqwest: server-side HTTP client for RFC 8058 one-click List-Unsubscribe POST.
+# rustls-tls keeps the binary OpenSSL-free (mirrors what bequest/pizauth use);
+# `default-features = false` strips the cookie store and chunked-streaming we
+# don't need. We disable redirect-following intentionally — see
+# `mail::unsubscribe::execute` for why (cookie-bound redirect targets must
+# fall through to the user's browser).
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+
 [profile.release]
 strip = true
 lto = "thin"

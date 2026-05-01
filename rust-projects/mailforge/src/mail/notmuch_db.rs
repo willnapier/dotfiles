@@ -77,6 +77,13 @@ pub struct Envelope {
     /// is the most reliable per-message handle.
     pub query: [Option<String>; 2],
     pub tags: Vec<String>,
+    /// Set by the listing render path AFTER the notmuch JSON
+    /// deserialization, by parsing the message file's `List-Unsubscribe`
+    /// header. `#[serde(default)]` so notmuch's JSON (which doesn't carry
+    /// this field) deserializes cleanly with `has_unsubscribe = false`.
+    /// Drives the per-row hover-reveal unsubscribe icon.
+    #[serde(default)]
+    pub has_unsubscribe: bool,
 }
 
 impl Envelope {
@@ -774,6 +781,7 @@ mod tests {
             subject: String::new(),
             query: [Some("id:abc@example.com".to_string()), None],
             tags: vec![],
+            has_unsubscribe: false,
         };
         assert_eq!(env.message_id(), Some("abc@example.com"));
     }
@@ -790,6 +798,7 @@ mod tests {
             subject: String::new(),
             query: [None, None],
             tags: vec![],
+            has_unsubscribe: false,
         };
         assert_eq!(env.message_id(), None);
     }
@@ -807,7 +816,31 @@ mod tests {
             // notmuch should always produce id:..., but be defensive.
             query: [Some("not-an-id-term".to_string()), None],
             tags: vec![],
+            has_unsubscribe: false,
         };
         assert_eq!(env.message_id(), None);
+    }
+
+    #[test]
+    fn envelope_deserializes_without_has_unsubscribe_field() {
+        // Notmuch's JSON output doesn't carry has_unsubscribe; serde
+        // default must fill it in as false so deserialization stays
+        // backward-compatible.
+        let raw = br#"[
+            {
+              "thread": "abc",
+              "timestamp": 1,
+              "date_relative": "now",
+              "matched": 1,
+              "total": 1,
+              "authors": "x",
+              "subject": "y",
+              "query": ["id:m@x.com", null],
+              "tags": []
+            }
+        ]"#;
+        let envs = parse_search_json(raw).expect("parse");
+        assert_eq!(envs.len(), 1);
+        assert!(!envs[0].has_unsubscribe);
     }
 }
