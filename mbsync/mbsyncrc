@@ -95,7 +95,7 @@ Port 993
 User will@willnapier.com
 AuthMechs XOAUTH2
 PassCmd "$HOME/.local/bin/pizauth show gmail"
-SSLType IMAPS
+TLSType IMAPS
 
 IMAPStore gmail-remote
 Account gmail
