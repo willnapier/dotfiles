@@ -114,6 +114,37 @@
   // handles the RFC 8058 one-click flow; if the message only has https
   // or mailto fallbacks, server returns `open_url` and we hand off to
   // the browser.
+  // Parse an RFC 2369 `mailto:` List-Unsubscribe URL into to/subject/body.
+  // Returns null if the URL doesn't start with mailto:. Multiple recipients
+  // (comma-separated in the path) are preserved verbatim.
+  //
+  //   mailto:unsub@list.com?subject=unsubscribe
+  //   → { to: "unsub@list.com", subject: "unsubscribe", body: "" }
+  function parseMailto(url) {
+    if (!url || !url.toLowerCase().startsWith("mailto:")) return null;
+    try {
+      // Strip "mailto:" then parse manually. URL() chokes on bare email
+      // addresses without a scheme/host, so we split path? from query.
+      const rest = url.slice(7); // after "mailto:"
+      const qIdx = rest.indexOf("?");
+      const path = qIdx >= 0 ? rest.slice(0, qIdx) : rest;
+      const queryStr = qIdx >= 0 ? rest.slice(qIdx + 1) : "";
+      const to = decodeURIComponent(path);
+      const params = new URLSearchParams(queryStr);
+      // Per RFC 6068 + 2369, the relevant query params are case-insensitive.
+      // Walk all keys to handle different casings.
+      let subject = "", body = "";
+      for (const [k, v] of params.entries()) {
+        const lk = k.toLowerCase();
+        if (lk === "subject") subject = v;
+        else if (lk === "body") body = v;
+      }
+      return { to, subject, body };
+    } catch (e) {
+      return null;
+    }
+  }
+
   function unsubscribeRow(rowEl, btn) {
     const row = rowEl || currentRow();
     if (!row) {
@@ -153,8 +184,24 @@
         }
         if (json.open_url) {
           if (json.method === "mailto") {
-            window.location.href = json.open_url;
-            showToast("Opening mail handler…", "info");
+            // Don't trigger the OS mailto handler (Mail.app on macOS).
+            // Parse the mailto: URL and navigate to MailForge's compose
+            // form pre-filled with the to/subject/body. The user can
+            // review and Send via the existing compose pipeline, which
+            // dispatches via the right account's pizauth+SMTP/Graph
+            // backend.
+            const parsed = parseMailto(json.open_url);
+            if (parsed && parsed.to) {
+              const params = new URLSearchParams();
+              params.set("to", parsed.to);
+              if (parsed.subject) params.set("subject", parsed.subject);
+              if (parsed.body) params.set("body", parsed.body);
+              window.location.href = "/mail/compose?" + params.toString();
+              return;
+            }
+            // Fallback: parsing failed. Show the URL in a toast so the
+            // user can copy it; don't auto-trigger Mail.app.
+            showToast("Mailto unsubscribe — copy this URL: " + json.open_url, "info");
           } else {
             window.open(json.open_url, "_blank", "noopener,noreferrer");
             showToast("Opened unsubscribe page in new tab", "info");

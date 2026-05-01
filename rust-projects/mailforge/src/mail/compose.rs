@@ -89,6 +89,15 @@ pub struct ComposeQuery {
     /// Pre-select an account (for "compose from cohs" links). Defaults
     /// to the personal account if absent.
     pub from: Option<String>,
+    /// Ad-hoc prefill: To. Used by the unsubscribe-via-mailto flow,
+    /// which parses an RFC 2369 `mailto:` List-Unsubscribe URL and
+    /// navigates to /mail/compose?to=...&subject=...&body=... instead
+    /// of triggering the OS mailto handler (Mail.app on macOS).
+    pub to: Option<String>,
+    /// Ad-hoc prefill: Subject. Pairs with `to` above.
+    pub subject: Option<String>,
+    /// Ad-hoc prefill: Body. Pairs with `to` above.
+    pub body: Option<String>,
 }
 
 /// Form fields posted to `/api/send`.
@@ -794,8 +803,12 @@ pub async fn compose_form(Query(q): Query<ComposeQuery>) -> Response {
         return Html(doc).into_response();
     }
 
-    // Blank composer.
-    let body = render_form(&from_slug, "", "", "", "", "", None, None);
+    // Blank composer (or ad-hoc prefilled via to/subject/body query params,
+    // used by the unsubscribe-via-mailto flow).
+    let to = q.to.as_deref().unwrap_or("");
+    let subject = q.subject.as_deref().unwrap_or("");
+    let prefill_body = q.body.as_deref().unwrap_or("");
+    let body = render_form(&from_slug, to, "", "", subject, prefill_body, None, None);
     let doc = templates::page(
         "Compose - mailforge",
         PageContext::Compose,
