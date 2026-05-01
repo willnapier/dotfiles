@@ -195,6 +195,46 @@
           row.style.transition = "opacity 0.2s";
           row.style.opacity = "0";
           setTimeout(() => { row.remove(); paintCursor(); }, 200);
+          // Post-unsub "scorched earth" follow-up: if the sender has
+          // existing non-trashed messages, prompt to trash them all.
+          // Brief delay so the success toast finishes painting before
+          // the confirm dialog steals focus.
+          const sender = json.sender_address;
+          const count = json.sender_message_count || 0;
+          if (sender && count > 0) {
+            setTimeout(() => {
+              const ok = window.confirm(
+                "Unsubscribed.\n\n" + count + " existing message" + (count === 1 ? "" : "s") +
+                " from " + sender + " on disk. Delete them all?"
+              );
+              if (!ok) return;
+              showToast("Trashing " + count + " from " + sender + "…", "info");
+              fetch("/api/unsubscribe/trash-from-sender?id=" + encodeURIComponent(id), {
+                method: "POST",
+                credentials: "same-origin",
+              })
+                .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+                .then(j => {
+                  if (j.ok) {
+                    showToast("Trashed " + j.count + " messages from " + (j.sender || sender), "success");
+                    // Remove any visible rows from the same sender from
+                    // the current page (others on later pages will be
+                    // gone after the next listing reload).
+                    document.querySelectorAll('tr.envelope-row').forEach(tr => {
+                      const fromCell = tr.querySelector('.col-from .from-name');
+                      if (fromCell && fromCell.textContent.includes(sender.split('@')[0])) {
+                        tr.style.transition = "opacity 0.2s";
+                        tr.style.opacity = "0";
+                        setTimeout(() => { tr.remove(); paintCursor(); }, 200);
+                      }
+                    });
+                  } else {
+                    showToast("Trash-all failed: " + (j.error || "unknown"), "error");
+                  }
+                })
+                .catch(err => showToast("Trash-all failed: " + err.message, "error"));
+            }, 700);
+          }
           return;
         }
         if (json.open_url) {

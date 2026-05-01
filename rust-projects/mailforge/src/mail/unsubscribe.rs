@@ -97,7 +97,7 @@ pub struct ProbeResult {
 }
 
 /// Result of `POST /api/unsubscribe/execute`.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Default)]
 pub struct ExecuteResult {
     /// True only when the server-side action completed end-to-end (POST
     /// succeeded AND the message was tagged). `false` when the frontend
@@ -114,6 +114,29 @@ pub struct ExecuteResult {
     pub open_url: Option<String>,
     /// Human-readable error message, if any.
     pub error: Option<String>,
+    /// Sender's email address (display-name stripped). Populated for
+    /// successful unsubscribes; drives the post-unsub "delete N existing
+    /// messages from this sender?" follow-up prompt.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sender_address: Option<String>,
+    /// Number of NON-TRASHED messages still on disk from the same sender
+    /// (excluding the one just trashed by this unsubscribe). Frontend
+    /// shows this in the "scorched earth" prompt.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sender_message_count: Option<u64>,
+}
+
+/// Extract a clean `local@domain` address from a From: header value.
+/// Handles bracketed (`Joe Bloggs <joe@example.com>`) and bare (`joe@example.com`)
+/// forms. Returns the trimmed input if no `<...>` is found, which works
+/// fine when the input was already an address.
+fn extract_sender_address(from: &str) -> String {
+    if let Some(start) = from.rfind('<') {
+        if let Some(end_offset) = from[start..].find('>') {
+            return from[start + 1..start + end_offset].trim().to_string();
+        }
+    }
+    from.trim().to_string()
 }
 
 // ------------------------------------------------------------------
@@ -555,7 +578,8 @@ pub async fn execute_post(Query(q): Query<UnsubQuery>) -> impl IntoResponse {
                     status: None,
                     open_url: None,
                     error: Some(format!("message not found: {e}")),
-                }),
+                ..Default::default()
+            }),
             )
                 .into_response()
         }
@@ -572,6 +596,7 @@ async fn execute_with_probe(id: &str, probe: ProbeResult) -> axum::response::Res
                 status: None,
                 open_url: None,
                 error: Some("no List-Unsubscribe header on this message".into()),
+                ..Default::default()
             }),
         )
             .into_response();
@@ -587,6 +612,7 @@ async fn execute_with_probe(id: &str, probe: ProbeResult) -> axum::response::Res
                 status: None,
                 open_url: Some(method.url.clone()),
                 error: None,
+                ..Default::default()
             }),
         )
             .into_response(),
@@ -598,6 +624,7 @@ async fn execute_with_probe(id: &str, probe: ProbeResult) -> axum::response::Res
                 status: None,
                 open_url: Some(method.url.clone()),
                 error: None,
+                ..Default::default()
             }),
         )
             .into_response(),
@@ -623,7 +650,8 @@ async fn execute_one_click(id: &str, url: &str) -> axum::response::Response {
                     status: None,
                     open_url: None,
                     error: Some(format!("reqwest client build failed: {e}")),
-                }),
+                ..Default::default()
+            }),
             )
                 .into_response();
         }
@@ -647,7 +675,8 @@ async fn execute_one_click(id: &str, url: &str) -> axum::response::Response {
                     status: None,
                     open_url: Some(url.to_string()),
                     error: Some(format!("upstream POST failed: {e}")),
-                }),
+                ..Default::default()
+            }),
             )
                 .into_response();
         }
@@ -665,6 +694,7 @@ async fn execute_one_click(id: &str, url: &str) -> axum::response::Response {
                 status: Some(status),
                 open_url: Some(url.to_string()),
                 error: None,
+                ..Default::default()
             }),
         )
             .into_response();
@@ -681,6 +711,7 @@ async fn execute_one_click(id: &str, url: &str) -> axum::response::Response {
                 error: Some(format!(
                     "upstream returned HTTP {status}; opening in browser as fallback"
                 )),
+                ..Default::default()
             }),
         )
             .into_response();
@@ -699,10 +730,30 @@ async fn execute_one_click(id: &str, url: &str) -> axum::response::Response {
                 status: Some(status),
                 open_url: None,
                 error: Some(format!("POST succeeded but tagging failed: {e}")),
+                ..Default::default()
             }),
         )
             .into_response();
     }
+
+    // Compute sender address + remaining-message count for the post-unsub
+    // "delete N existing from this sender" follow-up prompt. Best-effort:
+    // if the From: header doesn't parse, leave the fields None and the
+    // frontend skips the prompt silently.
+    let (sender_address, sender_message_count) = match notmuch_db::show(id) {
+        Ok(msg) => {
+            let from = msg.from.as_deref().unwrap_or_default();
+            let address = extract_sender_address(from);
+            if address.is_empty() {
+                (None, None)
+            } else {
+                let count_q = format!("from:{address} and not tag:trash");
+                let cnt = notmuch_db::count(&count_q).ok();
+                (Some(address), cnt)
+            }
+        }
+        Err(_) => (None, None),
+    };
 
     (
         StatusCode::OK,
@@ -711,6 +762,84 @@ async fn execute_one_click(id: &str, url: &str) -> axum::response::Response {
             method: "one_click_post",
             status: Some(status),
             open_url: None,
+            error: None,
+            sender_address,
+            sender_message_count,
+        }),
+    )
+        .into_response()
+}
+
+// ------------------------------------------------------------------
+// Trash-all-from-sender (scorched earth follow-up)
+// ------------------------------------------------------------------
+
+/// Result of `POST /api/unsubscribe/trash-from-sender`.
+#[derive(Debug, Serialize)]
+pub struct TrashFromSenderResult {
+    pub ok: bool,
+    pub sender: Option<String>,
+    pub count: u64,
+    pub error: Option<String>,
+}
+
+/// POST `/api/unsubscribe/trash-from-sender?id=<msg-id>`. Tags every
+/// non-trashed notmuch message whose From: header matches the same
+/// sender as the given message. Optional follow-up to a successful
+/// unsubscribe — clears historical clutter from a sender you've just
+/// stopped accepting.
+pub async fn trash_from_sender_post(Query(q): Query<UnsubQuery>) -> impl IntoResponse {
+    let msg = match notmuch_db::show(&q.id) {
+        Ok(m) => m,
+        Err(e) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(TrashFromSenderResult {
+                    ok: false,
+                    sender: None,
+                    count: 0,
+                    error: Some(format!("show failed: {e}")),
+                }),
+            )
+                .into_response();
+        }
+    };
+    let from = msg.from.as_deref().unwrap_or_default();
+    let address = extract_sender_address(from);
+    if address.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(TrashFromSenderResult {
+                ok: false,
+                sender: None,
+                count: 0,
+                error: Some("no parseable sender address".into()),
+            }),
+        )
+            .into_response();
+    }
+    let query = format!("from:{address} and not tag:trash");
+    let count = notmuch_db::count(&query).unwrap_or(0);
+    if count > 0 {
+        if let Err(e) = notmuch_db::apply_tag_changes(&query, &["trash"], &["inbox"]) {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(TrashFromSenderResult {
+                    ok: false,
+                    sender: Some(address),
+                    count: 0,
+                    error: Some(format!("tag-update failed: {e}")),
+                }),
+            )
+                .into_response();
+        }
+    }
+    (
+        StatusCode::OK,
+        Json(TrashFromSenderResult {
+            ok: true,
+            sender: Some(address),
+            count,
             error: None,
         }),
     )

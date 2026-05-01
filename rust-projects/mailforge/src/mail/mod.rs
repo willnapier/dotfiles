@@ -101,6 +101,7 @@ pub fn router() -> Router {
         .route("/api/mailcurator/sweep", post(curator::sweep_post))
         .route("/api/unsubscribe/probe", get(unsubscribe::probe_get))
         .route("/api/unsubscribe/execute", post(unsubscribe::execute_post))
+        .route("/api/unsubscribe/trash-from-sender", post(unsubscribe::trash_from_sender_post))
         // Static assets (CSS, JS) — ServeDir registered in daemon.rs
         // because tower_http's ServeDir is easier to compose at the
         // outer Router level. Path: /static/*.
