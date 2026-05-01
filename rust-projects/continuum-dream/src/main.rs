@@ -37,6 +37,10 @@ struct Cli {
     #[arg(long)]
     since: Option<String>,
 
+    /// Cap the number of sessions processed per run (default: 50)
+    #[arg(long, default_value = "50")]
+    max_sessions: usize,
+
     /// Dump the context document to stdout instead of sending to AI
     #[arg(long, hide = true)]
     dump_context: bool,
@@ -160,18 +164,31 @@ fn run_dream(cli: &Cli) -> Result<()> {
     );
 
     // Gather: collect new sessions
-    let sessions = gather::collect_sessions(
+    let all_sessions = gather::collect_sessions(
         &dream_state,
         cli.since.as_deref(),
     )?;
 
-    if sessions.is_empty() {
+    if all_sessions.is_empty() {
         println!("No new sessions to consolidate.");
         return Ok(());
     }
 
+    // Cap to avoid overwhelming the model context on large backlogs
+    let total_available = all_sessions.len();
+    let sessions: Vec<_> = all_sessions.into_iter().take(cli.max_sessions).collect();
+    if total_available > sessions.len() {
+        eprintln!(
+            "Found {} new sessions (capped at {}, {} remain for future runs)",
+            total_available,
+            sessions.len(),
+            total_available - sessions.len()
+        );
+    } else {
+        eprintln!("Found {} new sessions", sessions.len());
+    }
+
     let session_paths: Vec<String> = sessions.iter().map(|s| s.relative_path.clone()).collect();
-    eprintln!("Found {} new sessions", sessions.len());
 
     let session_context = gather::format_sessions(&sessions);
 

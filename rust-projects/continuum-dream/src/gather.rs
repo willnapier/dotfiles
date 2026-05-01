@@ -158,7 +158,7 @@ fn read_session(
                         {
                             // Truncate to 300 chars
                             let truncated = if trimmed.len() > 300 {
-                                format!("{}...", &trimmed[..300])
+                                format!("{}...", trimmed.chars().take(300).collect::<String>())
                             } else {
                                 trimmed.to_string()
                             };
