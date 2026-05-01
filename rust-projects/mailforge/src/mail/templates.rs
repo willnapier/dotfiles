@@ -95,6 +95,9 @@ fn mailbox_label(slug: &str) -> String {
 /// `tags.ignore_tags` convention. Keep this list short — every tag in
 /// it is one less signal in the listing row.
 fn is_ignored_tag(tag: &str) -> bool {
+    if tag.starts_with("curator-") {
+        return true;
+    }
     matches!(
         tag,
         "inbox" | "unread" | "attachment" | "signed" | "encrypted" | "replied" | "passed" | "sent"
@@ -233,6 +236,21 @@ pub fn envelope_row_indexed(env: &Envelope, row_index: usize, from_ctx: Option<&
         .filter(|t| !is_ignored_tag(t))
         .collect();
 
+    // Extract mailcurator policy names from `curator-<name>-seen` tags.
+    // Surfaces them on the row so the "Sweep like this" button can scope
+    // to the matching policy. Comma-separated for the rare multi-policy
+    // case; the JS picks the first one.
+    let curator_policies: Vec<&str> = env
+        .tags
+        .iter()
+        .filter_map(|t| t.strip_prefix("curator-").and_then(|s| s.strip_suffix("-seen")))
+        .collect();
+    let curator_policies_attr = if curator_policies.is_empty() {
+        None
+    } else {
+        Some(curator_policies.join(","))
+    };
+
     // Choose subject link target: message URL for single-message threads,
     // thread URL otherwise. Encode the id segment — GitHub notification
     // ids contain `/` (e.g. owner/repo/check-suites/...@github.com) which
@@ -265,6 +283,7 @@ pub fn envelope_row_indexed(env: &Envelope, row_index: usize, from_ctx: Option<&
             data-row-index=(row_index)
             data-thread-id=(env.thread)
             data-msg-id=[link_id_attr.as_deref()]
+            data-curator-policies=[curator_policies_attr.as_deref()]
         {
             td class="col-from" { (env.authors) }
             td class="col-tags" {

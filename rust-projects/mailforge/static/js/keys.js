@@ -64,41 +64,40 @@
   const postForm = (url, f) => fetch(url, { method: "POST", credentials: "same-origin", body: new FormData(f) });
 
   // ----- Mailcurator sweep -----
-  // Two-step: dry-run preview → confirm dialog → live run.
-  // The button has data-action="sweep-now" on it; init() binds the click.
+  // "Sweep like this" — scopes to the policy of the cursor-row's message.
+  // Reads `data-curator-policies` (set by templates.rs from the message's
+  // `curator-<name>-seen` tags). Single-policy run is fast (no extractor
+  // overhead) and intentional (you're looking at a row, you sweep its kind).
   function sweepNow(btn) {
+    const row = currentRow();
+    if (!row) {
+      showToast("No row selected", "error");
+      return;
+    }
+    const policiesAttr = row.dataset.curatorPolicies || "";
+    if (!policiesAttr) {
+      showToast("No mailcurator policy matches this row", "info");
+      return;
+    }
+    // Multi-policy case is rare; pick the first.
+    const policy = policiesAttr.split(",")[0].trim();
+    if (!confirm("Sweep all messages matched by policy '" + policy + "'?\n\n"
+                 + "This ignores age thresholds. The extractor gate still applies "
+                 + "(uncaptured data is never destroyed).")) {
+      showToast("Cancelled", "info");
+      return;
+    }
     if (btn) btn.disabled = true;
-    showToast("Previewing sweep…", "info");
-    fetch("/api/mailcurator/sweep?dry_run=1", { method: "POST", credentials: "same-origin" })
+    showToast("Sweeping " + policy + "…", "info");
+    const url = "/api/mailcurator/sweep?only=" + encodeURIComponent(policy);
+    fetch(url, { method: "POST", credentials: "same-origin" })
       .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
-      .then(preview => {
-        if (!preview.ok) {
-          throw new Error(preview.error || "preview failed");
-        }
-        const t = preview.trashed || 0;
-        const a = preview.archived || 0;
-        if (t === 0 && a === 0) {
-          showToast("Nothing to sweep — no policies match right now", "info");
-          return;
-        }
-        const parts = [];
-        if (t) parts.push(t + " trash");
-        if (a) parts.push(a + " archive");
-        if (!confirm("Sweep now?\n\n" + parts.join(", ") + "\n\nThis ignores age thresholds. Extracted-data gate still applies.")) {
-          showToast("Cancelled", "info");
-          return;
-        }
-        showToast("Sweeping…", "info");
-        return fetch("/api/mailcurator/sweep", { method: "POST", credentials: "same-origin" })
-          .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
-          .then(result => {
-            if (!result.ok) throw new Error(result.error || "sweep failed");
-            const msg = "Trashed " + (result.trashed || 0)
-              + (result.archived ? ", archived " + result.archived : "");
-            showToast(msg, "success");
-            // Refresh listing so the user sees the cleared rows.
-            setTimeout(() => window.location.reload(), 600);
-          });
+      .then(result => {
+        if (!result.ok) throw new Error(result.error || "sweep failed");
+        const msg = "Trashed " + (result.trashed || 0)
+          + (result.archived ? ", archived " + result.archived : "");
+        showToast(msg, "success");
+        setTimeout(() => window.location.reload(), 600);
       })
       .catch(err => showToast("Sweep failed: " + err.message, "error"))
       .finally(() => { if (btn) btn.disabled = false; });

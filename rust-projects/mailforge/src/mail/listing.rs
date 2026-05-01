@@ -139,12 +139,15 @@ pub async fn list_mailbox(
             @if user_filter.is_some() {
                 a class="mailbox-filter__clear" href=(base_url) { "Clear" }
             }
-            // Sweep button — runs `mailcurator run --now` after a dry-run
-            // confirm step. The actual flow lives in keys.js (sweepNow()).
+            // Sweep button — runs `mailcurator run --now --only <policy>`
+            // scoped to whichever mailcurator policy matches the current
+            // cursor row. Fast (no extractor overhead) and intentional
+            // (you're looking at a row, you sweep its kind). JS lives in
+            // keys.js (sweepNow()).
             button type="button" class="mailbox-filter__sweep"
                 data-action="sweep-now"
-                title="Run mailcurator now: trash messages whose policies say they're disposable, ignoring age thresholds."
-            { "Sweep" }
+                title="Sweep messages like this one (matched by the same mailcurator policy as the row your cursor is on)."
+            { "Sweep like this" }
         }
 
         @if let Some(err) = &fetch_error {
