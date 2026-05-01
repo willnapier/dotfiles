@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.williamnapier.mbsync-gmail-spike</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/sh</string>
+        <string>-c</string>
+        <string>/Users/williamnapier/.local/bin/mbsync gmail &amp;&amp; /opt/homebrew/bin/notmuch new</string>
+    </array>
+    <!-- TRANSITIONAL agent (Phase 2 of Oxidise Lieer, 2026-05-01).
+         Fires every 4 hours to pull Gmail All Mail in chunks under
+         Workspace's per-hour IMAP rate limit. Expected to converge
+         in 24-36 hours of wall time. ONCE CONVERGED:
+           launchctl bootout gui/501/com.williamnapier.mbsync-gmail-spike
+         then remove this plist + the dotter entry, replacing with a
+         permanent com.williamnapier.mbsync-gmail.plist at 900s
+         (15-min) cadence — matching the cohs cadence.
+
+         EnvironmentVariables matches mbsync-cohs.plist for the same
+         reason: `notmuch new` triggers post-new hook with bare
+         `notmuch tag` calls that inherit no PATH from launchd. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/Users/williamnapier/.local/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/williamnapier</string>
+        <key>NOTMUCH_CONFIG</key>
+        <string>/Users/williamnapier/Mail/.notmuch-config</string>
+    </dict>
+    <key>StartInterval</key>
+    <integer>14400</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/williamnapier/Library/Logs/mbsync-gmail-spike.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/williamnapier/Library/Logs/mbsync-gmail-spike.log</string>
+</dict>
+</plist>
