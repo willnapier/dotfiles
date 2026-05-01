@@ -54,6 +54,24 @@ aside.sidebar a {
 
 aside.sidebar a:hover { color: var(--fg); background: var(--bg); }
 
+/* Sidebar keyboard-shortcut badge. The first 9 sidebar anchors (in
+ * render order — mailboxes per account, then tools) get a tiny number
+ * badge prepended via JS in keys.js::initSidebarShortcuts. The matching
+ * digit key in _base navigates to the anchor. */
+.sidebar-key {
+  display: inline-block;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  padding: 0 4px;
+  margin-right: 6px;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  color: var(--fg-faint);
+  vertical-align: baseline;
+  line-height: 1.2;
+}
+
 aside.sidebar a.active {
   color: var(--bg);
   background: var(--accent);

@@ -638,6 +638,45 @@
       // keyboard shortcut later.
       initResizableColumns();
     }
+
+    // Sidebar keyboard shortcuts: number the first 9 sidebar anchors
+    // 1-9 in render order, prepend visible kbd badges to each, and
+    // bind digit keys 1-9 in _base so they work in any non-typing
+    // context (listing, message, thread, search). Compose suppresses
+    // digits while a field is focused (per isTyping check), so this
+    // doesn't clash with typing numeric content into the form.
+    initSidebarShortcuts();
+  }
+
+  function sidebarJumpHandler(n) {
+    return () => {
+      const a = document.querySelector(`aside.sidebar a[data-shortcut="${n}"]`);
+      if (a && a.href) window.location.href = a.href;
+    };
+  }
+
+  function initSidebarShortcuts() {
+    const anchors = Array.from(document.querySelectorAll(
+      "aside.sidebar a[data-mailbox], aside.sidebar a[data-action]"
+    ));
+    const numbered = anchors.slice(0, 9);
+    numbered.forEach((a, i) => {
+      const n = i + 1;
+      a.dataset.shortcut = String(n);
+      if (!a.querySelector(".sidebar-key")) {
+        const kbd = document.createElement("kbd");
+        kbd.className = "sidebar-key";
+        kbd.textContent = String(n);
+        a.insertBefore(kbd, a.firstChild);
+      }
+    });
+    // Wire digit keys 1-9 to jumping. Done in _base so the bindings
+    // work from any context (including message view); typing-suppression
+    // (isTyping check in handleKeydown) prevents collision with numeric
+    // input into form fields.
+    for (let n = 1; n <= 9; n++) {
+      dispatch._base[String(n)] = sidebarJumpHandler(n);
+    }
   }
 
   function initResizableColumns() {
