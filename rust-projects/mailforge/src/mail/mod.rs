@@ -104,3 +104,76 @@ pub fn router() -> Router {
         // because tower_http's ServeDir is easier to compose at the
         // outer Router level. Path: /static/*.
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::{Method, Request, StatusCode};
+    use tower::ServiceExt;
+
+    /// Smoke test: the unsubscribe routes are registered and don't 404
+    /// at the routing layer. We send a HEAD/empty-body request and
+    /// accept any non-404 status (the handlers themselves will fail
+    /// without a real notmuch DB, but the routing layer must match).
+    #[tokio::test]
+    async fn unsubscribe_routes_are_registered() {
+        let app = router();
+
+        // GET /api/unsubscribe/probe — without ?id this 400s on the
+        // Query extractor; that's fine, we only assert "not 404".
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri("/api/unsubscribe/probe")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(
+            resp.status(),
+            StatusCode::NOT_FOUND,
+            "probe route must be registered; got {}",
+            resp.status()
+        );
+
+        // POST /api/unsubscribe/execute — same idea.
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/unsubscribe/execute")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(
+            resp.status(),
+            StatusCode::NOT_FOUND,
+            "execute route must be registered; got {}",
+            resp.status()
+        );
+
+        // Wrong method on probe → 405, not 404.
+        let app = router();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/unsubscribe/probe")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::METHOD_NOT_ALLOWED,
+            "POST on probe must be 405 (method exists, wrong verb)"
+        );
+    }
+}

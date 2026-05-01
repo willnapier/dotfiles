@@ -99,10 +99,85 @@ table.listing {
 
 .envelope-row.kb-current { background: var(--selected); }
 
-.col-from { width: 22ch; color: var(--fg-muted); }
+.col-from { width: 22ch; color: var(--fg-muted); position: relative; }
 .col-tags { width: 14ch; }
 .col-subject { width: auto; white-space: normal; } /* Subject can wrap; takes remaining space */
 .col-date { width: 18ch; color: var(--fg-faint); text-align: right; } /* full date "X days ago" or "2026-04-30" */
+
+/* ===== Per-row hover-reveal action icons =====
+ * Visual parsimony: rows without a relevant affordance render zero icons.
+ * Rows with one render at opacity 0 (truly invisible until hover, not
+ * just dim — see memory feedback_visual_parsimony). On row hover, icons
+ * fade to 0.6; on icon hover, full 1.0.
+ *
+ * Layout: stacked horizontally inside .col-from, after the author name.
+ * They consume no horizontal space when invisible because the .from-name
+ * span flows first; the .row-actions span sits to its right and the
+ * column ellipsises at the column edge as before.
+ */
+.from-name { display: inline; }
+
+.row-actions {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: var(--sp-1);
+  vertical-align: baseline;
+}
+
+.row-action {
+  /* Reset button defaults */
+  background: transparent;
+  border: 1px solid var(--rule);
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  line-height: 1.4;
+  /* Default hidden state — opacity 0 + pointer-events:none means the
+     icon is truly invisible AND non-interactive on rows that don't
+     have it (per design brief). visibility:hidden would skip layout
+     measurement, but we want the column to settle to the same width
+     whether or not the icon shows, so opacity is the right tool. */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+/* Reveal on row hover, only when the row carries the matching
+ * affordance attribute. Rows without data-curator-policies / without
+ * data-has-unsubscribe never reveal their (non-existent) icon —
+ * the maud template emits the button at all only when the relevant
+ * field is set, so this is belt-and-braces.
+ */
+.envelope-row[data-curator-policies]:hover .row-action--sweep,
+.envelope-row[data-has-unsubscribe="true"]:hover .row-action--unsubscribe,
+.envelope-row.kb-current[data-curator-policies] .row-action--sweep,
+.envelope-row.kb-current[data-has-unsubscribe="true"] .row-action--unsubscribe {
+  opacity: 0.6;
+  pointer-events: auto;
+}
+
+.row-action:hover,
+.row-action:focus {
+  opacity: 1 !important;
+  border-color: var(--accent);
+  color: var(--fg);
+  outline: none;
+}
+
+.row-action--unsubscribe:hover {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+/* Sweep icon picks up the warning hue — destructive but staged
+ * (mailcurator's extractor gate still applies). */
+.row-action--sweep:hover {
+  border-color: var(--warning);
+  color: var(--warning);
+}
 
 /* ===== Message header ===== */
 .message-header {

@@ -684,6 +684,76 @@ mod tests {
     }
 
     #[test]
+    fn envelope_row_no_unsubscribe_attr_when_field_false() {
+        // has_unsubscribe defaults to false in make_env — the attr must
+        // not appear at all (not even as `data-has-unsubscribe="false"`).
+        // Visual parsimony: rows without the affordance should have no
+        // attr to gate hover CSS off.
+        let env = make_env("Hello", vec!["inbox"]);
+        let html = envelope_row(&env).into_string();
+        assert!(
+            !html.contains("data-has-unsubscribe"),
+            "row without List-Unsubscribe must not stamp data-has-unsubscribe; got: {html}"
+        );
+        // And no row-action--unsubscribe button rendered.
+        assert!(
+            !html.contains("row-action--unsubscribe"),
+            "unsubscribe icon must not render when has_unsubscribe=false"
+        );
+    }
+
+    #[test]
+    fn envelope_row_stamps_unsubscribe_attr_when_field_true() {
+        let mut env = make_env("Hello", vec!["inbox"]);
+        env.has_unsubscribe = true;
+        let html = envelope_row(&env).into_string();
+        assert!(
+            html.contains(r#"data-has-unsubscribe="true""#),
+            "row with List-Unsubscribe must stamp data-has-unsubscribe=\"true\"; got: {html}"
+        );
+        assert!(
+            html.contains("row-action--unsubscribe"),
+            "unsubscribe icon must render when has_unsubscribe=true"
+        );
+    }
+
+    #[test]
+    fn envelope_row_curator_policies_preserved_after_sweep_refactor() {
+        // Sweep moved from toolbar to per-row icon, but the existing
+        // data-curator-policies attribute on the <tr> must not regress —
+        // sweepNow() reads it.
+        let env = make_env("Hi", vec!["inbox", "curator-newsletters-seen"]);
+        let html = envelope_row(&env).into_string();
+        assert!(
+            html.contains(r#"data-curator-policies="newsletters""#),
+            "data-curator-policies must still be set after refactor; got: {html}"
+        );
+        assert!(
+            html.contains("row-action--sweep"),
+            "sweep icon must render when curator-* tag present"
+        );
+    }
+
+    #[test]
+    fn envelope_row_no_sweep_icon_without_curator_policy() {
+        let env = make_env("Hi", vec!["inbox"]);
+        let html = envelope_row(&env).into_string();
+        assert!(
+            !html.contains("row-action--sweep"),
+            "sweep icon must not render when no curator-* tag matches"
+        );
+    }
+
+    #[test]
+    fn helpbar_listing_includes_unsubscribe_and_sweep() {
+        let html = helpbar(PageContext::Listing).into_string();
+        assert!(html.contains(">U<"), "helpbar must list U binding");
+        assert!(html.contains(">S<"), "helpbar must list S binding");
+        assert!(html.contains("unsub"));
+        assert!(html.contains("sweep"));
+    }
+
+    #[test]
     fn paginator_math_first_page() {
         let html = paginator(0, 100, 50, "/mail/personal/inbox").into_string();
         assert!(html.contains("Page 1 of 2"));

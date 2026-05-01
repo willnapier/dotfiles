@@ -38,6 +38,7 @@ use crate::mail::notmuch_db;
 use crate::mail::templates::{
     self, envelope_row_indexed, paginator_with_query, status_banner, PageContext,
 };
+use crate::mail::unsubscribe;
 
 const PER_PAGE: usize = 50;
 
@@ -109,6 +110,21 @@ pub async fn list_mailbox(
     };
     let total = total_result.unwrap_or(0);
 
+    // Pre-load List-Unsubscribe presence per envelope. Each lookup is a
+    // notmuch CLI call + file read + header parse — microseconds in the
+    // common case, well under 100ms total for a 50-message page on
+    // William's stack. Wrapped in a defensive try-style: any per-message
+    // parse failure defaults to has_unsubscribe=false rather than
+    // bubbling. The listing render must never break for one bad message.
+    let mut envelopes = envelopes;
+    for env in envelopes.iter_mut() {
+        if let Some(msg_id) = env.message_id() {
+            // Clone out of the immutable borrow before mutating the env.
+            let id = msg_id.to_string();
+            env.has_unsubscribe = unsubscribe::message_has_unsubscribe(&id);
+        }
+    }
+
     let base_url = format!("/mail/{}/{}", account.slug, mailbox);
     let from_ctx = format!("{}/{}", account.slug, mailbox);
     let extra_query = user_filter.map(|q| format!("q={}", url::form_urlencoded::byte_serialize(q.as_bytes()).collect::<String>()));
@@ -126,7 +142,13 @@ pub async fn list_mailbox(
         ))
 
         // In-mailbox search/filter form. The keyboard JS focuses this
-        // when the user presses `/`.
+        // when the user presses `/`. Sweep used to live here as a
+        // toolbar button; it's now per-row hover-reveal (see the
+        // .row-action--sweep icon in templates.rs::envelope_row_indexed).
+        // Rationale: the curatorial impulse fires WHILE looking at a
+        // row, not at the toolbar — keep the affordance at zero clicks
+        // from the trigger moment. Same pattern for the new
+        // List-Unsubscribe icon.
         form class="mailbox-filter" method="get" action=(base_url) {
             input type="text"
                 name="q"
@@ -139,15 +161,6 @@ pub async fn list_mailbox(
             @if user_filter.is_some() {
                 a class="mailbox-filter__clear" href=(base_url) { "Clear" }
             }
-            // Sweep button — runs `mailcurator run --now --only <policy>`
-            // scoped to whichever mailcurator policy matches the current
-            // cursor row. Fast (no extractor overhead) and intentional
-            // (you're looking at a row, you sweep its kind). JS lives in
-            // keys.js (sweepNow()).
-            button type="button" class="mailbox-filter__sweep"
-                data-action="sweep-now"
-                title="Sweep messages like this one (matched by the same mailcurator policy as the row your cursor is on)."
-            { "Sweep like this" }
         }
 
         @if let Some(err) = &fetch_error {

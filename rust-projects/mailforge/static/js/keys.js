@@ -64,12 +64,17 @@
   const postForm = (url, f) => fetch(url, { method: "POST", credentials: "same-origin", body: new FormData(f) });
 
   // ----- Mailcurator sweep -----
-  // "Sweep like this" — scopes to the policy of the cursor-row's message.
-  // Reads `data-curator-policies` (set by templates.rs from the message's
+  // "Sweep like this" — scopes to the policy of the row's message. Reads
+  // `data-curator-policies` (set by templates.rs from the message's
   // `curator-<name>-seen` tags). Single-policy run is fast (no extractor
   // overhead) and intentional (you're looking at a row, you sweep its kind).
-  function sweepNow(btn) {
-    const row = currentRow();
+  //
+  // Signature: sweepNow(rowEl?). Pass an explicit row (the per-row icon
+  // case) or omit to use currentRow() (the keyboard-shortcut case).
+  // Optional second arg `btn` is the icon button to disable while in
+  // flight; not load-bearing.
+  function sweepNow(rowEl, btn) {
+    const row = rowEl || currentRow();
     if (!row) {
       showToast("No row selected", "error");
       return;
@@ -100,6 +105,66 @@
         setTimeout(() => window.location.reload(), 600);
       })
       .catch(err => showToast("Sweep failed: " + err.message, "error"))
+      .finally(() => { if (btn) btn.disabled = false; });
+  }
+
+  // ----- One-click unsubscribe -----
+  // Reads `data-has-unsubscribe="true"` on the row to decide whether to
+  // even ask. Then POSTs /api/unsubscribe/execute?id=<msg-id>. Server
+  // handles the RFC 8058 one-click flow; if the message only has https
+  // or mailto fallbacks, server returns `open_url` and we hand off to
+  // the browser.
+  function unsubscribeRow(rowEl, btn) {
+    const row = rowEl || currentRow();
+    if (!row) {
+      showToast("No row selected", "error");
+      return;
+    }
+    if (row.dataset.hasUnsubscribe !== "true") {
+      showToast("No unsubscribe option for this row", "info");
+      return;
+    }
+    const id = rowId(row);
+    if (!id) {
+      showToast("No message id on row", "error");
+      return;
+    }
+    // Sender label for the confirm dialog: best-effort from the row's
+    // From column. Strip the email half for readability.
+    const fromCell = row.querySelector(".col-from .from-name") || row.querySelector(".col-from");
+    const sender = (fromCell ? fromCell.textContent : "this sender").trim();
+    if (!confirm("Unsubscribe from " + sender + "?\n\n"
+                 + "If the sender supports RFC 8058 one-click, this is final. "
+                 + "Otherwise the unsubscribe page opens in a new tab.")) {
+      showToast("Cancelled", "info");
+      return;
+    }
+    if (btn) btn.disabled = true;
+    const url = "/api/unsubscribe/execute?id=" + encodeURIComponent(id);
+    fetch(url, { method: "POST", credentials: "same-origin" })
+      .then(r => r.json().then(j => ({ status: r.status, json: j })))
+      .then(({ status, json }) => {
+        if (json.ok) {
+          showToast("Unsubscribed and trashed", "success");
+          row.style.transition = "opacity 0.2s";
+          row.style.opacity = "0";
+          setTimeout(() => { row.remove(); paintCursor(); }, 200);
+          return;
+        }
+        if (json.open_url) {
+          if (json.method === "mailto") {
+            window.location.href = json.open_url;
+            showToast("Opening mail handler…", "info");
+          } else {
+            window.open(json.open_url, "_blank", "noopener,noreferrer");
+            showToast("Opened unsubscribe page in new tab", "info");
+          }
+          return;
+        }
+        const errMsg = json.error || ("HTTP " + status);
+        showToast("Unsubscribe failed: " + errMsg, "error");
+      })
+      .catch(err => showToast("Unsubscribe failed: " + err.message, "error"))
       .finally(() => { if (btn) btn.disabled = false; });
   }
 
@@ -433,6 +498,11 @@
       "Ctrl+r": refresh, "Ctrl+R": refresh,
       n: nextMailbox, o: prevMailbox,
       N: nextAccount, O: prevAccount,
+      // Per-row affordances: uppercase to keep the lowercase letter
+      // namespace clear (lower-s is set-seen). U/S act on the cursor
+      // row; same flow as clicking the per-row hover-reveal icons.
+      U: () => unsubscribeRow(currentRow()),
+      S: () => sweepNow(currentRow()),
     },
 
     message: {
@@ -530,10 +600,25 @@
       if (oh) oh.addEventListener("click", (ev) => { ev.preventDefault(); composeEscalateHelix(); }, false);
     }
 
-    // Wire the listing-toolbar Sweep button to mailcurator's --now run.
-    const sweepBtn = document.querySelector('button[data-action="sweep-now"]');
-    if (sweepBtn) {
-      sweepBtn.addEventListener("click", (ev) => { ev.preventDefault(); sweepNow(sweepBtn); }, false);
+    // Per-row hover-reveal icons (sweep + unsubscribe). Event-delegated
+    // off the listing tbody so we don't have to re-bind on each row;
+    // listing rows can also be added/removed dynamically by row-mutation
+    // helpers without losing handlers. The previous toolbar Sweep button
+    // (data-action="sweep-now") was retired in favour of these per-row
+    // controls — see listing.rs and the design note in mailforge.md.
+    const ctxName = document.body && document.body.dataset.context;
+    if (ctxName === "listing" || ctxName === "search") {
+      document.addEventListener("click", (ev) => {
+        const btn = ev.target.closest('.row-action[data-action]');
+        if (!btn) return;
+        const row = btn.closest('tr.envelope-row, .envelope-row');
+        if (!row) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        const action = btn.dataset.action;
+        if (action === "sweep-row") sweepNow(row, btn);
+        else if (action === "unsubscribe-row") unsubscribeRow(row, btn);
+      }, false);
     }
   }
 
