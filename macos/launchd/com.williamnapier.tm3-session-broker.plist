@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.williamnapier.tm3-session-broker</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/williamnapier/.local/bin/tm3-session-broker</string>
+    </array>
+    <!-- Hourly poll. Silent unless TM3 session state needs the user's
+         attention (expired, or approaching expiry). State persisted at
+         ~/.local/share/tm3-session-broker/state.json so notifications
+         dedupe across runs. Companion to com.williamnapier.tm3-watcher. -->
+    <key>StartInterval</key>
+    <integer>3600</integer>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/williamnapier/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/williamnapier</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/williamnapier/Library/Logs/tm3-session-broker.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/williamnapier/Library/Logs/tm3-session-broker.log</string>
+</dict>
+</plist>

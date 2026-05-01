@@ -1,0 +1,12 @@
+[Unit]
+Description=TM3 session-state monitor (fires desktop notifications when re-auth needed)
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/tm3-session-broker
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target
