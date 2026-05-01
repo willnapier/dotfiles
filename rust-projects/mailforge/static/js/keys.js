@@ -677,6 +677,39 @@
     for (let n = 1; n <= 9; n++) {
       dispatch._base[String(n)] = sidebarJumpHandler(n);
     }
+
+    // Background-prefetch numbered sidebar mailboxes after the current
+    // page is settled, so digit-key navigation lands near-instantly.
+    // Skip the active mailbox (already loaded). Items not in the first 9
+    // get lazy hover-prefetch for the same effect on click.
+    setTimeout(() => {
+      anchors.forEach((a) => {
+        if (a.classList.contains("active")) return;
+        if (a.dataset.prefetched) return;
+        if (!a.dataset.shortcut) return; // Only eager-prefetch numbered ones
+        prefetchHref(a.href);
+        a.dataset.prefetched = "true";
+      });
+    }, 500);
+    // Lazy hover-prefetch for items 10+ (no shortcut). Cheap; only
+    // fires on actual hover.
+    anchors.forEach((a) => {
+      if (a.dataset.shortcut) return; // Already covered by eager prefetch
+      a.addEventListener("mouseenter", () => {
+        if (a.dataset.prefetched) return;
+        prefetchHref(a.href);
+        a.dataset.prefetched = "true";
+      }, { once: true });
+    });
+  }
+
+  function prefetchHref(href) {
+    if (!href) return;
+    const link = document.createElement("link");
+    link.rel = "prefetch";
+    link.as = "document";
+    link.href = href;
+    document.head.appendChild(link);
   }
 
   function initResizableColumns() {
