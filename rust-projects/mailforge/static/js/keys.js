@@ -460,7 +460,10 @@
   function msgMutate(url, verb) {
     const id = currentMessageId();
     if (!id) return;
-    postJSON(url, { id })
+    // Server expects `{ ids: [...] }` — same shape as rowMutate. Wrap the
+    // single id in a one-element array so axum's Json<IdsRequest> extractor
+    // succeeds (otherwise: "Expected request with Content-Type: application/json").
+    postJSON(url, { ids: [id] })
       .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); history.back(); })
       .catch(err => showToast(verb + " failed: " + err.message, "error"));
   }
