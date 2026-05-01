@@ -36,7 +36,26 @@ if command -v mailcurator >/dev/null 2>&1; then
     mailcurator run 2>&1 | sed 's/^/[mailcurator] /' || true
 fi
 
-# --- Rule 3: strip the transient `new` tag ---
+# --- Rule 3.5: tag outgoing unsubscribe messages ---
+# When MailForge sends an unsubscribe via the mailto-compose path,
+# Gmail's SMTP saves a copy to the user's Sent folder. lieer pulls
+# that back, notmuch indexes it, and notmuch's [new] config tags it
+# `new;unread;inbox` by default. Without intervention, the from-self
+# exception in MailForge's inbox query (which keeps PracticeForge
+# OTPs visible) would also keep these unsub emails visible — clutter.
+#
+# Heuristic: outgoing messages whose To: matches common unsubscribe
+# address patterns are themselves unsubscribe actions. Tag them
+# `unsubscribed` (audit trail) and strip `inbox` so they vanish from
+# the inbox view. The patterns below cover the vast majority of
+# legitimate unsubscribe addresses; false positives would require an
+# incoming email TO one of these patterns, which is vanishingly rare.
+notmuch tag +unsubscribed -inbox -- \
+    '(from:will@willnapier.com or from:will.napier@changeofharleystreet.com)
+     and tag:new
+     and (to:unsubscribe or to:unsub or to:list-unsubscribe or to:opt-out or to:remove-me)'
+
+# --- Rule 4: strip the transient `new` tag ---
 # notmuch's [new] config applies `new;unread;inbox` to every newly-
 # indexed file. The `new` tag is supposed to be *transient* — used
 # by earlier rules in this hook to find unprocessed mail, then

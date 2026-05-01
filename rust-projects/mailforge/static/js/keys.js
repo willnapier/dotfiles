@@ -244,13 +244,16 @@
             // form pre-filled with the to/subject/body. The user can
             // review and Send via the existing compose pipeline, which
             // dispatches via the right account's pizauth+SMTP/Graph
-            // backend.
+            // backend. Carry `unsubscribe_for_id` so the server can tag
+            // the ORIGINAL inbox row +unsubscribed +trash -inbox on a
+            // successful Send, matching the one-click POST behaviour.
             const parsed = parseMailto(json.open_url);
             if (parsed && parsed.to) {
               const params = new URLSearchParams();
               params.set("to", parsed.to);
               if (parsed.subject) params.set("subject", parsed.subject);
               if (parsed.body) params.set("body", parsed.body);
+              params.set("unsubscribe_for_id", id);
               window.location.href = "/mail/compose?" + params.toString();
               return;
             }

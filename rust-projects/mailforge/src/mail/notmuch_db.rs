@@ -170,7 +170,8 @@ pub fn mailbox_query(account: &Account, mailbox: &str) -> Option<String> {
         ("personal", "inbox") => format!(
             "tag:inbox and (not tag:sent or from:{self_from}) \
              and not tag:archive and not tag:spam and not tag:trash \
-             and not tag:cohs and not tag:promotions and date:6M.."
+             and not tag:cohs and not tag:promotions and not tag:unsubscribed \
+             and date:6M.."
         ),
         ("personal", "promotions") => {
             "tag:inbox and tag:promotions and not tag:archive and not tag:spam \
@@ -186,7 +187,7 @@ pub fn mailbox_query(account: &Account, mailbox: &str) -> Option<String> {
         // ---------------- COHS (M365, gated by tag:cohs) ----------------
         ("cohs", "inbox") => format!(
             "tag:cohs and tag:inbox and (not tag:sent or from:{self_from}) \
-             and not tag:archive and not tag:spam and not tag:trash"
+             and not tag:archive and not tag:spam and not tag:trash and not tag:unsubscribed"
         ),
         ("cohs", "unread") => "tag:cohs and tag:unread and not tag:trash and not tag:spam".to_string(),
         ("cohs", "sent") => "tag:cohs and tag:sent".to_string(),

@@ -98,6 +98,13 @@ pub struct ComposeQuery {
     pub subject: Option<String>,
     /// Ad-hoc prefill: Body. Pairs with `to` above.
     pub body: Option<String>,
+    /// When the compose was opened from the unsubscribe-via-mailto flow,
+    /// this carries the original sender's message ID so that on
+    /// successful Send, the server can tag THAT message
+    /// `+unsubscribed +trash -inbox` (mirroring what the one-click POST
+    /// path already does for itself). Hidden form field threads this
+    /// through to the SendForm.
+    pub unsubscribe_for_id: Option<String>,
 }
 
 /// Form fields posted to `/api/send`.
@@ -105,7 +112,7 @@ pub struct ComposeQuery {
 /// `from_account` is the account slug (`personal` / `cohs`) — drives
 /// send-backend selection. The actual `From:` header is filled from
 /// the account's `identity` field server-side.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct SendForm {
     pub from_account: String,
     pub to: String,
@@ -117,6 +124,12 @@ pub struct SendForm {
     pub in_reply_to: Option<String>,
     /// Optional draft id; if present, draft will be moved to sent/ on success.
     pub draft_id: Option<String>,
+    /// When this Send is the unsubscribe-via-mailto flow, this carries
+    /// the original sender's message ID. On success, the server tags
+    /// THAT message `+unsubscribed +trash -inbox` so the inbox row
+    /// that triggered the unsub disappears (matching the one-click
+    /// POST path's behaviour).
+    pub unsubscribe_for_id: Option<String>,
 }
 
 /// Draft autosave envelope. Matches `SendForm` plus a draft id.
@@ -587,6 +600,7 @@ fn render_form(
     body: &str,
     in_reply_to: Option<&str>,
     draft_id: Option<&str>,
+    unsubscribe_for_id: Option<&str>,
 ) -> Markup {
     let title_label = if draft_id.is_some() {
         "Resume draft"
@@ -676,6 +690,12 @@ fn render_form(
                 @if let Some(id) = draft_id {
                     input type="hidden" name="draft_id" value=(id);
                 }
+                // For mailto-unsubscribe sends: original sender's
+                // message ID. Server tags THAT message (not the
+                // outgoing one) on successful Send.
+                @if let Some(id) = unsubscribe_for_id {
+                    input type="hidden" name="unsubscribe_for_id" value=(id);
+                }
 
                 .cluster {
                     button type="submit" class="primary" { "Send" }
@@ -716,6 +736,7 @@ pub async fn compose_form(Query(q): Query<ComposeQuery>) -> Response {
                     &d.body,
                     d.in_reply_to.as_deref(),
                     Some(&d.id),
+                    None,
                 );
                 let doc = templates::page(
                     "Compose - mailforge",
@@ -792,6 +813,7 @@ pub async fn compose_form(Query(q): Query<ComposeQuery>) -> Response {
             &body,
             in_reply_to.as_deref(),
             None,
+            None,
         );
         let doc = templates::page(
             "Compose - mailforge",
@@ -808,7 +830,7 @@ pub async fn compose_form(Query(q): Query<ComposeQuery>) -> Response {
     let to = q.to.as_deref().unwrap_or("");
     let subject = q.subject.as_deref().unwrap_or("");
     let prefill_body = q.body.as_deref().unwrap_or("");
-    let body = render_form(&from_slug, to, "", "", subject, prefill_body, None, None);
+    let body = render_form(&from_slug, to, "", "", subject, prefill_body, None, None, q.unsubscribe_for_id.as_deref());
     let doc = templates::page(
         "Compose - mailforge",
         PageContext::Compose,
@@ -882,6 +904,26 @@ pub async fn send_post(Form(form): Form<SendForm>) -> Response {
             if let Some(draft_id) = form.draft_id.as_deref() {
                 if is_safe_id(draft_id) {
                     let _ = move_draft_to_sent(draft_id);
+                }
+            }
+
+            // If this was the unsubscribe-via-mailto flow, tag the
+            // ORIGINAL message (the inbox row that triggered the unsub)
+            // as +unsubscribed +trash -inbox so it disappears from the
+            // inbox view, mirroring the one-click POST path's behaviour.
+            // Best-effort: log a warning on failure but still return Ok
+            // (the user's email did go out — that's the user-facing
+            // success criterion).
+            if let Some(orig_id) = form.unsubscribe_for_id.as_deref() {
+                let q = format!("id:{orig_id}");
+                if let Err(e) = crate::mail::notmuch_db::apply_tag_changes(
+                    &q,
+                    &["unsubscribed", "trash"],
+                    &["inbox"],
+                ) {
+                    tracing::warn!(
+                        "send_post: tag-update for unsubscribe_for_id={orig_id} failed: {e}"
+                    );
                 }
             }
 
@@ -1350,6 +1392,7 @@ mod tests {
             body: "First line\nSecond line\n".to_string(),
             in_reply_to: Some("abc123@example.com".to_string()),
             draft_id: None,
+            ..Default::default()
         };
         let bytes = build_mime(&form, "will@willnapier.com").expect("mime builds");
         let s = std::str::from_utf8(&bytes).expect("utf8");
@@ -1383,6 +1426,7 @@ mod tests {
             body: "".to_string(),
             in_reply_to: None,
             draft_id: None,
+            ..Default::default()
         };
         let r = build_mime(&form, "will@willnapier.com");
         assert!(r.is_err());
@@ -1399,6 +1443,7 @@ mod tests {
             body: "".to_string(),
             in_reply_to: None,
             draft_id: None,
+            ..Default::default()
         };
         let r = build_mime(&form, "will@willnapier.com");
         assert!(r.is_err());
@@ -1415,6 +1460,7 @@ mod tests {
             body: "hello".to_string(),
             in_reply_to: None,
             draft_id: None,
+            ..Default::default()
         };
         let bytes = build_mime(&form, "will@willnapier.com").unwrap();
         let id = extract_message_id(&bytes);
