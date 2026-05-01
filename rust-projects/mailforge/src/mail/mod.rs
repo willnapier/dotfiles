@@ -50,6 +50,7 @@
 
 pub mod accounts;
 pub mod compose;
+pub mod curator;
 pub mod listing;
 pub mod message;
 pub mod notmuch_db;
@@ -95,6 +96,7 @@ pub fn router() -> Router {
         .route("/api/escalate-helix", post(compose::escalate_helix))
         .route("/api/escalate-helix/status", get(compose::escalate_helix_status))
         .route("/api/escalate-helix/abort", post(compose::escalate_helix_abort))
+        .route("/api/mailcurator/sweep", post(curator::sweep_post))
         // Static assets (CSS, JS) — ServeDir registered in daemon.rs
         // because tower_http's ServeDir is easier to compose at the
         // outer Router level. Path: /static/*.

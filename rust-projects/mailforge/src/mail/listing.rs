@@ -139,6 +139,12 @@ pub async fn list_mailbox(
             @if user_filter.is_some() {
                 a class="mailbox-filter__clear" href=(base_url) { "Clear" }
             }
+            // Sweep button — runs `mailcurator run --now` after a dry-run
+            // confirm step. The actual flow lives in keys.js (sweepNow()).
+            button type="button" class="mailbox-filter__sweep"
+                data-action="sweep-now"
+                title="Run mailcurator now: trash messages whose policies say they're disposable, ignoring age thresholds."
+            { "Sweep" }
         }
 
         @if let Some(err) = &fetch_error {

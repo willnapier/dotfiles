@@ -63,6 +63,47 @@
   });
   const postForm = (url, f) => fetch(url, { method: "POST", credentials: "same-origin", body: new FormData(f) });
 
+  // ----- Mailcurator sweep -----
+  // Two-step: dry-run preview → confirm dialog → live run.
+  // The button has data-action="sweep-now" on it; init() binds the click.
+  function sweepNow(btn) {
+    if (btn) btn.disabled = true;
+    showToast("Previewing sweep…", "info");
+    fetch("/api/mailcurator/sweep?dry_run=1", { method: "POST", credentials: "same-origin" })
+      .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+      .then(preview => {
+        if (!preview.ok) {
+          throw new Error(preview.error || "preview failed");
+        }
+        const t = preview.trashed || 0;
+        const a = preview.archived || 0;
+        if (t === 0 && a === 0) {
+          showToast("Nothing to sweep — no policies match right now", "info");
+          return;
+        }
+        const parts = [];
+        if (t) parts.push(t + " trash");
+        if (a) parts.push(a + " archive");
+        if (!confirm("Sweep now?\n\n" + parts.join(", ") + "\n\nThis ignores age thresholds. Extracted-data gate still applies.")) {
+          showToast("Cancelled", "info");
+          return;
+        }
+        showToast("Sweeping…", "info");
+        return fetch("/api/mailcurator/sweep", { method: "POST", credentials: "same-origin" })
+          .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+          .then(result => {
+            if (!result.ok) throw new Error(result.error || "sweep failed");
+            const msg = "Trashed " + (result.trashed || 0)
+              + (result.archived ? ", archived " + result.archived : "");
+            showToast(msg, "success");
+            // Refresh listing so the user sees the cleared rows.
+            setTimeout(() => window.location.reload(), 600);
+          });
+      })
+      .catch(err => showToast("Sweep failed: " + err.message, "error"))
+      .finally(() => { if (btn) btn.disabled = false; });
+  }
+
   // ----- Listing cursor state -----
   let cursorIndex = 0;
   let lastKey = "", lastKeyAt = 0; // for vim-style "gg"
@@ -487,6 +528,12 @@
       if (sd) sd.addEventListener("click", (ev) => { ev.preventDefault(); composeSaveDraft(); }, false);
       const oh = document.getElementById("open-helix");
       if (oh) oh.addEventListener("click", (ev) => { ev.preventDefault(); composeEscalateHelix(); }, false);
+    }
+
+    // Wire the listing-toolbar Sweep button to mailcurator's --now run.
+    const sweepBtn = document.querySelector('button[data-action="sweep-now"]');
+    if (sweepBtn) {
+      sweepBtn.addEventListener("click", (ev) => { ev.preventDefault(); sweepNow(sweepBtn); }, false);
     }
   }
 
