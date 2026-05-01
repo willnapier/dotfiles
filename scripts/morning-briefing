@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# morning-briefing — overnight-state digest, posted to MESSAGEBOARD.md
+# Fired by ~/dotfiles/macos/launchd/com.williamnapier.morning-briefing.plist
+# at 07:30 daily. Disable via:
+#   launchctl bootout gui/$(id -u)/com.williamnapier.morning-briefing
+
+set -u
+PATH=/Users/williamnapier/.local/bin:/Users/williamnapier/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin
+export PATH
+export HOME=/Users/williamnapier
+
+GMAIL_DIR="$HOME/Mail/gmail-mb"
+GMAIL_LOG="$HOME/Library/Logs/mbsync-gmail-spike.log"
+CLIPPY_LOG=/tmp/overnight/clippy-sweep.log
+MC_DIR="$HOME/.local/share/mailcurator"
+
+now=$(date "+%Y-%m-%d %H:%M %Z")
+
+# --- Gmail pull ---
+if [ -d "$GMAIL_DIR" ]; then
+  size=$(du -sh "$GMAIL_DIR" 2>/dev/null | awk '{print $1}')
+  count=$(find "$GMAIL_DIR" -type f 2>/dev/null | wc -l | tr -d ' ')
+  last_tick=$(stat -f "%Sm" -t "%F %H:%M" "$GMAIL_LOG" 2>/dev/null)
+  last_log=$(tail -3 "$GMAIL_LOG" 2>/dev/null | sed 's/^/    /')
+  gmail_section=$(printf -- "- Maildir: **%s** in %s\n- Last tick: %s\n- Tail:\n\n\`\`\`\n%s\n\`\`\`" \
+    "$count messages" "$size" "$last_tick" "$last_log")
+else
+  gmail_section="- gmail-mb dir missing"
+fi
+
+# --- Clippy sweep ---
+if [ -f "$CLIPPY_LOG" ]; then
+  clippy_finished=$(grep -c '^=== clippy sweep finished' "$CLIPPY_LOG" 2>/dev/null || echo 0)
+  warnings=$(grep -cE '^warning:' "$CLIPPY_LOG" 2>/dev/null || echo 0)
+  errors=$(grep -cE '^error(\[|:)' "$CLIPPY_LOG" 2>/dev/null || echo 0)
+  if [ "$clippy_finished" = "0" ]; then
+    clippy_section="- Sweep STILL RUNNING — see $CLIPPY_LOG"
+  else
+    clippy_section=$(printf -- "- Finished. **%s warnings**, **%s errors** across 4 workspaces.\n- Full log: \`%s\`" "$warnings" "$errors" "$CLIPPY_LOG")
+  fi
+else
+  clippy_section="- Sweep log not found at $CLIPPY_LOG"
+fi
+
+# --- CI ---
+if command -v gh >/dev/null 2>&1; then
+  ci_lines=""
+  for repo in willnapier/practiceforge willnapier/tm3-diary-capture; do
+    line=$(gh run list --repo "$repo" --limit 1 --json conclusion,name,createdAt,headBranch \
+      -q '.[0] | "- '"$repo"': \(.conclusion // "running") — \(.name) (\(.headBranch), \(.createdAt))"' 2>/dev/null)
+    [ -n "$line" ] && ci_lines="${ci_lines}${line}\n"
+  done
+  ci_section=$(printf "$ci_lines" | sed 's/\\n$//')
+  [ -z "$ci_section" ] && ci_section="- gh CLI returned nothing (auth?)"
+else
+  ci_section="- gh not on PATH"
+fi
+
+# --- mailcurator ---
+if [ -d "$MC_DIR" ]; then
+  del_count=$(wc -l < "$MC_DIR/deletions.jsonl" 2>/dev/null | tr -d ' ')
+  deliv_count=$(wc -l < "$MC_DIR/deliveries.jsonl" 2>/dev/null | tr -d ' ')
+  recent_del=$(tail -3 "$MC_DIR/deletions.jsonl" 2>/dev/null | sed 's/^/    /')
+  mc_section=$(printf -- "- deletions.jsonl lines: **%s**, deliveries.jsonl lines: **%s**\n- Last 3 deletions:\n\n\`\`\`\n%s\n\`\`\`" \
+    "${del_count:-0}" "${deliv_count:-0}" "$recent_del")
+else
+  mc_section="- mailcurator dir missing"
+fi
+
+# --- Compose ---
+body=$(cat <<EOF
+**Morning briefing — generated $now**
+
+### Gmail pull
+$gmail_section
+
+### Clippy sweep (overnight)
+$clippy_section
+
+### CI
+$ci_section
+
+### mailcurator
+$mc_section
+EOF
+)
+
+if command -v messageboard-edit >/dev/null 2>&1; then
+  messageboard-edit insert "$body"
+else
+  printf "\n### %s — morning-briefing fallback\n\n%s\n\n---\n" "$now" "$body" >> "$HOME/Assistants/shared/MESSAGEBOARD.md"
+fi
