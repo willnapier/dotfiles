@@ -27,7 +27,7 @@ AuthMechs XOAUTH2
 # handles refresh transparently; the printed token is always fresh at
 # the moment of use.
 PassCmd "$HOME/.local/bin/pizauth show cohs"
-SSLType IMAPS
+TLSType IMAPS
 # macOS trust store is used implicitly; no CertificateFile needed.
 
 IMAPStore cohs-remote
