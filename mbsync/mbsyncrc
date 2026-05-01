@@ -108,9 +108,16 @@ SubFolders Verbatim
 Channel gmail-spike
 Far :gmail-remote:
 Near :gmail-local:
-# Spike scope: INBOX only. Expand to "[Gmail]/All Mail" once auth +
-# folder mechanics are confirmed.
-Patterns "INBOX"
+# Phase 2 (2026-05-01 17:22): expanded from INBOX-only to include
+# [Google Mail]/All Mail — Gmail's canonical "every message exactly
+# once" folder. UK English variant is "Google Mail" not "Gmail";
+# probed via mbsync -l 17:24 — `[Gmail]/...` matches NOTHING on this
+# account, `[Google Mail]/...` is correct. ~24GB / 218k-message pull
+# on first run. INBOX kept in Patterns during transition; eventual
+# cleanup will drop it (every Inbox message also exists under All
+# Mail, so the local INBOX/ directory becomes redundant once All Mail
+# is fully synced).
+Patterns "INBOX" "[Google Mail]/All Mail"
 Sync Pull
 Expunge None
 CopyArrivalDate yes
