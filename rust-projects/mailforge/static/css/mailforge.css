@@ -99,15 +99,50 @@ table.listing {
 
 .envelope-row.kb-current { background: var(--selected); }
 
-.col-from { width: 22ch; color: var(--fg-muted); }
-.col-tags { width: 14ch; }
+/* Column widths. Defaults exposed via CSS variables so the resize JS
+ * (in keys.js) can override them per-user via localStorage. Resize
+ * handles in the table head emit pixel-based widths; defaults below
+ * use ch-units for readable typography-relative starting values. */
+:root {
+  --col-from-width: 22ch;
+  --col-tags-width: 14ch;
+  --col-date-width: 18ch;
+  --col-actions-width: 14ch;
+}
+.col-from { width: var(--col-from-width); color: var(--fg-muted); }
+.col-tags { width: var(--col-tags-width); }
 .col-subject { width: auto; white-space: normal; } /* Subject can wrap; takes remaining space */
-.col-date { width: 18ch; color: var(--fg-faint); text-align: right; } /* full date "X days ago" or "2026-04-30" */
+.col-date { width: var(--col-date-width); color: var(--fg-faint); text-align: right; } /* full date "X days ago" or "2026-04-30" */
 /* Dedicated rightmost column for per-row hover-reveal action icons
- * (sweep / unsubscribe). 8ch is enough for two short text labels at
- * 11px size with internal padding; rows without affordances render
- * an empty cell in this width, keeping all rows aligned. */
-.col-actions { width: 8ch; text-align: right; }
+ * (sweep / unsubscribe). 14ch fits "broom" + "unsub" side-by-side
+ * with comfortable padding; rows without affordances render an
+ * empty cell, preserving alignment. */
+.col-actions { width: var(--col-actions-width); text-align: right; }
+
+/* Resize handles on each fixed column header. Subject is the auto-grow
+ * column so doesn't get a handle (it takes whatever space is left). */
+table.listing thead th { position: relative; }
+.col-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  user-select: none;
+  /* Subtle hover hint without clutter */
+  background: transparent;
+  transition: background 0.12s ease;
+}
+.col-resizer:hover,
+.col-resizer.dragging {
+  background: var(--accent);
+  opacity: 0.5;
+}
+/* While dragging, kill text selection across the whole document so
+ * the cursor stays on the col-resize affordance. */
+body.col-resizing { cursor: col-resize !important; user-select: none; }
+body.col-resizing * { user-select: none !important; }
 
 /* ===== Per-row hover-reveal action icons =====
  * Visual parsimony: rows without a relevant affordance render zero icons.

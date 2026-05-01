@@ -454,7 +454,17 @@
       });
     }
     if (dirty && !window.confirm("Discard unsent message?")) return;
-    history.back();
+    // history.back() is a no-op when the compose page was opened
+    // directly (bookmark, fresh tab, refresh). Detect that via the
+    // referrer: if it's empty or cross-origin, history.back() won't
+    // navigate within this app, so route explicitly to /mail.
+    const sameOriginReferrer = document.referrer
+      && document.referrer.startsWith(window.location.origin);
+    if (sameOriginReferrer) {
+      history.back();
+    } else {
+      window.location.href = "/mail";
+    }
   }
 
   // ----- Modal/back -----
@@ -619,7 +629,69 @@
         if (action === "sweep-row") sweepNow(row, btn);
         else if (action === "unsubscribe-row") unsubscribeRow(row, btn);
       }, false);
+
+      // Resizable column widths. Restore from localStorage, then wire
+      // mousedown handlers on each .col-resizer to drive live drag.
+      // Persists pixel widths under "mailforge-col-widths" so the
+      // values survive page reloads. To reset to defaults, the user
+      // can clear the key from devtools or we could expose a
+      // keyboard shortcut later.
+      initResizableColumns();
     }
+  }
+
+  function initResizableColumns() {
+    // Restore saved widths
+    try {
+      const raw = localStorage.getItem("mailforge-col-widths");
+      if (raw) {
+        const widths = JSON.parse(raw);
+        for (const [col, val] of Object.entries(widths)) {
+          if (typeof val === "string" && /^\d+(\.\d+)?(px|ch|em|rem)$/.test(val)) {
+            document.documentElement.style.setProperty(`--col-${col}-width`, val);
+          }
+        }
+      }
+    } catch (e) { /* ignore corrupt localStorage */ }
+
+    document.querySelectorAll(".col-resizer").forEach((handle) => {
+      handle.addEventListener("mousedown", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const col = handle.dataset.col;
+        if (!col) return;
+        const th = handle.parentElement;
+        const startX = ev.clientX;
+        const startWidth = th.getBoundingClientRect().width;
+        handle.classList.add("dragging");
+        document.body.classList.add("col-resizing");
+
+        const onMove = (mv) => {
+          const delta = mv.clientX - startX;
+          // Clamp to a sensible minimum so columns can't disappear.
+          const newWidth = Math.max(40, Math.round(startWidth + delta));
+          document.documentElement.style.setProperty(`--col-${col}-width`, newWidth + "px");
+        };
+        const onUp = () => {
+          document.removeEventListener("mousemove", onMove);
+          document.removeEventListener("mouseup", onUp);
+          handle.classList.remove("dragging");
+          document.body.classList.remove("col-resizing");
+          // Persist all current widths
+          try {
+            const cs = getComputedStyle(document.documentElement);
+            const widths = {};
+            for (const c of ["from", "tags", "date", "actions"]) {
+              const v = cs.getPropertyValue(`--col-${c}-width`).trim();
+              if (v) widths[c] = v;
+            }
+            localStorage.setItem("mailforge-col-widths", JSON.stringify(widths));
+          } catch (e) { /* localStorage might be full or disabled */ }
+        };
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", onUp);
+      }, false);
+    });
   }
 
   if (document.readyState === "loading") {

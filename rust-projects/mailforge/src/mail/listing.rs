@@ -192,15 +192,32 @@ pub async fn list_mailbox(
             table class="listing" role="grid" aria-label="Messages" {
                 thead {
                     tr {
-                        th class="col-from"    { "From" }
-                        th class="col-tags"    { "Tags" }
+                        // Resize handles on every fixed-width column.
+                        // The `col-resizer` element captures mousedown
+                        // and the JS in keys.js drives the live drag
+                        // + localStorage persistence. Subject column
+                        // is auto-grow so doesn't need a handle (it
+                        // takes whatever space is left).
+                        th class="col-from" {
+                            "From"
+                            span class="col-resizer" data-col="from" aria-hidden="true" {}
+                        }
+                        th class="col-tags" {
+                            "Tags"
+                            span class="col-resizer" data-col="tags" aria-hidden="true" {}
+                        }
                         th class="col-subject" { "Subject" }
-                        th class="col-date"    { "Date" }
+                        th class="col-date" {
+                            "Date"
+                            span class="col-resizer" data-col="date" aria-hidden="true" {}
+                        }
                         // Empty header for the per-row hover-reveal
                         // actions column (sweep / unsubscribe icons).
-                        // 8ch wide; rows without actions render an
-                        // empty cell, preserving visual alignment.
-                        th class="col-actions" aria-hidden="true" { "" }
+                        // Rows without actions render an empty cell,
+                        // preserving visual alignment.
+                        th class="col-actions" aria-hidden="true" {
+                            span class="col-resizer" data-col="actions" aria-hidden="true" {}
+                        }
                     }
                 }
                 tbody {
