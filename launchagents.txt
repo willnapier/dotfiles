@@ -46,8 +46,8 @@ com.williamnapier.karabiner-relink
 com.williamnapier.link-service
 com.williamnapier.linkmanager.plist.disabled
 com.williamnapier.mailcurator-drift
+com.williamnapier.mailforge
 com.williamnapier.mbsync-cohs
-com.williamnapier.meliview
 com.williamnapier.pizauth
 com.williamnapier.pizauth-dump
 com.williamnapier.practiceforge-dashboard
