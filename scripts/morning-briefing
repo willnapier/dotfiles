@@ -71,6 +71,20 @@ else
   mc_section="- mailcurator dir missing"
 fi
 
+# --- Frontend audits ---
+AUDIT_DIR="$HOME/Assistants/shared/audits"
+audit_section=""
+for proj in mailforge practiceforge; do
+  f="$AUDIT_DIR/${proj}-frontend-audit-2026-05-02.md"
+  if [ -f "$f" ]; then
+    lines=$(wc -l < "$f" | tr -d ' ')
+    audit_section="${audit_section}- ${proj}: **ready** (${lines} lines) — \`${f}\`"$'\n'
+  else
+    audit_section="${audit_section}- ${proj}: not yet written — agent may still be running"$'\n'
+  fi
+done
+[ -z "$audit_section" ] && audit_section="- (no audit files configured)"
+
 # --- Compose ---
 body=$(cat <<EOF
 **Morning briefing — generated $now**
@@ -80,6 +94,9 @@ $gmail_section
 
 ### Clippy sweep (overnight)
 $clippy_section
+
+### Frontend audits (overnight)
+$audit_section
 
 ### CI
 $ci_section
