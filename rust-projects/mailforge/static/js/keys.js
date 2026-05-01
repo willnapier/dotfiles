@@ -412,8 +412,9 @@
 
     listing: {
       e: navDown, i: navUp,
-      // n/o = sidebar horizontal scroll in meli; in browser there's no equivalent, so they're
-      // unbound here. Account nav uses uppercase N/O (per meli config: next_account='N', prev_account='O').
+      // Three-tier vertical nav: e/i row (within mailbox), n/o mailbox
+      // (within account), N/O account (across accounts). Lowercase
+      // narrows scope, uppercase widens — mirrors meli's N/O convention.
       ArrowDown: navDown, ArrowUp: navUp,
       PageDown: navPageDown, PageUp: navPageUp,
       G: navBottom,
@@ -430,7 +431,7 @@
       r: replyCurrent, f: forwardCurrent, c: compose,
       t: tagCurrent,
       "Ctrl+r": refresh, "Ctrl+R": refresh,
-      E: nextMailbox, I: prevMailbox,
+      n: nextMailbox, o: prevMailbox,
       N: nextAccount, O: prevAccount,
     },
 
