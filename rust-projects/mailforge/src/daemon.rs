@@ -143,7 +143,7 @@ fn wrapper_html(id: &str, m: &Manifest, images_allowed: bool) -> String {
             h.from.as_deref(),
             h.date.as_deref(),
             format!(
-                r#"<iframe class="body" sandbox="allow-popups allow-popups-to-escape-sandbox" src="/v/{id}/body.html{body_query}"></iframe>"#
+                r#"<iframe class="body" sandbox="allow-popups allow-popups-to-escape-sandbox" tabindex="-1" src="/v/{id}/body.html{body_query}"></iframe>"#
             ),
         ),
         Manifest::Pdf(p) => (

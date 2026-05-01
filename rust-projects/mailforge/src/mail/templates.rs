@@ -476,10 +476,19 @@ pub fn safe_text(s: &str) -> Markup {
 /// to a new tab so users can click through. The body's `<base>` tag
 /// (injected by `pipe::inject_base_target`) makes all unscoped links
 /// open in a new tab by default.
+///
+/// `tabindex="-1"` prevents the iframe from auto-focusing on page load
+/// or being reachable via Tab navigation. This keeps keyboard focus on
+/// the parent message-view document so `keys.js` `_base.Backspace` /
+/// `_base.Escape` handlers fire and pop back to the listing. The user
+/// can still click into the iframe to interact with its content; focus
+/// then lives there until they click outside (cross-origin sandbox
+/// means parent can't observe iframe-internal focus events).
 pub fn html_body_iframe(uuid: &str) -> Markup {
     html! {
         iframe class="message-body__iframe"
             sandbox="allow-popups allow-popups-to-escape-sandbox"
+            tabindex="-1"
             src=(format!("/v/{}", uuid))
             title="Message body"
         {}
