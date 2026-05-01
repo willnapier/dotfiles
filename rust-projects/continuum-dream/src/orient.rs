@@ -6,10 +6,13 @@ use std::path::PathBuf;
 
 use crate::types::{MemoryFile, MemoryFrontmatter, MemoryState};
 
-/// Default memory directory
+/// Default memory directory — derived from $HOME using Claude Code's slug convention.
+/// CC converts the home path to a slug by replacing every '/' with '-', giving
+/// e.g. /home/will → -home-will, /Users/williamnapier → -Users-williamnapier.
 pub fn memory_dir() -> Result<PathBuf> {
     let home = dirs::home_dir().context("No home directory")?;
-    Ok(home.join(".claude/projects/-Users-williamnapier/memory"))
+    let slug = home.to_string_lossy().replace('/', "-");
+    Ok(home.join(format!(".claude/projects/{}/memory", slug)))
 }
 
 /// Scan the memory directory and return the full state
