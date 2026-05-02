@@ -48,6 +48,8 @@ com.williamnapier.linkmanager.plist.disabled
 com.williamnapier.mailcurator-drift
 com.williamnapier.mailforge
 com.williamnapier.mbsync-cohs
+com.williamnapier.mbsync-gmail-spike
+com.williamnapier.morning-briefing
 com.williamnapier.pizauth
 com.williamnapier.pizauth-dump
 com.williamnapier.practiceforge-dashboard
@@ -57,6 +59,7 @@ com.williamnapier.subscriptions-check
 com.williamnapier.syncthing-monitor
 com.williamnapier.system-health-check
 com.williamnapier.tm3-diary-live
+com.williamnapier.tm3-session-broker
 com.williamnapier.tm3-watcher
 com.williamnapier.wiki-link-manager
 com.williamnapier.zellij-zombie-watcher
