@@ -199,13 +199,6 @@ async fn pull(
         let _ = CHECKPOINT_EVERY; // future-proof: per-message checkpoint hook
         state.messages_pulled =
             prior_pulled.saturating_add(session_written.load(Ordering::Relaxed));
-        tracing::info!(
-            phase = "page-end-save",
-            prior_pulled,
-            session_written = session_written.load(Ordering::Relaxed),
-            saving = state.messages_pulled,
-            "DEBUG-SAVE"
-        );
         state::save_lossy(&state).await;
 
         if let Some(cap) = max_messages
@@ -238,13 +231,6 @@ async fn pull(
     // Final flush — always preserve cumulative `messages_pulled`.
     state.messages_pulled =
         prior_pulled.saturating_add(session_written.load(Ordering::Relaxed));
-    tracing::info!(
-        phase = "final-save",
-        prior_pulled,
-        session_written = session_written.load(Ordering::Relaxed),
-        saving = state.messages_pulled,
-        "DEBUG-SAVE"
-    );
     state::save_lossy(&state).await;
 
     Ok(())
