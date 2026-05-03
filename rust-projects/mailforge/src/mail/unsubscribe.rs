@@ -780,6 +780,13 @@ pub struct TrashFromSenderResult {
     pub ok: bool,
     pub sender: Option<String>,
     pub count: u64,
+    /// Bare message-ids of every row that was trashed by this call.
+    /// The JS uses this as an exact-match set to remove visible rows
+    /// from the current listing; substring matching on the From column
+    /// over-matches when multiple senders share a local-part
+    /// (info@..., noreply@..., etc.).
+    #[serde(default)]
+    pub trashed_ids: Vec<String>,
     pub error: Option<String>,
 }
 
@@ -798,6 +805,7 @@ pub async fn trash_from_sender_post(Query(q): Query<UnsubQuery>) -> impl IntoRes
                     ok: false,
                     sender: None,
                     count: 0,
+                    trashed_ids: Vec::new(),
                     error: Some(format!("show failed: {e}")),
                 }),
             )
@@ -813,6 +821,7 @@ pub async fn trash_from_sender_post(Query(q): Query<UnsubQuery>) -> impl IntoRes
                 ok: false,
                 sender: None,
                 count: 0,
+                trashed_ids: Vec::new(),
                 error: Some("no parseable sender address".into()),
             }),
         )
@@ -820,6 +829,19 @@ pub async fn trash_from_sender_post(Query(q): Query<UnsubQuery>) -> impl IntoRes
     }
     let query = format!("from:{address} and not tag:trash");
     let count = notmuch_db::count(&query).unwrap_or(0);
+    // Capture the matched ids BEFORE applying the tag change so the JS
+    // can do exact-id row removal on the current page (substring
+    // matching on the From column over-matches local-parts like
+    // `info`, `noreply`, `support`, etc.). Cap at 5000 — the listing
+    // only paints the current page anyway, and this list is purely a
+    // hint to the JS visual update.
+    let trashed_ids: Vec<String> = match notmuch_db::search(&query, 0, 5000) {
+        Ok(envs) => envs
+            .iter()
+            .filter_map(|e| e.message_id().map(|s| s.to_string()))
+            .collect(),
+        Err(_) => Vec::new(),
+    };
     if count > 0 {
         if let Err(e) = notmuch_db::apply_tag_changes(&query, &["trash"], &["inbox"]) {
             return (
@@ -828,6 +850,7 @@ pub async fn trash_from_sender_post(Query(q): Query<UnsubQuery>) -> impl IntoRes
                     ok: false,
                     sender: Some(address),
                     count: 0,
+                    trashed_ids: Vec::new(),
                     error: Some(format!("tag-update failed: {e}")),
                 }),
             )
@@ -840,6 +863,7 @@ pub async fn trash_from_sender_post(Query(q): Query<UnsubQuery>) -> impl IntoRes
             ok: true,
             sender: Some(address),
             count,
+            trashed_ids,
             error: None,
         }),
     )

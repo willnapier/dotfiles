@@ -217,17 +217,23 @@
                 .then(j => {
                   if (j.ok) {
                     showToast("Trashed " + j.count + " messages from " + (j.sender || sender), "success");
-                    // Remove any visible rows from the same sender from
-                    // the current page (others on later pages will be
-                    // gone after the next listing reload).
-                    document.querySelectorAll('tr.envelope-row').forEach(tr => {
-                      const fromCell = tr.querySelector('.col-from .from-name');
-                      if (fromCell && fromCell.textContent.includes(sender.split('@')[0])) {
-                        tr.style.transition = "opacity 0.2s";
-                        tr.style.opacity = "0";
-                        setTimeout(() => { tr.remove(); paintCursor(); }, 200);
-                      }
-                    });
+                    // Exact-id row removal. The server returns the bare
+                    // message-ids it actually trashed; we walk the
+                    // current page's envelope rows and remove only
+                    // those matching by `data-msg-id`. Substring
+                    // matching on the From column over-matches when
+                    // multiple senders share a local-part (info@,
+                    // noreply@, support@, notifications@…).
+                    const trashedIds = new Set(Array.isArray(j.trashed_ids) ? j.trashed_ids : []);
+                    if (trashedIds.size > 0) {
+                      document.querySelectorAll('tr.envelope-row[data-msg-id]').forEach(tr => {
+                        if (trashedIds.has(tr.dataset.msgId)) {
+                          tr.style.transition = "opacity 0.2s";
+                          tr.style.opacity = "0";
+                          setTimeout(() => { tr.remove(); paintCursor(); }, 200);
+                        }
+                      });
+                    }
                   } else {
                     showToast("Trash-all failed: " + (j.error || "unknown"), "error");
                   }
@@ -378,7 +384,11 @@
   }
 
   function refresh() {
-    postJSON("/api/refresh", {}).finally(() => window.location.reload());
+    // No /api/refresh route exists server-side; the previous POST
+    // produced a 404 in the access log on every Ctrl+R. Just reload
+    // the page — the listing handler will re-issue notmuch search/count
+    // on render.
+    window.location.reload();
   }
 
   function replyCurrent() {
@@ -590,7 +600,27 @@
   function composeSaveDraft() {
     const f = composeForm();
     if (!f) return;
-    postForm("/api/draft", f)
+    // Server is `Json<DraftBody>` — POSTing urlencoded returns 415.
+    // Build the JSON object from the form fields by name. Optional
+    // fields (cc/bcc/in_reply_to) coerce empty string → null so the
+    // serde `Option<String>` extractor accepts them.
+    const fd = new FormData(f);
+    const opt = (k) => {
+      const v = fd.get(k);
+      return v && String(v).length > 0 ? String(v) : null;
+    };
+    const draftId = (f.dataset && f.dataset.draftId) || fd.get("draft_id") || "";
+    const body = {
+      id: String(draftId || ""),
+      from_account: String(fd.get("from_account") || ""),
+      to: String(fd.get("to") || ""),
+      cc: opt("cc"),
+      bcc: opt("bcc"),
+      subject: String(fd.get("subject") || ""),
+      body: String(fd.get("body") || ""),
+      in_reply_to: opt("in_reply_to"),
+    };
+    postJSON("/api/draft", body)
       .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); showToast("Draft saved", "success"); })
       .catch(err => showToast("Draft failed: " + err.message, "error"));
   }
@@ -605,7 +635,20 @@
       .then(j => {
         if (!j.ok) throw new Error(j.error || "escalation rejected");
         showToast("Helix opened — save in Helix to return; Ctrl+Shift+E to abort", "info");
+        // Cap the poll at 600 ticks (1.5s × 600 = 15min). Past that
+        // the user has almost certainly closed Helix without saving,
+        // or the daemon stopped responding; either way, polling
+        // forever is the wrong answer.
+        let ticks = 0;
+        const MAX_TICKS = 600;
         window.__helixPoll = setInterval(() => {
+          ticks++;
+          if (ticks > MAX_TICKS) {
+            clearInterval(window.__helixPoll);
+            window.__helixPoll = null;
+            showToast("Helix escalation timeout — please refresh", "error");
+            return;
+          }
           fetch("/api/escalate-helix/status", { credentials: "same-origin" })
             .then(r => r.json())
             .then(j => {

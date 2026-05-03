@@ -189,7 +189,11 @@ pub async fn list_mailbox(
                 p { "No messages match this view." }
             }
         } @else {
-            table class="listing" role="grid" aria-label="Messages" {
+            // Native <table> semantics; previously declared
+            // role="grid" but lacked the row/cell roles, aria-selected,
+            // and roving tabindex that ARIA grid expects. Bare <table>
+            // is what AT actually consumes for tabular mail listings.
+            table class="listing" aria-label="Messages" {
                 thead {
                     tr {
                         // Resize handles on every fixed-width column.

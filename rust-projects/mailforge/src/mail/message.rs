@@ -577,7 +577,7 @@ fn action_toolbar(msg: &Message) -> Markup {
                 data-msg-id=(id)
             { "Reply" }
             a class="action-btn"
-                href=(format!("{reply_url}&all=1"))
+                href=(format!("/mail/compose?reply_all={id}"))
                 accesskey="R"
                 data-action="reply-all"
                 data-msg-id=(id)
@@ -588,28 +588,28 @@ fn action_toolbar(msg: &Message) -> Markup {
                 data-action="forward"
                 data-msg-id=(id)
             { "Forward" }
-            // Delete and archive POST to /api/* endpoints; render as
-            // forms so they work without JS, but the JS keyboard agent
-            // hijacks them for optimistic UI updates per
-            // docs/keybindings.md.
-            form class="action-form" method="post" action="/api/trash" {
-                input type="hidden" name="ids" value=(id);
-                button type="submit"
-                    class="action-btn danger"
-                    accesskey="d"
-                    data-action="trash"
-                    data-msg-id=(id)
-                { "Delete" }
-            }
-            form class="action-form" method="post" action="/api/archive" {
-                input type="hidden" name="ids" value=(id);
-                button type="submit"
-                    class="action-btn"
-                    accesskey="a"
-                    data-action="archive"
-                    data-msg-id=(id)
-                { "Archive" }
-            }
+            // Delete and archive call /api/trash and /api/archive via
+            // the JS keyboard agent (msgTrash/msgArchive in keys.js).
+            // JS-required: the API extractors are `Json<IdsRequest>`
+            // and would 415 on a urlencoded form submit. The previous
+            // form-rendered fallback emitted a urlencoded `ids=<id>`
+            // field that the JSON extractor rejected; replaced with
+            // plain buttons that route through the same JSON path the
+            // keyboard shortcut uses.
+            button type="button"
+                class="action-btn danger"
+                accesskey="d"
+                data-action="trash"
+                data-msg-id=(id)
+                onclick="document.dispatchEvent(new KeyboardEvent('keydown', {key: 'd'}))"
+            { "Delete" }
+            button type="button"
+                class="action-btn"
+                accesskey="a"
+                data-action="archive"
+                data-msg-id=(id)
+                onclick="document.dispatchEvent(new KeyboardEvent('keydown', {key: 'a'}))"
+            { "Archive" }
             a class="action-btn action-btn--secondary"
                 href=(format!("/mail/m/{}?view=full", crate::mail::notmuch_db::encode_id(&msg.id)))
                 accesskey="v"

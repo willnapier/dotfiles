@@ -22,12 +22,14 @@
 //! file. Each entry would be (name, query). Render in the sidebar under a
 //! "Saved" heading. Out of scope for the first build.
 
-#[allow(unused_imports)]
 use axum::{
     extract::Query,
-    response::{IntoResponse, Response},
+    response::{Html, IntoResponse, Response},
 };
+use maud::html;
 use serde::Deserialize;
+
+use crate::mail::templates::{self, status_banner, PageContext};
 
 #[derive(Debug, Default, Deserialize)]
 pub struct SearchQuery {
@@ -42,17 +44,29 @@ pub struct SearchQuery {
 
 /// GET `/mail/search`.
 ///
-/// If `q` is empty/missing: render the search form alone.
-/// If `q` is present: render the form pre-filled with `q`, plus the
-/// envelope-list result table.
+/// Placeholder until the full search experience is built. Returns a
+/// 200 HTML page with a "not yet implemented" notice, so the route is
+/// reachable from the sidebar / `/` shortcut without panicking the
+/// handler. See the module-level doc-comment for the intended design.
 pub async fn search_get(Query(_q): Query<SearchQuery>) -> Response {
-    todo!(
-        "1. if q.q is None or empty: render form-only via templates::page(Search, ...)\n\
-         2. else:\n\
-            - search(query, page * PER_PAGE, PER_PAGE) + count(query)\n\
-            - render form (prefilled) + envelope rows + paginator\n\
-         3. handle notmuch syntax errors: surface as banner above results,\n\
-            not 500 (notmuch returns non-zero exit on parse errors;\n\
-            wrap as user-facing message)"
-    )
+    let body = html! {
+        (status_banner("Search", Some("Not yet implemented")))
+        div class="empty-state panel" {
+            h2 { "Search not yet implemented" }
+            p {
+                "Cross-mailbox search is on the roadmap. For now, use the "
+                "per-mailbox filter in the listing view (press "
+                code { "/" }
+                " to focus the filter input)."
+            }
+        }
+    };
+    let doc = templates::page(
+        "Search — MailForge",
+        PageContext::Search,
+        None,
+        None,
+        body,
+    );
+    Html(doc).into_response()
 }

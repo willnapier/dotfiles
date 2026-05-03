@@ -430,10 +430,10 @@ pub fn paginator_with_query(
 /// Single tag chip. Used inline in envelope rows and headers.
 pub fn tag_chip(tag: &str) -> Markup {
     let variant = match tag {
-        "sent" => "tag-chip success",
-        "trash" | "spam" => "tag-chip error",
-        "drafts" | "draft" => "tag-chip warning",
-        "billing" | "promotions" => "tag-chip info",
+        "sent" => "tag-chip tag-success",
+        "trash" | "spam" => "tag-chip tag-error",
+        "drafts" | "draft" => "tag-chip tag-warning",
+        "billing" | "promotions" => "tag-chip tag-info",
         _ => "tag-chip",
     };
     html! {
@@ -870,13 +870,13 @@ mod tests {
     fn tag_chip_variants() {
         assert!(tag_chip("sent")
             .into_string()
-            .contains("tag-chip success"));
+            .contains("tag-chip tag-success"));
         assert!(tag_chip("trash")
             .into_string()
-            .contains("tag-chip error"));
+            .contains("tag-chip tag-error"));
         assert!(tag_chip("drafts")
             .into_string()
-            .contains("tag-chip warning"));
+            .contains("tag-chip tag-warning"));
         assert!(tag_chip("custom")
             .into_string()
             .contains(r#"class="tag-chip""#));
