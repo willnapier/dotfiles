@@ -678,7 +678,6 @@ fn render_form(
                 label.field {
                     span.field-label { "Body" }
                     textarea name="body" rows="20"
-                             style="max-width: 72ch; width: 100%; font-family: var(--font-mono);"
                     {
                         (body)
                     }

@@ -36,7 +36,7 @@ use serde::Deserialize;
 use crate::mail::accounts;
 use crate::mail::notmuch_db;
 use crate::mail::templates::{
-    self, envelope_row_indexed, paginator_with_query, status_banner, PageContext,
+    self, envelope_row_indexed, mailbox_label, paginator_with_query, status_banner, PageContext,
 };
 use crate::mail::unsubscribe;
 
@@ -142,7 +142,7 @@ pub async fn list_mailbox(
     let from_ctx = format!("{}/{}", account.slug, mailbox);
     let extra_query = user_filter.map(|q| format!("q={}", url::form_urlencoded::byte_serialize(q.as_bytes()).collect::<String>()));
 
-    let mailbox_label = mailbox_label_for(&mailbox);
+    let mailbox_label = mailbox_label(&mailbox);
     let banner_subtitle = match (envelopes.is_empty(), total) {
         (true, 0) => "No messages.".to_string(),
         (_, n) => format!("{n} messages — page {} of {}", page + 1, total_pages(n, PER_PAGE)),
@@ -255,22 +255,6 @@ pub async fn list_mailbox(
     Html(doc).into_response()
 }
 
-/// Display label for a mailbox slug. Mirrors templates::mailbox_label
-/// but kept here so the listing handler doesn't need to reach into the
-/// templates module's privates.
-fn mailbox_label_for(slug: &str) -> String {
-    match slug {
-        "all-mail" => "All Mail".to_string(),
-        other => {
-            let mut chars = other.chars();
-            match chars.next() {
-                Some(c) => c.to_uppercase().chain(chars).collect(),
-                None => String::new(),
-            }
-        }
-    }
-}
-
 fn total_pages(total: u64, per_page: usize) -> u64 {
     let per_page = per_page.max(1) as u64;
     if total == 0 {
@@ -301,10 +285,6 @@ mod tests {
         assert_eq!(total_pages(101, 50), 3);
     }
 
-    #[test]
-    fn mailbox_label_capitalises() {
-        assert_eq!(mailbox_label_for("inbox"), "Inbox");
-        assert_eq!(mailbox_label_for("sent"), "Sent");
-        assert_eq!(mailbox_label_for("all-mail"), "All Mail");
-    }
+    // mailbox_label test moved to templates.rs alongside the
+    // canonical implementation (was duplicated here per audit #19).
 }

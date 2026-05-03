@@ -46,12 +46,16 @@
       host.style.cssText = "position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:8px;";
       document.body.appendChild(host);
     }
-    const border = kind === "error" ? "var(--error,#dc322f)" : kind === "success" ? "var(--success,#859900)" : "var(--rule,#0a4050)";
+    // Read tokens from theme.css only — duplicate hex fallbacks
+    // silently drift when theme.css moves, and the stylesheet is
+    // always loaded by the time toasts appear (page() injects it
+    // synchronously in the <head>).
+    const border = kind === "error" ? "var(--error)" : kind === "success" ? "var(--success)" : "var(--rule)";
     const el = document.createElement("div");
     el.className = "toast toast-" + (kind || "info");
     el.textContent = msg;
-    el.style.cssText = "padding:8px 12px;border-radius:4px;font-family:var(--font-mono,monospace);font-size:13px;"
-      + "box-shadow:0 4px 12px rgba(0,0,0,0.4);background:var(--bg-elevated,#073642);color:var(--fg,#839496);border:1px solid " + border + ";";
+    el.style.cssText = "padding:8px 12px;border-radius:4px;font-family:var(--font-mono);font-size:13px;"
+      + "box-shadow:0 4px 12px rgba(0,0,0,0.4);background:var(--bg-elevated);color:var(--fg);border:1px solid " + border + ";";
     host.appendChild(el);
     setTimeout(() => { el.style.transition = "opacity 0.3s"; el.style.opacity = "0"; setTimeout(() => el.remove(), 300); }, 2400);
   }
@@ -194,7 +198,7 @@
           showToast("Unsubscribed and trashed", "success");
           row.style.transition = "opacity 0.2s";
           row.style.opacity = "0";
-          setTimeout(() => { row.remove(); paintCursor(); }, 200);
+          setTimeout(() => { row.remove(); decrementBannerCount(); paintCursor(); }, 200);
           // Post-unsub "scorched earth" follow-up: if the sender has
           // existing non-trashed messages, prompt to trash them all.
           // Brief delay so the success toast finishes painting before
@@ -341,19 +345,49 @@
     if (href) window.location.href = href;
   }
 
+  // Decrement the "<n> messages — page Y of Z" subtitle. Pure visual
+  // patch; the next page render reads from notmuch and self-corrects.
+  // Best-effort regex update — leaves subtitle alone if it doesn't
+  // match the expected shape.
+  function decrementBannerCount() {
+    const sub = document.querySelector(".status-banner__subtitle");
+    if (!sub) return;
+    const txt = sub.textContent || "";
+    const m = txt.match(/^(\d+)(\s+messages?)/);
+    if (!m) return;
+    const n = Math.max(0, parseInt(m[1], 10) - 1);
+    sub.textContent = n + m[2] + txt.slice(m[0].length);
+  }
+
   // Server expects `{ ids: [...] }` (bulk-friendly API). Single-row mutations
   // wrap the one id in a one-element array. Future multi-select can reuse
   // the same shape without API changes.
+  //
+  // Per-row in-flight flag (`data-in-flight="1"`) suppresses repeat key
+  // presses on the same row while the network call is pending, so a
+  // rapid "d d d d" doesn't fire four POSTs against the same id.
   function rowMutate(url, label) {
     const row = currentRow();
     if (!row) return;
+    if (row.dataset.inFlight === "1") return;
     const id = rowId(row);
     if (!id) { showToast("No message id on row", "error"); return; }
+    row.dataset.inFlight = "1";
     row.style.transition = "opacity 0.15s";
     row.style.opacity = "0.4";
     postJSON(url, { ids: [id] })
-      .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); row.remove(); showToast(label + "d", "success"); paintCursor(); })
-      .catch(err => { row.style.opacity = ""; showToast(label + " failed: " + err.message, "error"); });
+      .then(r => {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        row.remove();
+        decrementBannerCount();
+        showToast(label + "d", "success");
+        paintCursor();
+      })
+      .catch(err => {
+        row.style.opacity = "";
+        delete row.dataset.inFlight;
+        showToast(label + " failed: " + err.message, "error");
+      });
   }
   const trashCurrent = () => rowMutate("/api/trash", "Trashe");
   const archiveCurrent = () => rowMutate("/api/archive", "Archive");
@@ -449,11 +483,9 @@
   const msgPageUp = () => scrollBody(-window.innerHeight * 0.9);
 
   function currentMessageId() {
-    // Templates stamp `data-msg-id` (→ dataset.msgId); legacy code paths
-    // also accept `data-message-id` (→ dataset.messageId). Body comes
-    // first because the page-level attribute wins over deeply nested ones.
-    if (document.body.dataset.msgId) return document.body.dataset.msgId;
-    if (document.body.dataset.messageId) return document.body.dataset.messageId;
+    // Templates stamp `data-msg-id` on the <article> for messages /
+    // envelope <tr> for listings. The body element only carries
+    // data-context — the previous body-first branches were dead.
     const el = document.querySelector("[data-msg-id], [data-message-id]");
     if (!el) return null;
     return el.dataset.msgId || el.dataset.messageId || null;
@@ -480,6 +512,10 @@
   const msgTrash = () => msgMutate("/api/trash", "Trash");
   const msgArchive = () => msgMutate("/api/archive", "Archive");
   const msgUnarchive = () => msgMutate("/api/unarchive", "Unarchive");
+  // The message page emits exactly one [data-nav=...] per direction
+  // (sibling_nav_links in message.rs). If a future thread or paginated
+  // view emits multiple, querySelector's first-match-wins is the
+  // contract — order in the DOM is "the next sibling to navigate to".
   const msgNext = () => clickSel("[data-nav=next-message]");
   const msgPrev = () => clickSel("[data-nav=prev-message]");
   // Extract the From-domain from the visible message header for trust-list
@@ -567,7 +603,11 @@
   }
 
   // ----- Compose actions -----
-  const composeForm = () => document.querySelector("form.compose, form#compose, form[action*='send']");
+  // Tightened to id-only — the previous `form[action*='send']` clause
+  // would also match a future "Send test email" form or anything else
+  // posting to /api/send. The compose template stamps id="compose-form"
+  // on the canonical form (compose.rs::compose_form_view).
+  const composeForm = () => document.getElementById("compose-form");
 
   function composeSend() {
     const f = composeForm();
@@ -679,6 +719,15 @@
       f.querySelectorAll("input, textarea").forEach(el => {
         if ((el.value || "") !== (el.defaultValue || el.getAttribute("value") || "")) dirty = true;
       });
+      // <select name="from_account"> uses defaultSelected on its
+      // <option> children; el.value compares against the originally
+      // selected option's value. Account changes carry no real cost
+      // (you can switch back) but a silent loss-on-Esc is surprising.
+      f.querySelectorAll("select").forEach(sel => {
+        const orig = Array.from(sel.options).find(o => o.defaultSelected);
+        const origVal = orig ? orig.value : (sel.options[0] && sel.options[0].value) || "";
+        if ((sel.value || "") !== origVal) dirty = true;
+      });
     }
     if (dirty && !window.confirm("Discard unsent message?")) return;
     // history.back() is a no-op when the compose page was opened
@@ -695,19 +744,17 @@
   }
 
   // ----- Modal/back -----
-  function closeOverlays() {
-    document.querySelectorAll(".overlay.open").forEach(o => o.classList.remove("open"));
-    if (document.activeElement && document.activeElement !== document.body && document.activeElement.blur) {
-      document.activeElement.blur();
-    }
-  }
+  // No overlay UI exists in MailForge; previously closeOverlays() was
+  // wired to Escape in _base but only blurred the active element.
+  // Bind Escape to back() directly so the meaning is honest. Compose
+  // overrides Escape to composeCancel() in its dispatch table.
   const back = () => history.back();
 
   // ----- Dispatch tables -----
   // Letter keys are case-sensitive: ev.key encodes shift state for letters.
   const dispatch = {
     _base: {
-      Escape: closeOverlays,
+      Escape: back,
       Backspace: back,
       "?": () => showToast("Help: see docs/keybindings.md", "info"),
     },
@@ -824,6 +871,11 @@
 
   // ----- Init -----
   function init() {
+    // Reset the vim-"gg" prefix tracker on every page load so a stale
+    // "g" pressed on the listing doesn't carry into the message view's
+    // 600ms window.
+    lastKey = "";
+    lastKeyAt = 0;
     document.addEventListener("keydown", handleKeydown, false);
     const ctx = document.body && document.body.dataset.context;
     if (ctx === "listing" || ctx === "search") paintCursor();

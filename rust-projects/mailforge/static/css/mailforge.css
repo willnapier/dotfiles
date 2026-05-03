@@ -603,6 +603,7 @@ body.col-resizing * { user-select: none !important; }
 
 .compose textarea {
   min-height: 30ch;
+  max-width: 72ch;
   font-family: var(--font-mono);
   resize: vertical;
 }

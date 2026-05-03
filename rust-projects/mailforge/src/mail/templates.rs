@@ -77,7 +77,7 @@ fn mailboxes_for(account_slug: &str) -> &'static [&'static str] {
 
 /// Display label for a mailbox slug. Inbox stays "Inbox", "all-mail"
 /// becomes "All Mail", etc.
-fn mailbox_label(slug: &str) -> String {
+pub fn mailbox_label(slug: &str) -> String {
     match slug {
         "all-mail" => "All Mail".to_string(),
         other => {
