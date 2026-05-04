@@ -181,7 +181,6 @@ pub async fn show_message(
             (message_header_with_trust(&message, &subject_text, &trust))
             (images_banner)
             (body_markup)
-            (action_toolbar(&message))
             (nav_links)
         }
     };
@@ -262,7 +261,6 @@ pub async fn show_thread(Path(thread_id): Path<String>) -> Response {
                         // default of images-on; users who need to block can open
                         // a single message and use the toggle there.
                         (render_body(msg, true))
-                        (action_toolbar(msg))
                     }
                 }
             }
@@ -570,65 +568,6 @@ fn render_body_html_only(msg: &Message, images_allowed: bool) -> Markup {
     }
 }
 
-/// Reply / Reply All / Forward / Delete / Archive toolbar. Each button
-/// has both an `accesskey` and a `data-action` attribute so the keyboard
-/// JS can dispatch and the browser's native accesskey wiring also works.
-fn action_toolbar(msg: &Message) -> Markup {
-    let id = &msg.id;
-    let reply_url = format!("/mail/compose?reply={id}");
-    let fwd_url = format!("/mail/compose?fwd={id}");
-
-    html! {
-        nav class="action-toolbar" aria-label="Message actions" {
-            a class="action-btn"
-                href=(reply_url)
-                accesskey="r"
-                data-action="reply"
-                data-msg-id=(id)
-            { "Reply" }
-            a class="action-btn"
-                href=(format!("/mail/compose?reply_all={id}"))
-                accesskey="R"
-                data-action="reply-all"
-                data-msg-id=(id)
-            { "Reply All" }
-            a class="action-btn"
-                href=(fwd_url)
-                accesskey="f"
-                data-action="forward"
-                data-msg-id=(id)
-            { "Forward" }
-            // Delete and archive call /api/trash and /api/archive via
-            // the JS keyboard agent (msgTrash/msgArchive in keys.js).
-            // JS-required: the API extractors are `Json<IdsRequest>`
-            // and would 415 on a urlencoded form submit. The previous
-            // form-rendered fallback emitted a urlencoded `ids=<id>`
-            // field that the JSON extractor rejected; replaced with
-            // plain buttons that route through the same JSON path the
-            // keyboard shortcut uses.
-            button type="button"
-                class="action-btn danger"
-                accesskey="d"
-                data-action="trash"
-                data-msg-id=(id)
-                onclick="document.dispatchEvent(new KeyboardEvent('keydown', {key: 'd'}))"
-            { "Delete" }
-            button type="button"
-                class="action-btn"
-                accesskey="a"
-                data-action="archive"
-                data-msg-id=(id)
-                onclick="document.dispatchEvent(new KeyboardEvent('keydown', {key: 'a'}))"
-            { "Archive" }
-            a class="action-btn action-btn--secondary"
-                href=(format!("/mail/m/{}?view=full", crate::mail::notmuch_db::encode_id(&msg.id)))
-                accesskey="v"
-                data-action="open-viewer"
-            { "HTML view" }
-        }
-    }
-}
-
 /// Resolve the prev/next message ids for a given mailbox context. Returns
 /// `(prev_id, next_id)` ordered as the user reads the listing top-to-bottom
 /// — `prev` is the row above (newer message in newest-first order), `next`
@@ -791,23 +730,7 @@ mod tests {
         assert!(html.contains("HTML version is available"));
     }
 
-    #[test]
-    fn action_toolbar_has_accesskeys_and_data_attrs() {
-        let msg = make_msg("Hi", Some("body"), vec!["inbox"]);
-        let html = action_toolbar(&msg).into_string();
-        assert!(html.contains(r#"accesskey="r""#));
-        assert!(html.contains(r#"accesskey="f""#));
-        assert!(html.contains(r#"accesskey="d""#));
-        assert!(html.contains(r#"accesskey="a""#));
-        assert!(html.contains(r#"data-action="reply""#));
-        assert!(html.contains(r#"data-action="trash""#));
-        assert!(html.contains(r#"data-action="archive""#));
-        assert!(html.contains(r#"data-action="forward""#));
-        // Reply link should encode the message id.
-        assert!(html.contains("/mail/compose?reply=abc@example.com"));
-    }
-
-    #[test]
+#[test]
     fn pick_active_account_for_cohs_tag() {
         let msg = make_msg("Hi", Some("b"), vec!["inbox", "cohs"]);
         assert_eq!(pick_active_account(&msg), Some("cohs"));
