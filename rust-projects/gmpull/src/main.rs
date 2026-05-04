@@ -16,10 +16,10 @@ mod labels;
 mod maildir;
 mod state;
 
-/// Concurrency for `messages.get`. 16 in flight × ~250ms RTT ≈ 64
-/// req/s, comfortably under Gmail's 25 QPS / 250 quota-units cap
-/// (each get is 5 units → 320 units/s peak).
-const FETCH_CONCURRENCY: usize = 16;
+use api::{
+    DEFAULT_FETCH_CONCURRENCY, DEFAULT_RATE_BURST_UNITS, DEFAULT_RATE_UNITS_PER_SEC,
+    SharedRateLimiter, build_fetch_semaphore, build_rate_limiter,
+};
 
 /// Save the checkpoint every N messages. 100 keeps disk writes cheap
 /// while bounding redo on crash to one page worth.
@@ -47,6 +47,19 @@ enum Cmd {
         /// for smoke testing.
         #[arg(long)]
         max_messages: Option<u64>,
+        /// Quota-units/second cap (default 150 — Gmail's per-100 s
+        /// sustained budget is 15 000 units → 150/s). Lower this to
+        /// 100 if 150/s still trips the quota; raise it cautiously
+        /// only if Gmail confirms a higher per-user allowance.
+        #[arg(long, default_value_t = DEFAULT_RATE_UNITS_PER_SEC)]
+        rate_limit: u32,
+        /// Burst-bucket size in quota units (default 750 — ~5 s of
+        /// the rate cap).
+        #[arg(long, default_value_t = DEFAULT_RATE_BURST_UNITS)]
+        rate_burst: u32,
+        /// Concurrent in-flight `messages.get` cap (default 3).
+        #[arg(long, default_value_t = DEFAULT_FETCH_CONCURRENCY)]
+        concurrency: usize,
     },
 }
 
@@ -65,7 +78,20 @@ fn main() -> Result<()> {
                 maildir,
                 resume,
                 max_messages,
-            } => pull(maildir, resume, max_messages).await,
+                rate_limit,
+                rate_burst,
+                concurrency,
+            } => {
+                pull(
+                    maildir,
+                    resume,
+                    max_messages,
+                    rate_limit,
+                    rate_burst,
+                    concurrency,
+                )
+                .await
+            }
         }
     })
 }
@@ -84,12 +110,21 @@ async fn pull(
     maildir_arg: Option<PathBuf>,
     _resume: bool,
     max_messages: Option<u64>,
+    rate_limit: u32,
+    rate_burst: u32,
+    concurrency: usize,
 ) -> Result<()> {
     let maildir_root = maildir_arg
         .map(Ok)
         .unwrap_or_else(state::default_maildir)?;
 
-    tracing::info!(maildir = %maildir_root.display(), "starting pull");
+    tracing::info!(
+        maildir = %maildir_root.display(),
+        rate_limit_units_per_s = rate_limit,
+        rate_burst_units = rate_burst,
+        concurrency,
+        "starting pull"
+    );
     maildir::ensure_maildir(&maildir_root).await?;
     state::ensure_state_dir().await?;
 
@@ -102,6 +137,8 @@ async fn pull(
     );
 
     let http = api::build_client()?;
+    let limiter: SharedRateLimiter = build_rate_limiter(rate_limit, rate_burst);
+    let fetch_sem = build_fetch_semaphore(concurrency);
     let token = auth::access_token().context("getting initial pizauth token")?;
     let token_arc: Arc<tokio::sync::RwLock<String>> = Arc::new(tokio::sync::RwLock::new(token));
 
@@ -125,13 +162,13 @@ async fn pull(
         // List one page of IDs.
         let (ids, next_token) = {
             let t = token_arc.read().await;
-            match api::list_messages_page(&http, &t, page_token.as_deref()).await {
+            match api::list_messages_page(&http, &t, page_token.as_deref(), &limiter).await {
                 Ok(v) => v,
                 Err(e) if e.to_string().contains("401 unauthorized") => {
                     drop(t);
                     refresh_token(&token_arc).await?;
                     let t = token_arc.read().await;
-                    api::list_messages_page(&http, &t, page_token.as_deref()).await?
+                    api::list_messages_page(&http, &t, page_token.as_deref(), &limiter).await?
                 }
                 Err(e) => return Err(e.context("messages.list failed")),
             }
@@ -139,12 +176,19 @@ async fn pull(
 
         if ids.is_empty() && next_token.is_none() {
             tracing::info!("no more pages — pull complete");
+            // Flag completion in state so watchers can detect it.
+            state.last_page_token = None;
+            state.messages_pulled =
+                prior_pulled.saturating_add(session_written.load(Ordering::Relaxed));
+            state::save_lossy(&state).await;
             break;
         }
         pages_processed += 1;
         tracing::debug!(page = pages_processed, ids = ids.len(), "page fetched");
 
-        // Fetch this page concurrently.
+        // Fetch this page concurrently. The limiter and semaphore
+        // are the real concurrency governors — `FuturesUnordered`
+        // is just bookkeeping.
         use futures::stream::{FuturesUnordered, StreamExt};
         let mut in_flight = FuturesUnordered::new();
         for id in ids.iter() {
@@ -153,12 +197,22 @@ async fn pull(
             let labels_c = labels_arc.clone();
             let root_c = maildir_root.clone();
             let id_c = id.id.clone();
+            let limiter_c = limiter.clone();
+            let sem_c = fetch_sem.clone();
             in_flight.push(tokio::spawn(async move {
-                fetch_and_write_one(http_c, token_c, &id_c, &root_c, &labels_c).await
+                let _permit = sem_c
+                    .acquire_owned()
+                    .await
+                    .context("acquiring fetch semaphore")?;
+                fetch_and_write_one(http_c, token_c, &id_c, &root_c, &labels_c, &limiter_c)
+                    .await
             }));
 
-            // Cap the in-flight set.
-            while in_flight.len() >= FETCH_CONCURRENCY {
+            // Allow up to `concurrency * 4` queued tasks before we
+            // start draining; this keeps the semaphore the real
+            // concurrency cap rather than `FuturesUnordered`.
+            let queue_cap = concurrency.saturating_mul(4).max(8);
+            while in_flight.len() >= queue_cap {
                 if let Some(joined) = in_flight.next().await {
                     handle_one(
                         joined,
@@ -211,7 +265,7 @@ async fn pull(
         match next_token {
             Some(t) => page_token = Some(t),
             None => {
-                tracing::info!("reached final page");
+                tracing::info!("reached final page — pull complete");
                 state.last_page_token = None;
                 state.messages_pulled =
                     prior_pulled.saturating_add(session_written.load(Ordering::Relaxed));
@@ -246,16 +300,17 @@ async fn fetch_and_write_one(
     id: &str,
     maildir_root: &std::path::Path,
     labels_map: &std::collections::HashMap<String, String>,
+    limiter: &SharedRateLimiter,
 ) -> Result<bool> {
     let msg = {
         let t = token.read().await;
-        match api::get_message_raw(&http, &t, id).await {
+        match api::get_message_raw(&http, &t, id, limiter).await {
             Ok(m) => m,
             Err(e) if e.to_string().contains("401 unauthorized") => {
                 drop(t);
                 refresh_token(&token).await?;
                 let t = token.read().await;
-                api::get_message_raw(&http, &t, id).await?
+                api::get_message_raw(&http, &t, id, limiter).await?
             }
             Err(e) => return Err(e.context(format!("messages.get id={id}"))),
         }
