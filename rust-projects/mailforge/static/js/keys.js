@@ -591,6 +591,43 @@
       })
       .catch(err => showToast("Untrust failed: " + err.message, "error"));
   }
+
+  // Capital-K — kill this sender. Adds a per-sender mailcurator policy
+  // (`from = "@<domain>"`, intended_categories = ["bulk-marketing"],
+  // delete_after_days = 1) AND immediately runs `mailcurator run --only
+  // <new-policy>` so the existing messages disappear from the listing.
+  //
+  // Capitalised intentionally — destructive actions need Shift to
+  // discourage accidental fire from the message-context lowercase
+  // namespace (where t/T/v are non-destructive trust/HTML toggles).
+  // Confirms before posting; on success, navigates back to the listing
+  // (reuses `back()` semantics — sessionStorage-backed listing URL).
+  function msgKillSender() {
+    const dom = currentSenderDomain();
+    if (!dom) {
+      showToast("No sender domain found on this message", "error");
+      return;
+    }
+    const fromValue = "@" + dom;
+    if (!confirm("Add " + fromValue + " to mailcurator blacklist?\n\n"
+                 + "Future messages will be trashed; existing messages from "
+                 + "this sender will be trashed now.")) {
+      showToast("Cancelled", "info");
+      return;
+    }
+    showToast("Killing " + fromValue + "…", "info");
+    postJSON("/api/mailcurator/blacklist", { from: fromValue })
+      .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+      .then(j => {
+        if (!j.ok) throw new Error(j.error || "kill failed");
+        const n = j.trashed_immediately || 0;
+        const verb = j.already_existed ? "Re-killed" : "Killed";
+        showToast(verb + " " + fromValue + " — " + n + " trashed", "success");
+        // Brief delay so the success toast is readable before nav.
+        setTimeout(() => back(), 400);
+      })
+      .catch(err => showToast("Kill failed: " + err.message, "error"));
+  }
   const msgReload = () => window.location.reload();
 
   // ----- Thread actions -----
@@ -839,6 +876,10 @@
       // to auto-render forever.
       t: msgTrustDomain,
       T: msgUntrustDomain,
+      // K (uppercase, intentional — destructive action requires Shift):
+      // append a mailcurator blacklist policy for the sender's domain
+      // AND run the policy immediately to trash existing messages.
+      K: msgKillSender,
       "Ctrl+r": msgReload, "Ctrl+R": msgReload,
     },
 

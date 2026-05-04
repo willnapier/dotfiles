@@ -57,6 +57,15 @@ const BACKOFF_CAP: Duration = Duration::from_secs(300);
 /// Gmail's quota model charges 5 units per message read.
 pub const QUOTA_UNITS_PER_CALL: u32 = 5;
 
+/// Quota cost of a single `users.history.list` call. Cheaper than
+/// `messages.list` because we're asking "what changed since X?"
+/// rather than enumerating the whole mailbox.
+pub const QUOTA_UNITS_PER_HISTORY_CALL: u32 = 2;
+
+/// Quota cost of a single `users.getProfile` call. Used once after
+/// the initial backfill to seed the historyId checkpoint.
+pub const QUOTA_UNITS_PER_PROFILE_CALL: u32 = 1;
+
 /// Sustained units/second the limiter will allow. 150 is 60 % of
 /// the burst ceiling and matches Gmail's 100 s sliding budget
 /// (15 000 units / 100 s = 150/s).
@@ -120,6 +129,69 @@ pub struct MsgIdRef {
     pub id: String,
 }
 
+/// One row of the `users.history.list` response. Records can carry
+/// any combination of `messagesAdded` / `messagesDeleted` /
+/// `labelsAdded` / `labelsRemoved`. v0.2 only consumes the first
+/// two; label changes don't affect the on-disk mirror because flags
+/// are derived at write time from the message's full label list.
+#[derive(Debug, Deserialize, Clone)]
+pub struct HistoryRecord {
+    /// The historyId for this record. Monotonically increasing.
+    #[serde(default)]
+    pub id: String,
+    /// Messages newly added to the mailbox since the previous
+    /// historyId. Each carries `id` (and `threadId`, ignored).
+    #[serde(rename = "messagesAdded", default)]
+    pub messages_added: Vec<HistoryMessageEntry>,
+    /// Messages deleted (purged from Gmail entirely, not just
+    /// trashed). v0.2 logs these but does not remove local files —
+    /// the user's archive stays whole.
+    #[serde(rename = "messagesDeleted", default)]
+    pub messages_deleted: Vec<HistoryMessageEntry>,
+}
+
+/// An `{message: {id, ...}}` wrapper used inside both `messagesAdded`
+/// and `messagesDeleted`. Gmail wraps the actual message under a
+/// `message` key — we unwrap it here.
+#[derive(Debug, Deserialize, Clone)]
+pub struct HistoryMessageEntry {
+    pub message: HistoryMessageRef,
+}
+
+/// Inner message reference inside a history entry. We keep `id` and
+/// optionally the labelIds (used only for log readability on
+/// deletes).
+#[derive(Debug, Deserialize, Clone)]
+pub struct HistoryMessageRef {
+    pub id: String,
+    #[serde(default, rename = "labelIds")]
+    pub label_ids: Vec<String>,
+}
+
+/// Response from `users.history.list`. The `history` array may be
+/// missing entirely if there have been no changes since
+/// `startHistoryId`; serde defaults handle that.
+#[derive(Debug, Deserialize)]
+struct HistoryListResponse {
+    #[serde(default)]
+    history: Vec<HistoryRecord>,
+    #[serde(rename = "nextPageToken", default)]
+    next_page_token: Option<String>,
+    /// The latest historyId at the moment the response was generated,
+    /// even if `history` is empty. We use this to advance our
+    /// checkpoint on quiet ticks.
+    #[serde(rename = "historyId", default)]
+    history_id: Option<String>,
+}
+
+/// Response from `users.getProfile`. Used at the end of the initial
+/// backfill to seed the historyId checkpoint.
+#[derive(Debug, Deserialize)]
+struct ProfileResponse {
+    #[serde(rename = "historyId", default)]
+    history_id: Option<String>,
+}
+
 /// One message fetched via `messages.get?format=raw`.
 #[derive(Debug)]
 pub struct RawMessage {
@@ -169,6 +241,97 @@ pub async fn list_messages_page(
     Ok((parsed.messages, parsed.next_page_token))
 }
 
+/// Fetch one page of the `users.history.list` stream.
+///
+/// Returns `(records, nextPageToken, latestHistoryId)`. The third
+/// value is non-`None` whenever Gmail returns a `historyId` field on
+/// the response — even if the `history` array is empty (a quiet tick),
+/// in which case the caller can use it to advance the local
+/// checkpoint without doing any other work.
+///
+/// On a `404 / 400 historyId not found` error (Gmail expires history
+/// after ~7 days for inactive accounts), we surface a tagged error
+/// the caller (`pull()`) recognises as the "fall back to full
+/// enumeration" trigger. Any other error bubbles up unchanged.
+///
+/// Costs `QUOTA_UNITS_PER_HISTORY_CALL` (2) tokens from the limiter
+/// per attempt, including retries.
+pub async fn list_history_page(
+    http: &reqwest::Client,
+    token: &str,
+    start_history_id: &str,
+    page_token: Option<&str>,
+    limiter: &SharedRateLimiter,
+) -> Result<(Vec<HistoryRecord>, Option<String>, Option<String>)> {
+    let mut url = format!(
+        "{API_BASE}/users/me/history?startHistoryId={}&maxResults=500",
+        urlencoding::encode(start_history_id),
+    );
+    if let Some(t) = page_token {
+        url.push_str(&format!("&pageToken={}", urlencoding::encode(t)));
+    }
+
+    let body = retry_get_with_units(
+        http,
+        token,
+        &url,
+        "history.list",
+        limiter,
+        QUOTA_UNITS_PER_HISTORY_CALL,
+    )
+    .await
+    .map_err(classify_history_error)?;
+
+    let parsed: HistoryListResponse =
+        serde_json::from_str(&body).context("parsing history.list JSON")?;
+    Ok((parsed.history, parsed.next_page_token, parsed.history_id))
+}
+
+/// Wrap a transport-level error coming back from `retry_get_with_units`
+/// during a history call. If the error message indicates the
+/// `startHistoryId` is too old or unknown we re-tag the error with
+/// the literal string `"historyId not found"` so the pull loop can
+/// match on it without parsing JSON. Any other error is passed
+/// through unchanged.
+fn classify_history_error(e: anyhow::Error) -> anyhow::Error {
+    let msg = e.to_string();
+    let stale = (msg.contains("HTTP 404") || msg.contains("HTTP 400"))
+        && (msg.contains("historyId")
+            || msg.contains("Invalid startHistoryId")
+            || msg.contains("not found")
+            || msg.contains("Start history ID"));
+    if stale {
+        e.context("historyId not found — caller should reseed via messages.list")
+    } else {
+        e
+    }
+}
+
+/// Fetch the mailbox profile and return its current `historyId`.
+/// Used after a fresh full backfill to seed the incremental
+/// checkpoint. One quota unit; bubble up any error.
+pub async fn get_profile_history_id(
+    http: &reqwest::Client,
+    token: &str,
+    limiter: &SharedRateLimiter,
+) -> Result<String> {
+    let url = format!("{API_BASE}/users/me/profile");
+    let body = retry_get_with_units(
+        http,
+        token,
+        &url,
+        "users.getProfile",
+        limiter,
+        QUOTA_UNITS_PER_PROFILE_CALL,
+    )
+    .await?;
+    let parsed: ProfileResponse =
+        serde_json::from_str(&body).context("parsing users.getProfile JSON")?;
+    parsed
+        .history_id
+        .ok_or_else(|| anyhow!("users.getProfile returned no historyId"))
+}
+
 /// Fetch one message in `format=raw`. Decodes the base64url body
 /// before returning so the caller writes plain RFC 5322 bytes.
 pub async fn get_message_raw(
@@ -197,13 +360,29 @@ async fn retry_get(
     op: &'static str,
     limiter: &SharedRateLimiter,
 ) -> Result<String> {
+    retry_get_with_units(http, token, url, op, limiter, QUOTA_UNITS_PER_CALL).await
+}
+
+/// Variant of [`retry_get`] that takes the quota cost explicitly.
+/// Used by `users.history.list` (2 units) and `users.getProfile`
+/// (1 unit) which are cheaper than the default 5-unit `messages.*`
+/// calls. The retry / backoff / 401 / 403 semantics are otherwise
+/// identical.
+async fn retry_get_with_units(
+    http: &reqwest::Client,
+    token: &str,
+    url: &str,
+    op: &'static str,
+    limiter: &SharedRateLimiter,
+    units: u32,
+) -> Result<String> {
     let mut last_err: Option<anyhow::Error> = None;
     let mut quota_hit = false;
     for attempt in 0..MAX_RETRIES {
         // Wait for quota tokens before *every* attempt, including
         // retries. This is what stops us re-blowing the limit the
         // instant a 60 s sleep ends.
-        await_quota(limiter, QUOTA_UNITS_PER_CALL).await;
+        await_quota(limiter, units).await;
 
         let resp_result = http
             .get(url)
@@ -431,6 +610,132 @@ mod tests {
         assert!(d >= QUOTA_BACKOFF_FLOOR, "got {:?}", d);
         // And we still respect the cap.
         assert!(d <= BACKOFF_CAP);
+    }
+
+    #[test]
+    fn history_response_parses_added_and_deleted() {
+        // A representative payload showing both messagesAdded and
+        // messagesDeleted in a single record, plus a separate
+        // labels-only record (which we intentionally ignore — flags
+        // are derived at write time from the message's full label
+        // list, not via diff).
+        let body = r#"{
+            "history": [
+                {
+                    "id": "1001",
+                    "messages": [{"id": "msg-1", "threadId": "t1"}],
+                    "messagesAdded": [
+                        {"message": {"id": "msg-1", "labelIds": ["INBOX","UNREAD"]}}
+                    ]
+                },
+                {
+                    "id": "1002",
+                    "messagesDeleted": [
+                        {"message": {"id": "msg-2", "labelIds": ["TRASH"]}}
+                    ]
+                },
+                {
+                    "id": "1003",
+                    "labelsAdded": [
+                        {"message": {"id": "msg-3"}, "labelIds": ["STARRED"]}
+                    ]
+                }
+            ],
+            "nextPageToken": "PAGE",
+            "historyId": "1003"
+        }"#;
+        let parsed: HistoryListResponse = serde_json::from_str(body).unwrap();
+        assert_eq!(parsed.history.len(), 3);
+        assert_eq!(parsed.next_page_token.as_deref(), Some("PAGE"));
+        assert_eq!(parsed.history_id.as_deref(), Some("1003"));
+
+        // First record has one added message.
+        assert_eq!(parsed.history[0].messages_added.len(), 1);
+        assert_eq!(parsed.history[0].messages_added[0].message.id, "msg-1");
+        assert!(parsed.history[0].messages_deleted.is_empty());
+
+        // Second record has one deleted message.
+        assert!(parsed.history[1].messages_added.is_empty());
+        assert_eq!(parsed.history[1].messages_deleted.len(), 1);
+        assert_eq!(parsed.history[1].messages_deleted[0].message.id, "msg-2");
+
+        // Third record (labels-only) yields nothing in either array.
+        assert!(parsed.history[2].messages_added.is_empty());
+        assert!(parsed.history[2].messages_deleted.is_empty());
+    }
+
+    #[test]
+    fn history_response_handles_empty_quiet_tick() {
+        // No changes since the last historyId. The `history` array
+        // is absent; serde defaults give us a vec of zero records.
+        // `historyId` is still set so the caller can advance the
+        // checkpoint without doing more work.
+        let body = r#"{"historyId":"42"}"#;
+        let parsed: HistoryListResponse = serde_json::from_str(body).unwrap();
+        assert!(parsed.history.is_empty());
+        assert!(parsed.next_page_token.is_none());
+        assert_eq!(parsed.history_id.as_deref(), Some("42"));
+    }
+
+    #[test]
+    fn extract_added_ids_from_history_records() {
+        // Helper-style test mirroring what main.rs::pull does:
+        // flatten every record's messagesAdded into a deduped Vec
+        // of Gmail IDs preserving order. Two records both add msg-A;
+        // the duplicate must collapse.
+        let body = r#"{
+            "history": [
+                {"id": "1", "messagesAdded": [
+                    {"message": {"id": "msg-A", "labelIds": ["INBOX"]}}
+                ]},
+                {"id": "2", "messagesAdded": [
+                    {"message": {"id": "msg-B", "labelIds": ["INBOX"]}},
+                    {"message": {"id": "msg-A", "labelIds": ["INBOX"]}}
+                ]}
+            ],
+            "historyId": "2"
+        }"#;
+        let parsed: HistoryListResponse = serde_json::from_str(body).unwrap();
+        let mut seen = std::collections::HashSet::new();
+        let mut ordered: Vec<String> = Vec::new();
+        for rec in &parsed.history {
+            for added in &rec.messages_added {
+                if seen.insert(added.message.id.clone()) {
+                    ordered.push(added.message.id.clone());
+                }
+            }
+        }
+        assert_eq!(ordered, vec!["msg-A".to_string(), "msg-B".to_string()]);
+    }
+
+    #[test]
+    fn classify_history_error_tags_stale_history() {
+        let stale = anyhow!(
+            "HTTP 404 on history.list: {{\"error\":{{\"message\":\"Invalid startHistoryId\"}}}}"
+        );
+        let tagged = classify_history_error(stale);
+        assert!(
+            tagged.to_string().contains("historyId not found")
+                || format!("{tagged:#}").contains("historyId not found"),
+            "tagged: {tagged:#}",
+        );
+
+        // Unrelated transport errors must NOT be tagged.
+        let other = anyhow!("HTTP 500 on history.list: server unavailable");
+        let unchanged = classify_history_error(other);
+        assert!(!unchanged.to_string().contains("historyId not found"));
+    }
+
+    #[test]
+    fn profile_response_parses_history_id() {
+        let body = r#"{
+            "emailAddress": "x@y.z",
+            "messagesTotal": 12345,
+            "threadsTotal": 6789,
+            "historyId": "987654"
+        }"#;
+        let parsed: ProfileResponse = serde_json::from_str(body).unwrap();
+        assert_eq!(parsed.history_id.as_deref(), Some("987654"));
     }
 
     #[tokio::test]

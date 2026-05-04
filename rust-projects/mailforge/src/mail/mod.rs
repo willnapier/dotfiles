@@ -101,6 +101,7 @@ pub fn router() -> Router {
         .route("/api/escalate-helix/status", get(compose::escalate_helix_status))
         .route("/api/escalate-helix/abort", post(compose::escalate_helix_abort))
         .route("/api/mailcurator/sweep", post(curator::sweep_post))
+        .route("/api/mailcurator/blacklist", post(curator::blacklist_post))
         .route("/api/unsubscribe/probe", get(unsubscribe::probe_get))
         .route("/api/unsubscribe/execute", post(unsubscribe::execute_post))
         .route("/api/unsubscribe/trash-from-sender", post(unsubscribe::trash_from_sender_post))
