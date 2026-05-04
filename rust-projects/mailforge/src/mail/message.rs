@@ -45,18 +45,17 @@ use crate::mail::trusted_senders;
 enum TrustState {
     /// Sender domain not in the trusted set — no chip; default body branch.
     NotTrusted,
-    /// Sender domain trusted AND auth passed — auto-render HTML inline.
-    /// Carries the domain (as a borrowed slice in the owning struct).
+    /// Sender domain trusted AND no explicit auth failure — auto-render
+    /// HTML inline with a trust chip. Covers both "auth passed" and
+    /// "auth header silent / absent" — the user's explicit trust signal
+    /// is enough; we only override on an explicit fail. Many legitimate
+    /// senders (Tessie was the canonical example) leave the
+    /// Authentication-Results header empty, so requiring a positive
+    /// pass would block them.
     AutoHtml,
     /// Sender domain trusted but auth headers explicitly fail — force
     /// plaintext + show a warning chip ("possible spoof").
     AuthFailed,
-    /// Sender domain trusted; auth header missing (no warning, just
-    /// fall-through to default behaviour). We don't render a chip in
-    /// this case — many legacy senders genuinely lack the header, and
-    /// pushing a warning every time would train banner-blindness.
-    /// Effectively equivalent to NotTrusted for rendering purposes.
-    TrustedNoAuth,
 }
 
 /// Resolved trust state plus the domain string we used to decide. Threaded
@@ -261,9 +260,11 @@ pub async fn show_thread(Path(thread_id): Path<String>) -> Response {
 /// 3. Re-parse the message file's headers via `mail-parser` to read the
 ///    `Authentication-Results` header.
 /// 4. Map the auth verdict onto a TrustState:
-///    - passed → AutoHtml
-///    - explicit fail → AuthFailed (warn + force plaintext)
-///    - header missing or all-other → TrustedNoAuth (silent fallback)
+///    - explicit fail (dmarc=fail / spf=fail / dkim=fail) → AuthFailed
+///      (warn + force plaintext)
+///    - anything else (passed, silent header, missing header, parse
+///      failure, file read failure) → AutoHtml. The trust list is the
+///      user's explicit signal; we only veto on an explicit negative.
 ///
 /// We re-parse the file on each render rather than carrying the
 /// `Authentication-Results` field through `notmuch_db::Message`. That
@@ -279,31 +280,31 @@ fn resolve_trust(msg: &Message) -> TrustContext {
         return TrustContext { state: TrustState::NotTrusted, domain };
     }
     let Some(path) = msg.filename.as_deref() else {
-        return TrustContext { state: TrustState::TrustedNoAuth, domain };
+        return TrustContext { state: TrustState::AutoHtml, domain };
     };
     let bytes = match std::fs::read(path) {
         Ok(b) => b,
         Err(e) => {
             tracing::debug!("trust: failed to read {}: {}", path, e);
-            return TrustContext { state: TrustState::TrustedNoAuth, domain };
+            return TrustContext { state: TrustState::AutoHtml, domain };
         }
     };
     let parsed = match mail_parser::MessageParser::default().parse(&bytes[..]) {
         Some(p) => p,
         None => {
             tracing::debug!("trust: mail-parser failed for {}", path);
-            return TrustContext { state: TrustState::TrustedNoAuth, domain };
+            return TrustContext { state: TrustState::AutoHtml, domain };
         }
     };
     let verdict = auth_results::verdict_from_message(&parsed);
-    let state = if !verdict.header_present {
-        TrustState::TrustedNoAuth
-    } else if verdict.passed() {
-        TrustState::AutoHtml
-    } else if verdict.explicit_fail() {
+    // Veto only on an explicit negative auth verdict; otherwise honour the
+    // user's trust list. Many legitimate senders leave the
+    // Authentication-Results header silent (empty methods after the
+    // server-id) — requiring a positive pass would block them.
+    let state = if verdict.explicit_fail() {
         TrustState::AuthFailed
     } else {
-        TrustState::TrustedNoAuth
+        TrustState::AutoHtml
     };
     TrustContext { state, domain }
 }
@@ -323,9 +324,7 @@ fn message_header_with_trust(
 }
 
 /// Render the small chip near the message header that calls out the
-/// trust state. Returns an empty fragment for `NotTrusted` and
-/// `TrustedNoAuth` (we deliberately stay quiet when there's no signal
-/// to surface).
+/// trust state. Returns an empty fragment for `NotTrusted`.
 ///
 /// - `AutoHtml`: shows `[auto-HTML — <domain> is trusted (click to untrust)]`.
 ///   Click handler calls POST `/api/html-trusted/remove` and reloads.
@@ -336,7 +335,7 @@ fn message_header_with_trust(
 /// for any future per-state colour tweaks.
 fn trust_chip(trust: &TrustContext) -> Markup {
     match trust.state {
-        TrustState::NotTrusted | TrustState::TrustedNoAuth => html! {},
+        TrustState::NotTrusted => html! {},
         TrustState::AutoHtml => {
             let label = format!("auto-HTML — {} is trusted (click to untrust)", trust.domain);
             html! {
