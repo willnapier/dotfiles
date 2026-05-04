@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.williamnapier.gmpull</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/sh</string>
+        <string>-c</string>
+        <string>/Users/williamnapier/.local/bin/gmpull pull --resume &amp;&amp; /opt/homebrew/bin/notmuch new</string>
+    </array>
+    <!-- EnvironmentVariables: required for notmuch's post-new hook
+         which calls bare `notmuch tag ...` lines (PATH-less under
+         launchd otherwise). Same shape as mbsync-cohs.plist; see that
+         file's comment block for the post-new hook story.
+
+         Note: gmpull does NOT yet use Gmail's historyId for incremental
+         syncs — each tick re-enumerates messages.list (~500 quota units
+         per tick at 100 pages × 5 units). At 5-min cadence that's
+         ~144k units/day, well under Gmail's per-user 250 u/s ceiling
+         (~21M units/day theoretical). Add historyId-based incremental
+         to gmpull v0.2 to drop the per-tick cost to near zero on idle. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/Users/williamnapier/.local/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/williamnapier</string>
+        <key>NOTMUCH_CONFIG</key>
+        <string>/Users/williamnapier/Mail/.notmuch-config</string>
+    </dict>
+    <!-- 300s = 5min, matching the cadence lieer was running at. -->
+    <key>StartInterval</key>
+    <integer>300</integer>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>/Users/williamnapier/Library/Logs/gmpull.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/williamnapier/Library/Logs/gmpull.log</string>
+</dict>
+</plist>
