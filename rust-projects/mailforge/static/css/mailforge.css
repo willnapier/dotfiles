@@ -324,11 +324,14 @@ body.col-resizing * { user-select: none !important; }
 /* ===== Message body ===== */
 .message-body {
   margin: var(--sp-4) auto;
-  max-width: 72ch;
+  /* No max-width on the parent — plaintext sets its own cap in mono
+   * ch (matching the email's natural wrap), HTML iframe fills the
+   * viewport. Setting 72ch in inherited (sans) ch came out narrower
+   * than the typical email 72-mono-char wrap, producing orphaned
+   * 2-3 word continuations on every line. */
 }
 
 .message-body--html {
-  max-width: none;
   margin: 0;
 }
 
@@ -364,7 +367,14 @@ body.col-resizing * { user-select: none !important; }
   font-size: var(--text-lg);
   line-height: 1.5;
   color: var(--fg);
-  margin: 0;
+  margin: 0 auto;
+  /* Cap width in the element's own mono context — matches the
+   * email's natural wrap (typically 72-78 mono chars per RFC 5322
+   * recommendation). 80ch leaves a couple chars of breathing room
+   * so trailing punctuation doesn't kiss the edge. Lines arriving
+   * already-wrapped at ≤80 chars now fit on a single visual line
+   * without orphaned 2-3 word continuations. */
+  max-width: 80ch;
 }
 
 .message-body__html-hint {
