@@ -544,30 +544,38 @@
   }
 
   function msgHtmlView() {
-    // Side-effect: opt this domain into HTML auto-render for next time.
-    // Fire-and-forget — don't block the navigation on the trust-add round-trip
-    // (the navigation is the user-visible action; the server is fast enough
-    // that the POST usually completes before the next page renders, but if
-    // it doesn't, the trust-add lands the next page load down the line).
-    const dom = currentSenderDomain();
-    if (dom) {
-      try {
-        postJSON("/api/html-trusted/add", { domain: dom }).catch(() => {});
-      } catch (_) { /* network errors get logged in DevTools */ }
-    }
-    // Prefer clicking the visible "HTML view" link — guarantees the same
-    // navigation as a pointer click, which is the path the user has
-    // already verified works. Falls back to URL synthesis only if the
-    // link isn't on the page (e.g. action toolbar suppressed for some
-    // reason).
-    const link = document.querySelector('a[data-action="open-viewer"]');
-    if (link) { link.click(); return; }
+    // Pure "view HTML for this message" — no trust change. Decoupled
+    // from trust-add 2026-05-04 so the user can open HTML once (e.g.
+    // to click an unsubscribe link in marketing emails) without
+    // committing the sender to the auto-render whitelist. To opt the
+    // sender INTO auto-render, press `t` separately.
     const id = currentMessageId();
     if (id) window.location.href = "/mail/m/" + encodeURIComponent(id) + "?view=full";
   }
 
-  // Capital-V — untrust the current sender's domain and reload so the
+  // Lowercase-t — trust the current sender's domain (add to whitelist).
+  // Future emails from this domain auto-render HTML inline. No
+  // navigation; the user presses `t` while reading whichever view
+  // they're on (plaintext or HTML), gets a toast, and continues.
+  function msgTrustDomain() {
+    const dom = currentSenderDomain();
+    if (!dom) {
+      showToast("No sender domain found on this message", "error");
+      return;
+    }
+    postJSON("/api/html-trusted/add", { domain: dom })
+      .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+      .then(j => {
+        if (!j.ok) throw new Error(j.error || "trust failed");
+        showToast("Trusted " + dom + " for auto-HTML", "success");
+      })
+      .catch(err => showToast("Trust failed: " + err.message, "error"));
+  }
+
+  // Capital-T — untrust the current sender's domain and reload so the
   // message re-renders as plaintext (the chip disappears too).
+  // Was bound to V before 2026-05-04; renamed to T for symmetry with
+  // lowercase t (trust).
   function msgUntrustDomain() {
     const dom = currentSenderDomain();
     if (!dom) {
@@ -822,10 +830,15 @@
       d: msgTrash, a: msgArchive, A: msgUnarchive,
       n: msgPrev, o: msgNext,
       v: msgHtmlView,
-      // Capital V — untrust this sender's domain (POST then reload).
-      // Mirrors the lower-v "trust + open viewer" flow so the trust list
-      // is fully keyboard-driven from the message view.
-      V: msgUntrustDomain,
+      // Trust / untrust as separate actions, decoupled from `v`.
+      // - `t` trusts the sender's domain (add to whitelist)
+      // - `T` untrusts (remove from whitelist + reload to plaintext)
+      // - `v` views HTML for THIS message only — no trust change
+      // This lets the user open HTML once (to click an unsubscribe link
+      // in marketing email, for example) without committing the sender
+      // to auto-render forever.
+      t: msgTrustDomain,
+      T: msgUntrustDomain,
       "Ctrl+r": msgReload, "Ctrl+R": msgReload,
     },
 
