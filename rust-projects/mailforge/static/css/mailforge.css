@@ -584,6 +584,23 @@ body.col-resizing * { user-select: none !important; }
   letter-spacing: 0.04em;
 }
 
+/* Each label.field stacks block-level so its child input/textarea
+ * fills the .compose container's 72ch — keeps the textarea the
+ * same visual width as the To/Cc/Bcc/Subject inputs above it. The
+ * uniform margin-bottom gives the same vertical rhythm between
+ * every field, including between Subject and Body. */
+.compose label.field {
+  display: block;
+  margin-bottom: var(--sp-2);
+}
+.compose label.field:last-of-type {
+  margin-bottom: 0;
+}
+.compose label.field .field-label {
+  display: block;
+  margin-bottom: 2px;
+}
+
 .compose input[type="text"],
 .compose input[type="email"],
 .compose textarea,
