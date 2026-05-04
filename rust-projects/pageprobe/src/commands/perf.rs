@@ -144,8 +144,10 @@ pub async fn run(json: bool) -> Result<()> {
         .and_then(|s| serde_json::from_str(s).ok())
         .unwrap_or_default();
 
-    let _ = browser.close().await;
+    // Drop closes the WebSocket; we deliberately do NOT call
+    // `browser.close()` (that would shut Chrome down).
     handle.abort();
+    drop(browser);
 
     let rows: Vec<PerfRow> = metrics
         .iter()
@@ -221,7 +223,7 @@ fn format_count(value: f64) -> String {
     let bytes = s.as_bytes().to_vec();
     s.clear();
     for (i, &c) in bytes.iter().enumerate() {
-        if i > 0 && (bytes.len() - i) % 3 == 0 {
+        if i > 0 && (bytes.len() - i).is_multiple_of(3) {
             s.push(',');
         }
         s.push(c as char);
@@ -238,7 +240,7 @@ fn format_bytes(n: u64) -> String {
     let bytes = s.as_bytes().to_vec();
     s.clear();
     for (i, &c) in bytes.iter().enumerate() {
-        if i > 0 && (bytes.len() - i) % 3 == 0 {
+        if i > 0 && (bytes.len() - i).is_multiple_of(3) {
             s.push(',');
         }
         s.push(c as char);

@@ -89,8 +89,10 @@ pub async fn run(
 
     let resp = page.execute(params).await.context("Runtime.evaluate")?;
 
-    let _ = browser.close().await;
+    // Drop closes the WebSocket; we deliberately do NOT call
+    // `browser.close()` (that would shut Chrome down).
     handle.abort();
+    drop(browser);
 
     if let Some(exc) = &resp.result.exception_details {
         return Err(anyhow!(

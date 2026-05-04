@@ -11,8 +11,10 @@ pub async fn run(pattern: String) -> Result<()> {
     let target = cdp::pick_target(&pages, &pattern)?;
     let id = target.target_id.as_ref().to_string();
     let url = target.url.clone();
-    let _ = browser.close().await;
+    // Drop closes the WebSocket; we deliberately do NOT call
+    // `browser.close()` (that sends `Browser.close` and shuts Chrome down).
     handle.abort();
+    drop(browser);
 
     s.attached_tab_id = Some(id.clone());
     state::save(&s)?;

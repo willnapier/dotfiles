@@ -21,9 +21,10 @@ pub async fn run(json: bool) -> Result<()> {
                 attached_url = Some(t.url.clone());
             }
         }
-        // Best-effort close.
-        let _ = browser.close().await;
+        // Drop closes the WebSocket; we deliberately do NOT call
+        // `browser.close()` (that sends `Browser.close` and shuts Chrome down).
         handle.abort();
+        drop(browser);
     }
 
     if json {

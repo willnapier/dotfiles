@@ -71,10 +71,11 @@ pub async fn run(expression: String, json: bool, await_promise: bool) -> Result<
 
     let resp = page.execute(params).await.context("Runtime.evaluate")?;
 
-    // Always tear down before producing user-visible output so we don't
-    // leave the handler task running, regardless of which path we take.
-    let _ = browser.close().await;
+    // Tear down the handler task; drop closes the WebSocket. We deliberately
+    // do NOT call `browser.close()` here — that sends `Browser.close` to
+    // Chrome and shuts down the whole debug session.
     handle.abort();
+    drop(browser);
 
     if let Some(exc) = &resp.result.exception_details {
         let msg = exc

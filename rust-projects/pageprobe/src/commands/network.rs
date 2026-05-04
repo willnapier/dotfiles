@@ -228,8 +228,10 @@ pub async fn run(last: usize, json: bool) -> Result<()> {
         }
     }
 
-    let _ = browser.close().await;
+    // Drop closes the WebSocket; we deliberately do NOT call
+    // `browser.close()` (that sends `Browser.close` and shuts Chrome down).
     handle.abort();
+    drop(browser);
     Ok(())
 }
 

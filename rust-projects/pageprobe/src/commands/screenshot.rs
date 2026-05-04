@@ -82,8 +82,10 @@ pub async fn run(
         .await
         .context("Page.captureScreenshot")?;
 
-    let _ = browser.close().await;
+    // Drop closes the WebSocket; we deliberately do NOT call
+    // `browser.close()` (that would shut Chrome down).
     handle.abort();
+    drop(browser);
 
     println!(
         "{}  ({} bytes)",
