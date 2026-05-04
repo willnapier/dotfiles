@@ -748,7 +748,28 @@
   // wired to Escape in _base but only blurred the active element.
   // Bind Escape to back() directly so the meaning is honest. Compose
   // overrides Escape to composeCancel() in its dispatch table.
-  const back = () => history.back();
+  //
+  // On a message page, plain history.back() steps backward through
+  // every message the user opened in this tab — confusing because
+  // pressing Backspace once after opening multiple messages takes
+  // them to the previous message, not back to the listing they
+  // came from. Instead: record the listing URL in sessionStorage
+  // on each listing/search page-load (see init()), and on
+  // message-context Backspace jump straight to that URL. Falls
+  // back to /mail (default inbox) if no listing has been visited
+  // yet (e.g., direct-URL entry into a message), or to
+  // history.back() for non-message contexts.
+  const LISTING_KEY = "mailforge:lastListing";
+  const back = () => {
+    const ctx = document.body && document.body.dataset.context;
+    if (ctx === "message" || ctx === "thread") {
+      const last = sessionStorage.getItem(LISTING_KEY);
+      if (last) { window.location.href = last; return; }
+      window.location.href = "/mail";
+      return;
+    }
+    history.back();
+  };
 
   // ----- Dispatch tables -----
   // Letter keys are case-sensitive: ev.key encodes shift state for letters.
@@ -878,7 +899,13 @@
     lastKeyAt = 0;
     document.addEventListener("keydown", handleKeydown, false);
     const ctx = document.body && document.body.dataset.context;
-    if (ctx === "listing" || ctx === "search") paintCursor();
+    if (ctx === "listing" || ctx === "search") {
+      paintCursor();
+      // Remember this listing/search URL for message-page Backspace.
+      // Each new listing visit overwrites — so the value always points
+      // at the most recent listing the user actually navigated to.
+      try { sessionStorage.setItem(LISTING_KEY, window.location.href); } catch (_) {}
+    }
 
     // Focus rescue: when the user clicks a link inside the sandboxed
     // body iframe (typical case: an "unsubscribe" link with the
