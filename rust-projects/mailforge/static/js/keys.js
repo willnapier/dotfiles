@@ -418,11 +418,30 @@
   }
 
   function refresh() {
-    // No /api/refresh route exists server-side; the previous POST
-    // produced a 404 in the access log on every Ctrl+R. Just reload
-    // the page — the listing handler will re-issue notmuch search/count
-    // on render.
-    window.location.reload();
+    // Active pull semantics for Ctrl+R: trigger a fresh `gmpull pull
+    // --resume && notmuch new` server-side, then reload. The launchd
+    // tick fires every 5 minutes; this gives the user on-demand
+    // freshness without waiting. With v0.2 incremental pulls, an idle
+    // pull is ~0.7s — fast enough to await synchronously.
+    showToast("Pulling…", "info");
+    postJSON("/api/pull-now", {})
+      .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+      .then(j => {
+        if (j.ok) {
+          showToast("Pulled (" + j.took_ms + "ms)", "success");
+        } else {
+          showToast("Pull failed: " + (j.error || "unknown") + " — reloading anyway", "error");
+        }
+        // Reload regardless of pull outcome so the user gets the
+        // current notmuch state. The pull failure case might still
+        // have produced partial new mail — and the listing should
+        // refresh anyway when the user explicitly asked.
+        setTimeout(() => window.location.reload(), 250);
+      })
+      .catch(err => {
+        showToast("Pull failed: " + err.message + " — reloading anyway", "error");
+        setTimeout(() => window.location.reload(), 600);
+      });
   }
 
   function replyCurrent() {

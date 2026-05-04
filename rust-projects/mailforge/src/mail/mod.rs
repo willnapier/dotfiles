@@ -55,6 +55,7 @@ pub mod curator;
 pub mod listing;
 pub mod message;
 pub mod notmuch_db;
+pub mod pull;
 pub mod search;
 pub mod tag;
 pub mod templates;
@@ -102,6 +103,10 @@ pub fn router() -> Router {
         .route("/api/escalate-helix/abort", post(compose::escalate_helix_abort))
         .route("/api/mailcurator/sweep", post(curator::sweep_post))
         .route("/api/mailcurator/blacklist", post(curator::blacklist_post))
+        // On-demand pull: invokes `gmpull pull --resume && notmuch new`
+        // and returns synchronously. The Ctrl+R refresh handler awaits
+        // this so the listing re-renders with newly-arrived mail.
+        .route("/api/pull-now", post(pull::pull_now_post))
         .route("/api/unsubscribe/probe", get(unsubscribe::probe_get))
         .route("/api/unsubscribe/execute", post(unsubscribe::execute_post))
         .route("/api/unsubscribe/trash-from-sender", post(unsubscribe::trash_from_sender_post))
