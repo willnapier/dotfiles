@@ -1,6 +1,10 @@
 pub mod attach;
 pub mod console;
+pub mod dom;
+pub mod eval;
 pub mod network;
+pub mod perf;
+pub mod screenshot;
 pub mod start;
 pub mod status;
 pub mod stop;

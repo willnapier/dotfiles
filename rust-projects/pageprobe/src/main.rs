@@ -1,7 +1,8 @@
 //! pageprobe — Rust CLI for inspecting Chrome via the DevTools Protocol.
 //!
-//! See `~/Assistants/shared/pageprobe.md` for design notes and the v0.2
-//! roadmap. v0.1 ships start, stop, status, tabs, attach, network, console.
+//! See `~/Assistants/shared/pageprobe.md` for design notes. v0.1 shipped
+//! start, stop, status, tabs, attach, network, console. v0.2 adds eval,
+//! screenshot, perf, dom.
 mod cdp;
 mod chrome;
 mod commands;
@@ -71,6 +72,54 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Evaluate a JS expression in the attached tab.
+    ///
+    /// EXPRESSION may be `-` to read JS from stdin (avoids shell-quoting
+    /// pain for complex expressions).
+    Eval {
+        expression: String,
+        /// Emit the raw `Runtime.RemoteObject` as JSON.
+        #[arg(long)]
+        json: bool,
+        /// `awaitPromise: true` — wait for a returned promise to resolve.
+        #[arg(long = "await")]
+        await_promise: bool,
+    },
+    /// Capture a PNG (or JPEG with --quality) of the attached tab.
+    Screenshot {
+        /// Output path. Default: /tmp/pageprobe-<unix-ts>.png.
+        path: Option<PathBuf>,
+        /// Capture the full scrollable page, not just the viewport.
+        #[arg(long)]
+        full: bool,
+        /// JPEG quality 0-100 (switches output extension to .jpg).
+        #[arg(long)]
+        quality: Option<i64>,
+        /// Crop to "x,y,w,h" (CSS pixels).
+        #[arg(long)]
+        clip: Option<String>,
+    },
+    /// Report performance metrics for the attached tab.
+    Perf {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Query DOM via CSS selector.
+    Dom {
+        selector: String,
+        /// Return outer HTML (default).
+        #[arg(long)]
+        html: bool,
+        /// Return textContent only.
+        #[arg(long)]
+        text: bool,
+        /// Return attributes as a JSON object.
+        #[arg(long)]
+        attrs: bool,
+        /// Return all matches as an array.
+        #[arg(long)]
+        all: bool,
+    },
 }
 
 #[tokio::main]
@@ -84,5 +133,24 @@ async fn main() -> Result<()> {
         Cmd::Attach { pattern } => commands::attach::run(pattern).await,
         Cmd::Network { last, json } => commands::network::run(last, json).await,
         Cmd::Console { last, json } => commands::console::run(last, json).await,
+        Cmd::Eval {
+            expression,
+            json,
+            await_promise,
+        } => commands::eval::run(expression, json, await_promise).await,
+        Cmd::Screenshot {
+            path,
+            full,
+            quality,
+            clip,
+        } => commands::screenshot::run(path, full, quality, clip).await,
+        Cmd::Perf { json } => commands::perf::run(json).await,
+        Cmd::Dom {
+            selector,
+            html,
+            text,
+            attrs,
+            all,
+        } => commands::dom::run(selector, html, text, attrs, all).await,
     }
 }
