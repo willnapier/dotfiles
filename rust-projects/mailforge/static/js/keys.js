@@ -944,6 +944,30 @@
         else if (action === "unsubscribe-row") unsubscribeRow(row, btn);
       }, false);
 
+      // Whole-row click to open the message. Previously only the
+      // subject column's <a> was clickable, but the hover highlight
+      // covered the entire row — so clicks on From/Tags/Date columns
+      // looked like they should work but didn't. Now: any click on
+      // the row updates the keyboard cursor and navigates to the
+      // message URL, matching the visual affordance. Skips clicks on
+      // hover-reveal action buttons (handled above) and on real
+      // anchors (browser navigates natively, but we still update the
+      // cursor first so j/k after click resumes from the clicked row).
+      document.addEventListener("click", (ev) => {
+        if (ev.target.closest('.row-action')) return;
+        const row = ev.target.closest('tr.envelope-row, .envelope-row');
+        if (!row) return;
+        const rows = listingRows();
+        const idx = rows.indexOf(row);
+        if (idx >= 0) {
+          cursorIndex = idx;
+          paintCursor();
+        }
+        if (ev.target.closest('a')) return; // browser handles navigation
+        const link = row.querySelector('a[href*="/mail/m/"], a[href*="/mail/t/"]');
+        if (link && link.href) window.location.href = link.href;
+      }, false);
+
       // Resizable column widths. Restore from localStorage, then wire
       // mousedown handlers on each .col-resizer to drive live drag.
       // Persists pixel widths under "mailforge-col-widths" so the
