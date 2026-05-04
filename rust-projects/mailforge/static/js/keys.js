@@ -808,38 +808,12 @@
       dispatch._base[String(n)] = sidebarJumpHandler(n);
     }
 
-    // Background-prefetch numbered sidebar mailboxes after the current
-    // page is settled, so digit-key navigation lands near-instantly.
-    // Skip the active mailbox (already loaded). Items not in the first 9
-    // get lazy hover-prefetch for the same effect on click.
-    setTimeout(() => {
-      anchors.forEach((a) => {
-        if (a.classList.contains("active")) return;
-        if (a.dataset.prefetched) return;
-        if (!a.dataset.shortcut) return; // Only eager-prefetch numbered ones
-        prefetchHref(a.href);
-        a.dataset.prefetched = "true";
-      });
-    }, 500);
-    // Lazy hover-prefetch for items 10+ (no shortcut). Cheap; only
-    // fires on actual hover.
-    anchors.forEach((a) => {
-      if (a.dataset.shortcut) return; // Already covered by eager prefetch
-      a.addEventListener("mouseenter", () => {
-        if (a.dataset.prefetched) return;
-        prefetchHref(a.href);
-        a.dataset.prefetched = "true";
-      }, { once: true });
-    });
-  }
-
-  function prefetchHref(href) {
-    if (!href) return;
-    const link = document.createElement("link");
-    link.rel = "prefetch";
-    link.as = "document";
-    link.href = href;
-    document.head.appendChild(link);
+    // Sidebar prefetch dropped 2026-05-04 — was firing 8 notmuch
+    // subprocess searches per page load (500-800ms each, audit #14),
+    // starving real clicks. William navigates by keyboard (j/k/n/o) so
+    // hover-prefetch wouldn't help either. The trade-off: first click
+    // to a cold mailbox is ~500-700ms instead of <100ms; second click
+    // onwards uses notmuch's warm cache and is fast.
   }
 
   function initResizableColumns() {
