@@ -617,7 +617,12 @@ body.col-resizing * { user-select: none !important; }
 
 .compose textarea {
   min-height: 30ch;
-  max-width: 72ch;
+  /* No max-width here — `.compose { max-width: 72ch }` on the parent
+   * already caps the row width in the inherited (sans) font, which
+   * matches the inputs above. Setting max-width: 72ch on the textarea
+   * itself reads `ch` in MONO (the textarea's own font), which at
+   * this body size is ~12% narrower than sans-ch — so the textarea
+   * came out ~87px narrower than the inputs. Measured 2026-05-04. */
   font-family: var(--font-mono);
   resize: vertical;
 }
@@ -645,4 +650,35 @@ body.col-resizing * { user-select: none !important; }
   text-align: center;
   padding: var(--sp-6);
   color: var(--fg-muted);
+}
+
+/* ===== Address autocomplete (compose To/Cc/Bcc) ===== */
+/* Floating dropdown rendered into <body> by static/js/keys.js's
+   wireAddressAutocomplete. Positioned absolutely against
+   document.documentElement using getBoundingClientRect() + scroll
+   offsets so it tracks the input through page scrolls and resizes. */
+.address-autocomplete {
+  position: absolute;
+  background: var(--bg-elevated);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  max-height: 240px;
+  overflow-y: auto;
+  z-index: 100;
+  min-width: 220px;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+.address-autocomplete__option {
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.address-autocomplete__option:hover,
+.address-autocomplete__option.highlighted {
+  background: var(--accent);
+  color: var(--bg);
 }
