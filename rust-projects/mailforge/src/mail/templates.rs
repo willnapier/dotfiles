@@ -75,6 +75,24 @@ fn mailboxes_for(account_slug: &str) -> &'static [&'static str] {
     }
 }
 
+/// Count unread messages from the last 24 hours for an account's
+/// inbox, using the same query the inbox listing uses (so the count
+/// matches what the user would see if they opened it). Returns 0 on
+/// any error — sidebar count is decorative; failures shouldn't break
+/// page rendering. Counts only the current attention surface ("new
+/// AND unread in last 24h"), not raw unread total — most curated
+/// inboxes accumulate stale "unread" entries that aren't actionable.
+fn recent_unread_count_for(account: &Account) -> u64 {
+    use crate::mail::notmuch_db::{count, mailbox_query};
+    let Some(inbox_q) = mailbox_query(account, "inbox") else {
+        return 0;
+    };
+    // Compose: <inbox query> AND date:24h.. AND tag:unread.
+    // Parens around the inbox query because it may contain `or` clauses.
+    let q = format!("({inbox_q}) and date:24h.. and tag:unread");
+    count(&q).unwrap_or(0)
+}
+
 /// Display label for a mailbox slug. Inbox stays "Inbox", "all-mail"
 /// becomes "All Mail", etc.
 pub fn mailbox_label(slug: &str) -> String {
@@ -171,6 +189,7 @@ pub fn sidebar(
                 h1 { "MailForge" }
             }
             @for account in accounts {
+                @let recent_count = recent_unread_count_for(account);
                 section class="sidebar-account" data-account=(account.slug) {
                     h2 class={
                         "sidebar-account__name"
@@ -189,6 +208,13 @@ pub fn sidebar(
                                     data-mailbox=(*mb)
                                 {
                                     (mailbox_label(mb))
+                                    @if *mb == "inbox" && recent_count > 0 {
+                                        " " span class="sidebar-mailbox__recent"
+                                            title="Unread messages from the last 24 hours"
+                                        {
+                                            "(" (recent_count) ")"
+                                        }
+                                    }
                                 }
                             }
                         }
