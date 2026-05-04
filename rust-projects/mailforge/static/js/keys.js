@@ -880,6 +880,37 @@
     const ctx = document.body && document.body.dataset.context;
     if (ctx === "listing" || ctx === "search") paintCursor();
 
+    // Focus rescue: when the user clicks a link inside the sandboxed
+    // body iframe (typical case: an "unsubscribe" link with the
+    // <base target="_blank"> from the email HTML, opening a new tab),
+    // focus stays trapped in the iframe in the original tab. Keyboard
+    // shortcuts like Backspace then no-op because keydown events from
+    // the cross-origin sandboxed iframe don't bubble to the parent.
+    // Two listeners restore focus to the outer document:
+    //   1. window.focus — fires when the user switches back to this
+    //      tab (from the unsubscribe-page tab, or from another window).
+    //   2. document.click — fires when the user clicks on any chrome
+    //      element outside the iframe (sidebar, helpbar, action toolbar).
+    // Both blur the iframe if it's the active element, returning
+    // keyboard focus to the parent document where keydown handlers fire.
+    const rescueFocus = () => {
+      const ae = document.activeElement;
+      if (ae && ae.tagName === "IFRAME") {
+        try { ae.blur(); } catch (_) {}
+        if (document.body && document.body.tabIndex < 0) {
+          document.body.setAttribute("tabindex", "-1");
+        }
+        try { document.body.focus(); } catch (_) {}
+      }
+    };
+    window.addEventListener("focus", rescueFocus, false);
+    document.addEventListener("click", (ev) => {
+      // Only rescue if the click is on chrome (not on the iframe itself).
+      if (ev.target && ev.target.tagName !== "IFRAME" && !ev.target.closest("iframe")) {
+        rescueFocus();
+      }
+    }, true);
+
     // Intercept native form submit on the compose form so pressing Enter
     // (or clicking Send) goes through composeSend's XHR + post-success
     // redirect, instead of letting the browser navigate to /api/send and
