@@ -238,9 +238,8 @@ depends = []
 "scripts/hx-process-durations-wezterm" = "~/.local/bin/hx-process-durations-wezterm"
 # Claude Code nightly cleanup - cross-platform (launchd on mac, systemd on linux)
 "scripts/claude-code-nightly-cleanup" = "~/.local/bin/claude-code-nightly-cleanup"
-# Mail sync - cross-platform (launchd on mac, systemd on linux)
-"scripts/mail-sync" = "~/.local/bin/mail-sync"
-"scripts/mail-sync-trigger" = "~/.local/bin/mail-sync-trigger"
+# Mail sync (lieer/gmi) — RETIRED 2026-05-04, replaced by gmpull (Rust
+# Gmail-API puller). Source files preserved in ~/dotfiles/legacy/.
 # Re-nu conversion scripts - Native Nushell watchers with no external dependencies
 "scripts/claude-docs-watcher-renu" = "~/.local/bin/claude-docs-watcher-renu"
 "scripts/claude-docs-watcher" = "~/.local/bin/claude-docs-watcher"
@@ -367,7 +366,6 @@ depends = ["shared"]
 "launchagents/com.user.forge-metadata-backup.plist" = "~/Library/LaunchAgents/com.user.forge-metadata-backup.plist"
 "launchd/com.user.web-clip-watcher.plist" = "~/Library/LaunchAgents/com.user.web-clip-watcher.plist"
 "launchd/com.user.readwise-sync.plist" = "~/Library/LaunchAgents/com.user.readwise-sync.plist"
-"launchd/com.user.mail-sync.plist" = "~/Library/LaunchAgents/com.user.mail-sync.plist"
 "launchd/com.user.claude-code-nightly-cleanup.plist" = "~/Library/LaunchAgents/com.user.claude-code-nightly-cleanup.plist"
 "launchd/com.user.remind-notify.plist" = "~/Library/LaunchAgents/com.user.remind-notify.plist"
 "launchd/com.user.forge-sync-conflict-cleaner.plist" = "~/Library/LaunchAgents/com.user.forge-sync-conflict-cleaner.plist"
@@ -472,9 +470,9 @@ depends = ["shared"]
 # Claude Code nightly cleanup - kills stale processes at 3am
 "systemd/claude-code-nightly-cleanup.service" = "~/.config/systemd/user/claude-code-nightly-cleanup.service"
 "systemd/claude-code-nightly-cleanup.timer" = "~/.config/systemd/user/claude-code-nightly-cleanup.timer"
-# Mail sync - lieer pull + notmuch indexing every 15 minutes
-"systemd/mail-sync.service" = "~/.config/systemd/user/mail-sync.service"
-"systemd/mail-sync.timer" = "~/.config/systemd/user/mail-sync.timer"
+# Mail sync (lieer/gmi) — RETIRED 2026-05-04 on Mac, replaced by gmpull.
+# Linux equivalent for gmpull not yet packaged; nimbini still runs lieer
+# until that lands. Sources preserved in ~/dotfiles/legacy/systemd/.
 # System health check - systemd units (script in shared.files)
 "systemd/system-health-check.service" = "~/.config/systemd/user/system-health-check.service"
 "systemd/system-health-check.timer" = "~/.config/systemd/user/system-health-check.timer"
