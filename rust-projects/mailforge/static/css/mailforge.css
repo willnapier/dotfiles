@@ -429,6 +429,31 @@ body.col-resizing * { user-select: none !important; }
 .tag-chip.tag-warning { color: var(--warning); border-color: var(--warning); }
 .tag-chip.tag-info { color: var(--info); border-color: var(--info); }
 
+/* Trust chips (HTML auto-render trust list).
+ * - .trust-chip-auto: muted, indicates "we auto-rendered HTML for you".
+ *   Rendered as <button>; cursor:pointer hints clickability for untrust.
+ * - .trust-chip-failed: warning-coloured; this domain is on the trust
+ *   list but the message's auth headers didn't pass, so we forced
+ *   plaintext to avoid tracking-pixel exposure on a possibly-spoofed
+ *   message. Rendered as <span> (no click action — tooltip carries
+ *   the explanation). */
+.trust-chip {
+  margin-left: var(--sp-2);
+  font-family: var(--font-mono, monospace);
+}
+.trust-chip-auto {
+  cursor: pointer;
+  background: transparent;
+}
+.trust-chip-auto:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.trust-chip-failed {
+  color: var(--warning);
+  border-color: var(--warning);
+}
+
 /* ===== Status banner / paginator / helpbar ===== */
 .status-banner {
   display: flex;

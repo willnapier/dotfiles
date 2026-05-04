@@ -49,6 +49,7 @@
 #![allow(dead_code)]
 
 pub mod accounts;
+pub mod auth_results;
 pub mod compose;
 pub mod curator;
 pub mod listing;
@@ -57,6 +58,7 @@ pub mod notmuch_db;
 pub mod search;
 pub mod tag;
 pub mod templates;
+pub mod trusted_senders;
 pub mod unsubscribe;
 
 use axum::Router;
@@ -102,6 +104,11 @@ pub fn router() -> Router {
         .route("/api/unsubscribe/probe", get(unsubscribe::probe_get))
         .route("/api/unsubscribe/execute", post(unsubscribe::execute_post))
         .route("/api/unsubscribe/trash-from-sender", post(unsubscribe::trash_from_sender_post))
+        // HTML auto-render trust list (per-domain). Add/remove only —
+        // the JSON file at ~/.config/mailforge/html-trusted-senders.json
+        // IS the listing surface for debugging.
+        .route("/api/html-trusted/add", post(trusted_senders::add_post))
+        .route("/api/html-trusted/remove", post(trusted_senders::remove_post))
         // Static assets (CSS, JS) — ServeDir registered in daemon.rs
         // because tower_http's ServeDir is easier to compose at the
         // outer Router level. Path: /static/*.

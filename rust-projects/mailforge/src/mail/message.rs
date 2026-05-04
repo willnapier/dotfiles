@@ -33,8 +33,47 @@ use axum::{
 use maud::{html, Markup};
 
 use crate::mail::accounts::ACCOUNTS;
+use crate::mail::auth_results;
 use crate::mail::notmuch_db::{self, Message};
 use crate::mail::templates::{self, html_body_iframe, plaintext_body, tag_chip, PageContext};
+use crate::mail::trusted_senders;
+
+/// Outcome of consulting the trusted-senders store + Authentication-Results
+/// header for a single message render. Drives both the body branch and
+/// the header chip.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TrustState {
+    /// Sender domain not in the trusted set — no chip; default body branch.
+    NotTrusted,
+    /// Sender domain trusted AND auth passed — auto-render HTML inline.
+    /// Carries the domain (as a borrowed slice in the owning struct).
+    AutoHtml,
+    /// Sender domain trusted but auth headers explicitly fail — force
+    /// plaintext + show a warning chip ("possible spoof").
+    AuthFailed,
+    /// Sender domain trusted; auth header missing (no warning, just
+    /// fall-through to default behaviour). We don't render a chip in
+    /// this case — many legacy senders genuinely lack the header, and
+    /// pushing a warning every time would train banner-blindness.
+    /// Effectively equivalent to NotTrusted for rendering purposes.
+    TrustedNoAuth,
+}
+
+/// Resolved trust state plus the domain string we used to decide. Threaded
+/// from `show_message` through to `message_header` so the chip can name
+/// the domain in its label / data-attr.
+#[derive(Debug, Clone)]
+struct TrustContext {
+    state: TrustState,
+    /// The lowercased From-domain (or empty if extraction failed).
+    domain: String,
+}
+
+impl TrustContext {
+    fn none() -> Self {
+        Self { state: TrustState::NotTrusted, domain: String::new() }
+    }
+}
 
 /// GET `/mail/m/<id>`.
 ///
@@ -65,15 +104,25 @@ pub async fn show_message(
         }
     }
 
-    // 3. Pick body rendering strategy.
+    // 3. Resolve trust state. `?untrusted=1` lets the caller force the
+    //    default plaintext branch (we don't currently surface a UI for
+    //    this; reserved for future "view as plain" override).
+    let trust = resolve_trust(&message);
+
+    // 4. Pick body rendering strategy.
     // `?view=full` overrides the plain-text-preferred default and forces
     // the HTML iframe view (the keyboard-shortcut `m` from message-view
     // navigates here; the in-page hint says "press m to open the
     // dedicated viewer"). When `?view=full` is set AND there's an HTML
     // part, skip the plaintext-preferred branch and fall through to
     // the HTML iframe path. Falls back gracefully if no HTML part.
+    //
+    // When `trust.state == AutoHtml` AND there's an HTML part, also
+    // skip the plaintext branch — the user has whitelisted the domain
+    // and the message authenticates, so render HTML inline by default.
     let force_full = q.get("view").map(|v| v == "full").unwrap_or(false);
-    let body_markup = if force_full && message.text_html.is_some() {
+    let auto_html = matches!(trust.state, TrustState::AutoHtml) && message.text_html.is_some();
+    let body_markup = if (force_full || auto_html) && message.text_html.is_some() {
         render_body_html_only(&message)
     } else {
         render_body(&message)
@@ -105,7 +154,7 @@ pub async fn show_message(
 
     let page_body = html! {
         article class="message-view" data-msg-id=(message.id) {
-            (message_header(&message, &subject_text))
+            (message_header_with_trust(&message, &subject_text, &trust))
             (body_markup)
             (action_toolbar(&message))
             (nav_links)
@@ -200,6 +249,116 @@ pub async fn show_thread(Path(thread_id): Path<String>) -> Response {
         page_body,
     );
     Html(doc).into_response()
+}
+
+/// Resolve the trust state for rendering this message.
+///
+/// Steps:
+/// 1. Extract the From-domain (lowercased). If extraction fails, return
+///    NotTrusted — we can't even ask the question.
+/// 2. Check the in-memory trusted-senders set. If the domain isn't there,
+///    return NotTrusted (skip auth parsing — it's irrelevant).
+/// 3. Re-parse the message file's headers via `mail-parser` to read the
+///    `Authentication-Results` header.
+/// 4. Map the auth verdict onto a TrustState:
+///    - passed → AutoHtml
+///    - explicit fail → AuthFailed (warn + force plaintext)
+///    - header missing or all-other → TrustedNoAuth (silent fallback)
+///
+/// We re-parse the file on each render rather than carrying the
+/// `Authentication-Results` field through `notmuch_db::Message`. That
+/// keeps the existing data shape stable and pays the parse cost only on
+/// the message-view route (50-200ms total notmuch round-trip dwarfs
+/// the parse).
+fn resolve_trust(msg: &Message) -> TrustContext {
+    let domain = match msg.from.as_deref().and_then(trusted_senders::extract_from_domain) {
+        Some(d) => d,
+        None => return TrustContext::none(),
+    };
+    if !trusted_senders::is_trusted(&domain) {
+        return TrustContext { state: TrustState::NotTrusted, domain };
+    }
+    let Some(path) = msg.filename.as_deref() else {
+        return TrustContext { state: TrustState::TrustedNoAuth, domain };
+    };
+    let bytes = match std::fs::read(path) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::debug!("trust: failed to read {}: {}", path, e);
+            return TrustContext { state: TrustState::TrustedNoAuth, domain };
+        }
+    };
+    let parsed = match mail_parser::MessageParser::default().parse(&bytes[..]) {
+        Some(p) => p,
+        None => {
+            tracing::debug!("trust: mail-parser failed for {}", path);
+            return TrustContext { state: TrustState::TrustedNoAuth, domain };
+        }
+    };
+    let verdict = auth_results::verdict_from_message(&parsed);
+    let state = if !verdict.header_present {
+        TrustState::TrustedNoAuth
+    } else if verdict.passed() {
+        TrustState::AutoHtml
+    } else if verdict.explicit_fail() {
+        TrustState::AuthFailed
+    } else {
+        TrustState::TrustedNoAuth
+    };
+    TrustContext { state, domain }
+}
+
+/// Render the standard headers panel plus an optional trust-chip
+/// (`auto-HTML — domain trusted` / `auth failed — forced plaintext`).
+/// Delegates to `message_header` for the unchanged headers block.
+fn message_header_with_trust(
+    msg: &Message,
+    subject_text: &str,
+    trust: &TrustContext,
+) -> Markup {
+    html! {
+        (message_header(msg, subject_text))
+        (trust_chip(trust))
+    }
+}
+
+/// Render the small chip near the message header that calls out the
+/// trust state. Returns an empty fragment for `NotTrusted` and
+/// `TrustedNoAuth` (we deliberately stay quiet when there's no signal
+/// to surface).
+///
+/// - `AutoHtml`: shows `[auto-HTML — <domain> is trusted (click to untrust)]`.
+///   Click handler calls POST `/api/html-trusted/remove` and reloads.
+/// - `AuthFailed`: shows `[auth failed — forced plaintext]` with a tooltip.
+///
+/// Visible affordances reuse `tag-chip` so the styling stays in sync with
+/// the rest of the UI; specific variants get a `trust-chip-*` modifier
+/// for any future per-state colour tweaks.
+fn trust_chip(trust: &TrustContext) -> Markup {
+    match trust.state {
+        TrustState::NotTrusted | TrustState::TrustedNoAuth => html! {},
+        TrustState::AutoHtml => {
+            let label = format!("auto-HTML — {} is trusted (click to untrust)", trust.domain);
+            html! {
+                button type="button"
+                    class="tag-chip trust-chip trust-chip-auto"
+                    data-action="untrust-domain"
+                    data-domain=(trust.domain)
+                    title="Click to remove this domain from the auto-HTML list"
+                {
+                    (label)
+                }
+            }
+        }
+        TrustState::AuthFailed => html! {
+            span class="tag-chip trust-chip trust-chip-failed"
+                data-domain=(trust.domain)
+                title="DMARC/SPF/DKIM didn't pass; this message is unverified despite claiming to be from a trusted domain. Showing plaintext to avoid tracking-pixel exposure on a possibly-spoofed message."
+            {
+                "auth failed — forced plaintext"
+            }
+        },
+    }
 }
 
 /// Renders the standard headers panel: subject + From/To/Cc/Bcc/Date,

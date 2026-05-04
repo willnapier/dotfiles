@@ -472,7 +472,43 @@
   const msgUnarchive = () => msgMutate("/api/unarchive", "Unarchive");
   const msgNext = () => clickSel("[data-nav=next-message]");
   const msgPrev = () => clickSel("[data-nav=prev-message]");
+  // Extract the From-domain from the visible message header for trust-list
+  // mutations. Walks the .meta-row entries for the one whose .meta-key is
+  // "From", grabs the .meta-val text, then takes everything after the LAST
+  // `@`. Returns "" when nothing recognisable is present so callers can
+  // bail without surprising the server with an empty payload.
+  function currentSenderDomain() {
+    const rows = document.querySelectorAll(".message-header .meta-row");
+    for (const row of rows) {
+      const k = row.querySelector(".meta-key");
+      if (!k || k.textContent.trim().toLowerCase() !== "from") continue;
+      const v = row.querySelector(".meta-val");
+      if (!v) return "";
+      const text = v.textContent || "";
+      // Strip any trailing `>` from `Name <a@b>` shapes; locate the rightmost @.
+      const cleaned = text.replace(/[>\s]+$/, "").trim();
+      const at = cleaned.lastIndexOf("@");
+      if (at < 0) return "";
+      let dom = cleaned.slice(at + 1).trim();
+      // Strip a trailing `>` if it survived (e.g. "Name <a@b.com>").
+      dom = dom.replace(/[>\s]+$/, "");
+      return dom.toLowerCase();
+    }
+    return "";
+  }
+
   function msgHtmlView() {
+    // Side-effect: opt this domain into HTML auto-render for next time.
+    // Fire-and-forget — don't block the navigation on the trust-add round-trip
+    // (the navigation is the user-visible action; the server is fast enough
+    // that the POST usually completes before the next page renders, but if
+    // it doesn't, the trust-add lands the next page load down the line).
+    const dom = currentSenderDomain();
+    if (dom) {
+      try {
+        postJSON("/api/html-trusted/add", { domain: dom }).catch(() => {});
+      } catch (_) { /* network errors get logged in DevTools */ }
+    }
     // Prefer clicking the visible "HTML view" link — guarantees the same
     // navigation as a pointer click, which is the path the user has
     // already verified works. Falls back to URL synthesis only if the
@@ -482,6 +518,24 @@
     if (link) { link.click(); return; }
     const id = currentMessageId();
     if (id) window.location.href = "/mail/m/" + encodeURIComponent(id) + "?view=full";
+  }
+
+  // Capital-V — untrust the current sender's domain and reload so the
+  // message re-renders as plaintext (the chip disappears too).
+  function msgUntrustDomain() {
+    const dom = currentSenderDomain();
+    if (!dom) {
+      showToast("No sender domain found on this message", "error");
+      return;
+    }
+    postJSON("/api/html-trusted/remove", { domain: dom })
+      .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+      .then(j => {
+        if (!j.ok) throw new Error(j.error || "untrust failed");
+        showToast("Untrusted " + dom + " — reloading…", "success");
+        setTimeout(() => window.location.reload(), 300);
+      })
+      .catch(err => showToast("Untrust failed: " + err.message, "error"));
   }
   const msgReload = () => window.location.reload();
 
@@ -653,6 +707,10 @@
       d: msgTrash, a: msgArchive, A: msgUnarchive,
       n: msgPrev, o: msgNext,
       v: msgHtmlView,
+      // Capital V — untrust this sender's domain (POST then reload).
+      // Mirrors the lower-v "trust + open viewer" flow so the trust list
+      // is fully keyboard-driven from the message view.
+      V: msgUntrustDomain,
       "Ctrl+r": msgReload, "Ctrl+R": msgReload,
     },
 
@@ -767,6 +825,38 @@
       // can clear the key from devtools or we could expose a
       // keyboard shortcut later.
       initResizableColumns();
+    }
+
+    // Trust-chip click handler: the auto-HTML chip in the message header
+    // is a button with data-action="untrust-domain". Click → POST remove
+    // → reload (so the message re-renders as plaintext and the chip
+    // disappears). Lives in `message` and `thread` contexts (thread
+    // headers may carry chips for individual messages once the trust
+    // logic extends, though show_thread doesn't render them today).
+    if (ctxName === "message" || ctxName === "thread") {
+      document.addEventListener("click", (ev) => {
+        const btn = ev.target.closest('button[data-action="untrust-domain"]');
+        if (!btn) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        const dom = btn.dataset.domain || "";
+        if (!dom) {
+          showToast("No domain on chip", "error");
+          return;
+        }
+        btn.disabled = true;
+        postJSON("/api/html-trusted/remove", { domain: dom })
+          .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+          .then(j => {
+            if (!j.ok) throw new Error(j.error || "untrust failed");
+            showToast("Untrusted " + dom + " — reloading…", "success");
+            setTimeout(() => window.location.reload(), 300);
+          })
+          .catch(err => {
+            btn.disabled = false;
+            showToast("Untrust failed: " + err.message, "error");
+          });
+      }, false);
     }
 
     // Sidebar keyboard shortcuts: number the first 9 sidebar anchors
