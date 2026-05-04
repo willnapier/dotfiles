@@ -309,6 +309,16 @@ fn resolve_trust(msg: &Message) -> TrustContext {
     if !trusted_senders::is_trusted(&domain) {
         return TrustContext { state: TrustState::NotTrusted, domain };
     }
+    // If there's no actual HTML body to render, suppress the trust chip
+    // entirely — the chip claims "auto-HTML" but the message would
+    // render as plaintext anyway (no HTML part exists, or the part is
+    // empty). Some senders ship a zero-byte text/html and put HTML
+    // markup in the text/plain alternative, which renders as visible
+    // source — the chip claiming auto-HTML in that case is misleading.
+    let has_html = matches!(&msg.text_html, Some(s) if !s.is_empty());
+    if !has_html {
+        return TrustContext { state: TrustState::NotTrusted, domain };
+    }
     let Some(path) = msg.filename.as_deref() else {
         return TrustContext { state: TrustState::AutoHtml, domain };
     };
