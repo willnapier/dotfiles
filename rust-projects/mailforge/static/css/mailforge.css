@@ -115,7 +115,14 @@ table.listing {
 
 .envelope-row:hover { background: var(--bg-elevated); }
 
-.envelope-row.kb-current { background: var(--selected); }
+.envelope-row.kb-current {
+  background: var(--selected);
+  /* 2px accent left border hardens the cursor cue beyond the
+   * 18%-opacity tint alone; pairs with the kb-current row's
+   * action-reveal logic. inset shadow avoids reflow that a
+   * regular border would cause. */
+  box-shadow: inset 2px 0 0 0 var(--accent);
+}
 
 /* Column widths. Defaults exposed via CSS variables so the resize JS
  * (in keys.js) can override them per-user via localStorage. Resize
@@ -125,11 +132,14 @@ table.listing {
   --col-from-width: 22ch;
   --col-tags-width: 14ch;
   --col-date-width: 18ch;
-  --col-actions-width: 14ch;
+  --col-actions-width: 8ch;
 }
-.col-from { width: var(--col-from-width); color: var(--fg-muted); }
+/* Reading hierarchy: From > Subject > Date by visual weight. The
+ * sender is what users skim first ("who's mailing me?") so it gets
+ * full --fg; subject is dimmed to --fg-muted as the second-pass cue. */
+.col-from { width: var(--col-from-width); color: var(--fg); }
 .col-tags { width: var(--col-tags-width); }
-.col-subject { width: auto; white-space: normal; } /* Subject can wrap; takes remaining space */
+.col-subject { width: auto; white-space: normal; color: var(--fg-muted); } /* Subject can wrap; takes remaining space. Dimmed vs From per the From > Subject > Date hierarchy. */
 .col-date { width: var(--col-date-width); color: var(--fg-faint); text-align: right; } /* full date "X days ago" or "2026-04-30" */
 /* Dedicated rightmost column for per-row hover-reveal action icons
  * (sweep / unsubscribe). 14ch fits "broom" + "unsub" side-by-side
