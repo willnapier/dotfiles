@@ -549,9 +549,19 @@ pub fn safe_text(s: &str) -> Markup {
 pub fn html_body_iframe(uuid: &str, images_allowed: bool) -> Markup {
     let qs = if images_allowed { "?images=1" } else { "?images=0" };
     let src = format!("/v/{}/body.html{}", uuid, qs);
+    // `allow-same-origin` is added so the parent's `keys.js` can attach a
+    // keydown listener to `iframe.contentDocument` and forward events out
+    // of the iframe — without it, when the user clicks inside the email
+    // body to read it, focus is trapped and Backspace / 1 / 2 / e / i / etc.
+    // all silently no-op. With our body.html CSP already at
+    // `script-src 'none'; form-action 'none'; frame-src 'none'`, the
+    // iframe content remains purely declarative HTML+CSS regardless of
+    // the same-origin flag — no scripts can run inside it, no form
+    // submissions, no nested frames. The flag only enables parent-side
+    // event forwarding.
     html! {
         iframe class="message-body__iframe"
-            sandbox="allow-popups allow-popups-to-escape-sandbox"
+            sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin"
             tabindex="-1"
             loading="eager"
             src=(src)

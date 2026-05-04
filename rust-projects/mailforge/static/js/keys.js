@@ -911,6 +911,56 @@
       }
     }, true);
 
+    // Forward keydown events from inside the body iframe back to the
+    // parent's handler. The iframe sandbox includes allow-same-origin
+    // (with body.html's strict CSP keeping it harmless) specifically
+    // so we can attach this listener — otherwise contentDocument access
+    // throws and clicks inside the iframe trap keys (Backspace, 1, 2,
+    // e/i, etc. silently no-op). Re-dispatching synthesises a fresh
+    // KeyboardEvent on the parent document; handleKeydown catches it
+    // and routes via the dispatch table just like a native parent
+    // keystroke.
+    const wireIframeKeyForward = (iframe) => {
+      const attach = () => {
+        try {
+          const doc = iframe.contentDocument;
+          if (!doc) return;
+          doc.addEventListener("keydown", (ev) => {
+            // Don't hijack typing inside any input/textarea inside the
+            // iframe (rare in mail bodies but possible — search forms in
+            // newsletter HTML, for example).
+            const t = ev.target;
+            if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) {
+              return;
+            }
+            // Synthesise an equivalent event on the parent document so
+            // the existing keys.js dispatch table fires.
+            const fwd = new KeyboardEvent("keydown", {
+              key: ev.key,
+              code: ev.code,
+              ctrlKey: ev.ctrlKey,
+              metaKey: ev.metaKey,
+              altKey: ev.altKey,
+              shiftKey: ev.shiftKey,
+              bubbles: true,
+              cancelable: true,
+            });
+            document.dispatchEvent(fwd);
+          }, true);
+        } catch (_) {
+          // contentDocument access can throw if sandbox lacks
+          // allow-same-origin. Fail closed — the parent's window.focus
+          // / click rescue handlers above are the fallback.
+        }
+      };
+      // The iframe may already be loaded by the time keys.js init runs
+      // (loading="eager" + ready browser cache). Try immediately, then
+      // also on the load event in case it isn't ready yet.
+      attach();
+      iframe.addEventListener("load", attach, false);
+    };
+    document.querySelectorAll("iframe.message-body__iframe").forEach(wireIframeKeyForward);
+
     // Intercept native form submit on the compose form so pressing Enter
     // (or clicking Send) goes through composeSend's XHR + post-success
     // redirect, instead of letting the browser navigate to /api/send and
