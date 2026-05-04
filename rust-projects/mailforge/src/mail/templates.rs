@@ -447,9 +447,10 @@ pub fn tag_chip(tag: &str) -> Markup {
 pub fn helpbar(ctx: PageContext) -> Markup {
     let entries: &[(&str, &str)] = match ctx {
         PageContext::Listing => &[
-            ("e/i", "nav"),
+            ("e/i", "row"),
+            ("n/o", "mailbox"),
+            ("N/O", "account"),
             ("Enter", "open"),
-            ("Backspace", "back"),
             ("r", "reply"),
             ("d", "trash"),
             ("a/A", "archive/un"),

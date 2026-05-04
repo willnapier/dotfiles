@@ -801,8 +801,12 @@
       r: replyCurrent, f: forwardCurrent, c: compose,
       t: tagCurrent,
       "Ctrl+r": refresh, "Ctrl+R": refresh,
-      n: nextMailbox, o: prevMailbox,
-      N: nextAccount, O: prevAccount,
+      // n is to the LEFT of o on the keyboard (Colemak-DH and QWERTY
+      // both); n should mean "previous", o should mean "next". Matches
+      // the message-context convention (n: msgPrev, o: msgNext).
+      n: prevMailbox, o: nextMailbox,
+      // Same N is left of O → N is "previous" in the spatial convention.
+      N: prevAccount, O: nextAccount,
       // Per-row affordances: uppercase to keep the lowercase letter
       // namespace clear (lower-s is set-seen). U/S act on the cursor
       // row; same flow as clicking the per-row hover-reveal icons.
