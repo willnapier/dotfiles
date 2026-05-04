@@ -2,6 +2,7 @@ pub mod import;
 pub mod store;
 pub mod tags;
 pub mod dedup;
+pub mod enrich;
 
 use chrono::NaiveDate;
 use rust_decimal::Decimal;

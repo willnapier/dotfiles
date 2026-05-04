@@ -1,6 +1,6 @@
 use chrono::Datelike;
 use clap::{Parser, Subcommand};
-use fd_budget::{Account, import, store::CsvStore, tags::{TagRules, apply_rules, reapply_rules}, dedup};
+use fd_budget::{Account, import, store::CsvStore, tags::{TagRules, apply_rules, reapply_rules}, dedup, enrich};
 use rust_decimal::Decimal;
 use std::fs::File;
 use std::io::{BufReader, BufRead, Write};
@@ -42,6 +42,24 @@ enum Commands {
         /// Maximum number of transactions to process
         #[arg(short, long)]
         limit: Option<usize>,
+    },
+    /// Reconcile bank rows against mailcurator email-evidence
+    Enrich {
+        /// Path to mailcurator bills.jsonl
+        #[arg(long)]
+        from: Option<PathBuf>,
+        /// Path to write matches.jsonl
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Amount tolerance (default 0.01)
+        #[arg(long)]
+        amount_tolerance: Option<Decimal>,
+        /// Date window in days (default 3)
+        #[arg(long)]
+        date_window: Option<i64>,
+        /// Print summary only; don't write file
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -130,6 +148,94 @@ fn main() -> anyhow::Result<()> {
         Commands::Categorize { limit } => {
             cmd_categorize(limit)?;
         }
+        Commands::Enrich { from, out, amount_tolerance, date_window, dry_run } => {
+            cmd_enrich(from, out, amount_tolerance, date_window, dry_run)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn default_bills_jsonl() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".local/share/mailcurator/bills.jsonl")
+}
+
+fn default_matches_jsonl() -> PathBuf {
+    get_data_dir().join("matches.jsonl")
+}
+
+fn cmd_enrich(
+    from: Option<PathBuf>,
+    out: Option<PathBuf>,
+    amount_tolerance: Option<Decimal>,
+    date_window: Option<i64>,
+    dry_run: bool,
+) -> anyhow::Result<()> {
+    use enrich::{Confidence, MatchOptions};
+
+    let bills_path = from.unwrap_or_else(default_bills_jsonl);
+    let out_path = out.unwrap_or_else(default_matches_jsonl);
+
+    let store = CsvStore::new(get_store_path());
+    let transactions = store.load_all()?;
+    if transactions.is_empty() {
+        eprintln!("No transactions in store; run `fd-budget import` first.");
+        return Ok(());
+    }
+
+    let email_rows = enrich::load_email_rows(&bills_path)
+        .map_err(|e| anyhow::anyhow!("failed to load {}: {}", bills_path.display(), e))?;
+
+    let mut opts = MatchOptions::default();
+    if let Some(t) = amount_tolerance {
+        opts.amount_tolerance = t;
+    }
+    if let Some(w) = date_window {
+        opts.date_window_days = w;
+    }
+
+    let (results, summary) = enrich::enrich(&transactions, &email_rows, opts);
+
+    let total = summary.bank_rows;
+    let none_count = summary.count(Confidence::None);
+    let enriched = total.saturating_sub(none_count);
+
+    let pct = |n: usize| -> f64 {
+        if total == 0 {
+            0.0
+        } else {
+            (n as f64 / total as f64) * 100.0
+        }
+    };
+
+    println!(
+        "Reconciled {} bank rows against {} email rows.",
+        summary.bank_rows, summary.email_rows
+    );
+    let high = summary.count(Confidence::High);
+    let medium = summary.count(Confidence::Medium);
+    let ambiguous = summary.count(Confidence::Ambiguous);
+    let internal = summary.count(Confidence::InternalTransfer);
+    println!("  high              {:>4} ({:.1}%)", high, pct(high));
+    println!("  medium            {:>4} ({:.1}%)", medium, pct(medium));
+    println!("  ambiguous         {:>4} ({:.1}%)", ambiguous, pct(ambiguous));
+    println!("  internal-transfer {:>4} ({:.1}%)", internal, pct(internal));
+    println!("  none              {:>4} ({:.1}%)", none_count, pct(none_count));
+
+    if dry_run {
+        println!("(dry-run; no file written)");
+    } else {
+        enrich::write_matches(&out_path, &results)?;
+        // All rows are written (none-rows too) so downstream queries can join cleanly;
+        // the "omitted" wording mirrors the spec's user-facing summary.
+        println!(
+            "Wrote {} ({} enriched rows; {} none rows omitted)",
+            out_path.display(),
+            enriched,
+            none_count
+        );
     }
 
     Ok(())
