@@ -976,6 +976,209 @@
     }
   }
 
+  // ----- Address autocomplete (compose To/Cc/Bcc) -----
+  // Server-driven completion. The address book lives on the server in
+  // src/mail/addresses.rs (notmuch-derived, cached). We GET
+  // /api/addresses?q=<token> from this fetch path, debounced 150ms.
+  //
+  // Recipient inputs are comma-separated lists. The "active token" is the
+  // last comma-separated segment with leading/trailing whitespace trimmed.
+  // Accepting a suggestion replaces only the active token, leaving any
+  // earlier addresses intact.
+  //
+  // Failure mode: if /api/addresses errors, the dropdown silently doesn't
+  // appear — the field still works as a plain text input. Don't toast
+  // every fetch failure; that would spam during temporary notmuch hiccups.
+  function wireAddressAutocomplete(inputEl) {
+    if (!inputEl || inputEl.dataset.acWired === "true") return;
+    inputEl.dataset.acWired = "true";
+
+    let dropdown = null;
+    let highlighted = -1;
+    let lastMatches = [];
+    let debounceTimer = 0;
+    let blurTimer = 0;
+
+    const dismiss = () => {
+      if (dropdown) {
+        dropdown.remove();
+        dropdown = null;
+      }
+      highlighted = -1;
+      lastMatches = [];
+    };
+
+    // Active token = last comma-separated segment, trimmed. Returns
+    // [token, startIndex, endIndex] in the raw value where the token
+    // currently sits, so accept() can splice cleanly.
+    const activeToken = () => {
+      const v = inputEl.value;
+      const lastComma = v.lastIndexOf(",");
+      const startRaw = lastComma + 1;
+      const segment = v.slice(startRaw);
+      const leadingWs = segment.length - segment.trimStart().length;
+      const start = startRaw + leadingWs;
+      const end = v.length;
+      return [v.slice(start, end), start, end];
+    };
+
+    const positionDropdown = () => {
+      if (!dropdown) return;
+      const rect = inputEl.getBoundingClientRect();
+      dropdown.style.top = (window.scrollY + rect.bottom) + "px";
+      dropdown.style.left = (window.scrollX + rect.left) + "px";
+      dropdown.style.minWidth = rect.width + "px";
+    };
+
+    const render = (matches) => {
+      lastMatches = matches;
+      if (!matches.length) {
+        dismiss();
+        return;
+      }
+      if (!dropdown) {
+        dropdown = document.createElement("div");
+        dropdown.className = "address-autocomplete";
+        dropdown.setAttribute("role", "listbox");
+        // Use mousedown (not click) so the input's blur — which fires
+        // on mousedown — doesn't tear down the dropdown before the
+        // click event runs. We preventDefault on mousedown to keep
+        // focus in the input.
+        dropdown.addEventListener("mousedown", (ev) => {
+          const opt = ev.target.closest(".address-autocomplete__option");
+          if (!opt) return;
+          ev.preventDefault();
+          const idx = parseInt(opt.dataset.idx || "-1", 10);
+          if (idx >= 0) accept(idx);
+        }, false);
+        document.body.appendChild(dropdown);
+      }
+      dropdown.innerHTML = "";
+      matches.forEach((m, i) => {
+        const opt = document.createElement("div");
+        opt.className = "address-autocomplete__option";
+        opt.setAttribute("role", "option");
+        opt.dataset.idx = String(i);
+        opt.textContent = m.display;
+        if (i === highlighted) opt.classList.add("highlighted");
+        dropdown.appendChild(opt);
+      });
+      positionDropdown();
+    };
+
+    const moveHighlight = (delta) => {
+      if (!lastMatches.length) return;
+      highlighted = (highlighted + delta + lastMatches.length) % lastMatches.length;
+      // Re-render the highlight class without re-creating the dropdown
+      // (avoids flicker and preserves scroll position).
+      if (dropdown) {
+        const opts = dropdown.querySelectorAll(".address-autocomplete__option");
+        opts.forEach((o, i) => o.classList.toggle("highlighted", i === highlighted));
+        const sel = opts[highlighted];
+        if (sel) sel.scrollIntoView({ block: "nearest" });
+      }
+    };
+
+    const accept = (idx) => {
+      const m = lastMatches[idx];
+      if (!m) return;
+      const [, start] = activeToken();
+      // Replace from `start` to end-of-string with the chosen display +
+      // ", " so the user can type the next recipient immediately. We
+      // trim trailing whitespace off the prefix (keeping the comma if
+      // present) so we don't leak double-spacing on consecutive accepts.
+      const prefix = inputEl.value.slice(0, start).replace(/\s+$/, "");
+      const sep = prefix.length === 0 ? "" : (prefix.endsWith(",") ? " " : ", ");
+      inputEl.value = prefix + sep + m.display + ", ";
+      dismiss();
+      // Fire `input` so any other listeners (autosave, validation) see
+      // the programmatic change. Without `bubbles: true` axum-side
+      // form-data captures still pick it up at submit time, but
+      // bubbling is the conventional choice.
+      inputEl.dispatchEvent(new Event("input", { bubbles: true }));
+      // Move caret to end of input.
+      try { inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length); } catch (_) {}
+    };
+
+    const fetchAndRender = () => {
+      const [tok] = activeToken();
+      if (tok.length < 2) {
+        dismiss();
+        return;
+      }
+      const url = "/api/addresses?q=" + encodeURIComponent(tok) + "&limit=10";
+      fetch(url, { credentials: "same-origin" })
+        .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+        .then(j => {
+          // Only accept results matching the CURRENT active token —
+          // a stale response from an earlier keystroke shouldn't
+          // overwrite the dropdown for whatever the user has now typed.
+          const [now] = activeToken();
+          if (now !== tok) return;
+          highlighted = (j.matches && j.matches.length) ? 0 : -1;
+          render(j.matches || []);
+        })
+        .catch(() => { /* silent — leave field as plain input */ });
+    };
+
+    inputEl.addEventListener("input", () => {
+      window.clearTimeout(debounceTimer);
+      debounceTimer = window.setTimeout(fetchAndRender, 150);
+    }, false);
+
+    inputEl.addEventListener("keydown", (ev) => {
+      if (!dropdown || !lastMatches.length) {
+        // Esc with no dropdown: let the event bubble (compose context's
+        // Escape handler may want it). Don't preventDefault.
+        return;
+      }
+      if (ev.key === "ArrowDown") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        moveHighlight(1);
+      } else if (ev.key === "ArrowUp") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        moveHighlight(-1);
+      } else if (ev.key === "Enter") {
+        if (highlighted >= 0) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          accept(highlighted);
+        }
+        // If nothing highlighted, let Enter fall through — but the
+        // form's default submit behaviour is fine for advanced users
+        // who want bare-address submission.
+      } else if (ev.key === "Tab") {
+        // Common UX: Tab accepts the current highlight, then advances
+        // to the next field naturally (don't preventDefault — let the
+        // browser do its tab traversal).
+        if (highlighted >= 0) {
+          accept(highlighted);
+        }
+      } else if (ev.key === "Escape") {
+        ev.preventDefault();
+        ev.stopPropagation();
+        dismiss();
+      }
+    }, false);
+
+    inputEl.addEventListener("blur", () => {
+      // Delay so a click on a dropdown option (which fires AFTER blur
+      // by default) registers before we tear down. The mousedown
+      // handler in render() preventDefaults to keep focus, but blur
+      // can still fire on Tab-out — the timeout covers both cases.
+      window.clearTimeout(blurTimer);
+      blurTimer = window.setTimeout(dismiss, 150);
+    }, false);
+
+    // Reposition while open if the page scrolls or resizes — relevant
+    // for the compose page where the body textarea may push the form
+    // height around.
+    window.addEventListener("scroll", () => { if (dropdown) positionDropdown(); }, true);
+    window.addEventListener("resize", () => { if (dropdown) positionDropdown(); }, false);
+  }
+
   // ----- Init -----
   function init() {
     // Reset the vim-"gg" prefix tracker on every page load so a stale
@@ -1106,6 +1309,18 @@
       if (sd) sd.addEventListener("click", (ev) => { ev.preventDefault(); composeSaveDraft(); }, false);
       const oh = document.getElementById("open-helix");
       if (oh) oh.addEventListener("click", (ev) => { ev.preventDefault(); composeEscalateHelix(); }, false);
+      // Address autocomplete on each recipient field. Wrapped in
+      // try/catch so a JS-side wiring failure can't take down the
+      // whole compose form; the inputs remain plain text inputs.
+      try {
+        ["to", "cc", "bcc"].forEach((n) => {
+          const el = cf.querySelector(`input[name="${n}"]`);
+          if (el) wireAddressAutocomplete(el);
+        });
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error("[mailforge address autocomplete]", e);
+      }
     }
 
     // Per-row hover-reveal icons (sweep + unsubscribe). Event-delegated

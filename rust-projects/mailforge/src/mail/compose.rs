@@ -614,13 +614,10 @@ fn render_form(
         section.compose-wrapper {
             header.compose-header {
                 h1 { (title_label) }
-                p.compose-status {
-                    "Draft saves automatically every 5s. "
-                    code { "Ctrl+E" }
-                    " opens the body in Helix. "
-                    code { "Ctrl+Enter" }
-                    " sends."
-                }
+                // Shortcut hint paragraph removed — same bindings are
+                // already documented in the sticky helpbar at the bottom
+                // of the page (Ctrl+Enter send, Ctrl+S save, Ctrl+E
+                // Helix, Esc cancel). Duplicating them here is chrome.
             }
 
             form id="compose-form"

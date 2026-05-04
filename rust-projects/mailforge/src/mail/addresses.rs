@@ -32,6 +32,7 @@
 //! module follows the same subprocess + JSON pattern.
 
 use anyhow::{Context, Result};
+use axum::{extract::Query, response::IntoResponse, Json};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::process::{Command, Stdio};
@@ -358,6 +359,46 @@ pub fn search_in(book: &[AddressEntry], q: &str, limit: usize) -> Vec<AddressEnt
         }
     });
     iter.take(limit).cloned().collect()
+}
+
+// ------------------------------------------------------------------
+// HTTP endpoint
+// ------------------------------------------------------------------
+
+/// Query string for `GET /api/addresses`. `q` is the user's typed
+/// fragment; `limit` defaults to 10 (the spec's recommended dropdown
+/// size). Both are optional — an empty `q` returns the top-N by rank,
+/// useful for "show me my most-frequently-emailed contacts" smoke
+/// testing.
+#[derive(Debug, Default, Deserialize)]
+pub struct AddressesQuery {
+    #[serde(default)]
+    pub q: Option<String>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+/// Response shape: `{"matches": [...]}`. Single-key wrapper so we can
+/// extend with metadata (cache age, total-matches-before-limit) without
+/// breaking the client schema.
+#[derive(Debug, Serialize)]
+pub struct AddressesResponse {
+    pub matches: Vec<AddressEntry>,
+}
+
+/// GET `/api/addresses?q=<prefix>&limit=10`.
+///
+/// Reads from the cached address book — never invokes notmuch
+/// synchronously. If the cache hasn't been built yet, [`get`] blocks
+/// long enough for the first call (5-15s on a 218k-message corpus) but
+/// every subsequent caller hits the warm cache (<1ms).
+pub async fn addresses_get(Query(q): Query<AddressesQuery>) -> impl IntoResponse {
+    let needle = q.q.unwrap_or_default();
+    let limit = q.limit.unwrap_or(10).clamp(1, 100);
+    let matches = tokio::task::spawn_blocking(move || search(&needle, limit))
+        .await
+        .unwrap_or_default();
+    Json(AddressesResponse { matches })
 }
 
 // ------------------------------------------------------------------

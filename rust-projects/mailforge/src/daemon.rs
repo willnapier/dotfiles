@@ -62,6 +62,12 @@ pub async fn run(port: u16) -> Result<()> {
         .with_context(|| format!("mkdir {}", cache.display()))?;
     let state = AppState { cache: Arc::new(cache) };
 
+    // Background refresh task for the compose-form address book. The
+    // initial build is lazy (first request to /api/addresses pays the
+    // cost), so spawning here only arms the 10-minute refresh loop —
+    // it does not block startup.
+    crate::mail::addresses::spawn_refresh_task();
+
     // mailforge subrouter: the browser-native MUA UI (listing, message,
     // compose, send, tag, search). Lives under /mail/* and /api/* — no
     // overlap with the /v/* asset routes. The mail subrouter is stateless

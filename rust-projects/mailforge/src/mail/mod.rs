@@ -49,6 +49,7 @@
 #![allow(dead_code)]
 
 pub mod accounts;
+pub mod addresses;
 pub mod auth_results;
 pub mod compose;
 pub mod curator;
@@ -103,6 +104,11 @@ pub fn router() -> Router {
         .route("/api/escalate-helix/abort", post(compose::escalate_helix_abort))
         .route("/api/mailcurator/sweep", post(curator::sweep_post))
         .route("/api/mailcurator/blacklist", post(curator::blacklist_post))
+        // Address-book autocomplete for compose To/Cc/Bcc fields. Reads
+        // from an in-memory cache populated by `notmuch address` (built
+        // lazily on first hit, refreshed every 10 min by the background
+        // task spawned in `daemon::run`).
+        .route("/api/addresses", get(addresses::addresses_get))
         // On-demand pull: invokes `gmpull pull --resume && notmuch new`
         // and returns synchronously. The Ctrl+R refresh handler awaits
         // this so the listing re-renders with newly-arrived mail.
