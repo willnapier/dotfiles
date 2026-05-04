@@ -565,11 +565,13 @@ body.col-resizing * { user-select: none !important; }
 
 /* ===== Compose ===== */
 .compose-header {
-  /* Match the form's container so the heading aligns visually with
-   * the input column; centred within that. */
+  /* Match the form's container exactly — same max-width, same auto
+   * centring of the COLUMN — but left-aligned text so the heading
+   * starts at the same horizontal position as the input boxes
+   * below. Centring within the 72ch column makes the heading float
+   * over a left-anchored set of fields, which reads as misaligned. */
   max-width: 72ch;
   margin: 0 auto var(--sp-3);
-  text-align: center;
 }
 
 .compose-header h1 {
