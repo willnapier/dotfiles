@@ -26,7 +26,7 @@
 
 use anyhow::{Context, Result};
 use filetime::FileTime;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -129,6 +129,50 @@ pub async fn write_message(
     Ok(cur_path)
 }
 
+/// Load every Gmail message ID already present on disk under `cur/`
+/// and `new/`. Used at startup to dedupe `messages.list` results
+/// before paying the 5-quota-unit cost of `messages.get`.
+///
+/// Maildir filenames are `<gmail_id>:2,<flags>` — we split at the
+/// first `:` and take the prefix. Files lacking a `:` (legacy or
+/// alien) are skipped silently.
+///
+/// Walking 112k entries on cur/ takes ~50-100 ms on APFS, paid once
+/// per `pull()` invocation. The resulting set is ~2 MB heap (112k ×
+/// ~16-byte ID strings). Passed by `Arc<RwLock<…>>` to fetch tasks
+/// so dedup hits are O(1) and concurrent.
+pub fn load_existing_gmail_ids(maildir_root: &Path) -> Result<HashSet<String>> {
+    let mut ids = HashSet::new();
+    for sub in ["cur", "new"] {
+        let dir = maildir_root.join(sub);
+        // Tolerate missing subdirs — ensure_maildir creates them on
+        // first run, but a brand-new install may call us before that.
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => {
+                return Err(e).with_context(|| format!("read_dir {}", dir.display()));
+            }
+        };
+        for entry in entries {
+            let entry = entry.with_context(|| format!("iterating {}", dir.display()))?;
+            // file_name returns OsString; we need a UTF-8 view to
+            // split at ':'. Skip non-UTF-8 names rather than fail —
+            // they can't be a Gmail ID anyway.
+            let name = entry.file_name();
+            let Some(name_str) = name.to_str() else {
+                continue;
+            };
+            if let Some((id, _flags)) = name_str.split_once(':')
+                && !id.is_empty()
+            {
+                ids.insert(id.to_string());
+            }
+        }
+    }
+    Ok(ids)
+}
+
 /// Ensure a maildir's `cur/`, `new/`, and `tmp/` subdirs exist.
 /// Idempotent — safe to call every startup.
 pub async fn ensure_maildir(root: &Path) -> Result<()> {
@@ -175,5 +219,59 @@ mod tests {
         assert!(should_skip(&["TRASH".to_string()]));
         assert!(should_skip(&["SPAM".to_string()]));
         assert!(!should_skip(&["INBOX".to_string()]));
+    }
+
+    #[test]
+    fn load_existing_gmail_ids_extracts_prefix_before_colon() {
+        let tmp = std::env::temp_dir().join(format!(
+            "gmpull-load-ids-{}-{}",
+            std::process::id(),
+            TMP_SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
+        for sub in ["cur", "new", "tmp"] {
+            std::fs::create_dir_all(tmp.join(sub)).unwrap();
+        }
+        // Three lieer-shaped names in cur/, one in new/, plus a
+        // garbage file with no colon (must be ignored), plus a tmp
+        // file (must NOT be picked up — only cur/ and new/ count).
+        std::fs::write(tmp.join("cur").join("aaaa1111:2,S"), b"x").unwrap();
+        std::fs::write(tmp.join("cur").join("bbbb2222:2,FRS"), b"x").unwrap();
+        std::fs::write(tmp.join("cur").join("cccc3333:2,"), b"x").unwrap();
+        std::fs::write(tmp.join("new").join("dddd4444:2,"), b"x").unwrap();
+        std::fs::write(tmp.join("cur").join("not-a-maildir-name"), b"x").unwrap();
+        std::fs::write(
+            tmp.join("tmp").join("eeee5555:2,S"),
+            b"x",
+        )
+        .unwrap();
+
+        let ids = load_existing_gmail_ids(&tmp).unwrap();
+        assert_eq!(ids.len(), 4, "got: {ids:?}");
+        assert!(ids.contains("aaaa1111"));
+        assert!(ids.contains("bbbb2222"));
+        assert!(ids.contains("cccc3333"));
+        assert!(ids.contains("dddd4444"));
+        // Negative case: tmp/ entries and garbage names are excluded.
+        assert!(!ids.contains("eeee5555"));
+        assert!(!ids.contains("not-a-maildir-name"));
+        // And a novel id we didn't write is correctly absent.
+        assert!(!ids.contains("ffff6666"));
+
+        // Cleanup — best-effort.
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn load_existing_gmail_ids_handles_missing_subdirs() {
+        let tmp = std::env::temp_dir().join(format!(
+            "gmpull-load-ids-empty-{}-{}",
+            std::process::id(),
+            TMP_SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&tmp).unwrap();
+        // Neither cur/ nor new/ exists yet — must not error.
+        let ids = load_existing_gmail_ids(&tmp).unwrap();
+        assert!(ids.is_empty());
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }
