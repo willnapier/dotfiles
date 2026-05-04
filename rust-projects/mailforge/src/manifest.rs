@@ -44,6 +44,13 @@ pub fn write(dir: &Path, m: &Manifest) -> Result<()> {
     serde_json::to_writer_pretty(f, m).context("writing manifest.json")
 }
 
+// Reader for the manifest. Kept around as part of the public API even
+// though no in-tree caller currently invokes it: the wrapper render
+// handler that used to be its only consumer was deleted in the 2026-05-02
+// single-iframe refactor (see daemon.rs). Out-of-process tooling and
+// future debugging helpers can still call this without resurrecting the
+// wrapper.
+#[allow(dead_code)]
 pub fn read(dir: &Path) -> Result<Manifest> {
     let path = dir.join("manifest.json");
     let f = std::fs::File::open(&path)
