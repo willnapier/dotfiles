@@ -64,15 +64,8 @@ pub async fn run(json: bool) -> Result<()> {
         .clone()
         .ok_or_else(|| anyhow!("no tab attached. Run `pageprobe attach <pattern>` first."))?;
 
-    let (mut browser, handle) = cdp::connect(port).await?;
-    let page = browser
-        .pages()
-        .await?
-        .into_iter()
-        .find(|p| p.target_id().as_ref() == tab_id.as_str())
-        .ok_or_else(|| {
-            anyhow!("attached tab id no longer matches any open tab; run `pageprobe attach` again")
-        })?;
+    let (browser, handle) = cdp::connect(port).await?;
+    let page = cdp::page_for_tab(&browser, &tab_id).await?;
 
     page.execute(PerfEnableParams::default())
         .await

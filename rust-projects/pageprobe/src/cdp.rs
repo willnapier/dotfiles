@@ -6,9 +6,12 @@
 //! it down.
 use anyhow::{Context, Result, anyhow};
 use chromiumoxide::Browser;
-use chromiumoxide::cdp::browser_protocol::target::TargetInfo;
+use chromiumoxide::cdp::browser_protocol::target::{TargetId, TargetInfo};
+use chromiumoxide::page::Page;
 use futures::StreamExt;
+use std::time::{Duration, Instant};
 use tokio::task::JoinHandle;
+use tokio::time::sleep;
 
 use crate::chrome;
 
@@ -47,6 +50,29 @@ pub async fn list_pages(browser: &mut Browser) -> Result<Vec<TargetInfo>> {
         .filter(|t| t.r#type == "page")
         .collect::<Vec<_>>();
     Ok(pages)
+}
+
+/// Resolves a `Page` by tab id, polling briefly so we don't lose to the
+/// race between `Browser::connect` returning and the Handler receiving
+/// `Target.targetCreated` events for pre-existing tabs.
+///
+/// The handler queues `Target.setDiscoverTargets(true)` on construction
+/// but we have to give it a moment to hear back. This polls for up to
+/// ~2 seconds at 50ms intervals.
+pub async fn page_for_tab(browser: &Browser, tab_id: &str) -> Result<Page> {
+    let target_id = TargetId::from(tab_id.to_string());
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if let Ok(page) = browser.get_page(target_id.clone()).await {
+            return Ok(page);
+        }
+        if Instant::now() >= deadline {
+            return Err(anyhow!(
+                "attached tab id no longer matches any open tab; run `pageprobe attach` again"
+            ));
+        }
+        sleep(Duration::from_millis(50)).await;
+    }
 }
 
 /// Truncates `s` to `max` chars, appending "..." if it was longer.
