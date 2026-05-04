@@ -15,12 +15,12 @@
          launchd otherwise). Same shape as mbsync-cohs.plist; see that
          file's comment block for the post-new hook story.
 
-         Note: gmpull does NOT yet use Gmail's historyId for incremental
-         syncs — each tick re-enumerates messages.list (~500 quota units
-         per tick at 100 pages × 5 units). At 5-min cadence that's
-         ~144k units/day, well under Gmail's per-user 250 u/s ceiling
-         (~21M units/day theoretical). Add historyId-based incremental
-         to gmpull v0.2 to drop the per-tick cost to near zero on idle. -->
+         As of v0.2 (2026-05-04), idle ticks take the cheap path
+         via users.history.list (~5 quota units total). Full
+         enumeration only runs on first start, after a stale
+         historyId (Gmail expires history after ~7 days inactive),
+         or on the ~once-per-week pull immediately following long
+         downtime. See ~/Assistants/shared/gmpull.md. -->
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
