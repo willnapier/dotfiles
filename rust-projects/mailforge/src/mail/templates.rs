@@ -461,7 +461,7 @@ pub fn helpbar(ctx: PageContext) -> Markup {
         ],
         PageContext::Message => &[
             ("Backspace", "back"),
-            ("r", "reply"),
+            ("r/R", "reply/all"),
             ("f", "fwd"),
             ("d", "trash"),
             ("a/A", "archive/un"),
