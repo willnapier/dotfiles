@@ -5,16 +5,20 @@
 //!
 //! ## HTML body handling
 //!
-//! For messages with `text/html` parts, mailforge reuses the existing
-//! `/v/<uuid>` viewer pipeline. The flow:
+//! For messages with `text/html` parts, mailforge points a single iframe at
+//! the strict-CSP body endpoint `/v/<uuid>/body.html`. The flow:
 //!
 //! 1. `notmuch_db::show(id)` returns the message with file path.
 //! 2. Read the raw RFC822 bytes from the file.
 //! 3. Call into [`crate::pipe::cache_html_message`] which builds a cache
 //!    entry and returns the UUID.
-//! 4. Embed `<iframe sandbox src="/v/<uuid>">` in the rendered page.
-//!    The iframe's CSP/asset machinery is unchanged — mailforge's existing
-//!    code path applies.
+//! 4. Embed `<iframe sandbox src="/v/<uuid>/body.html?images=1">` directly
+//!    in the rendered page. The image-toggle UI sits in the message-view
+//!    chrome (above the iframe), not inside it.
+//!
+//! Earlier designs nested two iframes (a wrapper page at `/v/<uuid>` that
+//! itself embedded `body.html`); the inner iframe intermittently failed to
+//! load on first navigation. Collapsing to one iframe eliminates the race.
 //!
 //! For messages with only `text/plain`, render the body directly inside
 //! the page (no iframe needed) inside a `<pre class=plaintext>` block.
@@ -35,7 +39,9 @@ use maud::{html, Markup};
 use crate::mail::accounts::ACCOUNTS;
 use crate::mail::auth_results;
 use crate::mail::notmuch_db::{self, Message};
-use crate::mail::templates::{self, html_body_iframe, plaintext_body, tag_chip, PageContext};
+use crate::mail::templates::{
+    self, html_body_iframe, image_toggle_banner, plaintext_body, tag_chip, PageContext,
+};
 use crate::mail::trusted_senders;
 
 /// Outcome of consulting the trusted-senders store + Authentication-Results
@@ -121,10 +127,29 @@ pub async fn show_message(
     // and the message authenticates, so render HTML inline by default.
     let force_full = q.get("view").map(|v| v == "full").unwrap_or(false);
     let auto_html = matches!(trust.state, TrustState::AutoHtml) && message.text_html.is_some();
-    let body_markup = if (force_full || auto_html) && message.text_html.is_some() {
-        render_body_html_only(&message)
+    // External-image flag. Default-on; `?images=0` blocks. Threaded into the
+    // iframe `src` so the daemon can pick strict-vs-relaxed CSP, and into the
+    // chrome-level toggle banner so the user can flip without round-tripping
+    // through the (now-deleted) wrapper page.
+    let images_allowed = q.get("images").map(|v| v != "0").unwrap_or(true);
+    let html_branch = (force_full || auto_html) && message.text_html.is_some();
+    let body_markup = if html_branch {
+        render_body_html_only(&message, images_allowed)
     } else {
-        render_body(&message)
+        render_body(&message, images_allowed)
+    };
+    // The toggle banner only makes sense when we're actually rendering HTML
+    // via the iframe (PDFs can't load external resources; plaintext doesn't
+    // either). Anchor the form action at the bare message URL so we always
+    // write a clean query string from scratch.
+    let toggle_path = format!(
+        "/mail/m/{}",
+        crate::mail::notmuch_db::encode_id(&message.id)
+    );
+    let images_banner = if html_branch {
+        image_toggle_banner(&toggle_path, images_allowed)
+    } else {
+        maud::html! {}
     };
 
     // 4. Compose final page.
@@ -154,6 +179,7 @@ pub async fn show_message(
     let page_body = html! {
         article class="message-view" data-msg-id=(message.id) {
             (message_header_with_trust(&message, &subject_text, &trust))
+            (images_banner)
             (body_markup)
             (action_toolbar(&message))
             (nav_links)
@@ -231,7 +257,11 @@ pub async fn show_thread(Path(thread_id): Path<String>) -> Response {
                     }
                     div class="thread-message__body" {
                         (message_header(msg, msg.subject.as_deref().unwrap_or("(no subject)")))
-                        (render_body(msg))
+                        // Thread view doesn't expose an image-toggle UI per-message
+                        // (it would multiply the chrome). Match the message-view
+                        // default of images-on; users who need to block can open
+                        // a single message and use the toggle there.
+                        (render_body(msg, true))
                         (action_toolbar(msg))
                     }
                 }
@@ -424,7 +454,11 @@ fn message_header(msg: &Message, subject_text: &str) -> Markup {
 /// Branches on plain vs HTML body. HTML bodies build a cache entry via
 /// `pipe::cache_html_message` and embed an iframe; plain bodies render
 /// inline as `<pre class=plaintext>`.
-fn render_body(msg: &Message) -> Markup {
+///
+/// `images_allowed` is threaded into the iframe src as `?images=0|1` so the
+/// daemon's `serve_body` handler picks the strict-vs-relaxed CSP. Plain text
+/// doesn't load external images so the flag is irrelevant on that branch.
+fn render_body(msg: &Message, images_allowed: bool) -> Markup {
     if let Some(plain) = &msg.text_plain {
         // Prefer plain text when available — fewer surprises, no iframe
         // chrome, copies cleanly. The user can press `m` (per
@@ -462,7 +496,7 @@ fn render_body(msg: &Message) -> Markup {
             Ok(uuid) => {
                 return html! {
                     section class="message-body message-body--html" aria-label="Message body" {
-                        (html_body_iframe(&uuid))
+                        (html_body_iframe(&uuid, images_allowed))
                     }
                 };
             }
@@ -493,9 +527,9 @@ fn render_body(msg: &Message) -> Markup {
 /// param (the `m` keystroke from message-view). Falls back to plain
 /// text or the empty state if no HTML body is present, so the call
 /// site never crashes on absent HTML.
-fn render_body_html_only(msg: &Message) -> Markup {
+fn render_body_html_only(msg: &Message, images_allowed: bool) -> Markup {
     let Some(html_body) = &msg.text_html else {
-        return render_body(msg);
+        return render_body(msg, images_allowed);
     };
 
     let bytes_opt = match &msg.filename {
@@ -510,7 +544,7 @@ fn render_body_html_only(msg: &Message) -> Markup {
     match crate::pipe::cache_html_message(&bytes) {
         Ok(uuid) => html! {
             section class="message-body message-body--html" aria-label="Message body" {
-                (html_body_iframe(&uuid))
+                (html_body_iframe(&uuid, images_allowed))
             }
         },
         Err(e) => {
@@ -717,7 +751,7 @@ mod tests {
     #[test]
     fn render_body_prefers_plain_text() {
         let msg = make_msg("Hi", Some("Hello world"), vec!["inbox"]);
-        let html = render_body(&msg).into_string();
+        let html = render_body(&msg, true).into_string();
         assert!(html.contains("Hello world"));
         assert!(html.contains("plaintext"));
         assert!(!html.contains("iframe"));
@@ -726,7 +760,7 @@ mod tests {
     #[test]
     fn render_body_escapes_plain() {
         let msg = make_msg("Hi", Some("<b>HTML</b>"), vec!["inbox"]);
-        let html = render_body(&msg).into_string();
+        let html = render_body(&msg, true).into_string();
         assert!(!html.contains("<b>HTML</b>"));
         assert!(html.contains("&lt;b&gt;HTML&lt;/b&gt;"));
     }
@@ -734,7 +768,7 @@ mod tests {
     #[test]
     fn render_body_no_body_shows_empty_state() {
         let msg = make_msg("Hi", None, vec!["inbox"]);
-        let html = render_body(&msg).into_string();
+        let html = render_body(&msg, true).into_string();
         assert!(html.contains("no readable body"));
     }
 
@@ -742,7 +776,7 @@ mod tests {
     fn render_body_html_hint_when_both_present() {
         let mut msg = make_msg("Hi", Some("plain"), vec!["inbox"]);
         msg.text_html = Some("<p>html</p>".to_string());
-        let html = render_body(&msg).into_string();
+        let html = render_body(&msg, true).into_string();
         assert!(html.contains("plain"));
         assert!(html.contains("HTML version is available"));
     }

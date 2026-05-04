@@ -56,7 +56,15 @@ pub fn run(port: u16, no_open: bool) -> Result<()> {
     log_step("writing manifest");
     manifest::write(&dir, &m)?;
 
-    let url = format!("http://127.0.0.1:{port}/v/{id}");
+    // The bare `/v/<uuid>` "wrapper" page was deleted in the 2026-05-02
+    // single-iframe refactor. The standalone meli `:pipe-message` path now
+    // opens body.html directly — degraded experience: no message-page
+    // chrome (sidebar, header, helpbar), no image-toggle UI. That's
+    // acceptable: William has stopped using meli, and pipe.rs is kept
+    // around mostly so the build doesn't break for other mailcap-driven
+    // callers. Mailforge's primary message-view (/mail/m/<id>) remains
+    // the rich path.
+    let url = format!("http://127.0.0.1:{port}/v/{id}/body.html");
     log_step(&format!("opening URL {url}"));
     // Print URL once to stdout so callers (e.g. ad-hoc CLI invocations) see
     // it. meli's mailcap dispatch ignores child stdout when copiousoutput is
@@ -72,9 +80,9 @@ pub fn run(port: u16, no_open: bool) -> Result<()> {
 
 /// In-process variant of [`run`]: takes raw RFC822 bytes, builds a cache
 /// entry, and returns the UUID. The mailforge message-view handler uses
-/// this to embed `<iframe src="/v/<uuid>">` for HTML email bodies — the
-/// iframe then hits the existing `/v/<uuid>` viewer route in `daemon.rs`,
-/// reusing the strict CSP / asset machinery without code duplication.
+/// this to embed `<iframe src="/v/<uuid>/body.html">` for HTML email bodies
+/// — the iframe hits the strict-CSP `serve_body` route in `daemon.rs`,
+/// directly (no wrapper page).
 ///
 /// Differs from [`run`]:
 ///   - no stdin read (bytes are passed in),
@@ -84,7 +92,7 @@ pub fn run(port: u16, no_open: bool) -> Result<()> {
 ///   - no stdout println.
 ///
 /// Returns the UUID of the new cache directory. The caller embeds it as
-/// `/v/<uuid>` in the iframe src.
+/// `/v/<uuid>/body.html` in the iframe src.
 pub fn cache_html_message(bytes: &[u8]) -> Result<String> {
     if bytes.is_empty() {
         bail!("cache_html_message: empty input");

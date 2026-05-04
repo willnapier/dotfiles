@@ -4,7 +4,7 @@ use axum::{
     body::Body,
     extract::{Path as AxPath, Query, State},
     http::{HeaderMap, HeaderValue, StatusCode, header},
-    response::{Html, IntoResponse, Response},
+    response::{IntoResponse, Response},
     routing::get,
 };
 use serde::Deserialize;
@@ -49,7 +49,7 @@ impl ViewQuery {
     }
 }
 
-use crate::manifest::{self, Manifest};
+use crate::manifest;
 
 #[derive(Clone)]
 struct AppState {
@@ -64,13 +64,22 @@ pub async fn run(port: u16) -> Result<()> {
 
     // mailforge subrouter: the browser-native MUA UI (listing, message,
     // compose, send, tag, search). Lives under /mail/* and /api/* — no
-    // overlap with the existing /v/* viewer routes. The mail subrouter
-    // is stateless (notmuch CLI subprocesses, on-disk drafts), so it
-    // merges cleanly into the stateful viewer Router. See
-    // ~/Assistants/shared/mailforge-design.md for the full design.
+    // overlap with the /v/* asset routes. The mail subrouter is stateless
+    // (notmuch CLI subprocesses, on-disk drafts), so it merges cleanly into
+    // the stateful asset Router. See `~/Assistants/shared/mailforge-design.md`.
+    //
+    // The `/v/<uuid>` "wrapper" route used to render an HTML page containing
+    // a second iframe pointing at body.html — a nested-iframe shape that
+    // intermittently failed to load on first navigation. As of 2026-05-02
+    // mailforge's message-view points its single iframe directly at
+    // /v/<uuid>/body.html; the wrapper, render handler, and ViewQuery on
+    // the wrapper route have all been deleted. body.html, raw.pdf, and the
+    // cid/* asset routes remain — they're called by the new single-iframe
+    // architecture. The meli `:pipe-message` standalone path (src/pipe.rs)
+    // still works in degraded form (no header chrome, no image toggle); not
+    // load-bearing, mailforge is the primary UI now.
     let app = Router::new()
         .route("/healthz", get(|| async { "ok" }))
-        .route("/v/:id", get(render))
         .route("/v/:id/body.html", get(serve_body))
         .route("/v/:id/raw.pdf", get(serve_pdf))
         .route("/v/:id/cid/:filename", get(serve_asset))
@@ -131,148 +140,6 @@ fn entry_dir(state: &AppState, id: &str) -> Option<PathBuf> {
     }
     let p = state.cache.join(id);
     if p.is_dir() { Some(p) } else { None }
-}
-
-async fn render(
-    AxPath(id): AxPath<String>,
-    Query(q): Query<ViewQuery>,
-    State(state): State<AppState>,
-) -> Response {
-    let Some(dir) = entry_dir(&state, &id) else {
-        return (StatusCode::NOT_FOUND, "no such view").into_response();
-    };
-    let m = match manifest::read(&dir) {
-        Ok(m) => m,
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("manifest: {e}")).into_response(),
-    };
-    Html(wrapper_html(&id, &m, q.images_allowed())).into_response()
-}
-
-fn wrapper_html(id: &str, m: &Manifest, images_allowed: bool) -> String {
-    // Iframe inherits the wrapper's view-state. Default is images on; only
-    // pass ?images=0 explicitly when the user has chosen to block.
-    let body_query = if images_allowed { "" } else { "?images=0" };
-    let (subject, from, date, body) = match m {
-        Manifest::Html(h) => (
-            h.subject.as_deref(),
-            h.from.as_deref(),
-            h.date.as_deref(),
-            format!(
-                r#"<iframe class="body" sandbox="allow-popups allow-popups-to-escape-sandbox" tabindex="-1" src="/v/{id}/body.html{body_query}"></iframe>"#
-            ),
-        ),
-        Manifest::Pdf(p) => (
-            p.subject.as_deref(),
-            p.from.as_deref(),
-            p.date.as_deref(),
-            format!(
-                r#"<embed class="body" src="/v/{id}/raw.pdf" type="application/pdf">"#
-            ),
-        ),
-    };
-    // For HTML mode, show a small banner with the toggle. PDFs don't load
-    // external images so the toggle is meaningless there. Default is
-    // images-allowed (you've already vetted the sender by escalating to
-    // mailforge); the toggle blocks them for sus messages.
-    let images_banner = match (m, images_allowed) {
-        (Manifest::Html(_), true) => format!(
-            r#"<div class="img-banner">
-                External images loaded.
-                <form method="get" action="/v/{id}" style="display:inline;">
-                  <input type="hidden" name="images" value="0">
-                  <button type="submit" class="img-toggle">Block external images</button>
-                </form>
-            </div>"#
-        ),
-        (Manifest::Html(_), false) => format!(
-            r#"<div class="img-banner img-banner-active">
-                External images blocked for this view.
-                <form method="get" action="/v/{id}" style="display:inline;">
-                  <button type="submit" class="img-toggle">Load external images</button>
-                </form>
-            </div>"#
-        ),
-        _ => String::new(),
-    };
-    let title = subject.unwrap_or("(no subject)");
-    let from_html = from
-        .map(|f| format!("<span class=hdr-field>From: {}</span>", html_escape(f)))
-        .unwrap_or_default();
-    let date_html = date
-        .map(|d| format!("<span class=hdr-field>Date: {}</span>", html_escape(d)))
-        .unwrap_or_default();
-    let title_html = html_escape(title);
-    format!(
-        r#"<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>{title_html}</title>
-<style>
-  :root {{
-    color-scheme: light dark;
-    --bg: #fafaf7; --fg: #1a1a1a; --muted: #555; --rule: #e2e2dd;
-  }}
-  @media (prefers-color-scheme: dark) {{
-    :root {{ --bg: #16181a; --fg: #e8e6e3; --muted: #a8a8a8; --rule: #2a2c30; }}
-  }}
-  html, body {{ margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--fg);
-    font: 14px/1.45 -apple-system, "SF Pro Text", "Segoe UI", Roboto, system-ui, sans-serif; }}
-  header {{ padding: 14px 20px; border-bottom: 1px solid var(--rule); display: flex;
-    flex-direction: column; gap: 4px; }}
-  header h1 {{ font-size: 16px; font-weight: 600; margin: 0; }}
-  .hdr-meta {{ display: flex; gap: 18px; color: var(--muted); font-size: 12px; }}
-  iframe.body, embed.body {{ width: 100%; flex: 1; border: 0; background: white; }}
-  body {{ display: flex; flex-direction: column; }}
-  .img-banner {{ padding: 6px 20px; font-size: 12px; color: var(--muted);
-    border-bottom: 1px solid var(--rule); display: flex; gap: 12px;
-    align-items: center; }}
-  .img-banner.img-banner-active {{ color: var(--fg); background: rgba(255,193,7,0.06); }}
-  .img-toggle {{ font: inherit; padding: 2px 10px; border: 1px solid var(--rule);
-    background: transparent; color: inherit; border-radius: 4px; cursor: pointer; }}
-  .img-toggle:hover {{ background: var(--rule); }}
-</style>
-</head>
-<body>
-<header>
-  <h1>{title_html}</h1>
-  <div class="hdr-meta">{from_html}{date_html}</div>
-</header>
-{images_banner}
-{body}
-<script>
-  // Backspace / Escape return to the previous view (the message list in
-  // MailForge, or the referring tab from any other entry point). The
-  // sandboxed iframe below is cross-origin (NULL origin from sandbox),
-  // so its keydown events can't bubble up to this script — that's fine.
-  // The wrapper area (header, banner, body margins) keeps keyboard focus
-  // until the user clicks INTO the iframe content, at which point this
-  // handler stops firing for that focus context. Clicking back on any
-  // wrapper element (or pressing Tab off the iframe) restores it.
-  document.addEventListener('keydown', function (e) {{
-    if (e.key === 'Backspace' || e.key === 'Escape') {{
-      // Don't hijack typing inside any visible input/textarea (none today,
-      // but defensive against future banner inputs).
-      var t = e.target;
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) {{
-        return;
-      }}
-      e.preventDefault();
-      history.back();
-    }}
-  }});
-</script>
-</body>
-</html>
-"#
-    )
-}
-
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
 }
 
 async fn serve_body(

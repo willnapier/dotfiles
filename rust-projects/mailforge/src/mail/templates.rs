@@ -525,29 +525,70 @@ pub fn safe_text(s: &str) -> Markup {
     html! { (s) }
 }
 
-/// Render an iframe-embedded HTML body via the existing `/v/<uuid>`
-/// viewer pipeline. The `uuid` is whatever `pipe::run_with_bytes`
-/// returned. Sandbox config matches daemon::wrapper_html: scripts/forms/
-/// same-origin still blocked, but `target="_blank"` links can escape
-/// to a new tab so users can click through. The body's `<base>` tag
-/// (injected by `pipe::inject_base_target`) makes all unscoped links
-/// open in a new tab by default.
+/// Render an iframe-embedded HTML body, pointing directly at the strict-CSP
+/// body endpoint `/v/<uuid>/body.html`.
 ///
-/// `tabindex="-1"` prevents the iframe from auto-focusing on page load
-/// or being reachable via Tab navigation. This keeps keyboard focus on
-/// the parent message-view document so `keys.js` `_base.Backspace` /
-/// `_base.Escape` handlers fire and pop back to the listing. The user
-/// can still click into the iframe to interact with its content; focus
-/// then lives there until they click outside (cross-origin sandbox
-/// means parent can't observe iframe-internal focus events).
-pub fn html_body_iframe(uuid: &str) -> Markup {
+/// History: an earlier design wrapped the body in a second HTML page (the
+/// `/v/<uuid>` "wrapper") which itself contained an iframe pointing at
+/// `body.html` — a nested-iframe shape. That intermittently failed on first
+/// navigation (inner iframe loaded blank, refresh fixed it) due to a
+/// browser-side timing race we never pinned down. Collapsing to a single
+/// iframe eliminates the failure mode structurally; the image-toggle UI
+/// (previously rendered inside the wrapper) now lives in the message-view
+/// chrome via [`image_toggle_banner`]. See 2026-05-02 commit notes.
+///
+/// `images_allowed` controls the iframe's query string: default (true) sends
+/// `?images=1`, which the daemon's `serve_body` handler reads to pick the
+/// relaxed CSP (external images allowed). `?images=0` falls back to strict
+/// CSP. The query string is always emitted explicitly so caches key on it.
+///
+/// `loading="eager"` is set explicitly. The default is "auto" which browsers
+/// implement variably; eager removes one source of "loaded blank" weirdness.
+/// `tabindex="-1"` keeps focus on the parent doc for keyboard nav; sandbox
+/// flags allow target="_blank" link escape only.
+pub fn html_body_iframe(uuid: &str, images_allowed: bool) -> Markup {
+    let qs = if images_allowed { "?images=1" } else { "?images=0" };
+    let src = format!("/v/{}/body.html{}", uuid, qs);
     html! {
         iframe class="message-body__iframe"
             sandbox="allow-popups allow-popups-to-escape-sandbox"
             tabindex="-1"
-            src=(format!("/v/{}", uuid))
+            loading="eager"
+            src=(src)
             title="Message body"
         {}
+    }
+}
+
+/// Render the image-toggle banner that sits in the message-view chrome,
+/// directly above the body iframe. Replaces the old wrapper-page `img-banner`.
+///
+/// Submits via GET to the same message-view URL so the toggle is bookmarkable
+/// and survives Backspace navigation. `current_path` is `/mail/m/<id>` (no
+/// query) and the form preserves `view=full` so the user stays in the HTML
+/// view after toggling. PDFs don't load external images so this is HTML-only.
+pub fn image_toggle_banner(current_path: &str, images_allowed: bool) -> Markup {
+    if images_allowed {
+        html! {
+            div class="img-banner" {
+                "External images loaded."
+                form method="get" action=(current_path) class="img-banner__form" {
+                    input type="hidden" name="view" value="full";
+                    input type="hidden" name="images" value="0";
+                    button type="submit" class="img-toggle" { "Block external images" }
+                }
+            }
+        }
+    } else {
+        html! {
+            div class="img-banner img-banner--active" {
+                "External images blocked for this view."
+                form method="get" action=(current_path) class="img-banner__form" {
+                    input type="hidden" name="view" value="full";
+                    button type="submit" class="img-toggle" { "Load external images" }
+                }
+            }
+        }
     }
 }
 
