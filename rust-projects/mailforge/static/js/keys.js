@@ -1408,6 +1408,29 @@
       }, false);
     }
 
+    // Compose: deterministic cursor placement on page load. The
+    // server stamps `autofocus` on the right field (To for fresh
+    // compose / forward; body textarea for reply / draft / unsubscribe)
+    // and `data-cursor-pos="start"|"end"` on the textarea. Browsers
+    // disagree on where the caret lands when autofocus is applied to a
+    // textarea with content — some put it at 0, others at the end.
+    // We override explicitly so reply lands above the quoted original
+    // and draft resumes at the end of saved content.
+    if (ctxName === "compose") {
+      const ta = document.querySelector('textarea[name="body"][autofocus]');
+      if (ta) {
+        const pos = ta.dataset.cursorPos === "end" ? ta.value.length : 0;
+        // Defer to next tick so HTML autofocus has applied before we
+        // mutate selection — otherwise some browsers re-clobber it.
+        setTimeout(() => {
+          try {
+            ta.setSelectionRange(pos, pos);
+            if (pos === 0) ta.scrollTop = 0;
+          } catch (_) { /* ignore */ }
+        }, 0);
+      }
+    }
+
     // Sidebar keyboard shortcuts: number the first 9 sidebar anchors
     // 1-9 in render order, prepend visible kbd badges to each, and
     // bind digit keys 1-9 in _base so they work in any non-typing

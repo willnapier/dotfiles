@@ -610,6 +610,18 @@ fn render_form(
         "Compose"
     };
 
+    // Cursor placement on page load. Reply lands above the quoted
+    // original (cursor at position 0). Resumed draft continues at the
+    // end of existing content. Forward / fresh compose with no `to`
+    // value focuses the To field. Anything else (unsubscribe with
+    // to/subject prefilled, mailto-import) focuses the body. The
+    // textarea carries data-cursor-pos="start"|"end" so keys.js can
+    // position the caret deterministically — relying on browser
+    // autofocus defaults isn't portable across textareas with content.
+    let focus_to = draft_id.is_none() && in_reply_to.is_none() && to.is_empty();
+    let focus_body = !focus_to;
+    let body_cursor_pos = if draft_id.is_some() { "end" } else { "start" };
+
     html! {
         section.compose-wrapper {
             header.compose-header {
@@ -651,6 +663,7 @@ fn render_form(
                     span.field-label { "To" }
                     input type="text" name="to" value=(to)
                           placeholder="recipient@example.com (comma-separated)"
+                          autofocus[focus_to]
                           required;
                 }
 
@@ -675,6 +688,8 @@ fn render_form(
                 label.field {
                     span.field-label { "Body" }
                     textarea name="body" rows="20"
+                             autofocus[focus_body]
+                             data-cursor-pos=(body_cursor_pos)
                     {
                         (body)
                     }
