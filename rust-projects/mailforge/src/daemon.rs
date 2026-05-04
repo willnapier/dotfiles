@@ -101,7 +101,22 @@ pub async fn run(port: u16) -> Result<()> {
                             format!("{}/static", env!("CARGO_MANIFEST_DIR"))
                         }),
                 )),
-        );
+        )
+        // Global no-store cache headers for /mail/* and /v/* dynamic routes
+        // (the static branch above already has its own no-store layer
+        // and is unaffected). Without this, the browser uses heuristic
+        // caching on responses that lack explicit Cache-Control, which
+        // produces intermittent "iframe loaded blank, refresh fixes it"
+        // failures when a freshly-issued /v/<uuid>/body.html request
+        // collides with a cached 404 from a prior UUID. For a
+        // localhost-only single-user mail UI, re-fetching everything is
+        // both correct and cheap (notmuch + local cache are fast).
+        // Discovered 2026-05-04 — Sadhana Mala emails in particular
+        // surfaced the failure mode.
+        .layer(tower_http::set_header::SetResponseHeaderLayer::overriding(
+            axum::http::header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static("no-cache, no-store, must-revalidate"),
+        ));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     tracing::info!("mailforge listening on http://{addr}");
