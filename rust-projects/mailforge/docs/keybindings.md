@@ -118,6 +118,8 @@ Mirrors meli's envelope-view + pager.
 | `J` | Next message in mailbox (or thread) |
 | `K` | Previous message in mailbox (or thread) |
 | `m` | Open in mailforge viewer (forces full-render of HTML body in fullscreen iframe — the original mailforge escalation path; useful for messages where the inline iframe is too cramped) |
+| `v` | Open the HTML view via the existing `?view=full` URL **AND** add this sender's domain to the auto-HTML trust list (fire-and-forget POST `/api/html-trusted/add`). On future messages from the domain, MailForge auto-renders HTML inline IF the message's `Authentication-Results` (DMARC/SPF/DKIM) passes. |
+| `V` | Untrust this sender's domain (POST `/api/html-trusted/remove` then reload). The message re-renders as plaintext and the trust chip in the header disappears. |
 | `Ctrl+R` | Reload the message (re-fetch from notmuch) |
 
 ## Thread (`/mail/t/<thread-id>`)
