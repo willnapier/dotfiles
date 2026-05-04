@@ -93,7 +93,11 @@ async fn launch_platform(port: u16, user_data_dir: &Path) -> Result<u32> {
 
     // Chrome takes a moment to register its process. Poll `pgrep -f` for
     // up to a few seconds looking for our user-data-dir argument.
-    let needle = format!("--user-data-dir={}", user_data_dir.display());
+    // NOTE: BSD pgrep (macOS) treats a leading `--` in the pattern as
+    // an end-of-options marker and errors with "illegal option". Drop
+    // the `--` prefix from the regex — `user-data-dir=<path>` matches
+    // the same processes without confusing pgrep's argument parser.
+    let needle = format!("user-data-dir={}", user_data_dir.display());
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         if let Some(pid) = pgrep_first(&needle).await? {
@@ -169,8 +173,13 @@ pub async fn stop(pid: u32, grace: Duration) -> Result<()> {
 
 /// Best-effort: kill any debug-Chrome whose command line contains the
 /// given user-data-dir. Used when `state.json` lacks a PID.
+///
+/// NOTE on the regex: BSD pgrep (macOS) rejects patterns starting
+/// with `--` as "illegal option". The `--user-data-dir=` prefix is
+/// shortened to `user-data-dir=` here — same matches against Chrome's
+/// command line, no flag-parser confusion.
 pub async fn stop_by_user_data_dir(user_data_dir: &Path) -> Result<usize> {
-    let needle = format!("--user-data-dir={}", user_data_dir.display());
+    let needle = format!("user-data-dir={}", user_data_dir.display());
     let out = Command::new("pgrep")
         .args(["-f", &needle])
         .output()

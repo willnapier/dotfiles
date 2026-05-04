@@ -19,6 +19,17 @@ pub async fn run(port: u16, user_data_dir: Option<PathBuf>) -> Result<()> {
         None => state::default_user_data_dir()?,
     };
 
+    // Orphan guard: if a previous pageprobe-Chrome instance for this
+    // user-data-dir is still alive (state lost track of its PID, or
+    // a prior `stop` failed to clean it up), kill it before launching
+    // a new one. Otherwise we end up with two debug-Chromes on
+    // (potentially) the same port and the user gets confused about
+    // which window is which.
+    let orphans = chrome::stop_by_user_data_dir(&user_data_dir).await.unwrap_or(0);
+    if orphans > 0 {
+        eprintln!("(killed {orphans} orphan Chrome process(es) from a prior session)");
+    }
+
     let pid = chrome::launch(port, &user_data_dir).await?;
 
     s.chrome_pid = if pid == 0 { None } else { Some(pid) };
