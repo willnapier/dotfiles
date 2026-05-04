@@ -508,12 +508,38 @@ body.col-resizing * { user-select: none !important; }
   bottom: 0;
   background: var(--bg-elevated);
   border-top: 1px solid var(--rule);
-  padding: var(--sp-2) var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
   font-size: var(--text-base);
   color: var(--fg-muted);
   display: flex;
-  gap: var(--sp-3);
+  /* Spread bindings across the full width so the gap between
+   * binding groups is unambiguously larger than the in-group
+   * space between <kbd> and its label. The bindings are also
+   * non-shrinking so each stays whole on resize. */
+  justify-content: space-between;
   flex-wrap: wrap;
+  row-gap: var(--sp-2);
+}
+
+.helpbar__bindings {
+  display: flex;
+  justify-content: space-between;
+  flex: 1;
+  flex-wrap: wrap;
+  /* Minimum inter-group spacing for the wrap-fallback case (narrow
+   * windows where space-between collapses). At wider widths,
+   * space-between dominates. */
+  gap: var(--sp-6);
+  align-items: center;
+}
+
+.helpbar__binding {
+  white-space: nowrap;
+}
+
+.helpbar__action {
+  margin-left: var(--sp-1);
+  color: var(--fg-muted);
 }
 
 .helpbar kbd {
