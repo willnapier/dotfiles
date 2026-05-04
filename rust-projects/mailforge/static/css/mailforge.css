@@ -325,7 +325,14 @@ body.col-resizing * { user-select: none !important; }
   min-height: 60vh;
   border: 1px solid var(--rule);
   border-radius: var(--radius-md);
-  background: var(--bg-elevated);
+  /* Solarized light base3 cream as the canvas behind email content.
+   * Mail HTML is virtually always designed for a light background;
+   * dark email text (color: #333 etc.) on the dark theme's
+   * --bg-elevated rendered as near-invisible. The cream stays in
+   * the Solarized family, is warmer than pure #ffffff, and where
+   * the email sets its own background that wins via CSS specificity
+   * — the cream only shows in blank areas. */
+  background: #fdf6e3;
 }
 
 /* HTML view (`?view=full`): hide the subject/meta header (subject is in
