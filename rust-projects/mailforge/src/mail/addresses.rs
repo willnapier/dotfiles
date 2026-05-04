@@ -8,12 +8,21 @@
 //!
 //! ## Why an in-memory cache
 //!
-//! Building the book requires 2-3 `notmuch address` invocations (sender,
-//! recipients-of-sent-mail, recipients-from-everything). On William's
-//! 218k-message corpus this takes 5-15 seconds end to end — far too slow
-//! to do inside a request handler. The cache populates lazily on first
-//! access (so the daemon doesn't block startup) and is rebuilt on a timer
-//! to pick up newly-corresponded addresses.
+//! Building the book requires two `notmuch address` invocations
+//! (recipients of `tag:sent`; senders of everything else). On William's
+//! 218k-message corpus this takes 10-15 seconds end to end — far too
+//! slow to do inside a request handler. We do an EAGER initial build on
+//! startup (in `spawn_refresh_task`) so the first request to
+//! `/api/addresses` finds a warm cache; the refresh loop then rebuilds
+//! every 10 minutes to pick up newly-corresponded addresses.
+//!
+//! The two-call shape exploits a notmuch quirk: with
+//! `--deduplicate=no`, each row carries both the (latest-seen-on-this-
+//! row) display name AND lets us count occurrences per address. So one
+//! call yields BOTH the universe and the count — saving a third call
+//! against `*` which is prohibitively slow (~2 minutes on a 218k corpus
+//! because notmuch has to walk every message to gather senders +
+//! recipients).
 //!
 //! ## Ranking
 //!
@@ -71,19 +80,25 @@ pub struct AddressEntry {
 /// (deduplicated) address. We ignore `name-addr` because we re-derive
 /// the display string ourselves — notmuch's quoting is fine but we want
 /// a single code path so the unit tests cover it.
+///
+/// Public so unit tests + future callers (e.g. an admin "rebuild now"
+/// route) can construct fixtures and pass them to
+/// [`build_from_streams`].
 #[derive(Debug, Deserialize)]
-struct NotmuchAddrRow {
+pub struct NotmuchAddrRow {
     #[serde(default)]
-    name: String,
-    address: String,
+    pub name: String,
+    pub address: String,
 }
 
 // ------------------------------------------------------------------
 // Cache
 // ------------------------------------------------------------------
 
-/// Process-global cache. Populated lazily on first access (see [`get`]),
-/// then refreshed every [`REFRESH_INTERVAL`] by [`spawn_refresh_task`].
+/// Process-global cache. Initialised to an empty Vec on first call to
+/// [`get`] or [`spawn_refresh_task`]; the actual address book is loaded
+/// in the background by `spawn_refresh_task` and assigned via the
+/// `RwLock`.
 static CACHE: OnceLock<RwLock<Vec<AddressEntry>>> = OnceLock::new();
 
 /// How often the background refresh task rebuilds the cache. 10 minutes
@@ -92,117 +107,109 @@ static CACHE: OnceLock<RwLock<Vec<AddressEntry>>> = OnceLock::new();
 /// freshly-corresponded addresses appear within one mail-cycle iteration.
 const REFRESH_INTERVAL: Duration = Duration::from_secs(600);
 
-/// Read-only access to the cached address book. Builds the book on
-/// first call (synchronous, may take 5-15 seconds on a large corpus),
-/// then returns a clone of the current snapshot on subsequent calls.
+/// Read-only access to the cached address book. Returns whatever the
+/// cache currently holds — never blocks waiting for a (re)build. If the
+/// background task hasn't finished its first rebuild yet, callers see
+/// an empty Vec (and the autocomplete dropdown stays empty); the next
+/// request after the rebuild completes will see the populated book.
 ///
-/// Returns an empty Vec if the build failed (e.g. notmuch is unavailable).
-/// We swallow the error here so the autocomplete endpoint degrades to
-/// "no suggestions" rather than 500ing the entire compose page.
+/// Failure handling: a poisoned RwLock or a missing OnceLock cell both
+/// degrade to an empty Vec — the autocomplete endpoint then returns
+/// `{"matches": []}` rather than 500ing the compose page.
 pub fn get() -> Vec<AddressEntry> {
-    let lock = CACHE.get_or_init(|| RwLock::new(build_or_empty()));
-    lock.read()
+    cache()
+        .read()
         .map(|v| v.clone())
         .unwrap_or_default()
+}
+
+fn cache() -> &'static RwLock<Vec<AddressEntry>> {
+    CACHE.get_or_init(|| RwLock::new(Vec::new()))
 }
 
 /// Spawn the background refresh task. Should be called once from the
 /// daemon's `run` after the runtime is up. Idempotent: subsequent calls
 /// after the first will return without spawning a duplicate.
 ///
-/// The task sleeps `REFRESH_INTERVAL` then rebuilds the cache, repeating
-/// forever. A failed rebuild leaves the previous snapshot in place
-/// (we don't want a transient notmuch failure to wipe the book).
+/// The task does an EAGER first build (immediately, on the blocking
+/// pool) so the cache is warm soon after startup. After each build it
+/// sleeps [`REFRESH_INTERVAL`] then rebuilds again. A failed rebuild
+/// leaves the previous snapshot in place (we don't want a transient
+/// notmuch failure to wipe the book).
 pub fn spawn_refresh_task() {
     static SPAWNED: OnceLock<()> = OnceLock::new();
     if SPAWNED.set(()).is_err() {
         return; // already spawned
     }
+    // Touch the cache so the OnceLock cell is initialised before any
+    // refresh / read tries to write into it.
+    let _ = cache();
     tokio::spawn(async {
         loop {
-            tokio::time::sleep(REFRESH_INTERVAL).await;
             // notmuch CLI is blocking; run on the blocking pool so we
-            // don't tie up an async worker for 5-15s.
+            // don't tie up an async worker for 10-15s.
             let result = tokio::task::spawn_blocking(build_address_book).await;
             match result {
                 Ok(Ok(fresh)) => {
-                    if let Some(lock) = CACHE.get() {
-                        if let Ok(mut guard) = lock.write() {
-                            *guard = fresh;
-                        }
+                    if let Ok(mut guard) = cache().write() {
+                        let n = fresh.len();
+                        *guard = fresh;
+                        tracing::info!("address book refreshed: {n} entries");
                     }
                 }
                 Ok(Err(e)) => {
-                    tracing::warn!("address book refresh failed: {e:#}");
+                    tracing::warn!("address book build failed: {e:#}");
                 }
                 Err(e) => {
-                    tracing::warn!("address book refresh join error: {e}");
+                    tracing::warn!("address book build join error: {e}");
                 }
             }
+            tokio::time::sleep(REFRESH_INTERVAL).await;
         }
     });
-}
-
-/// Wrapper that demotes errors to an empty list. Used by the lazy-init
-/// path so a notmuch failure doesn't poison the cache forever.
-fn build_or_empty() -> Vec<AddressEntry> {
-    match build_address_book() {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::warn!("address book initial build failed: {e:#}");
-            Vec::new()
-        }
-    }
 }
 
 // ------------------------------------------------------------------
 // Build
 // ------------------------------------------------------------------
 
-/// Build the full address book by issuing 3 `notmuch address` calls and
+/// Build the full address book by issuing 2 `notmuch address` calls and
 /// merging the results. Public so test harnesses (and any future
 /// admin/refresh endpoint) can drive a synchronous rebuild.
+///
+/// Why only 2 calls — see the module-level docstring. We avoid the
+/// `--output=sender --output=recipients '*'` shape (universe in one go)
+/// because on a large corpus notmuch needs ~2 minutes to walk every
+/// message; the two split queries `tag:sent` and `not tag:sent` are
+/// cumulatively ~15 seconds and partition the corpus exactly the same
+/// way for the count and universe-derivation purposes we have here.
 pub fn build_address_book() -> Result<Vec<AddressEntry>> {
-    // 1. Universe of addresses (sender + recipients), deduped, with
-    //    most-recent name attached. This is the seed: we'll create one
-    //    AddressEntry per row here, then layer counts on top.
-    let universe_json = run_notmuch_address(&[
-        "--output=sender",
-        "--output=recipients",
-        "--deduplicate=address",
-        "--sort=newest-first",
-        "*",
-    ])
-    .context("building address universe")?;
-    let universe: Vec<NotmuchAddrRow> = serde_json::from_slice(&universe_json)
-        .context("parsing notmuch address universe JSON")?;
-
-    // 2. Recipients of every sent message, NOT deduplicated, so we can
-    //    count occurrences per address. This is "addresses YOU have
-    //    written to" weighted by frequency.
-    let sent_recipients_json = run_notmuch_address(&[
+    // 1. Recipients of sent messages, NOT deduplicated. Each row gives
+    //    us (a) an address and its display name, (b) one tally toward
+    //    sent_count for that address. We dedupe + count in one pass.
+    let sent_json = run_notmuch_address(&[
         "--output=recipients",
         "--deduplicate=no",
+        "--sort=newest-first",
         "tag:sent",
     ])
-    .context("counting sent recipients")?;
-    let sent_recipients: Vec<NotmuchAddrRow> = serde_json::from_slice(&sent_recipients_json)
+    .context("listing sent recipients")?;
+    let sent_rows: Vec<NotmuchAddrRow> = serde_json::from_slice(&sent_json)
         .context("parsing notmuch sent-recipients JSON")?;
-    let sent_counts = count_addresses(&sent_recipients);
 
-    // 3. Senders of every received (= not-sent) message. Counts which
-    //    addresses have written to YOU.
-    let recv_senders_json = run_notmuch_address(&[
+    // 2. Senders of incoming (non-sent) messages, NOT deduplicated.
+    //    Same shape; populates recv_count and the rest of the universe.
+    let recv_json = run_notmuch_address(&[
         "--output=sender",
         "--deduplicate=no",
+        "--sort=newest-first",
         "not tag:sent",
     ])
-    .context("counting incoming senders")?;
-    let recv_senders: Vec<NotmuchAddrRow> = serde_json::from_slice(&recv_senders_json)
+    .context("listing incoming senders")?;
+    let recv_rows: Vec<NotmuchAddrRow> = serde_json::from_slice(&recv_json)
         .context("parsing notmuch incoming-senders JSON")?;
-    let recv_counts = count_addresses(&recv_senders);
 
-    Ok(merge(universe, &sent_counts, &recv_counts))
+    Ok(build_from_streams(&sent_rows, &recv_rows))
 }
 
 /// Invoke `notmuch address --format=json <args...>` and return raw stdout.
@@ -230,60 +237,74 @@ fn run_notmuch_address(extra_args: &[&str]) -> Result<Vec<u8>> {
 // Pure helpers (unit-testable without notmuch)
 // ------------------------------------------------------------------
 
-/// Count occurrences of each (lowercased) address in a non-deduplicated
-/// list of notmuch rows. Used by the build pipeline to roll
-/// `--deduplicate=no` notmuch output into per-address counts.
-fn count_addresses(rows: &[NotmuchAddrRow]) -> HashMap<String, u32> {
-    let mut counts = HashMap::new();
-    for row in rows {
-        let addr = row.address.to_lowercase();
-        if addr.is_empty() {
-            continue;
-        }
-        *counts.entry(addr).or_insert(0) += 1;
-    }
-    counts
-}
-
-/// Merge the universe (one row per unique address, with its most-recent
-/// display name) with per-address sent and receive counts. Returns the
-/// final ranked address book.
-fn merge(
-    universe: Vec<NotmuchAddrRow>,
-    sent_counts: &HashMap<String, u32>,
-    recv_counts: &HashMap<String, u32>,
+/// Build the address book from two streams of (non-deduplicated)
+/// `notmuch address` rows: one for sent recipients, one for incoming
+/// senders. Each row contributes one tally to the relevant count, and
+/// (the first time an address is seen) seeds the [`AddressEntry`]
+/// with a display name — preferring sent-recipients order (which is
+/// already newest-first) so the most-recent name we used wins.
+///
+/// Public for unit-testing; production code goes through
+/// [`build_address_book`].
+pub fn build_from_streams(
+    sent_rows: &[NotmuchAddrRow],
+    recv_rows: &[NotmuchAddrRow],
 ) -> Vec<AddressEntry> {
-    // Universe may itself have duplicates if newest-first sort surfaces
-    // the same address more than once (it shouldn't with --deduplicate=address,
-    // but defend against that). Keep the first occurrence's name.
-    let mut seen: HashMap<String, usize> = HashMap::new();
-    let mut entries: Vec<AddressEntry> = Vec::with_capacity(universe.len());
-    for row in universe {
+    let mut by_addr: HashMap<String, AddressEntry> = HashMap::new();
+
+    // Helper: insert/update an entry based on a notmuch row. Bumps the
+    // chosen counter; sets name on first sight only (so the freshly-
+    // seen, in-newest-first-order name sticks).
+    fn upsert(
+        by_addr: &mut HashMap<String, AddressEntry>,
+        row: &NotmuchAddrRow,
+        bump_sent: bool,
+    ) {
         let addr_lc = row.address.to_lowercase();
         if addr_lc.is_empty() {
-            continue;
+            return;
         }
-        if seen.contains_key(&addr_lc) {
-            continue;
-        }
-        seen.insert(addr_lc.clone(), entries.len());
-
-        let name = if row.name.trim().is_empty() {
+        let name_opt = if row.name.trim().is_empty() {
             None
         } else {
             Some(row.name.trim().to_string())
         };
-        let display = format_display(name.as_deref(), &addr_lc);
-        let sent_count = sent_counts.get(&addr_lc).copied().unwrap_or(0);
-        let recv_count = recv_counts.get(&addr_lc).copied().unwrap_or(0);
-        entries.push(AddressEntry {
-            name,
-            address: addr_lc,
-            display,
-            sent_count,
-            recv_count,
-        });
+        let entry = by_addr
+            .entry(addr_lc.clone())
+            .or_insert_with(|| AddressEntry {
+                name: name_opt.clone(),
+                address: addr_lc.clone(),
+                // display filled in once we've finalised the entry
+                display: String::new(),
+                sent_count: 0,
+                recv_count: 0,
+            });
+        // Late name promotion: a row without a name shouldn't overwrite
+        // an earlier seen name. A row with a name fills in if absent.
+        if entry.name.is_none() && name_opt.is_some() {
+            entry.name = name_opt;
+        }
+        if bump_sent {
+            entry.sent_count = entry.sent_count.saturating_add(1);
+        } else {
+            entry.recv_count = entry.recv_count.saturating_add(1);
+        }
     }
+
+    for row in sent_rows {
+        upsert(&mut by_addr, row, true);
+    }
+    for row in recv_rows {
+        upsert(&mut by_addr, row, false);
+    }
+
+    let mut entries: Vec<AddressEntry> = by_addr
+        .into_values()
+        .map(|mut e| {
+            e.display = format_display(e.name.as_deref(), &e.address);
+            e
+        })
+        .collect();
     rank(&mut entries);
     entries
 }
@@ -409,29 +430,22 @@ pub async fn addresses_get(Query(q): Query<AddressesQuery>) -> impl IntoResponse
 mod tests {
     use super::*;
 
-    /// Minimal fixture mimicking `notmuch address --output=sender
-    /// --output=recipients --deduplicate=address` output. Exercises:
-    /// - addresses with display names (Alice, Bob)
-    /// - bare addresses with empty name (newsletter)
-    /// - quoted-name with comma (`"Maras, Katie"`)
-    /// - mixed-case address that should be lowercased
-    fn universe_fixture() -> Vec<NotmuchAddrRow> {
-        serde_json::from_str(
+    #[test]
+    fn parses_notmuch_address_json() {
+        // Real-shape fixture from `notmuch address --format=json`.
+        // Confirms our struct shape matches notmuch's JSON layout, with
+        // the awkward cases the spec called out: empty-name rows,
+        // mixed-case addresses, quoted display name with embedded comma.
+        let rows: Vec<NotmuchAddrRow> = serde_json::from_str(
             r#"[
               {"name": "Alice Adams", "address": "alice@example.com", "name-addr": "Alice Adams <alice@example.com>"},
               {"name": "", "address": "newsletter@example.org", "name-addr": "newsletter@example.org"},
               {"name": "Bob Brown", "address": "Bob.Brown@Example.NET", "name-addr": "Bob Brown <Bob.Brown@Example.NET>"},
-              {"name": "Maras, Katie", "address": "katie@city.ac.uk", "name-addr": "\"Maras, Katie\" <katie@city.ac.uk>"},
-              {"name": "Carol", "address": "carol@example.com", "name-addr": "Carol <carol@example.com>"}
+              {"name": "Maras, Katie", "address": "katie@city.ac.uk", "name-addr": "\"Maras, Katie\" <katie@city.ac.uk>"}
             ]"#,
         )
-        .unwrap()
-    }
-
-    #[test]
-    fn parses_notmuch_address_json() {
-        let rows = universe_fixture();
-        assert_eq!(rows.len(), 5);
+        .unwrap();
+        assert_eq!(rows.len(), 4);
         assert_eq!(rows[0].name, "Alice Adams");
         assert_eq!(rows[0].address, "alice@example.com");
         // Empty name comes through as empty string (not None) from notmuch.
@@ -444,85 +458,121 @@ mod tests {
     }
 
     #[test]
-    fn merge_lowercases_addresses() {
-        let universe = universe_fixture();
-        let book = merge(universe, &HashMap::new(), &HashMap::new());
+    fn build_from_streams_lowercases_addresses() {
+        // Single recv row mentions Bob Brown with mixed-case address;
+        // book should normalise to lowercase.
+        let recv: Vec<NotmuchAddrRow> = serde_json::from_str(
+            r#"[{"name": "Bob Brown", "address": "Bob.Brown@Example.NET", "name-addr": ""}]"#,
+        )
+        .unwrap();
+        let book = build_from_streams(&[], &recv);
         let bob = book.iter().find(|e| e.name.as_deref() == Some("Bob Brown")).unwrap();
         assert_eq!(bob.address, "bob.brown@example.net");
     }
 
     #[test]
-    fn merge_skips_empty_addresses() {
-        let universe: Vec<NotmuchAddrRow> = serde_json::from_str(
+    fn build_from_streams_skips_empty_addresses() {
+        // notmuch occasionally emits rows with an empty `address` field
+        // (degenerate List-Unsubscribe etc.). They should never appear
+        // in the book.
+        let recv: Vec<NotmuchAddrRow> = serde_json::from_str(
             r#"[{"name": "Anon", "address": "", "name-addr": ""},
-                {"name": "Real", "address": "real@example.com", "name-addr": "Real <real@example.com>"}]"#,
+                {"name": "Real", "address": "real@example.com", "name-addr": ""}]"#,
         )
         .unwrap();
-        let book = merge(universe, &HashMap::new(), &HashMap::new());
+        let book = build_from_streams(&[], &recv);
         assert_eq!(book.len(), 1);
         assert_eq!(book[0].address, "real@example.com");
     }
 
     #[test]
-    fn merge_dedupes_universe() {
-        // Two rows with the same address (defensive — notmuch should
-        // already dedupe with --deduplicate=address, but we shouldn't
-        // double-count if it doesn't).
-        let universe: Vec<NotmuchAddrRow> = serde_json::from_str(
+    fn build_from_streams_dedupes_case_insensitively() {
+        // Two rows for the same address (different casing). Both should
+        // collapse into a single entry; recv_count should be 2.
+        let recv: Vec<NotmuchAddrRow> = serde_json::from_str(
             r#"[{"name": "First", "address": "x@y.com", "name-addr": ""},
                 {"name": "Second", "address": "X@Y.COM", "name-addr": ""}]"#,
         )
         .unwrap();
-        let book = merge(universe, &HashMap::new(), &HashMap::new());
+        let book = build_from_streams(&[], &recv);
         assert_eq!(book.len(), 1);
-        // First occurrence wins — caller passed newest-first.
+        assert_eq!(book[0].address, "x@y.com");
+        assert_eq!(book[0].recv_count, 2);
+        // First row's name wins (sets entry on insert).
         assert_eq!(book[0].name.as_deref(), Some("First"));
     }
 
     #[test]
-    fn merge_attaches_counts() {
-        let universe = universe_fixture();
-        let mut sent = HashMap::new();
-        sent.insert("alice@example.com".to_string(), 7);
-        sent.insert("carol@example.com".to_string(), 2);
-        let mut recv = HashMap::new();
-        recv.insert("alice@example.com".to_string(), 3);
-        recv.insert("newsletter@example.org".to_string(), 12);
-
-        let book = merge(universe, &sent, &recv);
+    fn build_from_streams_attaches_counts() {
+        // alice gets 3 sent + 2 recv; newsletter gets 0 sent + 4 recv.
+        let sent: Vec<NotmuchAddrRow> = serde_json::from_str(
+            r#"[{"name": "Alice", "address": "alice@example.com", "name-addr": ""},
+                {"name": "Alice", "address": "alice@example.com", "name-addr": ""},
+                {"name": "Alice", "address": "alice@example.com", "name-addr": ""}]"#,
+        )
+        .unwrap();
+        let recv: Vec<NotmuchAddrRow> = serde_json::from_str(
+            r#"[{"name": "", "address": "alice@example.com", "name-addr": ""},
+                {"name": "", "address": "alice@example.com", "name-addr": ""},
+                {"name": "", "address": "newsletter@example.org", "name-addr": ""},
+                {"name": "", "address": "newsletter@example.org", "name-addr": ""},
+                {"name": "", "address": "newsletter@example.org", "name-addr": ""},
+                {"name": "", "address": "newsletter@example.org", "name-addr": ""}]"#,
+        )
+        .unwrap();
+        let book = build_from_streams(&sent, &recv);
         let alice = book.iter().find(|e| e.address == "alice@example.com").unwrap();
-        assert_eq!(alice.sent_count, 7);
-        assert_eq!(alice.recv_count, 3);
+        assert_eq!(alice.sent_count, 3);
+        assert_eq!(alice.recv_count, 2);
         let news = book.iter().find(|e| e.address == "newsletter@example.org").unwrap();
         assert_eq!(news.sent_count, 0);
-        assert_eq!(news.recv_count, 12);
+        assert_eq!(news.recv_count, 4);
+        // Newsletter had empty names in every row → name remains None.
+        assert!(news.name.is_none());
+    }
+
+    #[test]
+    fn build_from_streams_promotes_late_name() {
+        // First sighting has empty name, second has a name. The name
+        // should fill in (we don't want to lock in "no name" forever).
+        let recv: Vec<NotmuchAddrRow> = serde_json::from_str(
+            r#"[{"name": "", "address": "x@y.com", "name-addr": ""},
+                {"name": "Eventually Named", "address": "x@y.com", "name-addr": ""}]"#,
+        )
+        .unwrap();
+        let book = build_from_streams(&[], &recv);
+        assert_eq!(book.len(), 1);
+        assert_eq!(book[0].name.as_deref(), Some("Eventually Named"));
+        assert_eq!(book[0].recv_count, 2);
+    }
+
+    /// Helper for the ranking test — build a row vec from
+    /// (name, address, count) tuples.
+    fn rows(spec: &[(&str, &str, usize)]) -> Vec<NotmuchAddrRow> {
+        let mut out = Vec::new();
+        for &(name, addr, n) in spec {
+            for _ in 0..n {
+                out.push(NotmuchAddrRow {
+                    name: name.to_string(),
+                    address: addr.to_string(),
+                });
+            }
+        }
+        out
     }
 
     #[test]
     fn ranking_orders_by_sent_then_recv_then_display() {
-        let universe: Vec<NotmuchAddrRow> = serde_json::from_str(
-            r#"[
-              {"name": "Bob", "address": "bob@x.com", "name-addr": ""},
-              {"name": "Alice", "address": "alice@x.com", "name-addr": ""},
-              {"name": "Charlie", "address": "charlie@x.com", "name-addr": ""},
-              {"name": "Dave", "address": "dave@x.com", "name-addr": ""}
-            ]"#,
-        )
-        .unwrap();
-        let mut sent = HashMap::new();
-        sent.insert("charlie@x.com".to_string(), 5);
-        sent.insert("alice@x.com".to_string(), 5);
-        // bob has 0 sent, 10 recv — should beat dave (0 / 0)
-        let mut recv = HashMap::new();
-        recv.insert("bob@x.com".to_string(), 10);
+        // sent: alice=5, charlie=5; recv: bob=10, dave=1.
+        // Expect order: alice (sent=5, alphabetical), charlie (sent=5),
+        //               bob (sent=0 / recv=10), dave (sent=0 / recv=1).
+        let sent = rows(&[("Alice", "alice@x.com", 5), ("Charlie", "charlie@x.com", 5)]);
+        let recv = rows(&[("Bob", "bob@x.com", 10), ("Dave", "dave@x.com", 1)]);
 
-        let book = merge(universe, &sent, &recv);
-        // Top: alice + charlie (both sent=5); alphabetical tie-break.
+        let book = build_from_streams(&sent, &recv);
         assert_eq!(book[0].address, "alice@x.com");
         assert_eq!(book[1].address, "charlie@x.com");
-        // Then bob (recv=10, sent=0).
         assert_eq!(book[2].address, "bob@x.com");
-        // Then dave (everything 0).
         assert_eq!(book[3].address, "dave@x.com");
     }
 
@@ -650,20 +700,15 @@ mod tests {
     }
 
     #[test]
-    fn count_addresses_lowercases_and_skips_empty() {
-        let rows: Vec<NotmuchAddrRow> = serde_json::from_str(
-            r#"[
-              {"name": "", "address": "a@b.com", "name-addr": ""},
-              {"name": "", "address": "A@B.COM", "name-addr": ""},
-              {"name": "", "address": "a@b.com", "name-addr": ""},
-              {"name": "", "address": "", "name-addr": ""},
-              {"name": "", "address": "c@d.com", "name-addr": ""}
-            ]"#,
+    fn build_handles_quoted_display_name_with_comma() {
+        // Make sure the "Maras, Katie" type rows survive the
+        // build pipeline and produce a properly-quoted display.
+        let recv: Vec<NotmuchAddrRow> = serde_json::from_str(
+            r#"[{"name": "Maras, Katie", "address": "katie@city.ac.uk", "name-addr": ""}]"#,
         )
         .unwrap();
-        let counts = count_addresses(&rows);
-        assert_eq!(counts.get("a@b.com").copied(), Some(3));
-        assert_eq!(counts.get("c@d.com").copied(), Some(1));
-        assert!(!counts.contains_key(""));
+        let book = build_from_streams(&[], &recv);
+        assert_eq!(book.len(), 1);
+        assert_eq!(book[0].display, "\"Maras, Katie\" <katie@city.ac.uk>");
     }
 }
