@@ -417,6 +417,12 @@
     if (el) { el.focus(); el.select && el.select(); }
   }
 
+  // Stash the last pull-now result here so the post-reload page can
+  // surface its toast for the full ~2.4s lifetime. Showing the toast
+  // BEFORE reload causes the toast element to be torn down with the
+  // page after only the reload-debounce window (~250ms — too short
+  // to read).
+  const PULL_RESULT_KEY = "mailforge:lastPullResult";
   function refresh() {
     // Active pull semantics for Ctrl+R: trigger a fresh `gmpull pull
     // --resume && notmuch new` server-side, then reload. The launchd
@@ -424,23 +430,26 @@
     // freshness without waiting. With v0.2 incremental pulls, an idle
     // pull is ~0.7s — fast enough to await synchronously.
     showToast("Pulling…", "info");
+    const stash = (payload) => {
+      try {
+        sessionStorage.setItem(PULL_RESULT_KEY, JSON.stringify(
+          Object.assign({ ts: Date.now() }, payload)
+        ));
+      } catch (_) { /* sessionStorage exhausted — ignore */ }
+    };
     postJSON("/api/pull-now", {})
       .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
       .then(j => {
-        if (j.ok) {
-          showToast("Pulled (" + j.took_ms + "ms)", "success");
-        } else {
-          showToast("Pull failed: " + (j.error || "unknown") + " — reloading anyway", "error");
-        }
+        stash({ ok: j.ok, took_ms: j.took_ms, error: j.error || null });
         // Reload regardless of pull outcome so the user gets the
         // current notmuch state. The pull failure case might still
         // have produced partial new mail — and the listing should
         // refresh anyway when the user explicitly asked.
-        setTimeout(() => window.location.reload(), 250);
+        window.location.reload();
       })
       .catch(err => {
-        showToast("Pull failed: " + err.message + " — reloading anyway", "error");
-        setTimeout(() => window.location.reload(), 600);
+        stash({ ok: false, error: err.message });
+        window.location.reload();
       });
   }
 
@@ -975,6 +984,27 @@
     lastKey = "";
     lastKeyAt = 0;
     document.addEventListener("keydown", handleKeydown, false);
+
+    // Surface any stashed result from the prior pull-now (refresh()).
+    // The toast appears on the freshly-reloaded page so it lives the
+    // full 2.4s display window — versus showing it pre-reload, where
+    // the page tear-down kills it after ~250ms.
+    try {
+      const raw = sessionStorage.getItem(PULL_RESULT_KEY);
+      if (raw) {
+        sessionStorage.removeItem(PULL_RESULT_KEY);
+        const r = JSON.parse(raw);
+        // Stale results (>10s old — e.g., the user navigated elsewhere
+        // before the pull finished) are silently dropped.
+        if (Date.now() - (r.ts || 0) < 10000) {
+          if (r.ok) {
+            showToast("Pulled (" + r.took_ms + "ms)", "success");
+          } else {
+            showToast("Pull failed: " + (r.error || "unknown"), "error");
+          }
+        }
+      }
+    } catch (_) { /* malformed stash — ignore */ }
     const ctx = document.body && document.body.dataset.context;
     if (ctx === "listing" || ctx === "search") {
       paintCursor();
