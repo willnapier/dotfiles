@@ -3,6 +3,7 @@ pub mod store;
 pub mod tags;
 pub mod dedup;
 pub mod enrich;
+pub mod query;
 
 use chrono::NaiveDate;
 use rust_decimal::Decimal;

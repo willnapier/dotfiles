@@ -32,6 +32,10 @@ pub struct EmailRow {
     /// "received" or "refund" or "sent" or null. Most rows have no direction.
     pub direction: Option<String>,
     pub policy: Option<String>,
+    /// ISO currency code (e.g. "GBP", "AUD"). PayPal rows always set "GBP" since
+    /// they expose `amount_gbp`. Utility rows may set non-GBP (e.g. Cliniko AUD).
+    /// `None` means "not specified" — treated as GBP downstream.
+    pub currency: Option<String>,
 }
 
 impl EmailRow {
@@ -47,6 +51,14 @@ impl EmailRow {
 
     pub fn is_paypal(&self) -> bool {
         matches!(self.vendor.as_deref(), Some(v) if v.eq_ignore_ascii_case("paypal"))
+    }
+
+    /// True if the row is denominated in GBP (or unspecified — treated as GBP).
+    pub fn is_gbp(&self) -> bool {
+        match self.currency.as_deref() {
+            None => true,
+            Some(c) => c.eq_ignore_ascii_case("gbp"),
+        }
     }
 
     /// "Best guess" date — closest of due_date or received_date to a target.
@@ -111,6 +123,11 @@ fn parse_email_row(line: &str) -> Option<EmailRow> {
         .and_then(|v| v.as_str())
         .map(String::from);
 
+    let currency = obj
+        .get("currency")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
     Some(EmailRow {
         message_id,
         vendor,
@@ -120,6 +137,7 @@ fn parse_email_row(line: &str) -> Option<EmailRow> {
         due_date,
         direction,
         policy,
+        currency,
     })
 }
 
@@ -225,10 +243,16 @@ impl Default for MatchOptions {
     }
 }
 
-/// Detect First Direct VISA-payoff direct-debit lines.
+/// Detect First Direct VISA-payoff lines.
+///
+/// Bank rows for the monthly VISA payoff carry only "FIRST DIRECT VISA"
+/// (sometimes followed by "FIRST PAYMENT"); they do NOT include "DIRECT DEBIT"
+/// in the description. The original implementation required both, which
+/// produced zero matches on real data. We now key off "FIRST DIRECT VISA"
+/// alone — the phrase is specific enough that false positives are vanishingly
+/// rare.
 pub fn is_internal_transfer(description: &str) -> bool {
-    let lower = description.to_lowercase();
-    lower.contains("first direct visa") && lower.contains("direct debit")
+    description.to_lowercase().contains("first direct visa")
 }
 
 /// Tokenise into ASCII alphanumeric tokens of len ≥ 3, lowercased.
@@ -597,6 +621,7 @@ mod tests {
             due_date: due.and_then(parse_due_date),
             direction: None,
             policy: None,
+            currency: None,
         }
     }
 
@@ -624,15 +649,14 @@ mod tests {
 
     #[test]
     fn test_internal_transfer_detection() {
-        // Spec mandates BOTH "FIRST DIRECT VISA" AND "DIRECT DEBIT".
-        assert!(is_internal_transfer(
-            "FIRST DIRECT VISA DIRECT DEBIT"
-        ));
-        assert!(is_internal_transfer(
-            "first direct visa via direct debit"
-        ));
-        assert!(!is_internal_transfer("FIRST DIRECT VISA"));
+        // "FIRST DIRECT VISA" alone is sufficient — real bank rows do not
+        // contain "DIRECT DEBIT" text for the VISA payoff line.
+        assert!(is_internal_transfer("FIRST DIRECT VISA"));
+        assert!(is_internal_transfer("FIRST DIRECT VISA FIRST PAYMENT"));
+        assert!(is_internal_transfer("first direct visa direct debit"));
         assert!(!is_internal_transfer("DIRECT DEBIT only"));
+        assert!(!is_internal_transfer("first direct"));
+        assert!(!is_internal_transfer("visa payment"));
         assert!(!is_internal_transfer("groceries"));
     }
 

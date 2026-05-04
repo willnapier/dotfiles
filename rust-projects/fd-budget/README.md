@@ -27,12 +27,23 @@ fd-budget tag reapply                         # Re-tag all transactions
 fd-budget categorize -l 20                    # Process 20 untagged
 
 # Stats
-fd-budget stats                               # Overview
+fd-budget stats                               # Overview (tag/account summary)
 fd-budget untagged -l 10                      # Show untagged
 
-# PayPal enrichment
-fd-budget enrich-paypal ~/Downloads/paypal.csv --dry-run  # Preview matches
-fd-budget enrich-paypal ~/Downloads/paypal.csv            # Enrich descriptions
+# Email-evidence enrichment (joins bank rows to mailcurator bills.jsonl)
+fd-budget enrich                              # Refresh ~/.config/fd-budget/matches.jsonl
+fd-budget enrich --dry-run                    # Print summary only
+fd-budget enrich --amount-tolerance 0.05      # Loosen amount match
+
+# Stage 2 queries (read transactions.csv + bills.jsonl + matches.jsonl)
+fd-budget stats --by-counterparty             # Spend per counterparty (top 30)
+fd-budget stats --by-counterparty --year 2025
+fd-budget stats --by-counterparty --month 2025-10 --limit 50
+
+fd-budget tx vendor vodafone --with-evidence  # Drill into one vendor's rows
+fd-budget tx vendor octopus --year 2025
+fd-budget tx unmatched --over 50              # Big debits with no email evidence
+fd-budget tx unmatched --over 100 --year 2025
 ```
 
 ### Nushell Commands (`budget-*`)
@@ -125,8 +136,14 @@ budget-search "AMAZ" | group-by description | each { length } | sort-by -r
 budget-tag "subscription" | group-by description | each { get amount | math sum }
 ```
 
-**Enrich PayPal transactions**:
-1. Export from PayPal: Activity → Download → CSV format
-2. Preview: `fd-budget enrich-paypal ~/Downloads/Download.csv --dry-run`
-3. Apply: `fd-budget enrich-paypal ~/Downloads/Download.csv`
-4. Tag: `fd-budget categorize` (new merchant names now matchable)
+**Reconcile against email evidence**:
+1. Run mailcurator to refresh `~/.local/share/mailcurator/bills.jsonl`
+2. `fd-budget enrich` — produces `~/.config/fd-budget/matches.jsonl` joining bank rows to email evidence by amount + date + vendor
+3. Inspect: `fd-budget stats --by-counterparty` (top spend), `fd-budget tx unmatched --over 50` (large rows missing evidence), `fd-budget tx vendor <name> --with-evidence` (per-vendor drill)
+
+Confidence tiers in `matches.jsonl`:
+- `high` — substring vendor match, exact date
+- `medium` — token overlap or date offset within window
+- `ambiguous` — multiple equally-valid candidates
+- `internal-transfer` — VISA payoff (excluded from spend aggregates)
+- `none` — no email evidence found

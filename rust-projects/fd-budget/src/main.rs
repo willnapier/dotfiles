@@ -1,6 +1,6 @@
-use chrono::Datelike;
+use chrono::{Datelike, NaiveDate};
 use clap::{Parser, Subcommand};
-use fd_budget::{Account, import, store::CsvStore, tags::{TagRules, apply_rules, reapply_rules}, dedup, enrich};
+use fd_budget::{Account, import, store::CsvStore, tags::{TagRules, apply_rules, reapply_rules}, dedup, enrich, query};
 use rust_decimal::Decimal;
 use std::fs::File;
 use std::io::{BufReader, BufRead, Write};
@@ -35,8 +35,38 @@ enum Commands {
         #[arg(short, long)]
         limit: Option<usize>,
     },
-    /// Show statistics
-    Stats,
+    /// Show statistics. With `--by-counterparty`, aggregates outgoing spend
+    /// per counterparty, joining transactions.csv against matches.jsonl and
+    /// bills.jsonl. Without flags, prints the original tag/account summary.
+    Stats {
+        /// Aggregate outgoing spend per counterparty (Stage 2 query)
+        #[arg(long)]
+        by_counterparty: bool,
+        /// Filter to a single calendar year
+        #[arg(long)]
+        year: Option<i32>,
+        /// Filter to a single calendar month (YYYY-MM)
+        #[arg(long)]
+        month: Option<String>,
+        /// Filter rows on or after this date (YYYY-MM-DD)
+        #[arg(long)]
+        since: Option<NaiveDate>,
+        /// Maximum rows to print (default 30)
+        #[arg(long, default_value_t = 30)]
+        limit: usize,
+    },
+    /// Drill into individual bank rows.
+    ///
+    /// Two sub-actions: `vendor <NAME>` (filter by counterparty substring)
+    /// and `unmatched` (rows with confidence == "none").
+    ///
+    /// Note: the spec sketches `tx --vendor <NAME>` as a flag, but `vendor`
+    /// and `unmatched` are mutually exclusive sub-actions, so clap-idiomatic
+    /// subcommands are clearer. Functionally equivalent.
+    Tx {
+        #[command(subcommand)]
+        action: TxAction,
+    },
     /// Interactively categorize untagged transactions
     Categorize {
         /// Maximum number of transactions to process
@@ -60,6 +90,42 @@ enum Commands {
         /// Print summary only; don't write file
         #[arg(long)]
         dry_run: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum TxAction {
+    /// List bank rows matching a vendor (substring, case-insensitive).
+    Vendor {
+        /// Vendor substring (case-insensitive).
+        name: String,
+        /// Show resolved email-evidence message-id for each row.
+        #[arg(long)]
+        with_evidence: bool,
+        /// Filter to a single calendar year.
+        #[arg(long)]
+        year: Option<i32>,
+        /// Filter to a single calendar month (YYYY-MM).
+        #[arg(long)]
+        month: Option<String>,
+        /// Filter rows on or after this date (YYYY-MM-DD).
+        #[arg(long)]
+        since: Option<NaiveDate>,
+    },
+    /// List bank rows with no email evidence (confidence == "none").
+    Unmatched {
+        /// Only show rows where |amount| >= this threshold.
+        #[arg(long)]
+        over: Option<Decimal>,
+        /// Filter to a single calendar year.
+        #[arg(long)]
+        year: Option<i32>,
+        /// Filter to a single calendar month (YYYY-MM).
+        #[arg(long)]
+        month: Option<String>,
+        /// Filter rows on or after this date (YYYY-MM-DD).
+        #[arg(long)]
+        since: Option<NaiveDate>,
     },
 }
 
@@ -142,8 +208,15 @@ fn main() -> anyhow::Result<()> {
         Commands::Untagged { limit } => {
             cmd_untagged(limit)?;
         }
-        Commands::Stats => {
-            cmd_stats()?;
+        Commands::Stats { by_counterparty, year, month, since, limit } => {
+            if by_counterparty {
+                cmd_stats_by_counterparty(year, month.as_deref(), since, limit)?;
+            } else {
+                cmd_stats()?;
+            }
+        }
+        Commands::Tx { action } => {
+            cmd_tx(action)?;
         }
         Commands::Categorize { limit } => {
             cmd_categorize(limit)?;
@@ -239,6 +312,46 @@ fn cmd_enrich(
     }
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Stage 2 query commands (stats --by-counterparty, tx vendor, tx unmatched)
+// ---------------------------------------------------------------------------
+
+fn cmd_stats_by_counterparty(
+    year: Option<i32>,
+    month: Option<&str>,
+    since: Option<NaiveDate>,
+    limit: usize,
+) -> anyhow::Result<()> {
+    let (txs, emails, matches) = query::load_all(
+        &get_store_path(),
+        &default_bills_jsonl(),
+        &default_matches_jsonl(),
+    )?;
+    let joined = query::join(&txs, &emails, &matches);
+    let filter = query::DateFilter::from_flags(year, month, since)?;
+    query::cmd_stats_by_counterparty(&joined, filter, limit)
+}
+
+fn cmd_tx(action: TxAction) -> anyhow::Result<()> {
+    let (txs, emails, matches) = query::load_all(
+        &get_store_path(),
+        &default_bills_jsonl(),
+        &default_matches_jsonl(),
+    )?;
+    let joined = query::join(&txs, &emails, &matches);
+
+    match action {
+        TxAction::Vendor { name, with_evidence, year, month, since } => {
+            let filter = query::DateFilter::from_flags(year, month.as_deref(), since)?;
+            query::cmd_tx_by_vendor(&joined, filter, &name, with_evidence)
+        }
+        TxAction::Unmatched { over, year, month, since } => {
+            let filter = query::DateFilter::from_flags(year, month.as_deref(), since)?;
+            query::cmd_tx_unmatched(&joined, filter, over)
+        }
+    }
 }
 
 fn cmd_import(file: &PathBuf, account: Account) -> anyhow::Result<()> {
