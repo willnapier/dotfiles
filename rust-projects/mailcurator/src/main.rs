@@ -27,6 +27,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+mod bills_cli;
 mod bookings_cli;
 mod config;
 mod coverage;
@@ -207,6 +208,22 @@ enum Command {
     Tesla {
         #[command(subcommand)]
         action: TeslaAction,
+    },
+    /// Query the bills.jsonl extracted store. Multi-vendor (Octopus,
+    /// Vodafone, BT, Direct Line, PayPal merchants, etc.) so this is a
+    /// flat lookup rather than the subcommand pattern other stores use.
+    /// Vendor matching is case-insensitive substring against vendor
+    /// (utility rows) or counterparty (PayPal rows).
+    Bills {
+        /// Substring match against vendor / counterparty (case-insensitive).
+        #[arg(long)]
+        vendor: Option<String>,
+        /// Filter to a specific received year (UTC).
+        #[arg(long)]
+        year: Option<i32>,
+        /// Maximum rows to print.
+        #[arg(short, long, default_value_t = 30)]
+        limit: usize,
     },
 }
 
@@ -624,6 +641,9 @@ fn main() -> Result<()> {
             TeslaAction::Summary => tesla_cli::summary()?,
             TeslaAction::Find { query, limit } => tesla_cli::find(&query, limit)?,
         },
+        Command::Bills { vendor, year, limit } => {
+            bills_cli::list(vendor.as_deref(), year, limit)?
+        }
         Command::Subscriptions { action } => match action {
             SubscriptionsAction::List => subscriptions::list()?,
             SubscriptionsAction::Check { alert, buffer_days } => {
