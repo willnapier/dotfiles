@@ -4,7 +4,7 @@
 //! Confidence tiers: `high`, `medium`, `ambiguous`, `internal-transfer`, `none`.
 
 use crate::Transaction;
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -108,10 +108,18 @@ fn parse_email_row(line: &str) -> Option<EmailRow> {
         .and_then(|v| v.as_str())
         .and_then(parse_rfc2822_date);
 
+    // due_date may arrive in several shapes:
+    //   - "23/04/2026"            (strict dd/mm/yyyy — primary)
+    //   - "23 April 2026"         (UK natural-language with year — DirectLine)
+    //   - "23rd April"            (UK natural-language, NO year — Octopus)
+    //
+    // For the year-less form we infer year from received_date, snapping to
+    // the nearest occurrence (allows December emails referring to a
+    // January due-date in the new year, etc.).
     let due_date = obj
         .get("due_date")
         .and_then(|v| v.as_str())
-        .and_then(parse_due_date);
+        .and_then(|s| parse_due_date(s, received_date));
 
     let direction = obj
         .get("direction")
@@ -155,8 +163,57 @@ fn parse_rfc2822_date(s: &str) -> Option<NaiveDate> {
         })
 }
 
-fn parse_due_date(s: &str) -> Option<NaiveDate> {
-    NaiveDate::parse_from_str(s.trim(), "%d/%m/%Y").ok()
+/// Permissive due-date parser. Accepts:
+///   - "dd/mm/yyyy"            strict
+///   - "<day> <Month> <year>"  e.g. "23 April 2026"
+///   - "<day><suffix> <Month> <year>"  e.g. "23rd April 2026"
+///   - "<day><suffix> <Month>" e.g. "23rd April" — year inferred from
+///     `received_hint` (if absent, returns None).
+///
+/// When inferring year we pick the year that makes the resulting date
+/// closest to `received_hint`, considering both `received.year()` and
+/// `received.year() ± 1`. This handles the December/January wraparound
+/// (a December email about a January DD).
+fn parse_due_date(s: &str, received_hint: Option<NaiveDate>) -> Option<NaiveDate> {
+    let raw = s.trim();
+    if raw.is_empty() {
+        return None;
+    }
+
+    // Strict dd/mm/yyyy first — fastest path, also our legacy format.
+    if let Ok(d) = NaiveDate::parse_from_str(raw, "%d/%m/%Y") {
+        return Some(d);
+    }
+
+    // Strip ordinal suffixes ("23rd" → "23") so chrono accepts the day part.
+    // Match "<digits><st|nd|rd|th>" with case-insensitive suffix.
+    let re = regex::Regex::new(r"(?i)(\d{1,2})(st|nd|rd|th)\b").ok()?;
+    let normalised = re.replace_all(raw, "$1").to_string();
+    let normalised = normalised.trim();
+
+    // "23 April 2026" — explicit year wins.
+    if let Ok(d) = NaiveDate::parse_from_str(normalised, "%d %B %Y") {
+        return Some(d);
+    }
+    if let Ok(d) = NaiveDate::parse_from_str(normalised, "%-d %B %Y") {
+        return Some(d);
+    }
+
+    // "23 April" — no year. Need received_hint to backfill.
+    let hint = received_hint?;
+    let candidates: Vec<NaiveDate> = [hint.year() - 1, hint.year(), hint.year() + 1]
+        .iter()
+        .filter_map(|y| {
+            let candidate = format!("{normalised} {y}");
+            NaiveDate::parse_from_str(&candidate, "%d %B %Y")
+                .or_else(|_| NaiveDate::parse_from_str(&candidate, "%-d %B %Y"))
+                .ok()
+        })
+        .collect();
+
+    candidates
+        .into_iter()
+        .min_by_key(|d| (d.signed_duration_since(hint)).num_days().abs())
 }
 
 /// Load all email rows from a JSONL file, skipping invalid lines.
@@ -612,13 +669,15 @@ mod tests {
         received: Option<&str>,
         due: Option<&str>,
     ) -> EmailRow {
+        let received_date = received.and_then(parse_rfc2822_date);
+        let due_date = due.and_then(|s| parse_due_date(s, received_date));
         EmailRow {
             message_id: msg_id.to_string(),
             vendor: vendor.map(String::from),
             counterparty: counterparty.map(String::from),
             amount: amount.and_then(|s| Decimal::from_str(s).ok()),
-            received_date: received.and_then(parse_rfc2822_date),
-            due_date: due.and_then(parse_due_date),
+            received_date,
+            due_date,
             direction: None,
             policy: None,
             currency: None,
@@ -737,5 +796,49 @@ mod tests {
         let (results, _) = enrich(&[bank], &[email], MatchOptions::default());
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].confidence, Confidence::High);
+    }
+
+    #[test]
+    fn test_parse_due_date_strict() {
+        let d = parse_due_date("23/04/2026", None).unwrap();
+        assert_eq!(d, NaiveDate::from_ymd_opt(2026, 4, 23).unwrap());
+    }
+
+    #[test]
+    fn test_parse_due_date_natural_with_year() {
+        let d = parse_due_date("23 April 2026", None).unwrap();
+        assert_eq!(d, NaiveDate::from_ymd_opt(2026, 4, 23).unwrap());
+        let d = parse_due_date("23rd April 2026", None).unwrap();
+        assert_eq!(d, NaiveDate::from_ymd_opt(2026, 4, 23).unwrap());
+        let d = parse_due_date("3 March 2026", None).unwrap();
+        assert_eq!(d, NaiveDate::from_ymd_opt(2026, 3, 3).unwrap());
+    }
+
+    #[test]
+    fn test_parse_due_date_no_year_uses_received() {
+        // Octopus subject "23rd April" with received Apr 16 2026 → 23 Apr 2026.
+        let received = NaiveDate::from_ymd_opt(2026, 4, 16);
+        let d = parse_due_date("23rd April", received).unwrap();
+        assert_eq!(d, NaiveDate::from_ymd_opt(2026, 4, 23).unwrap());
+    }
+
+    #[test]
+    fn test_parse_due_date_december_january_wrap() {
+        // Email received 16 December 2025, "23rd January" should resolve to
+        // 2026 — closer to received than 23 Jan 2025.
+        let received = NaiveDate::from_ymd_opt(2025, 12, 16);
+        let d = parse_due_date("23rd January", received).unwrap();
+        assert_eq!(d, NaiveDate::from_ymd_opt(2026, 1, 23).unwrap());
+    }
+
+    #[test]
+    fn test_parse_due_date_no_year_no_hint_returns_none() {
+        assert!(parse_due_date("23rd April", None).is_none());
+    }
+
+    #[test]
+    fn test_parse_due_date_garbage_returns_none() {
+        assert!(parse_due_date("not a date", None).is_none());
+        assert!(parse_due_date("", None).is_none());
     }
 }
