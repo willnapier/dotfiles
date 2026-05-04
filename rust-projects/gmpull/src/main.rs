@@ -145,6 +145,7 @@ async fn pull(
     let prior_pulled = state.messages_pulled;
     tracing::info!(
         resuming_from_token = ?state.last_page_token,
+        last_history_id = ?state.last_history_id,
         prior_messages_pulled = prior_pulled,
         "loaded state"
     );
@@ -190,6 +191,90 @@ async fn pull(
     let session_errored = AtomicU64::new(0);
     let started = Instant::now();
 
+    // ── Branch: incremental vs full enumeration ───────────────────
+    //
+    // Take the cheap incremental path when:
+    //   * the previous full backfill ran to completion
+    //     (`last_page_token` is None), AND
+    //   * we have a historyId checkpoint to start from.
+    //
+    // Otherwise fall through to the legacy full-enumeration path,
+    // which also handles first-run and crash-recovery correctly.
+    let take_incremental = state.last_page_token.is_none() && state.last_history_id.is_some();
+
+    if take_incremental {
+        let start_id = state
+            .last_history_id
+            .clone()
+            .expect("guarded above");
+        tracing::info!(
+            start_history_id = %start_id,
+            "incremental path: using users.history.list"
+        );
+        match incremental_pull(
+            &http,
+            &token_arc,
+            &start_id,
+            &maildir_root,
+            &labels_arc,
+            &limiter,
+            &fetch_sem,
+            &existing_ids_arc,
+            concurrency,
+            &session_written,
+            &session_deduped,
+            &session_filtered,
+            &session_errored,
+            max_messages,
+        )
+        .await
+        {
+            Ok(latest_history_id) => {
+                if let Some(id) = latest_history_id {
+                    tracing::info!(
+                        new_history_id = %id,
+                        "incremental pull complete; advancing checkpoint"
+                    );
+                    state.last_history_id = Some(id);
+                } else {
+                    tracing::info!(
+                        "incremental pull complete; no new historyId returned (no changes)"
+                    );
+                }
+                state.last_page_token = None;
+                state.messages_pulled =
+                    prior_pulled.saturating_add(session_written.load(Ordering::Relaxed));
+                state::save_lossy(&state).await;
+                log_progress(
+                    &session_written,
+                    &session_deduped,
+                    &session_filtered,
+                    &session_errored,
+                    started,
+                );
+                return Ok(());
+            }
+            Err(e) => {
+                let msg = format!("{e:#}");
+                if msg.contains("historyId not found") {
+                    tracing::warn!(
+                        error = %msg,
+                        "history checkpoint expired or invalid; reseeding via full messages.list"
+                    );
+                    // Clear the stale checkpoint and fall through to
+                    // full enumeration. The end of that path will
+                    // reseed via users.getProfile.
+                    state.last_history_id = None;
+                    state::save_lossy(&state).await;
+                } else {
+                    return Err(e.context("incremental pull failed"));
+                }
+            }
+        }
+    }
+
+    // ── Full enumeration (first run, recovery from stale history,
+    //    or resume of a prior crash mid-backfill).
     let mut page_token = state.last_page_token.clone();
     let mut pages_processed: u64 = 0;
     let mut last_log = Instant::now();
@@ -328,9 +413,252 @@ async fn pull(
     // Final flush — always preserve cumulative `messages_pulled`.
     state.messages_pulled =
         prior_pulled.saturating_add(session_written.load(Ordering::Relaxed));
+
+    // Seed historyId for the next tick if and only if the full
+    // enumeration ran to completion (last_page_token cleared) and
+    // we don't already have a checkpoint. One getProfile call ≈
+    // 1 quota unit; cheap insurance against ever doing another
+    // full enumeration if it can be avoided.
+    if state.last_page_token.is_none() && state.last_history_id.is_none() {
+        let t = token_arc.read().await;
+        match api::get_profile_history_id(&http, &t, &limiter).await {
+            Ok(id) => {
+                tracing::info!(
+                    history_id = %id,
+                    "seeded last_history_id via users.getProfile"
+                );
+                state.last_history_id = Some(id);
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "users.getProfile failed; next tick will fall back to full enumeration"
+                );
+            }
+        }
+    }
+
     state::save_lossy(&state).await;
 
     Ok(())
+}
+
+/// Run the incremental sync path: walk `users.history.list`,
+/// resolve every new message ID via the existing
+/// [`fetch_and_write_one`] path, and log (but never delete) any
+/// `messagesDeleted` entries.
+///
+/// Returns the latest `historyId` reported by Gmail across all
+/// pages (or `None` if no pages had one — should never happen but
+/// is defensive). The caller persists it as the new checkpoint.
+///
+/// `max_messages` is honoured the same way as in the full path: we
+/// stop spawning new fetches once the session-write counter hits
+/// the cap, and let any in-flight tasks finish.
+#[allow(clippy::too_many_arguments)]
+async fn incremental_pull(
+    http: &reqwest::Client,
+    token_arc: &Arc<tokio::sync::RwLock<String>>,
+    start_history_id: &str,
+    maildir_root: &std::path::Path,
+    labels_arc: &Arc<std::collections::HashMap<String, String>>,
+    limiter: &SharedRateLimiter,
+    fetch_sem: &Arc<tokio::sync::Semaphore>,
+    existing_ids_arc: &Arc<tokio::sync::RwLock<HashSet<String>>>,
+    concurrency: usize,
+    session_written: &AtomicU64,
+    session_deduped: &AtomicU64,
+    session_filtered: &AtomicU64,
+    session_errored: &AtomicU64,
+    max_messages: Option<u64>,
+) -> Result<Option<String>> {
+    use futures::stream::{FuturesUnordered, StreamExt};
+
+    let mut latest_history_id: Option<String> = None;
+    let mut page_token: Option<String> = None;
+    let mut pages: u64 = 0;
+    let mut total_added: u64 = 0;
+    let mut total_deleted: u64 = 0;
+
+    // Dedupe message IDs across the entire history walk — Gmail
+    // can emit the same id in multiple records (e.g. add + label
+    // change), and we don't want to double-fetch in one tick.
+    let mut seen_added: HashSet<String> = HashSet::new();
+
+    loop {
+        let (records, next_token, history_id) = {
+            let t = token_arc.read().await;
+            match api::list_history_page(http, &t, start_history_id, page_token.as_deref(), limiter)
+                .await
+            {
+                Ok(v) => v,
+                Err(e) if e.to_string().contains("401 unauthorized") => {
+                    drop(t);
+                    refresh_token(token_arc).await?;
+                    let t = token_arc.read().await;
+                    api::list_history_page(
+                        http,
+                        &t,
+                        start_history_id,
+                        page_token.as_deref(),
+                        limiter,
+                    )
+                    .await?
+                }
+                Err(e) => return Err(e),
+            }
+        };
+
+        pages += 1;
+        if let Some(id) = history_id {
+            // Always advance to the latest historyId we've seen,
+            // even on a quiet page (history empty). This is what
+            // lets a busy mailbox skip past stale pages cheaply
+            // and a quiet mailbox advance its checkpoint with a
+            // single 2-unit call.
+            latest_history_id = Some(id);
+        }
+
+        // Collect new message IDs to fetch (deduped) and log
+        // deletions to the local ghost-log (no FS removal).
+        let mut to_fetch: Vec<String> = Vec::new();
+        for rec in &records {
+            for added in &rec.messages_added {
+                let id = &added.message.id;
+                if seen_added.insert(id.clone()) {
+                    to_fetch.push(id.clone());
+                }
+            }
+            for deleted in &rec.messages_deleted {
+                total_deleted = total_deleted.saturating_add(1);
+                log_message_deleted(maildir_root, &deleted.message).await;
+            }
+        }
+
+        if !to_fetch.is_empty() {
+            tracing::info!(
+                page = pages,
+                added = to_fetch.len(),
+                "history page: fetching newly-added messages"
+            );
+        }
+
+        // Fetch them concurrently using the same machinery as the
+        // full path. Honour --max-messages by stopping early.
+        let mut in_flight = FuturesUnordered::new();
+        let queue_cap = concurrency.saturating_mul(4).max(8);
+        let cap_reached = |w: u64| max_messages.is_some_and(|cap| w >= cap);
+
+        for id in to_fetch.into_iter() {
+            if cap_reached(session_written.load(Ordering::Relaxed)) {
+                break;
+            }
+            total_added = total_added.saturating_add(1);
+            let http_c = http.clone();
+            let token_c = token_arc.clone();
+            let labels_c = labels_arc.clone();
+            let root_c = maildir_root.to_path_buf();
+            let limiter_c = limiter.clone();
+            let sem_c = fetch_sem.clone();
+            let existing_c = existing_ids_arc.clone();
+            in_flight.push(tokio::spawn(async move {
+                let _permit = sem_c
+                    .acquire_owned()
+                    .await
+                    .context("acquiring fetch semaphore")?;
+                fetch_and_write_one(
+                    http_c, token_c, &id, &root_c, &labels_c, &limiter_c, &existing_c,
+                )
+                .await
+            }));
+            while in_flight.len() >= queue_cap {
+                if let Some(joined) = in_flight.next().await {
+                    handle_one(
+                        joined,
+                        session_written,
+                        session_deduped,
+                        session_filtered,
+                        session_errored,
+                    );
+                }
+            }
+        }
+        while let Some(joined) = in_flight.next().await {
+            handle_one(
+                joined,
+                session_written,
+                session_deduped,
+                session_filtered,
+                session_errored,
+            );
+        }
+
+        if cap_reached(session_written.load(Ordering::Relaxed)) {
+            tracing::info!(
+                cap = max_messages,
+                "reached --max-messages during incremental pull; stopping"
+            );
+            break;
+        }
+
+        match next_token {
+            Some(t) => page_token = Some(t),
+            None => break,
+        }
+    }
+
+    tracing::info!(
+        pages,
+        added = total_added,
+        deleted = total_deleted,
+        latest_history_id = ?latest_history_id,
+        "incremental walk done"
+    );
+
+    Ok(latest_history_id)
+}
+
+/// Append one entry to the deletion ghost log.
+///
+/// Path: `<maildir_root>/.gmpull-deletions.log`. Format: one JSON
+/// object per line `{"ts":..., "id":"...", "labels":[...]}`. The
+/// log is intentionally outside the standard `cur/`/`new/`/`tmp/`
+/// triad so maildir clients ignore it. Writes are best-effort —
+/// disk burps are logged but never abort the pull.
+async fn log_message_deleted(
+    maildir_root: &std::path::Path,
+    msg: &api::HistoryMessageRef,
+) {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let path = maildir_root.join(".gmpull-deletions.log");
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let line = serde_json::json!({
+        "ts": ts,
+        "id": msg.id,
+        "labels": msg.label_ids,
+    });
+    let mut body = line.to_string();
+    body.push('\n');
+
+    use tokio::io::AsyncWriteExt;
+    let open_res = tokio::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .await;
+    match open_res {
+        Ok(mut f) => {
+            if let Err(e) = f.write_all(body.as_bytes()).await {
+                tracing::warn!(error = %e, path = %path.display(), "deletion-log write failed");
+            }
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, path = %path.display(), "deletion-log open failed");
+        }
+    }
 }
 
 /// Fetch one message and write it to the maildir. Returns a

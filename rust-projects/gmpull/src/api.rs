@@ -137,7 +137,10 @@ pub struct MsgIdRef {
 #[derive(Debug, Deserialize, Clone)]
 pub struct HistoryRecord {
     /// The historyId for this record. Monotonically increasing.
+    /// Kept as part of the parsed shape for debug visibility; the
+    /// response-level `historyId` is what advances the checkpoint.
     #[serde(default)]
+    #[allow(dead_code)]
     pub id: String,
     /// Messages newly added to the mailbox since the previous
     /// historyId. Each carries `id` (and `threadId`, ignored).
