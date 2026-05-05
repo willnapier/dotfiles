@@ -411,12 +411,29 @@
     const row = currentRow();
     if (!row) return;
     if (row.dataset.inFlight === "1") return;
+    // Prefer the bare message id (single-message rows); fall back to the
+    // thread id (multi-message thread rows). Server accepts either via
+    // {ids: [...]} or {thread_ids: [...]} — multi-message threads have
+    // no single id to send (Envelope::message_id() returns None when
+    // matched > 1), but acting on the whole thread is the Gmail-style
+    // expected behaviour anyway. Without this fallback, A/D in archive
+    // or any other view containing multi-message threads errored with
+    // "No message id on row".
     const id = rowId(row);
-    if (!id) { showToast("No message id on row", "error"); return; }
+    const tid = row.dataset.threadId || null;
+    let body;
+    if (id) {
+      body = { ids: [id] };
+    } else if (tid) {
+      body = { thread_ids: [tid] };
+    } else {
+      showToast("No message or thread id on row", "error");
+      return;
+    }
     row.dataset.inFlight = "1";
     row.style.transition = "opacity 0.15s";
     row.style.opacity = "0.4";
-    postJSON(url, { ids: [id] })
+    postJSON(url, body)
       .then(r => {
         if (!r.ok) throw new Error("HTTP " + r.status);
         row.remove();
@@ -436,9 +453,19 @@
 
   function setSeenCurrent() {
     const row = currentRow();
+    if (!row) return;
+    // Same fallback as rowMutate: thread-id when single-message id is absent.
     const id = rowId(row);
-    if (!id) return;
-    postJSON("/api/seen", { ids: [id] })
+    const tid = row.dataset.threadId || null;
+    let body;
+    if (id) {
+      body = { ids: [id] };
+    } else if (tid) {
+      body = { thread_ids: [tid] };
+    } else {
+      return;
+    }
+    postJSON("/api/seen", body)
       .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); row.classList.remove("unread"); showToast("Marked seen", "success"); })
       .catch(err => showToast("Seen failed: " + err.message, "error"));
   }

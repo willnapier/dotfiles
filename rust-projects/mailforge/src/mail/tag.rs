@@ -45,10 +45,22 @@ pub struct TagRequest {
     pub remove: Vec<String>,
 }
 
-/// Body of POST `/api/trash` and `/api/archive`.
-#[derive(Debug, Deserialize)]
+/// Body of POST `/api/trash`, `/api/archive`, and friends.
+///
+/// Accepts either explicit message ids (preferred when known) or thread
+/// ids (used when the listing row represents a multi-message thread —
+/// `Envelope::message_id()` returns None for those, so the per-row JS
+/// has no single id to send. Still, the user's intent is "act on this
+/// row" → "act on this thread", which is the Gmail-style convention).
+///
+/// At least one of `ids` / `thread_ids` should be non-empty; both empty
+/// short-circuits to a no-op success in [`run_tag_changes`].
+#[derive(Debug, Deserialize, Default)]
 pub struct IdsRequest {
+    #[serde(default)]
     pub ids: Vec<String>,
+    #[serde(default)]
+    pub thread_ids: Vec<String>,
 }
 
 /// Standard JSON response shape.
@@ -72,22 +84,39 @@ pub struct TagResponse {
 /// notmuch-illegal empty query string.
 fn run_tag_changes(
     ids: &[String],
+    thread_ids: &[String],
     add: &[&str],
     remove: &[&str],
 ) -> (StatusCode, Json<TagResponse>) {
-    if ids.is_empty() {
+    if ids.is_empty() && thread_ids.is_empty() {
         return (
             StatusCode::OK,
             Json(TagResponse { ok: true, affected: 0, error: None }),
         );
     }
-    let query = notmuch_db::ids_to_query(ids);
+    // Build a notmuch query that ORs id-clauses and thread-clauses
+    // together. Either side may be empty; only the non-empty halves
+    // contribute. Thread queries expand to all messages in those
+    // threads, so a multi-message thread row becomes "act on every
+    // message of this thread" — the Gmail convention.
+    let mut clauses: Vec<String> = Vec::with_capacity(ids.len() + thread_ids.len());
+    for id in ids {
+        clauses.push(format!("id:{id}"));
+    }
+    for tid in thread_ids {
+        clauses.push(format!("thread:{tid}"));
+    }
+    let query = clauses.join(" or ");
     match notmuch_db::apply_tag_changes(&query, add, remove) {
         Ok(_) => (
             StatusCode::OK,
             Json(TagResponse {
                 ok: true,
-                affected: ids.len(),
+                // We don't know the actual count when thread_ids are
+                // involved without a separate notmuch search; report
+                // the request shape (one count per submitted id/thread
+                // is "good enough" for the UI's success toast).
+                affected: ids.len() + thread_ids.len(),
                 error: None,
             }),
         ),
@@ -109,7 +138,7 @@ fn run_tag_changes(
 pub async fn tag_post(Json(req): Json<TagRequest>) -> impl IntoResponse {
     let add: Vec<&str> = req.add.iter().map(|s| s.as_str()).collect();
     let remove: Vec<&str> = req.remove.iter().map(|s| s.as_str()).collect();
-    run_tag_changes(&req.ids, &add, &remove)
+    run_tag_changes(&req.ids, &[], &add, &remove)
 }
 
 /// POST `/api/trash`. Sugar for `+trash -inbox` (matches meli config
@@ -122,13 +151,13 @@ pub async fn tag_post(Json(req): Json<TagRequest>) -> impl IntoResponse {
 /// `gmail-push-tags` run for Gmail; for COHS, `cohs-trash-mover` handles
 /// the file relocation directly.
 pub async fn trash_post(Json(req): Json<IdsRequest>) -> impl IntoResponse {
-    run_tag_changes(&req.ids, &["trash"], &["inbox"])
+    run_tag_changes(&req.ids, &req.thread_ids, &["trash"], &["inbox"])
 }
 
 /// POST `/api/archive`. Sugar for `-inbox` (no add — archive is just the
 /// absence of inbox). Equivalent to meli's archive workflow.
 pub async fn archive_post(Json(req): Json<IdsRequest>) -> impl IntoResponse {
-    run_tag_changes(&req.ids, &[], &["inbox"])
+    run_tag_changes(&req.ids, &req.thread_ids, &[], &["inbox"])
 }
 
 /// POST `/api/seen`. Sugar for `-unread`. Marks message(s) as read locally.
@@ -136,7 +165,7 @@ pub async fn archive_post(Json(req): Json<IdsRequest>) -> impl IntoResponse {
 /// removing the Gmail UNREAD label; mbsync replicates the maildir Seen
 /// flag for COHS via mbsync's own flag-tracking on next sync.
 pub async fn seen_post(Json(req): Json<IdsRequest>) -> impl IntoResponse {
-    run_tag_changes(&req.ids, &[], &["unread"])
+    run_tag_changes(&req.ids, &req.thread_ids, &[], &["unread"])
 }
 
 /// POST `/api/unarchive`. Inverse of [`archive_post`]. Adds `inbox` and
@@ -149,5 +178,5 @@ pub async fn seen_post(Json(req): Json<IdsRequest>) -> impl IntoResponse {
 /// what clears them out of the archive view; the `+inbox` is what
 /// restores them to the inbox view. One handler covers both conventions.
 pub async fn unarchive_post(Json(req): Json<IdsRequest>) -> impl IntoResponse {
-    run_tag_changes(&req.ids, &["inbox"], &["archive"])
+    run_tag_changes(&req.ids, &req.thread_ids, &["inbox"], &["archive"])
 }

@@ -353,7 +353,7 @@ pub fn envelope_row_indexed(env: &Envelope, row_index: usize, from_ctx: Option<&
                             tabindex="-1"
                             aria-label="Sweep messages like this one"
                             title="Sweep all messages matched by this row's mailcurator policy (S)"
-                        { "broom" }
+                        { "sweep" }
                     }
                     @if env.has_unsubscribe {
                         button type="button"
