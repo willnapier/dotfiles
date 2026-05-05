@@ -9,10 +9,10 @@
     <array>
         <string>/bin/bash</string>
         <string>-c</string>
-        <string>/Users/williamnapier/.local/bin/tm3-cookie-sync; /Users/williamnapier/.local/bin/tm3-diary-capture --live</string>
+        <string>/Users/williamnapier/.local/bin/tm3-cookie-sync; /Users/williamnapier/.local/bin/tm3-diary-capture --live; /Users/williamnapier/.local/bin/practiceforge sync-docs</string>
     </array>
 
-    <!-- Hourly during clinic hours (07:00-20:00) -->
+    <!-- Hourly during clinic hours (07:00-22:00) -->
     <key>StartCalendarInterval</key>
     <array>
         <dict><key>Hour</key><integer>7</integer><key>Minute</key><integer>0</integer></dict>
@@ -29,6 +29,8 @@
         <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Hour</key><integer>19</integer><key>Minute</key><integer>0</integer></dict>
         <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>22</integer><key>Minute</key><integer>0</integer></dict>
     </array>
 
     <key>StandardOutPath</key>
