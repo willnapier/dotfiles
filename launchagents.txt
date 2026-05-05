@@ -19,7 +19,6 @@ com.user.forge-metadata-backup
 com.user.forge-sync-conflict-cleaner
 com.user.frecency-daemon
 com.user.ghostty-theme-switcher.plist.disabled
-com.user.mail-sync
 com.user.medialogs-sync.plist.disabled
 com.user.readwise-sync
 com.user.remind-notify
@@ -42,6 +41,7 @@ com.williamnapier.git-auto-pull-watcher
 com.williamnapier.git-auto-push-watcher
 com.williamnapier.gmail-push-tags
 com.williamnapier.gmail-push-tags-watchdog
+com.williamnapier.gmpull
 com.williamnapier.karabiner-relink
 com.williamnapier.link-service
 com.williamnapier.linkmanager.plist.disabled
