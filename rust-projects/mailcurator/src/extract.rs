@@ -350,7 +350,11 @@ fn extract_one(
 
         for f in &ex.fields {
             if let Some(v) = apply_rule(f, &parsed, &subject, &body_text)? {
-                record.insert(f.name.clone(), Value::String(v));
+                let value = match f.kind.as_deref() {
+                    Some("date") => normalise_date(&v, &parsed).unwrap_or(v),
+                    _ => v,
+                };
+                record.insert(f.name.clone(), Value::String(value));
             }
         }
 
@@ -394,6 +398,73 @@ fn apply_regex(pattern: &str, text: &str) -> Result<Option<String>> {
         // Use first capture group if present, else whole match.
         caps.get(1).or_else(|| caps.get(0)).map(|m| m.as_str().to_string())
     }).flatten())
+}
+
+/// Normalise a captured date string to ISO `YYYY-MM-DD`. Returns `None`
+/// if no shape is recognised — the caller falls back to the raw value.
+///
+/// Supported inputs:
+/// - `2026-04-23` (passthrough)
+/// - `23/04/2026` (UK day-first slash form, common in utility bills)
+/// - `23 April 2026`, `23rd April 2026` (full natural-language)
+/// - `23 April`, `23rd April` (year inferred from the message's `Date:`
+///   header — the year is chosen to minimise distance to the received
+///   date, handling Dec→Jan wraps in either direction).
+///
+/// Year inference uses the email's `Date:` header (`%a, %d %b %Y …` per
+/// RFC 2822); falls back to extracted-Date or current year if absent.
+fn normalise_date(s: &str, parsed: &mailparse::ParsedMail) -> Option<String> {
+    use chrono::{Datelike, NaiveDate};
+
+    let raw = s.trim();
+    if raw.is_empty() {
+        return None;
+    }
+
+    // ISO passthrough — already normalised, fast path.
+    if NaiveDate::parse_from_str(raw, "%Y-%m-%d").is_ok() {
+        return Some(raw.to_string());
+    }
+
+    // dd/mm/yyyy — UK utility-bill convention.
+    if let Ok(d) = NaiveDate::parse_from_str(raw, "%d/%m/%Y") {
+        return Some(d.format("%Y-%m-%d").to_string());
+    }
+
+    // Strip ordinal suffixes ("23rd" → "23") so chrono accepts the day part.
+    let re = Regex::new(r"(?i)(\d{1,2})(st|nd|rd|th)\b").ok()?;
+    let normalised = re.replace_all(raw, "$1").to_string();
+    let normalised = normalised.trim();
+
+    // Natural-language with explicit year.
+    for fmt in &["%d %B %Y", "%-d %B %Y"] {
+        if let Ok(d) = NaiveDate::parse_from_str(normalised, fmt) {
+            return Some(d.format("%Y-%m-%d").to_string());
+        }
+    }
+
+    // Natural-language without year — needs the message's Date: hint.
+    let received_hint = parsed
+        .headers
+        .get_first_value("Date")
+        .and_then(|h| chrono::DateTime::parse_from_rfc2822(&h).ok())
+        .map(|dt| dt.date_naive());
+
+    let hint = received_hint?;
+    let candidates: Vec<NaiveDate> = [hint.year() - 1, hint.year(), hint.year() + 1]
+        .iter()
+        .filter_map(|y| {
+            let candidate = format!("{normalised} {y}");
+            NaiveDate::parse_from_str(&candidate, "%d %B %Y")
+                .or_else(|_| NaiveDate::parse_from_str(&candidate, "%-d %B %Y"))
+                .ok()
+        })
+        .collect();
+
+    candidates
+        .into_iter()
+        .min_by_key(|d| (d.signed_duration_since(hint)).num_days().abs())
+        .map(|d| d.format("%Y-%m-%d").to_string())
 }
 
 /// Decode message body to raw HTML if a text/html part exists; empty

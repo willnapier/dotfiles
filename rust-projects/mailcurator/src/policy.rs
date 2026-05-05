@@ -98,6 +98,17 @@ pub struct FieldRule {
 
     /// Regex applied to the Subject header. First capture group wins.
     pub subject_regex: Option<String>,
+
+    /// Optional value-type hint. When set to `"date"`, the captured string
+    /// is normalised to ISO `YYYY-MM-DD` after extraction. Supported input
+    /// shapes: ISO `YYYY-MM-DD` (passthrough), `dd/mm/yyyy`, "23 April 2026",
+    /// "23rd April 2026", "23rd April" (year inferred from the message's
+    /// `Date:` header — picks the year that minimises distance, handling
+    /// Dec→Jan wrap). On parse failure the raw captured string is preserved
+    /// rather than dropping the field. Without this, captured strings are
+    /// written verbatim.
+    #[serde(default)]
+    pub kind: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
