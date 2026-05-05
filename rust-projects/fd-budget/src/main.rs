@@ -362,9 +362,15 @@ fn cmd_import(file: &PathBuf, account: Account) -> anyhow::Result<()> {
     let existing_ids = store.load_import_ids()?;
     eprintln!("Loaded {} existing transactions", existing_ids.len());
 
-    // Parse the midata file
+    // Parse the midata file. FD's current-account export uses a
+    // 5-column schema (with Type + Balance); the Visa-card export
+    // uses a 4-column schema (Date, Description, Amount, Reference).
+    // Different parsers per account.
     let reader = BufReader::new(File::open(file)?);
-    let transactions = import::parse_midata(reader, account)?;
+    let transactions = match account {
+        Account::Visa => import::parse_midata_visa(reader, account)?,
+        _ => import::parse_midata(reader, account)?,
+    };
     eprintln!("Parsed {} transactions from file", transactions.len());
 
     // Deduplicate

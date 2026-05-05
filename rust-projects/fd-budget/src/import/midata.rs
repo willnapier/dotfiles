@@ -90,6 +90,69 @@ pub fn parse_midata<R: Read>(
     Ok(transactions)
 }
 
+/// Parse the FD Visa-card CSV format (4 columns: Date, Description,
+/// Amount, Reference). Distinct from `parse_midata` because the Visa
+/// account export uses a different schema — no `Type` column, no
+/// running balance — than the current account's midata.
+///
+/// Filename convention also differs: current account is
+/// `MIDATA_<accountid>.csv`; Visa is `<DDMMYYYY>_<accountid>.csv`.
+pub fn parse_midata_visa<R: Read>(
+    reader: R,
+    account: Account,
+) -> Result<Vec<Transaction>, ParseError> {
+    let mut csv_reader = ReaderBuilder::new()
+        .has_headers(true)
+        .flexible(true)
+        .from_reader(reader);
+
+    let mut transactions = Vec::new();
+
+    for result in csv_reader.records() {
+        let record = match result {
+            Ok(r) => r,
+            Err(_) => break,
+        };
+
+        if record.len() < 3 || record.get(0).map(|s| s.trim().is_empty()).unwrap_or(true) {
+            break;
+        }
+
+        let date_str = record.get(0).unwrap_or("");
+        let description_str = record.get(1).unwrap_or("");
+        let amount_str = record.get(2).unwrap_or("");
+
+        let date = match NaiveDate::parse_from_str(date_str, "%d/%m/%Y") {
+            Ok(d) => d,
+            Err(_) => break,
+        };
+
+        let amount = match parse_amount(amount_str) {
+            Ok(a) => a,
+            Err(_) => break,
+        };
+
+        let description = clean_description(description_str);
+        let raw_description = description_str.to_string();
+
+        let import_id = compute_import_id(&date, &amount, &raw_description);
+
+        transactions.push(Transaction {
+            date,
+            account,
+            tx_type: TxType::Unknown(0),
+            amount,
+            description,
+            raw_description,
+            balance: None,
+            tags: Vec::new(),
+            import_id,
+        });
+    }
+
+    Ok(transactions)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -114,5 +177,21 @@ mod tests {
 
         let virgin = &transactions[1];
         assert_eq!(virgin.tx_type, TxType::DirectDebit);
+    }
+
+    #[test]
+    fn test_parse_midata_visa_sample() {
+        let csv_data = "Date,Description,Amount,Reference\n\
+                        04/05/2026,Tesla Inc.             West Drayton  GB,-13.02,80000008\n\
+                        29/04/2026,INTEREST,-63.45,99375440";
+
+        let transactions = parse_midata_visa(csv_data.as_bytes(), Account::Visa).unwrap();
+
+        assert_eq!(transactions.len(), 2);
+        let tesla = &transactions[0];
+        assert_eq!(tesla.date, NaiveDate::from_ymd_opt(2026, 5, 4).unwrap());
+        assert_eq!(tesla.amount, Decimal::from_str("-13.02").unwrap());
+        assert_eq!(tesla.account, Account::Visa);
+        assert!(tesla.description.starts_with("Tesla Inc."));
     }
 }
