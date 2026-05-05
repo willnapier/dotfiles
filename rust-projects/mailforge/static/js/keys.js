@@ -290,6 +290,46 @@
   const listingRows = () => Array.from(document.querySelectorAll("tr.envelope-row, .envelope-row, .row[data-id]"));
   const currentRow = () => listingRows()[cursorIndex] || null;
 
+  // Persist the current cursor's message-id (and its index as a positional
+  // fallback) so a subsequent listing render — page reload after pull-now,
+  // Backspace return from a message page, etc. — can resume the cursor on
+  // the same row instead of jumping to row 0.
+  //
+  // The fallback index handles the case where the persisted message has
+  // been deleted between renders (e.g., trashed via the message page);
+  // the cursor lands at "approximately the same place" rather than the
+  // top of the inbox.
+  const SEL_KEY = "mailforge:listingSelection";
+  function persistSelection() {
+    const r = currentRow();
+    const id = r ? rowId(r) : null;
+    if (id == null) return;
+    try {
+      sessionStorage.setItem(SEL_KEY, JSON.stringify({ id, idx: cursorIndex }));
+    } catch (_) { /* sessionStorage exhausted — ignore */ }
+  }
+
+  // Called once at init, before the first paintCursor() in listing context.
+  // Looks up the row matching the persisted msgId and sets cursorIndex
+  // accordingly. If the msgId no longer exists (deleted), falls back to
+  // the persisted positional index, clamped to current rows.
+  function restoreCursorFromSession() {
+    let saved;
+    try {
+      saved = JSON.parse(sessionStorage.getItem(SEL_KEY) || "null");
+    } catch (_) { saved = null; }
+    if (!saved) return;
+    const rows = listingRows();
+    if (!rows.length) return;
+    if (saved.id) {
+      const idx = rows.findIndex(r => rowId(r) === saved.id);
+      if (idx >= 0) { cursorIndex = idx; return; }
+    }
+    if (typeof saved.idx === "number") {
+      cursorIndex = Math.max(0, Math.min(rows.length - 1, saved.idx));
+    }
+  }
+
   function paintCursor() {
     const rows = listingRows();
     if (!rows.length) return;
@@ -297,6 +337,7 @@
     rows.forEach((r, i) => r.classList.toggle("kb-current", i === cursorIndex));
     const cur = rows[cursorIndex];
     if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: "nearest" });
+    persistSelection();
   }
 
   function moveCursor(delta) {
@@ -1210,6 +1251,13 @@
     } catch (_) { /* malformed stash — ignore */ }
     const ctx = document.body && document.body.dataset.context;
     if (ctx === "listing" || ctx === "search") {
+      // Restore cursor to the previously-selected row (by msg id, with a
+      // positional fallback if the row no longer exists). Without this
+      // the cursor always defaults to row 0 after any page reload —
+      // including the one triggered by Backspace returning from a message
+      // page or by Ctrl-R pulling new mail. Must run BEFORE paintCursor
+      // so the resulting cursorIndex is what gets painted.
+      restoreCursorFromSession();
       paintCursor();
       // Remember this listing/search URL for message-page Backspace.
       // Each new listing visit overwrites — so the value always points
