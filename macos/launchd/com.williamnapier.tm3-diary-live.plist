@@ -9,7 +9,7 @@
     <array>
         <string>/bin/bash</string>
         <string>-c</string>
-        <string>/Users/williamnapier/.local/bin/tm3-cookie-sync; /Users/williamnapier/.local/bin/tm3-diary-capture --live; /Users/williamnapier/.local/bin/practiceforge sync-docs</string>
+        <string>/Users/williamnapier/.local/bin/tm3-cookie-sync; /Users/williamnapier/.local/bin/tm3-diary-capture --live</string>
     </array>
 
     <!-- Hourly during clinic hours (07:00-22:00) -->
