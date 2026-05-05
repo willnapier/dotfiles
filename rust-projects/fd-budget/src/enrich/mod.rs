@@ -4,7 +4,7 @@
 //! Confidence tiers: `high`, `medium`, `ambiguous`, `internal-transfer`, `none`.
 
 use crate::Transaction;
-use chrono::{DateTime, Datelike, NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -174,53 +174,30 @@ fn parse_rfc2822_date(s: &str) -> Option<NaiveDate> {
 /// closest to `received_hint`, considering both `received.year()` and
 /// `received.year() ± 1`. This handles the December/January wraparound
 /// (a December email about a January DD).
-fn parse_due_date(s: &str, received_hint: Option<NaiveDate>) -> Option<NaiveDate> {
-    let raw = s.trim();
-    if raw.is_empty() {
-        return None;
-    }
-
-    // Strict dd/mm/yyyy first — fastest path, also our legacy format.
-    if let Ok(d) = NaiveDate::parse_from_str(raw, "%d/%m/%Y") {
-        return Some(d);
-    }
-
-    // Strip ordinal suffixes ("23rd" → "23") so chrono accepts the day part.
-    // Match "<digits><st|nd|rd|th>" with case-insensitive suffix.
-    let re = regex::Regex::new(r"(?i)(\d{1,2})(st|nd|rd|th)\b").ok()?;
-    let normalised = re.replace_all(raw, "$1").to_string();
-    let normalised = normalised.trim();
-
-    // "23 April 2026" — explicit year wins.
-    if let Ok(d) = NaiveDate::parse_from_str(normalised, "%d %B %Y") {
-        return Some(d);
-    }
-    if let Ok(d) = NaiveDate::parse_from_str(normalised, "%-d %B %Y") {
-        return Some(d);
-    }
-
-    // "23 April" — no year. Need received_hint to backfill.
-    let hint = received_hint?;
-    let candidates: Vec<NaiveDate> = [hint.year() - 1, hint.year(), hint.year() + 1]
-        .iter()
-        .filter_map(|y| {
-            let candidate = format!("{normalised} {y}");
-            NaiveDate::parse_from_str(&candidate, "%d %B %Y")
-                .or_else(|_| NaiveDate::parse_from_str(&candidate, "%-d %B %Y"))
-                .ok()
-        })
-        .collect();
-
-    candidates
-        .into_iter()
-        .min_by_key(|d| (d.signed_duration_since(hint)).num_days().abs())
+/// Parse a `due_date` value from bills.jsonl. Mailcurator now normalises
+/// at extraction time (`kind = "date"` on the field), so ISO is the only
+/// shape we expect. Anything else returns None — that's a signal to
+/// improve mailcurator's normaliser, not silently absorb here.
+///
+/// The `_received_hint` parameter is retained for signature continuity
+/// with callers; it's no longer needed.
+fn parse_due_date(s: &str, _received_hint: Option<NaiveDate>) -> Option<NaiveDate> {
+    NaiveDate::parse_from_str(s.trim(), "%Y-%m-%d").ok()
 }
 
 /// Load all email rows from a JSONL file, skipping invalid lines.
+///
+/// Dedup-by-message-id is applied: mailcurator's extraction is
+/// append-only, so re-extractions (e.g. after policy regex tuning)
+/// leave stale rows alongside the fresh ones. We keep the LAST
+/// occurrence per message_id since that's the freshest extraction
+/// with the most recent policy applied. Rows with empty message_id
+/// are kept individually (no key to dedup on).
 pub fn load_email_rows<P: AsRef<Path>>(path: P) -> std::io::Result<Vec<EmailRow>> {
     let file = File::open(path.as_ref())?;
     let reader = BufReader::new(file);
-    let mut rows = Vec::new();
+    let mut rows: Vec<EmailRow> = Vec::new();
+    let mut seen: HashMap<String, usize> = HashMap::new();
     for line in reader.lines() {
         let line = line?;
         let trimmed = line.trim();
@@ -228,7 +205,14 @@ pub fn load_email_rows<P: AsRef<Path>>(path: P) -> std::io::Result<Vec<EmailRow>
             continue;
         }
         if let Some(row) = parse_email_row(trimmed) {
-            rows.push(row);
+            if row.message_id.is_empty() {
+                rows.push(row);
+            } else if let Some(&idx) = seen.get(&row.message_id) {
+                rows[idx] = row;
+            } else {
+                seen.insert(row.message_id.clone(), rows.len());
+                rows.push(row);
+            }
         }
     }
     Ok(rows)
@@ -784,6 +768,7 @@ mod tests {
     #[test]
     fn test_due_date_window() {
         // Bank line on due date, email received earlier — utility-bill case.
+        // due_date is ISO-normalised by mailcurator at extraction time.
         let bank = mk_tx("2025-10-13", "-55.67", "VODAFONE", "abc");
         let email = mk_email(
             "<v@1>",
@@ -791,7 +776,7 @@ mod tests {
             None,
             Some("55.67"),
             Some("Sat, 4 Oct 2025 11:04:54 -0000"),
-            Some("13/10/2025"),
+            Some("2025-10-13"),
         );
         let (results, _) = enrich(&[bank], &[email], MatchOptions::default());
         assert_eq!(results.len(), 1);
@@ -799,40 +784,17 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_due_date_strict() {
-        let d = parse_due_date("23/04/2026", None).unwrap();
+    fn test_parse_due_date_iso() {
+        let d = parse_due_date("2026-04-23", None).unwrap();
         assert_eq!(d, NaiveDate::from_ymd_opt(2026, 4, 23).unwrap());
     }
 
     #[test]
-    fn test_parse_due_date_natural_with_year() {
-        let d = parse_due_date("23 April 2026", None).unwrap();
-        assert_eq!(d, NaiveDate::from_ymd_opt(2026, 4, 23).unwrap());
-        let d = parse_due_date("23rd April 2026", None).unwrap();
-        assert_eq!(d, NaiveDate::from_ymd_opt(2026, 4, 23).unwrap());
-        let d = parse_due_date("3 March 2026", None).unwrap();
-        assert_eq!(d, NaiveDate::from_ymd_opt(2026, 3, 3).unwrap());
-    }
-
-    #[test]
-    fn test_parse_due_date_no_year_uses_received() {
-        // Octopus subject "23rd April" with received Apr 16 2026 → 23 Apr 2026.
-        let received = NaiveDate::from_ymd_opt(2026, 4, 16);
-        let d = parse_due_date("23rd April", received).unwrap();
-        assert_eq!(d, NaiveDate::from_ymd_opt(2026, 4, 23).unwrap());
-    }
-
-    #[test]
-    fn test_parse_due_date_december_january_wrap() {
-        // Email received 16 December 2025, "23rd January" should resolve to
-        // 2026 — closer to received than 23 Jan 2025.
-        let received = NaiveDate::from_ymd_opt(2025, 12, 16);
-        let d = parse_due_date("23rd January", received).unwrap();
-        assert_eq!(d, NaiveDate::from_ymd_opt(2026, 1, 23).unwrap());
-    }
-
-    #[test]
-    fn test_parse_due_date_no_year_no_hint_returns_none() {
+    fn test_parse_due_date_legacy_formats_rejected() {
+        // Mailcurator normalises at extraction (`kind = "date"`). Any
+        // non-ISO value reaching fd-budget signals a normaliser gap.
+        assert!(parse_due_date("23/04/2026", None).is_none());
+        assert!(parse_due_date("23 April 2026", None).is_none());
         assert!(parse_due_date("23rd April", None).is_none());
     }
 
