@@ -22,7 +22,6 @@ gmail-push-tags.timer
 gnome-keyring-daemon.socket
 helix-undo-cleanup.timer
 link-service.service
-mail-sync.timer
 mailcurator-drift.timer
 mbsync-cohs.timer
 nushell-env.service
