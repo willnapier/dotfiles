@@ -159,39 +159,42 @@ mod tests {
     use rust_decimal::Decimal;
     use std::str::FromStr;
 
+    // Test fixtures use synthetic data only — fictional merchants and
+    // round amounts. Public repo discipline: do not commit real
+    // transaction data, even in tests.
     #[test]
     fn test_parse_midata_sample() {
         let csv_data = r#"Date,Type,Merchant/Description,Debit/Credit,Balance
-07/11/2025,))),PRET A MANGER     London,-£9.00,+£8478.33
-07/11/2025,DD,VIRGIN MEDIA PYMTS,-£70.46,-£1373.78"#;
+01/01/2025,))),ACME COFFEE     Anytown,-£5.00,+£1000.00
+01/01/2025,DD,EXAMPLE TELECOM,-£50.00,+£950.00"#;
 
         let transactions = parse_midata(csv_data.as_bytes(), Account::Current).unwrap();
 
         assert_eq!(transactions.len(), 2);
 
-        let pret = &transactions[0];
-        assert_eq!(pret.date, NaiveDate::from_ymd_opt(2025, 11, 7).unwrap());
-        assert_eq!(pret.tx_type, TxType::Contactless);
-        assert_eq!(pret.amount, Decimal::from_str("-9.00").unwrap());
-        assert_eq!(pret.description, "PRET A MANGER London");
+        let coffee = &transactions[0];
+        assert_eq!(coffee.date, NaiveDate::from_ymd_opt(2025, 1, 1).unwrap());
+        assert_eq!(coffee.tx_type, TxType::Contactless);
+        assert_eq!(coffee.amount, Decimal::from_str("-5.00").unwrap());
+        assert_eq!(coffee.description, "ACME COFFEE Anytown");
 
-        let virgin = &transactions[1];
-        assert_eq!(virgin.tx_type, TxType::DirectDebit);
+        let telecom = &transactions[1];
+        assert_eq!(telecom.tx_type, TxType::DirectDebit);
     }
 
     #[test]
     fn test_parse_midata_visa_sample() {
         let csv_data = "Date,Description,Amount,Reference\n\
-                        04/05/2026,Tesla Inc.             West Drayton  GB,-13.02,80000008\n\
-                        29/04/2026,INTEREST,-63.45,99375440";
+                        01/01/2025,Acme Widgets         Anytown  GB,-10.00,REF00000001\n\
+                        02/01/2025,EXAMPLE INTEREST,-1.23,REF00000002";
 
         let transactions = parse_midata_visa(csv_data.as_bytes(), Account::Visa).unwrap();
 
         assert_eq!(transactions.len(), 2);
-        let tesla = &transactions[0];
-        assert_eq!(tesla.date, NaiveDate::from_ymd_opt(2026, 5, 4).unwrap());
-        assert_eq!(tesla.amount, Decimal::from_str("-13.02").unwrap());
-        assert_eq!(tesla.account, Account::Visa);
-        assert!(tesla.description.starts_with("Tesla Inc."));
+        let widget = &transactions[0];
+        assert_eq!(widget.date, NaiveDate::from_ymd_opt(2025, 1, 1).unwrap());
+        assert_eq!(widget.amount, Decimal::from_str("-10.00").unwrap());
+        assert_eq!(widget.account, Account::Visa);
+        assert!(widget.description.starts_with("Acme Widgets"));
     }
 }
