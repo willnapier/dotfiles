@@ -534,9 +534,10 @@
     // K on the wrong row. authors string is rendered into .from-name.
     const fromName = (row.querySelector(".from-name") || {}).textContent || "(unknown sender)";
     if (!confirm("Kill sender for: " + fromName.trim() + "?\n\n"
-                 + "Adds the sender's domain to the mailcurator blacklist; "
-                 + "future messages auto-trashed; existing messages from "
-                 + "this sender trashed now.")) {
+                 + "Adds the sender's domain to the mailcurator blacklist. "
+                 + "Future bulk-marketing messages from this sender auto-trash. "
+                 + "Existing messages stay in place — to trash them, filter "
+                 + "from:@<domain> then Ctrl+D.")) {
       showToast("Cancelled", "info");
       return;
     }
@@ -546,14 +547,18 @@
       .then(j => {
         if (!j.ok) throw new Error(j.error || "kill failed");
         const n = j.trashed_immediately || 0;
-        const verb = j.already_existed ? "Re-killed" : "Killed";
-        showToast(verb + " — " + n + " trashed", "success");
-        // The row that triggered K is presumably one of the trashed
-        // messages — remove it optimistically and let the next render
-        // catch up if any others are still on this page.
-        row.remove();
-        decrementBannerCount();
-        paintCursor();
+        const verb = j.already_existed ? "Re-installed" : "Installed";
+        const suffix = n > 0 ? " (+" + n + " already-classified trashed)" : "";
+        showToast(verb + " policy for " + fromName.trim() + suffix, "success");
+        // Only remove the row if it actually got trashed by the run-now
+        // sweep (i.e. it was already bulk-marketing-classified and ≥1 day
+        // old). Otherwise leave it — the policy is a future-only guard,
+        // and the user can purge existing via filter + Ctrl+D.
+        if (n > 0) {
+          row.remove();
+          decrementBannerCount();
+          paintCursor();
+        }
       })
       .catch(err => showToast("Kill failed: " + err.message, "error"));
   }
@@ -813,8 +818,9 @@
     }
     const fromValue = "@" + dom;
     if (!confirm("Add " + fromValue + " to mailcurator blacklist?\n\n"
-                 + "Future messages will be trashed; existing messages from "
-                 + "this sender will be trashed now.")) {
+                 + "Future bulk-marketing messages from this sender auto-trash. "
+                 + "Existing messages stay in place — to trash them, filter "
+                 + "from:" + fromValue + " then Ctrl+D.")) {
       showToast("Cancelled", "info");
       return;
     }
@@ -824,8 +830,9 @@
       .then(j => {
         if (!j.ok) throw new Error(j.error || "kill failed");
         const n = j.trashed_immediately || 0;
-        const verb = j.already_existed ? "Re-killed" : "Killed";
-        showToast(verb + " " + fromValue + " — " + n + " trashed", "success");
+        const verb = j.already_existed ? "Re-installed" : "Installed";
+        const suffix = n > 0 ? " (+" + n + " already-classified trashed)" : "";
+        showToast(verb + " policy for " + fromValue + suffix, "success");
         // Brief delay so the success toast is readable before nav.
         setTimeout(() => back(), 400);
       })
