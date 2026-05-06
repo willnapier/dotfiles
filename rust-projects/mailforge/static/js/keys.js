@@ -699,7 +699,7 @@
     if (id) window.location.href = "/mail/compose?" + qs + "=" + encodeURIComponent(id);
   }
   const msgReply = () => msgGoto("reply");
-  const msgReplyAll = () => msgGoto("replyAll");
+  const msgReplyAll = () => msgGoto("reply_all");
   const msgForward = () => msgGoto("fwd");
 
   function msgMutate(url, verb) {
