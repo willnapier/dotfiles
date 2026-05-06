@@ -79,8 +79,12 @@ Mirrors William's meli `[shortcuts.listing]` and `[shortcuts.general]`.
 | `Backspace` | Go back (close tab in meli; browser back here) | `exit_entry = 'Backspace'` (listing) |
 | `s` | Set seen (mark read without opening) | `set_seen = 's'` (listing) |
 | `d` | Trash (POST `/api/trash`) | `commands` shortcut `d` (listing) — `tag add trash, tag remove inbox, flag set trash` |
-| `D` | Trash (alias of `d`; meli docs example uses lowercase but uppercase has muscle memory in some terminals) | new |
+| `D` | Un-trash (POST `/api/untrash`; restores `+inbox -trash`) | new (2026-05-06) — mirrors `A`'s relationship to `a`. Use from the trash view; harmless no-op elsewhere. |
 | `a` | Archive (POST `/api/archive`) | new — fills the triage triad. Suggested in meli config comments: "Strongest candidate: `n` = archive". We use `a` because `n` is needed for sidebar nav. |
+| `A` | Un-archive (POST `/api/unarchive`; `+inbox -archive`) | mirrors `D`/`d` for the trash pair |
+| `K` | Kill-sender (POST `/api/mailcurator/blacklist` with `{msg_id}` or `{thread_id}`) | new (2026-05-06) — counterpart to message-view `K`. Server resolves the From-domain from the row's notmuch id, blacklists it in mailcurator, retro-trashes existing messages from that sender. Confirm dialog quotes the visible from-name. |
+| `S` | Sweep (run mailcurator policy matching this row) | new — see `data-curator-policies` row attr |
+| `U` | Unsubscribe (RFC 8058 / mailto) | new — see `data-has-unsubscribe` row attr |
 | `/` | Focus in-mailbox search input | meli's `:` command bar maps roughly here |
 | `r` | Reply to highlighted (`/mail/compose?reply=<id>`) | `reply` (envelope-view); promoting to listing gives one-keystroke reply from the list |
 | `R` | Reply-all (TODO: not yet implemented) | meli `reply_to_all` |

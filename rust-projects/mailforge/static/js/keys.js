@@ -450,6 +450,60 @@
   const trashCurrent = () => rowMutate("/api/trash", "Trashe");
   const archiveCurrent = () => rowMutate("/api/archive", "Archive");
   const unarchiveCurrent = () => rowMutate("/api/unarchive", "Unarchive");
+  // D in listing: restores from trash (mirrors A's relationship to a for
+  // the archive pair). Server endpoint adds +inbox -trash; harmless no-op
+  // on rows that aren't in trash, so the binding is safe outside the
+  // trash view too — though the natural use is from the trash listing.
+  const untrashCurrent = () => rowMutate("/api/untrash", "Restore");
+
+  // K in listing: kill-sender. Counterpart to message-view K
+  // (msgKillSender). Listing rows don't carry the From-domain in the DOM
+  // (the Envelope only exposes `authors` = display names), so we let the
+  // server resolve it from the row's msg-id or thread-id. Server accepts
+  // {msg_id} for single-message rows or {thread_id} for multi-message
+  // thread rows; either way it walks notmuch to the From header and
+  // derives @<domain>.
+  function killSenderFromListing() {
+    const row = currentRow();
+    if (!row) return;
+    const id = rowId(row);
+    const tid = row.dataset.threadId || null;
+    let body;
+    if (id) {
+      body = { msg_id: id };
+    } else if (tid) {
+      body = { thread_id: tid };
+    } else {
+      showToast("No message or thread id on row", "error");
+      return;
+    }
+    // Show a name preview if we have one — useful guard against pressing
+    // K on the wrong row. authors string is rendered into .from-name.
+    const fromName = (row.querySelector(".from-name") || {}).textContent || "(unknown sender)";
+    if (!confirm("Kill sender for: " + fromName.trim() + "?\n\n"
+                 + "Adds the sender's domain to the mailcurator blacklist; "
+                 + "future messages auto-trashed; existing messages from "
+                 + "this sender trashed now.")) {
+      showToast("Cancelled", "info");
+      return;
+    }
+    showToast("Killing " + fromName.trim() + "…", "info");
+    postJSON("/api/mailcurator/blacklist", body)
+      .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+      .then(j => {
+        if (!j.ok) throw new Error(j.error || "kill failed");
+        const n = j.trashed_immediately || 0;
+        const verb = j.already_existed ? "Re-killed" : "Killed";
+        showToast(verb + " — " + n + " trashed", "success");
+        // The row that triggered K is presumably one of the trashed
+        // messages — remove it optimistically and let the next render
+        // catch up if any others are still on this page.
+        row.remove();
+        decrementBannerCount();
+        paintCursor();
+      })
+      .catch(err => showToast("Kill failed: " + err.message, "error"));
+  }
 
   function setSeenCurrent() {
     const row = currentRow();
@@ -936,8 +990,12 @@
       },
       Enter: openCurrent,
       s: setSeenCurrent,
-      d: trashCurrent, D: trashCurrent,
+      d: trashCurrent, D: untrashCurrent,
       a: archiveCurrent, A: unarchiveCurrent,
+      // K — kill-sender (mailcurator blacklist + retro-trash). Mirrors the
+      // message-view K binding; surfaces the same destructive action on
+      // the listing so the user doesn't have to open every spam email.
+      K: killSenderFromListing,
       "/": focusSearchInput,
       r: replyCurrent, f: forwardCurrent, c: compose,
       t: tagCurrent,

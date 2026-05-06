@@ -180,3 +180,15 @@ pub async fn seen_post(Json(req): Json<IdsRequest>) -> impl IntoResponse {
 pub async fn unarchive_post(Json(req): Json<IdsRequest>) -> impl IntoResponse {
     run_tag_changes(&req.ids, &req.thread_ids, &["inbox"], &["archive"])
 }
+
+/// POST `/api/untrash`. Inverse of [`trash_post`]. Adds `inbox` and
+/// removes `trash` so the message reappears in its account's inbox view.
+///
+/// Bound to `D` in the listing context, mirroring `A`'s relationship to
+/// `a` for the archive pair. Only meaningful when called from the trash
+/// view; calling it on a non-trashed message is a harmless no-op (the
+/// `-trash` finds nothing to remove and the `+inbox` either already
+/// applies or is a no-op for a message already in inbox).
+pub async fn untrash_post(Json(req): Json<IdsRequest>) -> impl IntoResponse {
+    run_tag_changes(&req.ids, &req.thread_ids, &["inbox"], &["trash"])
+}

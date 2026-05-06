@@ -109,11 +109,27 @@ fn extract_total(text: &str, prefix: &str) -> Option<u64> {
 
 /// Request body for `POST /api/mailcurator/blacklist`.
 ///
-/// `from` follows the mailcurator convention: a domain prefixed with `@`,
-/// e.g. `"@bettermode.io"`. (Matches existing policies in the wild.)
+/// Accepts ONE of three input forms (in priority order):
+/// 1. `from`: a domain prefixed with `@`, e.g. `"@bettermode.io"`.
+///    Direct path used by the message-view kill-sender (`K`) — the JS
+///    has already extracted the domain from the visible header.
+/// 2. `msg_id`: a notmuch message id; server fetches the message and
+///    extracts the From-domain. Used by the listing-view kill-sender
+///    (`K`) when the row represents a single message.
+/// 3. `thread_id`: a notmuch thread id; server fetches the thread,
+///    uses the first message's From-domain. Used by the listing-view
+///    kill-sender when the row is a multi-message thread (no single
+///    msg-id, see [`super::tag::IdsRequest`] for the parallel pattern).
+///
+/// At least one must be present. `from` wins if multiple are supplied.
 #[derive(Deserialize)]
 pub struct BlacklistBody {
-    pub from: String,
+    #[serde(default)]
+    pub from: Option<String>,
+    #[serde(default)]
+    pub msg_id: Option<String>,
+    #[serde(default)]
+    pub thread_id: Option<String>,
 }
 
 /// Response for `POST /api/mailcurator/blacklist`.
@@ -135,6 +151,61 @@ pub fn policies_path() -> Option<PathBuf> {
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
     Some(base.join("mailcurator").join("policies.toml"))
+}
+
+/// Resolve [`BlacklistBody`] into a canonical `@domain` string. Tries the
+/// explicit `from` field first; if absent, fetches the message (or first
+/// message of the thread) via notmuch and extracts the From-domain.
+///
+/// Returns the `@<domain>` form expected by [`derive_policy_name_from_domain`]
+/// and the rest of the kill-sender pipeline. Errors are user-facing strings.
+fn resolve_from(body: &BlacklistBody) -> Result<String, String> {
+    if let Some(f) = body.from.as_ref() {
+        let trimmed = f.trim();
+        if !trimmed.is_empty() {
+            return Ok(trimmed.to_string());
+        }
+    }
+    if let Some(msg_id) = body.msg_id.as_ref() {
+        let trimmed = msg_id.trim();
+        if !trimmed.is_empty() {
+            let msg = super::notmuch_db::show(trimmed)
+                .map_err(|e| format!("notmuch show {}: {}", trimmed, e))?;
+            return extract_at_domain(msg.from.as_deref())
+                .ok_or_else(|| format!("no From-domain on message {}", trimmed));
+        }
+    }
+    if let Some(thread_id) = body.thread_id.as_ref() {
+        let trimmed = thread_id.trim();
+        if !trimmed.is_empty() {
+            let msgs = super::notmuch_db::show_thread(trimmed)
+                .map_err(|e| format!("notmuch show_thread {}: {}", trimmed, e))?;
+            let first = msgs.into_iter().next().ok_or_else(|| {
+                format!("thread {} has no messages", trimmed)
+            })?;
+            return extract_at_domain(first.from.as_deref())
+                .ok_or_else(|| format!("no From-domain on first message of thread {}", trimmed));
+        }
+    }
+    Err("must supply one of: from, msg_id, thread_id".to_string())
+}
+
+/// Extract the `@<domain>` form from a raw From header.
+/// Handles `Name <local@domain>`, `local@domain`, and `<local@domain>`
+/// shapes. Returns None when no `@<non-empty>` is present.
+fn extract_at_domain(from_header: Option<&str>) -> Option<String> {
+    let raw = from_header?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    // Strip a trailing `>` (and any whitespace before it).
+    let cleaned = raw.trim_end_matches(|c: char| c == '>' || c.is_whitespace());
+    let at = cleaned.rfind('@')?;
+    let dom = cleaned[at + 1..].trim();
+    if dom.is_empty() {
+        return None;
+    }
+    Some(format!("@{}", dom.to_ascii_lowercase()))
 }
 
 /// Derive a stable mailcurator policy name from the `from` value.
@@ -300,10 +371,23 @@ fn epoch_to_ymdhms(secs: i64) -> (i64, u32, u32, u32, u32, u32) {
 /// stderr in `error` for visibility, but `ok: true` reflects "policy
 /// added"; the trash count is best-effort.
 pub async fn blacklist_post(Json(body): Json<BlacklistBody>) -> Json<BlacklistResult> {
-    // ---- Validation ---------------------------------------------------
-    let from = body.from.trim().to_string();
-    if from.is_empty()
-        || !from.contains('@')
+    // ---- Resolve `from` domain ----------------------------------------
+    // Priority: explicit `from` > resolved-from-msg_id > resolved-from-thread_id.
+    let from = match resolve_from(&body) {
+        Ok(f) => f,
+        Err(e) => {
+            return Json(BlacklistResult {
+                ok: false,
+                policy_name: String::new(),
+                already_existed: false,
+                trashed_immediately: 0,
+                stdout: String::new(),
+                error: Some(e),
+            });
+        }
+    };
+
+    if !from.contains('@')
         || from.len() < 2
         || from.len() > 100
     {
@@ -314,8 +398,9 @@ pub async fn blacklist_post(Json(body): Json<BlacklistBody>) -> Json<BlacklistRe
             trashed_immediately: 0,
             stdout: String::new(),
             error: Some(format!(
-                "invalid `from`: must contain @, length 2-100 (got {} chars)",
-                from.len()
+                "invalid resolved `from`: must contain @, length 2-100 (got {} chars: {:?})",
+                from.len(),
+                from
             )),
         });
     }
