@@ -192,3 +192,120 @@ pub async fn unarchive_post(Json(req): Json<IdsRequest>) -> impl IntoResponse {
 pub async fn untrash_post(Json(req): Json<IdsRequest>) -> impl IntoResponse {
     run_tag_changes(&req.ids, &req.thread_ids, &["inbox"], &["trash"])
 }
+
+/// Body of POST `/api/listing/trash-all`.
+///
+/// Identifies a filtered listing view by its (account, mailbox, q) tuple.
+/// Server reconstructs the same notmuch query the GET handler uses
+/// (`({mailbox_query}) and ({q})`), then applies `+trash -inbox` to
+/// every match. `q` is REQUIRED and must be non-empty — bulk-trashing an
+/// entire mailbox is too destructive to expose via this endpoint.
+#[derive(Debug, Deserialize)]
+pub struct TrashAllRequest {
+    pub account: String,
+    pub mailbox: String,
+    pub q: String,
+}
+
+/// POST `/api/listing/trash-all`.
+///
+/// Bulk-trash every message matching the active filter on a listing page.
+/// Bound to Ctrl+D in the listing-context keymap. Refuses to act on an
+/// empty `q` so a misbinding can never accidentally trash a whole
+/// mailbox. Returns 200 with the affected count on success.
+pub async fn trash_all_in_filter(
+    Json(req): Json<TrashAllRequest>,
+) -> (StatusCode, Json<TagResponse>) {
+    use crate::mail::{accounts, notmuch_db};
+
+    // Hard refuse empty filter — the whole point of the safety guard.
+    let user_q = req.q.trim();
+    if user_q.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(TagResponse {
+                ok: false,
+                affected: 0,
+                error: Some("trash-all requires a non-empty `q` filter".to_string()),
+            }),
+        );
+    }
+
+    let account = match accounts::find(&req.account) {
+        Some(a) => a,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(TagResponse {
+                    ok: false,
+                    affected: 0,
+                    error: Some(format!("unknown account: {}", req.account)),
+                }),
+            );
+        }
+    };
+
+    let mailbox_q = match notmuch_db::mailbox_query(account, &req.mailbox) {
+        Some(q) => q,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(TagResponse {
+                    ok: false,
+                    affected: 0,
+                    error: Some(format!(
+                        "unknown mailbox: {}/{}",
+                        req.account, req.mailbox
+                    )),
+                }),
+            );
+        }
+    };
+
+    let final_query = format!("({mailbox_q}) and ({user_q})");
+
+    // Pre-count so the response carries the actual affected number, not
+    // a Vec::len() of submitted ids that we don't have here.
+    let count = match notmuch_db::count(&final_query) {
+        Ok(n) => n,
+        Err(e) => {
+            tracing::warn!("trash-all count failed: {e}");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(TagResponse {
+                    ok: false,
+                    affected: 0,
+                    error: Some(format!("count failed: {e}")),
+                }),
+            );
+        }
+    };
+    if count == 0 {
+        return (
+            StatusCode::OK,
+            Json(TagResponse { ok: true, affected: 0, error: None }),
+        );
+    }
+
+    match notmuch_db::apply_tag_changes(&final_query, &["trash"], &["inbox"]) {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(TagResponse {
+                ok: true,
+                affected: count as usize,
+                error: None,
+            }),
+        ),
+        Err(e) => {
+            tracing::warn!("trash-all tag failed: {e}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(TagResponse {
+                    ok: false,
+                    affected: 0,
+                    error: Some(e.to_string()),
+                }),
+            )
+        }
+    }
+}

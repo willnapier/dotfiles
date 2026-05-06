@@ -456,6 +456,59 @@
   // trash view too — though the natural use is from the trash listing.
   const untrashCurrent = () => rowMutate("/api/untrash", "Restore");
 
+  // Ctrl+D in listing: bulk-trash everything matching the current filter.
+  // Refuses (with toast) when the listing has no active `?q=` filter to
+  // protect against accidentally trashing the whole mailbox. Reads
+  // account/mailbox from the URL path; reads the count from the
+  // status-banner subtitle so the confirm dialog quotes a real number.
+  // Server's /api/listing/trash-all also enforces non-empty `q` —
+  // belt-and-braces on the safety check.
+  function trashAllInCurrentFilter() {
+    if (document.body.dataset.context !== "listing") {
+      showToast("Ctrl+D bulk-trash only works on listing pages", "info");
+      return;
+    }
+    const path = window.location.pathname;
+    const m = path.match(/^\/mail\/([^/]+)\/([^/]+)\/?$/);
+    if (!m) {
+      showToast("Couldn't parse listing URL — Ctrl+D needs /mail/<account>/<mailbox>", "error");
+      return;
+    }
+    const account = m[1];
+    const mailbox = m[2];
+    const params = new URL(window.location.href).searchParams;
+    const q = (params.get("q") || "").trim();
+    if (!q) {
+      showToast("Ctrl+D requires an active filter — type / and a query first", "info");
+      return;
+    }
+    // Pull message count from the status-banner subtitle ("N messages —
+    // page X of Y"). Fall back to "matching" if the regex misses.
+    const sub = document.querySelector(".status-banner__subtitle");
+    const subText = (sub && sub.textContent) || "";
+    const cm = subText.match(/^(\d+)\s+messages?/);
+    const count = cm ? cm[1] : "all matching";
+    if (!confirm(
+      "Trash all " + count + " messages matching \"" + q + "\"?\n\n"
+      + "This applies to every message in " + account + "/" + mailbox
+      + " matching the filter — not just the visible page. Restoring "
+      + "individual messages later: switch to the trash view and press D."
+    )) {
+      showToast("Cancelled", "info");
+      return;
+    }
+    showToast("Trashing " + count + " messages…", "info");
+    postJSON("/api/listing/trash-all", { account, mailbox, q })
+      .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+      .then(j => {
+        if (!j.ok) throw new Error(j.error || "trash-all failed");
+        showToast("Trashed " + j.affected + " messages", "success");
+        // Reload to show the now-empty (or much smaller) filtered view.
+        window.location.reload();
+      })
+      .catch(err => showToast("Trash-all failed: " + err.message, "error"));
+  }
+
   // K in listing: kill-sender. Counterpart to message-view K
   // (msgKillSender). Listing rows don't carry the From-domain in the DOM
   // (the Envelope only exposes `authors` = display names), so we let the
@@ -996,6 +1049,10 @@
       // message-view K binding; surfaces the same destructive action on
       // the listing so the user doesn't have to open every spam email.
       K: killSenderFromListing,
+      // Ctrl+D — bulk-trash everything matching the current ?q= filter.
+      // Two safety guards: (1) silently refuses without a filter, (2)
+      // confirm dialog quotes the count + filter string verbatim.
+      "Ctrl+d": trashAllInCurrentFilter, "Ctrl+D": trashAllInCurrentFilter,
       "/": focusSearchInput,
       r: replyCurrent, f: forwardCurrent, c: compose,
       t: tagCurrent,

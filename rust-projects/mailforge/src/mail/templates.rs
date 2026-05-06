@@ -481,10 +481,11 @@ pub fn helpbar(ctx: PageContext) -> Markup {
             ("d/D", "trash/un"),
             ("a/A", "archive/un"),
             ("K", "kill"),
+            ("⌃D", "del-filter"),
             ("S", "sweep"),
             ("U", "unsub"),
             ("c", "compose"),
-            ("/", "search"),
+            ("/", "filter"),
             ("?", "help"),
         ],
         PageContext::Message => &[
