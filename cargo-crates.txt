@@ -2,7 +2,7 @@ bat	0.25.0	crates.io
 bequest	0.1.0	/home/will/dotfiles/rust-projects/bequest
 chatgpt-to-continuum	0.1.0	/home/will/dotfiles/rust-projects/chatgpt-to-continuum
 clinic-attendance-report	0.1.0	/home/will/dotfiles/rust-projects/clinic-attendance-report
-clinical	0.1.0	/home/will/dotfiles/rust-projects/clinical/crates/notes
+clinical	0.1.0	/home/will/Code/practiceforge/clinical-notes
 clinical-portal	0.1.0	/home/will/dotfiles/rust-projects/clinical/crates/portal
 clinical-product	0.1.0	/home/will/dotfiles/rust-projects/clinical-product
 concert-capture	0.1.0	/home/will/dotfiles/rust-projects/concert-capture
