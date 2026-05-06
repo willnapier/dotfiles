@@ -81,8 +81,11 @@ generate_note() {
     local start_time
     start_time=$(date +%s)
 
-    # clinical note --no-save outputs the note to stdout
-    clinical note "$client_id" "$observation" --no-save > "$tmpnote" 2>/dev/null
+    # practiceforge note --no-save outputs the note to stdout.
+    # (Was `clinical note ...` until 2026-05-06 when clinical-notes was
+    # folded into practiceforge as in-process modules — see
+    # ~/Code/practiceforge git log for the consolidation commits.)
+    practiceforge note "$client_id" "$observation" --no-save > "$tmpnote" 2>/dev/null
 
     local end_time elapsed
     end_time=$(date +%s)
@@ -110,8 +113,9 @@ review_note() {
 
         case "${choice,,}" in
             a)
-                # Save via clinical note-save
-                cat "$notefile" | clinical note-save "$client_id" 2>&1
+                # Save via practiceforge note-save (was `clinical note-save`
+                # before the 2026-05-06 consolidation).
+                cat "$notefile" | practiceforge note-save "$client_id" 2>&1
                 echo -e "${GREEN}✓ Saved${NC}"
 
                 # Mark attended in DayPage
