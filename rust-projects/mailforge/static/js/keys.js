@@ -1387,6 +1387,17 @@
     // elsewhere). Capture-phase listener so the second `/` is
     // intercepted even when the filter input has focus from the
     // first keystroke.
+    //
+    // Defensive layering — preventDefault alone in capture phase
+    // sometimes lets the character slip into the focused input on
+    // Chrome before the synchronous navigation completes. So we also:
+    //   (a) stopImmediatePropagation, blocking any other listeners on
+    //       this event in the same phase
+    //   (b) blur the input, so any racing beforeinput/input/keypress
+    //       lands on the body rather than the input
+    //   (c) clear the input value (idempotent if already empty)
+    //   (d) defer navigation one task tick, letting any pending event
+    //       loop work resolve before unload begins.
     let slashLastAt = 0;
     const SLASH_CHORD_WINDOW = 350;
     document.addEventListener("keydown", (e) => {
@@ -1401,9 +1412,15 @@
       if (safeToChord && now - slashLastAt < SLASH_CHORD_WINDOW) {
         e.preventDefault();
         e.stopPropagation();
+        if (typeof e.stopImmediatePropagation === "function") {
+          e.stopImmediatePropagation();
+        }
         slashLastAt = 0;
-        if (inInput) active.value = "";
-        window.location.href = "/mail/search";
+        if (inInput) {
+          active.value = "";
+          try { active.blur(); } catch (_) { /* defensive */ }
+        }
+        setTimeout(() => { window.location.href = "/mail/search"; }, 0);
         return;
       }
       slashLastAt = now;
