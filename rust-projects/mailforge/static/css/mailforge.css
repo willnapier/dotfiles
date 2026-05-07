@@ -767,8 +767,11 @@ body.col-resizing * { user-select: none !important; }
   border-color: var(--accent);
 }
 .search-help-toggle[open] > summary {
-  margin-bottom: var(--sp-2);
-  color: var(--fg);
+  /* Once the cheat-sheet is expanded, hide the chip — its label
+     would just duplicate context the content makes clear. Esc
+     closes the disclosure (see keys.js::escapeOrBack); when the
+     details closes, [open] drops and the chip reappears. */
+  display: none;
 }
 .search-help-toggle > .search-help {
   margin: 0;
