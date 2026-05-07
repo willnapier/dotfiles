@@ -86,7 +86,8 @@ Mirrors William's meli `[shortcuts.listing]` and `[shortcuts.general]`.
 | `Ctrl+D` | Trash all messages matching the active filter (POST `/api/listing/trash-all`) | new (2026-05-06) — bulk-delete companion to `/`. Refuses (with toast) when no `?q=` filter is active so a misbinding can't accidentally trash a whole mailbox. Server-side guard also enforces non-empty `q`. Confirm dialog quotes the message count from the status-banner and the verbatim filter string. Use `D` from the trash view to restore individuals. |
 | `S` | Sweep (run mailcurator policy matching this row) | new — see `data-curator-policies` row attr |
 | `U` | Unsubscribe (RFC 8058 / mailto) | new — see `data-has-unsubscribe` row attr |
-| `/` | Focus in-mailbox search input | meli's `:` command bar maps roughly here |
+| `/` | Focus in-mailbox filter input | meli's `:` command bar maps roughly here. Quick `//` (within 350ms) escapes to global cross-mailbox search regardless of context. |
+| `//` | Cross-mailbox global search (`/mail/search`) | universal chord — works from listing (even after `/` has focused the local filter), message view, compose, anywhere. Capture-phase listener intercepts the second slash. Single-slash typed mid-query (regex notmuch syntax) is protected. |
 | `r` | Reply to highlighted (`/mail/compose?reply=<id>`) | `reply` (envelope-view); promoting to listing gives one-keystroke reply from the list |
 | `R` | Reply-all (`/mail/compose?reply_all=<id>`) | shipped 2026-05-06 — meli `reply_to_all` |
 | `f` | Forward highlighted (`/mail/compose?fwd=<id>`) | meli `forward` |
