@@ -212,7 +212,6 @@ fn search_form(prefill: Option<&str>) -> Markup {
 pub fn search_help() -> Markup {
     html! {
         section class="empty-state panel search-help" {
-            h3 { "Query syntax" }
             p class="search-help__lede" {
                 "Notmuch full-text query against headers, bodies, and decoded attachment text. Plain words match anywhere; "
                 code { "field:" }
