@@ -30,6 +30,7 @@ cliclick
 cmake
 confuse
 coreutils
+cryptography
 cyrus-sasl
 d2
 dav1d
@@ -80,10 +81,12 @@ icu4c@77
 icu4c@78
 imagemagick
 imath
+img2pdf
 inlyne
 isl
 isync
 jbig2dec
+jbig2enc
 jpeg-turbo
 jpeg-xl
 jq
@@ -191,6 +194,7 @@ npth
 nspr
 nss
 nushell
+ocrmypdf
 ollama
 oniguruma
 opencore-amr
@@ -210,10 +214,13 @@ pipx
 pixman
 pkgconf
 pngpaste
+pngquant
 poppler
 potrace
 procs
+pybind11
 pycparser
+pydantic
 python-setuptools
 python@3.12
 python@3.13
@@ -259,6 +266,7 @@ uchardet
 unar
 unbound
 unibilium
+unpaper
 utf8proc
 uvwasi
 vapoursynth
