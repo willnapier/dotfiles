@@ -97,6 +97,7 @@ pub fn router() -> Router {
         .route("/api/unarchive", post(tag::unarchive_post))
         .route("/api/untrash", post(tag::untrash_post))
         .route("/api/listing/trash-all", post(tag::trash_all_in_filter))
+        .route("/api/listing/archive-all", post(tag::archive_all_in_filter))
         .route("/api/seen", post(tag::seen_post))
         .route("/api/send", post(compose::send_post))
         .route("/api/draft", post(compose::draft_save))

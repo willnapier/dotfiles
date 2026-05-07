@@ -509,6 +509,54 @@
       .catch(err => showToast("Trash-all failed: " + err.message, "error"));
   }
 
+  // Toolbar "Archive all" — same pattern as trashAllInCurrentFilter
+  // but POSTs /api/listing/archive-all (which applies `-inbox`, the
+  // archive operation per archive_post). Reversible per-row via D in
+  // the archive view (unarchive). Same safety guards: requires active
+  // filter, requires non-empty q at the server too.
+  function archiveAllInCurrentFilter() {
+    if (document.body.dataset.context !== "listing") {
+      showToast("Archive-all only works on listing pages", "info");
+      return;
+    }
+    const path = window.location.pathname;
+    const m = path.match(/^\/mail\/([^/]+)\/([^/]+)\/?$/);
+    if (!m) {
+      showToast("Couldn't parse listing URL — needs /mail/<account>/<mailbox>", "error");
+      return;
+    }
+    const account = m[1];
+    const mailbox = m[2];
+    const params = new URL(window.location.href).searchParams;
+    const q = (params.get("q") || "").trim();
+    if (!q) {
+      showToast("Archive-all requires an active filter — type / and a query first", "info");
+      return;
+    }
+    const sub = document.querySelector(".status-banner__subtitle");
+    const subText = (sub && sub.textContent) || "";
+    const cm = subText.match(/^(\d+)\s+messages?/);
+    const count = cm ? cm[1] : "all matching";
+    if (!confirm(
+      "Archive all " + count + " messages matching \"" + q + "\"?\n\n"
+      + "This applies to every message in " + account + "/" + mailbox
+      + " matching the filter — not just the visible page. Restoring "
+      + "individual messages later: switch to the archive view and press A."
+    )) {
+      showToast("Cancelled", "info");
+      return;
+    }
+    showToast("Archiving " + count + " messages…", "info");
+    postJSON("/api/listing/archive-all", { account, mailbox, q })
+      .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+      .then(j => {
+        if (!j.ok) throw new Error(j.error || "archive-all failed");
+        showToast("Archived " + j.affected + " messages", "success");
+        window.location.reload();
+      })
+      .catch(err => showToast("Archive-all failed: " + err.message, "error"));
+  }
+
   // K in listing: kill-sender. Counterpart to message-view K
   // (msgKillSender). Listing rows don't carry the From-domain in the DOM
   // (the Envelope only exposes `authors` = display names), so we let the
@@ -1619,6 +1667,17 @@
         ev.preventDefault();
         ev.stopPropagation();
         trashAllInCurrentFilter();
+      }, false);
+
+      // Toolbar "Archive all" button — sibling of Trash all. Posts
+      // /api/listing/archive-all. No keyboard chord today; can add
+      // (e.g. Ctrl+Shift+A) if it earns one.
+      document.addEventListener("click", (ev) => {
+        const btn = ev.target.closest('button[data-action="archive-all-filter"]');
+        if (!btn) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        archiveAllInCurrentFilter();
       }, false);
 
       // Whole-row click to open the message. Previously only the

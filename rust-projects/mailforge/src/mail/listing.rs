@@ -181,7 +181,18 @@ pub async fn list_mailbox(
             // Clear was here previously; dropped because Esc already
             // navigates back to the unfiltered listing and the sidebar
             // mailbox name is the always-available mouse fallback.
+            // Bulk actions on the active filter. Archive (default
+            // styling — reversible, low-stakes) precedes Trash
+            // (.danger styling — destructive treatment) so the
+            // affirmative-then-destructive ordering matches typical
+            // toolbar grammar. Both gated on filter presence so they
+            // can't accidentally hit a whole mailbox.
             @if user_filter.is_some() {
+                button type="button"
+                       class="mailbox-filter__archive-all"
+                       data-action="archive-all-filter" {
+                    "Archive all"
+                }
                 button type="button"
                        class="danger mailbox-filter__trash-all"
                        data-action="trash-all-filter" {
