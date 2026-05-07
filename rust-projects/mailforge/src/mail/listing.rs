@@ -171,8 +171,22 @@ pub async fn list_mailbox(
                 aria-label="Filter mailbox"
                 id="mailbox-filter-input";
             button type="submit" { "Filter" }
+            // "Trash all" — destructive bulk-trash of every message
+            // matching the current filter (POST /api/listing/trash-all).
+            // Same operation as the Ctrl+D keyboard chord, surfaced for
+            // mouse users. Only rendered when a filter is active so it
+            // can't accidentally trash a whole mailbox. data-action wires
+            // the click to trashAllInCurrentFilter() in keys.js.
+            //
+            // Clear was here previously; dropped because Esc already
+            // navigates back to the unfiltered listing and the sidebar
+            // mailbox name is the always-available mouse fallback.
             @if user_filter.is_some() {
-                a class="mailbox-filter__clear" href=(base_url) { "Clear" }
+                button type="button"
+                       class="danger mailbox-filter__trash-all"
+                       data-action="trash-all-filter" {
+                    "Trash all"
+                }
             }
             // Inline collapsible cheat-sheet — same content as the
             // /mail/search variant. Sits next to the Filter/Clear

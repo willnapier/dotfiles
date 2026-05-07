@@ -1610,6 +1610,17 @@
         else if (action === "unsubscribe-row") unsubscribeRow(row, btn);
       }, false);
 
+      // Toolbar "Trash all" button — only rendered when a filter is
+      // active. Same operation as Ctrl+D (trashAllInCurrentFilter):
+      // confirms, then POSTs /api/listing/trash-all.
+      document.addEventListener("click", (ev) => {
+        const btn = ev.target.closest('button[data-action="trash-all-filter"]');
+        if (!btn) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        trashAllInCurrentFilter();
+      }, false);
+
       // Whole-row click to open the message. Previously only the
       // subject column's <a> was clickable, but the hover highlight
       // covered the entire row — so clicks on From/Tags/Date columns
