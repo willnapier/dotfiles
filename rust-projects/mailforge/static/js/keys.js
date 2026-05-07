@@ -547,12 +547,14 @@
       .then(j => {
         if (!j.ok) throw new Error(j.error || "kill failed");
         const n = j.trashed_immediately || 0;
-        const verb = j.already_existed ? "Re-installed" : "Installed";
-        const suffix = n > 0 ? " (+" + n + " already-classified trashed)" : "";
-        showToast(verb + " policy for " + fromName.trim() + suffix, "success");
+        const head = j.already_existed
+          ? "Already blacklisted: " + fromName.trim()
+          : "Blacklisted " + fromName.trim();
+        const suffix = n > 0 ? " (+" + n + " trashed)" : "";
+        showToast(head + suffix, "success");
         // Only remove the row if it actually got trashed by the run-now
         // sweep (i.e. it was already bulk-marketing-classified and ≥1 day
-        // old). Otherwise leave it — the policy is a future-only guard,
+        // old). Otherwise leave it — the blacklist is a future-only guard,
         // and the user can purge existing via filter + Ctrl+D.
         if (n > 0) {
           row.remove();
@@ -830,9 +832,11 @@
       .then(j => {
         if (!j.ok) throw new Error(j.error || "kill failed");
         const n = j.trashed_immediately || 0;
-        const verb = j.already_existed ? "Re-installed" : "Installed";
-        const suffix = n > 0 ? " (+" + n + " already-classified trashed)" : "";
-        showToast(verb + " policy for " + fromValue + suffix, "success");
+        const head = j.already_existed
+          ? "Already blacklisted: " + fromValue
+          : "Blacklisted " + fromValue;
+        const suffix = n > 0 ? " (+" + n + " trashed)" : "";
+        showToast(head + suffix, "success");
         // Brief delay so the success toast is readable before nav.
         setTimeout(() => back(), 400);
       })
