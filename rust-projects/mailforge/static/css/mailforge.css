@@ -739,6 +739,35 @@ body.col-resizing * { user-select: none !important; }
   color: var(--fg-muted);
 }
 
+/* Inline disclosure toggle on /mail/search results pages. Closed by
+   default; lets the user consult the cheat-sheet without losing the
+   active query. */
+.search-help-toggle {
+  margin: var(--sp-2) 0 var(--sp-3);
+}
+.search-help-toggle > summary {
+  cursor: pointer;
+  display: inline-block;
+  padding: 4px 10px;
+  font-size: 0.88em;
+  color: var(--fg-muted);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  user-select: none;
+}
+.search-help-toggle > summary:hover {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+.search-help-toggle[open] > summary {
+  margin-bottom: var(--sp-2);
+  color: var(--fg);
+}
+.search-help-toggle > .search-help {
+  margin: 0;
+}
+
 /* ===== Address autocomplete (compose To/Cc/Bcc) ===== */
 /* Floating dropdown rendered into <body> by static/js/keys.js's
    wireAddressAutocomplete. Positioned absolutely against

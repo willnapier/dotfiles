@@ -127,6 +127,15 @@ fn render_results(query: &str, page: usize) -> Markup {
         ))
         (search_form(Some(query)))
 
+        // Inline cheat-sheet, collapsed by default. Native <details>
+        // (no JS) — keyboard-accessible (Tab + Enter/Space). Lets the
+        // user consult syntax without losing the current query, which
+        // is the friction in the "/, then //, lose your work" path.
+        details class="search-help-toggle" {
+            summary { "Syntax help" }
+            (search_help())
+        }
+
         @if let Some(err) = &fetch_error {
             div class="banner banner--error" role="alert" {
                 strong { "Search error: " }
@@ -139,7 +148,6 @@ fn render_results(query: &str, page: usize) -> Markup {
                 h2 { "No matches" }
                 p { "Refine your query and try again." }
             }
-            (search_help())
         } @else {
             // Table structure mirrors listing::list_mailbox so the same
             // CSS column widths and resize-handle persistence apply.
