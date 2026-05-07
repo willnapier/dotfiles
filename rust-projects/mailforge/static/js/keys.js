@@ -1382,6 +1382,33 @@
     lastKeyAt = 0;
     document.addEventListener("keydown", handleKeydown, false);
 
+    // Universal `//` chord → /mail/search. Single `/` keeps its
+    // context-specific binding (focus filter on listing; no-op
+    // elsewhere). Capture-phase listener so the second `/` is
+    // intercepted even when the filter input has focus from the
+    // first keystroke.
+    let slashLastAt = 0;
+    const SLASH_CHORD_WINDOW = 350;
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "/") return;
+      const now = (typeof performance !== "undefined" ? performance.now() : Date.now());
+      const active = document.activeElement;
+      const inInput = active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA");
+      // Mid-query `/` (rare, but valid in regex like from:/.*@x/) must
+      // not redirect. Only chord when the focused input is in its
+      // initial state (empty or holding just the first `/`).
+      const safeToChord = !inInput || active.value === "" || active.value === "/";
+      if (safeToChord && now - slashLastAt < SLASH_CHORD_WINDOW) {
+        e.preventDefault();
+        e.stopPropagation();
+        slashLastAt = 0;
+        if (inInput) active.value = "";
+        window.location.href = "/mail/search";
+        return;
+      }
+      slashLastAt = now;
+    }, true);
+
     // Surface any stashed result from the prior pull-now (refresh()).
     // The toast appears on the freshly-reloaded page so it lives the
     // full 2.4s display window — versus showing it pre-reload, where
