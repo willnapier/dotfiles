@@ -203,26 +203,119 @@ fn search_form(prefill: Option<&str>) -> Markup {
 
 fn search_help() -> Markup {
     html! {
-        section class="empty-state panel" {
+        section class="empty-state panel search-help" {
             h3 { "Query syntax" }
-            ul {
-                li {
-                    "Plain words search "
-                    strong { "bodies and headers" }
-                    " — e.g. "
-                    code { "vacation" }
-                }
-                li { code { "from:stripe" } " — sender substring" }
-                li { code { "to:will@willnapier.com" } " — recipient" }
-                li { code { "subject:\"long phrase\"" } " — quoted Subject phrase" }
-                li { code { "date:7d.." } " — last 7 days · " code { "date:2026-01-01.." } " — since · " code { "date:..2026-04-30" } " — until" }
-                li { code { "tag:billing and not tag:trash" } " — booleans (and / or / not)" }
-                li { code { "from:stripe and date:30d.. and tag:unread" } " — combinations" }
+            p class="search-help__lede" {
+                "Notmuch full-text query against headers, bodies, and decoded attachment text. Plain words match anywhere; "
+                code { "field:" }
+                " prefixes scope the match. Combine with "
+                code { "and" }
+                " / "
+                code { "or" }
+                " / "
+                code { "not" }
+                " (parens for grouping)."
             }
-            p {
+
+            div class="search-help__cols" {
+                section {
+                    h4 { "Basics" }
+                    ul {
+                        li { code { "vacation" } " — plain word in body or headers" }
+                        li { code { "\"annual leave\"" } " — exact phrase (quoted)" }
+                        li { code { "vacation OR holiday" } " — either" }
+                        li { code { "vacation and not 2024" } " — negation" }
+                        li { code { "(alice or bob) and stripe" } " — grouping" }
+                    }
+                }
+
+                section {
+                    h4 { "People & subject" }
+                    ul {
+                        li { code { "from:stripe" } " — sender contains" }
+                        li { code { "to:will@willnapier.com" } " — direct recipient" }
+                        li { code { "cc:olly" } " — CC line" }
+                        li { code { "bcc:..." } " — BCC line (if header preserved)" }
+                        li { code { "subject:invoice" } " — Subject contains" }
+                        li { code { "subject:\"order confirmation\"" } " — Subject phrase" }
+                    }
+                }
+
+                section {
+                    h4 { "Dates" }
+                    ul {
+                        li { code { "date:today" } " · " code { "date:yesterday" } " · " code { "date:\"last week\"" } }
+                        li { code { "date:7d.." } " — last 7 days (open-ended)" }
+                        li { code { "date:..30d" } " — older than 30 days" }
+                        li { code { "date:2026-01-01.." } " — since absolute date" }
+                        li { code { "date:2026-01-01..2026-04-30" } " — bounded range" }
+                        li { code { "date:1y.." } " — last year" }
+                    }
+                }
+
+                section {
+                    h4 { "Tags & state" }
+                    ul {
+                        li { code { "tag:unread" } " · " code { "tag:inbox" } " · " code { "tag:archive" } " · " code { "tag:trash" } " · " code { "tag:sent" } }
+                        li { code { "tag:cohs" } " — COHS account messages only" }
+                        li { code { "tag:promotions" } " — auto-classified promotions" }
+                        li { code { "tag:unsubscribed" } " — messages where you clicked Unsubscribe (audit trail; usually also " code { "tag:trash" } ")" }
+                        li { code { "tag:bulk-marketing" } " — mailcurator classification" }
+                        li { code { "tag:curator-<policy>-seen" } " — already touched by named mailcurator policy" }
+                    }
+                }
+
+                section {
+                    h4 { "Attachments & MIME" }
+                    ul {
+                        li { code { "attachment:invoice.pdf" } " — by attachment filename" }
+                        li { code { "mimetype:application/pdf" } " — any PDF attachment" }
+                        li { code { "mimetype:image/*" } " — any image" }
+                        li { code { "attachment:\"\"" } " — has any attachment" }
+                    }
+                }
+
+                section {
+                    h4 { "Regex (slashes)" }
+                    ul {
+                        li { code { "from:/.*@stripe\\.com$/" } " — sender domain regex" }
+                        li { code { "subject:/^Re: /" } " — Subject anchored regex" }
+                        li { code { "from:/(noreply|no-reply)@/" } " — alternation" }
+                    }
+                    p class="search-help__note" {
+                        "Slashes delimit the regex; backslash to escape inside. Xapian regex is roughly POSIX-extended."
+                    }
+                }
+
+                section {
+                    h4 { "Folder & path" }
+                    ul {
+                        li { code { "folder:personal/inbox" } " — Maildir folder" }
+                        li { code { "path:personal/inbox/" } " — file path prefix" }
+                        li { code { "thread:0000000000031577" } " — all messages in a thread" }
+                    }
+                }
+
+                section {
+                    h4 { "Real-world recipes" }
+                    ul {
+                        li { code { "from:stripe and date:30d.. and tag:unread" } }
+                        li { code { "tag:cohs and from:nhs.uk and date:6M.." } }
+                        li { code { "subject:invoice and mimetype:application/pdf and date:1y.." } }
+                        li { code { "tag:promotions and date:..30d and not tag:trash" } " — old promo to triage" }
+                        li { code { "from:/.*@(stripe|paddle|gocardless)\\.com/" } " — billing senders" }
+                    }
+                }
+            }
+
+            p class="search-help__footer" {
                 "Full reference: "
                 a href="https://notmuchmail.org/manpages/notmuch-search-terms-7/" target="_blank" rel="noopener" {
                     "notmuch-search-terms(7)"
+                }
+                " · "
+                a href="https://notmuchmail.org/manpages/notmuch-search-7/" target="_blank" rel="noopener" {
+                    "notmuch-search(7)"
                 }
             }
         }

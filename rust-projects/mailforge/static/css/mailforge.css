@@ -676,6 +676,69 @@ body.col-resizing * { user-select: none !important; }
   color: var(--fg-muted);
 }
 
+/* ===== Search help (cheat-sheet under /mail/search form) ===== */
+.search-help {
+  text-align: left;
+  max-width: none;
+  padding: var(--sp-5) var(--sp-6);
+}
+.search-help h3 {
+  margin: 0 0 var(--sp-2);
+}
+.search-help h4 {
+  margin: 0 0 var(--sp-2);
+  font-size: 0.95em;
+  color: var(--fg);
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 2px;
+}
+.search-help__lede {
+  margin: 0 0 var(--sp-4);
+  color: var(--fg-muted);
+  font-size: 0.95em;
+  max-width: 90ch;
+}
+.search-help__cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--sp-4) var(--sp-5);
+  margin-bottom: var(--sp-4);
+}
+.search-help__cols section {
+  break-inside: avoid;
+}
+.search-help ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.search-help li {
+  padding: 2px 0;
+  font-size: 0.92em;
+  line-height: 1.5;
+}
+.search-help li code {
+  font-family: var(--font-mono);
+  background: var(--bg-elevated);
+  padding: 1px 5px;
+  border-radius: 2px;
+  font-size: 0.95em;
+  color: var(--fg);
+}
+.search-help__note {
+  margin: var(--sp-2) 0 0;
+  font-size: 0.85em;
+  color: var(--fg-muted);
+  font-style: italic;
+}
+.search-help__footer {
+  margin: var(--sp-3) 0 0;
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--rule);
+  font-size: 0.9em;
+  color: var(--fg-muted);
+}
+
 /* ===== Address autocomplete (compose To/Cc/Bcc) ===== */
 /* Floating dropdown rendered into <body> by static/js/keys.js's
    wireAddressAutocomplete. Positioned absolutely against
