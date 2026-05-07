@@ -660,6 +660,7 @@ body.col-resizing * { user-select: none !important; }
 /* ===== Mailbox filter form (listing toolbar) ===== */
 .mailbox-filter {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-2);
   margin: var(--sp-2) 0 var(--sp-3) 0;
@@ -667,6 +668,11 @@ body.col-resizing * { user-select: none !important; }
 .mailbox-filter input[type="text"] {
   flex: 1;
   min-width: 0;
+}
+/* Open state: cheat-sheet breaks to its own full-width row below
+   the input/button row instead of stretching the row vertically. */
+.mailbox-filter > details.search-help-toggle[open] {
+  flex-basis: 100%;
 }
 
 /* ===== Empty state ===== */

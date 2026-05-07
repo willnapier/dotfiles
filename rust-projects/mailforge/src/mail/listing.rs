@@ -174,6 +174,14 @@ pub async fn list_mailbox(
             @if user_filter.is_some() {
                 a class="mailbox-filter__clear" href=(base_url) { "Clear" }
             }
+            // Inline collapsible cheat-sheet — same content as the
+            // /mail/search variant. Sits next to the Filter/Clear
+            // controls when closed; flex-wrap pushes the expanded
+            // help to its own full-width row when open.
+            details class="search-help-toggle" {
+                summary { "Syntax help" }
+                (crate::mail::search::search_help())
+            }
         }
 
         @if let Some(err) = &fetch_error {
