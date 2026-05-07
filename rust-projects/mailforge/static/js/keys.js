@@ -1030,11 +1030,33 @@
     history.back();
   };
 
+  // Escape: if a help disclosure (or any inline <details> we treat as
+  // dismissable) is open, close it first instead of navigating back.
+  // Lets users dismiss the cheat-sheet without leaving the page; only
+  // when nothing's open does Esc fall through to history navigation.
+  function escapeOrBack() {
+    const open = document.querySelector("details.search-help-toggle[open]");
+    if (open) {
+      open.removeAttribute("open");
+      // Move focus off the summary so subsequent keystrokes (e.g. /)
+      // hit the document dispatcher, not the (now-closed) summary.
+      if (typeof open.blur === "function") {
+        try { open.blur(); } catch (_) { /* defensive */ }
+      }
+      const sum = open.querySelector("summary");
+      if (sum && typeof sum.blur === "function") {
+        try { sum.blur(); } catch (_) { /* defensive */ }
+      }
+      return;
+    }
+    back();
+  }
+
   // ----- Dispatch tables -----
   // Letter keys are case-sensitive: ev.key encodes shift state for letters.
   const dispatch = {
     _base: {
-      Escape: back,
+      Escape: escapeOrBack,
       Backspace: back,
       "?": () => showToast("Help: see docs/keybindings.md", "info"),
     },
