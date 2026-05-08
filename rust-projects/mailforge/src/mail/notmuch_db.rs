@@ -131,33 +131,43 @@ pub struct Message {
 
 /// Translate (account, mailbox) into a notmuch query string.
 ///
-/// Mirrors the queries in `~/.config/meli/config.toml`. The mapping is
-/// account-aware: `personal/inbox` excludes `tag:cohs` (workspace inbox
-/// excludes COHS messages); `cohs/inbox` requires `tag:cohs`.
+/// Account discrimination is **path-based**, not tag-based: the file's
+/// physical maildir path is the truth, never `tag:cohs`. Path predicates
+/// use notmuch's `path:<dir>/**` recursive form (`path:cohs/**` matches
+/// any file under the M365 cohs maildir).
+///
+/// ## Why path-based, not tag-based (changed 2026-05-08)
+///
+/// notmuch deduplicates by Message-ID — a message that arrived at BOTH
+/// will@willnapier.com (Gmail) and will.napier@cohs (M365) becomes ONE
+/// notmuch document with multiple file paths. Tag-based scoping (e.g.
+/// `tag:cohs`) leaks across both sides because the tag is on the document,
+/// not the file. Path-based scoping (`path:cohs/**` vs `not path:cohs/**`)
+/// is the honest discriminator: each maildir holds physically distinct
+/// files, and the path scope correctly assigns each view to the right
+/// account regardless of any tag drift between Gmail-label sync and
+/// M365 mbsync state.
 ///
 /// Returns None for unknown mailbox names.
 ///
 /// ## Mailbox vocabulary
 ///
-/// Personal account:
-/// - `inbox`     → `tag:inbox and not tag:archive and not tag:spam and not tag:trash and not tag:cohs and not tag:promotions and date:6M..`
-/// - `promotions`→ `tag:inbox and tag:promotions and not tag:archive and not tag:spam and not tag:trash and not tag:cohs and date:6M..`
-/// - `unread`    → `tag:unread and not tag:cohs`
-/// - `sent`      → `tag:sent and not tag:cohs`
-/// - `archive`   → `not tag:inbox and not tag:trash and not tag:spam and not tag:sent and not tag:cohs`
-/// - `all-mail`  → `date:30d.. and not tag:cohs`
+/// Personal account (everything NOT under `~/Mail/cohs/`):
+/// - `inbox`     → `tag:inbox and not path:cohs/** and ...`
+/// - `promotions`→ `tag:inbox and tag:promotions and not path:cohs/** and ...`
+/// - `unread`    → `tag:unread and not path:cohs/**`
+/// - `sent`      → `tag:sent and not path:cohs/**`
+/// - `archive`   → `not tag:inbox and not tag:trash and not tag:spam and not tag:sent and not path:cohs/**`
+/// - `all-mail`  → `date:30d.. and not path:cohs/**`
 ///
-/// COHS account:
-/// - `inbox`     → `tag:cohs and tag:inbox and not tag:archive and not tag:spam and not tag:trash`
-/// - `unread`    → `tag:cohs and tag:unread and not tag:trash and not tag:spam`
-/// - `sent`      → `tag:cohs and tag:sent`
-/// - `drafts`    → `tag:cohs and tag:drafts`
-/// - `archive`   → `tag:cohs and tag:archive`
-/// - `trash`     → `tag:cohs and tag:trash`
-/// - `spam`      → `tag:cohs and tag:spam`
-///
-/// Implementation hint: a static `match (account.slug, mailbox)` block is
-/// fine. The total count of valid (slug, mailbox) pairs is ~15.
+/// COHS account (everything under `~/Mail/cohs/`):
+/// - `inbox`     → `path:cohs/** and tag:inbox and not tag:archive and not tag:spam and not tag:trash`
+/// - `unread`    → `path:cohs/** and tag:unread and not tag:trash and not tag:spam`
+/// - `sent`      → `path:cohs/** and tag:sent`
+/// - `drafts`    → `path:cohs/** and tag:drafts`
+/// - `archive`   → `path:cohs/** and tag:archive`
+/// - `trash`     → `path:cohs/** and tag:trash`
+/// - `spam`      → `path:cohs/** and tag:spam`
 pub fn mailbox_query(account: &Account, mailbox: &str) -> Option<String> {
     // Inbox queries hide `tag:sent` clutter (Gmail labels self-addressed
     // mail as both Inbox and Sent) EXCEPT when `from:` is the account's
@@ -166,35 +176,35 @@ pub fn mailbox_query(account: &Account, mailbox: &str) -> Option<String> {
     // account, etc.) while still excluding any other sent-tagged stragglers.
     let self_from = account.identity;
     let q: String = match (account.slug, mailbox) {
-        // ---------------- Personal (Gmail / no cohs tag) ----------------
+        // ---------------- Personal (anything NOT under /Mail/cohs/) ----------------
         ("personal", "inbox") => format!(
             "tag:inbox and (not tag:sent or from:{self_from}) \
              and not tag:archive and not tag:spam and not tag:trash \
-             and not tag:cohs and not tag:promotions and not tag:unsubscribed \
+             and not path:cohs/** and not tag:promotions and not tag:unsubscribed \
              and date:6M.."
         ),
         ("personal", "promotions") => {
             "tag:inbox and tag:promotions and not tag:archive and not tag:spam \
-             and not tag:trash and not tag:cohs and date:6M..".to_string()
+             and not tag:trash and not path:cohs/** and date:6M..".to_string()
         }
-        ("personal", "unread") => "tag:unread and not tag:cohs".to_string(),
-        ("personal", "sent") => "tag:sent and not tag:cohs".to_string(),
+        ("personal", "unread") => "tag:unread and not path:cohs/**".to_string(),
+        ("personal", "sent") => "tag:sent and not path:cohs/**".to_string(),
         ("personal", "archive") => {
-            "not tag:inbox and not tag:trash and not tag:spam and not tag:sent and not tag:cohs".to_string()
+            "not tag:inbox and not tag:trash and not tag:spam and not tag:sent and not path:cohs/**".to_string()
         }
-        ("personal", "all-mail") => "date:30d.. and not tag:cohs".to_string(),
+        ("personal", "all-mail") => "date:30d.. and not path:cohs/**".to_string(),
 
-        // ---------------- COHS (M365, gated by tag:cohs) ----------------
+        // ---------------- COHS (everything under /Mail/cohs/) ----------------
         ("cohs", "inbox") => format!(
-            "tag:cohs and tag:inbox and (not tag:sent or from:{self_from}) \
+            "path:cohs/** and tag:inbox and (not tag:sent or from:{self_from}) \
              and not tag:archive and not tag:spam and not tag:trash and not tag:unsubscribed"
         ),
-        ("cohs", "unread") => "tag:cohs and tag:unread and not tag:trash and not tag:spam".to_string(),
-        ("cohs", "sent") => "tag:cohs and tag:sent".to_string(),
-        ("cohs", "drafts") => "tag:cohs and tag:drafts".to_string(),
-        ("cohs", "archive") => "tag:cohs and tag:archive".to_string(),
-        ("cohs", "trash") => "tag:cohs and tag:trash".to_string(),
-        ("cohs", "spam") => "tag:cohs and tag:spam".to_string(),
+        ("cohs", "unread") => "path:cohs/** and tag:unread and not tag:trash and not tag:spam".to_string(),
+        ("cohs", "sent") => "path:cohs/** and tag:sent".to_string(),
+        ("cohs", "drafts") => "path:cohs/** and tag:drafts".to_string(),
+        ("cohs", "archive") => "path:cohs/** and tag:archive".to_string(),
+        ("cohs", "trash") => "path:cohs/** and tag:trash".to_string(),
+        ("cohs", "spam") => "path:cohs/** and tag:spam".to_string(),
 
         _ => return None,
     };
@@ -584,27 +594,32 @@ mod tests {
             );
             let q = q.unwrap();
             assert!(
-                q.contains("tag:inbox") || q.contains("tag:cohs"),
-                "inbox query for {} doesn't reference inbox or cohs tag: {q}",
+                q.contains("tag:inbox") || q.contains("path:cohs"),
+                "inbox query for {} doesn't reference inbox tag or cohs path: {q}",
                 acc.slug
             );
         }
     }
 
     #[test]
-    fn personal_inbox_excludes_cohs_and_promotions() {
+    fn personal_inbox_excludes_cohs_path_and_promotions() {
         let acc = find("personal").expect("personal account exists");
         let q = mailbox_query(acc, "inbox").expect("inbox mapping exists");
-        assert!(q.contains("not tag:cohs"), "got: {q}");
+        // Path-based discrimination (changed 2026-05-08): personal account
+        // excludes anything physically under /Mail/cohs/, not by `tag:cohs`.
+        assert!(q.contains("not path:cohs/**"), "got: {q}");
         assert!(q.contains("not tag:promotions"), "got: {q}");
         assert!(q.contains("date:6M.."), "got: {q}");
     }
 
     #[test]
-    fn cohs_inbox_requires_cohs_tag() {
+    fn cohs_inbox_scoped_by_path() {
         let acc = find("cohs").expect("cohs account exists");
         let q = mailbox_query(acc, "inbox").expect("inbox mapping exists");
-        assert!(q.starts_with("tag:cohs"), "got: {q}");
+        // Path-based discrimination (changed 2026-05-08): cohs account
+        // queries are scoped by file path, not by `tag:cohs`. The path
+        // predicate must be present and the inbox tag still required.
+        assert!(q.contains("path:cohs/**"), "got: {q}");
         assert!(q.contains("tag:inbox"), "got: {q}");
     }
 
