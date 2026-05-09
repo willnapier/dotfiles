@@ -43,7 +43,12 @@
     if (!host) {
       host = document.createElement("div");
       host.id = "toast-container";
-      host.style.cssText = "position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:8px;";
+      // Top-right (not bottom-right) so the toast doesn't collide with
+      // the browser's link-status overlay (Firefox shows hovered URLs
+      // bottom-right when the cursor is on the right side of the page;
+      // browser chrome is outside the page DOM so we can't z-index over
+      // it — only relocate).
+      host.style.cssText = "position:fixed;top:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:8px;";
       document.body.appendChild(host);
     }
     // Read tokens from theme.css only — duplicate hex fallbacks
