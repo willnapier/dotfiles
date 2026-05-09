@@ -807,3 +807,24 @@ body.col-resizing * { user-select: none !important; }
   background: var(--accent);
   color: var(--bg);
 }
+
+/* Toast container — keys.js appends toast `<div>`s to this host. The
+ * page template injects <div id="toast-container" class="toast-container">
+ * already, so the inline-style fallback in keys.js (which only runs
+ * when the host is freshly created) never fires on real pages. CSS is
+ * the authoritative placement.
+ *
+ * Top-right (not bottom-*): browser link-status overlays (Firefox shows
+ * hovered URLs bottom-left, can flip to bottom-right when cursor is
+ * bottom-left) live in the bottom edge of the viewport. Browser chrome
+ * is outside the page DOM, so we can't z-index over it — only relocate.
+ */
+.toast-container {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
