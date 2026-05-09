@@ -73,7 +73,6 @@ pub fn report_all(policies: &[Policy], policy_filter: Option<&str>) -> Result<Ve
 }
 
 fn build_report(pol: &Policy, category: &str) -> Result<Report> {
-    let path = store::category_path(category)?;
     let required_fields: Vec<String> = pol
         .vendor_module
         .as_deref()
@@ -85,43 +84,40 @@ fn build_report(pol: &Policy, category: &str) -> Result<Report> {
     let mut records = 0usize;
     let mut fully_covered = 0usize;
 
-    if path.exists() {
-        let f = File::open(&path).with_context(|| format!("opening {}", path.display()))?;
-        for line in BufReader::new(f).lines() {
-            let line = line?;
-            if line.trim().is_empty() {
+    let lines = store::read_category_lines(category)?;
+    for line in lines {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let Ok(obj) = serde_json::from_str::<Value>(&line) else {
+            continue; // tolerate corrupt lines
+        };
+        // Only count rows attributed to THIS policy. The same jsonl may
+        // be shared by multiple policies (e.g. deliveries.jsonl from
+        // royal-mail + amazon-shipping). Filter on the `policy` field;
+        // tolerate older rows without it (count them in for category).
+        if let Some(p) = obj.get("policy").and_then(|v| v.as_str()) {
+            if p != pol.name {
                 continue;
             }
-            let Ok(obj) = serde_json::from_str::<Value>(&line) else {
-                continue; // tolerate corrupt lines
-            };
-            // Only count rows attributed to THIS policy. The same jsonl may
-            // be shared by multiple policies (e.g. deliveries.jsonl from
-            // royal-mail + amazon-shipping). Filter on the `policy` field;
-            // tolerate older rows without it (count them in for category).
-            if let Some(p) = obj.get("policy").and_then(|v| v.as_str()) {
-                if p != pol.name {
-                    continue;
+        }
+        records += 1;
+        let mut all_required = !required_fields.is_empty();
+        if let Some(map) = obj.as_object() {
+            for (k, v) in map {
+                if is_populated(v) {
+                    *field_population.entry(k.clone()).or_insert(0) += 1;
                 }
             }
-            records += 1;
-            let mut all_required = !required_fields.is_empty();
-            if let Some(map) = obj.as_object() {
-                for (k, v) in map {
-                    if is_populated(v) {
-                        *field_population.entry(k.clone()).or_insert(0) += 1;
+            if all_required {
+                for r in &required_fields {
+                    if !map.get(r).map(is_populated).unwrap_or(false) {
+                        all_required = false;
+                        break;
                     }
                 }
                 if all_required {
-                    for r in &required_fields {
-                        if !map.get(r).map(is_populated).unwrap_or(false) {
-                            all_required = false;
-                            break;
-                        }
-                    }
-                    if all_required {
-                        fully_covered += 1;
-                    }
+                    fully_covered += 1;
                 }
             }
         }
@@ -187,34 +183,22 @@ impl Snapshot {
     }
 }
 
-/// Append one row per report to coverage-history.jsonl.
+/// Append one row per report to this machine's coverage-history file
+/// (`coverage-history.<hostname>.jsonl`). Reads in `read_history` union
+/// across all per-host files when comparing for drift.
 pub fn snapshot(reports: &[Report]) -> Result<()> {
-    let path = store::store_dir()?.join("coverage-history.jsonl");
-    use std::fs::OpenOptions;
-    use std::io::Write;
-    let mut f = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-        .with_context(|| format!("opening {}", path.display()))?;
     for r in reports {
         let s = Snapshot::from_report(r);
-        let line = serde_json::to_string(&s)?;
-        writeln!(f, "{line}")?;
+        store::append_record("coverage-history", &s)?;
     }
     Ok(())
 }
 
-/// Read the entire snapshot history.
+/// Read the entire snapshot history across every per-host file.
 fn read_history() -> Result<Vec<Snapshot>> {
-    let path = store::store_dir()?.join("coverage-history.jsonl");
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-    let f = File::open(&path)?;
+    let lines = store::read_category_lines("coverage-history")?;
     let mut out = Vec::new();
-    for line in BufReader::new(f).lines() {
-        let line = line?;
+    for line in lines {
         if line.trim().is_empty() {
             continue;
         }

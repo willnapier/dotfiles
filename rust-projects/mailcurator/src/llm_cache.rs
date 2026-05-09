@@ -6,16 +6,18 @@
 //! that we deliberately want to re-extract for) the human runs
 //! `mailcurator llm-cache clear` to flush.
 //!
-//! Storage: `~/.local/share/mailcurator/llm-cache.jsonl`. One line per
-//! cached extraction. Read once on startup into a HashMap; writes append
-//! immediately so a crash mid-run preserves earlier work.
+//! Storage: `~/.local/share/mailcurator/llm-cache.<hostname>.jsonl`. One
+//! line per cached extraction. Each machine writes only its own per-host
+//! file (avoids Syncthing conflicts when the cache directory is shared).
+//! On load, all per-host files are unioned into a single in-memory map so
+//! Mac benefits from cache entries written on nimbini and vice versa.
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
-use std::fs::{File, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::PathBuf;
 
 use crate::store;
@@ -37,22 +39,21 @@ pub struct Cache {
 
 impl Cache {
     pub fn load() -> Result<Self> {
-        let path = store::store_dir()?.join("llm-cache.jsonl");
+        // Reads are union across all per-host files (and the legacy
+        // single-file if still present); writes go to THIS machine's
+        // per-host file. So both machines' cache hits compound.
+        let lines = store::read_category_lines("llm-cache")?;
         let mut by_key = HashMap::new();
-        if path.exists() {
-            let f = File::open(&path)
-                .with_context(|| format!("opening {}", path.display()))?;
-            for line in BufReader::new(f).lines() {
-                let line = line?;
-                if line.trim().is_empty() {
-                    continue;
-                }
-                let Ok(rec) = serde_json::from_str::<CachedExtraction>(&line) else {
-                    continue; // tolerate corrupt lines
-                };
-                by_key.insert((rec.message_id, rec.module), rec.fields);
+        for line in lines {
+            if line.trim().is_empty() {
+                continue;
             }
+            let Ok(rec) = serde_json::from_str::<CachedExtraction>(&line) else {
+                continue; // tolerate corrupt lines
+            };
+            by_key.insert((rec.message_id, rec.module), rec.fields);
         }
+        let path = store::category_path("llm-cache")?;
         Ok(Self { by_key, path })
     }
 

@@ -107,21 +107,17 @@ pub fn append_event(event: &SubscriptionEvent) -> Result<()> {
         .context("appending to subscriptions.jsonl")
 }
 
-/// Load all events from disk. Empty Vec if the file doesn't exist yet.
+/// Load all events from disk across every per-host subscriptions file (and
+/// the legacy single-file if still present). Empty Vec if no events yet.
 pub fn load_events() -> Result<Vec<SubscriptionEvent>> {
-    let path = store::store_dir()?.join("subscriptions.jsonl");
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-    let raw = std::fs::read_to_string(&path)
-        .with_context(|| format!("reading {}", path.display()))?;
+    let lines = store::read_category_lines("subscriptions")?;
     let mut out = Vec::new();
-    for (n, line) in raw.lines().enumerate() {
+    for (n, line) in lines.iter().enumerate() {
         if line.trim().is_empty() {
             continue;
         }
         let evt: SubscriptionEvent = serde_json::from_str(line)
-            .with_context(|| format!("parsing subscriptions.jsonl line {}", n + 1))?;
+            .with_context(|| format!("parsing subscriptions record {}", n + 1))?;
         out.push(evt);
     }
     Ok(out)

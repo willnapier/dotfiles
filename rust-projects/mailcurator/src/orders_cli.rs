@@ -4,11 +4,9 @@
 //! authoritative store. This module makes it queryable so you reach for it
 //! first instead of grepping email.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::{DateTime, Datelike, Utc};
 use serde_json::Value;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
 
 use crate::store;
 
@@ -25,11 +23,7 @@ struct Order {
 }
 
 fn load_orders() -> Result<Vec<Order>> {
-    let path = store::category_path("orders")?;
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-    let f = File::open(&path).with_context(|| format!("opening {}", path.display()))?;
+    let lines = store::read_category_lines("orders")?;
     let mut out = Vec::new();
     // Defensive dedup-by-message-id at load time. Gmail label-pull
     // (Inbox + Sent + All Mail) can produce 3x duplicates per message
@@ -37,8 +31,7 @@ fn load_orders() -> Result<Vec<Order>> {
     // runs but historical jsonl may still have legacy dups. Keeping
     // the most-information-rich record per message-id.
     let mut seen_mids: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-    for line in BufReader::new(f).lines() {
-        let line = line?;
+    for line in lines {
         if line.trim().is_empty() {
             continue;
         }

@@ -35,6 +35,7 @@ mod eval;
 mod extract;
 mod extractors;
 mod journeys_cli;
+mod leader;
 mod llm;
 mod llm_cache;
 mod notmuch;
@@ -393,6 +394,24 @@ fn main() -> Result<()> {
             }
         }
         Command::Run { dry_run, now, only, llm_disable, llm_budget } => {
+            // Multi-machine leadership: skip clean if another machine has been
+            // active more recently. Bypass with MAILCURATOR_FORCE=1 (e.g. for
+            // backfill or explicit operator runs). Dry runs also honour the
+            // gate — easier to reason about, and cheap to override when
+            // genuinely needed. See src/leader.rs for the protocol.
+            let decision = leader::should_run();
+            let id = leader::machine_id();
+            match &decision {
+                leader::RunDecision::Run | leader::RunDecision::ForcedRun => {
+                    eprintln!("{}", leader::explain_decision(&decision, &id));
+                }
+                leader::RunDecision::SkipOtherActive { .. }
+                | leader::RunDecision::SkipNoRecentActivity { .. } => {
+                    eprintln!("{}", leader::explain_decision(&decision, &id));
+                    return Ok(());
+                }
+            }
+
             let cfg = config::load(&path)?;
             extract::set_llm_budget(llm_budget);
             if llm_disable {

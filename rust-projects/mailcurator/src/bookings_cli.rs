@@ -4,12 +4,10 @@
 //! Most-useful subcommand: `upcoming`, which surfaces bookings whose
 //! check-in date is in the future.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::{DateTime, Datelike, Utc};
 use regex::Regex;
 use serde_json::Value;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
 use std::sync::OnceLock;
 
 use crate::store;
@@ -36,14 +34,9 @@ struct Booking {
 }
 
 fn load_bookings() -> Result<Vec<Booking>> {
-    let path = store::category_path("bookings")?;
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-    let f = File::open(&path).with_context(|| format!("opening {}", path.display()))?;
+    let lines = store::read_category_lines("bookings")?;
     let mut out = Vec::new();
-    for line in BufReader::new(f).lines() {
-        let line = line?;
+    for line in lines {
         if line.trim().is_empty() {
             continue;
         }

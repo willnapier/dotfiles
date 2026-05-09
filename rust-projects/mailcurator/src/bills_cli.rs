@@ -9,11 +9,9 @@
 //! (utility rows) or `counterparty` (PayPal rows where the canonical
 //! vendor is "PayPal" but the merchant is what you actually want).
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::{DateTime, Datelike, Utc};
 use serde_json::Value;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
 
 use crate::store;
 
@@ -43,15 +41,10 @@ impl Bill {
 }
 
 fn load_bills() -> Result<Vec<Bill>> {
-    let path = store::category_path("bills")?;
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-    let f = File::open(&path).with_context(|| format!("opening {}", path.display()))?;
+    let lines = store::read_category_lines("bills")?;
     let mut out: Vec<Bill> = Vec::new();
     let mut seen_mids: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-    for line in BufReader::new(f).lines() {
-        let line = line?;
+    for line in lines {
         if line.trim().is_empty() {
             continue;
         }

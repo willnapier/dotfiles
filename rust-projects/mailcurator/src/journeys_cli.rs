@@ -4,11 +4,9 @@
 //! journey history; this CLI makes it queryable so you reach for it
 //! before grepping email.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use serde_json::Value;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
 
 use crate::store;
 
@@ -24,14 +22,9 @@ struct Journey {
 }
 
 fn load_journeys() -> Result<Vec<Journey>> {
-    let path = store::category_path("journeys")?;
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-    let f = File::open(&path).with_context(|| format!("opening {}", path.display()))?;
+    let lines = store::read_category_lines("journeys")?;
     let mut out = Vec::new();
-    for line in BufReader::new(f).lines() {
-        let line = line?;
+    for line in lines {
         if line.trim().is_empty() {
             continue;
         }
