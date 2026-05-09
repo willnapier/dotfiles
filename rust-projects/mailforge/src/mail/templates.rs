@@ -609,24 +609,28 @@ pub fn html_body_iframe(uuid: &str, images_allowed: bool) -> Markup {
 /// query) and the form preserves `view=full` so the user stays in the HTML
 /// view after toggling. PDFs don't load external images so this is HTML-only.
 pub fn image_toggle_banner(current_path: &str, images_allowed: bool) -> Markup {
+    // Wording note: "for this message" emphasises per-view scope so users
+    // don't conflate this banner's button with the persistent domain-trust
+    // chip (`t` / trust-chip-auto). The banner toggles CSP for this one
+    // view only; trust state on the sender's domain is unchanged.
     if images_allowed {
         html! {
             div class="img-banner" {
-                "External images loaded."
+                "External images loaded for this message."
                 form method="get" action=(current_path) class="img-banner__form" {
                     input type="hidden" name="view" value="full";
                     input type="hidden" name="images" value="0";
-                    button type="submit" class="img-toggle" { "Block external images" }
+                    button type="submit" class="img-toggle" { "Hide for this message" }
                 }
             }
         }
     } else {
         html! {
             div class="img-banner img-banner--active" {
-                "External images blocked for this view."
+                "External images hidden for this message."
                 form method="get" action=(current_path) class="img-banner__form" {
                     input type="hidden" name="view" value="full";
-                    button type="submit" class="img-toggle" { "Load external images" }
+                    button type="submit" class="img-toggle" { "Show for this message" }
                 }
             }
         }
