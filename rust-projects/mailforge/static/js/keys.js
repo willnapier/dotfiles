@@ -1718,12 +1718,12 @@
       initResizableColumns();
     }
 
-    // Trust-chip click handler: the auto-HTML chip in the message header
-    // is a button with data-action="untrust-domain". Click → POST remove
-    // → reload (so the message re-renders as plaintext and the chip
-    // disappears). Lives in `message` and `thread` contexts (thread
-    // headers may carry chips for individual messages once the trust
-    // logic extends, though show_thread doesn't render them today).
+    // Trust-chip / image-banner click handlers: the auto-HTML chip in the
+    // message header AND the image banner's Trust/Untrust button both
+    // carry data-action="{trust,untrust}-domain". Click → POST add/remove
+    // → reload (so the message re-renders with the new trust state and
+    // the controls update accordingly). Lives in `message` and `thread`
+    // contexts.
     if (ctxName === "message" || ctxName === "thread") {
       document.addEventListener("click", (ev) => {
         const btn = ev.target.closest('button[data-action="untrust-domain"]');
@@ -1746,6 +1746,33 @@
           .catch(err => {
             btn.disabled = false;
             showToast("Untrust failed: " + err.message, "error");
+          });
+      }, false);
+
+      // Sibling handler — banner's Trust button. Same pattern: POST add,
+      // reload so the message re-renders with HTML inline (auto_html
+      // becomes true now that the domain is allowlisted).
+      document.addEventListener("click", (ev) => {
+        const btn = ev.target.closest('button[data-action="trust-domain"]');
+        if (!btn) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        const dom = btn.dataset.domain || "";
+        if (!dom) {
+          showToast("No domain on button", "error");
+          return;
+        }
+        btn.disabled = true;
+        postJSON("/api/html-trusted/add", { domain: dom })
+          .then(r => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+          .then(j => {
+            if (!j.ok) throw new Error(j.error || "trust failed");
+            showToast("Trusted " + dom + " — reloading…", "success");
+            setTimeout(() => window.location.reload(), 300);
+          })
+          .catch(err => {
+            btn.disabled = false;
+            showToast("Trust failed: " + err.message, "error");
           });
       }, false);
     }

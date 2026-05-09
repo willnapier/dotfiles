@@ -146,8 +146,17 @@ pub async fn show_message(
         "/mail/m/{}",
         crate::mail::notmuch_db::encode_id(&message.id)
     );
+    let trust_domain = if trust.domain.is_empty() {
+        None
+    } else {
+        Some(trust.domain.as_str())
+    };
+    let in_trust_list = matches!(
+        trust.state,
+        TrustState::AutoHtml | TrustState::AuthFailed
+    );
     let images_banner = if html_branch {
-        image_toggle_banner(&toggle_path, images_allowed)
+        image_toggle_banner(&toggle_path, images_allowed, trust_domain, in_trust_list)
     } else {
         maud::html! {}
     };
