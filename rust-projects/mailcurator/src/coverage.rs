@@ -8,13 +8,11 @@
 //! Usage: `mailcurator coverage` (all policies) or `mailcurator coverage
 //! --policy amazon-orders` (one policy).
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
 
 use crate::extractors;
 use crate::policy::Policy;

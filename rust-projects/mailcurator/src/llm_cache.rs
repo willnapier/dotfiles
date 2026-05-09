@@ -125,6 +125,8 @@ mod tests {
 
     #[test]
     fn persists_to_disk() {
+        use std::fs::File;
+        use std::io::{BufRead, BufReader};
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("cache.jsonl");
         {

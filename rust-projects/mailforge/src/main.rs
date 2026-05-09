@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
+mod activity;
 mod daemon;
 mod mail;
 mod manifest;

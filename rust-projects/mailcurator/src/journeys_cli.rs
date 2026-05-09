@@ -5,7 +5,7 @@
 //! before grepping email.
 
 use anyhow::Result;
-use chrono::{DateTime, Datelike, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, Utc};
 use serde_json::Value;
 
 use crate::store;

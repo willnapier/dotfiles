@@ -84,8 +84,13 @@ pub async fn run(port: u16) -> Result<()> {
     // architecture. The meli `:pipe-message` standalone path (src/pipe.rs)
     // still works in degraded form (no header chrome, no image toggle); not
     // load-bearing, mailforge is the primary UI now.
-    let app = Router::new()
-        .route("/healthz", get(|| async { "ok" }))
+    // User-facing routes — any request here counts as "practitioner is at
+    // this machine" and bumps the activity record for mailcurator leadership.
+    // Excludes /healthz (which may be polled by launchd / systemd / external
+    // monitoring and would falsely keep the leader from rotating). See
+    // `src/activity.rs` for the protocol and `mailcurator::leader` for the
+    // read-and-decide side.
+    let user_facing = Router::new()
         .route("/v/:id/body.html", get(serve_body))
         .route("/v/:id/raw.pdf", get(serve_pdf))
         .route("/v/:id/cid/:filename", get(serve_asset))
@@ -117,6 +122,11 @@ pub async fn run(port: u16) -> Result<()> {
                         }),
                 )),
         )
+        .layer(axum::middleware::from_fn(crate::activity::middleware));
+
+    let app = Router::new()
+        .route("/healthz", get(|| async { "ok" }))
+        .merge(user_facing)
         // Global no-store cache headers for /mail/* and /v/* dynamic routes
         // (the static branch above already has its own no-store layer
         // and is unaffected). Without this, the browser uses heuristic
