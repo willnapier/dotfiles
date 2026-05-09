@@ -1,0 +1,23 @@
+[Unit]
+Description=Pull personal Gmail via gmpull (REST API) and re-index with notmuch
+After=network-online.target pizauth.service
+Wants=network-online.target pizauth.service
+
+[Service]
+Type=oneshot
+# gmpull shells out to `pizauth show gmail` for OAuth tokens. Both gmpull
+# and notmuch live in ~/.local/bin/ which is absent from systemd's minimal
+# PATH — must be explicit. Mirrors the launchd plist EnvironmentVariables
+# block (EnvironmentVariables fix discovered 2026-04-23 after ~20 silent
+# no-op ticks on the Mac side).
+Environment=PATH=/home/will/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=/home/will
+Environment=NOTMUCH_CONFIG=/home/will/Mail/.notmuch-config
+ExecStart=/bin/sh -c '/home/will/.local/bin/gmpull pull --resume && /usr/bin/notmuch new'
+# Idle ticks are ~5 quota units / sub-second via users.history.list. Full
+# enumeration paths (cold-start, stale historyId, week-long downtime)
+# can take much longer — 30min cap is generous but bounds the rare worst
+# case so the timer can re-arm rather than hang forever.
+TimeoutStartSec=30min
+StandardOutput=append:/home/will/.local/share/gmpull.log
+StandardError=append:/home/will/.local/share/gmpull.log

@@ -1,0 +1,13 @@
+[Unit]
+Description=Pull personal Gmail every 5 minutes
+
+[Timer]
+# 5min cadence matches the Mac launchd StartInterval (300s). 3min boot
+# offset staggers behind mbsync-cohs (2min) so the two pulls don't hit
+# the network simultaneously on login.
+OnBootSec=3min
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

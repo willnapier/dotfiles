@@ -500,6 +500,12 @@ depends = ["shared"]
 "systemd/pizauth-dump.timer" = "~/.config/systemd/user/pizauth-dump.timer"
 "systemd/mbsync-cohs.service" = "~/.config/systemd/user/mbsync-cohs.service"
 "systemd/mbsync-cohs.timer" = "~/.config/systemd/user/mbsync-cohs.timer"
+# gmpull — Rust replacement for lieer; pulls personal Gmail via REST API.
+# Mac counterpart is launchd plist `com.williamnapier.gmpull` (300s). Linux
+# uses 5min systemd timer to match. Backfill (~218k messages) must complete
+# before timer is started — kicked off manually first time.
+"systemd/gmpull.service" = "~/.config/systemd/user/gmpull.service"
+"systemd/gmpull.timer" = "~/.config/systemd/user/gmpull.timer"
 "systemd/gmail-push-tags.service" = "~/.config/systemd/user/gmail-push-tags.service"
 "systemd/gmail-push-tags.timer" = "~/.config/systemd/user/gmail-push-tags.timer"
 "systemd/gmail-push-tags-watchdog.service" = "~/.config/systemd/user/gmail-push-tags-watchdog.service"
