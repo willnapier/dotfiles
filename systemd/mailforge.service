@@ -1,6 +1,10 @@
 [Unit]
 Description=mailforge — Axum daemon for browser-handoff mail rendering
-After=default.target
+# pizauth.service must be up first: mailforge shells out to `pizauth show`
+# for OAuth tokens on every send. network-online.target is transitive via
+# pizauth but stated explicitly for clarity.
+After=pizauth.service network-online.target
+Wants=pizauth.service network-online.target
 
 [Service]
 Type=simple
