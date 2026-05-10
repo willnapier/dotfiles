@@ -19,10 +19,12 @@ git-auto-pull-watcher.service
 git-auto-push-watcher.service
 gmail-push-tags-watchdog.timer
 gmail-push-tags.timer
+gmpull.timer
 gnome-keyring-daemon.socket
 helix-undo-cleanup.timer
 link-service.service
 mailcurator-drift.timer
+mailforge.service
 mbsync-cohs.timer
 nushell-env.service
 p11-kit-server.socket
