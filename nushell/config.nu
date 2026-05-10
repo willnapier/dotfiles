@@ -4293,7 +4293,18 @@ def claude [...args] {
         # Run with continuum-claude wrapper (auto-persists to database)
         # Interactive mode: execs to real Claude (transparent passthrough)
         # Print mode: wraps and logs to ~/continuum-logs/
-        ^$continuum_claude ...$args
+        #
+        # ANTHROPIC_API_KEY is stripped so `claude` always uses the OAuth /
+        # Max-subscription credential. The env var is exported by env-secret.nu
+        # for PracticeForge's direct-API path; it must NOT reach the `claude`
+        # CLI, where it hijacks auth and breaks features that require OAuth
+        # (e.g. /ultrareview, which only authenticates via the subscription
+        # credential and rejects API-key auth). Mirrors the fallback branch
+        # below and the Mac convention of keeping the var commented-out for
+        # non-PracticeForge uses.
+        with-env { ANTHROPIC_API_KEY: null } {
+            ^$continuum_claude ...$args
+        }
     } else {
         # Check if we can auto-build continuum-claude
         let continuum_ensure = ($env.HOME | path join ".local/bin/continuum-ensure")
