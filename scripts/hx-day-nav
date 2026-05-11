@@ -1,9 +1,54 @@
 #!/usr/bin/env nu
-# Day navigation for Helix via Zellij keystroke injection
+# Smart prev/next navigation for Helix via Zellij keystroke injection.
 # Usage: hx-day-nav <prev|next> [buffer_name]
-# Calculates target day, then sends :open command to Helix via Zellij
+#
+# Dispatch by buffer location:
+#   - Rust Book chapter (~/rust-learning/book/src/ch*.md) → previous/next chapter
+#   - Otherwise                                            → previous/next DayPage
+#
+# In both cases, sends `:open <path><Enter>` to Helix via Zellij keystrokes.
 
 def main [direction: string, buffer_name?: string] {
+    let book_dir = $"($env.HOME)/rust-learning/book/src"
+
+    let target_path = if ($buffer_name != null) and ($buffer_name | str starts-with $"($book_dir)/") {
+        book-nav $direction $buffer_name $book_dir
+    } else {
+        daypage-nav $direction $buffer_name
+    }
+
+    # Expose target for other consumers
+    $target_path | save -f /tmp/helix-day-target.txt
+
+    # Inject :open command into Helix via Zellij
+    # write 27 = Escape (ensure NORMAL mode); write 13 = Enter
+    sleep 200ms
+    ^zellij action write 27
+    sleep 100ms
+    ^zellij action write-chars $":open ($target_path)"
+    sleep 100ms
+    ^zellij action write 13
+}
+
+# Sequential navigation through the main Rust Book chapters (ch*.md).
+# Lexicographic order matches reading order because chapters use
+# zero-padded NN-NN numbering (ch01-00, ch01-01, ch01-02, ch02-00...).
+# Appendices and front-matter are reachable via SUMMARY.md + gf.
+def book-nav [direction: string, buffer_name: string, book_dir: string] {
+    let chapters = (ls $"($book_dir)/ch*.md" | get name | each { path basename } | sort)
+    let current = ($buffer_name | path basename)
+    let matches = ($chapters | enumerate | where item == $current)
+    let current_idx = if ($matches | is-empty) { 0 } else { ($matches | first | get index) }
+    let last_idx = (($chapters | length) - 1)
+    let target_idx = if $direction == "next" {
+        [($current_idx + 1), $last_idx] | math min
+    } else {
+        [($current_idx - 1), 0] | math max
+    }
+    $"($book_dir)/" + ($chapters | get $target_idx)
+}
+
+def daypage-nav [direction: string, buffer_name?: string] {
     # Extract date from buffer name if it looks like a DayPage
     let current_date = if ($buffer_name != null) {
         let basename = ($buffer_name | path basename | str replace '.md' '')
@@ -16,7 +61,6 @@ def main [direction: string, buffer_name?: string] {
         date now
     }
 
-    # Calculate target date
     let target_date = if $direction == "prev" {
         $current_date - 1day | format date "%Y-%m-%d"
     } else {
@@ -33,16 +77,5 @@ def main [direction: string, buffer_name?: string] {
         }
     }
 
-    # Also write to file for other consumers
-    $note_path | save -f /tmp/helix-day-target.txt
-
-    # Send :open command to Helix via Zellij keystroke injection
-    # write 27 = Escape (ensure normal mode)
-    # write 13 = Enter (execute command)
-    sleep 200ms
-    ^zellij action write 27
-    sleep 100ms
-    ^zellij action write-chars $":open ($note_path)"
-    sleep 100ms
-    ^zellij action write 13
+    $note_path
 }
