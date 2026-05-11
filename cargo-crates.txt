@@ -28,7 +28,7 @@ meliview	0.1.0	/home/will/dotfiles/rust-projects/meliview
 module	0.1.0	/home/will/dotfiles/rust-projects/module
 nu	0.107.0	crates.io
 pizauth	1.0.11	https://github.com/ltratt/pizauth?tag=pizauth-1.0.11#f58048fc
-practiceforge	0.1.0	/home/will/Code/practiceforge/practiceforge
+practiceforge	0.1.0	/home/will/Code/practiceforge/.claude/worktrees/agent-ab9c407670ae9febc/practiceforge
 ripgrep	14.1.1	crates.io
 sd	1.0.0	crates.io
 skill-eval	0.1.0	/home/will/dotfiles/rust-projects/skill-eval
