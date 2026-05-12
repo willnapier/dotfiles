@@ -11,8 +11,20 @@
 def main [direction: string, buffer_name?: string] {
     let book_dir = $"($env.HOME)/rust-learning/book/src"
 
-    let target_path = if ($buffer_name != null) and ($buffer_name | str starts-with $"($book_dir)/") {
-        book-nav $direction $buffer_name $book_dir
+    # Debug log — inspect with: open /tmp/hx-day-nav.log
+    $"[(date now | format date '%H:%M:%S')] dir=($direction) buffer=($buffer_name)\n" | save -a /tmp/hx-day-nav.log
+
+    # Dispatch by buffer basename. The book pane's CWD is book/src, so
+    # Helix's %{buffer_name} arrives as a bare basename like
+    # `ch01-00-getting-started.md` — a `starts-with absolute-path` check
+    # never matches. Match on the chapter-file naming pattern instead;
+    # that scopes navigation to the rust-learning context without needing
+    # Zellij session detection.
+    let basename = if ($buffer_name != null) { $buffer_name | path basename } else { "" }
+    let is_book_file = ($basename =~ '^ch\d+')
+
+    let target_path = if $is_book_file {
+        book-nav $direction $basename $book_dir
     } else {
         daypage-nav $direction $buffer_name
     }
@@ -35,7 +47,7 @@ def main [direction: string, buffer_name?: string] {
 # zero-padded NN-NN numbering (ch01-00, ch01-01, ch01-02, ch02-00...).
 # Appendices and front-matter are reachable via SUMMARY.md + gf.
 def book-nav [direction: string, buffer_name: string, book_dir: string] {
-    let chapters = (ls $"($book_dir)/ch*.md" | get name | each { path basename } | sort)
+    let chapters = (ls ($"($book_dir)/ch*.md" | into glob) | get name | each { path basename } | sort)
     let current = ($buffer_name | path basename)
     let matches = ($chapters | enumerate | where item == $current)
     let current_idx = if ($matches | is-empty) { 0 } else { ($matches | first | get index) }
