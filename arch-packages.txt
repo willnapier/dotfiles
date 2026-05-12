@@ -114,6 +114,7 @@ xorg-xwayland
 xwayland-satellite
 yay
 yt-dlp
+zellij
 zoom
 zotero-bin
 zram-generator
