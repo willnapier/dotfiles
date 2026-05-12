@@ -31,6 +31,8 @@
         <string>/Users/williamnapier</string>
         <key>RUST_LOG</key>
         <string>info</string>
+        <key>MAILFORGE_STATIC_DIR</key>
+        <string>/Users/williamnapier/Code/mailforge/static</string>
     </dict>
 
     <key>ProcessType</key>
