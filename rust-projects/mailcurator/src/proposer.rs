@@ -245,33 +245,39 @@ Output rules:
   sender varies within a domain.
 - Lead with two comment lines: a one-line purpose + a one-line lifecycle
   rationale. These help the reviewer skim policies.toml later.
+- ALL fields below must be filled in with real values. Do NOT emit
+  placeholder syntax like `{N}`, `{M}`, `<placeholder>`, etc. — those
+  break TOML parsing and force a manual edit before paste. For the
+  commented-out `delete_after_days` line in particular, include a real
+  numeric example (e.g. `30`) that the reviewer can keep or adjust.
 
-Format:
+Format (replace EVERY angle-bracketed and brace-bracketed token with a
+concrete value — never emit literal placeholder syntax in output):
 
-# {policy-slug} — {one-line purpose}.
-# Lifecycle: {one-line reasoning}.
+# <one-line purpose of this policy>
+# Lifecycle: <one-line rationale>.
 [[policy]]
-name = "{kebab-case-slug}"
-from = "{exact-email or @domain}"
-intended_categories = ["{category}"]
-archive_after_days = {N}
-# delete_after_days = {M}  # QUARANTINED — enable after a week of clean operation.
+name = "<kebab-case-slug>"
+from = "<exact-email or @domain>"
+intended_categories = ["<category>"]
+archive_after_days = <N — a real number like 7, 14, 30>
+# delete_after_days = <N — a real number like 30, 60, 90>  # QUARANTINED: enable after a week of clean operation.
 
 # Optional, only if extractable:
 [[policy.extractor]]
-category = "{store}"
+category = "<store>"
 
 [[policy.extractor.field]]
 name = "vendor"
-literal = "{vendor name observed}"
+literal = "<vendor name observed>"
 
 [[policy.extractor.field]]
 name = "amount"
-body_regex = '{regex tuned to body shape}'
+body_regex = '<regex tuned to body shape>'
 
 # ... one [[policy.extractor.field]] block per extractable field.
 
-Output the TOML block now:
+Output the TOML block now (with all placeholders filled in):
 "#;
 
 fn truncate(s: &str, max: usize) -> String {
