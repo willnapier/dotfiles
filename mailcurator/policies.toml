@@ -1,0 +1,1492 @@
+# Example mailcurator policies — copy to ~/.config/mailcurator/policies.toml
+# and edit to taste.
+#
+# Design principle: extract and destroy. If an email has extractable value
+# (invoice, tracking, dates, amounts), capture it to JSONL first; then the
+# envelope is disposable. If the email has no extractable value (e.g. a
+# verification code), it can be deleted on schedule.
+#
+# v1 supports lifecycle only (archive, trash). Extraction lands in v2. Until
+# then, policies for senders with extractable data should set archive_after_days
+# but NOT delete_after_days — we don't want to destroy information we haven't
+# captured.
+
+# =============================================================================
+# CATEGORY A — zero extractable value, safe to delete on schedule
+# =============================================================================
+
+# Verification codes — nothing to capture; the code itself is ephemeral
+[[policy]]
+name = "verification-codes"
+subject_contains_any = ["verification code", "password reset", "encryption password", "password assistance", "verify your email", "security code", "sign-in code", "login code", "secure link to log in", "amazon.co.uk: sign-in"]
+intended_categories = ["auth-code"]
+delete_after_days = 1
+
+# =============================================================================
+# CATEGORY B — has extractable data; lifecycle gated on extraction success
+# =============================================================================
+
+# Royal Mail: tracking number + expected delivery date captured to
+# ~/.local/share/mailcurator/deliveries.jsonl, then OK to delete after 30d.
+[[policy]]
+name = "royal-mail"
+from = "@royalmail.com"
+intended_categories = ["delivery"]
+archive_after_days = 3
+delete_after_days = 30
+
+[[policy.extractor]]
+category = "deliveries"
+
+[[policy.extractor.field]]
+name = "carrier"
+literal = "Royal Mail"
+
+[[policy.extractor.field]]
+name = "tracking"
+body_regex = '([A-Z]{2}\d{9}GB)'
+
+[[policy.extractor.field]]
+name = "expected_delivery"
+body_regex = 'Delivery is due:\s*(?:\w+,\s*)?(\d{1,2}\s+\w+\s+\d{4})'
+kind = "date"
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "received"
+header = "Date"
+
+# Amazon shipping (not receipts): extract tracking, expected arrival (v2)
+[[policy]]
+name = "amazon-shipping"
+from = "@amazon.co.uk"
+subject_contains_any = ["out for delivery", "has been delivered", "is on the way", "shipped", "arriving", "order received"]
+intended_categories = ["delivery", "shipping-receipt"]
+archive_after_days = 7
+on_arrival.tags_add = ["receipts"]
+
+["delivery"]
+subject_not_contains = "receipt"
+archive_after_days = 7
+# delete_after_days deferred
+
+# Stripe payment events: KEEP in inbox (billing-relevant live data).
+# Extractor will capture invoice_id, amount, currency, paid_at — feeds Xero reconciliation.
+[[policy]]
+name = "stripe-billing"
+from = "notifications@stripe.com"
+intended_categories = ["invoice", "notification"]
+on_arrival.tags_add = ["billing"]
+# no archive, no delete — these stay visible until you process them
+
+# Uber trips (not receipts): extract trip date, route, fare (v2)
+[[policy]]
+name = "uber-trips"
+from = "@uber.com"
+subject_not_contains = "receipt"
+intended_categories = ["notification", "invoice", "shipping-receipt"]
+archive_after_days = 2
+# delete deferred
+
+# Uber receipts: tax-relevant. Extract receipt number, amount, date (v2).
+[[policy]]
+name = "uber-receipts"
+from = "@uber.com"
+subject_contains = "receipt"
+intended_categories = ["invoice"]
+on_arrival.tags_add = ["receipts"]
+archive_after_days = 7
+# never delete — tax/audit
+
+# Zoom invites: extract meeting date, topic, host URL (v2)
+[[policy]]
+name = "zoom-invites"
+from = "@zoom.us"
+intended_categories = ["calendar-invite", "notification"]
+archive_after_days = 7
+# delete deferred until extractor captures meeting metadata
+
+# =============================================================================
+# Newsletters (added incrementally via unmatched → preview → add workflow)
+# =============================================================================
+
+# NICABM — Ruth Buczynski. Clinical education marketing. Good material but
+# newsletter nonetheless. Quarantined while we verify no false positives.
+[[policy]]
+name = "nicabm"
+from = "ruthbuczynski@nicabm.com"
+intended_categories = ["newsletter", "marketing"]
+archive_after_days = 3
+delete_after_days = 14
+
+# =============================================================================
+# Marketing senders — Category A, delete-on-schedule
+# (added 2026-04-25 from labelled-corpus mining; validated frequency in inbox)
+# =============================================================================
+
+[[policy]]
+name = "drop"
+from = "info@i.drop.com"
+intended_categories = ["marketing"]
+archive_after_days = 1
+delete_after_days = 7
+
+[[policy]]
+name = "resparked"
+from = "hello@resparked.com"
+intended_categories = ["marketing", "newsletter"]
+archive_after_days = 1
+delete_after_days = 7
+
+[[policy]]
+name = "turtle-doves"
+from = "hello@e.turtle-doves.co.uk"
+intended_categories = ["marketing"]
+archive_after_days = 1
+delete_after_days = 7
+
+[[policy]]
+name = "liberty-london"
+from = "store@shop.libertylondon.com"
+intended_categories = ["marketing"]
+archive_after_days = 1
+delete_after_days = 7
+
+[[policy]]
+name = "bam-clothing"
+from = "bam@send.bambooclothing.co.uk"
+intended_categories = ["marketing"]
+archive_after_days = 1
+delete_after_days = 7
+
+[[policy]]
+name = "sunspel"
+from = "noreply@email.sunspel.com"
+intended_categories = ["marketing"]
+archive_after_days = 1
+delete_after_days = 7
+
+[[policy]]
+name = "new-harbinger"
+from = "no-reply@newharbinger.com"
+intended_categories = ["marketing", "newsletter"]
+archive_after_days = 3
+delete_after_days = 14
+
+# =============================================================================
+# Notification noise — Category A
+# =============================================================================
+
+[[policy]]
+name = "instagram"
+from = "@mail.instagram.com"
+intended_categories = ["notification", "marketing"]
+archive_after_days = 1
+delete_after_days = 7
+
+[[policy]]
+name = "discord"
+from = "noreply@discord.com"
+intended_categories = ["notification"]
+archive_after_days = 3
+delete_after_days = 14
+
+[[policy]]
+name = "nextdoor"
+# Domain match covers @nextdoor.com, @nextdoor.nl, @rs.email.nextdoor.nl,
+# and any other regional/subdomain variants. Confirmed 2026-05-01:
+# nextdoor.nl emails ship with NO List-Unsubscribe header, so MailForge's
+# one-click affordance can't reach them — policy-driven destruction is
+# the cleaner path.
+from = "@nextdoor"
+intended_categories = ["notification", "social-media-noise"]
+delete_after_days = 1
+
+# =============================================================================
+# Invoice senders — Category B; tag for findability, archive but never delete
+# =============================================================================
+
+[[policy]]
+name = "apple-receipts"
+from = "no_reply@email.apple.com"
+intended_categories = ["invoice"]
+archive_after_days = 14
+on_arrival.tags_add = ["receipts"]
+
+# Apple subscription renewal reminders — "Your Subscription Renewal" email
+# announcing an upcoming auto-renewal date and amount. Track B Agent C.
+# Writes to ~/.local/share/mailcurator/subscriptions.jsonl.
+[[policy]]
+name = "apple-subscription-renewals"
+from = "no_reply@email.apple.com"
+subject_contains = "Subscription Renewal"
+intended_categories = ["invoice"]
+on_arrival.tags_add = ["receipts"]
+# No archive/delete: lifecycle is owned by apple-receipts policy. This
+# policy exists purely for extraction.
+
+[[policy.extractor]]
+category = "subscriptions"
+
+[[policy.extractor.field]]
+name = "event"
+literal = "renewal_reminder"
+
+[[policy.extractor.field]]
+name = "service"
+literal = "apple.com"
+
+[[policy.extractor.field]]
+name = "next_renewal"
+body_regex = 'Starting from (\d{1,2}\s+\w+\s+\d{4}),\s*your subscription'
+kind = "date"
+
+[[policy.extractor.field]]
+name = "amount"
+body_regex = 'automatically renews for (£\d+\.\d+)'
+
+[[policy.extractor.field]]
+name = "frequency"
+body_regex = 'automatically renews for £\d+\.\d+/(year|month|week)'
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "from"
+header = "From"
+
+# Apple subscription charges — "Your invoice from Apple." emails containing
+# subscription line items. Body markers (Monthly|Annual|Yearly) and "Renews
+# <date>" reliably differentiate subscription renewals from ad-hoc App Store
+# purchases. Records for ad-hoc purchases will still be written but with
+# `frequency` and `next_renewal` absent — the synth layer can filter on
+# their presence. Track B Agent C.
+[[policy]]
+name = "apple-subscription-charges"
+from = "no_reply@email.apple.com"
+subject_contains = "invoice from Apple"
+intended_categories = ["invoice"]
+on_arrival.tags_add = ["receipts"]
+# No archive/delete: lifecycle owned by apple-receipts policy.
+
+[[policy.extractor]]
+category = "subscriptions"
+
+[[policy.extractor.field]]
+name = "event"
+literal = "charged"
+
+[[policy.extractor.field]]
+name = "service"
+literal = "apple.com"
+
+[[policy.extractor.field]]
+name = "frequency"
+body_regex = '\((Monthly|Annual|Yearly)\)'
+
+[[policy.extractor.field]]
+name = "next_renewal"
+body_regex = 'Renews (\d{1,2}\s+\w+\s+\d{4})'
+kind = "date"
+
+# Total charged amount. Apple receipts use two formats over time:
+#   newer: "MasterCard •••• 8923 (Apple Pay) £8.99"  (final line of receipt)
+#   older: "TOTAL £8.99"                              (uppercase keyword)
+# Match either; the regex engine takes the first hit. The card pattern is
+# anchored to common UK methods to reduce false positives from other £
+# values elsewhere on the page.
+[[policy.extractor.field]]
+name = "amount"
+body_regex = '(?:TOTAL\s*|(?:MasterCard|Visa|American Express|Apple Pay)[^£]{0,80})(£\d+\.\d+)'
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "from"
+header = "From"
+
+# PayPal — receipts, automatic payments, donations, refunds. Captures
+# rich payee context (recipient name, transaction ID, amount) at receive-
+# time before the PayPal web UI eventually drops it. Two body formats
+# coexist:
+#   modern (paypal.co.uk, ~2014+): HTML "You paid £130.87 GBP to
+#     Dropbox Internationa..." + "Transaction ID: 6RR24898VN115122M" or
+#     "Order ID 752043806496692734".
+#   legacy (paypal.com, pre-2012): plaintext "You sent a payment of
+#     £11.50 GBP to Skype" + "Transaction ID: 12A51843FK610412T".
+# Both share £NN.NN GBP and Transaction/Order ID labelling, so a single
+# extractor covers them. Counterparty is best taken from Subject which is
+# more deterministic than body across email types. Tax-relevant — never
+# delete, archive only. `from = "@paypal"` is broader than `@paypal.co.uk`
+# to also catch the older paypal.com receipts (~30 historical receipts);
+# the few non-receipt operational mails (login, password) are harmless —
+# they extract nothing beyond vendor + subject + received.
+[[policy]]
+name = "paypal-receipts"
+from = "@paypal"
+intended_categories = ["invoice"]
+archive_after_days = 14
+on_arrival.tags_add = ["receipts"]
+
+[[policy.extractor]]
+category = "bills"
+
+[[policy.extractor.field]]
+name = "vendor"
+literal = "PayPal"
+
+# counterparty: extracted from Subject. Ordered alternations (longest first)
+# cover ~92% of subjects — the dominant "Receipt for your payment to X"
+# plus automatic payments, donations, scheduled-purchase, refund, invoice.
+# The remainder are operational emails (login/password/legal) which
+# legitimately have no counterparty.
+[[policy.extractor.field]]
+name = "counterparty"
+subject_regex = '(?:[Rr]eceipt for [Yy]our [Pp]ayment to|[Rr]eceipt for [Yy]our donation to|sent an automatic payment to|[Yy]ou just sent a payment to|[Yy]ou have authorised a payment to|donated.*?to benefit|donated to benefit|[Yy]ou.ve authorised a payment to|[Yy]our payment to|[Yy]ou.ve paid|[Yy]ou.ve submitted an order in the amount of [^ ]+ [A-Z]+ to|payment for your purchase with|payment for your|payment for|[Rr]efund from|[Ii]nvoice from|[Rr]eceipt for [Yy]our)\s+([^:£$¥]+?)(?:\s+(?:has been processed|purchase|for invoice|—|would like to be paid|-)|:|$)'
+
+# amount_gbp: matches "£NN.NN GBP" (modern UTF-8 quoted-printable) or
+# "&pound;NN.NN GBP" (mid-era HTML entity used by Uber, Donation via
+# PayPal Giving Fund, etc.). The body has multiple £ amounts (subtotal,
+# total, payment, etc.) — extractors take the first match, which is
+# reliably the headline amount across formats. Legacy paypal.com
+# windows-1252 receipts have an unencoded byte that mailcurator may
+# leave as a replacement char; those receipts often lack any £/GBP
+# context altogether (Netflix/TIDAL ~2010s) and are genuinely
+# non-extractable on amount.
+[[policy.extractor.field]]
+name = "amount_gbp"
+body_regex = '(?:£|&pound;)\s*(\d+(?:\.\d{1,2})?)\s*GBP'
+
+[[policy.extractor.field]]
+name = "currency"
+literal = "GBP"
+
+# transaction_id: PayPal's reference. Modern receipts use "Transaction ID"
+# OR "Order ID" (post-2024 templates), automatic payments add "Profile ID"
+# for recurring billing agreements. ~91% of payment emails carry one.
+[[policy.extractor.field]]
+name = "transaction_id"
+body_regex = '(?:Transaction ID|Order ID|Profile ID)[:\s]*([A-Za-z0-9\-]{8,30})'
+
+# note: best-effort. Captures the "Invoice ID" reference value when the
+# merchant supplies one (Uber, legacy paypal.com receipts that include
+# an Invoice ID: line). Restricted to alphanumeric tokens to avoid the
+# greedy-capture failure mode where stripped-HTML rolls "Invoice ID
+# <id> Description Unit price Qty Amount £NN GBP..." into the field.
+[[policy.extractor.field]]
+name = "note"
+body_regex = 'Invoice ID[:\s]+([A-Za-z0-9_\-]{6,30})'
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "received"
+header = "Date"
+
+[[policy.extractor.field]]
+name = "message_id"
+header = "Message-ID"
+
+[[policy]]
+name = "brightpay-payroll"
+from = "docs@brightpay.co.uk"
+intended_categories = ["invoice"]
+archive_after_days = 30
+on_arrival.tags_add = ["billing"]
+
+[[policy]]
+name = "elicit-receipts"
+from = "@elicit.com"
+subject_contains_any = ["receipt", "invoice", "payment"]
+intended_categories = ["invoice"]
+archive_after_days = 30
+on_arrival.tags_add = ["receipts"]
+
+["invoice"]
+archive_after_days = 30
+on_arrival.tags_add = ["receipts"]
+
+# =============================================================================
+# Existing fixes
+# =============================================================================
+
+# Dropbox Plus subscription renewals — Track B extractor (2026-04-28).
+# Dropbox sends renewal reminders ~30 days before renewal date.
+# Pattern: "Your subscription will renew on <date>, and you'll be charged
+# £<amount> on that date and again each year"
+[[policy]]
+name = "dropbox-subscription"
+from = "no-reply@dropbox.com"
+subject_contains_any = ["subscription is about to renew", "subscription will renew"]
+intended_categories = ["invoice"]
+on_arrival.tags_add = ["receipts"]
+
+[[policy.extractor]]
+category = "subscriptions"
+
+[[policy.extractor.field]]
+name = "event"
+literal = "renewal_reminder"
+
+[[policy.extractor.field]]
+name = "service"
+literal = "dropbox.com"
+
+[[policy.extractor.field]]
+name = "next_renewal"
+body_regex = 'subscription will renew on (\d{1,2}\s+\w+\s+\d{4})'
+kind = "date"
+
+[[policy.extractor.field]]
+name = "amount"
+body_regex = 'charged\s*(£\d+\.\d+)'
+
+[[policy.extractor.field]]
+name = "frequency"
+body_regex = 'again each (year|month|week)'
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "from"
+header = "From"
+
+# Apple Developer Program enrollment confirmation. Different sender
+# (developer@email.apple.com) than App Store receipts. Body confirms:
+# "I will be billed on an annual basis for £79"
+# "I can cancel automatic renewal at any time up to 24 hours before"
+# Renewal date is NOT in the enrollment email — a separate reminder
+# arrives close to the renewal. We extract enrollment terms now, and
+# synthesise computes next_renewal = enrollment_ts + 1y as a fallback.
+[[policy]]
+name = "apple-developer-program"
+from = "developer@email.apple.com"
+subject_contains_any = ["automatic renewal", "Welcome to the Apple Developer Program"]
+intended_categories = ["invoice"]
+on_arrival.tags_add = ["receipts"]
+
+[[policy.extractor]]
+category = "subscriptions"
+
+[[policy.extractor.field]]
+name = "event"
+literal = "subscription_started"
+
+[[policy.extractor.field]]
+name = "service"
+literal = "apple-developer-program"
+
+[[policy.extractor.field]]
+name = "amount"
+body_regex = 'billed on an annual basis for (=A3\d+|£\d+)'
+
+[[policy.extractor.field]]
+name = "frequency"
+literal = "annual"
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "from"
+header = "From"
+
+# =============================================================================
+# Wave 3 expansion (2026-04-28 evening) — top uncategorised senders
+# =============================================================================
+
+# Bulk™ supplements MARKETING — Cat A. Broadened from bulk_uk@news.bulk.com
+# to bulk_uk@ to cover both marketing subdomains (news.bulk.com AND
+# email.bulk.com). Transactional senders (hello@bulk.com for order/delivery,
+# feedback@bulk.com for post-purchase) start with different prefixes so
+# they're NOT caught by this policy. Refined 2026-04-28.
+[[policy]]
+name = "bulk-marketing"
+from = "bulk_uk@"
+intended_categories = ["marketing"]
+archive_after_days = 3
+delete_after_days = 7
+
+# Bulk™ ORDER / DELIVERY transactional from hello@bulk.com.
+# Receipt-grade — archive only, no destroy.
+[[policy]]
+name = "bulk-orders"
+from = "hello@bulk.com"
+intended_categories = ["invoice"]
+on_arrival.tags_add = ["receipts"]
+archive_after_days = 14
+
+# Vegetology supplements MARKETING (Cat A) — excludes order/subscription
+# transactional emails which use the same sender. Refined 2026-04-28 after
+# false-positives caught real order confirmations.
+[[policy]]
+name = "vegetology-marketing"
+from = "hello@vegetology.com"
+subject_not_contains = "order"
+intended_categories = ["marketing"]
+archive_after_days = 3
+delete_after_days = 7
+
+# Vegetology ORDER / DISPATCH / SUBSCRIPTION transactional emails. Same
+# sender as marketing; differentiated by subject containing "order".
+# Receipt-grade content — archive but keep, no destroy.
+[[policy]]
+name = "vegetology-orders"
+from = "hello@vegetology.com"
+subject_contains = "order"
+intended_categories = ["invoice"]
+on_arrival.tags_add = ["receipts"]
+archive_after_days = 14
+
+# Confer CPD event announcements — time-bound; events expire after their date
+# so longer delete window than pure marketing.
+[[policy]]
+name = "confer-cpd"
+from = "info@confer.uk.com"
+intended_categories = ["marketing", "notification"]
+archive_after_days = 7
+delete_after_days = 30
+
+# Nick Milo / Linking Your Thinking newsletter — the email IS the content,
+# not a parcel for extraction. Archive but keep; no delete_after_days.
+[[policy]]
+name = "linking-your-thinking"
+from = "hello@linkingyourthinking.com"
+intended_categories = ["newsletter"]
+archive_after_days = 14
+
+# Sam Harris newsletter — podcast announcements + essays; same reasoning.
+[[policy]]
+name = "sam-harris"
+from = "team@news.samharris.org"
+intended_categories = ["newsletter"]
+archive_after_days = 14
+
+# Classical Music industry newsletter — same.
+[[policy]]
+name = "classical-music"
+from = "cm@email.classical-music.uk"
+intended_categories = ["newsletter"]
+archive_after_days = 14
+
+# =====================================================================
+# Reference-data policies (added 2026-04-29)
+# =====================================================================
+# Lifecycle rule of thumb: archive forever for anything with financial,
+# legal or legacy interest (orders, journeys, vehicle records). Trash
+# only for pure noise (promos). Extracted facts land in jsonl files
+# under ~/.local/share/mailcurator/<category>.jsonl which become the
+# authoritative store — query subcommands TBD (Stage 4).
+
+# Trainline — train journey records.
+# Reference data: archive forever. Journeys often booked 2-3 weeks
+# advance, so the email has live operational value until the trip,
+# then legacy/financial value indefinitely. Feeds journeys.jsonl.
+[[policy]]
+name = "trainline-journeys"
+from = "@comms.trainline.com"
+# Tight subject filter for transactional only — exclude marketing
+# ("Earth Day", "Why pay the full fare?", "Splitting and saving").
+# Patterns derived from preview run 2026-04-29. Marketing emails are
+# captured by the trainline-promo policy below and quarantine-trashed.
+subject_contains_any = ["Thanks for booking", "Get ready for", "Your trip", "Alert:", "Delay Repay", "Your refund", "Booking confirmation"]
+vendor_module = "trainline_journeys"
+intended_categories = ["journey"]
+archive_after_days = 7
+# delete_after_days deliberately omitted — keep forever
+
+[[policy.extractor]]
+category = "journeys"
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "received"
+header = "Date"
+
+[[policy.extractor.field]]
+name = "operator"
+literal = "Trainline"
+
+[[policy.extractor.field]]
+name = "journey_date"
+body_regex = '(\d{1,2}\s+\w{3,9}\s+\d{4})'
+kind = "date"
+
+[[policy.extractor.field]]
+name = "journey_time"
+body_regex = '\b(\d{2}:\d{2})\b'
+
+[[policy.extractor.field]]
+name = "fare"
+body_regex = '£([0-9]+\.\d{2})'
+
+[[policy.extractor.field]]
+name = "booking_ref"
+body_regex = '(?:Booking ref|Reference|Confirmation\s+code)[:\s]+([A-Z0-9]{5,12})'
+
+# trainline-promo: marketing/savings/seasonal noise. Same booking-vs-
+# marketing pattern as Airbnb. Quarantine-then-trash per the
+# 2026-04-23 "quarantine first on new destroy policies" rule. No
+# extractor — these messages have nothing to capture; just trash on
+# a delay.
+[[policy]]
+name = "trainline-promo"
+from = "@comms.trainline.com"
+subject_contains_any = ["Earth Day", "Why pay", "splitting and saving", "saving on trains", "More ways to save", "Disrupted travel", "Refund rules", "Spend less", "Train Swap", "Today's the day", "saving that"]
+intended_categories = ["promo"]
+archive_after_days = 3
+delete_after_days = 30
+
+# Amazon orders — order confirmations (NOT shipping, NOT promos).
+# Reference data: archive forever. Financial relevance for years
+# (warranties, returns, tax). Tight subject filter to avoid catching
+# shipping notifications (those are amazon-shipping → deliveries.jsonl)
+# or promos (those are amazon-promos → trash).
+[[policy]]
+name = "amazon-orders"
+from = "@amazon.co.uk"
+# ORDER PLACEMENT ONLY. amazon-shipping owns dispatch/delivery
+# ("Dispatched:", "Out for delivery:", "Delivered:") — don't overlap.
+# Modern Amazon order-placement subjects (per 2026-04-29 inbox sample):
+#   "Amazon.co.uk order of <title>."
+#   "Ordered: '<title>'"
+# Plus legacy/marketplace seller patterns.
+subject_contains_any = ["Amazon.co.uk order of", "Ordered:", "Thank you for your order"]
+# Vendor module: CSS-selector-based HTML parsing — anchors total on
+# <b>Grand Total:</b> instead of first "Total" text (which the older
+# generic body_regex was matching, occasionally capturing subtotals).
+vendor_module = "amazon_orders"
+intended_categories = ["order"]
+archive_after_days = 7
+# delete_after_days deliberately omitted — keep forever
+
+[[policy.extractor]]
+category = "orders"
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "received"
+header = "Date"
+
+[[policy.extractor.field]]
+name = "vendor"
+literal = "Amazon"
+
+[[policy.extractor.field]]
+name = "order_id"
+body_regex = '(\d{3}-\d{7}-\d{7})'
+
+[[policy.extractor.field]]
+name = "total"
+body_regex = '(?:Order [Tt]otal|Grand [Tt]otal|Total)[:\s]*£([0-9]+\.\d{2})'
+
+[[policy.extractor.field]]
+name = "eta"
+subject_regex = 'arriving\s+([\w\s,]+?)(?:[,\.]|$)'
+
+# Amazon promos — pure noise. Quarantine at 7d initially per the
+# "quarantine first on new destroy policies" rule. After a week of no
+# false positives, drop to delete_after_days = 0 for instant trash.
+[[policy]]
+name = "amazon-promos"
+from = "@amazon.co.uk"
+# Broadened wider per preview — initial filter caught only 14 historic
+# 2008–2010 promos; modern Amazon promo subjects differ. Sample below
+# pending refinement after live-traffic observation.
+subject_contains_any = ["Today's Deals", "Lightning Deal", "Lightning Deals", "Prime Day", "Spring Sale", "Summer Sale", "Black Friday", "Cyber Monday", "% off", "Save up to", "Recommended for you", "Hot picks", "Top deals", "Trending", "deals you'll love", "We thought you might like", "Picks for you", "Suggested for you", "based on your", "Inspired by your"]
+intended_categories = ["promo"]
+delete_after_days = 7
+# Tighten to 0 once destroy-preview is clean across at least one week.
+# Tighten/broaden subject list as live preview surfaces FP/FN.
+
+# Tesla — vehicle records (service appointments, supercharger receipts,
+# software releases, marketing). All archived. Tessie (lifetime sub) is
+# the live data source, but emails are the paper trail for tax-relevant
+# amounts and service history. Cheap insurance.
+[[policy]]
+name = "tesla"
+from = "@tesla.com"
+# Tightened 2026-04-30: was catching everything from @tesla.com
+# (152 emails, 67% noise). Now scoped to actual vehicle records:
+# service appointments, supercharger payments, premium connectivity
+# subscriptions, payment receipts. Marketing / software-release /
+# auth / access-change noise is captured by tesla-marketing below.
+subject_contains_any = ["Service Appointment", "Service for Your", "Mobile Service Appointment", "Delivery Appointment", "Supercharger Payment", "Supercharger Access", "Supercharging Membership", "Subscribed to Premium", "Payment Receipt from Tesla", "Service team"]
+vendor_module = "tesla"
+intended_categories = ["vehicle-record"]
+archive_after_days = 7
+# delete_after_days deliberately omitted — keep forever
+
+[[policy.extractor]]
+category = "tesla"
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "received"
+header = "Date"
+
+[[policy.extractor.field]]
+name = "vendor"
+literal = "Tesla"
+
+[[policy.extractor.field]]
+name = "amount"
+body_regex = '£([0-9]+\.\d{2})'
+
+[[policy.extractor.field]]
+name = "service_date"
+body_regex = '(?:Appointment|Scheduled|Service date)[:\s]+(\w+,?\s*\d{1,2}\s+\w+\s+\d{4})'
+
+[[policy.extractor.field]]
+name = "location"
+body_regex = '(?:Location|Service Center|Service Centre)[:\s]+([\w\s,]+?)(?:\n|$)'
+
+# Tesla marketing / software-update announcements / auth / access-change
+# noise. ~67% of tesla.com mail (101 of 152 in archive) was this category
+# before the split. Quarantine-trash same shape as airbnb-marketing.
+#
+# Auth codes and access-change events have transient value — once
+# you've used the code or registered the third-party app, the email is
+# dead. Same lifecycle as marketing.
+[[policy]]
+name = "tesla-marketing"
+from = "@tesla.com"
+subject_contains_any = ["Explore the Tesla Shop", "Get to Know", "More Range", "Review Financing", "Updates Are Here", "Updates, Tips", "Your Tesla Updates", "Owner Updates", "Tesla Update", "Free Supercharging", "Free Miles", "Voting", "Verification Code", "Reset Your", "Reset your", "App Access", "granted", "removed", "Remove Vehicle Request", "change Tesla Account", "Security Code", "Premium Connectivity Trial", "Premium Connectivity has Expired", "Premium Connectivity Ending", "Supercharger Voting", "Supercharger Closure", "Supercharger Posts", "Supercharger Pricing", "Introducing Tesla Service", "New Feature"]
+intended_categories = ["promo"]
+archive_after_days = 3
+delete_after_days = 30
+
+# Airbnb — split into bookings vs marketing (2026-04-29).
+#
+# Original `airbnb` policy caught everything from @airbnb.com — bookings,
+# review requests, "homes you should see" promos, host messages, account
+# notices. That gave a misleading 16.7% health % because checkin/
+# checkout only populate on actual reservation emails (≈25% of the
+# stream). Splitting clarifies both lifecycle (bookings keep, marketing
+# trash) and health metrics (bookings policy now reports honest health).
+#
+# airbnb-bookings: reservations + welcome + confirmed-trip + receipts +
+# payment notices. All financial/legacy interest; archive forever.
+[[policy]]
+name = "airbnb-bookings"
+from = "@airbnb.com"
+subject_contains_any = ["Reservation for", "Reservation reminder", "Welcome to", "Confirmed:", "Your receipt from", "payment is coming up", "Booking confirmation"]
+vendor_module = "airbnb_bookings"
+intended_categories = ["booking"]
+archive_after_days = 14
+# delete_after_days deliberately omitted — keep forever (booking + payment
+# records are tax-relevant indefinitely; jsonl extraction is supplement,
+# not replacement, for historical mail).
+
+[[policy.extractor]]
+category = "bookings"
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "received"
+header = "Date"
+
+[[policy.extractor.field]]
+name = "vendor"
+literal = "Airbnb"
+
+[[policy.extractor.field]]
+name = "booking_ref"
+body_regex = '(?:Confirmation code|Reservation|Booking)[:\s]+([A-Z0-9]{6,12})'
+
+[[policy.extractor.field]]
+name = "checkin"
+body_regex = '(?:Check-?in|Arrive)[:\s]+(\w+,?\s*\w+\s+\d{1,2},?\s+\d{4})'
+
+[[policy.extractor.field]]
+name = "checkout"
+body_regex = '(?:Check-?out|Depart)[:\s]+(\w+,?\s*\w+\s+\d{1,2},?\s+\d{4})'
+
+[[policy.extractor.field]]
+name = "host"
+body_regex = '(?:Host|hosted by)[:\s]+([A-Z][\w\s]+?)(?:\n|$)'
+
+[[policy.extractor.field]]
+name = "total"
+body_regex = '(?:Total|Total cost|You paid)[:\s]*(?:£|\$|€)([0-9]+(?:\.\d{2})?)'
+
+# airbnb-marketing: promo / review nudges / "homes you should see" /
+# discovery emails / account housekeeping. Pure noise from data POV.
+# Quarantine-then-trash per the 2026-04-23 "quarantine first on new
+# destroy policies" rule. No extractor — these messages have nothing
+# to capture; just trash on a delay.
+[[policy]]
+name = "airbnb-marketing"
+from = "@airbnb.com"
+subject_contains_any = ["homes you should see", "homes, just for you", "Apartments in", "Find ", "🏡", "just for you", "Get ", " off ", "Take action", "There's still time", "Add an Airbnb Experience", "Airbnb Experience", "Write a review", "review for", "Account activity", "New login", "Simplifying", "Sign in"]
+intended_categories = ["promo"]
+archive_after_days = 3
+delete_after_days = 30
+
+# Booking.com — hotel/B&B/inn reservations. Same shape as Airbnb but
+# different vendor, feeding shared bookings.jsonl so `mailcurator
+# bookings list` shows everything mixed.
+[[policy]]
+name = "booking-com-bookings"
+from = "@booking.com"
+subject_contains_any = ["Your booking is confirmed", "booking is confirmed at", "Thanks! Your booking", "your trip", "This is your receipt", "We have updated the PIN", "Booking cancelled", "we have a question about your booking", "reminder about your trip"]
+vendor_module = "booking_com_bookings"
+intended_categories = ["booking"]
+archive_after_days = 14
+# delete_after_days deliberately omitted — keep forever (financial /
+# legacy reference, same lifecycle policy as Airbnb).
+
+[[policy.extractor]]
+category = "bookings"
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "received"
+header = "Date"
+
+[[policy.extractor.field]]
+name = "policy_vendor"
+literal = "Booking.com"
+
+# Booking.com marketing: review nudges, deal alerts, account-activity
+# notices. Quarantine-trash same shape as airbnb-marketing.
+[[policy]]
+name = "booking-com-marketing"
+from = "@booking.com"
+subject_contains_any = ["is waiting for your review", "Rate ", "Get alerts about", "Important Booking.com Security", "Genius", "deal", "% off", "save up to", "perfect for you", "for your next trip"]
+intended_categories = ["promo"]
+archive_after_days = 3
+delete_after_days = 30
+
+# Marriott / Bonvoy — small volume but high-value (chain hotels, often
+# work travel). Most marriott.com mail is loyalty marketing; the
+# `Copy of Stay Folio` and explicit "Reservation/Confirmation"
+# subjects are the actual stay records.
+[[policy]]
+name = "marriott-bookings"
+from = "@marriott.com"
+subject_contains_any = ["Stay Folio", "Reservation Confirmation", "Confirmation for", "Your stay at", "Booking Confirmation", "Welcome to"]
+vendor_module = "generic_hotel"
+intended_categories = ["booking"]
+archive_after_days = 14
+
+[[policy.extractor]]
+category = "bookings"
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "received"
+header = "Date"
+
+[[policy.extractor.field]]
+name = "vendor"
+literal = "Marriott"
+
+# Premier Inn — UK budget chain.
+[[policy]]
+name = "premier-inn-bookings"
+from = "@premierinn.com"
+subject_contains_any = ["Booking Confirmation", "booking confirmation", "Your reservation", "Your stay", "Reservation confirmation", "Welcome to Premier Inn", "Thanks for booking"]
+vendor_module = "generic_hotel"
+intended_categories = ["booking"]
+archive_after_days = 14
+
+[[policy.extractor]]
+category = "bookings"
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "received"
+header = "Date"
+
+[[policy.extractor.field]]
+name = "vendor"
+literal = "Premier Inn"
+
+# Travelodge — UK budget chain.
+[[policy]]
+name = "travelodge-bookings"
+from = "@travelodge.co.uk"
+subject_contains_any = ["Booking Confirmation", "booking confirmation", "Your reservation", "Your stay", "Reservation confirmation", "Thanks for booking", "Welcome to Travelodge"]
+vendor_module = "generic_hotel"
+intended_categories = ["booking"]
+archive_after_days = 14
+
+[[policy.extractor]]
+category = "bookings"
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "received"
+header = "Date"
+
+[[policy.extractor.field]]
+name = "vendor"
+literal = "Travelodge"
+
+# Agoda — Asia-focused booking aggregator. All 19 emails in archive
+# are bookings-shaped per probe, so loose subject filter.
+[[policy]]
+name = "agoda-bookings"
+from = "@agoda.com"
+subject_contains_any = ["Booking Confirmation", "Booking confirmation", "booking has been confirmed", "Your booking", "Confirmation:", "Itinerary", "Your reservation"]
+vendor_module = "generic_hotel"
+intended_categories = ["booking"]
+archive_after_days = 14
+
+[[policy.extractor]]
+category = "bookings"
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "received"
+header = "Date"
+
+[[policy.extractor.field]]
+name = "vendor"
+literal = "Agoda"
+
+# Expedia — meta-search + bookings.
+[[policy]]
+name = "expedia-bookings"
+from = "@expedia.com"
+subject_contains_any = ["Itinerary", "Booking confirmation", "Your reservation", "Your trip", "Confirmation:", "is confirmed"]
+vendor_module = "generic_hotel"
+intended_categories = ["booking"]
+archive_after_days = 14
+
+[[policy.extractor]]
+category = "bookings"
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "received"
+header = "Date"
+
+[[policy.extractor.field]]
+name = "vendor"
+literal = "Expedia"
+
+# Hotels.com — currently no bookings in archive, but policy in place
+# for future. If/when bookings appear, generic_hotel module will
+# extract them.
+[[policy]]
+name = "hotels-com-bookings"
+from = "@hotels.com"
+subject_contains_any = ["Booking Confirmation", "Itinerary", "Your reservation", "Your stay", "Confirmation:"]
+vendor_module = "generic_hotel"
+intended_categories = ["booking"]
+archive_after_days = 14
+
+[[policy.extractor]]
+category = "bookings"
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "received"
+header = "Date"
+
+[[policy.extractor.field]]
+name = "vendor"
+literal = "Hotels.com"
+
+# lastminute.com — 442 emails in archive, overwhelmingly marketing
+# (deals/savings/last-minute escape promos). No booking confirmations
+# observed in current archive; treat the whole sender domain as
+# quarantine-trash. Add a `lastminute-bookings` policy later only if
+# real bookings start appearing.
+[[policy]]
+name = "lastminute-marketing"
+from = "@lastminute.com"
+intended_categories = ["promo"]
+archive_after_days = 3
+delete_after_days = 30
+
+# Marriott / Premier Inn / Travelodge / Hotels.com / Expedia / Agoda
+# loyalty + marketing — all the same shape: review nudges, deals,
+# loyalty-tier emails.
+[[policy]]
+name = "hotel-loyalty-marketing"
+from = "@marriott.com"
+subject_contains_any = ["Bonvoy", "loyalty", "earn points", "Member", "your points", "Marriott Mobile", "redeem", "deal", "% off", "save up to"]
+intended_categories = ["promo"]
+archive_after_days = 7
+delete_after_days = 60
+
+# =============================================================================
+# Vodafone — split by sender address. Profiled 2026-05-04 from 930-msg corpus
+# (`from:vodafone`). Each address is purpose-pure: bills, marketing, or
+# operational. Operational/transactional senders (network outages,
+# password resets, order/SIM changes) are deliberately NOT covered — those
+# go to the inbox for triage.
+# =============================================================================
+
+# Vodafone bills — keep forever, just clear out of inbox. archive-only;
+# no delete to preserve HMRC reference window.
+#
+# Body shape (mail.vodafone.co.uk + notify.vodafone.co.uk):
+#   "your monthly bill's ready for you online (account number ending 6856)
+#    comes to £55.67 and it's due on 13/10/2025."
+[[policy]]
+name = "vodafone-bills"
+from = "donotreply@mail.vodafone.co.uk"
+intended_categories = ["invoice"]
+archive_after_days = 7
+on_arrival.tags_add = ["receipts"]
+
+[[policy.extractor]]
+category = "bills"
+
+[[policy.extractor.field]]
+name = "vendor"
+literal = "Vodafone"
+
+[[policy.extractor.field]]
+name = "amount"
+body_regex = '£(\d+\.\d{2})'
+
+[[policy.extractor.field]]
+name = "due_date"
+body_regex = 'due on (\d{2}/\d{2}/\d{4})'
+kind = "date"
+
+[[policy.extractor.field]]
+name = "account_tail"
+body_regex = 'account\s+number\s+ending\s+(\d+)'
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "received"
+header = "Date"
+
+[[policy]]
+name = "vodafone-bills-notify"
+from = "noreply@notify.vodafone.co.uk"
+intended_categories = ["invoice"]
+archive_after_days = 7
+on_arrival.tags_add = ["receipts"]
+
+[[policy.extractor]]
+category = "bills"
+
+[[policy.extractor.field]]
+name = "vendor"
+literal = "Vodafone"
+
+[[policy.extractor.field]]
+name = "amount"
+body_regex = '£(\d+\.\d{2})'
+
+[[policy.extractor.field]]
+name = "due_date"
+body_regex = 'due on (\d{2}/\d{2}/\d{4})'
+kind = "date"
+
+[[policy.extractor.field]]
+name = "account_tail"
+body_regex = 'account\s+number\s+ending\s+(\d+)'
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "received"
+header = "Date"
+
+# vodafone-bills-centre: 2008-2011 era ("Vodafone Billing Centre"). The
+# email body has no inline amount, due date, or account number — bill
+# total is hosted online behind a "take a look" link. TODO: skip
+# extractor for now; if we ever back-fill from PDF attachments, add then.
+[[policy]]
+name = "vodafone-bills-centre"
+from = "donotreply@contact-vodafone.co.uk"
+intended_categories = ["invoice"]
+archive_after_days = 7
+
+# Vodafone marketing firehose — Black-Friday / Galaxy / upgrade pitches /
+# Free-Wi-Fi-on-the-Underground. Pure noise, destroy on schedule.
+[[policy]]
+name = "vodafone-marketing"
+from = "vodafone@mail.vodafone.co.uk"
+intended_categories = ["promo"]
+archive_after_days = 1
+delete_after_days = 30
+
+[[policy]]
+name = "vodafone-survey"
+from = "survey@mail.vodafone.co.uk"
+intended_categories = ["promo"]
+archive_after_days = 1
+delete_after_days = 30
+
+# =============================================================================
+# Utility / billing senders — added 2026-05-04. All write to bills.jsonl.
+# Lifecycle: archive_after_days = 7, NO delete (HMRC reference window).
+# Where vendor-side inline content is too thin (BT, vodafone-bills-centre,
+# Direct Line — bill total hosted online behind a link), we keep the policy
+# for inbox lifecycle but add only the fields we can verify from samples.
+# =============================================================================
+
+# Octopus Energy — DD reminders + monthly statements. Body shape:
+#   "Direct Debit payment of £479.92 on 23rd April"
+#   "Account no. - A-FFC74AF5"
+# Some statements include the year ("23rd December 2024"); the FYI reminders
+# omit it. We capture what's there; fd-budget's parse_due_date backfills the
+# year from the message Date header.
+#
+# Two date fields:
+#   - payment_date: legacy field, kept for backwards compat (raw "23rd April")
+#   - due_date:     same value, but read by fd-budget enrich. The subject line
+#                   carries it most reliably ("FYI: We'll take a £479.92
+#                   payment on 23rd April"), so we anchor there. Statement
+#                   emails ("FYI: Your energy statement") have no date in
+#                   subject — that's expected null.
+[[policy]]
+name = "octopus-energy"
+from = "@octopus.energy"
+intended_categories = ["invoice"]
+archive_after_days = 7
+on_arrival.tags_add = ["receipts"]
+
+[[policy.extractor]]
+category = "bills"
+
+[[policy.extractor.field]]
+name = "vendor"
+literal = "Octopus Energy"
+
+[[policy.extractor.field]]
+name = "amount"
+body_regex = 'payment of\s*£(\d+\.\d{2})'
+
+[[policy.extractor.field]]
+name = "payment_date"
+body_regex = 'payment of\s*£\d+\.\d{2}\s+on\s+(?:the\s+)?(\d{1,2}(?:st|nd|rd|th)?\s+\w+(?:\s+\d{4})?)'
+
+[[policy.extractor.field]]
+name = "due_date"
+subject_regex = 'payment on\s+(\d{1,2}(?:st|nd|rd|th)?\s+\w+(?:\s+\d{4})?)'
+kind = "date"
+
+[[policy.extractor.field]]
+name = "account"
+body_regex = 'Account no\.\s*-\s*([A-Z]-[A-F0-9]+)'
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "received"
+header = "Date"
+
+# Virgin Media — "Your Virgin Media bill is ready". HTML-only emails;
+# crude tag-strip exposes the inline £ amounts. Body shape:
+#   "We will request £75.88 from your bank or building society"
+#   "Account number: 633123701"
+# Due date is NOT in body (just a generic "before the payment due date"
+# warning). TODO: extract due date if Virgin ever surfaces it inline.
+[[policy]]
+name = "virgin-media"
+from = "@virginmedia"
+intended_categories = ["invoice"]
+archive_after_days = 7
+on_arrival.tags_add = ["receipts"]
+
+[[policy.extractor]]
+category = "bills"
+
+[[policy.extractor.field]]
+name = "vendor"
+literal = "Virgin Media"
+
+[[policy.extractor.field]]
+name = "amount"
+body_regex = '(?:We will request|comes to|Amount:|Bill total:|will request)\s*£(\d+\.\d{2})'
+
+[[policy.extractor.field]]
+name = "account"
+body_regex = 'Account number:\s*(\d+)'
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "received"
+header = "Date"
+
+# BT — "Your latest bill is here" / "Your bill is ready". Body has
+# account number ("Account number: GB25368457") but NO inline amount —
+# bill total is hosted in BT's online portal behind a "view your bill"
+# link. TODO: amount + due date not extractable from body. Policy
+# present for inbox lifecycle and account-number reference; populate
+# bills.jsonl with whatever we can capture.
+[[policy]]
+name = "bt-bills"
+from = "@bt.com"
+subject_contains_any = ["Your latest bill", "Your bill is ready", "BT bill is available", "ACTIVE REQUIRED: Activate", "Activate and view your BT bill"]
+intended_categories = ["invoice"]
+archive_after_days = 7
+on_arrival.tags_add = ["receipts"]
+
+[[policy.extractor]]
+category = "bills"
+
+[[policy.extractor.field]]
+name = "vendor"
+literal = "BT"
+
+[[policy.extractor.field]]
+name = "account"
+body_regex = 'Account number:\s*([A-Z]+\d+)'
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "received"
+header = "Date"
+
+# RingCentral — "Service Statement" / "Recurring Statement" /
+# "Service statement". HTML-only; tag-strip exposes inline £ totals.
+# Universal anchor across all eras: "was/were charged £NN.NN. The
+# (Charge|charge) will appear as 'RingCentral'". Newer statements
+# additionally surface "Total charged to credit card: £NN.NN".
+[[policy]]
+name = "ringcentral-statements"
+from = "@ringcentral"
+subject_contains_any = ["Service Statement", "Service statement", "Recurring Statement"]
+intended_categories = ["invoice"]
+archive_after_days = 7
+on_arrival.tags_add = ["receipts"]
+
+[[policy.extractor]]
+category = "bills"
+
+[[policy.extractor.field]]
+name = "vendor"
+literal = "RingCentral"
+
+[[policy.extractor.field]]
+name = "amount"
+body_regex = 'charged\s*£(\d+\.\d{2})\.\s*(?:The|This)\s*(?:Charge|charge)'
+
+[[policy.extractor.field]]
+name = "account"
+body_regex = 'Account Number:\s*([\d\s]+?)\s+Statement'
+
+[[policy.extractor.field]]
+name = "statement_date"
+body_regex = 'Statement date:\s*(\d{2}/\d{2}/\d{4})'
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "received"
+header = "Date"
+
+# Cliniko — Australian SaaS (charges in AUD, $ symbol). Two relevant
+# subjects:
+#   "[Statement] Cliniko - Solo"  → monthly statement
+#   "Cliniko payment received"    → payment confirmation
+# Both have a clear "$NN.NN AUD" / "$NN.NN" inline. We anchor on
+# "payment of $NN.NN" or "Current Charges...: $NN.NN AUD".
+[[policy]]
+name = "cliniko-billing"
+from = "@cliniko"
+subject_contains_any = ["[Statement]", "payment received", "Statement", "Cliniko payment"]
+intended_categories = ["invoice"]
+archive_after_days = 7
+on_arrival.tags_add = ["receipts"]
+
+[[policy.extractor]]
+category = "bills"
+
+[[policy.extractor.field]]
+name = "vendor"
+literal = "Cliniko"
+
+[[policy.extractor.field]]
+name = "amount"
+body_regex = '(?:payment of|Current Charges[\.\s]+:?)\s*\$(\d+\.\d{2})'
+
+[[policy.extractor.field]]
+name = "currency"
+literal = "AUD"
+
+[[policy.extractor.field]]
+name = "statement_date"
+body_regex = 'Statement Date[\.\s]+:?\s*(\d{1,2}\s+\w+\s+\d{4})'
+
+[[policy.extractor.field]]
+name = "statement_id"
+body_regex = 'Statement ID[\.\s]+:?\s*(\d+)'
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "received"
+header = "Date"
+
+# Direct Line — car insurance. Renewal emails point to an online pack;
+# body carries Policy number ("Policy number 1015443557") and the
+# scheduled renewal date ("automatically renew on 3 March 2026"), but
+# NO inline amount — the premium quote lives behind the portal link.
+# TODO: amount not extractable from email body; bills.jsonl rows for
+# Direct Line will always have null amount until that changes.
+[[policy]]
+name = "directline-insurance"
+from = "@directline"
+subject_contains_any = ["insurance renewal", "insurance is coming up for renewal", "REMINDER: Your Direct Line insurance"]
+intended_categories = ["invoice"]
+archive_after_days = 7
+on_arrival.tags_add = ["receipts"]
+
+[[policy.extractor]]
+category = "bills"
+
+[[policy.extractor.field]]
+name = "vendor"
+literal = "Direct Line"
+
+[[policy.extractor.field]]
+name = "policy_number"
+body_regex = 'Policy number\s+(\d+)'
+
+[[policy.extractor.field]]
+name = "due_date"
+body_regex = 'automatically renew on\s+(\d{1,2}(?:st|nd|rd|th)?\s+\w+\s+\d{4})'
+kind = "date"
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "received"
+header = "Date"
+
+# Ealing Council — "Online payment receipt" emails for parking
+# permits, council services, etc. Body shape:
+#   "EA23613641      £30.00      1130216"
+# (whitespace-separated, plaintext.) We anchor on the EA<digits>
+# reference followed by £NN.NN.
+[[policy]]
+name = "ealing-council"
+from = "@ealing.gov.uk"
+subject_contains_any = ["Online payment receipt", "Permit renewal reminder", "URGENT: Permit renewal"]
+intended_categories = ["invoice"]
+archive_after_days = 7
+on_arrival.tags_add = ["receipts"]
+
+[[policy.extractor]]
+category = "bills"
+
+[[policy.extractor.field]]
+name = "vendor"
+literal = "Ealing Council"
+
+[[policy.extractor.field]]
+name = "reference"
+body_regex = '(EA\d+)'
+
+[[policy.extractor.field]]
+name = "amount"
+body_regex = 'EA\d+\s+£(\d+\.\d{2})'
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "received"
+header = "Date"
+
+# Ecotricity — pure marketing now (per 2026-05-04 inbox audit).
+# Subjects: "Vampire devices in your home", "Rewilding Britain with
+# Ecotalk", "Free WOMAD festival ticket", solar projects, etc.
+# Quarantine-trash on the standard 30-day window. The 64 historic
+# bill emails ("Your latest bill is ready") are an artefact of an
+# old account; treat the whole sender as promo.
+[[policy]]
+name = "ecotricity"
+from = "@ecotricity"
+intended_categories = ["promo"]
+archive_after_days = 1
+delete_after_days = 30
+
+# Added 2026-05-05 23:44:29 via MailForge K (kill-sender) keystroke.
+[[policy]]
+name = "kjbm-healthlabshq-com"
+from = "@kjbm.healthlabshq.com"
+intended_categories = ["bulk-marketing"]
+delete_after_days = 1
+
+# Added 2026-05-06 22:10:50 via MailForge K (kill-sender) keystroke.
+[[policy]]
+name = "trysuri-com"
+from = "@trysuri.com"
+intended_categories = ["bulk-marketing"]
+delete_after_days = 1
+
+# Added 2026-05-07 11:18:29 via MailForge K (kill-sender) keystroke.
+[[policy]]
+name = "email-pizzaexpress-com"
+from = "@email.pizzaexpress.com"
+intended_categories = ["bulk-marketing"]
+delete_after_days = 1
