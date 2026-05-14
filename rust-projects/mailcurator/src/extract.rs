@@ -407,6 +407,7 @@ fn apply_regex(pattern: &str, text: &str) -> Result<Option<String>> {
 /// - `2026-04-23` (passthrough)
 /// - `23/04/2026` (UK day-first slash form, common in utility bills)
 /// - `23 April 2026`, `23rd April 2026` (full natural-language)
+/// - `April 23, 2026` (American comma-form — Stripe receipts, US-tooling)
 /// - `23 April`, `23rd April` (year inferred from the message's `Date:`
 ///   header — the year is chosen to minimise distance to the received
 ///   date, handling Dec→Jan wraps in either direction).
@@ -437,7 +438,12 @@ fn normalise_date(s: &str, parsed: &mailparse::ParsedMail) -> Option<String> {
     let normalised = normalised.trim();
 
     // Natural-language with explicit year.
-    for fmt in &["%d %B %Y", "%-d %B %Y"] {
+    for fmt in &[
+        "%d %B %Y",   // "23 April 2026"
+        "%-d %B %Y",  // "3 April 2026"
+        "%B %-d, %Y", // "April 23, 2026" — American comma-form (Stripe et al)
+        "%B %d, %Y",  // "April 03, 2026" — zero-padded variant
+    ] {
         if let Ok(d) = NaiveDate::parse_from_str(normalised, fmt) {
             return Some(d.format("%Y-%m-%d").to_string());
         }
