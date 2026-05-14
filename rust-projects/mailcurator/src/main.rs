@@ -41,6 +41,7 @@ mod llm_cache;
 mod notmuch;
 mod orders_cli;
 mod policy;
+mod proposer;
 mod store;
 mod subscriptions;
 mod tesla_cli;
@@ -114,6 +115,29 @@ enum Command {
         /// Maximum senders to list
         #[arg(short, long, default_value_t = 30)]
         limit: usize,
+    },
+    /// Draft a `[[policy]]` + `[[policy.extractor]]` block for a sender via
+    /// Claude. Samples N messages from `<sender>`, includes body extracts
+    /// from the first few, and asks Claude to propose a lifecycle category
+    /// and (if relevant) an extractor schema. Always quarantine-first —
+    /// the draft NEVER sets `delete_after_days`. Output is printed to
+    /// stdout for paste-into-policies.toml after review.
+    ///
+    /// Composes with `unmatched` (find candidates) → this command (draft)
+    /// → `validate` (parse-check) → `preview` (FP check) → `improve`
+    /// (Karpathy refinement of regex post-paste).
+    ProposePolicy {
+        /// Sender to draft a policy for. Accepts an exact email
+        /// (`invoice+statements@mail.example.com`) or `@domain` style.
+        sender: String,
+        /// Number of messages to sample for the envelope evidence.
+        #[arg(short, long, default_value_t = 5)]
+        samples: usize,
+        /// Of the samples above, how many to include body extracts for.
+        /// Body extracts are what let Claude propose extractor regex; the
+        /// envelope-only samples drive lifecycle classification.
+        #[arg(long, default_value_t = 2)]
+        body_samples: usize,
     },
     /// Sample messages from the inbox and classify via Claude, building the
     /// labelled corpus used by `eval` and `improve`.
@@ -505,6 +529,9 @@ fn main() -> Result<()> {
             if seens.len() > limit.min(10) {
                 println!("  ... and {} more", seens.len() - limit.min(10));
             }
+        }
+        Command::ProposePolicy { sender, samples, body_samples } => {
+            proposer::propose_policy(&sender, samples, body_samples)?;
         }
         Command::Label { sample, window } => {
             eval::label(sample, &window)?;
