@@ -1490,3 +1490,65 @@ name = "email-pizzaexpress-com"
 from = "@email.pizzaexpress.com"
 intended_categories = ["bulk-marketing"]
 delete_after_days = 1
+
+# =============================================================================
+# SaaS billing — same bills.jsonl store as utilities (no separate store)
+# =============================================================================
+
+# Anthropic API billing — auto-recharge receipts for Claude API usage.
+# Volume: ~5-10/day during heavy API use (each API top-up = 1 receipt).
+# All receipts from invoice+statements@mail.anthropic.com via Amazon SES.
+# Added 2026-05-14: extends bills.jsonl with SaaS billing alongside utility
+# bills, rather than creating a separate store. Same downstream consumer
+# (fd-budget reconciliation). delete_after_days deliberately omitted on
+# first pass — quarantine-first; add once bills.jsonl shows clean extraction.
+[[policy]]
+name = "anthropic-api"
+from = "invoice+statements@mail.anthropic.com"
+intended_categories = ["invoice"]
+archive_after_days = 7
+on_arrival.tags_add = ["receipts"]
+
+[[policy.extractor]]
+category = "bills"
+
+[[policy.extractor.field]]
+name = "vendor"
+literal = "Anthropic"
+
+[[policy.extractor.field]]
+name = "amount"
+body_regex = 'Amount paid\s*£(\d+\.\d{2})'
+
+[[policy.extractor.field]]
+name = "subtotal"
+body_regex = 'Subtotal\s*£(\d+\.\d{2})'
+
+[[policy.extractor.field]]
+name = "vat"
+body_regex = 'VAT[^£]*£(\d+\.\d{2})'
+
+[[policy.extractor.field]]
+name = "payment_date"
+body_regex = 'Paid\s+(\w+\s+\d{1,2},\s+\d{4})'
+kind = "date"
+
+[[policy.extractor.field]]
+name = "receipt_number"
+body_regex = 'Receipt number\s+(\d{4}-\d{4}-\d{4})'
+
+[[policy.extractor.field]]
+name = "invoice_number"
+body_regex = 'Invoice number\s+([A-F0-9]+-\d+)'
+
+[[policy.extractor.field]]
+name = "description"
+body_regex = 'Receipt #\d{4}-\d{4}-\d{4}\s+(.+?)\s+Qty'
+
+[[policy.extractor.field]]
+name = "subject"
+header = "Subject"
+
+[[policy.extractor.field]]
+name = "received"
+header = "Date"
