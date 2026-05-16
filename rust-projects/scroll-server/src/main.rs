@@ -2,11 +2,10 @@
 //! tests can spin up the same router on an ephemeral port.
 
 use anyhow::Result;
-use scroll_server::config::Config;
+use scroll_server::{config::Config, serve};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let _cfg = Config::from_env()?;
-    eprintln!("scroll-server: skeleton — handlers wired in subsequent commits");
-    Ok(())
+    let cfg = Config::from_env()?;
+    serve(cfg).await
 }
