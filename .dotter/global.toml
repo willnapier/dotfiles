@@ -124,6 +124,7 @@ depends = []
 
 # Essential scripts (most commonly used)
 "scripts/daily-note.nu" = { target = "~/.local/bin/daily-note", type = "symbolic" }
+"scripts/rust-learn-resume.nu" = { target = "~/.local/bin/rust-learn-resume", type = "symbolic" }
 "scripts/remind.nu" = { target = "~/.local/bin/remind", type = "symbolic" }
 "scripts/daypage-template" = "~/.local/bin/daypage-template"
 "scripts/daypage-append" = "~/.local/bin/daypage-append"
