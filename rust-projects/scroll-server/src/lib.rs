@@ -2,3 +2,4 @@
 //! ~/Assistants/shared/scroll-server-design.md for the full design spec.
 
 pub mod config;
+pub mod day_word;
