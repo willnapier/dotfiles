@@ -32,7 +32,7 @@ if command -v gh >/dev/null 2>&1; then
   ci_lines=""
   for repo in willnapier/practiceforge willnapier/tm3-diary-capture; do
     line=$(gh run list --repo "$repo" --limit 1 --json conclusion,name,createdAt,headBranch \
-      -q '.[0] | "- '"$repo"': \(.conclusion // "running") — \(.name) (\(.headBranch), \(.createdAt))"' 2>/dev/null)
+      -q 'if length == 0 then "- '"$repo"': no workflow runs" else (.[0] | "- '"$repo"': \(.conclusion // "in progress") — \(.name) (\(.headBranch), \(.createdAt))") end' 2>/dev/null)
     [ -n "$line" ] && ci_lines="${ci_lines}${line}"$'\n'
   done
   if [ -n "$ci_lines" ]; then
