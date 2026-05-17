@@ -22,15 +22,13 @@ use crate::ratelimit::RateLimiter;
 pub fn build_app(cfg: &Config, audit_log: Arc<AuditLog>) -> Router {
     let state = AppState {
         scroll_dir: cfg.scroll_dir.clone(),
-        seed: Arc::new(cfg.seed.clone()),
-        word_list: Arc::new(cfg.word_list.clone()),
         rate_limiter: Arc::new(RateLimiter::new()),
         audit_log,
     };
 
     Router::new()
         .route("/healthz", get(healthz))
-        .route("/{topic}/{word}", get(scroll))
+        .route("/{slug}", get(scroll))
         .fallback(fallback)
         .with_state(state)
 }
