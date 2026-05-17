@@ -34,20 +34,12 @@ async fn start_server() -> TestServer {
     )
     .unwrap();
 
-    let seed = b"integration-test-seed-bytes-here".to_vec();
-    let word_list: Vec<String> = vec!["harbour", "meadow", "copper", "lantern"]
-        .into_iter()
-        .map(String::from)
-        .collect();
-
     let audit_path: PathBuf = tmp.path().join("audit.log");
     let bind: SocketAddr = "127.0.0.1:0".parse().unwrap();
 
     let cfg = Config {
         bind,
         scroll_dir: scroll_dir.clone(),
-        seed,
-        word_list,
         audit_log: audit_path.clone(),
     };
 
