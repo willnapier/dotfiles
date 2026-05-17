@@ -1552,3 +1552,41 @@ header = "Subject"
 [[policy.extractor.field]]
 name = "received"
 header = "Date"
+
+# ---------------------------------------------------------------------------
+# UK2 hosting / domain registrar — added 2026-05-17 via `mailcurator propose-policy`.
+# Categorised as `subscriptions` (recurring service billing — peer of Octopus/BT/Vodafone)
+# rather than `orders` (physical-goods shipping). `service` field dropped from the
+# propose-policy draft: the two-group regex `"X" for "Y"` didn't match the actual UK2
+# body shape (`<service> domain registration, <domain>, £<price>` style). Domain + amount
+# + status fields below cover the useful extraction surface.
+[[policy]]
+name = "uk2-hosting"
+from = "noreply@uk2.net"
+intended_categories = ["subscriptions", "invoice"]
+archive_after_days = 14
+# delete_after_days = 90  # QUARANTINED: enable after a week of clean operation.
+
+[[policy.extractor]]
+category = "subscriptions"
+
+[[policy.extractor.field]]
+name = "vendor"
+literal = "UK2"
+
+[[policy.extractor.field]]
+name = "domain"
+body_regex = '([a-z0-9-]+\.(?:com|net|org|co\.uk|io))'
+
+[[policy.extractor.field]]
+name = "amount"
+body_regex = '(?:Total|Subtotal)[:\s]+£(\d+\.\d{2})'
+
+[[policy.extractor.field]]
+name = "renewal_date"
+header = "Date"
+kind = "date"
+
+[[policy.extractor.field]]
+name = "status"
+subject_regex = '(renewed|Suspended|Expiring)'
