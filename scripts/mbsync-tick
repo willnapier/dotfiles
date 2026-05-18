@@ -1,0 +1,28 @@
+#!/bin/bash
+# mbsync-tick <channel> — wrap `mbsync <channel> && notmuch new` with retry-on-failure
+# to ride through short network blips (e.g. portable-Mac hotspot weather).
+#
+# Up to 3 attempts at 0s / +30s / +60s. Worst-case latency ~90s; well within
+# the 900s StartInterval of the launchd jobs that call this.
+#
+# If all attempts fail, exit non-zero so `launchctl print` shows "last exit
+# code = 1" — the morning-briefing soak counters will surface the failure.
+# If any attempt succeeds, exec into `notmuch new` so the post-new hook runs
+# exactly once per tick.
+
+set -u
+
+channel="${1:?usage: mbsync-tick <channel>}"
+attempts=3
+
+for i in $(seq 1 "$attempts"); do
+    if /Users/williamnapier/.local/bin/mbsync "$channel"; then
+        exec /opt/homebrew/bin/notmuch new
+    fi
+    if [ "$i" -lt "$attempts" ]; then
+        sleep $((i * 30))
+    fi
+done
+
+echo "mbsync-tick $channel: all $attempts attempts failed" >&2
+exit 1

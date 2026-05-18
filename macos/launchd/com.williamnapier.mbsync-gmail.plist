@@ -6,9 +6,8 @@
     <string>com.williamnapier.mbsync-gmail</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/bin/sh</string>
-        <string>-c</string>
-        <string>/Users/williamnapier/.local/bin/mbsync gmail &amp;&amp; /opt/homebrew/bin/notmuch new</string>
+        <string>/Users/williamnapier/.local/bin/mbsync-tick</string>
+        <string>gmail</string>
     </array>
     <!-- Permanent Gmail pull. Replaces the transitional mbsync-gmail-spike
          (4h cadence, 2026-05-01 to 2026-05-16). The spike was sized for the
@@ -16,6 +15,13 @@
          backlog drained (steady-state delta ~50-140 msgs/day across the
          last 10 days of MESSAGEBOARD briefings) the rate limit is no
          longer a concern, and 15-min cadence matches the cohs agent.
+
+         Invokes the mbsync-tick wrapper (introduced 2026-05-18) rather than
+         calling mbsync directly. The wrapper retries up to 3 times on
+         failure (at 0s/+30s/+60s) before giving up — protects the soak
+         from portable-Mac hotspot weather where a single resolver timeout
+         on imap.gmail.com burned an entire tick (30 such failures
+         accumulated 2026-05-18 11:30–19:49 BST during a rucksack session).
 
          EnvironmentVariables block is REQUIRED for the same reason as
          mbsync-cohs.plist: `notmuch new` triggers the post-new hook
