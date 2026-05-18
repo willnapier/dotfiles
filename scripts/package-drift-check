@@ -1,0 +1,81 @@
+#!/bin/bash
+# package-drift-check — emit a "Package drift" markdown section for the
+# morning-briefing. Surfaces:
+#   - Outdated brew packages on Mac
+#   - Outdated paru/pacman packages on nimbini
+#   - Cross-device tool-version drift (via tool-versions on each end)
+#   - Tailscale CLI vs daemon mismatch (catches the 2026-05-18 pattern
+#     where the running daemon was 2 months stale despite the package
+#     being current)
+#
+# Designed to run quickly inline in morning-briefing (< 10s typical).
+# Gracefully reports "unreachable" if SSH to nimbini times out (e.g. on
+# weak hotspot connections).
+
+set -u
+
+NIMBINI_HOST="${NIMBINI_HOST:-will@nimbini}"
+SSH_TIMEOUT=5
+
+# --- Mac brew outdated ---
+brew_section=""
+if command -v brew >/dev/null 2>&1; then
+    brew_n=$(brew outdated --quiet 2>/dev/null | wc -l | tr -d ' ')
+    brew_top=$(brew outdated --quiet 2>/dev/null | head -5 | tr '\n' ' ' | sed 's/[[:space:]]*$//')
+    if [ "${brew_n:-0}" -gt 0 ]; then
+        brew_section="- Mac brew: **${brew_n}** outdated (top 5: \`${brew_top}\`)"
+    else
+        brew_section="- Mac brew: ✓ up to date"
+    fi
+else
+    brew_section="- Mac brew: (not on PATH)"
+fi
+
+# --- Nimbini paru outdated ---
+pacman_section=""
+# Multi-line output: first line = count, second line = top 3 package names space-joined
+pacman_raw=$(ssh -o ConnectTimeout=$SSH_TIMEOUT -o BatchMode=yes "$NIMBINI_HOST" \
+    'paru -Qu 2>/dev/null | wc -l; paru -Qu 2>/dev/null | head -3 | awk "{print \$1}" | tr "\n" " "' 2>/dev/null)
+if [ -z "$pacman_raw" ]; then
+    pacman_section="- Nimbini paru: **unreachable** (SSH timeout)"
+else
+    pn=$(echo "$pacman_raw" | sed -n 1p | tr -d ' ')
+    ptop=$(echo "$pacman_raw" | sed -n 2p | sed 's/[[:space:]]*$//')
+    if [ "${pn:-0}" -gt 0 ]; then
+        pacman_section="- Nimbini paru: **${pn}** outdated (top 3: \`${ptop}\`)"
+    else
+        pacman_section="- Nimbini paru: ✓ up to date"
+    fi
+fi
+
+# --- Cross-device tool drift ---
+drift_section=""
+mac_versions=$(tool-versions 2>/dev/null || true)
+nim_versions=$(ssh -o ConnectTimeout=$SSH_TIMEOUT -o BatchMode=yes "$NIMBINI_HOST" 'tool-versions' 2>/dev/null || true)
+if [ -z "$mac_versions" ] || [ -z "$nim_versions" ]; then
+    drift_section="- Cross-device tool drift: skipped (tool-versions absent on one side)"
+else
+    drift_section="- Cross-device tool drift:"
+    while IFS='=' read -r tool mac_v; do
+        [ -z "$tool" ] && continue
+        nim_v=$(echo "$nim_versions" | grep "^${tool}=" | head -1 | cut -d'=' -f2-)
+        nim_v="${nim_v:-?}"
+        if [ "$mac_v" = "$nim_v" ]; then
+            marker="✓"
+        else
+            marker="⚠"
+        fi
+        drift_section="${drift_section}"$'\n'"  - ${tool}: Mac \`${mac_v}\` / Nimbini \`${nim_v}\` ${marker}"
+    done <<< "$mac_versions"
+fi
+
+# --- Tailscale CLI vs daemon ---
+ts_warn=$(tailscale status 2>&1 | grep -i "client version" | head -1 | sed 's/^[[:space:]]*//' || true)
+if [ -z "$ts_warn" ]; then
+    ts_section="- Tailscale CLI/daemon: ✓ matched"
+else
+    ts_section="- Tailscale CLI/daemon: ⚠ ${ts_warn}"
+fi
+
+# --- Compose ---
+printf '%s\n%s\n%s\n%s\n' "$brew_section" "$pacman_section" "$drift_section" "$ts_section"

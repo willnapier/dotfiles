@@ -1,0 +1,65 @@
+#!/bin/bash
+# tool-versions — emit `tool=version` lines for tools we track for
+# cross-device drift detection between Mac and nimbini.
+#
+# Used by package-drift-check on Mac, which compares local tool-versions
+# output against `ssh nimbini tool-versions`. Lives in [shared.files] so
+# both machines get the same script.
+#
+# Adding a new tool: add a `version_<tool>` function below and call it.
+# Conventions: emit empty string if the tool is absent; the caller treats
+# empty as "absent". Version strings are free-form (semver / commit hash /
+# whatever the tool natively reports); the caller does string-equality
+# comparison, so as long as both ends report the same shape it'll work.
+
+emit() {
+    local tool="$1" raw="$2"
+    if [ -z "$raw" ]; then
+        echo "${tool}=absent"
+    else
+        echo "${tool}=${raw}"
+    fi
+}
+
+# tailscale: first line of `tailscale version` is the semver
+if command -v tailscale >/dev/null 2>&1; then
+    emit tailscale "$(tailscale version 2>/dev/null | head -1 | tr -d ' ')"
+else
+    emit tailscale ""
+fi
+
+# notmuch: "notmuch X.Y" — take second token of `notmuch --version`
+if command -v notmuch >/dev/null 2>&1; then
+    emit notmuch "$(notmuch --version 2>/dev/null | awk '{print $2}')"
+else
+    emit notmuch ""
+fi
+
+# helix: "helix X.Y.Z (commit)" — filter the hx-auto wrapper line (only
+# present on Mac where the shell hook wraps hx for theme management)
+if command -v hx >/dev/null 2>&1; then
+    emit helix "$(hx --version 2>&1 | grep -v "^hx-auto" | head -1 | awk '{print $2}')"
+else
+    emit helix ""
+fi
+
+# meli: "meli X.Y.Z[+suffix]"
+if command -v meli >/dev/null 2>&1; then
+    emit meli "$(meli --version 2>&1 | head -1 | awk '{print $2}')"
+else
+    emit meli ""
+fi
+
+# mbsync (isync): no real --version; first line of --help is `isync <commit-hash> - ...`
+# The commit hash IS the version identifier for isync's mbsync.
+if command -v mbsync >/dev/null 2>&1; then
+    emit mbsync "$(mbsync --help 2>&1 | head -1 | awk '{print $2}')"
+else
+    emit mbsync ""
+fi
+
+# pizauth: no --version flag in current builds — placeholder so the
+# drift line shows up but always matches across devices (it'd
+# false-positive otherwise). When pizauth gains a version flag,
+# replace with the real query.
+emit pizauth "no-version-flag"

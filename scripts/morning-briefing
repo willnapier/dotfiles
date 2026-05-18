@@ -41,6 +41,17 @@ else
   gmail_section="- gmail-mb dir missing"
 fi
 
+# --- Package drift ---
+# Cross-device package + version drift detector. SSHs to nimbini (with a
+# 5s timeout — degrades to "unreachable" on weak networks). Added
+# 2026-05-18 after the tailscale 1.88.1-on-disk / 1.96.5-running-daemon
+# pattern that no existing monitoring would have caught.
+if command -v package-drift-check >/dev/null 2>&1; then
+  drift_section=$(package-drift-check 2>/dev/null || echo "- drift check exited non-zero")
+else
+  drift_section="- package-drift-check not on PATH"
+fi
+
 # --- CI ---
 if command -v gh >/dev/null 2>&1; then
   ci_lines=""
@@ -89,6 +100,9 @@ body=$(cat <<EOF
 
 ### Gmail pull
 $gmail_section
+
+### Package drift
+$drift_section
 
 ### Frontend audits (overnight)
 $audit_section
