@@ -25,11 +25,18 @@ if [ -d "$GMAIL_DIR" ]; then
   count=$(find "$GMAIL_DIR" -type f 2>/dev/null | wc -l | tr -d ' ')
   last_tick=$(stat -f "%Sm" -t "%F %H:%M" "$GMAIL_LOG" 2>/dev/null)
   last_log=$(tail -3 "$GMAIL_LOG" 2>/dev/null | sed 's/^/    /')
-  ok_ticks=$(grep -c '^\[mailcurator\] TOTAL' "$GMAIL_LOG" 2>/dev/null | tr -dc '0-9')
+  # ok_ticks counts EVERY mbsync run that completed cleanly — full mailcurator
+  # passes (TOTAL line) plus runs where mailcurator skipped on inactivity
+  # (Activity-check: skipping line). The earlier "only TOTAL" version
+  # under-counted by an order of magnitude because mailcurator skips when no
+  # machine has been active in 4h, which is typical overnight.
+  full_ticks=$(grep -c '^\[mailcurator\] TOTAL' "$GMAIL_LOG" 2>/dev/null | tr -dc '0-9')
+  skip_ticks=$(grep -c '^\[mailcurator\] Activity check: skipping' "$GMAIL_LOG" 2>/dev/null | tr -dc '0-9')
+  ok_ticks=$(( ${full_ticks:-0} + ${skip_ticks:-0} ))
   dns_errs=$(grep -c 'Cannot resolve server' "$GMAIL_LOG" 2>/dev/null | tr -dc '0-9')
   auth_errs=$(grep -c 'pizauth show gmail failed' "$GMAIL_LOG" 2>/dev/null | tr -dc '0-9')
-  gmail_section=$(printf -- "- Maildir: **%s** in %s\n- Last tick: %s\n- Soak (log lifetime): **%s** ok ticks, **%s** DNS errs, **%s** auth errs\n- Tail:\n\n\`\`\`\n%s\n\`\`\`" \
-    "$count messages" "$size" "$last_tick" "${ok_ticks:-0}" "${dns_errs:-0}" "${auth_errs:-0}" "$last_log")
+  gmail_section=$(printf -- "- Maildir: **%s** in %s\n- Last tick: %s\n- Soak (log lifetime): **%s** ok ticks (%s full + %s idle-skipped), **%s** DNS errs, **%s** auth errs\n- Tail:\n\n\`\`\`\n%s\n\`\`\`" \
+    "$count messages" "$size" "$last_tick" "${ok_ticks:-0}" "${full_ticks:-0}" "${skip_ticks:-0}" "${dns_errs:-0}" "${auth_errs:-0}" "$last_log")
 else
   gmail_section="- gmail-mb dir missing"
 fi

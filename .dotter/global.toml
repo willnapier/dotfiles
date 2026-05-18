@@ -364,6 +364,13 @@ depends = ["shared"]
 "macos/LaunchAgents/com.williamnapier.assistants-auto-push.plist" = "~/Library/LaunchAgents/com.williamnapier.assistants-auto-push.plist"
 "macos/LaunchAgents/com.williamnapier.git-auto-push-watcher.plist" = "~/Library/LaunchAgents/com.williamnapier.git-auto-push-watcher.plist"
 "macos/LaunchAgents/com.williamnapier.mailforge.plist" = "~/Library/LaunchAgents/com.williamnapier.mailforge.plist"
+# mailforge mailto-handler installer + source files (Info.plist, install.sh, mailforge-mailto.sh).
+# install.sh is the one-time bootstrap that builds MailForge.app and registers it as the
+# system default mailto: handler via duti; the Info.plist + mailforge-mailto.sh are
+# consumed by that build step. Tracked here so they don't go orphan-detector-flagged.
+"macos/mailforge-mailto-handler/Info.plist" = "~/.config/macos/mailforge-mailto-handler/Info.plist"
+"macos/mailforge-mailto-handler/install.sh" = "~/.config/macos/mailforge-mailto-handler/install.sh"
+"macos/mailforge-mailto-handler/mailforge-mailto.sh" = "~/.config/macos/mailforge-mailto-handler/mailforge-mailto.sh"
 "scripts/git-auto-push-watcher-macos" = "~/.local/bin/git-auto-push-watcher-macos"
 "scripts/assistants-auto-pull-macos" = "~/.local/bin/assistants-auto-pull-macos"
 "scripts/assistants-auto-push-macos" = "~/.local/bin/assistants-auto-push-macos"
