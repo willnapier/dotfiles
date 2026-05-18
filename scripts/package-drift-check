@@ -70,11 +70,23 @@ else
 fi
 
 # --- Tailscale CLI vs daemon ---
-ts_warn=$(tailscale status 2>&1 | grep -i "client version" | head -1 | sed 's/^[[:space:]]*//' || true)
-if [ -z "$ts_warn" ]; then
-    ts_section="- Tailscale CLI/daemon: ✓ matched"
+# Robust: query CLI version and daemon version directly rather than relying
+# on `tailscale status` printing a warning line (whose presence varies with
+# TTY/PATH context). `tailscale status --json` emits a stable Version field
+# for the daemon; `tailscale version` first line is the CLI's own version.
+cli_v=$(tailscale version 2>/dev/null | head -1 | tr -d ' ')
+daemon_v=$(tailscale status --json 2>/dev/null | grep -o '"Version":[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4)
+if [ -z "$cli_v" ] || [ -z "$daemon_v" ]; then
+    ts_section="- Tailscale CLI/daemon: skipped (could not query)"
 else
-    ts_section="- Tailscale CLI/daemon: ⚠ ${ts_warn}"
+    # Strip any -tHASH suffix for cleaner display (CLI: 1.98.2-t34c5 → 1.98.2)
+    cli_short=$(echo "$cli_v" | cut -d'-' -f1)
+    daemon_short=$(echo "$daemon_v" | cut -d'-' -f1)
+    if [ "$cli_short" = "$daemon_short" ]; then
+        ts_section="- Tailscale CLI/daemon: ✓ matched ($cli_short)"
+    else
+        ts_section="- Tailscale CLI/daemon: ⚠ CLI $cli_short / daemon $daemon_short"
+    fi
 fi
 
 # --- Compose ---
