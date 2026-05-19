@@ -29,6 +29,7 @@ depends = []
 "scripts/lask" = "~/.local/bin/lask"
 "scripts/semantic-cron-wrapper" = "~/.local/bin/semantic-cron-wrapper"
 "scripts/mbsync-tick" = "~/.local/bin/mbsync-tick"
+"scripts/workshop-output" = "~/.local/bin/workshop-output"
 "scripts/tool-versions" = "~/.local/bin/tool-versions"
 "scripts/package-drift-check" = "~/.local/bin/package-drift-check"
 "mbsync/mbsyncrc" = { target = "~/.mbsyncrc", type = "symbolic" }

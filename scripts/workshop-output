@@ -1,0 +1,28 @@
+#!/bin/bash
+# workshop-output — read the rust-learning workshop pane's typescript log
+# (written by `script -Fq /tmp/rust-workshop.log` from the Zellij layout)
+# and emit ANSI-stripped, CR-cleaned text suitable for CC reading.
+#
+# Companion to ~/rust-learning/unified/learning-layout.kdl. The workshop
+# pane wraps its nushell REPL in script(1), continuously dumping the
+# pane's pty output to /tmp/rust-workshop.log. This script reads that
+# file and strips terminal escape sequences so Claude Code (running in
+# the middle pane) can `workshop-output | tail -50` to see what
+# happened in the workshop without the user copy-pasting.
+
+LOG="${WORKSHOP_LOG:-/tmp/rust-workshop.log}"
+
+if [ ! -f "$LOG" ]; then
+    echo "workshop-output: no log at $LOG (is the workshop pane running with script(1)?)" >&2
+    exit 1
+fi
+
+# Strip ANSI escape sequences + isolated CRs. The regex covers CSI/SGR
+# sequences (the bulk of what tools emit) plus the few other common
+# escape forms. Leaves printable text + newlines intact.
+sed -E '
+    s/\x1b\[[0-9;?]*[a-zA-Z]//g
+    s/\x1b\][^\x07]*\x07//g
+    s/\x1b[()][AB012]//g
+    s/\r//g
+' "$LOG"
