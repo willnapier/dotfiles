@@ -742,7 +742,8 @@
                         "vendor_id": 7504
                     },
                     "ignore": false,
-                    "ignore_vendor_events": true
+                    "ignore_vendor_events": true,
+                    "manipulate_caps_lock_led": false
                 }
             ],
             "name": "ColemakModDHMod",
