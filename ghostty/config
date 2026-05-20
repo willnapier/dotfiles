@@ -1,4 +1,4 @@
-# DOTTER-MANAGED - Edit ~/dotfiles/ghostty/config, not ~/.config/ghostty/config
+	# DOTTER-MANAGED - Edit ~/dotfiles/ghostty/config, not ~/.config/ghostty/config
 # Ghostty Configuration with Solarized Themes
 # Auto-switches between light/dark based on system appearance
 
