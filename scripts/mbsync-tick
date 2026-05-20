@@ -1,20 +1,45 @@
 #!/bin/bash
-# mbsync-tick <channel> — wrap `mbsync <channel> && notmuch new` with retry-on-failure
-# to ride through short network blips (e.g. portable-Mac hotspot weather).
+# mbsync-tick <channel> — wrap `mbsync <channel> && notmuch new` with a DNS
+# preflight + retry-on-failure to ride through portable-Mac hotspot weather.
 #
-# Up to 3 attempts at 0s / +30s / +60s. Worst-case latency ~90s; well within
-# the 900s StartInterval of the launchd jobs that call this.
-#
-# If all attempts fail, exit non-zero so `launchctl print` shows "last exit
-# code = 1" — the morning-briefing soak counters will surface the failure.
-# If any attempt succeeds, exec into `notmuch new` so the post-new hook runs
-# exactly once per tick.
+# Flow:
+#   1. DNS preflight (host -W 3) for the channel's IMAP endpoint. If DNS
+#      fails, exit 0 (skip — intentional, not an error). Emits a recognisable
+#      "[mbsync-tick] ... preflight-skipped" line for the morning-briefing
+#      counter. Spares the 90s retry loop on wholesale-network-down.
+#   2. Up to 3 attempts at 0s / +30s / +60s for transient blips that cleared
+#      DNS but lost connectivity mid-IMAP. Worst-case latency ~90s; well
+#      within 900s StartInterval.
+#   3. On any successful mbsync, exec into `notmuch new` so the post-new
+#      hook runs exactly once per tick.
+#   4. On all-attempts-failed, exit 1 so launchctl + briefing surface it.
 
 set -u
 
 channel="${1:?usage: mbsync-tick <channel>}"
 attempts=3
 
+# Map channel to the IMAP endpoint it queries (for the DNS preflight).
+# Unknown channels skip the preflight and proceed straight to the retry loop.
+case "$channel" in
+    gmail) preflight_host="imap.gmail.com" ;;
+    cohs)  preflight_host="outlook.office365.com" ;;
+    *)     preflight_host="" ;;
+esac
+
+# DNS preflight: 3-second timeout. host(1) is part of bind tools — present
+# by default on macOS and on most Linux distros (Arch ships it in `bind` or
+# `bind-tools`). If host(1) is somehow missing, proceed without preflight
+# (graceful degradation — the retry loop's own DNS resolution still catches
+# the failure, just chattier).
+if [ -n "$preflight_host" ] && command -v host >/dev/null 2>&1; then
+    if ! host -W 3 "$preflight_host" >/dev/null 2>&1; then
+        echo "[mbsync-tick] $channel: preflight-skipped (DNS unreachable for $preflight_host)" >&2
+        exit 0
+    fi
+fi
+
+# Retry loop for transient blips that cleared the preflight.
 for i in $(seq 1 "$attempts"); do
     if /Users/williamnapier/.local/bin/mbsync "$channel"; then
         exec /opt/homebrew/bin/notmuch new
@@ -24,5 +49,5 @@ for i in $(seq 1 "$attempts"); do
     fi
 done
 
-echo "mbsync-tick $channel: all $attempts attempts failed" >&2
+echo "[mbsync-tick] $channel: all $attempts attempts failed" >&2
 exit 1
