@@ -4659,6 +4659,14 @@ def tip [section?: string, show?: string] {
     }
 }
 
+# Rust-learning workspace command namespace (rust-learn book / book-serve /
+# examples / patterns / scratch / run / etc.). Defined in
+# ~/rust-learning/unified/course-system.nu and loaded here so the commands
+# are available in every interactive shell. The workspace itself lives only
+# on the Mac; if you ever see "rust-learning" missing errors on Nimbini,
+# guard this source with a path-exists check.
+source ~/rust-learning/unified/course-system.nu
+
 # Show a tip on interactive shell startup (suppress in non-interactive/CI contexts)
 if $nu.is-interactive {
     tip
