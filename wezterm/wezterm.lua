@@ -48,6 +48,46 @@ local function scheme_for_appearance(appearance)
   end
 end
 
+-- Appearance-aware colour overrides (background + foreground). The
+-- existing `config.colors` block hardcodes the Solarized DARK background,
+-- which would show through even after the scheme switches to Light.
+-- This helper returns whichever variant matches the current macOS
+-- appearance and is invoked both at startup (below) and on every
+-- appearance change (via the `window-config-reloaded` handler).
+local function colors_for_appearance(appearance)
+  if appearance:find 'Dark' then
+    return {
+      background = '#002b36',  -- Solarized Dark base03 (teal)
+      foreground = '#839496',  -- Solarized Dark base0
+      selection_fg = 'none',
+      selection_bg = 'rgba(88, 110, 117, 0.25)',
+    }
+  else
+    return {
+      background = '#fdf6e3',  -- Solarized Light base3 (cream)
+      foreground = '#657b83',  -- Solarized Light base00
+      selection_fg = 'none',
+      selection_bg = 'rgba(238, 232, 213, 0.5)',  -- base2-tinted highlight
+    }
+  end
+end
+
+-- Dynamic theme switching: when macOS appearance changes, WezTerm
+-- internally fires `window-config-reloaded` on each window. Re-evaluate
+-- the appearance and apply the matching scheme + colour overrides — no
+-- WezTerm restart needed. Reference:
+-- https://wezterm.org/config/appearance.html#switching-between-dark-and-light-mode
+wezterm.on('window-config-reloaded', function(window, _pane)
+  local overrides = window:get_config_overrides() or {}
+  local appearance = window:get_appearance()
+  local scheme = scheme_for_appearance(appearance)
+  if overrides.color_scheme ~= scheme then
+    overrides.color_scheme = scheme
+    overrides.colors = colors_for_appearance(appearance)
+    window:set_config_overrides(overrides)
+  end
+end)
+
 -- Cross-platform key modifier mapping
 local function get_platform_modifiers()
   local is_macos = wezterm.target_triple:find("apple") ~= nil
