@@ -772,14 +772,37 @@ def ensure_social_files_for_leading_patterns [
 }
 
 # Resolve a date expression anchored to a source date (not "now").
-# Relative expressions ("in N days", "next Tuesday", "tomorrow") are computed
-# from the source DayPage date. Absolute expressions ("on March 17", "2026-03-15")
-# fall through to date from-human, which handles them correctly regardless of when it runs.
+# Relative expressions ("today", "yesterday", "tomorrow", "in N days",
+# "next Tuesday", "this Friday", "next week/month/year") are computed from
+# the source DayPage date. Absolute expressions ("on March 17", "2026-03-15")
+# fall through to `date from-human`, which handles them correctly regardless
+# of when it runs.
 # Returns a record: { date: string, time: string, has_time: bool }
+#
+# Expected behaviour (test cases verified 2026-05-23):
+#   resolve_reminder_date "today at 18:30"      "2026-04-27"
+#       -> { date: "2026-04-27", time: "18:30", has_time: true }
+#   resolve_reminder_date "today"               "2026-04-27"
+#       -> { date: "2026-04-27", time: "00:00", has_time: false }
+#   resolve_reminder_date "tomorrow at 09:00"   "2026-04-27"
+#       -> { date: "2026-04-28", time: "09:00", has_time: true }
+#   resolve_reminder_date "yesterday at 14:00"  "2026-04-27"
+#       -> { date: "2026-04-26", time: "14:00", has_time: true }
+#   resolve_reminder_date "in 3 days at 11:00"  "2026-04-27"
+#       -> { date: "2026-04-30", time: "11:00", has_time: true }
+#   resolve_reminder_date "next Tuesday at 10:00" "2026-04-27"  # Mon
+#       -> { date: "2026-04-28", time: "10:00", has_time: true }
+#   resolve_reminder_date "2026-06-01"          "2026-04-27"
+#       -> { date: "2026-06-01", has_time: false }
 def resolve_reminder_date [when_part: string, source_date: string]: nothing -> record {
     let source_dt = ($source_date | into datetime)
 
-    # Strip optional trailing time (e.g. "in 2 days 14:00") for date parsing
+    # Strip optional trailing time (e.g. "in 2 days 14:00", "today at 18:30")
+    # for date parsing. Accepts both "<expr> HH:MM" and "<expr> at HH:MM" forms;
+    # the " at " connector fix 2026-05-23 ensures natural-language wording like
+    # "today at 18:30" leaves a clean "today" date_expr for the relative-branch
+    # matchers below (previously the leftover " at" suffix broke matching and
+    # the expression fell through to date from-human with the current "now").
     let time_match = ($when_part | parse --regex '(\d{1,2}:\d{2})\s*$')
     let explicit_time = if ($time_match | is-not-empty) {
         $time_match | first | get capture0
@@ -787,7 +810,9 @@ def resolve_reminder_date [when_part: string, source_date: string]: nothing -> r
         null
     }
     let date_expr = if $explicit_time != null {
-        $when_part | str replace --regex '\s*\d{1,2}:\d{2}\s*$' '' | str trim
+        $when_part
+        | str replace --regex '(?i)\s*(at\s+)?\d{1,2}:\d{2}\s*$' ''
+        | str trim
     } else {
         $when_part | str trim
     }
@@ -804,6 +829,31 @@ def resolve_reminder_date [when_part: string, source_date: string]: nothing -> r
             "year" | "years" => ($source_dt + ($n * 365 * 1day)),
             _ => $source_dt
         })
+        return {
+            date: ($resolved | format date "%Y-%m-%d")
+            time: ($explicit_time | default "00:00")
+            has_time: ($explicit_time != null)
+        }
+    }
+
+    # "today" — anchors to the source DayPage date (NOT current "now")
+    # Bug fix 2026-05-23: prior to this branch, "today" fell through to
+    # `date from-human`, which resolves it against the CURRENT day. That caused
+    # one-off `r:: today at HH:MM` reminders in old DayPages to roll forward
+    # every night forever (see Reminders/2026-05-* for the gmail-push-tags
+    # incident). The fix anchors "today" to the source DayPage date so the
+    # reminder fires once, on the day the entry was written, and then stays put.
+    if ($date_expr =~ '(?i)^today$') {
+        return {
+            date: ($source_dt | format date "%Y-%m-%d")
+            time: ($explicit_time | default "00:00")
+            has_time: ($explicit_time != null)
+        }
+    }
+
+    # "yesterday" — anchors to the source DayPage date minus one day
+    if ($date_expr =~ '(?i)^yesterday$') {
+        let resolved = ($source_dt - 1day)
         return {
             date: ($resolved | format date "%Y-%m-%d")
             time: ($explicit_time | default "00:00")
@@ -879,8 +929,18 @@ def resolve_reminder_date [when_part: string, source_date: string]: nothing -> r
         | str replace --regex '(?i)^(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})' '$2 $1'
     )
     let resolved = ($normalised | date from-human)
-    let time = try { $resolved | format date "%H:%M" } catch { "00:00" }
-    let has_time = ($when_part =~ '\d{1,2}:\d{2}')
+    # Time-preservation fix 2026-05-23: when "at HH:MM" was stripped off the
+    # top of this function into $explicit_time, the time we want is THAT, not
+    # whatever `date from-human` defaults to for a date-only string (which on
+    # macOS lands at 00:30 BST or similar — see gmail-push-tags reminder loop
+    # incident). Prefer the explicit time if we extracted one; only fall back
+    # to the parsed datetime's time when no explicit time was given.
+    let time = if $explicit_time != null {
+        $explicit_time
+    } else {
+        try { $resolved | format date "%H:%M" } catch { "00:00" }
+    }
+    let has_time = ($explicit_time != null) or ($when_part =~ '\d{1,2}:\d{2}')
     {
         date: ($resolved | format date "%Y-%m-%d")
         time: $time
