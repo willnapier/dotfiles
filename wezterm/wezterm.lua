@@ -174,14 +174,13 @@ config.color_scheme = scheme_for_appearance(get_appearance())
 config.window_background_opacity = 0.98
 config.macos_window_background_blur = 20
 
--- Custom selection colors for better readability in Solarized themes
--- Explicitly set background to ensure it matches zellij's solarized-dark theme
-config.colors = {
-  background = '#002b36',  -- Solarized Dark base03 (teal) - matches zellij bg 0 43 54
-  foreground = '#839496',  -- Solarized Dark base0
-  selection_fg = 'none',  -- Keep original text color
-  selection_bg = 'rgba(88, 110, 117, 0.25)',  -- Darker, more subtle highlight for better contrast
-}
+-- Custom selection colors for better readability in Solarized themes.
+-- Was hardcoded to Solarized Dark (#002b36 teal background); changed
+-- 2026-05-23 to use the appearance-aware helper so the startup paint
+-- matches macOS appearance instead of forcing Dark even when scheme is
+-- Light. The window-config-reloaded handler (defined above) keeps this
+-- in sync on runtime appearance changes too.
+config.colors = colors_for_appearance(get_appearance())
 
 -- Font configuration
 config.font = wezterm.font("JetBrainsMono Nerd Font")
@@ -886,14 +885,18 @@ wezterm.on('gui-startup', function(cmd)
   -- mux.set_active_workspace 'main'
 end)
 
--- Simple approach: detect appearance on each config reload
-wezterm.on('window-focus-changed', function(window, pane)
+-- Window-focus-changed handler: keep appearance-driven scheme + colors
+-- in sync on focus. Previously this only updated overrides.color_scheme
+-- (not overrides.colors), causing a flash-light-then-dark race against
+-- the window-config-reloaded handler above. Now both move together.
+wezterm.on('window-focus-changed', function(window, _pane)
   local overrides = window:get_config_overrides() or {}
   local current_appearance = get_appearance()
   local current_scheme = scheme_for_appearance(current_appearance)
-  
+
   if overrides.color_scheme ~= current_scheme then
     overrides.color_scheme = current_scheme
+    overrides.colors = colors_for_appearance(current_appearance)
     window:set_config_overrides(overrides)
   end
 end)
