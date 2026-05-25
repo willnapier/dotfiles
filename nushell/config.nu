@@ -622,6 +622,16 @@ if (which stty | is-not-empty) {
     try { ^stty -ixon } catch { }
 }
 
+# Self-heal TTY modes before each prompt. If a TUI program exited without
+# restoring canonical mode (panic, SIGKILL, abrupt Ctrl-C), the next prompt
+# restores icanon/echo/isig/icrnl and re-asserts the susp/ixon customisations
+# above. One stty call per prompt; idempotent.
+$env.config.hooks.pre_prompt = [{||
+    if (which stty | is-not-empty) {
+        try { ^stty icanon echo isig icrnl susp undef -ixon } catch { }
+    }
+}]
+
 # Zettelkasten workflow commands for Forge
 # Use alias instead of function for cd commands (functions can't change parent shell directory)
 alias notes = cd $env.FORGE
