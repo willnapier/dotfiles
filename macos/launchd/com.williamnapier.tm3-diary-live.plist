@@ -45,6 +45,12 @@
         <string>/Users/williamnapier/.local/bin:/Users/williamnapier/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
         <key>HOME</key>
         <string>/Users/williamnapier</string>
+        <!-- Forensic HTML dump for cross-day-attribution bug recurrence
+             (handoff 2026-05-28). Dumps to /tmp/tm3-live-dump-YYYY-MM-DD.html;
+             ~16MB per capture; auto-prunes after 7 days. Remove once the
+             extract_day_columns root-cause fix lands and one clean week passes. -->
+        <key>DUMP_HTML</key>
+        <string>1</string>
     </dict>
 
     <key>ProcessType</key>

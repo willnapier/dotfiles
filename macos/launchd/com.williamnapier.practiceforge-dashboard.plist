@@ -28,6 +28,14 @@
              which would break every bookmark and link. For frontend
              iteration, run a second dashboard manually with PF_DEV=1 on
              port 3458, leaving prod 3457 untouched. -->
+        <!-- Forensic HTML dump for cross-day-attribution bug recurrence
+             (handoff 2026-05-28). Inherited by tm3-diary-capture --live
+             subprocess invocations from the dashboard's TM3 refresh flow.
+             Dumps to /tmp/tm3-live-dump-YYYY-MM-DD.html; auto-prunes after
+             7 days. Remove once the extract_day_columns root-cause fix lands
+             and one clean week passes. -->
+        <key>DUMP_HTML</key>
+        <string>1</string>
     </dict>
 </dict>
 </plist>
