@@ -78,6 +78,23 @@ end
 -- WezTerm restart needed. Reference:
 -- https://wezterm.org/config/appearance.html#switching-between-dark-and-light-mode
 wezterm.on('window-config-reloaded', function(window, _pane)
+  -- Linux/Niri: WezTerm's built-in window:get_appearance() returns 'Light'
+  -- here (no XDG portal serving org.freedesktop.appearance), which wrongly
+  -- overrode the correct dark startup scheme set by the gsettings-aware
+  -- get_appearance() at config load. On Linux we CLEAR any window-level
+  -- scheme/colour override so the base (dark) config shows through
+  -- immediately on reload — no restart needed. The guard (only clear when
+  -- an override is actually present) prevents a set→reload→set loop. Linux
+  -- has no live light/dark switching need under Niri.
+  if wezterm.target_triple:find("linux") then
+    local overrides = window:get_config_overrides() or {}
+    if overrides.color_scheme ~= nil or overrides.colors ~= nil then
+      overrides.color_scheme = nil
+      overrides.colors = nil
+      window:set_config_overrides(overrides)
+    end
+    return
+  end
   local overrides = window:get_config_overrides() or {}
   local appearance = window:get_appearance()
   local scheme = scheme_for_appearance(appearance)
