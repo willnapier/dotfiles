@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# morning-briefing — overnight-state digest, posted to MESSAGEBOARD.md
+# morning-briefing — overnight-state digest, written to shared/MORNING-BRIEFING.md
 # Fired by ~/dotfiles/macos/launchd/com.williamnapier.morning-briefing.plist
 # at 07:30 daily. Disable via:
 #   launchctl bootout gui/$(id -u)/com.williamnapier.morning-briefing
@@ -121,8 +121,20 @@ $mc_section
 EOF
 )
 
-if command -v messageboard-edit >/dev/null 2>&1; then
-  messageboard-edit insert "$body"
-else
-  printf "\n### %s — morning-briefing fallback\n\n%s\n\n---\n" "$now" "$body" >> "$HOME/Assistants/shared/MESSAGEBOARD.md"
-fi
+# --- Write to own file, rolling 2-day window (NOT the messageboard) ---
+# This digest is a DERIVED dashboard: every section above is a formatted view of
+# a durable source (mbsync-gmail.log, package-drift-check, shared/audits/*,
+# gh run list, mailcurator/*.jsonl). It is the sole record of nothing, so we keep
+# only the two most-recent entries (today + yesterday) for a day-over-day glance.
+# The <!-- briefing-entry --> marker is the awk delimiter between days.
+BRIEF_FILE="$HOME/Assistants/shared/MORNING-BRIEFING.md"
+marker="<!-- briefing-entry -->"
+{
+  printf '# Morning Briefing\n\n'
+  printf '_Overwritten daily by `~/dotfiles/scripts/morning-briefing` — rolling 2-day window. A derived dashboard, not a record: every figure is a live view of a durable source (mbsync-gmail.log, package-drift-check, shared/audits/, gh run list, mailcurator/*.jsonl)._\n\n'
+  printf '%s\n## %s\n\n%s\n' "$marker" "$now" "$body"
+  if [ -f "$BRIEF_FILE" ]; then
+    # carry forward only the most-recent prior entry (first marker block → becomes yesterday)
+    awk -v m="$marker" '$0==m{c++; if(c==2) exit} c>=1{print}' "$BRIEF_FILE"
+  fi
+} > "$BRIEF_FILE.tmp" && mv -f "$BRIEF_FILE.tmp" "$BRIEF_FILE"
