@@ -1,0 +1,34 @@
+#!/bin/sh
+# pizauth-show-retry — resilient `pizauth show <account>` for msmtp's passwordeval.
+#
+# pizauth refreshes OAuth tokens in the background, so `pizauth show <account>`
+# can fail transiently in the brief window between an access token expiring and
+# its refresh landing. msmtp's `passwordeval` runs its command once with no
+# retry, so that blip would bounce a send. This retries a few times with a
+# short backoff (mirrors practiceforge's CommandTokenSource retry). On success
+# the token is printed to stdout; on persistent failure pizauth's real error is
+# left on stderr (→ ~/Library/Logs/msmtp.log) and the script exits non-zero.
+#
+# Usage: pizauth-show-retry <account>      e.g.  pizauth-show-retry gmail
+# Managed in ~/dotfiles/scripts/ (dotter → ~/.local/bin/). Added 2026-06-05.
+
+acct="${1:?usage: pizauth-show-retry <account>}"
+
+pizauth=pizauth
+command -v "$pizauth" >/dev/null 2>&1 || pizauth="$HOME/.local/bin/pizauth"
+
+i=1
+while [ "$i" -le 3 ]; do
+	tok=$("$pizauth" show "$acct" 2>/dev/null)
+	if [ "$?" -eq 0 ] && [ -n "$tok" ]; then
+		printf '%s' "$tok"
+		exit 0
+	fi
+	i=$((i + 1))
+	[ "$i" -le 3 ] && sleep 1
+done
+
+# Retries exhausted — run once more WITHOUT swallowing stderr so the real
+# pizauth reason lands in the msmtp log, then fail.
+"$pizauth" show "$acct" >/dev/null
+exit 1

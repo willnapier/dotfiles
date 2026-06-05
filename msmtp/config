@@ -5,7 +5,11 @@
 # AUTH at the policy level — XOAUTH2 included.
 #
 # Auth model: pizauth owns the OAuth tokens. msmtp's passwordeval runs
-# `pizauth show gmail` on each send; pizauth auto-refreshes if needed.
+# `pizauth-show-retry gmail` on each send — a thin retry wrapper around
+# `pizauth show gmail`, because pizauth can briefly fail in the window mid
+# token-refresh and passwordeval has no retry of its own. pizauth
+# auto-refreshes as needed (and refresh_before_expiry=5m in pizauth.conf
+# narrows that window further).
 
 defaults
 auth           on
@@ -22,6 +26,6 @@ tls_starttls   off
 from           will@willnapier.com
 user           will@willnapier.com
 auth           xoauth2
-passwordeval   "/Users/williamnapier/.local/bin/pizauth show gmail"
+passwordeval   "/Users/williamnapier/.local/bin/pizauth-show-retry gmail"
 
 account default : gmail
