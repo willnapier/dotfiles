@@ -1,0 +1,115 @@
+#!/usr/bin/env nu
+# claude-worktree-cleaner — prune stale Claude-Code agent git worktrees, warn on low disk.
+#
+# WHY: agents launched with the Agent tool's `isolation: "worktree"` create a full
+# checkout under <repo>/.claude/worktrees/<id>. They get `locked`, the agent exits,
+# and nothing removes them — they accumulate (full source + their own multi-GB build
+# `target/`). Combined with APFS / Time-Machine local snapshots PINNING deleted blocks,
+# this silently fills the SSD. See memory `reference_mac_disk_full_not_memory` and
+# `~/Assistants/shared/DISK-SPACE-MAINTENANCE.md`.
+#
+# SAFETY: only removes a worktree that is BOTH (a) clean — `git status --porcelain`
+# empty, so no uncommitted/untracked work is lost — AND (b) untouched for >= --age-days.
+# Dirty or recent worktrees are skipped and reported. Dry-run unless --apply.
+#
+# Runs daily: launchd (mac) / systemd timer (linux). Cross-platform.
+
+def log [msg: string] {
+    let f = ($env.HOME | path join ".local/share/claude-worktree-cleaner.log")
+    let line = $"(date now | format date '%Y-%m-%d %H:%M:%S') ($msg)"
+    print $line
+    $line | save --append $f
+}
+
+def disk-used-pct [] {
+    let target = (if $nu.os-info.name == "macos" { "/System/Volumes/Data" } else { "/" })
+    ^df -P $target | lines | last | split row -r '\s+'
+    | where ($it | str ends-with "%") | first | str replace "%" "" | into int
+}
+
+def notify [title: string, body: string] {
+    if $nu.os-info.name == "macos" {
+        do { ^osascript -e $"display notification \"($body)\" with title \"($title)\"" } | complete | ignore
+    } else {
+        do { ^notify-send $title $body } | complete | ignore
+    }
+}
+
+def main [
+    --apply                     # actually remove worktrees (default: dry-run)
+    --age-days: int = 7         # only prune worktrees untouched for >= this many days
+    --disk-warn-pct: int = 85   # warn if the data volume is at/above this percent
+] {
+    let mode = (if $apply { "APPLY" } else { "DRY-RUN" })
+    log $"=== claude-worktree-cleaner start [($mode)] age>=($age_days)d warn>=($disk_warn_pct)% ==="
+
+    let wt_dirs = (
+        [ ($env.HOME | path join "*/.claude/worktrees")
+          ($env.HOME | path join "Code/*/.claude/worktrees")
+          ($env.HOME | path join "projects/*/.claude/worktrees") ]
+        | each {|g| glob $g } | flatten
+    )
+    let repos = ($wt_dirs | each {|p| $p | into string | path dirname | path dirname } | uniq)
+
+    mut removed = 0
+    mut skipped = 0
+    let cutoff = ((date now) - ($age_days * 1day))
+
+    for repo in $repos {
+        let wts = (
+            do { ^git -C $repo worktree list --porcelain } | complete | get stdout
+            | lines
+            | where ($it | str starts-with "worktree ")
+            | each {|l| $l | str replace "worktree " "" }
+            | where ($it | str contains ".claude/worktrees")
+        )
+        for wt in $wts {
+            if not ($wt | path exists) { continue }   # gone — prune clears the admin entry
+            let st = (do { ^git -C $wt status --porcelain } | complete)
+            if $st.exit_code != 0 {
+                log $"SKIP status-error ($wt): ($st.stderr | str trim)"
+                $skipped = $skipped + 1
+                continue
+            }
+            if (($st.stdout | str trim) | is-not-empty) {
+                log $"SKIP dirty ($wt)"
+                $skipped = $skipped + 1
+                continue
+            }
+            let mtime = (ls -D $wt | get modified | first)
+            if $mtime > $cutoff {
+                log $"SKIP recent ($wt)"
+                $skipped = $skipped + 1
+                continue
+            }
+            if $apply {
+                do { ^git -C $repo worktree unlock $wt } | complete | ignore
+                let r = (do { ^git -C $repo worktree remove --force $wt } | complete)
+                if $r.exit_code == 0 {
+                    log $"REMOVED ($wt)"
+                    $removed = $removed + 1
+                } else {
+                    log $"REMOVE-FAILED ($wt): ($r.stderr | str trim)"
+                    $skipped = $skipped + 1
+                }
+            } else {
+                log $"WOULD-REMOVE ($wt)"
+                $removed = $removed + 1
+            }
+        }
+        if $apply { do { ^git -C $repo worktree prune } | complete | ignore }
+    }
+
+    let verb = (if $apply { "removed" } else { "would-remove" })
+    log $"worktrees: ($verb)=($removed) skipped=($skipped)"
+
+    let used = (try { disk-used-pct } catch { -1 })
+    if $used >= 0 and $used >= $disk_warn_pct {
+        let m = $"Boot disk at ($used)%. Reclaim: cargo clean big target/ dirs, then sudo tmutil thinlocalsnapshots / 300000000000 4. See reference_mac_disk_full_not_memory."
+        log $"WARN disk ($used)% >= ($disk_warn_pct)%"
+        notify "Disk space low" $m
+    } else {
+        log $"disk OK ($used)%"
+    }
+    log "=== claude-worktree-cleaner end ==="
+}

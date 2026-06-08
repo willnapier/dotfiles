@@ -22,6 +22,7 @@ depends = []
 "meli/mailcap" = "~/.config/meli/mailcap"
 "scripts/forge-batch-classifier" = "~/.local/bin/forge-batch-classifier"
 "scripts/forge-sync-conflict-cleaner" = "~/.local/bin/forge-sync-conflict-cleaner"
+"scripts/claude-worktree-cleaner" = "~/.local/bin/claude-worktree-cleaner"
 "scripts/messageboard-edit" = "~/.local/bin/messageboard-edit"
 "scripts/messageboard-lock" = "~/.local/bin/messageboard-lock"
 "scripts/music-notation-lint" = "~/.local/bin/music-notation-lint"
@@ -388,6 +389,7 @@ depends = ["shared"]
 "launchd/com.user.claude-code-nightly-cleanup.plist" = "~/Library/LaunchAgents/com.user.claude-code-nightly-cleanup.plist"
 "launchd/com.user.remind-notify.plist" = "~/Library/LaunchAgents/com.user.remind-notify.plist"
 "launchd/com.user.forge-sync-conflict-cleaner.plist" = "~/Library/LaunchAgents/com.user.forge-sync-conflict-cleaner.plist"
+"launchd/com.user.claude-worktree-cleaner.plist" = "~/Library/LaunchAgents/com.user.claude-worktree-cleaner.plist"
 "macos/launchd/com.williamnapier.continuum-sync-claude.plist" = "~/Library/LaunchAgents/com.williamnapier.continuum-sync-claude.plist"
 "macos/launchd/com.williamnapier.practiceforge-dashboard.plist" = "~/Library/LaunchAgents/com.williamnapier.practiceforge-dashboard.plist"
 "macos/launchd/com.williamnapier.practiceforge-maintain.plist" = "~/Library/LaunchAgents/com.williamnapier.practiceforge-maintain.plist"
@@ -489,6 +491,9 @@ depends = ["shared"]
 # Claude Code nightly cleanup - kills stale processes at 3am
 "systemd/claude-code-nightly-cleanup.service" = "~/.config/systemd/user/claude-code-nightly-cleanup.service"
 "systemd/claude-code-nightly-cleanup.timer" = "~/.config/systemd/user/claude-code-nightly-cleanup.timer"
+# Claude Code agent-worktree cleaner - daily prune of stale .claude/worktrees + disk warning
+"systemd/claude-worktree-cleaner.service" = "~/.config/systemd/user/claude-worktree-cleaner.service"
+"systemd/claude-worktree-cleaner.timer" = "~/.config/systemd/user/claude-worktree-cleaner.timer"
 # Mail sync (lieer/gmi) — RETIRED 2026-05-04 on Mac, replaced by gmpull.
 # Linux equivalent for gmpull not yet packaged; nimbini still runs lieer
 # until that lands. Sources preserved in ~/dotfiles/legacy/systemd/.
