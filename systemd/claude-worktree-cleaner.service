@@ -3,5 +3,5 @@ Description=Prune stale Claude-Code agent git worktrees and warn on low disk
 
 [Service]
 Type=oneshot
-Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=PATH=/home/will/.cargo/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=/usr/bin/nu %h/.local/bin/claude-worktree-cleaner --apply

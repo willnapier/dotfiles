@@ -1,5 +1,6 @@
 #!/usr/bin/env nu
-# claude-worktree-cleaner — prune stale Claude-Code agent git worktrees, warn on low disk.
+# claude-worktree-cleaner — prune stale Claude-Code agent git worktrees, sweep stale
+# cargo build artifacts (keeping the live cache intact), and warn on low disk.
 #
 # WHY: agents launched with the Agent tool's `isolation: "worktree"` create a full
 # checkout under <repo>/.claude/worktrees/<id>. They get `locked`, the agent exits,
@@ -35,9 +36,37 @@ def notify [title: string, body: string] {
     }
 }
 
+# Sweep stale cargo build artifacts older than `days` across the dev roots, keeping the
+# live cache (anything used in the last `days` days). Uses cargo-sweep; skips gracefully
+# if it isn't installed. cargo-sweep -r ignores dot-dirs, so it never touches worktrees.
+def sweep-targets [apply: bool, days: int] {
+    if (which cargo-sweep | is-empty) {
+        log "cargo-sweep not installed — skipping build-artifact sweep"
+        return
+    }
+    let roots = (
+        [ ($env.HOME | path join "Code")
+          ($env.HOME | path join "dotfiles/rust-projects")
+          ($env.HOME | path join "rust-learning") ]
+        | where ($it | path exists)
+    )
+    for root in $roots {
+        let argv = (if $apply {
+            ["sweep" "--recursive" "--time" ($days | into string) $root]
+        } else {
+            ["sweep" "--dry-run" "--recursive" "--time" ($days | into string) $root]
+        })
+        let r = (do { ^cargo-sweep ...$argv } | complete)
+        let out = ([$r.stdout $r.stderr] | str join (char newline))
+        let summary = ($out | lines | where ($it | str downcase | str contains "clean") | str join "; ")
+        log $"cargo-sweep ($root) exit=($r.exit_code): ($summary)"
+    }
+}
+
 def main [
     --apply                     # actually remove worktrees (default: dry-run)
     --age-days: int = 7         # only prune worktrees untouched for >= this many days
+    --sweep-days: int = 30      # cargo-sweep build artifacts older than this many days (keeps live cache)
     --disk-warn-pct: int = 85   # warn if the data volume is at/above this percent
 ] {
     let mode = (if $apply { "APPLY" } else { "DRY-RUN" })
@@ -102,6 +131,9 @@ def main [
 
     let verb = (if $apply { "removed" } else { "would-remove" })
     log $"worktrees: ($verb)=($removed) skipped=($skipped)"
+
+    # --- sweep stale cargo build artifacts (keeps the live cache, drops old layers) ---
+    sweep-targets $apply $sweep_days
 
     let used = (try { disk-used-pct } catch { -1 })
     if $used >= 0 and $used >= $disk_warn_pct {
