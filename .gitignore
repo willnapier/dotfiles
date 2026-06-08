@@ -53,3 +53,8 @@ macos/launchd/com.williamnapier.git-auto-commit-watcher.plist
 # Backup/test configs
 niri/config-minimal.kdl
 .dotter/local.toml
+
+# Claude Code agent worktrees — ephemeral full checkouts from the Agent tool's
+# `isolation: "worktree"`. Never track these (they appear as submodule gitlinks
+# and pollute the repo). Disk cleanup is handled by claude-worktree-cleaner.
+.claude/worktrees/
