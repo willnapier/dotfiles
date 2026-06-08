@@ -44,13 +44,12 @@ def sweep-targets [apply: bool, days: int] {
         log "cargo-sweep not installed — skipping build-artifact sweep"
         return
     }
-    # ~/dotfiles/rust-projects is deliberately EXCLUDED: several tools there
-    # (concert-capture, continuum-activity, state-capture, wiki-resolve-batch) are
-    # symlinked into ~/.local/bin straight from target/release, so sweeping would
-    # delete the live binary and break the command. Only sweep roots whose binaries
-    # are COPIES in ~/.local/bin (e.g. ~/Code/practiceforge), never symlinks-from-target.
+    # All these roots' binaries are COPIES in ~/.local/bin (never symlinks-from-target),
+    # so sweeping their target/ is safe. (~/dotfiles/rust-projects was migrated off
+    # target/release symlinks to copies on 2026-06-08 — see DISK-SPACE-MAINTENANCE.md.)
     let roots = (
         [ ($env.HOME | path join "Code")
+          ($env.HOME | path join "dotfiles/rust-projects")
           ($env.HOME | path join "rust-learning") ]
         | where ($it | path exists)
     )
