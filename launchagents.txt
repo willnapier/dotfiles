@@ -9,6 +9,7 @@ com.napier.forge-metadata-backup
 com.user.chatgpt-watcher
 com.user.claude-code-nightly-cleanup
 com.user.claude-docs-watcher
+com.user.claude-worktree-cleaner
 com.user.collect-projects
 com.user.collect-projects-watcher
 com.user.dotter-drift-monitor
