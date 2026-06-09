@@ -1,6 +1,7 @@
 bat	0.25.0	crates.io
 bequest	0.1.0	/home/will/dotfiles/rust-projects/bequest
 cargo-leptos	0.3.6	crates.io
+cargo-sweep	0.8.0	crates.io
 chatgpt-to-continuum	0.1.0	/home/will/dotfiles/rust-projects/chatgpt-to-continuum
 clinic-attendance-report	0.1.0	/home/will/dotfiles/rust-projects/clinic-attendance-report
 clinical	0.1.0	/home/will/Code/practiceforge/clinical-notes
