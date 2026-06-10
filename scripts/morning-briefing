@@ -28,12 +28,16 @@ if [ -d "$GMAIL_DIR" ]; then
   # gmpull logs one "incremental pull complete" per clean tick. mailcurator
   # (run via notmuch post-new, same stdout log) logs an "Activity check:
   # skipping" line when no machine has been active in 4h — typical overnight.
-  # errors = any ERROR-level tracing line or a non-zero errored= in a progress line.
+  # errs  = GENUINE pull failures (a non-zero errored= in a progress line).
+  # blips = transient "token refresh in progress" hits when gmpull calls pizauth
+  #         mid-refresh — gmpull retries and recovers, so these are noise, not
+  #         failures (the 2026-06-05 pizauth hardening exists to shrink them).
   pulls=$(grep -c 'incremental pull complete' "$GMAIL_LOG" 2>/dev/null | tr -dc '0-9')
   skip_ticks=$(grep -c '^\[mailcurator\] Activity check: skipping' "$GMAIL_LOG" 2>/dev/null | tr -dc '0-9')
-  errs=$(grep -cE 'ERROR|errored=[1-9]' "$GMAIL_LOG" 2>/dev/null | tr -dc '0-9')
-  gmail_section=$(printf -- "- Maildir: **%s** in %s\n- Last tick: %s\n- Soak (log lifetime): **%s** completed pulls, **%s** idle-skipped (mailcurator), **%s** errors\n- Tail:\n\n\`\`\`\n%s\n\`\`\`" \
-    "$count messages" "$size" "$last_tick" "${pulls:-0}" "${skip_ticks:-0}" "${errs:-0}" "$last_log")
+  errs=$(grep -c 'errored=[1-9]' "$GMAIL_LOG" 2>/dev/null | tr -dc '0-9')
+  blips=$(grep -c 'pizauth show gmail failed' "$GMAIL_LOG" 2>/dev/null | tr -dc '0-9')
+  gmail_section=$(printf -- "- Maildir: **%s** in %s\n- Last tick: %s\n- Soak (log lifetime): **%s** completed pulls, **%s** idle-skipped, **%s** errors, **%s** transient auth-refresh blips\n- Tail:\n\n\`\`\`\n%s\n\`\`\`" \
+    "$count messages" "$size" "$last_tick" "${pulls:-0}" "${skip_ticks:-0}" "${errs:-0}" "${blips:-0}" "$last_log")
 else
   gmail_section="- gmail-rs dir missing"
 fi
