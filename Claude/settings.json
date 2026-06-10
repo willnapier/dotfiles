@@ -68,6 +68,16 @@
             "statusMessage": "Checking DayPage safety..."
           }
         ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/clinical-write-guard.sh",
+            "statusMessage": "Checking clinical file safety..."
+          }
+        ]
       }
     ],
     "PostToolUse": [
