@@ -1,53 +1,28 @@
 #!/usr/bin/env bash
-# email — open meli in a fresh WezTerm window (macOS).
-# Linux equivalent (same name) lives at ~/dotfiles/scripts/email-linux,
-# which dotter deploys to the same ~/.local/bin/email path on nimbini.
+# email — open MailForge (the daily-driver MUA) in the browser (macOS).
 #
-# Triggered by Karabiner's Cmd+Shift+Return rule (per
-# ~/dotfiles/karabiner/karabiner.json complex_modifications). May also
-# be invoked by hand at a shell prompt.
+# Triggered by Hammerspoon's Cmd+Shift+Return rule (~/dotfiles/hammerspoon/init.lua).
+# May also be run by hand at a shell prompt. The Linux equivalent (same name)
+# lives at ~/dotfiles/scripts/email-linux and deploys to the same ~/.local/bin/email.
 #
-# Absolute path to /opt/homebrew/bin/wezterm: ~/.local/bin/wezterm is a
-# symlink to the .app's wezterm CLI, but the CLI spawns a sibling
-# `wezterm-gui` from the same directory and ~/.local/bin/ has no such
-# sibling. Always invoke the brew-managed location which has both.
+# MailForge runs as a launchd daemon (com.williamnapier.mailforge) serving a
+# Leptos browser MUA on http://127.0.0.1:8765 (CoHS M365 + personal Gmail in one
+# client). "Open email" = make sure the daemon + mail sync are live, then open
+# the UI in the default browser.
 #
-# `default_prog` override: wezterm.lua sets default_prog = nushell, so
-# the trailing `-- meli` arg after `start` is ignored (config-level
-# default wins). Setting default_prog per-invocation via --config
-# (Lua array syntax — curly braces, NOT JSON brackets) tells THIS
-# wezterm to launch meli as its default program.
-#
-# `--always-new-process` ensures a fresh wezterm process tree rather
-# than routing into an existing wezterm mux. The fresh process gives
-# the macOS Window Server a foreground requestor, so the new window
-# can come to front (per the Karabiner-spawn HID context).
-#
-# Idempotency: pkill any existing meli first. meli's notmuch backend
-# caches per-row tag state at query time and doesn't refresh tags on
-# already-listed rows when Ctrl+R fires — only new arrivals get fresh
-# tags. So a long-lived meli accumulates stale tag chips. Pre-killing
-# means one keypress = one fresh meli, regardless of prior state.
-# WezTerm's default exit_behavior=CloseOnCleanExit closes the old
-# window automatically once meli has exited.
-pkill -x meli 2>/dev/null
+# History: this launcher previously opened the meli TUI in WezTerm and kicked the
+# long-retired com.user.mail-sync (lieer) agent. Repointed to MailForge 2026-06-10;
+# meli is still available by running `meli` directly.
 
-# Kickstart both sync agents in parallel with meli launch. launchctl
-# kickstart is async (fire-and-forget) — the agents run on their
-# launchd-configured env/PATH, and notmuch is updated by the time the
-# user gets to the first Ctrl+R inside meli (or by the next launch).
-# This gives "fresh meli" near-real-time mail without blocking the
-# launch itself; meli queries the existing notmuch DB while the syncs
-# proceed in the background.
-launchctl kickstart "gui/$UID/com.user.mail-sync" 2>/dev/null
+# Ensure the MailForge daemon is up (kickstart is idempotent fire-and-forget).
+launchctl kickstart "gui/$UID/com.williamnapier.mailforge" 2>/dev/null
+
+# Kickstart the live sync agents for fresh mail:
+#   gmpull      = canonical Gmail puller (Gmail REST API)
+#   mbsync-cohs = COHS (M365) IMAP via XOAUTH2
+# (mbsync-gmail is deliberately NOT kicked — gmpull is the canonical Gmail path.)
+launchctl kickstart "gui/$UID/com.williamnapier.gmpull" 2>/dev/null
 launchctl kickstart "gui/$UID/com.williamnapier.mbsync-cohs" 2>/dev/null
 
-# meli binary: ~/.local/bin/meli is the patched fork (envelope-open ENOENT
-# fix, command-bar redraw fix, x-meli-pipe-message mailcap extension).
-# /opt/homebrew/bin/meli is brew's vanilla 0.8.13 — keep available as a
-# fallback but prefer the fork because the mailcap flag silently no-ops
-# without it.
-exec /opt/homebrew/bin/wezterm \
-  --config 'default_prog={"'"$HOME"'/.local/bin/meli"}' \
-  start \
-  --always-new-process
+# Open the MailForge UI (307-redirects to the inbox) in the default browser.
+open "http://127.0.0.1:8765"
