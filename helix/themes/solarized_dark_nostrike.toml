@@ -1,0 +1,9 @@
+# Solarized Dark, identical to the built-in theme but with strikethrough rendering OFF.
+#
+# Why: Helix maps the `markup.strikethrough` scope to the terminal `crossed_out`
+# modifier, and the markdown tree-sitter grammar pairs up `~` characters. So a line
+# like "approx ~5 to ~10" gets the span between the tildes rendered crossed out.
+# This theme inherits every solarized_dark colour unchanged and only clears that one
+# modifier — honours the "Markdown Tilde Rule" without altering anything else.
+inherits = "solarized_dark"
+"markup.strikethrough" = {}
