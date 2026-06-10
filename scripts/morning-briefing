@@ -9,42 +9,33 @@ PATH=/Users/williamnapier/.local/bin:/Users/williamnapier/.cargo/bin:/opt/homebr
 export PATH
 export HOME=/Users/williamnapier
 
-GMAIL_DIR="$HOME/Mail/gmail-mb"
-GMAIL_LOG="$HOME/Library/Logs/mbsync-gmail.log"
+GMAIL_DIR="$HOME/Mail/gmail-rs"
+GMAIL_LOG="$HOME/Library/Logs/gmpull.log"
 MC_DIR="$HOME/.local/share/mailcurator"
 
 now=$(date "+%Y-%m-%d %H:%M %Z")
 
-# --- Gmail pull ---
-# Soak counters are LIFETIME for the current log file. mbsync-gmail.log
-# was created 2026-05-16 23:04 when the spike was retired; from a fresh
-# log file the counts approximate "since spike retirement". If log
-# rotation lands later, switch to a windowed count (past 24h).
+# --- Gmail pull (gmpull) ---
+# gmpull (Gmail REST API puller) replaced the retired mbsync-gmail spike
+# (2026-06-10); dir + log moved to gmail-rs / gmpull.log. Counters are LIFETIME
+# for the current log file. If log rotation lands later, switch to a windowed
+# count (past 24h).
 if [ -d "$GMAIL_DIR" ]; then
   size=$(du -sh "$GMAIL_DIR" 2>/dev/null | awk '{print $1}')
   count=$(find "$GMAIL_DIR" -type f 2>/dev/null | wc -l | tr -d ' ')
   last_tick=$(stat -f "%Sm" -t "%F %H:%M" "$GMAIL_LOG" 2>/dev/null)
-  last_log=$(tail -3 "$GMAIL_LOG" 2>/dev/null | sed 's/^/    /')
-  # ok_ticks counts EVERY mbsync run that completed cleanly — full mailcurator
-  # passes (TOTAL line) plus runs where mailcurator skipped on inactivity
-  # (Activity-check: skipping line). The earlier "only TOTAL" version
-  # under-counted by an order of magnitude because mailcurator skips when no
-  # machine has been active in 4h, which is typical overnight.
-  full_ticks=$(grep -c '^\[mailcurator\] TOTAL' "$GMAIL_LOG" 2>/dev/null | tr -dc '0-9')
+  last_log=$(tail -4 "$GMAIL_LOG" 2>/dev/null | sed 's/^/    /')
+  # gmpull logs one "incremental pull complete" per clean tick. mailcurator
+  # (run via notmuch post-new, same stdout log) logs an "Activity check:
+  # skipping" line when no machine has been active in 4h — typical overnight.
+  # errors = any ERROR-level tracing line or a non-zero errored= in a progress line.
+  pulls=$(grep -c 'incremental pull complete' "$GMAIL_LOG" 2>/dev/null | tr -dc '0-9')
   skip_ticks=$(grep -c '^\[mailcurator\] Activity check: skipping' "$GMAIL_LOG" 2>/dev/null | tr -dc '0-9')
-  # preflight_skipped counts ticks where mbsync-tick's DNS preflight rejected
-  # the run (network unreachable). Introduced 2026-05-20 — keeps the soak
-  # counter coherent on the portable-Mac hotspot-weather path. A high
-  # preflight-skip count + clean DNS errs = retry wrapper not even being
-  # asked to try, which is the right shape.
-  preflight_skipped=$(grep -c '^\[mbsync-tick\] .*preflight-skipped' "$GMAIL_LOG" 2>/dev/null | tr -dc '0-9')
-  ok_ticks=$(( ${full_ticks:-0} + ${skip_ticks:-0} ))
-  dns_errs=$(grep -c 'Cannot resolve server' "$GMAIL_LOG" 2>/dev/null | tr -dc '0-9')
-  auth_errs=$(grep -c 'pizauth show gmail failed' "$GMAIL_LOG" 2>/dev/null | tr -dc '0-9')
-  gmail_section=$(printf -- "- Maildir: **%s** in %s\n- Last tick: %s\n- Soak (log lifetime): **%s** ok ticks (%s full + %s idle-skipped), **%s** preflight-skipped, **%s** DNS errs, **%s** auth errs\n- Tail:\n\n\`\`\`\n%s\n\`\`\`" \
-    "$count messages" "$size" "$last_tick" "${ok_ticks:-0}" "${full_ticks:-0}" "${skip_ticks:-0}" "${preflight_skipped:-0}" "${dns_errs:-0}" "${auth_errs:-0}" "$last_log")
+  errs=$(grep -cE 'ERROR|errored=[1-9]' "$GMAIL_LOG" 2>/dev/null | tr -dc '0-9')
+  gmail_section=$(printf -- "- Maildir: **%s** in %s\n- Last tick: %s\n- Soak (log lifetime): **%s** completed pulls, **%s** idle-skipped (mailcurator), **%s** errors\n- Tail:\n\n\`\`\`\n%s\n\`\`\`" \
+    "$count messages" "$size" "$last_tick" "${pulls:-0}" "${skip_ticks:-0}" "${errs:-0}" "$last_log")
 else
-  gmail_section="- gmail-mb dir missing"
+  gmail_section="- gmail-rs dir missing"
 fi
 
 # --- Package drift ---
@@ -123,7 +114,7 @@ EOF
 
 # --- Write to own file, rolling 2-day window (NOT the messageboard) ---
 # This digest is a DERIVED dashboard: every section above is a formatted view of
-# a durable source (mbsync-gmail.log, package-drift-check, shared/audits/*,
+# a durable source (gmpull.log, package-drift-check, shared/audits/*,
 # gh run list, mailcurator/*.jsonl). It is the sole record of nothing, so we keep
 # only the two most-recent entries (today + yesterday) for a day-over-day glance.
 # The <!-- briefing-entry --> marker is the awk delimiter between days.
@@ -131,7 +122,7 @@ BRIEF_FILE="$HOME/Assistants/shared/MORNING-BRIEFING.md"
 marker="<!-- briefing-entry -->"
 {
   printf '# Morning Briefing\n\n'
-  printf '_Overwritten daily by `~/dotfiles/scripts/morning-briefing` — rolling 2-day window. A derived dashboard, not a record: every figure is a live view of a durable source (mbsync-gmail.log, package-drift-check, shared/audits/, gh run list, mailcurator/*.jsonl)._\n\n'
+  printf '_Overwritten daily by `~/dotfiles/scripts/morning-briefing` — rolling 2-day window. A derived dashboard, not a record: every figure is a live view of a durable source (gmpull.log, package-drift-check, shared/audits/, gh run list, mailcurator/*.jsonl)._\n\n'
   printf '%s\n## %s\n\n%s\n' "$marker" "$now" "$body"
   if [ -f "$BRIEF_FILE" ]; then
     # carry forward only the most-recent prior entry (first marker block → becomes yesterday)
