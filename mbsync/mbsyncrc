@@ -72,57 +72,8 @@ SyncState *
 Group cohs
 Channel cohs-all
 
-# --- Gmail spike (Oxidise Lieer project, restarted 2026-05-01) ---
-#
-# Parallel pull into ~/Mail/gmail-mb/ — does NOT touch lieer's
-# ~/Mail/personal/. Initial Patterns is INBOX-only to bound the spike
-# (Gmail's INBOX label, not All Mail — tens of MB, not 24 GB).
-#
-# Once the spike confirms (a) pizauth XOAUTH2 negotiates cleanly,
-# (b) folder structure under [Gmail]/ is sane, (c) notmuch indexes
-# the parallel maildir without confusing tags between lieer- and
-# mbsync-sourced copies — the next iteration expands Patterns to
-# `[Gmail]/All Mail` (the canonically-correct Gmail-IMAP source,
-# avoiding the per-label-folder duplication footgun) and we plan
-# the lieer→mbsync flip.
-#
-# First-time setup (once per install):
-#   pizauth refresh gmail
-# (already done on this machine — pizauth status shows Active.)
-IMAPAccount gmail
-Host imap.gmail.com
-Port 993
-User will@willnapier.com
-AuthMechs XOAUTH2
-PassCmd "$HOME/.local/bin/pizauth show gmail"
-TLSType IMAPS
-
-IMAPStore gmail-remote
-Account gmail
-
-MaildirStore gmail-local
-Path ~/Mail/gmail-mb/
-Inbox ~/Mail/gmail-mb/INBOX/
-SubFolders Verbatim
-
-Channel gmail-spike
-Far :gmail-remote:
-Near :gmail-local:
-# Phase 2 (2026-05-01 17:22): expanded from INBOX-only to include
-# [Google Mail]/All Mail — Gmail's canonical "every message exactly
-# once" folder. UK English variant is "Google Mail" not "Gmail";
-# probed via mbsync -l 17:24 — `[Gmail]/...` matches NOTHING on this
-# account, `[Google Mail]/...` is correct. ~24GB / 218k-message pull
-# on first run. INBOX kept in Patterns during transition; eventual
-# cleanup will drop it (every Inbox message also exists under All
-# Mail, so the local INBOX/ directory becomes redundant once All Mail
-# is fully synced).
-Patterns "INBOX" "[Google Mail]/All Mail"
-Sync Pull
-Expunge None
-CopyArrivalDate yes
-Create Near
-SyncState *
-
-Group gmail
-Channel gmail-spike
+# --- Gmail: retired 2026-06-10 ---
+# Gmail is pulled by gmpull (Gmail REST API → ~/Mail/gmail-rs/), the canonical
+# puller. The former mbsync "gmail-spike" (→ ~/Mail/gmail-mb/) was a redundant
+# second full sync and has been retired (agent + plist + this block removed).
+# The gmail-mb maildir is kept for a short soak, then reclaimed.
