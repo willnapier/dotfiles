@@ -1,0 +1,17 @@
+[Unit]
+Description=scroll-server (private context scrolls for AI fetch over Cloudflare Tunnel)
+Documentation=file://%h/Assistants/shared/scroll-server-design.md
+After=network.target
+
+[Service]
+ExecStart=%h/.local/bin/scroll-server
+Restart=always
+RestartSec=2
+# Contract (clinical-core-free): all three required, fail-fast if missing.
+# scroll_dir must already exist; audit_log parent must exist.
+Environment=SCROLL_SERVER_BIND=127.0.0.1:8770
+Environment=SCROLL_SERVER_SCROLL_DIR=%h/Forge/scrolls/sensitive
+Environment=SCROLL_SERVER_AUDIT_LOG=%h/Forge/scroll-server.log
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,13 @@
+[Unit]
+Description=Cloudflare Tunnel for scrolls.work (fronts scroll-server)
+After=network.target scroll-server.service
+Wants=scroll-server.service
+
+[Service]
+# Uses ~/.cloudflared/config.yml (tunnel id + credentials-file + ingress).
+ExecStart=%h/.local/bin/cloudflared --no-autoupdate tunnel run scrolls-work
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target
