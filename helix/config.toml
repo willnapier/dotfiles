@@ -4,7 +4,9 @@
 # Sync test: $(date)
 
 # Theme selection
-theme = "solarized_dark"
+# solarized_dark_nostrike = solarized_dark with strikethrough rendering disabled
+# (so `~` for "approximately" doesn't render crossed out). Theme file in themes/.
+theme = "solarized_dark_nostrike"
 
 [editor]
 # Enable cursor shape changing
