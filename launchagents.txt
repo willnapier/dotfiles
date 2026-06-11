@@ -49,7 +49,6 @@ com.williamnapier.linkmanager.plist.disabled
 com.williamnapier.mailcurator-drift
 com.williamnapier.mailforge
 com.williamnapier.mbsync-cohs
-com.williamnapier.mbsync-gmail
 com.williamnapier.morning-briefing
 com.williamnapier.pizauth
 com.williamnapier.pizauth-dump
