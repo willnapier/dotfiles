@@ -3,6 +3,7 @@ assistants-docs-watcher.service
 bequest-heartbeat.timer
 claude-code-nightly-cleanup.timer
 claude-worktree-cleaner.timer
+cloudflared-scrolls-work.service
 cohs-trash-mover.timer
 collect-projects-watcher.service
 collect-projects.timer
@@ -36,6 +37,7 @@ pizauth-dump.timer
 pizauth.service
 practiceforge.service
 readwise-sync.timer
+scroll-server.service
 ssh-agent.socket
 ssh-import-env.service
 state-capture.timer
