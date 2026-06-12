@@ -130,10 +130,10 @@
   },
   "alwaysThinkingEnabled": true,
   "effortLevel": "xhigh",
+  "skipWorkflowUsageWarning": true,
   "agentPushNotifEnabled": true,
   "voiceEnabled": true,
   "feedbackSurveyState": {
     "lastShownTime": 1754246159316
-  },
-  "skipWorkflowUsageWarning": true
+  }
 }
