@@ -262,6 +262,7 @@ theora
 trash
 tree
 tree-sitter
+typst
 uchardet
 unar
 unbound
