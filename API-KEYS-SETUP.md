@@ -10,7 +10,48 @@ For comprehensive setup instructions, cross-platform details, troubleshooting, a
 
 **See**: [`~/Assistants/shared/API-KEYS-CROSS-PLATFORM-SETUP.md`](../Assistants/shared/API-KEYS-CROSS-PLATFORM-SETUP.md)
 
-## Quick Setup (Nushell)
+## Preferred: macOS Keychain / gnome-keyring (static API keys)
+
+Static API keys (OpenRouter, OpenAI, Gemini) are **not** stored in `env-secret.nu`
+as plaintext. They live in the OS keyring and are loaded via a small cache:
+
+```
+keyring (security / secret-tool)  ->  api-key-cache-refresh  ->  ~/.cache/shell/api-keys.toml (chmod 600)  ->  env.nu
+```
+
+`env.nu` loads from the cache at shell startup (a direct `security` read costs
+roughly 8s on this Mac, so the cache avoids hanging every new window).
+
+**Store / rotate a key**:
+```bash
+# macOS
+security add-generic-password -s "openrouter-api-key" -a "goose" -w "sk-or-v1-..." -U
+# Linux
+secret-tool store --label="openrouter-api-key" service "openrouter-api-key" account "goose"
+
+# then refresh the cache (run after any rotation):
+api-key-cache-refresh
+```
+
+**Keyring service/account pairs** currently wired into `api-key-cache-refresh`:
+
+| Env var | service | account |
+|---------|---------|---------|
+| `GEMINI_API_KEY` | `gemini-api-key` | `forgepodium` |
+| `OPENAI_API_KEY` | `openai-api-key` | `semantic-search` |
+| `OPENROUTER_API_KEY` | `openrouter-api-key` | `goose` |
+
+To add a new static key: store it in the keyring, then add a fetch line +
+`printf` to `scripts/api-key-cache-refresh` and a load line to `nushell/env.nu`.
+
+> **Note on pizauth**: pizauth is an *OAuth2* token broker (mail stack). It does
+> not apply to static API keys like these — use the keyring-cache pattern above.
+
+## Legacy: env-secret.nu (OAuth-less plaintext — being phased out)
+
+`env-secret.nu` is still sourced by `env.nu`, but should no longer hold live
+static keys. It remains only for the (currently disabled) `ANTHROPIC_API_KEY`
+fallback. Prefer the keyring pattern above for anything new.
 
 ### File Locations
 
@@ -77,10 +118,16 @@ This is **already configured** in `nushell/env.nu` - no manual changes needed!
 
 ## Key Rotation
 
+**Static keys (OpenRouter/OpenAI/Gemini — keyring pattern):**
 1. Get new key from provider website
-2. Update `env-secret.nu` on **all machines**
-3. Reload shell: `exec nu`
-4. Delete old key from provider dashboard
+2. `security add-generic-password -s <service> -a <account> -w <new-key> -U` (macOS)
+   or `secret-tool store ...` (Linux), per the table above — **per machine**
+3. `api-key-cache-refresh` to rewrite the cache
+4. Reload shell: `exec nu`
+5. Delete old key from provider dashboard
+
+**ANTHROPIC (legacy env-secret.nu fallback, if ever re-enabled):** update
+`env-secret.nu` directly, or migrate it to the keyring pattern too.
 
 ## Troubleshooting
 
