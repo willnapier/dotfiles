@@ -181,7 +181,7 @@ def fireworks-chat [prompt: string] {
     let answer = (http post --content-type application/json --headers { Authorization: $"Bearer ($env.FIREWORKS_API_KEY)" } "https://api.fireworks.ai/inference/v1/chat/completions" {
         model: $model,
         messages: [{ role: "user", content: $prompt }],
-        max_tokens: 8192
+        max_tokens: 32768
     } | get choices.0.message.content)
     # Continuum log — best-effort; never let logging swallow the answer.
     try {
