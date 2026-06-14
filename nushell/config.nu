@@ -156,29 +156,52 @@ def ai-brief [assistant?: string] {
 def codex-brief [] { ai-brief codex }
 def claude-code-brief [] { ai-brief claude-code }
 
-# Goose → DeepSeek-V4-Pro on Fireworks (direct, zero-data-retention). Uses the
-# OpenAI-compatible provider with a SCOPED key override so the real
-# $env.OPENAI_API_KEY (semantic-search) is never touched. Key sourced from
-# keychain via api-key-cache-refresh. Continuum-captured. NON-PHI use only.
-# Tool-calling routes through GOOSE_TOOLSHIM + a local Ollama model (mistral),
-# because Fireworks rejects goose's native tool JSON-schema for this model.
-# Needs Ollama serving + `ollama pull mistral`.
-# Usage:  goose-fw            (interactive)
-#         goose-fw run --text "..."   (headless)
-def --wrapped goose-fw [...rest] {
+# DeepSeek-V4-Pro on Fireworks — direct chat (reasoning / long-context; NON-PHI).
+# Goose can't drive this model (its core tool schema 400s on Fireworks), so we
+# call the API directly. Every exchange is logged to Continuum as assistant
+# "fireworks" — full parity with the other AIs (searchable via ctce /
+# continuum-activity, synced via Syncthing).
+#   dsv4 "is Arc<Mutex<T>> the right choice here?"
+#   open src/main.rs | dsv4-on "review this for correctness"
+def dsv4 [...question: string] { fireworks-chat ($question | str join " ") }
+
+def dsv4-on [instruction: string] {
+    let piped = $in
+    fireworks-chat $"($instruction)\n\n---\n($piped)"
+}
+
+# Shared worker: call Fireworks, log the turn to Continuum, return the answer.
+def fireworks-chat [prompt: string] {
     if ($env.FIREWORKS_API_KEY? | is-empty) {
-        print "⚠️  FIREWORKS_API_KEY not set — run: api-key-cache-refresh"
+        print "⚠️  FIREWORKS_API_KEY not set — run api-key-cache-refresh, then restart your shell"
         return
     }
-    with-env {
-        GOOSE_PROVIDER: "openai",
-        GOOSE_MODEL: "accounts/fireworks/models/deepseek-v4-pro",
-        OPENAI_HOST: "https://api.fireworks.ai",
-        OPENAI_BASE_PATH: "inference/v1/chat/completions",
-        OPENAI_API_KEY: $env.FIREWORKS_API_KEY,
-        GOOSE_TOOLSHIM: "true",
-        GOOSE_TOOLSHIM_OLLAMA_MODEL: "mistral"
-    } { continuum-goose ...$rest }
+    let model = "accounts/fireworks/models/deepseek-v4-pro"
+    let start = (date now)
+    let answer = (http post --content-type application/json --headers { Authorization: $"Bearer ($env.FIREWORKS_API_KEY)" } "https://api.fireworks.ai/inference/v1/chat/completions" {
+        model: $model,
+        messages: [{ role: "user", content: $prompt }],
+        max_tokens: 8192
+    } | get choices.0.message.content)
+    # Continuum log — best-effort; never let logging swallow the answer.
+    try {
+        let id = (random uuid)
+        let s = ($start | format date "%Y-%m-%dT%H:%M:%S%:z")
+        let e = (date now | format date "%Y-%m-%dT%H:%M:%S%:z")
+        let dir = ([$env.HOME "Assistants" "continuum-logs" "fireworks" ($start | format date "%Y-%m-%d") $id] | path join)
+        mkdir $dir
+        {
+            id: $id, assistant: "fireworks", model: $model,
+            start_time: $s, end_time: $e, status: "logged",
+            message_count: 2, created_at: $s,
+            title: ($prompt | str substring 0..80), source_url: ""
+        } | to json | save ($dir | path join "session.json")
+        [
+            { id: 1, role: "user", content: $prompt, timestamp: $s }
+            { id: 2, role: "assistant", content: $answer, timestamp: $e }
+        ] | each { |m| $m | to json --raw } | str join "\n" | save ($dir | path join "messages.jsonl")
+    } catch { |err| print $"⚠️  dsv4: Continuum log failed: ($err.msg)" }
+    $answer
 }
 
 # ---- Quick Logging Functions ----
