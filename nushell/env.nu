@@ -86,6 +86,7 @@ if ($api_key_cache | path exists) {
     $env.GEMINI_API_KEY = ($cached | get -o gemini_api_key | default "")
     $env.OPENAI_API_KEY = ($cached | get -o openai_api_key | default "")
     $env.OPENROUTER_API_KEY = ($cached | get -o openrouter_api_key | default "")
+    $env.FIREWORKS_API_KEY = ($cached | get -o fireworks_api_key | default "")
 } else if (which api-key-cache-refresh | is-not-empty) {
     # First run: populate the cache (slow, but only once). Swallow failures
     # so a broken keychain never blocks shell startup.
@@ -95,6 +96,7 @@ if ($api_key_cache | path exists) {
         $env.GEMINI_API_KEY = ($cached | get -o gemini_api_key | default "")
         $env.OPENAI_API_KEY = ($cached | get -o openai_api_key | default "")
         $env.OPENROUTER_API_KEY = ($cached | get -o openrouter_api_key | default "")
+        $env.FIREWORKS_API_KEY = ($cached | get -o fireworks_api_key | default "")
     }
 }
 

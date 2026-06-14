@@ -156,6 +156,26 @@ def ai-brief [assistant?: string] {
 def codex-brief [] { ai-brief codex }
 def claude-code-brief [] { ai-brief claude-code }
 
+# Goose → DeepSeek-V4-Pro on Fireworks (direct, zero-data-retention). Uses the
+# OpenAI-compatible provider with a SCOPED key override so the real
+# $env.OPENAI_API_KEY (semantic-search) is never touched. Key sourced from
+# keychain via api-key-cache-refresh. Continuum-captured. NON-PHI use only.
+# Usage:  goose-fw            (interactive)
+#         goose-fw run --text "..."   (headless)
+def --wrapped goose-fw [...rest] {
+    if ($env.FIREWORKS_API_KEY? | is-empty) {
+        print "⚠️  FIREWORKS_API_KEY not set — run: api-key-cache-refresh"
+        return
+    }
+    with-env {
+        GOOSE_PROVIDER: "openai",
+        GOOSE_MODEL: "accounts/fireworks/models/deepseek-v4-pro",
+        OPENAI_HOST: "https://api.fireworks.ai",
+        OPENAI_BASE_PATH: "inference/v1/chat/completions",
+        OPENAI_API_KEY: $env.FIREWORKS_API_KEY
+    } { continuum-goose ...$rest }
+}
+
 # ---- Quick Logging Functions ----
 # Log entry directly to today's DayPage and trigger collection
 # Usage: log "P.website:: 2hr implemented-nav"
