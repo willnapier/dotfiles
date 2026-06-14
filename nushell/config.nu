@@ -160,6 +160,9 @@ def claude-code-brief [] { ai-brief claude-code }
 # OpenAI-compatible provider with a SCOPED key override so the real
 # $env.OPENAI_API_KEY (semantic-search) is never touched. Key sourced from
 # keychain via api-key-cache-refresh. Continuum-captured. NON-PHI use only.
+# Tool-calling routes through GOOSE_TOOLSHIM + a local Ollama model (mistral),
+# because Fireworks rejects goose's native tool JSON-schema for this model.
+# Needs Ollama serving + `ollama pull mistral`.
 # Usage:  goose-fw            (interactive)
 #         goose-fw run --text "..."   (headless)
 def --wrapped goose-fw [...rest] {
@@ -172,7 +175,9 @@ def --wrapped goose-fw [...rest] {
         GOOSE_MODEL: "accounts/fireworks/models/deepseek-v4-pro",
         OPENAI_HOST: "https://api.fireworks.ai",
         OPENAI_BASE_PATH: "inference/v1/chat/completions",
-        OPENAI_API_KEY: $env.FIREWORKS_API_KEY
+        OPENAI_API_KEY: $env.FIREWORKS_API_KEY,
+        GOOSE_TOOLSHIM: "true",
+        GOOSE_TOOLSHIM_OLLAMA_MODEL: "mistral"
     } { continuum-goose ...$rest }
 }
 
