@@ -123,8 +123,19 @@ This is **already configured** in `nushell/env.nu` - no manual changes needed!
 2. `security add-generic-password -s <service> -a <account> -w <new-key> -U` (macOS)
    or `secret-tool store ...` (Linux), per the table above — **per machine**
 3. `api-key-cache-refresh` to rewrite the cache
-4. Reload shell: `exec nu`
+4. Reload shell: `exec nu` (already-open shells keep the OLD key in their
+   environment until reloaded — if the old key was revoked, they get 401)
 5. Delete old key from provider dashboard
+
+> **Gotcha:** `-U` occasionally *adds* a second keychain item instead of
+> updating, leaving a duplicate. Then `find-generic-password` may return the
+> stale one and the cache gets the old key. If the cache shows the old key
+> after a refresh, clear duplicates and re-add cleanly:
+> ```bash
+> while security delete-generic-password -s "<service>" >/dev/null 2>&1; do :; done
+> security add-generic-password -s "<service>" -a "<account>" -w "<new-key>"
+> api-key-cache-refresh
+> ```
 
 **ANTHROPIC (legacy env-secret.nu fallback, if ever re-enabled):** update
 `env-secret.nu` directly, or migrate it to the keyring pattern too.
