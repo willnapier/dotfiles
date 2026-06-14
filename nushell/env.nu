@@ -79,10 +79,12 @@ if ($gcloud_root | path exists) {
 let api_key_cache = ($env.HOME | path join ".cache" "shell" "api-keys.toml")
 $env.GEMINI_API_KEY = ""
 $env.OPENAI_API_KEY = ""
+$env.OPENROUTER_API_KEY = ""
 if ($api_key_cache | path exists) {
     let cached = (try { open $api_key_cache } catch { {} })
     $env.GEMINI_API_KEY = ($cached | get -o gemini_api_key | default "")
     $env.OPENAI_API_KEY = ($cached | get -o openai_api_key | default "")
+    $env.OPENROUTER_API_KEY = ($cached | get -o openrouter_api_key | default "")
 } else if (which api-key-cache-refresh | is-not-empty) {
     # First run: populate the cache (slow, but only once). Swallow failures
     # so a broken keychain never blocks shell startup.
@@ -91,6 +93,7 @@ if ($api_key_cache | path exists) {
         let cached = (try { open $api_key_cache } catch { {} })
         $env.GEMINI_API_KEY = ($cached | get -o gemini_api_key | default "")
         $env.OPENAI_API_KEY = ($cached | get -o openai_api_key | default "")
+        $env.OPENROUTER_API_KEY = ($cached | get -o openrouter_api_key | default "")
     }
 }
 
