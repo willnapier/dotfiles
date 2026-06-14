@@ -80,6 +80,7 @@ let api_key_cache = ($env.HOME | path join ".cache" "shell" "api-keys.toml")
 $env.GEMINI_API_KEY = ""
 $env.OPENAI_API_KEY = ""
 $env.OPENROUTER_API_KEY = ""
+$env.FIREWORKS_API_KEY = ""
 if ($api_key_cache | path exists) {
     let cached = (try { open $api_key_cache } catch { {} })
     $env.GEMINI_API_KEY = ($cached | get -o gemini_api_key | default "")

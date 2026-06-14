@@ -11,6 +11,7 @@
 #   gemini-api-key / forgepodium
 #   openai-api-key / semantic-search
 #   openrouter-api-key / goose
+#   fireworks-api-key / goose
 #
 # Works on macOS (keychain via `security`) and Linux (gnome-keyring via
 # `secret-tool`). The cache file is chmod 600.
@@ -41,11 +42,13 @@ case "$(uname -s)" in
         GEMINI=$(fetch_darwin "gemini-api-key" "forgepodium")
         OPENAI=$(fetch_darwin "openai-api-key" "semantic-search")
         OPENROUTER=$(fetch_darwin "openrouter-api-key" "goose")
+        FIREWORKS=$(fetch_darwin "fireworks-api-key" "goose")
         ;;
     Linux)
         GEMINI=$(fetch_linux "gemini-api-key" "forgepodium")
         OPENAI=$(fetch_linux "openai-api-key" "semantic-search")
         OPENROUTER=$(fetch_linux "openrouter-api-key" "goose")
+        FIREWORKS=$(fetch_linux "fireworks-api-key" "goose")
         ;;
     *)
         echo "api-key-cache-refresh: unsupported OS $(uname -s)" >&2
@@ -61,6 +64,7 @@ TMP=$(mktemp "${CACHE_FILE}.XXXXXX")
     printf 'gemini_api_key = "%s"\n' "$GEMINI"
     printf 'openai_api_key = "%s"\n' "$OPENAI"
     printf 'openrouter_api_key = "%s"\n' "$OPENROUTER"
+    printf 'fireworks_api_key = "%s"\n' "$FIREWORKS"
 } > "$TMP"
 chmod 600 "$TMP"
 mv "$TMP" "$CACHE_FILE"
