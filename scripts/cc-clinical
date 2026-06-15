@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# cc-clinical — start Claude Code on the DPA'd Anthropic API path for clinical /
+# PHI work.
+#
+# Why: bulk PHI-FREE development runs on the flat-rate Max subscription (just run
+# `claude`). But reading real clinical DATA — special-category health data — must
+# only transit Anthropic on the commercial **DPA + no-training API** path, never
+# the consumer subscription (no DPA, may train). This wrapper sets
+# ANTHROPIC_API_KEY from the existing note-drafting key in
+# ~/.config/practiceforge/secrets.toml ([ai] api_key), so a clinical session
+# shares the same DPA'd key/org.
+#
+# Companion: the `clinical-data-guard.sh` PreToolUse hook BLOCKS clinical-data
+# reads whenever ANTHROPIC_API_KEY is unset (a normal Max session). So: do PHI
+# work in `cc-clinical`; do everything else in plain `claude`.
+#
+# Usage: cc-clinical [any normal `claude` args]
+set -euo pipefail
+
+SECRETS="${HOME}/.config/practiceforge/secrets.toml"
+if [ ! -f "$SECRETS" ]; then
+  echo "cc-clinical: $SECRETS not found — cannot obtain the DPA'd API key." >&2
+  exit 1
+fi
+
+# Pull api_key from the [ai] section. Take everything after the first '=' (so a
+# key containing '=' survives), then strip surrounding whitespace/quotes.
+KEY=$(awk '
+  /^\[/ { insec = 0 }
+  /^\[ai\]/ { insec = 1; next }
+  insec && /^[[:space:]]*api_key[[:space:]]*=/ {
+    sub(/^[^=]*=/, ""); gsub(/^[[:space:]"]+|[[:space:]"]+$/, ""); print; exit
+  }' "$SECRETS")
+
+if [ -z "${KEY:-}" ] || [[ "$KEY" != sk-* ]]; then
+  echo "cc-clinical: could not read a valid [ai] api_key (sk-...) from $SECRETS." >&2
+  exit 1
+fi
+
+export ANTHROPIC_API_KEY="$KEY"
+echo "cc-clinical: DPA / no-training API session active — clinical-data reads are permitted here." >&2
+exec claude "$@"
