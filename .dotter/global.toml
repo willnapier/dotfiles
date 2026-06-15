@@ -7,6 +7,7 @@ depends = []
 [shared.files]
 "ssh/config" = "~/.ssh/config"
 "scripts/tm3-cookie-sync" = "~/.local/bin/tm3-cookie-sync"
+"scripts/cc-clinical" = "~/.local/bin/cc-clinical"
 "scripts/anki-push" = "~/.local/bin/anki-push"
 "scripts/api-key-cache-refresh" = "~/.local/bin/api-key-cache-refresh"
 "scripts/prior-art" = "~/.local/bin/prior-art"

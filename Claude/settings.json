@@ -51,6 +51,11 @@
             "type": "command",
             "command": "bash ~/.claude/hooks/memory-platform-check.sh",
             "statusMessage": "Checking memory platform scope..."
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/clinical-data-guard.sh",
+            "statusMessage": "Checking clinical-data footing..."
           }
         ]
       },
@@ -76,6 +81,16 @@
             "type": "command",
             "command": "bash ~/.claude/hooks/clinical-write-guard.sh",
             "statusMessage": "Checking clinical file safety..."
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/clinical-data-guard.sh",
+            "statusMessage": "Checking clinical-data footing..."
           }
         ]
       }
