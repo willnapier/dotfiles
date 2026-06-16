@@ -1,0 +1,80 @@
+#!/usr/bin/env nu
+# fd-budget-sync — on-demand peer rsync of the fd-budget data store between
+# this Mac and nimbini over Tailscale/SSH. Deliberately NOT continuous: the
+# store holds bank data, so replication is manual, directional, and reversible
+# (chosen over Syncthing for exactly that — nothing is ever auto-replicated).
+#
+#   fd-budget-sync push           # PREVIEW: send THIS machine's data  -> other
+#   fd-budget-sync push --apply   # send for real (snapshots the receiver first)
+#   fd-budget-sync pull           # PREVIEW: fetch the other machine's data -> here
+#   fd-budget-sync pull --apply   # fetch for real (snapshots THIS machine first)
+#
+# Run `push` on the machine you're LEAVING, `pull` on the one you're ARRIVING at.
+# Direction is explicit; the receiver is always snapshotted to
+# ~/.local/share/fd-budget-sync-backups/<timestamp>/ before any overwrite, so a
+# wrong-way sync is fully recoverable. Conservative rsync flags only (-rltv) —
+# macOS ships openrsync (proto 29), nimbini GNU rsync (proto 32); they negotiate
+# to 29, so no GNU-only flags.
+
+const DATA = "~/.config/fd-budget"
+const BACKUPS = "~/.local/share/fd-budget-sync-backups"
+
+# The OTHER machine's ssh target, derived from the OS we're running on.
+def remote-target [] {
+    if ((^uname -s | str trim) == "Darwin") { "will@nimbini" } else { "mac" }
+}
+
+def main [
+    direction: string   # "push" (this -> other) or "pull" (other -> this)
+    --apply             # perform the transfer; without it you get a dry-run preview
+] {
+    if ($direction not-in ["push" "pull"]) {
+        print "usage: fd-budget-sync (push|pull) [--apply]"
+        print "  push = send THIS machine's store to the other; pull = fetch the other's store here"
+        return
+    }
+
+    let remote = (remote-target)
+    let local_dir = ($DATA | path expand)
+    let local_slash = $"($local_dir)/"
+    let remote_slash = $"($remote):.config/fd-budget/"   # relative path -> remote $HOME
+    let flags = (["-rltv"] | append (if $apply { [] } else { ["--dry-run"] }))
+
+    if $direction == "push" {
+        if $apply {
+            backup-remote $remote
+            ^ssh $remote "bash -lc 'mkdir -p ~/.config/fd-budget'"
+        }
+        print $"rsync push: LOCAL ($local_slash)  ->  ($remote_slash)"
+        ^rsync ...$flags $local_slash $remote_slash
+    } else {
+        if $apply {
+            backup-local
+            mkdir $local_dir
+        }
+        print $"rsync pull: ($remote_slash)  ->  LOCAL ($local_slash)"
+        ^rsync ...$flags $remote_slash $local_slash
+    }
+
+    if not $apply {
+        print ""
+        print "(preview only — re-run with --apply to transfer; the receiver is snapshotted first)"
+    }
+}
+
+# Snapshot the local store before it is overwritten by a pull.
+def backup-local [] {
+    let dir = ($DATA | path expand)
+    if not ($dir | path exists) { return }
+    let ts = (date now | format date "%Y%m%d-%H%M%S")
+    let dest = ($"($BACKUPS)/($ts)-local" | path expand)
+    mkdir ($BACKUPS | path expand)
+    cp -r $dir $dest
+    print $"  snapshot of local store -> ($dest)"
+}
+
+# Snapshot the remote store before it is overwritten by a push (no-op if empty).
+def backup-remote [remote: string] {
+    let ts = (date now | format date "%Y%m%d-%H%M%S")
+    ^ssh $remote $"bash -lc 'd=~/.config/fd-budget; b=~/.local/share/fd-budget-sync-backups/($ts)-remote; if [ -d \"$d\" ]; then mkdir -p \"$b\"; cp -a \"$d\"/. \"$b\"/; echo \"  snapshot of remote store -> $b\"; else echo \"  (remote store empty; nothing to back up)\"; fi'"
+}

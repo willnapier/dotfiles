@@ -136,6 +136,7 @@ depends = []
 "scripts/remind.nu" = { target = "~/.local/bin/remind", type = "symbolic" }
 "scripts/daypage-template" = "~/.local/bin/daypage-template"
 "scripts/daypage-append" = "~/.local/bin/daypage-append"
+"scripts/fd-budget-sync" = "~/.local/bin/fd-budget-sync"
 "scripts/daypage-flush" = "~/.local/bin/daypage-flush"
 "scripts/daypage-flush-wezterm" = "~/.local/bin/daypage-flush-wezterm"
 "scripts/daypage-mark-done" = "~/.local/bin/daypage-mark-done"
