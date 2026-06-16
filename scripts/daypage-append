@@ -3,23 +3,69 @@
 # Part of the pending queue system that prevents "file modified by
 # external process" errors when the DayPage is open in Helix.
 #
+#   Today / past dates -> machine-local pending queue (flushed via Space+U).
+#                         The queue exists ONLY to avoid clobbering today's
+#                         page while it is open in Helix.
+#   Future dates       -> written straight into the synced DayPage in ~/Forge
+#                         (Syncthing replicates it Mac <-> nimbini), so a
+#                         long-horizon reminder is cross-platform the moment
+#                         it is set. A future page is never open in Helix, so
+#                         the queue's clobber-protection is not needed.
+#
 # Usage: daypage-append "clinical-notes:: 8x 12min - EB88"
 #        daypage-append --date 2026-02-13 "concert.ilminster:: ..."
-# Flush: Space+F in Helix, or run daypage-flush from command line
+#        daypage-append --date 2027-06-16 "dev:: REMINDER ..."   # future -> synced page
+# Flush: Space+U in Helix, or run daypage-flush from command line
 
 def main [
     entry: string
     --date (-d): string  # Target date (YYYY-MM-DD), defaults to today
 ] {
-    let pending_dir = ($env.HOME | path join ".local" "share" "daypage-pending")
-    mkdir $pending_dir
+    let today = (date now | format date "%Y-%m-%d")
+    let target = if ($date | is-empty) { $today } else { $date }
 
-    let target = if ($date | is-empty) {
-        date now | format date "%Y-%m-%d"
+    # ISO dates compare correctly as strings (zero-padded YYYY-MM-DD).
+    if ($target > $today) {
+        append-to-daypage $target $entry
     } else {
-        $date
+        let pending_dir = ($env.HOME | path join ".local" "share" "daypage-pending")
+        mkdir $pending_dir
+        let pending_file = ($pending_dir | path join $"($target).md")
+        $"($entry)\n" | save --append $pending_file
     }
-    let pending_file = ($pending_dir | path join $"($target).md")
+}
 
-    $"($entry)\n" | save --append $pending_file
+# Insert a single entry directly into ~/Forge/NapierianLogs/DayPages/<date>.md,
+# creating the page from template if needed. Mirrors daypage-flush's insertion
+# (above ## Backlinks) and is idempotent (skips if the line is already present,
+# guarding against a double-set racing across machines). If the template step
+# fails, falls back to the local pending queue so nothing is silently dropped.
+def append-to-daypage [date: string, entry: string] {
+    let daypage_dir = ($env.HOME | path join "Forge" "NapierianLogs" "DayPages")
+    let daypage = ($daypage_dir | path join $"($date).md")
+
+    if not ($daypage | path exists) {
+        let result = (do { daypage-template $date } | complete)
+        if $result.exit_code == 0 and ($result.stdout | str trim | is-not-empty) {
+            $result.stdout | save $daypage
+        } else {
+            print -e $"DayPage template failed for ($date) — falling back to pending queue"
+            let pending_dir = ($env.HOME | path join ".local" "share" "daypage-pending")
+            mkdir $pending_dir
+            $"($entry)\n" | save --append ($pending_dir | path join $"($date).md")
+            return
+        }
+    }
+
+    let content = (open $daypage --raw)
+    if ($content | str contains $entry) {
+        return  # already set — idempotent no-op
+    }
+
+    let updated = if ($content | str contains "## Backlinks") {
+        $content | str replace "## Backlinks" $"($entry)\n\n## Backlinks"
+    } else {
+        $"($content | str trim --right)\n\n($entry)\n"
+    }
+    $updated | save -f $daypage
 }
