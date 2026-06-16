@@ -3,13 +3,9 @@ use std::str::FromStr;
 
 /// Parse amount from First Direct format: "-£9.00" or "+£8478.33"
 pub fn parse_amount(s: &str) -> Result<Decimal, String> {
-    let cleaned = s
-        .trim()
-        .replace('£', "")
-        .replace(',', "");
+    let cleaned = s.trim().replace('£', "").replace(',', "");
 
-    Decimal::from_str(&cleaned)
-        .map_err(|e| format!("failed to parse amount '{}': {}", s, e))
+    Decimal::from_str(&cleaned).map_err(|e| format!("failed to parse amount '{}': {}", s, e))
 }
 
 /// Clean up merchant description
@@ -20,10 +16,7 @@ pub fn clean_description(raw: &str) -> String {
     let cleaned = parts.join(" ");
 
     // Remove common noise patterns
-    let cleaned = cleaned
-        .replace("INT'L **********", "")
-        .trim()
-        .to_string();
+    let cleaned = cleaned.replace("INT'L **********", "").trim().to_string();
 
     // Remove trailing location codes that aren't useful
     // e.g., "TESCO STORES 1234 LONDON" -> "TESCO STORES LONDON"
@@ -54,9 +47,18 @@ mod tests {
 
     #[test]
     fn test_parse_amount() {
-        assert_eq!(parse_amount("-£9.00").unwrap(), Decimal::from_str("-9.00").unwrap());
-        assert_eq!(parse_amount("+£8478.33").unwrap(), Decimal::from_str("8478.33").unwrap());
-        assert_eq!(parse_amount("-£1,234.56").unwrap(), Decimal::from_str("-1234.56").unwrap());
+        assert_eq!(
+            parse_amount("-£9.00").unwrap(),
+            Decimal::from_str("-9.00").unwrap()
+        );
+        assert_eq!(
+            parse_amount("+£8478.33").unwrap(),
+            Decimal::from_str("8478.33").unwrap()
+        );
+        assert_eq!(
+            parse_amount("-£1,234.56").unwrap(),
+            Decimal::from_str("-1234.56").unwrap()
+        );
     }
 
     #[test]

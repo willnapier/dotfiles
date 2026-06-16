@@ -1,9 +1,14 @@
 use chrono::{Datelike, NaiveDate};
 use clap::{Parser, Subcommand};
-use fd_budget::{Account, import, store::CsvStore, tags::{TagRules, apply_rules, reapply_rules}, dedup, enrich, query};
+use fd_budget::{
+    dedup, enrich, import, query,
+    store::CsvStore,
+    tags::{apply_rules, reapply_rules, TagRules},
+    Account,
+};
 use rust_decimal::Decimal;
 use std::fs::File;
-use std::io::{BufReader, BufRead, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -29,11 +34,16 @@ enum Commands {
         #[command(subcommand)]
         action: TagAction,
     },
-    /// List transactions with no tags
+    /// List untagged transactions. By default only debits (the spend-
+    /// categorisation worklist) are shown; credits (income/refunds) are
+    /// separable by sign and excluded unless `--include-credits` is given.
     Untagged {
         /// Limit output to N transactions
         #[arg(short, long)]
         limit: Option<usize>,
+        /// Also show untagged credit (incoming) rows
+        #[arg(long)]
+        include_credits: bool,
     },
     /// Show statistics. With `--by-counterparty`, aggregates outgoing spend
     /// per counterparty, joining transactions.csv against matches.jsonl and
@@ -72,6 +82,9 @@ enum Commands {
         /// Maximum number of transactions to process
         #[arg(short, long)]
         limit: Option<usize>,
+        /// Also categorize untagged credit (incoming) rows
+        #[arg(long)]
+        include_credits: bool,
     },
     /// Reconcile bank rows against mailcurator email-evidence
     Enrich {
@@ -205,23 +218,41 @@ fn main() -> anyhow::Result<()> {
         Commands::Tag { action } => {
             cmd_tag(action)?;
         }
-        Commands::Untagged { limit } => {
-            cmd_untagged(limit)?;
+        Commands::Untagged {
+            limit,
+            include_credits,
+        } => {
+            cmd_untagged(limit, include_credits)?;
         }
-        Commands::Stats { by_counterparty, year, month, since, limit } => {
+        Commands::Stats {
+            by_counterparty,
+            year,
+            month,
+            since,
+            limit,
+        } => {
             if by_counterparty {
                 cmd_stats_by_counterparty(year, month.as_deref(), since, limit)?;
             } else {
-                cmd_stats()?;
+                cmd_stats(year, month.as_deref(), since)?;
             }
         }
         Commands::Tx { action } => {
             cmd_tx(action)?;
         }
-        Commands::Categorize { limit } => {
-            cmd_categorize(limit)?;
+        Commands::Categorize {
+            limit,
+            include_credits,
+        } => {
+            cmd_categorize(limit, include_credits)?;
         }
-        Commands::Enrich { from, out, amount_tolerance, date_window, dry_run } => {
+        Commands::Enrich {
+            from,
+            out,
+            amount_tolerance,
+            date_window,
+            dry_run,
+        } => {
             cmd_enrich(from, out, amount_tolerance, date_window, dry_run)?;
         }
     }
@@ -293,9 +324,21 @@ fn cmd_enrich(
     let internal = summary.count(Confidence::InternalTransfer);
     println!("  high              {:>4} ({:.1}%)", high, pct(high));
     println!("  medium            {:>4} ({:.1}%)", medium, pct(medium));
-    println!("  ambiguous         {:>4} ({:.1}%)", ambiguous, pct(ambiguous));
-    println!("  internal-transfer {:>4} ({:.1}%)", internal, pct(internal));
-    println!("  none              {:>4} ({:.1}%)", none_count, pct(none_count));
+    println!(
+        "  ambiguous         {:>4} ({:.1}%)",
+        ambiguous,
+        pct(ambiguous)
+    );
+    println!(
+        "  internal-transfer {:>4} ({:.1}%)",
+        internal,
+        pct(internal)
+    );
+    println!(
+        "  none              {:>4} ({:.1}%)",
+        none_count,
+        pct(none_count)
+    );
 
     if dry_run {
         println!("(dry-run; no file written)");
@@ -343,11 +386,22 @@ fn cmd_tx(action: TxAction) -> anyhow::Result<()> {
     let joined = query::join(&txs, &emails, &matches);
 
     match action {
-        TxAction::Vendor { name, with_evidence, year, month, since } => {
+        TxAction::Vendor {
+            name,
+            with_evidence,
+            year,
+            month,
+            since,
+        } => {
             let filter = query::DateFilter::from_flags(year, month.as_deref(), since)?;
             query::cmd_tx_by_vendor(&joined, filter, &name, with_evidence)
         }
-        TxAction::Unmatched { over, year, month, since } => {
+        TxAction::Unmatched {
+            over,
+            year,
+            month,
+            since,
+        } => {
             let filter = query::DateFilter::from_flags(year, month.as_deref(), since)?;
             query::cmd_tx_unmatched(&joined, filter, over)
         }
@@ -375,7 +429,10 @@ fn cmd_import(file: &PathBuf, account: Account) -> anyhow::Result<()> {
 
     // Deduplicate
     let transactions = dedup::deduplicate(transactions, &existing_ids);
-    eprintln!("{} new transactions after deduplication", transactions.len());
+    eprintln!(
+        "{} new transactions after deduplication",
+        transactions.len()
+    );
 
     if transactions.is_empty() {
         eprintln!("No new transactions to import");
@@ -402,8 +459,24 @@ fn cmd_tag(action: TagAction) -> anyhow::Result<()> {
     let mut rules = TagRules::load(&rules_path)?;
 
     match action {
-        TagAction::Add { pattern, tags, amount, min_amount, max_amount, day_of_month, day_window } => {
-            rules.add_rule(&pattern, tags.clone(), amount, min_amount, max_amount, day_of_month, day_window);
+        TagAction::Add {
+            pattern,
+            tags,
+            amount,
+            min_amount,
+            max_amount,
+            day_of_month,
+            day_window,
+        } => {
+            rules.add_rule(
+                &pattern,
+                tags.clone(),
+                amount,
+                min_amount,
+                max_amount,
+                day_of_month,
+                day_window,
+            );
             rules.save(&rules_path)?;
             let mut msg = format!("Added rule: {}", pattern);
             if let Some(a) = amount {
@@ -476,23 +549,44 @@ fn cmd_tag(action: TagAction) -> anyhow::Result<()> {
             reapply_rules(&mut transactions, &rules);
             store.rewrite(&transactions)?;
             let tagged = transactions.iter().filter(|t| !t.tags.is_empty()).count();
-            eprintln!("Re-tagged {} transactions ({} with tags)", transactions.len(), tagged);
+            eprintln!(
+                "Re-tagged {} transactions ({} with tags)",
+                transactions.len(),
+                tagged
+            );
         }
     }
 
     Ok(())
 }
 
-fn cmd_untagged(limit: Option<usize>) -> anyhow::Result<()> {
+fn cmd_untagged(limit: Option<usize>, include_credits: bool) -> anyhow::Result<()> {
     let store = CsvStore::new(get_store_path());
     let transactions = store.load_all()?;
 
-    let untagged: Vec<_> = transactions
-        .iter()
-        .filter(|t| t.tags.is_empty())
+    let untagged_all: Vec<_> = transactions.iter().filter(|t| t.tags.is_empty()).collect();
+
+    // By default the worklist is debits only — credits are income/refunds,
+    // separable by sign, and shouldn't be categorised into spend buckets.
+    let credits_hidden = if include_credits {
+        0
+    } else {
+        untagged_all.iter().filter(|t| t.is_credit()).count()
+    };
+    let untagged: Vec<_> = untagged_all
+        .into_iter()
+        .filter(|t| include_credits || t.is_debit())
         .collect();
 
-    eprintln!("{} untagged transactions", untagged.len());
+    if credits_hidden > 0 {
+        eprintln!(
+            "{} untagged transactions ({} credit rows hidden; use --include-credits)",
+            untagged.len(),
+            credits_hidden
+        );
+    } else {
+        eprintln!("{} untagged transactions", untagged.len());
+    }
 
     let display = match limit {
         Some(n) => &untagged[..n.min(untagged.len())],
@@ -500,13 +594,20 @@ fn cmd_untagged(limit: Option<usize>) -> anyhow::Result<()> {
     };
 
     for tx in display {
-        println!("{}\t{}\t{}\t{}", tx.date, tx.account, tx.amount, tx.raw_description);
+        println!(
+            "{}\t{}\t{}\t{}",
+            tx.date, tx.account, tx.amount, tx.raw_description
+        );
     }
 
     Ok(())
 }
 
-fn cmd_stats() -> anyhow::Result<()> {
+fn cmd_stats(
+    year: Option<i32>,
+    month: Option<&str>,
+    since: Option<NaiveDate>,
+) -> anyhow::Result<()> {
     let store = CsvStore::new(get_store_path());
     let transactions = store.load_all()?;
 
@@ -515,28 +616,87 @@ fn cmd_stats() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let total = transactions.len();
-    let tagged = transactions.iter().filter(|t| !t.tags.is_empty()).count();
+    let filter = query::DateFilter::from_flags(year, month, since)?;
+    let rows: Vec<_> = transactions
+        .iter()
+        .filter(|t| filter.matches(t.date))
+        .collect();
+    if rows.is_empty() {
+        eprintln!("No transactions in the selected period");
+        return Ok(());
+    }
+
+    let total = rows.len();
+    let tagged = rows.iter().filter(|t| !t.tags.is_empty()).count();
     let untagged = total - tagged;
 
-    let current = transactions.iter().filter(|t| t.account == Account::Current).count();
-    let visa = transactions.iter().filter(|t| t.account == Account::Visa).count();
+    let current = rows
+        .iter()
+        .filter(|t| t.account == Account::Current)
+        .count();
+    let visa = rows.iter().filter(|t| t.account == Account::Visa).count();
 
-    let dates: Vec<_> = transactions.iter().map(|t| t.date).collect();
+    let dates: Vec<_> = rows.iter().map(|t| t.date).collect();
     let min_date = dates.iter().min().unwrap();
     let max_date = dates.iter().max().unwrap();
+
+    // Spend floor: debits that are NOT transfers/income/tax/one-off. Income is
+    // every credit (separable by sign). Excluded = non-spend-tagged debits.
+    // Spend + Excluded == all debits; Income == all credits.
+    let spend: Decimal = rows
+        .iter()
+        .filter(|t| t.counts_as_spend())
+        .map(|t| t.amount.abs())
+        .sum();
+    let income: Decimal = rows
+        .iter()
+        .filter(|t| t.is_credit())
+        .map(|t| t.amount)
+        .sum();
+    let excluded: Decimal = rows
+        .iter()
+        .filter(|t| t.is_debit() && t.is_nonspend())
+        .map(|t| t.amount.abs())
+        .sum();
+    let untagged_debits = rows
+        .iter()
+        .filter(|t| t.is_debit() && t.tags.is_empty())
+        .count();
 
     println!("Transactions: {}", total);
     println!("  Current: {}", current);
     println!("  Visa: {}", visa);
-    println!("Tagged: {} ({:.1}%)", tagged, (tagged as f64 / total as f64) * 100.0);
+    println!(
+        "Tagged: {} ({:.1}%)",
+        tagged,
+        (tagged as f64 / total as f64) * 100.0
+    );
     println!("Untagged: {}", untagged);
     println!("Date range: {} to {}", min_date, max_date);
+    println!();
+    println!(
+        "Spend (recurring, excl. transfer/income/tax/one-off):  £{:.2}",
+        spend
+    );
+    println!(
+        "Income (all credits):                                  £{:.2}",
+        income
+    );
+    println!(
+        "Excluded debits (transfer/income/tax/one-off tags):    £{:.2}",
+        excluded
+    );
+    if untagged_debits > 0 {
+        println!(
+            "  note: {} untagged debit(s) still counted as spend — tag any one-off lumps (tax, gym, etc.) so the Spend floor settles",
+            untagged_debits
+        );
+    }
 
     Ok(())
 }
 
-fn cmd_categorize(limit: Option<usize>) -> anyhow::Result<()> {
+fn cmd_categorize(limit: Option<usize>, include_credits: bool) -> anyhow::Result<()> {
     let store = CsvStore::new(get_store_path());
     let rules_path = get_rules_path();
     let mut rules = TagRules::load(&rules_path)?;
@@ -545,11 +705,12 @@ fn cmd_categorize(limit: Option<usize>) -> anyhow::Result<()> {
     let stdin = std::io::stdin();
     let mut stdout = std::io::stdout();
 
-    // Get indices of untagged transactions
+    // Get indices of untagged transactions. By default only debits (the spend
+    // worklist); credits are income/refunds, excluded unless --include-credits.
     let untagged_indices: Vec<usize> = transactions
         .iter()
         .enumerate()
-        .filter(|(_, t)| t.tags.is_empty())
+        .filter(|(_, t)| t.tags.is_empty() && (include_credits || t.is_debit()))
         .map(|(i, _)| i)
         .collect();
 
@@ -558,7 +719,11 @@ fn cmd_categorize(limit: Option<usize>) -> anyhow::Result<()> {
         None => untagged_indices.len(),
     };
 
-    eprintln!("{} untagged transactions ({} to process)", untagged_indices.len(), to_process);
+    eprintln!(
+        "{} untagged transactions ({} to process)",
+        untagged_indices.len(),
+        to_process
+    );
     eprintln!("Commands: [tags...] to tag, [s]kip, [q]uit, [r]ule to create rule\n");
 
     let mut processed = 0;
@@ -573,9 +738,10 @@ fn cmd_categorize(limit: Option<usize>) -> anyhow::Result<()> {
 
         processed += 1;
 
-        println!("\n[{}/{}] {} | {} | {} | {}",
-            processed, to_process,
-            tx_date, tx_account, tx_amount, tx_raw_desc);
+        println!(
+            "\n[{}/{}] {} | {} | {} | {}",
+            processed, to_process, tx_date, tx_account, tx_amount, tx_raw_desc
+        );
 
         print!("Tags (space-separated), s=skip, q=quit: ");
         stdout.flush()?;
@@ -603,7 +769,10 @@ fn cmd_categorize(limit: Option<usize>) -> anyhow::Result<()> {
         // Ask about creating a rule
         let is_redacted = is_description_redacted(&tx_raw_desc);
         if is_redacted {
-            print!("Description is redacted. Create rule with amount={}? [y/N]: ", tx_amount);
+            print!(
+                "Description is redacted. Create rule with amount={}? [y/N]: ",
+                tx_amount
+            );
         } else {
             print!("Create rule for similar transactions? [y/N/pattern]: ");
         }
@@ -618,49 +787,56 @@ fn cmd_categorize(limit: Option<usize>) -> anyhow::Result<()> {
         }
 
         // Determine pattern and amount condition
-        let (final_pattern, rule_amount, rule_day, rule_day_window): (String, Option<Decimal>, Option<u32>, Option<u32>) =
-            if is_redacted && rule_input.eq_ignore_ascii_case("y") {
-                // Ask about day-of-month condition
-                let tx_day = tx_date.day();
-                print!("Add day-of-month condition? (tx day={}). Enter day[+/-window] or [N]: ", tx_day);
-                stdout.flush()?;
+        let (final_pattern, rule_amount, rule_day, rule_day_window): (
+            String,
+            Option<Decimal>,
+            Option<u32>,
+            Option<u32>,
+        ) = if is_redacted && rule_input.eq_ignore_ascii_case("y") {
+            // Ask about day-of-month condition
+            let tx_day = tx_date.day();
+            print!(
+                "Add day-of-month condition? (tx day={}). Enter day[+/-window] or [N]: ",
+                tx_day
+            );
+            stdout.flush()?;
 
-                let mut day_input = String::new();
-                stdin.lock().read_line(&mut day_input)?;
-                let day_input = day_input.trim();
+            let mut day_input = String::new();
+            stdin.lock().read_line(&mut day_input)?;
+            let day_input = day_input.trim();
 
-                let (day, window) = if day_input.eq_ignore_ascii_case("n") || day_input.is_empty() {
-                    (None, None)
-                } else {
-                    parse_day_input(day_input, tx_day)
-                };
-
-                (tx_raw_desc.clone(), Some(tx_amount), day, window)
+            let (day, window) = if day_input.eq_ignore_ascii_case("n") || day_input.is_empty() {
+                (None, None)
             } else {
-                let pattern = if rule_input.eq_ignore_ascii_case("y") {
-                    suggest_pattern(&tx_raw_desc)
-                } else {
-                    rule_input.to_string()
-                };
-
-                // Show pattern and ask for confirmation
-                print!("Pattern '{}' - confirm? [Y/n/edit]: ", pattern);
-                stdout.flush()?;
-
-                let mut confirm = String::new();
-                stdin.lock().read_line(&mut confirm)?;
-                let confirm = confirm.trim();
-
-                if confirm.eq_ignore_ascii_case("n") {
-                    continue;
-                }
-                let p = if confirm.is_empty() || confirm.eq_ignore_ascii_case("y") {
-                    pattern
-                } else {
-                    confirm.to_string()
-                };
-                (p, None, None, None)
+                parse_day_input(day_input, tx_day)
             };
+
+            (tx_raw_desc.clone(), Some(tx_amount), day, window)
+        } else {
+            let pattern = if rule_input.eq_ignore_ascii_case("y") {
+                suggest_pattern(&tx_raw_desc)
+            } else {
+                rule_input.to_string()
+            };
+
+            // Show pattern and ask for confirmation
+            print!("Pattern '{}' - confirm? [Y/n/edit]: ", pattern);
+            stdout.flush()?;
+
+            let mut confirm = String::new();
+            stdin.lock().read_line(&mut confirm)?;
+            let confirm = confirm.trim();
+
+            if confirm.eq_ignore_ascii_case("n") {
+                continue;
+            }
+            let p = if confirm.is_empty() || confirm.eq_ignore_ascii_case("y") {
+                pattern
+            } else {
+                confirm.to_string()
+            };
+            (p, None, None, None)
+        };
 
         // Count how many transactions would match
         let pattern_lower = final_pattern.to_lowercase();
@@ -694,10 +870,23 @@ fn cmd_categorize(limit: Option<usize>) -> anyhow::Result<()> {
                 note.push_str(&format!(" [day={}]", day));
             }
         }
-        eprintln!("Rule '{}'{} matches {} transactions", final_pattern, note, matching.len());
+        eprintln!(
+            "Rule '{}'{} matches {} transactions",
+            final_pattern,
+            note,
+            matching.len()
+        );
 
         // Add rule
-        rules.add_rule(&final_pattern, tags.clone(), rule_amount, None, None, rule_day, rule_day_window);
+        rules.add_rule(
+            &final_pattern,
+            tags.clone(),
+            rule_amount,
+            None,
+            None,
+            rule_day,
+            rule_day_window,
+        );
         rules.save(&rules_path)?;
 
         // Apply to all matching transactions
@@ -718,9 +907,12 @@ fn cmd_categorize(limit: Option<usize>) -> anyhow::Result<()> {
 
     let final_tagged = transactions.iter().filter(|t| !t.tags.is_empty()).count();
     eprintln!("\nSession: tagged {} transactions", tagged_count);
-    eprintln!("Total: {}/{} transactions tagged ({:.1}%)",
-        final_tagged, transactions.len(),
-        (final_tagged as f64 / transactions.len() as f64) * 100.0);
+    eprintln!(
+        "Total: {}/{} transactions tagged ({:.1}%)",
+        final_tagged,
+        transactions.len(),
+        (final_tagged as f64 / transactions.len() as f64) * 100.0
+    );
 
     Ok(())
 }
@@ -743,7 +935,10 @@ fn parse_day_input(input: &str, tx_day: u32) -> (Option<u32>, Option<u32>) {
     } else if let Ok(day) = input.trim().parse::<u32>() {
         (Some(day), None)
     } else {
-        eprintln!("Could not parse day input '{}', skipping day condition", input);
+        eprintln!(
+            "Could not parse day input '{}', skipping day condition",
+            input
+        );
         (None, None)
     }
 }
@@ -761,7 +956,10 @@ fn suggest_pattern(description: &str) -> String {
     let words: Vec<&str> = cleaned
         .split_whitespace()
         .filter(|w| w.len() > 2)
-        .filter(|w| !w.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '*'))
+        .filter(|w| {
+            !w.chars()
+                .all(|c| c.is_ascii_digit() || c == '.' || c == '*')
+        })
         .take(2)
         .collect();
 

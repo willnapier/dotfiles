@@ -1,9 +1,9 @@
-pub mod import;
-pub mod store;
-pub mod tags;
 pub mod dedup;
 pub mod enrich;
+pub mod import;
 pub mod query;
+pub mod store;
+pub mod tags;
 
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
@@ -38,14 +38,14 @@ impl std::str::FromStr for Account {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TxType {
-    Contactless,    // )))
-    Mastercard,     // MAS
-    DirectDebit,    // DD
-    BankPayment,    // BP
-    StandingOrder,  // SO
-    Transfer,       // TFR
-    Atm,            // ATM
-    Unknown(u8),    // Fallback
+    Contactless,   // )))
+    Mastercard,    // MAS
+    DirectDebit,   // DD
+    BankPayment,   // BP
+    StandingOrder, // SO
+    Transfer,      // TFR
+    Atm,           // ATM
+    Unknown(u8),   // Fallback
 }
 
 impl TxType {
@@ -96,11 +96,91 @@ pub struct Transaction {
 }
 
 impl Transaction {
+    /// Tags that mark a row as NOT recurring spend: internal transfers, income,
+    /// tax payments, and one-off / lumpy discretionary outgoings. These are
+    /// stripped from the spend floor so the recurring-cost figure is trustworthy
+    /// (the figure the forward "pots" layer will allocate against). Matched
+    /// case-insensitively. Rides the existing `tags` column — no schema change.
+    pub const NONSPEND_TAGS: &'static [&'static str] = &["transfer", "income", "tax", "one-off"];
+
     pub fn is_debit(&self) -> bool {
         self.amount.is_sign_negative()
     }
 
     pub fn is_credit(&self) -> bool {
         self.amount.is_sign_positive()
+    }
+
+    /// True if the row carries any reserved non-spend tag (case-insensitive).
+    pub fn is_nonspend(&self) -> bool {
+        self.tags.iter().any(|t| {
+            Self::NONSPEND_TAGS
+                .iter()
+                .any(|n| t.eq_ignore_ascii_case(n))
+        })
+    }
+
+    /// True when the row is recurring spend: a debit not carrying a non-spend
+    /// tag. Credits (income/refunds) and non-spend-tagged debits (transfers,
+    /// tax, one-offs) are excluded.
+    pub fn counts_as_spend(&self) -> bool {
+        self.is_debit() && !self.is_nonspend()
+    }
+}
+
+#[cfg(test)]
+mod transaction_tests {
+    use super::*;
+    use std::str::FromStr;
+
+    fn tx(amount: &str, tags: &[&str]) -> Transaction {
+        Transaction {
+            date: NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
+            account: Account::Current,
+            tx_type: TxType::Contactless,
+            amount: Decimal::from_str(amount).unwrap(),
+            description: "x".into(),
+            raw_description: "x".into(),
+            balance: None,
+            tags: tags.iter().map(|s| s.to_string()).collect(),
+            import_id: "id".into(),
+        }
+    }
+
+    #[test]
+    fn debit_without_nonspend_tag_counts_as_spend() {
+        assert!(tx("-12.50", &[]).counts_as_spend());
+        assert!(tx("-12.50", &["groceries"]).counts_as_spend());
+    }
+
+    #[test]
+    fn credit_is_never_spend() {
+        assert!(!tx("100.00", &[]).counts_as_spend());
+        assert!(!tx("100.00", &["income"]).counts_as_spend());
+    }
+
+    #[test]
+    fn nonspend_tagged_debit_is_excluded() {
+        for t in Transaction::NONSPEND_TAGS {
+            assert!(
+                !tx("-500.00", &[t]).counts_as_spend(),
+                "tag {t} should exclude"
+            );
+            assert!(tx("-500.00", &[t]).is_nonspend());
+        }
+    }
+
+    #[test]
+    fn nonspend_match_is_case_insensitive() {
+        assert!(tx("-500.00", &["Transfer"]).is_nonspend());
+        assert!(tx("-500.00", &["TAX"]).is_nonspend());
+    }
+
+    #[test]
+    fn one_off_excludes_lumpy_discretionary() {
+        // e.g. a gym block / AWS — tagged one-off, dropped from the spend floor.
+        let lump = tx("-2550.00", &["one-off", "gym"]);
+        assert!(lump.is_nonspend());
+        assert!(!lump.counts_as_spend());
     }
 }

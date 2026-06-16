@@ -92,7 +92,7 @@ impl CsvStore {
 
         let writer = BufWriter::new(file);
         let mut csv_writer = csv::WriterBuilder::new()
-            .has_headers(false)  // We write headers manually
+            .has_headers(false) // We write headers manually
             .from_writer(writer);
 
         // Write header if new file
@@ -114,7 +114,7 @@ impl CsvStore {
         let file = File::create(&self.path)?;
         let writer = BufWriter::new(file);
         let mut csv_writer = csv::WriterBuilder::new()
-            .has_headers(false)  // We write headers manually
+            .has_headers(false) // We write headers manually
             .from_writer(writer);
 
         csv_writer.write_record(CSV_HEADERS)?;
@@ -161,10 +161,10 @@ impl From<Transaction> for StoredTransaction {
 
 impl From<StoredTransaction> for Transaction {
     fn from(stored: StoredTransaction) -> Self {
-        use std::str::FromStr;
+        use crate::{Account, TxType};
         use chrono::NaiveDate;
         use rust_decimal::Decimal;
-        use crate::{Account, TxType};
+        use std::str::FromStr;
 
         Self {
             date: NaiveDate::parse_from_str(&stored.date, "%Y-%m-%d")

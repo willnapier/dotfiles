@@ -1,5 +1,5 @@
-use crate::Transaction;
 use crate::tags::TagRules;
+use crate::Transaction;
 
 /// Apply tag rules to a list of transactions
 /// Updates tags in-place based on matching rules
@@ -25,10 +25,10 @@ pub fn reapply_rules(transactions: &mut [Transaction], rules: &TagRules) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{Account, TxType};
     use chrono::NaiveDate;
     use rust_decimal::Decimal;
     use std::str::FromStr;
-    use crate::{Account, TxType};
 
     fn make_tx(raw_desc: &str) -> Transaction {
         Transaction {
@@ -47,12 +47,17 @@ mod tests {
     #[test]
     fn test_apply_rules() {
         let mut rules = TagRules::default();
-        rules.add_rule("TESCO", vec!["groceries".to_string()], None, None, None, None, None);
+        rules.add_rule(
+            "TESCO",
+            vec!["groceries".to_string()],
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
 
-        let mut transactions = vec![
-            make_tx("TESCO STORES LONDON"),
-            make_tx("PRET A MANGER"),
-        ];
+        let mut transactions = vec![make_tx("TESCO STORES LONDON"), make_tx("PRET A MANGER")];
 
         apply_rules(&mut transactions, &rules);
 
