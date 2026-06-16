@@ -1,6 +1,6 @@
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
-use sha2::{Digest, Sha256};
+use sha2::{Sha256, Digest};
 
 /// Compute a unique ID for a transaction based on date, amount, and raw description.
 /// This is used to detect duplicates when importing overlapping date ranges.

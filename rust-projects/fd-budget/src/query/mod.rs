@@ -303,7 +303,10 @@ fn aggregate_by_counterparty(
             };
             (name, src)
         } else {
-            (normalise_description(&row.tx.description), Source::BankOnly)
+            (
+                normalise_description(&row.tx.description),
+                Source::BankOnly,
+            )
         };
 
         let amount = row.tx.amount.abs();
@@ -402,7 +405,11 @@ pub fn cmd_tx_by_vendor(
         if with_evidence {
             let evidence = if let Some(email) = row.emails.first() {
                 let mid = truncate_msg_id(&email.message_id, 36);
-                format!("-> {:<38} {:<10}", mid, row.confidence)
+                format!(
+                    "-> {:<38} {:<10}",
+                    mid,
+                    row.confidence
+                )
             } else {
                 format!("{:<41} {}", "(no email evidence)", row.confidence)
             };
@@ -431,7 +438,10 @@ pub fn cmd_tx_by_vendor(
         } else {
             0.0
         };
-        println!("\n{} rows, {} with evidence ({:.1}%)", total, with_ev, pct);
+        println!(
+            "\n{} rows, {} with evidence ({:.1}%)",
+            total, with_ev, pct
+        );
     } else {
         println!("\n{} rows", total);
     }
@@ -647,7 +657,8 @@ mod tests {
         let txs = vec![tx_normal, tx_xfer];
         let emails = vec![email];
         let joined = join(&txs, &emails, &ms);
-        let (agg, internal_count, _, _) = aggregate_by_counterparty(&joined, DateFilter::default());
+        let (agg, internal_count, _, _) =
+            aggregate_by_counterparty(&joined, DateFilter::default());
         assert_eq!(internal_count, 1);
         assert_eq!(agg.len(), 1);
         assert_eq!(agg[0].name, "Vodafone");
@@ -662,7 +673,8 @@ mod tests {
         let emails: Vec<EmailRow> = vec![];
         let ms: Vec<MatchRow> = vec![];
         let joined = join(&txs, &emails, &ms);
-        let (agg, _, _, bank_only) = aggregate_by_counterparty(&joined, DateFilter::default());
+        let (agg, _, _, bank_only) =
+            aggregate_by_counterparty(&joined, DateFilter::default());
         let total: Decimal = agg.iter().map(|a| a.total_outgoing).sum();
         // Only the debit contributes.
         assert_eq!(total, Decimal::from_str("55.67").unwrap());
@@ -710,7 +722,10 @@ mod tests {
         let ms: Vec<MatchRow> = vec![]; // both unmatched (treated as "none")
         let joined = join(&txs, &emails, &ms);
 
-        let unmatched: Vec<&JoinedRow> = joined.iter().filter(|r| r.confidence == "none").collect();
+        let unmatched: Vec<&JoinedRow> = joined
+            .iter()
+            .filter(|r| r.confidence == "none")
+            .collect();
         assert_eq!(unmatched.len(), 2);
 
         let over_50: Vec<&JoinedRow> = unmatched
@@ -734,8 +749,12 @@ mod tests {
     #[test]
     fn date_filter_since_overrides_year_when_later() {
         // --since constrains start; if --since is later than --year start, it wins.
-        let f =
-            DateFilter::from_flags(Some(2025), None, NaiveDate::from_ymd_opt(2025, 6, 1)).unwrap();
+        let f = DateFilter::from_flags(
+            Some(2025),
+            None,
+            NaiveDate::from_ymd_opt(2025, 6, 1),
+        )
+        .unwrap();
         assert!(!f.matches(NaiveDate::from_ymd_opt(2025, 5, 31).unwrap()));
         assert!(f.matches(NaiveDate::from_ymd_opt(2025, 6, 1).unwrap()));
         assert!(f.matches(NaiveDate::from_ymd_opt(2025, 12, 31).unwrap()));

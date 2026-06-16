@@ -1,6 +1,6 @@
+use crate::{Account, Transaction, TxType};
 use crate::dedup::compute_import_id;
 use crate::import::normalize::{clean_description, parse_amount};
-use crate::{Account, Transaction, TxType};
 use chrono::NaiveDate;
 use csv::ReaderBuilder;
 use std::io::Read;
@@ -18,9 +18,13 @@ pub enum ParseError {
     MissingField(String),
 }
 
+
 /// Parse a midata CSV file from First Direct
 /// Stops parsing when it hits footer rows (empty lines, overdraft info, etc.)
-pub fn parse_midata<R: Read>(reader: R, account: Account) -> Result<Vec<Transaction>, ParseError> {
+pub fn parse_midata<R: Read>(
+    reader: R,
+    account: Account,
+) -> Result<Vec<Transaction>, ParseError> {
     let mut csv_reader = ReaderBuilder::new()
         .has_headers(true)
         .flexible(true)

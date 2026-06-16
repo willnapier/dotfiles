@@ -196,24 +196,8 @@ mod tests {
     #[test]
     fn test_rule_matching() {
         let mut rules = TagRules::default();
-        rules.add_rule(
-            "TESCO",
-            vec!["groceries".to_string(), "food".to_string()],
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
-        rules.add_rule(
-            "PRET",
-            vec!["food".to_string(), "lunch".to_string()],
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
+        rules.add_rule("TESCO", vec!["groceries".to_string(), "food".to_string()], None, None, None, None, None);
+        rules.add_rule("PRET", vec!["food".to_string(), "lunch".to_string()], None, None, None, None, None);
 
         let amount = Decimal::from_str("-10.00").unwrap();
         let d = date(2025, 1, 15);
@@ -234,15 +218,7 @@ mod tests {
     #[test]
     fn test_case_insensitive() {
         let mut rules = TagRules::default();
-        rules.add_rule(
-            "netflix",
-            vec!["subscription".to_string()],
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
+        rules.add_rule("netflix", vec!["subscription".to_string()], None, None, None, None, None);
 
         let amount = Decimal::from_str("-10.00").unwrap();
         let tags = rules.get_tags("NETFLIX.COM LONDON", amount, date(2025, 1, 15));

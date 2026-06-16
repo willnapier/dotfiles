@@ -87,7 +87,10 @@ fn parse_email_row(line: &str) -> Option<EmailRow> {
         .and_then(|v| v.as_str())
         .map(|s| s.trim().to_string())?;
 
-    let vendor = obj.get("vendor").and_then(|v| v.as_str()).map(String::from);
+    let vendor = obj
+        .get("vendor")
+        .and_then(|v| v.as_str())
+        .map(String::from);
 
     let counterparty = obj
         .get("counterparty")
@@ -123,7 +126,10 @@ fn parse_email_row(line: &str) -> Option<EmailRow> {
         .and_then(|v| v.as_str())
         .map(String::from);
 
-    let policy = obj.get("policy").and_then(|v| v.as_str()).map(String::from);
+    let policy = obj
+        .get("policy")
+        .and_then(|v| v.as_str())
+        .map(String::from);
 
     let currency = obj
         .get("currency")
@@ -334,10 +340,7 @@ fn name_tier(bank_desc: &str, email: &EmailRow) -> Option<Tier> {
             .trim();
         // Allow short substring overlap; the merchant code is heavily truncated.
         // Try 3-char windows from the bank fragment.
-        let fragment: String = stripped
-            .chars()
-            .take_while(|c| !c.is_whitespace())
-            .collect();
+        let fragment: String = stripped.chars().take_while(|c| !c.is_whitespace()).collect();
         if fragment.len() >= 3 {
             for i in 0..=fragment.len().saturating_sub(3) {
                 let win = &fragment[i..i + 3];
@@ -399,7 +402,8 @@ fn match_one<'e>(
             // Most rows have direction == None — those pass for both signs.
             if let Some(dir) = email.direction.as_deref() {
                 let dir_lower = dir.to_lowercase();
-                let is_credit_email = dir_lower == "received" || dir_lower == "refund";
+                let is_credit_email =
+                    dir_lower == "received" || dir_lower == "refund";
                 if is_credit && !is_credit_email && dir_lower != "sent" {
                     // bank credit but email isn't a credit — skip
                     // We allow "sent" only for debit-side.
@@ -430,8 +434,8 @@ fn match_one<'e>(
             }
 
             // Name match tier.
-            let Some(tier) =
-                name_tier(&tx.description, email).or_else(|| name_tier(&tx.raw_description, email))
+            let Some(tier) = name_tier(&tx.description, email)
+                .or_else(|| name_tier(&tx.raw_description, email))
             else {
                 continue;
             };
@@ -495,10 +499,7 @@ fn match_one<'e>(
         }
     } else {
         let count = candidates.len();
-        let ids: Vec<String> = candidates
-            .iter()
-            .map(|c| c.row.message_id.clone())
-            .collect();
+        let ids: Vec<String> = candidates.iter().map(|c| c.row.message_id.clone()).collect();
         MatchResult {
             bank_import_id: tx.import_id.clone(),
             confidence: Confidence::Ambiguous,
@@ -557,10 +558,8 @@ pub fn enrich(
         }
     }
 
-    let mut results: Vec<MatchResult> = transactions
-        .iter()
-        .map(|t| match_one(t, &by_date, opts))
-        .collect();
+    let mut results: Vec<MatchResult> =
+        transactions.iter().map(|t| match_one(t, &by_date, opts)).collect();
     results.sort_by(|a, b| a.bank_import_id.cmp(&b.bank_import_id));
 
     let mut summary = EnrichSummary {
