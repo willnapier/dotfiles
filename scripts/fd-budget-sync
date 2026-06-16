@@ -76,5 +76,5 @@ def backup-local [] {
 # Snapshot the remote store before it is overwritten by a push (no-op if empty).
 def backup-remote [remote: string] {
     let ts = (date now | format date "%Y%m%d-%H%M%S")
-    ^ssh $remote $"bash -lc 'd=~/.config/fd-budget; b=~/.local/share/fd-budget-sync-backups/($ts)-remote; if [ -d \"$d\" ]; then mkdir -p \"$b\"; cp -a \"$d\"/. \"$b\"/; echo \"  snapshot of remote store -> $b\"; else echo \"  (remote store empty; nothing to back up)\"; fi'"
+    ^ssh $remote $"bash -lc 'd=~/.config/fd-budget; b=~/.local/share/fd-budget-sync-backups/($ts)-remote; if [ -d \"$d\" ]; then mkdir -p \"$b\"; cp -a \"$d\"/. \"$b\"/; echo \"  snapshot of remote store -> $b\"; else echo \"  remote store empty - nothing to back up\"; fi'"
 }
