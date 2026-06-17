@@ -6,8 +6,10 @@
 //! *duplicate* subscriptions — e.g. two distinct £12.99 streams (a video service
 //! and a music service) that are easy to miss in the spending tail.
 //!
-//! Self-contained: loads via [`crate::store::CsvStore`], reuses
-//! [`crate::query::normalise_description`] for the merchant key, and reuses
+//! Self-contained: loads via [`crate::store::CsvStore`], derives the merchant
+//! grouping key with [`canonical_merchant`] (a conservative normaliser that
+//! collapses cosmetic variants of one merchant — branch town, masked card tail,
+//! payment-gateway stub — without merging distinct merchants), and reuses
 //! [`crate::query::DateFilter`] for the standard `--year`/`--month`/`--since`
 //! window. No mutation of `transactions.csv`.
 //!
@@ -28,11 +30,107 @@
 //!   the same merchant detected at two *distinct* prices (a likely price change
 //!   or an overlapping plan).
 
-use crate::query::{normalise_description, DateFilter};
+use crate::query::DateFilter;
 use crate::Transaction;
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
 use std::collections::BTreeMap;
+
+// ---------------------------------------------------------------------------
+// Conservative merchant-name canonicalisation
+// ---------------------------------------------------------------------------
+
+/// Trailing location tokens seen in the real data that are pure branch/town
+/// noise appended after a merchant name (e.g. `AUDIBLE UK LONDON`). Kept
+/// deliberately SMALL and only matched as a *whole trailing token*, never as a
+/// substring and never mid-name — so `GOOGLE YOUTUBE MEMLONDON` (which embeds
+/// "LONDON" inside `MEMLONDON`) and `GOOGLE GSUITE_WILLDUBLIN` are NOT touched.
+///
+/// Refinable: add a town here only after confirming it is genuine trailing
+/// branch noise on more than one real merchant, never a merchant name itself.
+const TRAILING_LOCATIONS: &[&str] = &["LONDON", "CORK", "DUBLIN", "SWINDON", "LUTON", "CHARD"];
+
+/// Is `tok` pure mask / numeric noise? True for runs of `*` (`**********`,
+/// `***`) and tokens made up entirely of `*`, digits, and ASCII punctuation
+/// (no letters), e.g. masked card tails. Such a token carries no merchant
+/// identity, so when TRAILING it is dropped.
+fn is_mask_noise(tok: &str) -> bool {
+    !tok.is_empty()
+        && tok
+            .chars()
+            .all(|c| c == '*' || c.is_ascii_digit() || c.is_ascii_punctuation())
+}
+
+/// Is `tok` a trailing payment-gateway / processor fragment? These are the
+/// "how it was paid" tails appended after the merchant, e.g. `APPLE.COM/`,
+/// `ADBL.CO/PYMT`, `.CO/PYMT`, `/PYMT`. Heuristic, intentionally narrow:
+/// the token must contain a `/` AND either end in `/` (a bare gateway stub like
+/// `APPLE.COM/`) or carry a known processor marker (`PYMT`/`PAYM`/`BILL/` style
+/// tails). A token that merely contains `/` mid-name is NOT matched here — the
+/// real core `APPLE.COM/BILL` is protected both by this narrowness and by the
+/// "never peel the last remaining token" rule below.
+///
+/// Refinable: extend the marker set as new processor tails appear in the data.
+fn is_gateway_tail(tok: &str) -> bool {
+    if !tok.contains('/') {
+        return false;
+    }
+    // Bare gateway stub: ends with a slash, e.g. `APPLE.COM/`.
+    if tok.ends_with('/') {
+        return true;
+    }
+    // Known processor markers in the slash-bearing tail.
+    const MARKERS: &[&str] = &["PYMT", "PYMNT", "PAYM", "/PMT"];
+    MARKERS.iter().any(|m| tok.contains(m))
+}
+
+/// Conservative canonical merchant key for grouping subscription variants.
+///
+/// Same merchant filed under cosmetically-different bank descriptors (branch
+/// town, masked card tail, payment-gateway stub) should collapse to ONE key;
+/// genuinely distinct merchants (different products, different PayPal payees)
+/// must NOT. When unsure, we UNDER-merge: a missed merge is a minor nuisance,
+/// a wrong merge corrupts the report.
+///
+/// Rules, applied in order:
+/// 1. Uppercase and collapse internal whitespace to single spaces.
+/// 2. Peel *trailing* noise tokens, right to left, stopping at the first token
+///    that is real and never removing the final remaining token (so the core
+///    name — even one containing `/`, like `APPLE.COM/BILL` — is always kept):
+///    - pure mask / numeric tokens (`**********`, `***`, masked digits);
+///    - payment-gateway / processor tails (`APPLE.COM/`, `ADBL.CO/PYMT`,
+///      `/PYMT`);
+///    - a SMALL curated set of trailing location tokens ([`TRAILING_LOCATIONS`]),
+///      matched only as a whole trailing token.
+/// 3. Re-join the surviving core tokens with single spaces and return.
+///
+/// Note: unlike [`crate::query::normalise_description`] this does NOT truncate
+/// to 25 chars — truncation can fuse distinct merchants and is not wanted for a
+/// grouping identity. Behaviour of `normalise_description` is unchanged.
+pub fn canonical_merchant(raw: &str) -> String {
+    // Rule 1: uppercase + collapse whitespace into discrete tokens.
+    let mut tokens: Vec<String> = raw
+        .to_uppercase()
+        .split_whitespace()
+        .map(String::from)
+        .collect();
+
+    // Rule 2: peel trailing noise, never below one token.
+    while tokens.len() > 1 {
+        let last = tokens.last().unwrap();
+        let is_location = TRAILING_LOCATIONS.contains(&last.as_str());
+        if is_mask_noise(last) || is_gateway_tail(last) || is_location {
+            tokens.pop();
+        } else {
+            // First real (non-noise) trailing token: stop. We never reorder or
+            // touch interior tokens, so mid-name occurrences are preserved.
+            break;
+        }
+    }
+
+    // Rule 3: collapse the surviving core.
+    tokens.join(" ")
+}
 
 /// Detected billing cadence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -177,7 +275,10 @@ pub fn audit(txs: &[Transaction], filter: DateFilter, opts: DetectOptions) -> Au
         if !tx.is_debit() {
             continue;
         }
-        let merchant = normalise_description(&tx.description);
+        // Conservative canonicalisation so cosmetic variants of the SAME
+        // merchant (branch town, masked card tail, gateway stub) collapse to
+        // one grouping key — without merging genuinely distinct merchants.
+        let merchant = canonical_merchant(&tx.description);
         // Skip rows that normalise to nothing (defensive — shouldn't happen).
         if merchant.is_empty() {
             continue;
@@ -591,6 +692,164 @@ mod tests {
         let audit = audit(&txs, filter, DetectOptions::default());
         // Only April + May remain -> 2 occurrences, below monthly floor of 3.
         assert!(audit.subscriptions.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // canonical_merchant — MERGE direction (cosmetic variants of ONE merchant)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn canonical_merges_apple_bill_variants() {
+        // The real Apple case: masked tail, branch town, and gateway stub are
+        // all the SAME merchant and must collapse to one key.
+        let a = canonical_merchant("APPLE.COM/BILL **********");
+        let b = canonical_merchant("APPLE.COM/BILL CORK");
+        let c = canonical_merchant("APPLE.COM/BILL APPLE.COM/");
+        assert_eq!(a, "APPLE.COM/BILL");
+        assert_eq!(a, b);
+        assert_eq!(b, c);
+    }
+
+    #[test]
+    fn canonical_merges_audible_variants() {
+        // Audible: a processor tail (ADBL.CO/PYMT) and a branch town (LONDON)
+        // are the same merchant.
+        let a = canonical_merchant("AUDIBLE UK ADBL.CO/PYMT");
+        let b = canonical_merchant("AUDIBLE UK LONDON");
+        assert_eq!(a, "AUDIBLE UK");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn canonical_drops_only_trailing_noise_not_core_slash() {
+        // The core token itself contains a slash; it must survive (never peel
+        // the last remaining token).
+        assert_eq!(canonical_merchant("APPLE.COM/BILL"), "APPLE.COM/BILL");
+        // Mask-only or gateway-only inputs collapse to the surviving core.
+        assert_eq!(canonical_merchant("AUDIBLE UK *** 1234"), "AUDIBLE UK");
+    }
+
+    // -----------------------------------------------------------------------
+    // canonical_merchant — DO-NOT-MERGE direction (distinct merchants)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn canonical_keeps_google_products_distinct() {
+        // Three different Google products / payment routes must stay THREE keys.
+        // "MEMLONDON"/"GSUITE_WILLDUBLIN" embed a town as a SUBSTRING, not a bare
+        // trailing token, so they are preserved; "(VIA PAYPAL)" is its own route.
+        let yt = canonical_merchant("GOOGLE YOUTUBE MEMLONDON");
+        let gs = canonical_merchant("GOOGLE GSUITE_WILLDUBLIN");
+        let pp = canonical_merchant("GOOGLE (VIA PAYPAL)");
+        assert_ne!(yt, gs);
+        assert_ne!(yt, pp);
+        assert_ne!(gs, pp);
+        // And none of them collapsed to a bare "GOOGLE".
+        assert_ne!(yt, "GOOGLE");
+        assert_ne!(gs, "GOOGLE");
+        assert_ne!(pp, "GOOGLE");
+    }
+
+    #[test]
+    fn canonical_keeps_netflix_distinct() {
+        // A long descriptive name must not collapse into or merge with anything.
+        let n = canonical_merchant("NETFLIX SERVICES UK LIMIT");
+        assert_eq!(n, "NETFLIX SERVICES UK LIMIT");
+        assert_ne!(n, canonical_merchant("NETFLIX"));
+    }
+
+    #[test]
+    fn canonical_does_not_merge_paypal_payee_with_bare_paypal() {
+        // A recovered PayPal payee must stay distinct from an unrecovered bare
+        // PAYPAL PAYMENT row.
+        let payee = canonical_merchant("DHARMACHAKRA (VIA PAYPAL)");
+        let bare = canonical_merchant("PAYPAL PAYMENT");
+        assert_ne!(payee, bare);
+        assert_eq!(bare, "PAYPAL PAYMENT");
+        // Bare PayPal stays its own thing — no noise rule touches it.
+        assert_eq!(payee, "DHARMACHAKRA (VIA PAYPAL)");
+    }
+
+    #[test]
+    fn canonical_does_not_drop_midname_location() {
+        // A location token in the MIDDLE of a name must never be stripped.
+        assert_eq!(
+            canonical_merchant("LONDON TRANSPORT TFL"),
+            "LONDON TRANSPORT TFL"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // End-to-end: APPLE.COM/BILL variants collapse in the audit, while two
+    // genuinely distinct same-amount merchants are still flagged.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn audit_collapses_apple_variants_but_still_flags_distinct_pair() {
+        let mut txs = Vec::new();
+        // ONE Apple subscription whose monthly charges arrive under three
+        // cosmetically-different descriptors — must become a SINGLE merchant.
+        let apple_variants = [
+            "APPLE.COM/BILL **********",
+            "APPLE.COM/BILL CORK",
+            "APPLE.COM/BILL APPLE.COM/",
+            "APPLE.COM/BILL **********",
+            "APPLE.COM/BILL CORK",
+        ];
+        for (i, desc) in apple_variants.iter().enumerate() {
+            let m = (i + 1) as u32;
+            txs.push(debit(&format!("2025-{:02}-08", m), "0.99", desc));
+        }
+        // Two GENUINELY distinct merchants at the same amount (£0.99) — these
+        // must remain two merchants and still trip the duplicate flag.
+        for m in 1u32..=4 {
+            txs.push(debit(&format!("2025-{:02}-12", m), "0.99", "CLOUDPHOTOS"));
+            txs.push(debit(&format!("2025-{:02}-22", m), "0.99", "PODCASTPLUS"));
+        }
+
+        let audit = audit(&txs, DateFilter::default(), DetectOptions::default());
+
+        // Exactly THREE detected merchants: one canonical Apple, plus the two
+        // distinct £0.99 streams. (Without canonicalisation Apple would be 3.)
+        assert_eq!(audit.subscriptions.len(), 3);
+        let merchants: Vec<&str> = audit
+            .subscriptions
+            .iter()
+            .map(|s| s.merchant.as_str())
+            .collect();
+        assert!(merchants.contains(&"APPLE.COM/BILL"));
+        assert!(merchants.contains(&"CLOUDPHOTOS"));
+        assert!(merchants.contains(&"PODCASTPLUS"));
+
+        // The Apple subscription has all five occurrences merged into one group.
+        let apple = audit
+            .subscriptions
+            .iter()
+            .find(|s| s.merchant == "APPLE.COM/BILL")
+            .expect("apple subscription present");
+        assert_eq!(apple.occurrences, 5);
+
+        // The same-amount flag lists exactly the THREE distinct merchants at
+        // £0.99 (Apple counted once, not three times).
+        let flagged: Vec<&ReviewFlag> = audit
+            .flags
+            .iter()
+            .filter(|f| matches!(f, ReviewFlag::SameAmountDifferentMerchants { .. }))
+            .collect();
+        assert_eq!(flagged.len(), 1);
+        if let ReviewFlag::SameAmountDifferentMerchants { amount, merchants } = flagged[0] {
+            assert_eq!(*amount, dec("0.99"));
+            assert_eq!(
+                merchants,
+                &vec![
+                    "APPLE.COM/BILL".to_string(),
+                    "CLOUDPHOTOS".to_string(),
+                    "PODCASTPLUS".to_string(),
+                ]
+            );
+        } else {
+            unreachable!();
+        }
     }
 
     #[test]
