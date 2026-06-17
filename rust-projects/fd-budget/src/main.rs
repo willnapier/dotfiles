@@ -1456,8 +1456,13 @@ fn cmd_categorize(limit: Option<usize>, include_credits: bool) -> anyhow::Result
         eprintln!("Tagged {} transactions with rule", matching.len());
     }
 
-    // Save updated transactions
+    // Snapshot BEFORE rewrite (primer rule 3) — uniform with `tag set`,
+    // `tag tag-transfers`, `tag reapply`: every tag-mutation path backs up first.
+    let backup = snapshot_store("categorize")?;
     store.rewrite(&transactions)?;
+    if let Some(b) = backup {
+        eprintln!("Backed up store to {}", b.display());
+    }
 
     let final_tagged = transactions.iter().filter(|t| !t.tags.is_empty()).count();
     eprintln!("\nSession: tagged {} transactions", tagged_count);

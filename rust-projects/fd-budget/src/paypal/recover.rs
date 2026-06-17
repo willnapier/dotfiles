@@ -20,10 +20,29 @@
 //! Disambiguation: when an amount recurs (several `-12.99` in a month), each
 //! bank row is matched to the **nearest-dated** PayPal candidate, and each
 //! PayPal leg is consumed at most once (greedy by date proximity).
+//!
+//! ## Binding a chain's legs (the structural link)
+//!
+//! Day-granular proximity alone mis-binds when two purchases collide (same
+//! amount, or two same-day FX chains): the wrong leg — and thus the wrong
+//! MERCHANT — gets attached. We retain the linking signals PayPal already
+//! provides and bind by the strongest one available, falling back gracefully
+//! (time is a TIE-BREAK/orderer, never a hard gate — legs of one event post a
+//! few seconds apart, not at an identical timestamp):
+//!
+//! * **FX foreign leg**: among non-GBP payment legs, prefer the one whose
+//!   `amount.abs() * exchange_rate` reconstructs the conversion's GBP amount
+//!   (= `bank_abs`) — a true amount-link to THIS chain. Tie-break by timestamp
+//!   nearest the conversion. Fall back to pure nearest-time only when the
+//!   exchange rate is unavailable.
+//! * **Two-leg payment**: among same-amount GBP payment legs, prefer the one
+//!   nearest in TIMESTAMP to the deposit — the legs of one checkout are
+//!   adjacent in time, so an unrelated same-amount direct purchase nearby is
+//!   not mistaken for the true payment leg.
 
 use crate::paypal::store::PayPalTxn;
 use crate::Transaction;
-use chrono::{NaiveDate, Utc};
+use chrono::{NaiveDate, NaiveDateTime, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -220,16 +239,26 @@ pub fn recover(
             })
         {
             let dep_date = paypal[dep_idx].date;
+            let dep_dt = paypal[dep_idx].datetime();
             let dep_id = paypal[dep_idx].transaction_id.clone();
 
             // --- Case 2: Two-leg — deposit → same-amount GBP payment leg. ---
-            if let Some(pay_idx) =
-                nearest_unconsumed(paypal, &consumed, dep_date, PP_CHAIN_WINDOW_DAYS, |p| {
+            // Legs of ONE checkout are adjacent in TIME, so we bind to the
+            // same-amount GBP payment leg nearest in TIMESTAMP to the deposit.
+            // This stops an unrelated same-amount direct-GBP purchase nearby
+            // (same day, but seconds/minutes apart) from being mis-picked.
+            if let Some(pay_idx) = nearest_unconsumed_by_time(
+                paypal,
+                &consumed,
+                dep_date,
+                dep_dt,
+                PP_CHAIN_WINDOW_DAYS,
+                |p| {
                     p.is_payment_leg()
                         && p.currency.eq_ignore_ascii_case("GBP")
                         && within(p.amount.abs(), bank_abs, GBP_TOLERANCE)
-                })
-            {
+                },
+            ) {
                 let pay = &paypal[pay_idx];
                 consumed.insert(dep_id.clone());
                 consumed.insert(pay.transaction_id.clone());
@@ -260,14 +289,22 @@ pub fn recover(
                 })
             {
                 let conv_date = paypal[conv_idx].date;
+                let conv_dt = paypal[conv_idx].datetime();
                 let conv_id = paypal[conv_idx].transaction_id.clone();
-                // Foreign payment leg: a non-GBP payment carrying a merchant,
-                // nearest to the conversion date.
-                if let Some(fx_idx) =
-                    nearest_unconsumed(paypal, &consumed, conv_date, PP_CHAIN_WINDOW_DAYS, |p| {
-                        p.is_payment_leg() && !p.currency.eq_ignore_ascii_case("GBP")
-                    })
-                {
+                // Foreign payment leg: a non-GBP payment carrying a merchant.
+                // Bind it to THIS chain by the strongest available signal — the
+                // amount link `foreign_amount.abs() * exchange_rate ≈ bank_abs`
+                // (the conversion's GBP value) — with timestamp-nearest-to-the
+                // -conversion as the tie-break. Falls back to pure
+                // timestamp-nearest only when no leg carries an exchange rate.
+                if let Some(fx_idx) = nearest_fx_leg(
+                    paypal,
+                    &consumed,
+                    conv_date,
+                    conv_dt,
+                    bank_abs,
+                    PP_CHAIN_WINDOW_DAYS,
+                ) {
                     let fx = &paypal[fx_idx];
                     consumed.insert(dep_id.clone());
                     consumed.insert(conv_id.clone());
@@ -366,6 +403,126 @@ where
         }
     }
     best.map(|(i, _)| i)
+}
+
+/// Absolute distance in seconds between two timestamps.
+fn time_delta_secs(a: NaiveDateTime, b: NaiveDateTime) -> i64 {
+    (a - b).num_seconds().abs()
+}
+
+/// Find the index of the unconsumed PayPal row nearest in TIMESTAMP to
+/// `target_dt` (among rows within `window` days of `target_date`) that
+/// satisfies `pred`. Used to bind legs of one checkout, which are adjacent in
+/// time. Ties (identical timestamp) broken by Transaction ID for determinism.
+///
+/// Time is a TIE-BREAK/orderer, not a gate: a row with a blank `Time`
+/// (`datetime()` → midnight) still participates, it just orders by date.
+fn nearest_unconsumed_by_time<F>(
+    paypal: &[PayPalTxn],
+    consumed: &HashSet<String>,
+    target_date: NaiveDate,
+    target_dt: NaiveDateTime,
+    window: i64,
+    pred: F,
+) -> Option<usize>
+where
+    F: Fn(&PayPalTxn) -> bool,
+{
+    let mut best: Option<(usize, i64)> = None;
+    for (i, p) in paypal.iter().enumerate() {
+        if consumed.contains(&p.transaction_id) {
+            continue;
+        }
+        if date_delta(p.date, target_date) > window {
+            continue;
+        }
+        if !pred(p) {
+            continue;
+        }
+        let td = time_delta_secs(p.datetime(), target_dt);
+        match best {
+            Some((bi, bd)) => {
+                let better = td < bd || (td == bd && p.transaction_id < paypal[bi].transaction_id);
+                if better {
+                    best = Some((i, td));
+                }
+            }
+            None => best = Some((i, td)),
+        }
+    }
+    best.map(|(i, _)| i)
+}
+
+/// A non-GBP payment leg carrying a merchant — the foreign leg of an FX chain.
+fn is_foreign_payment_leg(p: &PayPalTxn) -> bool {
+    p.is_payment_leg() && !p.currency.eq_ignore_ascii_case("GBP")
+}
+
+/// Pick the foreign payment leg of an FX chain, binding to THIS chain by the
+/// strongest available signal.
+///
+/// Primary binder: the AMOUNT link. A foreign leg's `amount.abs() *
+/// exchange_rate` reconstructs the GBP it cost — which equals the conversion's
+/// GBP amount, i.e. `bank_abs`. Among non-GBP payment legs that carry an
+/// exchange rate AND whose reconstructed GBP is within `GBP_TOLERANCE` of
+/// `bank_abs`, pick the one nearest in timestamp to the conversion (tie-break
+/// by Transaction ID). This prevents two same-day FX chains from swapping
+/// foreign legs.
+///
+/// Fallback: if no candidate carries a usable exchange rate, fall back to pure
+/// timestamp-nearest-to-the-conversion among non-GBP payment legs (the old
+/// behaviour, but tightened from day- to second-granular).
+fn nearest_fx_leg(
+    paypal: &[PayPalTxn],
+    consumed: &HashSet<String>,
+    conv_date: NaiveDate,
+    conv_dt: NaiveDateTime,
+    bank_abs: Decimal,
+    window: i64,
+) -> Option<usize> {
+    // Pass 1: amount-linked candidates (the true structural binder).
+    let mut best: Option<(usize, i64)> = None;
+    for (i, p) in paypal.iter().enumerate() {
+        if consumed.contains(&p.transaction_id) {
+            continue;
+        }
+        if date_delta(p.date, conv_date) > window {
+            continue;
+        }
+        if !is_foreign_payment_leg(p) {
+            continue;
+        }
+        let rate = match p.exchange_rate {
+            Some(r) => r,
+            None => continue,
+        };
+        if !within(p.amount.abs() * rate, bank_abs, GBP_TOLERANCE) {
+            continue;
+        }
+        let td = time_delta_secs(p.datetime(), conv_dt);
+        match best {
+            Some((bi, bd)) => {
+                let better = td < bd || (td == bd && p.transaction_id < paypal[bi].transaction_id);
+                if better {
+                    best = Some((i, td));
+                }
+            }
+            None => best = Some((i, td)),
+        }
+    }
+    if let Some((i, _)) = best {
+        return Some(i);
+    }
+
+    // Pass 2 (fallback): no exchange rate available — nearest in timestamp.
+    nearest_unconsumed_by_time(
+        paypal,
+        consumed,
+        conv_date,
+        conv_dt,
+        window,
+        is_foreign_payment_leg,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -663,5 +820,84 @@ mod tests {
         assert_eq!(summary.recovered, 1);
         // 12.99 of 100.00 = 12.99%
         assert!((summary.pct_value_recovered() - 12.99).abs() < 0.01);
+    }
+
+    /// REGRESSION (HIGH — FX foreign-leg cross-link, recover.rs:266-269 pre-fix).
+    ///
+    /// Two FX chains on the SAME DAY, distinct amounts/merchants. The old code
+    /// picked the foreign leg as `is_payment_leg() && non-GBP` nearest by DAY to
+    /// the conversion, tie-broken by Transaction ID — so when both foreign legs
+    /// are same-day, the first-processed bank row grabbed whichever leg had the
+    /// lower Transaction ID, regardless of which chain it belonged to. Here the
+    /// foreign-leg ids are ordered so the OLD code swaps them (bank-1 would have
+    /// grabbed "RIGHT-B" because PP-FX-B < PP-FX-A). The amount link
+    /// (`foreign_amount.abs() * exchange_rate ≈ bank_abs`) now binds each leg to
+    /// its true chain.
+    #[test]
+    fn two_same_day_fx_chains_do_not_swap() {
+        let txs = vec![
+            bank("2026-05-10", "-100.00", "bank-1"),
+            bank("2026-05-10", "-200.00", "bank-2"),
+        ];
+        // EUR leg: 110 * 0.909091 ≈ 100.00 (links to the -100 chain).
+        // USD leg: 260 * 0.769231 ≈ 200.00 (links to the -200 chain).
+        // Foreign-leg ids chosen so the OLD nearest-day + id tie-break SWAPS:
+        // both foreign legs are same-day, so the old code broke the tie by
+        // Transaction ID — and RIGHT-B's leg (PP-FX-1) sorts BEFORE RIGHT-A's
+        // leg (PP-FX-2), so bank-1 (processed first) wrongly grabbed RIGHT-B.
+        // The amount link now binds each leg to its own chain regardless of id.
+        let paypal = pp(
+            "10/05/2026,09:00:00,GMT,,Bank Deposit to PP Account ,Completed,GBP,100.00,0,100.00,,,100.00,PP-DEP-A,\n\
+             10/05/2026,09:00:01,GMT,,General Currency Conversion,Completed,GBP,-100.00,0,-100.00,,,0,PP-CONV-A,\n\
+             10/05/2026,09:00:02,GMT,RIGHT-A,Express Checkout Payment,Completed,EUR,-110.00,0,-110.00,0.909091,,0,PP-FX-2,Widget\n\
+             10/05/2026,11:00:00,GMT,,Bank Deposit to PP Account ,Completed,GBP,200.00,0,200.00,,,200.00,PP-DEP-B,\n\
+             10/05/2026,11:00:01,GMT,,General Currency Conversion,Completed,GBP,-200.00,0,-200.00,,,0,PP-CONV-B,\n\
+             10/05/2026,11:00:02,GMT,RIGHT-B,Express Checkout Payment,Completed,USD,-260.00,0,-260.00,0.769231,,0,PP-FX-1,Gadget\n",
+        );
+        let (recs, summary) = recover(&txs, &paypal, RecoverOptions::default());
+        assert_eq!(summary.fx_chain, 2);
+        assert_eq!(summary.recovered, 2);
+        let by_id: std::collections::HashMap<_, _> = recs
+            .iter()
+            .map(|r| (r.bank_import_id.as_str(), r))
+            .collect();
+        // The amount link binds each foreign leg to its OWN chain — no swap.
+        assert_eq!(by_id["bank-1"].recovered_merchant, "RIGHT-A");
+        assert_eq!(by_id["bank-1"].currency, "EUR");
+        assert_eq!(by_id["bank-1"].leg, Leg::FxChain);
+        assert_eq!(by_id["bank-2"].recovered_merchant, "RIGHT-B");
+        assert_eq!(by_id["bank-2"].currency, "USD");
+        assert_eq!(by_id["bank-2"].leg, Leg::FxChain);
+    }
+
+    /// REGRESSION (MEDIUM-HIGH — two-leg same-amount mis-pick, recover.rs:226-231
+    /// pre-fix).
+    ///
+    /// A true two-leg purchase (deposit +45 + payment -45 "RealMerchant") sits
+    /// near an UNRELATED same-amount direct-GBP purchase (-45 "OtherMerchant").
+    /// The old code picked the deposit's payment leg by same-amount + nearest
+    /// DAY + id tie-break, which could grab the unrelated direct purchase. Legs
+    /// of one checkout are adjacent in TIME, so we now bind the payment leg
+    /// nearest in TIMESTAMP to the deposit, recovering "RealMerchant".
+    #[test]
+    fn two_leg_prefers_timestamp_adjacent_leg_over_unrelated_same_amount() {
+        let txs = vec![bank("2026-04-10", "-45.00", "bank-1")];
+        // Deposit at 14:00:00; the TRUE payment leg posts a second later at
+        // 14:00:01. The unrelated direct -45 "OtherMerchant" is hours away at
+        // 09:00:00 (same day) — its id (PP-OTHER) would have sorted before
+        // PP-PAY under the old nearest-day + id tie-break, mis-binding it.
+        let paypal = pp(
+            "10/04/2026,09:00:00,GMT,OtherMerchant,General Payment,Completed,GBP,-45.00,0,-45.00,,,0,PP-OTHER,Unrelated\n\
+             10/04/2026,14:00:00,GMT,,Bank Deposit to PP Account ,Completed,GBP,45.00,0,45.00,,,45.00,PP-DEP,\n\
+             10/04/2026,14:00:01,GMT,RealMerchant,General Payment,Completed,GBP,-45.00,0,-45.00,,,0,PP-PAY,Thing\n",
+        );
+        let (recs, summary) = recover(&txs, &paypal, RecoverOptions::default());
+        assert_eq!(recs.len(), 1);
+        assert_eq!(summary.two_leg, 1);
+        assert_eq!(recs[0].recovered_merchant, "RealMerchant");
+        assert_eq!(recs[0].leg, Leg::TwoLeg);
+        assert_eq!(recs[0].chain_txn_ids, vec!["PP-DEP", "PP-PAY"]);
+        // The unrelated direct purchase was NOT consumed by this bank row.
+        assert!(!recs[0].chain_txn_ids.contains(&"PP-OTHER".to_string()));
     }
 }

@@ -11,7 +11,7 @@
 //! dedups by `import_id`: re-importing overlapping date-range exports adds no
 //! duplicate rows.
 
-use chrono::NaiveDate;
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use csv::ReaderBuilder;
 use rust_decimal::Decimal;
 use std::collections::HashSet;
@@ -40,6 +40,11 @@ pub enum PayPalError {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PayPalTxn {
     pub date: NaiveDate,
+    /// PayPal `Time` column (col index 1). The legs of one purchase are posted
+    /// within seconds of each other, so date+time is the strongest STRUCTURAL
+    /// link binding a chain's legs together. `None` when the export leaves it
+    /// blank (older exports / summary rows).
+    pub time: Option<NaiveTime>,
     /// Merchant name — the value we want to recover. BLANK for some system rows
     /// (deposits, currency conversions).
     pub name: String,
@@ -49,6 +54,11 @@ pub struct PayPalTxn {
     pub status: String,
     pub currency: String,
     pub amount: Decimal,
+    /// PayPal `Exchange Rate` column (col index 10). Populated only on the
+    /// foreign payment leg of an FX chain (e.g. `1.1009`); blank/`""` → `None`.
+    /// `amount.abs() * exchange_rate` reconstructs the GBP value of THIS chain,
+    /// giving a true amount-link to its conversion leg.
+    pub exchange_rate: Option<Decimal>,
     pub balance: Option<Decimal>,
     /// PayPal `Transaction ID` — unique key, used for idempotent import.
     pub transaction_id: String,
@@ -58,6 +68,14 @@ pub struct PayPalTxn {
 impl PayPalTxn {
     pub fn is_debit(&self) -> bool {
         self.amount.is_sign_negative()
+    }
+
+    /// Date+time as a single ordering key. Used as a TIE-BREAK / orderer when
+    /// binding a chain's legs (legs of one checkout are adjacent in time). When
+    /// the `Time` column is blank we fall back to midnight, so date-only rows
+    /// still order deterministically by date.
+    pub fn datetime(&self) -> NaiveDateTime {
+        self.date.and_time(self.time.unwrap_or(NaiveTime::MIN))
     }
 
     pub fn is_credit(&self) -> bool {
@@ -97,11 +115,13 @@ fn strip_bom(bytes: Vec<u8>) -> Vec<u8> {
 /// Indices of the columns we read, resolved by header name.
 struct ColumnMap {
     date: usize,
+    time: Option<usize>,
     name: usize,
     txn_type: usize,
     status: usize,
     currency: usize,
     amount: usize,
+    exchange_rate: Option<usize>,
     balance: Option<usize>,
     transaction_id: usize,
     item_title: Option<usize>,
@@ -121,11 +141,13 @@ fn map_columns(headers: &csv::StringRecord) -> Result<ColumnMap, PayPalError> {
     };
     Ok(ColumnMap {
         date: required("Date")?,
+        time: find("Time"),
         name: required("Name")?,
         txn_type: required("Type")?,
         status: required("Status")?,
         currency: required("Currency")?,
         amount: required("Amount")?,
+        exchange_rate: find("Exchange Rate"),
         balance: find("Balance"),
         transaction_id: required("Transaction ID")?,
         item_title: find("Item Title"),
@@ -145,6 +167,18 @@ fn parse_pp_amount(s: &str) -> Option<Decimal> {
         return None;
     }
     Decimal::from_str(&cleaned).ok()
+}
+
+/// Parse a PayPal `Time` cell. PayPal exports `HH:MM:SS`; some locales omit the
+/// seconds (`HH:MM`). Blank → `None` (tolerated, not an error).
+fn parse_pp_time(s: &str) -> Option<NaiveTime> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    NaiveTime::parse_from_str(s, "%H:%M:%S")
+        .or_else(|_| NaiveTime::parse_from_str(s, "%H:%M"))
+        .ok()
 }
 
 /// Parse a PayPal activity CSV export (UTF-8-with-BOM, 15 quoted columns) into
@@ -187,11 +221,13 @@ pub fn parse_paypal_csv<R: Read>(mut reader: R) -> Result<Vec<PayPalTxn>, PayPal
 
         out.push(PayPalTxn {
             date,
+            time: cols.time.and_then(|i| parse_pp_time(get(i))),
             name: get(cols.name).to_string(),
             txn_type: get(cols.txn_type).to_string(),
             status: get(cols.status).to_string(),
             currency: get(cols.currency).to_string(),
             amount,
+            exchange_rate: cols.exchange_rate.and_then(|i| parse_pp_amount(get(i))),
             balance: cols.balance.and_then(|i| parse_pp_amount(get(i))),
             transaction_id,
             item_title: cols
@@ -211,25 +247,35 @@ pub fn parse_paypal_csv<R: Read>(mut reader: R) -> Result<Vec<PayPalTxn>, PayPal
 /// Our canonical sidecar CSV header for stored PayPal rows.
 const STORE_HEADERS: &[&str] = &[
     "date",
+    "time",
     "name",
     "txn_type",
     "status",
     "currency",
     "amount",
+    "exchange_rate",
     "balance",
     "transaction_id",
     "item_title",
 ];
 
 /// Serialisable shape for the sidecar CSV.
+///
+/// `time` and `exchange_rate` are `#[serde(default)]` so a pre-existing sidecar
+/// written before these columns existed still deserialises (the missing cells
+/// read back as empty strings → `None`).
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 struct StoredPayPal {
     date: String,
+    #[serde(default)]
+    time: String,
     name: String,
     txn_type: String,
     status: String,
     currency: String,
     amount: String,
+    #[serde(default)]
+    exchange_rate: String,
     balance: String,
     transaction_id: String,
     item_title: String,
@@ -239,11 +285,13 @@ impl From<&PayPalTxn> for StoredPayPal {
     fn from(t: &PayPalTxn) -> Self {
         Self {
             date: t.date.to_string(),
+            time: t.time.map(|t| t.to_string()).unwrap_or_default(),
             name: t.name.clone(),
             txn_type: t.txn_type.clone(),
             status: t.status.clone(),
             currency: t.currency.clone(),
             amount: t.amount.to_string(),
+            exchange_rate: t.exchange_rate.map(|r| r.to_string()).unwrap_or_default(),
             balance: t.balance.map(|b| b.to_string()).unwrap_or_default(),
             transaction_id: t.transaction_id.clone(),
             item_title: t.item_title.clone(),
@@ -256,11 +304,13 @@ impl From<StoredPayPal> for PayPalTxn {
         Self {
             date: NaiveDate::parse_from_str(&s.date, "%Y-%m-%d")
                 .unwrap_or_else(|_| NaiveDate::from_ymd_opt(1970, 1, 1).unwrap()),
+            time: parse_pp_time(&s.time),
             name: s.name,
             txn_type: s.txn_type,
             status: s.status,
             currency: s.currency,
             amount: Decimal::from_str(&s.amount).unwrap_or_default(),
+            exchange_rate: Decimal::from_str(s.exchange_rate.trim()).ok(),
             balance: Decimal::from_str(&s.balance).ok(),
             transaction_id: s.transaction_id,
             item_title: s.item_title,
@@ -379,6 +429,56 @@ mod tests {
     }
 
     #[test]
+    fn parses_time_and_exchange_rate_columns() {
+        let rows = parse_paypal_csv(sample_csv().as_bytes()).unwrap();
+        // Direct GBP payment: time set, no exchange rate, datetime = date+time.
+        assert_eq!(
+            rows[0].time,
+            Some(NaiveTime::from_hms_opt(10, 0, 0).unwrap())
+        );
+        assert_eq!(rows[0].exchange_rate, None);
+        assert_eq!(
+            rows[0].datetime(),
+            NaiveDate::from_ymd_opt(2026, 3, 5)
+                .unwrap()
+                .and_hms_opt(10, 0, 0)
+                .unwrap()
+        );
+        // FX foreign leg (row 3): carries the exchange rate that links it to its
+        // conversion (amount.abs() * rate ≈ GBP value).
+        assert_eq!(rows[3].currency, "EUR");
+        assert_eq!(
+            rows[3].exchange_rate,
+            Some(Decimal::from_str("1.1009").unwrap())
+        );
+        assert_eq!(
+            rows[3].time,
+            Some(NaiveTime::from_hms_opt(9, 2, 0).unwrap())
+        );
+    }
+
+    #[test]
+    fn blank_time_and_exchange_rate_tolerated() {
+        // A row with empty Time and empty Exchange Rate must parse, not skip.
+        let csv = format!(
+            "{BOM}Date,Time,Time zone,Name,Type,Status,Currency,Amount,Fees,Total,Exchange Rate,Receipt ID,Balance,Transaction ID,Item Title\n\
+             05/03/2026,,GMT,Streamflix,General Payment,Completed,GBP,-12.99,0.00,-12.99,,,0.00,TXN-NOTIME,Plan\n"
+        );
+        let rows = parse_paypal_csv(csv.as_bytes()).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].time, None);
+        assert_eq!(rows[0].exchange_rate, None);
+        // datetime() falls back to midnight when time is blank.
+        assert_eq!(
+            rows[0].datetime(),
+            NaiveDate::from_ymd_opt(2026, 3, 5)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap()
+        );
+    }
+
+    #[test]
     fn classifies_leg_types() {
         let rows = parse_paypal_csv(sample_csv().as_bytes()).unwrap();
         let payment = &rows[0];
@@ -454,11 +554,24 @@ mod tests {
         let fresh2 = deduplicate(rows, &existing2);
         assert_eq!(fresh2.len(), 0);
 
-        // Round-trips intact.
+        // Round-trips intact — including the new time / exchange_rate columns.
         let loaded = store.load_all().unwrap();
         assert_eq!(loaded.len(), 4);
         assert_eq!(loaded[0].name, "Streamflix");
         assert_eq!(loaded[3].currency, "EUR");
+        assert_eq!(
+            loaded[0].time,
+            Some(NaiveTime::from_hms_opt(10, 0, 0).unwrap())
+        );
+        assert_eq!(loaded[0].exchange_rate, None);
+        assert_eq!(
+            loaded[3].exchange_rate,
+            Some(Decimal::from_str("1.1009").unwrap())
+        );
+        assert_eq!(
+            loaded[3].time,
+            Some(NaiveTime::from_hms_opt(9, 2, 0).unwrap())
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -239,3 +239,59 @@ fn e2e_disambiguates_recurring_amount_by_date() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// REGRESSION (HIGH — FX foreign-leg cross-link), end to end through the
+/// sidecar store. Two same-day FX chains, distinct amounts/merchants. Proves
+/// the `Exchange Rate` column survives parse → paypal.csv store → reload, and
+/// the amount link binds each foreign leg to its OWN chain (no swap). With the
+/// old day-granular nearest-by-id pick, bank-1 would have grabbed "RIGHT-B".
+#[test]
+fn e2e_two_same_day_fx_chains_do_not_swap_through_store() {
+    let dir = tmpdir("fx-swap");
+    let fd = "Date,Description,Amount,Balance\n\
+              10/05/2026,PAYPAL PAYMENT,-100.00,900.00\n\
+              10/05/2026,PAYPAL PAYMENT,-200.00,700.00\n";
+    let txs = parse_midata_current_4col(fd.as_bytes(), Account::Current).unwrap();
+
+    // EUR leg: 110 * 0.909091 ≈ 100.00; USD leg: 260 * 0.769231 ≈ 200.00.
+    // Foreign-leg ids ordered so the OLD code swapped (PP-FX-1 = RIGHT-B sorts
+    // before PP-FX-2 = RIGHT-A).
+    let pp = format!(
+        "{BOM}Date,Time,Time zone,Name,Type,Status,Currency,Amount,Fees,Total,Exchange Rate,Receipt ID,Balance,Transaction ID,Item Title\n\
+         10/05/2026,09:00:00,GMT,,Bank Deposit to PP Account ,Completed,GBP,100.00,0.00,100.00,,,100.00,PP-DEP-A,\n\
+         10/05/2026,09:00:01,GMT,,General Currency Conversion,Completed,GBP,-100.00,0.00,-100.00,,,0.00,PP-CONV-A,\n\
+         10/05/2026,09:00:02,GMT,RIGHT-A,Express Checkout Payment,Completed,EUR,-110.00,0.00,-110.00,0.909091,,0.00,PP-FX-2,Widget\n\
+         10/05/2026,11:00:00,GMT,,Bank Deposit to PP Account ,Completed,GBP,200.00,0.00,200.00,,,200.00,PP-DEP-B,\n\
+         10/05/2026,11:00:01,GMT,,General Currency Conversion,Completed,GBP,-200.00,0.00,-200.00,,,0.00,PP-CONV-B,\n\
+         10/05/2026,11:00:02,GMT,RIGHT-B,Express Checkout Payment,Completed,USD,-260.00,0.00,-260.00,0.769231,,0.00,PP-FX-1,Gadget\n"
+    );
+
+    // Import into the sidecar store (round-trips the new columns).
+    let pp_path = dir.join("paypal.csv");
+    let pp_store = PayPalStore::new(&pp_path);
+    let parsed = parse_paypal_csv(pp.as_bytes()).unwrap();
+    let existing = pp_store.load_transaction_ids().unwrap();
+    let fresh = fd_budget::paypal::deduplicate(parsed, &existing);
+    assert_eq!(pp_store.append(&fresh).unwrap(), 6);
+
+    // Recover from the RELOADED store (proves exchange_rate survived the store).
+    let paypal_rows = pp_store.load_all().unwrap();
+    let (recs, summary) = recover(&txs, &paypal_rows, RecoverOptions::default());
+    assert_eq!(summary.fx_chain, 2);
+
+    let matches_path = dir.join("paypal_matches.jsonl");
+    write_recoveries(&matches_path, &recs).unwrap();
+    let idx = RecoveryIndex::load(&matches_path).unwrap();
+
+    let by_amount = |amt: &str| -> Option<String> {
+        let target = Decimal::from_str(amt).unwrap();
+        txs.iter()
+            .find(|t| t.amount == target)
+            .and_then(|t| idx.recovered_merchant_for(&t.import_id))
+            .map(String::from)
+    };
+    assert_eq!(by_amount("-100.00").as_deref(), Some("RIGHT-A"));
+    assert_eq!(by_amount("-200.00").as_deref(), Some("RIGHT-B"));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
