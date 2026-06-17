@@ -689,9 +689,16 @@ fn cmd_stats(
         .filter(|t| t.is_credit())
         .map(|t| t.amount)
         .sum();
+    // Business / professional costs (a subset of nonspend) shown on their own
+    // line; the generic Excluded line then carries only transfer/income/tax/one-off.
+    let business: Decimal = rows
+        .iter()
+        .filter(|t| t.is_debit() && t.is_business())
+        .map(|t| t.amount.abs())
+        .sum();
     let excluded: Decimal = rows
         .iter()
-        .filter(|t| t.is_debit() && t.is_nonspend())
+        .filter(|t| t.is_debit() && t.is_nonspend() && !t.is_business())
         .map(|t| t.amount.abs())
         .sum();
     let untagged_debits = rows
@@ -710,17 +717,15 @@ fn cmd_stats(
     println!("Untagged: {}", untagged);
     println!("Date range: {} to {}", min_date, max_date);
     println!();
+    println!("{:<54} £{:.2}", "Spend (recurring personal living cost):", spend);
+    println!("{:<54} £{:.2}", "Income (all credits):", income);
     println!(
-        "Spend (recurring, excl. transfer/income/tax/one-off):  £{:.2}",
-        spend
+        "{:<54} £{:.2}",
+        "Business (professional — excluded from floor):", business
     );
     println!(
-        "Income (all credits):                                  £{:.2}",
-        income
-    );
-    println!(
-        "Excluded debits (transfer/income/tax/one-off tags):    £{:.2}",
-        excluded
+        "{:<54} £{:.2}",
+        "Excluded (transfer/income/tax/one-off):", excluded
     );
     if untagged_debits > 0 {
         println!(

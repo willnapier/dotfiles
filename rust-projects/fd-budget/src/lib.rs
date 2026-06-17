@@ -96,12 +96,16 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    /// Tags that mark a row as NOT recurring spend: internal transfers, income,
-    /// tax payments, and one-off / lumpy discretionary outgoings. These are
-    /// stripped from the spend floor so the recurring-cost figure is trustworthy
-    /// (the figure the forward "pots" layer will allocate against). Matched
-    /// case-insensitively. Rides the existing `tags` column — no schema change.
-    pub const NONSPEND_TAGS: &'static [&'static str] = &["transfer", "income", "tax", "one-off"];
+    /// Tags that mark a row as NOT part of the recurring **personal** spend
+    /// floor: internal transfers, income, tax payments, one-off / lumpy
+    /// discretionary outgoings, and **business** / professional costs (practice
+    /// expenses funded before the personal draw — PA fees, conference fees, etc.;
+    /// not personal living cost). Stripped from the floor so the recurring
+    /// personal-cost figure is trustworthy (the figure the forward "pots" layer
+    /// allocates against). Matched case-insensitively. Rides the existing `tags`
+    /// column — no schema change.
+    pub const NONSPEND_TAGS: &'static [&'static str] =
+        &["transfer", "income", "tax", "one-off", "business"];
 
     pub fn is_debit(&self) -> bool {
         self.amount.is_sign_negative()
@@ -120,9 +124,16 @@ impl Transaction {
         })
     }
 
-    /// True when the row is recurring spend: a debit not carrying a non-spend
-    /// tag. Credits (income/refunds) and non-spend-tagged debits (transfers,
-    /// tax, one-offs) are excluded.
+    /// True if the row is a business / professional cost (tag "business",
+    /// case-insensitive). A subset of `is_nonspend` — broken out so reporting
+    /// can show professional costs as their own line.
+    pub fn is_business(&self) -> bool {
+        self.tags.iter().any(|t| t.eq_ignore_ascii_case("business"))
+    }
+
+    /// True when the row is recurring personal spend: a debit not carrying a
+    /// non-spend tag. Credits (income/refunds) and non-spend-tagged debits
+    /// (transfers, tax, one-offs, business) are excluded.
     pub fn counts_as_spend(&self) -> bool {
         self.is_debit() && !self.is_nonspend()
     }
@@ -182,5 +193,16 @@ mod transaction_tests {
         let lump = tx("-2550.00", &["one-off", "gym"]);
         assert!(lump.is_nonspend());
         assert!(!lump.counts_as_spend());
+    }
+
+    #[test]
+    fn business_is_excluded_from_personal_floor() {
+        // Professional cost (e.g. PA fees, conference) — not personal living.
+        let b = tx("-370.00", &["business"]);
+        assert!(b.is_business());
+        assert!(b.is_nonspend());
+        assert!(!b.counts_as_spend());
+        // case-insensitive
+        assert!(tx("-1.00", &["Business"]).is_business());
     }
 }
