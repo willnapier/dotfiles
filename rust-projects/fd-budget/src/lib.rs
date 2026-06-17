@@ -96,6 +96,28 @@ pub struct Transaction {
     pub import_id: String,
 }
 
+/// True if a bank-row description is a payment **to** the First Direct Visa
+/// card. Such a payment is an internal transfer between the holder's own
+/// accounts: the Visa *purchases* are itemised on the card statement and
+/// imported separately, so counting the payment too would double-count it.
+///
+/// Matches the two phrasings First Direct uses for this line, both
+/// case-insensitively:
+///   - `FIRST DIRECT VISA` (sometimes followed by `FIRST PAYMENT`)
+///   - `F/D GOLD`
+///
+/// Deliberately conservative — neither phrase appears in ordinary merchant
+/// descriptions, so false positives are vanishingly rare. Lookalikes such as
+/// `FIRST DIRECT` alone (the bank name on unrelated lines) do NOT match.
+///
+/// This is the single source of truth for the card-payment double-count:
+/// `enrich::is_internal_transfer` delegates here, import auto-tags matching
+/// new rows `transfer`, and the `tag tag-transfers` backfill keys off it.
+pub fn is_card_payment(description: &str) -> bool {
+    let lower = description.to_lowercase();
+    lower.contains("first direct visa") || lower.contains("f/d gold")
+}
+
 impl Transaction {
     /// Tags that mark a row as NOT part of the recurring **personal** spend
     /// floor: internal transfers, income, tax payments, one-off / lumpy
@@ -208,5 +230,36 @@ mod transaction_tests {
         assert!(!b.counts_as_spend());
         // case-insensitive
         assert!(tx("-1.00", &["Business"]).is_business());
+    }
+
+    #[test]
+    fn card_payment_detects_both_visa_phrasings() {
+        // The two phrasings First Direct uses for a payment to the Visa card.
+        assert!(is_card_payment("FIRST DIRECT VISA"));
+        assert!(is_card_payment("FIRST DIRECT VISA FIRST PAYMENT"));
+        assert!(is_card_payment("F/D GOLD"));
+        // case-insensitive
+        assert!(is_card_payment("first direct visa"));
+        assert!(is_card_payment("f/d gold payment"));
+    }
+
+    #[test]
+    fn card_payment_ignores_lookalikes() {
+        // The bank name alone, or unrelated merchants, must NOT trip it.
+        assert!(!is_card_payment("FIRST DIRECT"));
+        assert!(!is_card_payment("first direct"));
+        assert!(!is_card_payment("VISA PAYMENT"));
+        assert!(!is_card_payment("GOLD COAST CAFE"));
+        assert!(!is_card_payment("FD GOLD")); // missing the slash
+        assert!(!is_card_payment("TESCO STORES"));
+    }
+
+    #[test]
+    fn card_payment_tagged_transfer_is_excluded_from_spend_floor() {
+        // A card payment auto-tagged `transfer` (a NONSPEND tag) drops out of
+        // the personal Spend floor — the whole point of P5.
+        let payment = tx("-1234.56", &["transfer"]);
+        assert!(payment.is_nonspend());
+        assert!(!payment.counts_as_spend());
     }
 }

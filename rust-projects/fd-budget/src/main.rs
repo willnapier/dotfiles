@@ -1,7 +1,7 @@
 use chrono::{Datelike, NaiveDate};
 use clap::{Parser, Subcommand};
 use fd_budget::{
-    dedup, enrich, import, paypal, query,
+    dedup, enrich, import, is_card_payment, paypal, query,
     store::CsvStore,
     tags::{apply_rules, apply_rules_with_recovery, reapply_rules, TagRules},
     Account,
@@ -240,6 +240,25 @@ enum TagAction {
         #[arg(long)]
         reset: bool,
     },
+    /// Tag a SINGLE row (by import_id) with one or more tags. For true
+    /// one-offs that don't suit the recurring-pattern rule engine. Keyed by
+    /// import_id (16 hex chars) so it can never collide with an unrelated row
+    /// the way an amount-rule can. A unique prefix of the id is accepted.
+    /// Additive: existing tags on the row are preserved.
+    Set {
+        /// import_id of the row (full 16-hex, or any unique prefix).
+        import_id: String,
+        /// Tags to add to that row.
+        #[arg(required = true)]
+        tags: Vec<String>,
+    },
+    /// Backfill the reserved `transfer` tag onto every EXISTING row that is a
+    /// First Direct card payment (FIRST DIRECT VISA / F/D GOLD). One-shot
+    /// companion to the auto-tagging that import now does for NEW rows;
+    /// `transfer` is a NONSPEND tag, so tagged rows drop out of the Spend
+    /// floor. Additive and idempotent — manual tags are preserved and rows
+    /// already carrying `transfer` are left unchanged.
+    TagTransfers,
 }
 
 fn get_data_dir() -> PathBuf {
@@ -683,6 +702,19 @@ fn cmd_import(file: &PathBuf, account: Account) -> anyhow::Result<()> {
     let mut transactions = transactions;
     apply_rules(&mut transactions, &rules);
 
+    // Auto-tag card payments (FIRST DIRECT VISA / F/D GOLD) as `transfer`.
+    // A payment TO the Visa card is an internal transfer — the card PURCHASES
+    // are itemised separately, so counting the payment too double-counts. The
+    // `transfer` tag is reserved (NONSPEND_TAGS), so these rows drop out of the
+    // Spend floor automatically. Additive, so any rule-derived tags survive.
+    let (card_payment_count, _) = auto_tag_card_payments(&mut transactions);
+    if card_payment_count > 0 {
+        eprintln!(
+            "{} card-payment row(s) auto-tagged `transfer` (excluded from Spend floor)",
+            card_payment_count
+        );
+    }
+
     // Count tagged
     let tagged_count = transactions.iter().filter(|t| !t.tags.is_empty()).count();
     eprintln!("{} transactions auto-tagged", tagged_count);
@@ -823,7 +855,199 @@ fn cmd_tag(action: TagAction) -> anyhow::Result<()> {
                 via_recovery
             );
         }
+        TagAction::Set { import_id, tags } => {
+            cmd_tag_set(&import_id, &tags)?;
+        }
+        TagAction::TagTransfers => {
+            cmd_tag_transfers()?;
+        }
     }
+
+    Ok(())
+}
+
+/// Snapshot `transactions.csv` to `/tmp/fd-budget-transactions.backup-<suffix>`
+/// before any rewrite (primer rule 3). Best-effort: if the store doesn't yet
+/// exist there's nothing to back up. Returns the backup path on success.
+fn snapshot_store(suffix: &str) -> anyhow::Result<Option<PathBuf>> {
+    let store_path = get_store_path();
+    if !store_path.exists() {
+        return Ok(None);
+    }
+    let backup = PathBuf::from(format!("/tmp/fd-budget-transactions.backup-{}", suffix));
+    std::fs::copy(&store_path, &backup)?;
+    Ok(Some(backup))
+}
+
+/// Resolve an import_id (exact or unique prefix) to a single row index.
+///
+/// Pure (no I/O) so it's unit-testable. An exact id match wins outright;
+/// otherwise prefix-matching applies. Returns the row index, `Ambiguous` with
+/// the candidate indices if a prefix hits >1 row, or `None` if nothing matches.
+/// Matching is case-insensitive (import_ids are lowercase hex).
+enum RowMatch {
+    One(usize),
+    Ambiguous(Vec<usize>),
+    None,
+}
+
+fn resolve_import_id(transactions: &[fd_budget::Transaction], needle: &str) -> RowMatch {
+    let needle = needle.trim().to_lowercase();
+    if needle.is_empty() {
+        return RowMatch::None;
+    }
+    let exact: Vec<usize> = transactions
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| t.import_id.eq_ignore_ascii_case(&needle))
+        .map(|(i, _)| i)
+        .collect();
+    let matches: Vec<usize> = if !exact.is_empty() {
+        exact
+    } else {
+        transactions
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.import_id.to_lowercase().starts_with(&needle))
+            .map(|(i, _)| i)
+            .collect()
+    };
+    match matches.len() {
+        0 => RowMatch::None,
+        1 => RowMatch::One(matches[0]),
+        _ => RowMatch::Ambiguous(matches),
+    }
+}
+
+/// Additively add `tags` to a single row (dedup, preserve existing). Returns the
+/// tags that were actually newly added. Pure — unit-testable.
+fn add_tags_to_row(tx: &mut fd_budget::Transaction, tags: &[String]) -> Vec<String> {
+    let mut added = Vec::new();
+    for tag in tags {
+        if !tx.tags.iter().any(|t| t == tag) {
+            tx.tags.push(tag.clone());
+            added.push(tag.clone());
+        }
+    }
+    added
+}
+
+/// Auto-tag every card-payment row (FIRST DIRECT VISA / F/D GOLD) with the
+/// reserved `transfer` tag, additively and idempotently. Returns
+/// `(newly_tagged, already_tagged)` counts. Pure — unit-testable. Shared by
+/// import (NEW rows) and `tag tag-transfers` (EXISTING rows).
+fn auto_tag_card_payments(transactions: &mut [fd_budget::Transaction]) -> (usize, usize) {
+    let mut newly = 0usize;
+    let mut already = 0usize;
+    for tx in transactions.iter_mut() {
+        if is_card_payment(&tx.raw_description) || is_card_payment(&tx.description) {
+            if tx.tags.iter().any(|t| t.eq_ignore_ascii_case("transfer")) {
+                already += 1;
+            } else {
+                tx.tags.push("transfer".to_string());
+                newly += 1;
+            }
+        }
+    }
+    (newly, already)
+}
+
+/// `tag set <import_id> <tags...>` — tag a single row by import_id.
+///
+/// Accepts an exact 16-hex import_id OR any unique prefix. An ambiguous prefix
+/// (matching >1 row) is an error that lists the candidates rather than guessing;
+/// a no-match prefix is a clear error. Additive: existing tags are preserved
+/// and duplicates are skipped.
+fn cmd_tag_set(import_id: &str, tags: &[String]) -> anyhow::Result<()> {
+    let store = CsvStore::new(get_store_path());
+    let mut transactions = store.load_all()?;
+
+    if import_id.trim().is_empty() {
+        anyhow::bail!("import_id must not be empty");
+    }
+
+    let idx = match resolve_import_id(&transactions, import_id) {
+        RowMatch::One(i) => i,
+        RowMatch::None => {
+            anyhow::bail!(
+                "no transaction matches import_id '{}' (exact or prefix)",
+                import_id
+            );
+        }
+        RowMatch::Ambiguous(candidates) => {
+            eprintln!(
+                "import_id prefix '{}' is ambiguous — matches {} rows:",
+                import_id,
+                candidates.len()
+            );
+            for &i in &candidates {
+                let t = &transactions[i];
+                eprintln!(
+                    "  {}  {}  {:>10}  {}",
+                    t.import_id, t.date, t.amount, t.raw_description
+                );
+            }
+            anyhow::bail!("ambiguous import_id prefix; supply more characters");
+        }
+    };
+
+    // Snapshot BEFORE rewrite (primer rule 3).
+    let backup = snapshot_store(&transactions[idx].import_id)?;
+
+    // Additive: append given tags, dedup, preserve existing.
+    let added = add_tags_to_row(&mut transactions[idx], tags);
+
+    store.rewrite(&transactions)?;
+
+    let t = &transactions[idx];
+    if let Some(b) = backup {
+        eprintln!("Backed up store to {}", b.display());
+    }
+    println!(
+        "{}  {}  {}  {}",
+        t.import_id, t.date, t.amount, t.raw_description
+    );
+    if added.is_empty() {
+        println!(
+            "  (all given tags already present) tags: [{}]",
+            t.tags.join(", ")
+        );
+    } else {
+        println!("  added {:?} -> tags: [{}]", added, t.tags.join(", "));
+    }
+
+    Ok(())
+}
+
+/// `tag tag-transfers` — backfill the reserved `transfer` tag onto every
+/// EXISTING card-payment row (FIRST DIRECT VISA / F/D GOLD). Companion to the
+/// auto-tagging import does for NEW rows. Additive and idempotent.
+fn cmd_tag_transfers() -> anyhow::Result<()> {
+    let store = CsvStore::new(get_store_path());
+    let mut transactions = store.load_all()?;
+
+    // Snapshot BEFORE rewrite (primer rule 3).
+    let backup = snapshot_store("tag-transfers")?;
+
+    let (newly_tagged, already) = auto_tag_card_payments(&mut transactions);
+
+    if newly_tagged == 0 {
+        eprintln!(
+            "No card-payment rows needed tagging ({} already carried `transfer`).",
+            already
+        );
+        return Ok(());
+    }
+
+    store.rewrite(&transactions)?;
+    if let Some(b) = backup {
+        eprintln!("Backed up store to {}", b.display());
+    }
+    eprintln!(
+        "Tagged {} card-payment row(s) `transfer` ({} already tagged). \
+         These are now excluded from the Spend floor.",
+        newly_tagged, already
+    );
 
     Ok(())
 }
@@ -1244,5 +1468,164 @@ fn suggest_pattern(description: &str) -> String {
         description.chars().take(15).collect()
     } else {
         words.join(" ")
+    }
+}
+
+#[cfg(test)]
+mod p4_p5_tests {
+    use super::*;
+    use chrono::NaiveDate;
+    use fd_budget::{Account, Transaction, TxType};
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
+
+    fn mk(import_id: &str, amount: &str, raw_desc: &str, tags: &[&str]) -> Transaction {
+        Transaction {
+            date: NaiveDate::from_ymd_opt(2025, 6, 1).unwrap(),
+            account: Account::Current,
+            tx_type: TxType::Contactless,
+            amount: Decimal::from_str(amount).unwrap(),
+            description: raw_desc.to_string(),
+            raw_description: raw_desc.to_string(),
+            balance: None,
+            tags: tags.iter().map(|s| s.to_string()).collect(),
+            import_id: import_id.to_string(),
+        }
+    }
+
+    // --- P4: tag set ------------------------------------------------------
+
+    #[test]
+    fn tag_set_exact_match_adds_additively() {
+        let mut txs = vec![
+            mk("aaaa111122223333", "-12.50", "TESCO", &["groceries"]),
+            mk("bbbb444455556666", "-9.99", "STREAMFLIX", &[]),
+        ];
+        let idx = match resolve_import_id(&txs, "bbbb444455556666") {
+            RowMatch::One(i) => i,
+            _ => panic!("expected exact match"),
+        };
+        assert_eq!(idx, 1);
+        let added = add_tags_to_row(&mut txs[idx], &["one-off".to_string()]);
+        assert_eq!(added, vec!["one-off".to_string()]);
+        assert_eq!(txs[1].tags, vec!["one-off".to_string()]);
+        // row 0 untouched
+        assert_eq!(txs[0].tags, vec!["groceries".to_string()]);
+    }
+
+    #[test]
+    fn tag_set_preserves_existing_and_dedups() {
+        let mut tx = mk("aaaa111122223333", "-12.50", "TESCO", &["groceries"]);
+        // "groceries" already present, "one-off" is new
+        let added = add_tags_to_row(&mut tx, &["groceries".to_string(), "one-off".to_string()]);
+        assert_eq!(added, vec!["one-off".to_string()]); // only the new one reported
+        assert_eq!(
+            tx.tags,
+            vec!["groceries".to_string(), "one-off".to_string()]
+        );
+    }
+
+    #[test]
+    fn tag_set_unique_prefix_resolves() {
+        let txs = vec![
+            mk("aaaa111122223333", "-12.50", "TESCO", &[]),
+            mk("bbbb444455556666", "-9.99", "STREAMFLIX", &[]),
+        ];
+        // "aaaa" is a unique prefix of row 0
+        match resolve_import_id(&txs, "aaaa") {
+            RowMatch::One(i) => assert_eq!(i, 0),
+            _ => panic!("expected unique-prefix match"),
+        }
+        // case-insensitive
+        match resolve_import_id(&txs, "AAAA1111") {
+            RowMatch::One(i) => assert_eq!(i, 0),
+            _ => panic!("expected case-insensitive prefix match"),
+        }
+    }
+
+    #[test]
+    fn tag_set_ambiguous_prefix_lists_candidates() {
+        let txs = vec![
+            mk("abcd111122223333", "-12.50", "TESCO", &[]),
+            mk("abcd444455556666", "-9.99", "STREAMFLIX", &[]),
+            mk("ffff000011112222", "-1.00", "OTHER", &[]),
+        ];
+        // "abcd" matches two rows → Ambiguous with both indices
+        match resolve_import_id(&txs, "abcd") {
+            RowMatch::Ambiguous(candidates) => {
+                assert_eq!(candidates, vec![0, 1]);
+            }
+            _ => panic!("expected ambiguous prefix"),
+        }
+    }
+
+    #[test]
+    fn tag_set_no_match_is_none() {
+        let txs = vec![mk("aaaa111122223333", "-12.50", "TESCO", &[])];
+        assert!(matches!(resolve_import_id(&txs, "zzzz"), RowMatch::None));
+        // empty needle is None, never a wildcard
+        assert!(matches!(resolve_import_id(&txs, ""), RowMatch::None));
+        assert!(matches!(resolve_import_id(&txs, "   "), RowMatch::None));
+    }
+
+    #[test]
+    fn tag_set_exact_wins_over_prefix() {
+        // One row's id is a prefix of another's. An exact match on the shorter
+        // id must resolve to that one row, not be treated as ambiguous.
+        let txs = vec![
+            mk("abcd1111", "-1.00", "SHORT", &[]),
+            mk("abcd11112222", "-2.00", "LONG", &[]),
+        ];
+        match resolve_import_id(&txs, "abcd1111") {
+            RowMatch::One(i) => assert_eq!(i, 0),
+            _ => panic!("expected exact id to win over the longer prefix-sharing row"),
+        }
+    }
+
+    // --- P5: card-payment auto-tagging ------------------------------------
+
+    #[test]
+    fn import_auto_tags_card_payment_as_transfer() {
+        // Mirrors what cmd_import does: after parse/dedup/rules, card payments
+        // get the reserved `transfer` tag and so leave the Spend floor.
+        let mut txs = vec![
+            mk("1111", "-1500.00", "FIRST DIRECT VISA FIRST PAYMENT", &[]),
+            mk("2222", "-2000.00", "F/D GOLD", &["manual"]),
+            mk("3333", "-12.50", "TESCO STORES", &["groceries"]),
+        ];
+        let (newly, already) = auto_tag_card_payments(&mut txs);
+        assert_eq!(newly, 2); // both card payments
+        assert_eq!(already, 0);
+
+        // FIRST DIRECT VISA row now carries transfer and is excluded from spend
+        assert!(txs[0].tags.iter().any(|t| t == "transfer"));
+        assert!(txs[0].is_nonspend());
+        assert!(!txs[0].counts_as_spend());
+
+        // F/D GOLD row: manual tag preserved, transfer added
+        assert!(txs[1].tags.contains(&"manual".to_string()));
+        assert!(txs[1].tags.contains(&"transfer".to_string()));
+        assert!(!txs[1].counts_as_spend());
+
+        // ordinary spend row untouched and still counts as spend
+        assert_eq!(txs[2].tags, vec!["groceries".to_string()]);
+        assert!(txs[2].counts_as_spend());
+    }
+
+    #[test]
+    fn auto_tag_card_payments_is_idempotent() {
+        let mut txs = vec![mk("1111", "-1500.00", "FIRST DIRECT VISA", &["transfer"])];
+        let (newly, already) = auto_tag_card_payments(&mut txs);
+        assert_eq!(newly, 0);
+        assert_eq!(already, 1);
+        // no duplicate transfer tag
+        assert_eq!(
+            txs[0]
+                .tags
+                .iter()
+                .filter(|t| t.as_str() == "transfer")
+                .count(),
+            1
+        );
     }
 }
