@@ -17,6 +17,7 @@ dotter	0.13.4	crates.io
 dprint	0.50.2	crates.io
 easel	0.1.0	/home/will/dotfiles/rust-projects/easel
 email-extract	0.1.0	/home/will/dotfiles/rust-projects/email-extract
+fd-budget	0.1.0	/home/will/dotfiles/rust-projects/fd-budget
 fd-find	10.3.0	crates.io
 gmpull	0.1.0	/home/will/dotfiles/rust-projects/gmpull
 graph-send	0.1.0	/home/will/dotfiles/rust-projects/graph-send
