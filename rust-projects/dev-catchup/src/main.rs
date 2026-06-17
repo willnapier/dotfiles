@@ -326,11 +326,13 @@ fn build_entry(date: NaiveDate, project: String, bucket: Bucket, no_ai: bool) ->
                 let mut shas: Vec<String> = Vec::new();
                 let mut pr_set: BTreeSet<u32> = BTreeSet::new();
                 for c in &found {
-                    if !shas.contains(&c.short_sha) {
-                        shas.push(c.short_sha.clone());
-                    }
                     if let Some(pr) = c.pr {
                         pr_set.insert(pr);
+                    }
+                    // Keep the real work commits in the SHA list; merge commits
+                    // contribute their PR number but not SHA clutter.
+                    if !c.subject.starts_with("Merge ") && !shas.contains(&c.short_sha) {
+                        shas.push(c.short_sha.clone());
                     }
                 }
                 (shas, pr_set.into_iter().collect::<Vec<_>>())

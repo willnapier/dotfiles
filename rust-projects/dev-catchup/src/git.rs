@@ -6,8 +6,7 @@ use std::process::Command;
 #[derive(Debug, Clone)]
 pub struct Commit {
     pub short_sha: String,
-    /// Kept as part of the public API; read by `parse_pr` at construction.
-    #[allow(dead_code)]
+    /// Commit subject — read to filter merge commits out of the SHA list.
     pub subject: String,
     pub pr: Option<u32>,
 }
@@ -29,6 +28,10 @@ pub fn commits_in_window(
     let mut cmd = Command::new("git");
     cmd.arg("-C").arg(repo_root).args([
         "log",
+        // --full-history keeps merge commits that the path filter would
+        // otherwise simplify away — that's where "Merge pull request #N" (the PR
+        // number) lives.
+        "--full-history",
         "--since",
         &since,
         "--until",
@@ -88,23 +91,28 @@ pub fn relativize(repo_root: &Path, abs_path: &str) -> Option<String> {
 fn parse_pr(subject: &str) -> Option<u32> {
     let bytes = subject.as_bytes();
     let mut i = 0;
-    while i + 1 < bytes.len() {
-        if bytes[i] == b'(' && bytes[i + 1] == b'#' {
-            let mut j = i + 2;
-            let start = j;
+    while i < bytes.len() {
+        if bytes[i] == b'#' {
+            let start = i + 1;
+            let mut j = start;
             while j < bytes.len() && bytes[j].is_ascii_digit() {
                 j += 1;
             }
-            // Require at least one digit and a closing ')'.
-            if j > start && j < bytes.len() && bytes[j] == b')' {
-                if let Ok(s) = std::str::from_utf8(&bytes[start..j]) {
-                    if let Ok(n) = s.parse::<u32>() {
+            if j > start {
+                // Accept only PR-like contexts: `(#124)` (squash) or
+                // `…pull request #124…` (merge). A bare `#99` issue ref is
+                // ignored. `i` is at a '#' byte (ASCII) so `..i` is a boundary.
+                let before = &subject[..i];
+                if before.ends_with('(') || before.ends_with("pull request ") {
+                    if let Ok(n) = subject[start..j].parse::<u32>() {
                         return Some(n);
                     }
                 }
             }
+            i = j.max(i + 1);
+        } else {
+            i += 1;
         }
-        i += 1;
     }
     None
 }
@@ -114,11 +122,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_pr_merge() {
+    fn test_parse_pr_merge_commit() {
         assert_eq!(
-            parse_pr("Merge pull request #5 from foo/bar (#124)"),
-            Some(124)
+            parse_pr("Merge pull request #118 from willnapier/fix/foo-2026"),
+            Some(118)
         );
+    }
+
+    #[test]
+    fn test_parse_pr_ignores_bare_issue_ref() {
+        assert_eq!(parse_pr("fix: handle the thing, closes #99"), None);
     }
 
     #[test]
