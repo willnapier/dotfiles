@@ -6,6 +6,20 @@
 #        messageboard-edit remove-section "### 2026-01-11 — device"
 #        messageboard-edit show
 
+# Trigger an immediate Syncthing rescan so a new/removed entry reaches the
+# other machine without waiting for the periodic scan. Best-effort: a sync
+# failure must never break the edit. This is the producer-side equivalent of
+# the old PostToolUse "sync on MESSAGEBOARD edit" hook, which can no longer
+# fire now that raw Edit/Write to MESSAGEBOARD.md is blocked (messageboard-guard).
+def trigger-sync [] {
+    try {
+        let key = (syncthing cli config gui apikey get | str trim)
+        if not ($key | is-empty) {
+            ^curl -s -X POST $"http://127.0.0.1:8384/rest/db/scan?folder=Assistants" -H $"X-API-Key: ($key)" | ignore
+        }
+    } catch { }
+}
+
 def main [action: string, content?: string] {
     let file = $"($env.HOME)/Assistants/shared/MESSAGEBOARD.md"
     let device = (sys host | get hostname)
@@ -36,7 +50,8 @@ def main [action: string, content?: string] {
 
             # Write atomically
             $updated | save -f $file
-            print $"✅ Message inserted at ($date) — ($device)"
+            trigger-sync
+            print $"✅ Message inserted into MESSAGEBOARD.md at ($date) — ($device)"
         }
 
         "remove-section" => {
@@ -78,6 +93,7 @@ def main [action: string, content?: string] {
             let updated = $"($before)\n($after)"
 
             $updated | save -f $file
+            trigger-sync
             print $"✅ Removed section: ($content)"
         }
 
@@ -129,6 +145,7 @@ def main [action: string, content?: string] {
             let updated = $"($before)\n($after)"
 
             $updated | save -f $file
+            trigger-sync
             print $"✅ Removed section containing: ($content)"
         }
 
