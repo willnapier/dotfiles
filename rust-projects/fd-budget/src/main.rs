@@ -321,6 +321,13 @@ fn get_rules_path() -> PathBuf {
     get_data_dir().join("rules.toml")
 }
 
+/// Path to the user-editable super-category roll-up config. Absent → the
+/// `stats --by-category --rollup` command falls back to the embedded default
+/// taxonomy (see [`query::CategoryMap::load`]).
+fn get_categories_path() -> PathBuf {
+    get_data_dir().join("categories.toml")
+}
+
 fn ensure_data_dir() -> std::io::Result<()> {
     std::fs::create_dir_all(get_data_dir())
 }
@@ -723,7 +730,22 @@ fn cmd_stats_by_category(
         return Ok(());
     }
     let filter = query::DateFilter::from_flags(year, month, since)?;
-    query::cmd_stats_by_category(&transactions, filter, limit, rollup)
+
+    // The super-category roll-up is config-driven. On first use of --rollup, seed
+    // a starter categories.toml (the embedded default taxonomy) the user can then
+    // edit; subsequent runs load whatever is on disk. Seeding is best-effort — if
+    // the write fails we still fall back to the in-memory default taxonomy below.
+    let category_map = if rollup {
+        let path = get_categories_path();
+        if !path.exists() {
+            let _ = std::fs::write(&path, query::CategoryMap::default_toml());
+        }
+        query::CategoryMap::load(&path)?
+    } else {
+        query::CategoryMap::default_taxonomy()
+    };
+
+    query::cmd_stats_by_category(&transactions, filter, limit, rollup, &category_map)
 }
 
 fn cmd_tx(action: TxAction) -> anyhow::Result<()> {

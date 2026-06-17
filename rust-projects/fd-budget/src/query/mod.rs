@@ -547,46 +547,253 @@ fn aggregate_by_category(
     (out, grand_total)
 }
 
-/// Default category -> super-category roll-up map (v1, hardcoded but refinable).
+/// The fallback super-category for any tag not listed in a taxonomy.
+pub const OTHER_SUPER: &str = "Other";
+
+/// The super-category for the reserved [`UNCATEGORISED`] tag. Kept distinct from
+/// [`OTHER_SUPER`] so untagged spend (the worklist signal) stays visible as its
+/// own bucket rather than being lumped in with merely-unmapped tags.
+pub const UNCATEGORISED_SUPER: &str = "Uncategorised";
+
+/// The built-in default taxonomy, expressed as `(super-category, &[member tags])`.
 ///
-/// Keys are lowercased category (primary-tag) names; the value is the
-/// super-category. Any category not listed rolls up under "Other". This is a
-/// deliberately simple structure: edit the table to refine, or later lift it to
-/// a config file. Comparison is case-insensitive (categories are lowercased
-/// before lookup).
-fn super_category(category: &str) -> &'static str {
-    match category.to_lowercase().as_str() {
-        // Home
-        "rent" | "mortgage" | "home" | "household" | "furniture" | "garden" => "Home",
-        // Bills / utilities
-        "bills" | "utilities" | "electricity" | "gas" | "water" | "energy" | "council-tax"
-        | "broadband" | "internet" | "phone" | "mobile" | "insurance" => "Bills",
-        // Food
-        "groceries" | "food" | "supermarket" | "dining" | "restaurant" | "takeaway" | "coffee"
-        | "pub" => "Food",
-        // Transport
-        "transport" | "fuel" | "petrol" | "parking" | "car" | "taxi" | "rail" | "train" | "bus"
-        | "tube" | "tfl" => "Transport",
-        // Travel
-        "travel" | "flights" | "hotel" | "holiday" | "accommodation" => "Travel",
-        // Subscriptions
-        "subscriptions" | "subscription" | "streaming" | "software" | "saas" | "media" => {
-            "Subscriptions"
+/// Single source of truth for the default mapping, used both as the absent-config
+/// fallback ([`CategoryMap::default_taxonomy`]) and to render a starter
+/// `categories.toml` ([`CategoryMap::default_toml`]). It is grouped into ~16
+/// super-categories derived from the real tag vocabulary surfaced by
+/// `stats --by-category` (rent, mortgage, bills, subscription, gym, transport,
+/// holiday, insurance, shopping, groceries, housing, health, cash, food, tech,
+/// travel, charity, giving, ...). It is a superset of the previous hardcoded
+/// table, so the default roll-up is unchanged for any tag that table mapped.
+const DEFAULT_TAXONOMY: &[(&str, &[&str])] = &[
+    (
+        "Home",
+        &[
+            "rent",
+            "mortgage",
+            "housing",
+            "flat",
+            "home",
+            "household",
+            "furniture",
+            "garden",
+        ],
+    ),
+    (
+        "Bills",
+        &[
+            "bills",
+            "utilities",
+            "electricity",
+            "gas",
+            "water",
+            "energy",
+            "council-tax",
+            "broadband",
+            "internet",
+            "phone",
+            "mobile",
+            "insurance",
+        ],
+    ),
+    (
+        "Food",
+        &[
+            "groceries",
+            "food",
+            "eatingout",
+            "workfood",
+            "supermarket",
+            "dining",
+            "restaurant",
+            "takeaway",
+            "coffee",
+            "pub",
+        ],
+    ),
+    (
+        "Transport",
+        &[
+            "transport",
+            "fuel",
+            "petrol",
+            "parking",
+            "car",
+            "taxi",
+            "rail",
+            "train",
+            "bus",
+            "tube",
+            "tfl",
+        ],
+    ),
+    (
+        "Travel",
+        &["travel", "flights", "hotel", "holiday", "accommodation"],
+    ),
+    (
+        "Subscriptions",
+        &[
+            "subscriptions",
+            "subscription",
+            "digital",
+            "tech",
+            "streaming",
+            "software",
+            "saas",
+            "media",
+            "entertainment",
+        ],
+    ),
+    (
+        "Health",
+        &[
+            "health", "medical", "dental", "pharmacy", "gym", "fitness", "therapy",
+        ],
+    ),
+    (
+        "Giving",
+        &["giving", "charity", "donation", "gifts", "gift"],
+    ),
+    (
+        "Shopping",
+        &[
+            "shopping",
+            "clothes",
+            "clothing",
+            "amazon",
+            "electronics",
+            "books",
+            "hobbies",
+        ],
+    ),
+    (
+        "Family",
+        &["childcare", "children", "kids", "school", "family"],
+    ),
+    ("Cash", &["cash", "atm", "withdrawal"]),
+];
+
+/// Config-driven category -> super-category roll-up map.
+///
+/// Built either from the embedded [default taxonomy](CategoryMap::default_taxonomy)
+/// or loaded from `categories.toml` (see [`CategoryMap::load`]). The on-disk schema
+/// is `super-category -> list of member tags`:
+///
+/// ```toml
+/// [super_categories]
+/// Home = ["rent", "mortgage", "housing", "household"]
+/// Bills = ["bills", "utilities", "mobile", "insurance"]
+/// # ...
+/// ```
+///
+/// Internally the map is inverted to `tag -> super-category` for O(1) lookup. Tag
+/// keys are lowercased so lookup is case-insensitive. A tag present in no
+/// super-category rolls up under [`OTHER_SUPER`]; the reserved [`UNCATEGORISED`]
+/// tag always maps to [`UNCATEGORISED_SUPER`] (implicitly, even if a config omits
+/// it), so the roll-up still reconciles exactly to the Spend floor.
+#[derive(Debug, Clone, Default)]
+pub struct CategoryMap {
+    /// Inverted lookup: lowercased tag -> super-category label.
+    tag_to_super: HashMap<String, String>,
+}
+
+/// On-disk schema for `categories.toml`: a single `[super_categories]` table
+/// whose keys are super-category labels and whose values are the member tags.
+#[derive(Debug, Clone, Default, serde::Serialize, Deserialize)]
+struct CategoriesConfig {
+    #[serde(default)]
+    super_categories: std::collections::BTreeMap<String, Vec<String>>,
+}
+
+impl CategoryMap {
+    /// Build the default (embedded) taxonomy map.
+    pub fn default_taxonomy() -> Self {
+        let mut tag_to_super = HashMap::new();
+        for (sup, tags) in DEFAULT_TAXONOMY {
+            for tag in *tags {
+                tag_to_super.insert(tag.to_lowercase(), (*sup).to_string());
+            }
         }
-        // Health
-        "health" | "medical" | "dental" | "pharmacy" | "gym" | "fitness" | "therapy" => "Health",
-        // Giving
-        "giving" | "charity" | "donation" | "gifts" | "gift" => "Giving",
-        // Shopping
-        "shopping" | "clothes" | "clothing" | "amazon" | "electronics" | "books" | "hobbies" => {
-            "Shopping"
-        }
-        // Childcare / family
-        "childcare" | "children" | "kids" | "school" | "family" => "Family",
-        // Uncategorised stays visible as its own super-category bucket.
-        UNCATEGORISED => "Uncategorised",
-        _ => "Other",
+        Self { tag_to_super }
     }
+
+    /// Build a map from an in-memory config (super-category -> member tags).
+    fn from_config(config: &CategoriesConfig) -> Self {
+        let mut tag_to_super = HashMap::new();
+        for (sup, tags) in &config.super_categories {
+            for tag in tags {
+                tag_to_super.insert(tag.to_lowercase(), sup.clone());
+            }
+        }
+        Self { tag_to_super }
+    }
+
+    /// Load the map from `categories.toml`.
+    ///
+    /// Behaviour:
+    /// - **Absent file** → fall back to the embedded [default
+    ///   taxonomy](CategoryMap::default_taxonomy) (today's behaviour, unchanged),
+    ///   so `--rollup` works with no config present.
+    /// - **Present file** → parse the `[super_categories]` table and invert it.
+    ///
+    /// A parse error is surfaced to the caller — a malformed config is a user
+    /// error worth reporting, not silently swallowing.
+    pub fn load<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
+        let path = path.as_ref();
+        if !path.exists() {
+            return Ok(Self::default_taxonomy());
+        }
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| anyhow::anyhow!("failed to read {}: {}", path.display(), e))?;
+        let config: CategoriesConfig = toml::from_str(&content)
+            .map_err(|e| anyhow::anyhow!("failed to parse {}: {}", path.display(), e))?;
+        Ok(Self::from_config(&config))
+    }
+
+    /// Serialise the default taxonomy to TOML, for writing a starter
+    /// `categories.toml` users can then edit.
+    pub fn default_toml() -> String {
+        let mut super_categories = std::collections::BTreeMap::new();
+        for (sup, tags) in DEFAULT_TAXONOMY {
+            super_categories.insert(
+                (*sup).to_string(),
+                tags.iter().map(|t| t.to_string()).collect(),
+            );
+        }
+        let config = CategoriesConfig { super_categories };
+        // Render from DEFAULT_TAXONOMY so the starter file can never drift from it.
+        toml::to_string_pretty(&config).unwrap_or_default()
+    }
+
+    /// The super-category for a category (primary-tag).
+    ///
+    /// The reserved [`UNCATEGORISED`] tag always maps to [`UNCATEGORISED_SUPER`].
+    /// Any tag not present in the map rolls up under [`OTHER_SUPER`]. Lookup is
+    /// case-insensitive.
+    pub fn super_category(&self, category: &str) -> String {
+        let lower = category.to_lowercase();
+        if lower == UNCATEGORISED {
+            return UNCATEGORISED_SUPER.to_string();
+        }
+        self.tag_to_super
+            .get(&lower)
+            .cloned()
+            .unwrap_or_else(|| OTHER_SUPER.to_string())
+    }
+}
+
+/// Default category -> super-category lookup, against the embedded taxonomy.
+///
+/// Thin wrapper over [`CategoryMap::default_taxonomy`]. Production code rolls up
+/// via a [`CategoryMap`] built by `main` (config-driven), so this is only used by
+/// the test suite to assert the default mapping without first building a map. Any
+/// tag not in the default taxonomy rolls up under [`OTHER_SUPER`];
+/// [`UNCATEGORISED`] maps to [`UNCATEGORISED_SUPER`]. Comparison is
+/// case-insensitive.
+#[cfg(test)]
+fn super_category(category: &str) -> String {
+    CategoryMap::default_taxonomy().super_category(category)
 }
 
 /// Print a stats-by-category table. The TOTAL line equals (and reconciles to)
@@ -596,6 +803,7 @@ pub fn cmd_stats_by_category(
     filter: DateFilter,
     limit: usize,
     rollup: bool,
+    category_map: &CategoryMap,
 ) -> anyhow::Result<()> {
     let (agg, grand_total) = aggregate_by_category(transactions, filter);
 
@@ -664,24 +872,28 @@ pub fn cmd_stats_by_category(
     }
 
     if rollup {
-        print_rollup(&agg, grand_total);
+        print_rollup(&agg, grand_total, category_map);
     }
 
     Ok(())
 }
 
 /// Print the super-category roll-up as a second section.
-fn print_rollup(agg: &[CategoryAggregate], grand_total: Decimal) {
-    let mut supers: HashMap<&'static str, (Decimal, usize)> = HashMap::new();
+///
+/// The mapping is config-driven via [`CategoryMap`]; a tag absent from the map
+/// lands in the [`OTHER_SUPER`] bucket, so the roll-up still reconciles exactly to
+/// the Spend floor.
+fn print_rollup(agg: &[CategoryAggregate], grand_total: Decimal, category_map: &CategoryMap) {
+    let mut supers: HashMap<String, (Decimal, usize)> = HashMap::new();
     for entry in agg {
-        let sup = super_category(&entry.name);
+        let sup = category_map.super_category(&entry.name);
         let e = supers.entry(sup).or_insert((Decimal::ZERO, 0));
         e.0 += entry.total;
         e.1 += entry.count;
     }
-    let mut rows: Vec<(&'static str, Decimal, usize)> =
+    let mut rows: Vec<(String, Decimal, usize)> =
         supers.into_iter().map(|(k, v)| (k, v.0, v.1)).collect();
-    rows.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+    rows.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 
     println!();
     println!("Super-category roll-up (mapping is refinable):");
@@ -1264,7 +1476,7 @@ mod tests {
         ];
         let (agg, grand_total) = aggregate_by_category(&txs, DateFilter::default());
         // Roll categories into super-categories and confirm exact reconciliation.
-        let mut supers: HashMap<&'static str, Decimal> = HashMap::new();
+        let mut supers: HashMap<String, Decimal> = HashMap::new();
         for entry in &agg {
             *supers.entry(super_category(&entry.name)).or_default() += entry.total;
         }
@@ -1278,6 +1490,160 @@ mod tests {
         assert_eq!(super_category("streaming"), "Subscriptions");
         assert_eq!(super_category(UNCATEGORISED), "Uncategorised");
         assert_eq!(super_category("nonsense-tag"), "Other");
+    }
+
+    /// Roll `agg` into super-categories using `map`, returning (supers, summed).
+    /// Mirrors the production `print_rollup` aggregation so the reconciliation
+    /// invariant is tested against the same code path shape.
+    fn rollup_with(
+        map: &CategoryMap,
+        agg: &[CategoryAggregate],
+    ) -> (HashMap<String, Decimal>, Decimal) {
+        let mut supers: HashMap<String, Decimal> = HashMap::new();
+        for entry in agg {
+            *supers.entry(map.super_category(&entry.name)).or_default() += entry.total;
+        }
+        let summed: Decimal = supers.values().copied().sum();
+        (supers, summed)
+    }
+
+    /// A categories.toml fixture written to a unique temp path. Synthetic only.
+    fn write_temp_categories(contents: &str, tag: &str) -> std::path::PathBuf {
+        let mut path = std::env::temp_dir();
+        let pid = std::process::id();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        path.push(format!("fd-budget-categories-{tag}-{pid}-{nanos}.toml"));
+        std::fs::write(&path, contents).unwrap();
+        path
+    }
+
+    #[test]
+    fn rollup_reconciles_to_spend_floor_with_config_present() {
+        // (i) With a config file present, the roll-up still reconciles exactly.
+        let txs = vec![
+            mk_tx_tagged("2025-06-01", "-900.00", "RENT", "t1", &["rent"]),
+            mk_tx_tagged("2025-06-02", "-55.67", "VODAFONE", "t2", &["mobile"]),
+            mk_tx_tagged("2025-06-03", "-40.00", "TESCO", "t3", &["groceries"]),
+            mk_tx_tagged(
+                "2025-06-04",
+                "-12.99",
+                "STREAMFLIX",
+                "t4",
+                &["subscription"],
+            ),
+            mk_tx_tagged("2025-06-05", "-7.50", "MYSTERY", "t5", &[]),
+        ];
+        let config = r#"
+[super_categories]
+Home = ["rent", "mortgage", "housing"]
+Bills = ["bills", "mobile", "insurance"]
+Food = ["groceries", "food", "coffee"]
+Subscriptions = ["subscription", "digital", "tech"]
+"#;
+        let path = write_temp_categories(config, "present");
+        let map = CategoryMap::load(&path).unwrap();
+
+        let (agg, grand_total) = aggregate_by_category(&txs, DateFilter::default());
+        let (supers, summed) = rollup_with(&map, &agg);
+        assert_eq!(summed, grand_total);
+        assert_eq!(grand_total, spend_floor(&txs, DateFilter::default()));
+        // The config map placed the known tags where the TOML says.
+        assert_eq!(map.super_category("rent"), "Home");
+        assert_eq!(map.super_category("mobile"), "Bills");
+        assert_eq!(map.super_category("groceries"), "Food");
+        assert_eq!(map.super_category("subscription"), "Subscriptions");
+        // The untagged row is in the Uncategorised super-bucket (always implicit).
+        assert!(supers.contains_key(UNCATEGORISED_SUPER));
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn tag_absent_from_config_lands_in_other_and_still_reconciles() {
+        // (ii) A tag not listed in any super-category rolls up under "Other",
+        // and the roll-up still reconciles exactly to the Spend floor.
+        let txs = vec![
+            mk_tx_tagged("2025-06-01", "-900.00", "RENT", "t1", &["rent"]),
+            // "gym" is deliberately omitted from the config below.
+            mk_tx_tagged("2025-06-02", "-30.00", "PUREGYM", "t2", &["gym"]),
+            mk_tx_tagged("2025-06-03", "-7.50", "MYSTERY", "t3", &[]),
+        ];
+        let config = r#"
+[super_categories]
+Home = ["rent", "mortgage"]
+Food = ["groceries", "food"]
+"#;
+        let path = write_temp_categories(config, "other");
+        let map = CategoryMap::load(&path).unwrap();
+
+        let (agg, grand_total) = aggregate_by_category(&txs, DateFilter::default());
+        let (supers, summed) = rollup_with(&map, &agg);
+
+        // The unmapped "gym" tag lands in the Other super-bucket.
+        assert_eq!(map.super_category("gym"), OTHER_SUPER);
+        let other = supers.get(OTHER_SUPER).copied().unwrap_or(Decimal::ZERO);
+        assert_eq!(other, Decimal::from_str("30.00").unwrap());
+        // Reconciliation still holds with an Other bucket present.
+        assert_eq!(summed, grand_total);
+        assert_eq!(grand_total, spend_floor(&txs, DateFilter::default()));
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn absent_config_falls_back_to_default_taxonomy_and_reconciles() {
+        // (iii) With no config file present, load() falls back to the embedded
+        // default taxonomy and the roll-up reconciles exactly.
+        let mut missing = std::env::temp_dir();
+        missing.push(format!(
+            "fd-budget-categories-does-not-exist-{}.toml",
+            std::process::id()
+        ));
+        // Ensure it really is absent.
+        std::fs::remove_file(&missing).ok();
+        assert!(!missing.exists());
+
+        let map = CategoryMap::load(&missing).unwrap();
+        // The fallback map equals the default taxonomy (spot-check known mappings).
+        assert_eq!(map.super_category("rent"), "Home");
+        assert_eq!(map.super_category("mobile"), "Bills");
+        assert_eq!(map.super_category("groceries"), "Food");
+        assert_eq!(map.super_category("streaming"), "Subscriptions");
+        assert_eq!(map.super_category(UNCATEGORISED), UNCATEGORISED_SUPER);
+        assert_eq!(map.super_category("nonsense-tag"), OTHER_SUPER);
+
+        let txs = vec![
+            mk_tx_tagged("2025-06-01", "-900.00", "RENT", "t1", &["rent"]),
+            mk_tx_tagged("2025-06-02", "-55.67", "VODAFONE", "t2", &["mobile"]),
+            mk_tx_tagged("2025-06-03", "-40.00", "TESCO", "t3", &["groceries"]),
+            mk_tx_tagged("2025-06-04", "-7.50", "MYSTERY", "t4", &[]),
+        ];
+        let (agg, grand_total) = aggregate_by_category(&txs, DateFilter::default());
+        let (_supers, summed) = rollup_with(&map, &agg);
+        assert_eq!(summed, grand_total);
+        assert_eq!(grand_total, spend_floor(&txs, DateFilter::default()));
+    }
+
+    #[test]
+    fn default_toml_round_trips_to_default_taxonomy() {
+        // The starter TOML we seed on first use parses back to a map equivalent
+        // to the embedded default for every default tag.
+        let toml = CategoryMap::default_toml();
+        assert!(toml.contains("[super_categories]"));
+        let path = write_temp_categories(&toml, "roundtrip");
+        let from_file = CategoryMap::load(&path).unwrap();
+        let default = CategoryMap::default_taxonomy();
+        for (_sup, tags) in DEFAULT_TAXONOMY {
+            for tag in *tags {
+                assert_eq!(
+                    from_file.super_category(tag),
+                    default.super_category(tag),
+                    "tag {tag} mismatched after TOML round-trip"
+                );
+            }
+        }
+        std::fs::remove_file(&path).ok();
     }
 
     #[test]
