@@ -47,11 +47,22 @@ enum Commands {
     },
     /// Show statistics. With `--by-counterparty`, aggregates outgoing spend
     /// per counterparty, joining transactions.csv against matches.jsonl and
-    /// bills.jsonl. Without flags, prints the original tag/account summary.
+    /// bills.jsonl. With `--by-category`, breaks the personal Spend floor down
+    /// per category (the row's primary tag), summing EXACTLY to the Spend floor.
+    /// Without flags, prints the original tag/account summary.
     Stats {
         /// Aggregate outgoing spend per counterparty (Stage 2 query)
-        #[arg(long)]
+        #[arg(long, conflicts_with = "by_category")]
         by_counterparty: bool,
+        /// Break the Spend floor down per category (primary tag). Each spend row
+        /// is attributed to exactly one bucket; untagged spend -> "uncategorised".
+        /// Per-category totals reconcile exactly to the Spend floor.
+        #[arg(long)]
+        by_category: bool,
+        /// With --by-category, also print a super-category roll-up (Home, Bills,
+        /// Food, Transport, …). Mapping is a refinable default. No effect otherwise.
+        #[arg(long)]
+        rollup: bool,
         /// Filter to a single calendar year
         #[arg(long)]
         year: Option<i32>,
@@ -271,6 +282,8 @@ fn main() -> anyhow::Result<()> {
         }
         Commands::Stats {
             by_counterparty,
+            by_category,
+            rollup,
             year,
             month,
             since,
@@ -278,6 +291,8 @@ fn main() -> anyhow::Result<()> {
         } => {
             if by_counterparty {
                 cmd_stats_by_counterparty(year, month.as_deref(), since, limit)?;
+            } else if by_category {
+                cmd_stats_by_category(year, month.as_deref(), since, limit, rollup)?;
             } else {
                 cmd_stats(year, month.as_deref(), since)?;
             }
@@ -563,6 +578,25 @@ fn cmd_stats_by_counterparty(
     let joined = query::join_with_recovery(&txs, &emails, &matches, &recoveries);
     let filter = query::DateFilter::from_flags(year, month, since)?;
     query::cmd_stats_by_counterparty(&joined, filter, limit)
+}
+
+fn cmd_stats_by_category(
+    year: Option<i32>,
+    month: Option<&str>,
+    since: Option<NaiveDate>,
+    limit: usize,
+    rollup: bool,
+) -> anyhow::Result<()> {
+    // Category = the row's primary tag, which lives on the transaction itself, so
+    // this needs only transactions.csv — no matches.jsonl / bills.jsonl join.
+    let store = CsvStore::new(get_store_path());
+    let transactions = store.load_all()?;
+    if transactions.is_empty() {
+        eprintln!("No transactions in store");
+        return Ok(());
+    }
+    let filter = query::DateFilter::from_flags(year, month, since)?;
+    query::cmd_stats_by_category(&transactions, filter, limit, rollup)
 }
 
 fn cmd_tx(action: TxAction) -> anyhow::Result<()> {

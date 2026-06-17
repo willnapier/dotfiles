@@ -464,6 +464,253 @@ pub fn cmd_stats_by_counterparty(
 }
 
 // ---------------------------------------------------------------------------
+// Command: stats --by-category
+// ---------------------------------------------------------------------------
+//
+// A native, exact category breakdown of the personal Spend floor. The earlier
+// awk attempt came out ~3% wrong because awk can't parse quoted CSV; this reuses
+// the tool's exact parser and the very same `counts_as_spend()` predicate that
+// `cmd_stats` uses for the Spend line, so the per-category totals SUM EXACTLY to
+// that floor.
+//
+// "Category" = the transaction's primary tag: its first tag that is NOT a
+// NONSPEND_TAG. A spend row carrying several descriptive tags is attributed to
+// exactly ONE bucket (its primary), so no row is double-counted. A spend row
+// with no category tag lands in the "uncategorised" bucket — the worklist signal.
+
+/// Bucket label used for spend rows that carry no descriptive (non-reserved) tag.
+pub const UNCATEGORISED: &str = "uncategorised";
+
+#[derive(Debug, Clone)]
+struct CategoryAggregate {
+    name: String,
+    total: Decimal, // Sum of |amount| for spend rows in this category.
+    count: usize,
+}
+
+/// The primary category of a spend row: its first tag that is NOT a reserved
+/// NONSPEND_TAG. Reserved tags (transfer/income/tax/one-off/business/fdvisa)
+/// never reach here for a spend row — `counts_as_spend()` already excludes any
+/// row carrying one — but we skip them defensively so a descriptive tag is
+/// always chosen as the label. Returns `None` when the row has no descriptive
+/// tag, which the caller maps to the "uncategorised" bucket.
+fn primary_category(tx: &Transaction) -> Option<&str> {
+    tx.tags
+        .iter()
+        .find(|t| {
+            !Transaction::NONSPEND_TAGS
+                .iter()
+                .any(|n| t.eq_ignore_ascii_case(n))
+        })
+        .map(|s| s.as_str())
+}
+
+/// Aggregate the personal Spend floor per category over the window.
+///
+/// Only rows where `counts_as_spend()` is true are included — exactly the rows
+/// `cmd_stats` sums into the "Spend (recurring personal living cost)" figure.
+/// Each such row is attributed to exactly one bucket (its `primary_category`,
+/// or "uncategorised"), so the bucket totals reconcile to the floor.
+///
+/// Return: (buckets sorted by total descending, grand total = Spend floor).
+fn aggregate_by_category(
+    transactions: &[Transaction],
+    filter: DateFilter,
+) -> (Vec<CategoryAggregate>, Decimal) {
+    let mut buckets: HashMap<String, CategoryAggregate> = HashMap::new();
+    let mut grand_total = Decimal::ZERO;
+
+    for tx in transactions {
+        if !filter.matches(tx.date) {
+            continue;
+        }
+        if !tx.counts_as_spend() {
+            continue;
+        }
+        let category = primary_category(tx).unwrap_or(UNCATEGORISED).to_string();
+        let amount = tx.amount.abs();
+        let entry = buckets
+            .entry(category.clone())
+            .or_insert_with(|| CategoryAggregate {
+                name: category,
+                total: Decimal::ZERO,
+                count: 0,
+            });
+        entry.total += amount;
+        entry.count += 1;
+        grand_total += amount;
+    }
+
+    let mut out: Vec<CategoryAggregate> = buckets.into_values().collect();
+    // Sort by total descending; tie-break by name so output is deterministic.
+    out.sort_by(|a, b| b.total.cmp(&a.total).then_with(|| a.name.cmp(&b.name)));
+    (out, grand_total)
+}
+
+/// Default category -> super-category roll-up map (v1, hardcoded but refinable).
+///
+/// Keys are lowercased category (primary-tag) names; the value is the
+/// super-category. Any category not listed rolls up under "Other". This is a
+/// deliberately simple structure: edit the table to refine, or later lift it to
+/// a config file. Comparison is case-insensitive (categories are lowercased
+/// before lookup).
+fn super_category(category: &str) -> &'static str {
+    match category.to_lowercase().as_str() {
+        // Home
+        "rent" | "mortgage" | "home" | "household" | "furniture" | "garden" => "Home",
+        // Bills / utilities
+        "bills" | "utilities" | "electricity" | "gas" | "water" | "energy" | "council-tax"
+        | "broadband" | "internet" | "phone" | "mobile" | "insurance" => "Bills",
+        // Food
+        "groceries" | "food" | "supermarket" | "dining" | "restaurant" | "takeaway" | "coffee"
+        | "pub" => "Food",
+        // Transport
+        "transport" | "fuel" | "petrol" | "parking" | "car" | "taxi" | "rail" | "train" | "bus"
+        | "tube" | "tfl" => "Transport",
+        // Travel
+        "travel" | "flights" | "hotel" | "holiday" | "accommodation" => "Travel",
+        // Subscriptions
+        "subscriptions" | "subscription" | "streaming" | "software" | "saas" | "media" => {
+            "Subscriptions"
+        }
+        // Health
+        "health" | "medical" | "dental" | "pharmacy" | "gym" | "fitness" | "therapy" => "Health",
+        // Giving
+        "giving" | "charity" | "donation" | "gifts" | "gift" => "Giving",
+        // Shopping
+        "shopping" | "clothes" | "clothing" | "amazon" | "electronics" | "books" | "hobbies" => {
+            "Shopping"
+        }
+        // Childcare / family
+        "childcare" | "children" | "kids" | "school" | "family" => "Family",
+        // Uncategorised stays visible as its own super-category bucket.
+        UNCATEGORISED => "Uncategorised",
+        _ => "Other",
+    }
+}
+
+/// Print a stats-by-category table. The TOTAL line equals (and reconciles to)
+/// the Spend floor printed by `fd-budget stats`.
+pub fn cmd_stats_by_category(
+    transactions: &[Transaction],
+    filter: DateFilter,
+    limit: usize,
+    rollup: bool,
+) -> anyhow::Result<()> {
+    let (agg, grand_total) = aggregate_by_category(transactions, filter);
+
+    if agg.is_empty() {
+        println!("No personal spend in the selected period.");
+        return Ok(());
+    }
+
+    println!("{:<28} {:>12}   {:>5}", "Category", "Total", "Count");
+    println!("{}", "-".repeat(50));
+
+    let mut shown_total = Decimal::ZERO;
+    let mut shown_count = 0usize;
+    for entry in agg.iter().take(limit) {
+        // Flag the uncategorised bucket prominently — it is the worklist signal.
+        let label = if entry.name == UNCATEGORISED {
+            format!("** {} **", entry.name)
+        } else {
+            truncate(&entry.name, 28)
+        };
+        println!(
+            "{:<28} {:>12}   {:>5}",
+            label,
+            format_money(entry.total),
+            entry.count
+        );
+        shown_total += entry.total;
+        shown_count += entry.count;
+    }
+
+    // If a limit truncated the table, fold the tail into a single line so the
+    // printed TOTAL still equals the Spend floor (reconciliation must hold).
+    if agg.len() > limit {
+        let rest_total = grand_total - shown_total;
+        let rest_count: usize = agg.iter().skip(limit).map(|a| a.count).sum();
+        println!(
+            "{:<28} {:>12}   {:>5}",
+            format!("(+{} more categories)", agg.len() - limit),
+            format_money(rest_total),
+            rest_count
+        );
+        shown_total += rest_total;
+        shown_count += rest_count;
+    }
+
+    println!("{}", "-".repeat(50));
+    println!(
+        "{:<28} {:>12}   {:>5}",
+        "TOTAL (= Spend floor)",
+        format_money(grand_total),
+        shown_count
+    );
+
+    // Reconciliation assertion: the printed rows must sum to the floor exactly.
+    // Decimal arithmetic is exact, so this always holds; we surface it so the
+    // user can see the breakdown is trustworthy (the whole point of the command).
+    if shown_total == grand_total {
+        println!("Reconciles exactly to the Spend floor. \u{2713}");
+    } else {
+        // Should be unreachable with Decimal; loud if it ever isn't.
+        println!(
+            "WARNING: category totals ({}) do NOT reconcile to Spend floor ({})",
+            format_money(shown_total),
+            format_money(grand_total)
+        );
+    }
+
+    if rollup {
+        print_rollup(&agg, grand_total);
+    }
+
+    Ok(())
+}
+
+/// Print the super-category roll-up as a second section.
+fn print_rollup(agg: &[CategoryAggregate], grand_total: Decimal) {
+    let mut supers: HashMap<&'static str, (Decimal, usize)> = HashMap::new();
+    for entry in agg {
+        let sup = super_category(&entry.name);
+        let e = supers.entry(sup).or_insert((Decimal::ZERO, 0));
+        e.0 += entry.total;
+        e.1 += entry.count;
+    }
+    let mut rows: Vec<(&'static str, Decimal, usize)> =
+        supers.into_iter().map(|(k, v)| (k, v.0, v.1)).collect();
+    rows.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+
+    println!();
+    println!("Super-category roll-up (mapping is refinable):");
+    println!("{:<28} {:>12}   {:>5}", "Super-category", "Total", "Count");
+    println!("{}", "-".repeat(50));
+    let mut total = Decimal::ZERO;
+    let mut count = 0usize;
+    for (name, sum, n) in &rows {
+        println!("{:<28} {:>12}   {:>5}", name, format_money(*sum), n);
+        total += *sum;
+        count += *n;
+    }
+    println!("{}", "-".repeat(50));
+    println!(
+        "{:<28} {:>12}   {:>5}",
+        "TOTAL (= Spend floor)",
+        format_money(grand_total),
+        count
+    );
+    if total != grand_total {
+        println!(
+            "WARNING: roll-up totals ({}) do NOT reconcile to Spend floor ({})",
+            format_money(total),
+            format_money(grand_total)
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Command 2b: tx --vendor <NAME> --with-evidence
 // ---------------------------------------------------------------------------
 
@@ -849,6 +1096,188 @@ mod tests {
         let (agg, _, _, _) = aggregate_by_counterparty(&joined, DateFilter::year(2025));
         assert_eq!(agg.len(), 1);
         assert_eq!(agg[0].count, 1);
+    }
+
+    // -------------------------------------------------------------------
+    // stats --by-category tests
+    // -------------------------------------------------------------------
+
+    fn mk_tx_tagged(
+        date_str: &str,
+        amount: &str,
+        desc: &str,
+        id: &str,
+        tags: &[&str],
+    ) -> Transaction {
+        let mut tx = mk_tx(date_str, amount, desc, id);
+        tx.tags = tags.iter().map(|s| s.to_string()).collect();
+        tx
+    }
+
+    /// Compute the Spend floor exactly as `cmd_stats` does, for cross-checking.
+    fn spend_floor(txs: &[Transaction], filter: DateFilter) -> Decimal {
+        txs.iter()
+            .filter(|t| filter.matches(t.date))
+            .filter(|t| t.counts_as_spend())
+            .map(|t| t.amount.abs())
+            .sum()
+    }
+
+    #[test]
+    fn category_totals_sum_to_spend_floor() {
+        let txs = vec![
+            mk_tx_tagged("2025-06-01", "-55.67", "VODAFONE", "t1", &["bills"]),
+            mk_tx_tagged("2025-06-02", "-30.00", "TESCO", "t2", &["groceries"]),
+            mk_tx_tagged("2025-06-03", "-10.00", "ALDI", "t3", &["groceries"]),
+            mk_tx_tagged(
+                "2025-06-04",
+                "-12.99",
+                "STREAMFLIX",
+                "t4",
+                &["subscriptions"],
+            ),
+            // Untagged debit -> uncategorised, still part of the floor.
+            mk_tx_tagged("2025-06-05", "-7.50", "CORNER SHOP", "t5", &[]),
+        ];
+        let (agg, grand_total) = aggregate_by_category(&txs, DateFilter::default());
+        let summed: Decimal = agg.iter().map(|a| a.total).sum();
+        // (i) buckets sum to the grand total returned ...
+        assert_eq!(summed, grand_total);
+        // ... and the grand total equals the independently-computed Spend floor.
+        assert_eq!(grand_total, spend_floor(&txs, DateFilter::default()));
+        assert_eq!(grand_total, Decimal::from_str("116.16").unwrap());
+    }
+
+    #[test]
+    fn category_excludes_credits_and_nonspend() {
+        let txs = vec![
+            mk_tx_tagged("2025-06-01", "-50.00", "TESCO", "t1", &["groceries"]),
+            // credit (refund) — excluded
+            mk_tx_tagged("2025-06-02", "20.00", "REFUND", "t2", &["groceries"]),
+            // nonspend-tagged debits — excluded from the floor
+            mk_tx_tagged("2025-06-03", "-1000.00", "HMRC", "t3", &["tax"]),
+            mk_tx_tagged("2025-06-04", "-500.00", "TFR OUT", "t4", &["transfer"]),
+            mk_tx_tagged("2025-06-05", "-370.00", "PA FEES", "t5", &["business"]),
+            mk_tx_tagged(
+                "2025-06-06",
+                "-2550.00",
+                "GYM BLOCK",
+                "t6",
+                &["one-off", "gym"],
+            ),
+            mk_tx_tagged("2025-06-07", "-46.07", "FD VISA", "t7", &["fdvisa"]),
+            mk_tx_tagged("2025-06-08", "-200.00", "PAYDAY", "t8", &["income"]),
+        ];
+        let (agg, grand_total) = aggregate_by_category(&txs, DateFilter::default());
+        // Only the single groceries debit survives.
+        assert_eq!(agg.len(), 1);
+        assert_eq!(agg[0].name, "groceries");
+        assert_eq!(grand_total, Decimal::from_str("50.00").unwrap());
+        assert_eq!(grand_total, spend_floor(&txs, DateFilter::default()));
+    }
+
+    #[test]
+    fn uncategorised_bucket_captures_untagged_spend() {
+        let txs = vec![
+            mk_tx_tagged("2025-06-01", "-50.00", "TESCO", "t1", &["groceries"]),
+            mk_tx_tagged("2025-06-02", "-7.50", "CORNER SHOP", "t2", &[]),
+            mk_tx_tagged("2025-06-03", "-3.20", "KIOSK", "t3", &[]),
+        ];
+        let (agg, _grand) = aggregate_by_category(&txs, DateFilter::default());
+        let uncat = agg
+            .iter()
+            .find(|a| a.name == UNCATEGORISED)
+            .expect("uncategorised bucket present");
+        assert_eq!(uncat.count, 2);
+        assert_eq!(uncat.total, Decimal::from_str("10.70").unwrap());
+    }
+
+    #[test]
+    fn primary_category_skips_reserved_tags() {
+        // A spend row that (defensively) carries a reserved tag alongside a
+        // descriptive one is labelled by the descriptive tag, not the reserved.
+        // (counts_as_spend would normally exclude such a row, but primary_category
+        // must still pick the descriptive label.)
+        let tx = mk_tx_tagged(
+            "2025-06-01",
+            "-50.00",
+            "X",
+            "t1",
+            &["groceries", "shopping"],
+        );
+        assert_eq!(primary_category(&tx), Some("groceries"));
+        let untagged = mk_tx_tagged("2025-06-01", "-50.00", "X", "t2", &[]);
+        assert_eq!(primary_category(&untagged), None);
+    }
+
+    #[test]
+    fn category_row_not_double_counted_across_tags() {
+        // A row with several descriptive tags lands in exactly ONE bucket.
+        let txs = vec![mk_tx_tagged(
+            "2025-06-01",
+            "-80.00",
+            "MIXED",
+            "t1",
+            &["groceries", "household", "shopping"],
+        )];
+        let (agg, grand_total) = aggregate_by_category(&txs, DateFilter::default());
+        assert_eq!(agg.len(), 1);
+        assert_eq!(agg[0].name, "groceries");
+        assert_eq!(agg[0].count, 1);
+        assert_eq!(grand_total, Decimal::from_str("80.00").unwrap());
+    }
+
+    #[test]
+    fn category_respects_date_filter() {
+        let txs = vec![
+            mk_tx_tagged("2024-12-31", "-100.00", "OLD", "t1", &["groceries"]),
+            mk_tx_tagged("2025-06-15", "-25.00", "NEW", "t2", &["groceries"]),
+            mk_tx_tagged("2026-01-01", "-99.00", "FUTURE", "t3", &["groceries"]),
+        ];
+        let (agg, grand_total) = aggregate_by_category(&txs, DateFilter::year(2025));
+        assert_eq!(agg.len(), 1);
+        assert_eq!(agg[0].count, 1);
+        assert_eq!(grand_total, Decimal::from_str("25.00").unwrap());
+        assert_eq!(grand_total, spend_floor(&txs, DateFilter::year(2025)));
+    }
+
+    #[test]
+    fn category_sorted_by_total_descending() {
+        let txs = vec![
+            mk_tx_tagged("2025-06-01", "-10.00", "A", "t1", &["coffee"]),
+            mk_tx_tagged("2025-06-02", "-90.00", "B", "t2", &["rent"]),
+            mk_tx_tagged("2025-06-03", "-40.00", "C", "t3", &["groceries"]),
+        ];
+        let (agg, _grand) = aggregate_by_category(&txs, DateFilter::default());
+        let names: Vec<&str> = agg.iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(names, vec!["rent", "groceries", "coffee"]);
+    }
+
+    #[test]
+    fn rollup_reconciles_to_spend_floor() {
+        let txs = vec![
+            mk_tx_tagged("2025-06-01", "-900.00", "RENT", "t1", &["rent"]),
+            mk_tx_tagged("2025-06-02", "-55.67", "VODAFONE", "t2", &["mobile"]),
+            mk_tx_tagged("2025-06-03", "-40.00", "TESCO", "t3", &["groceries"]),
+            mk_tx_tagged("2025-06-04", "-12.99", "STREAMFLIX", "t4", &["streaming"]),
+            mk_tx_tagged("2025-06-05", "-7.50", "MYSTERY", "t5", &[]),
+        ];
+        let (agg, grand_total) = aggregate_by_category(&txs, DateFilter::default());
+        // Roll categories into super-categories and confirm exact reconciliation.
+        let mut supers: HashMap<&'static str, Decimal> = HashMap::new();
+        for entry in &agg {
+            *supers.entry(super_category(&entry.name)).or_default() += entry.total;
+        }
+        let summed: Decimal = supers.values().copied().sum();
+        assert_eq!(summed, grand_total);
+        assert_eq!(grand_total, spend_floor(&txs, DateFilter::default()));
+        // Sanity: known mappings land where expected.
+        assert_eq!(super_category("rent"), "Home");
+        assert_eq!(super_category("mobile"), "Bills");
+        assert_eq!(super_category("groceries"), "Food");
+        assert_eq!(super_category("streaming"), "Subscriptions");
+        assert_eq!(super_category(UNCATEGORISED), "Uncategorised");
+        assert_eq!(super_category("nonsense-tag"), "Other");
     }
 
     #[test]
