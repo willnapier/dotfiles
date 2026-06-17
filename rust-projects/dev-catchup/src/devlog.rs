@@ -86,17 +86,27 @@ fn parse_claude_response(text: &str) -> (String, Vec<String>) {
         }
     }
 
-    // Drop leading blank or preamble lines (e.g. "here's the entry:").
-    while let Some(first) = body.first() {
+    // The model tends to "think out loud" in leading paragraphs, then write the
+    // real entry as the LAST blank-line-separated paragraph. Take that paragraph,
+    // then drop any leading meta lines stuck to it (blank, or ending in ':').
+    let joined = body.join("\n");
+    let last_para = joined
+        .split("\n\n")
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .last()
+        .unwrap_or("");
+    let mut lines: Vec<&str> = last_para.lines().collect();
+    while let Some(first) = lines.first() {
         let t = first.trim();
         if t.is_empty() || t.ends_with(':') {
-            body.remove(0);
+            lines.remove(0);
         } else {
             break;
         }
     }
 
-    let prose = body.join("\n").trim().to_string();
+    let prose = lines.join("\n").trim().to_string();
     (prose, topics)
 }
 
@@ -366,6 +376,15 @@ commits: abc1234 def5678 · 3 files · 14 edits\n\
         let (prose, topics) = parse_claude_response(resp);
         assert_eq!(prose, "Fixed the bug.");
         assert_eq!(topics, vec!["bug".to_string()]);
+    }
+
+    #[test]
+    fn test_parse_claude_response_takes_last_paragraph() {
+        let resp =
+            "Let me think about this.\n\nThe work has two themes.\n\nFixed the actual bug in parser.rs.\nTOPICS: parser";
+        let (prose, topics) = parse_claude_response(resp);
+        assert_eq!(prose, "Fixed the actual bug in parser.rs.");
+        assert_eq!(topics, vec!["parser".to_string()]);
     }
 
     #[test]
