@@ -100,12 +100,16 @@ enum Commands {
     },
     /// Audit recurring outgoings for subscriptions.
     ///
-    /// Groups debits by normalised merchant + exact amount, detects monthly
-    /// (~28-31 day) and annual (~365 day) cadences, and reports each detected
-    /// subscription with its annualised cost (sorted by annualised cost, with a
-    /// grand total). A "review these" section flags possible duplicates: the
-    /// same amount billed by two distinct merchants, or one merchant appearing
-    /// at two prices.
+    /// Groups debits by normalised merchant ALONE (a merchant whose GBP price
+    /// wobbles month-to-month — FX-priced services — stays ONE subscription with
+    /// a representative amount and a price range), detects monthly (~28-31 day)
+    /// and annual (~365 day) cadences, and reports each detected subscription
+    /// with its annualised cost (sorted by annualised cost, with a grand total).
+    /// Bare `PAYPAL PAYMENT` rows are resolved to their recovered merchant via
+    /// the PayPal recovery sidecar when present. A "review these" section flags
+    /// the same amount billed by two distinct merchants (a possible duplicate)
+    /// and, informationally, a single merchant whose price range is wide (a
+    /// likely price change).
     Subscriptions {
         /// Filter to a single calendar year
         #[arg(long)]
@@ -452,7 +456,12 @@ fn cmd_subscriptions(
         min_monthly: min_occurrences,
         ..DetectOptions::default()
     };
-    let audit = subscriptions::audit(&transactions, filter, opts);
+
+    // Resolve bare `PAYPAL PAYMENT` rows to their recovered real merchant via
+    // the PayPal recovery sidecar. A missing file yields an empty index, so the
+    // audit behaves exactly as before — recovery is purely additive.
+    let recoveries = query::load_recovery_index(&default_paypal_matches_jsonl())?;
+    let audit = subscriptions::audit_with_recovery(&transactions, filter, opts, &recoveries);
     print!("{}", subscriptions::render(&audit));
     Ok(())
 }

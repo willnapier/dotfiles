@@ -9,32 +9,49 @@
 //! Self-contained: loads via [`crate::store::CsvStore`], derives the merchant
 //! grouping key with [`canonical_merchant`] (a conservative normaliser that
 //! collapses cosmetic variants of one merchant — branch town, masked card tail,
-//! payment-gateway stub — without merging distinct merchants), and reuses
-//! [`crate::query::DateFilter`] for the standard `--year`/`--month`/`--since`
-//! window. No mutation of `transactions.csv`.
+//! payment-gateway stub — without merging distinct merchants), optionally
+//! resolves a bare `PAYPAL PAYMENT` row to its recovered real merchant
+//! (via [`crate::paypal::RecoveryIndex`]), and reuses [`crate::query::DateFilter`]
+//! for the standard `--year`/`--month`/`--since` window. No mutation of
+//! `transactions.csv`.
 //!
 //! ## Heuristic (in brief)
-//! - Consider **debits** only (outgoing money). Group by
-//!   `(normalised-merchant, amount-to-the-penny)`. We deliberately group on the
-//!   *exact* amount rather than a tolerance band: subscriptions hold a fixed
-//!   price, and an exact key is what lets us catch two distinct £12.99 streams
-//!   (a band would merge a £12.99 and a £13.49 line and defeat the
-//!   duplicate-detection goal). Price changes show up — correctly — as the same
-//!   merchant appearing at two prices, which the review section flags.
-//! - Sort each group's dates, compute consecutive day-gaps, take the **median**
-//!   gap. Classify monthly (median 25..=35 days, >= 3 occurrences) or annual
-//!   (median 350..=380 days, >= 2 occurrences). The median absorbs a single
-//!   doubled gap, so detection survives one missing month.
-//! - **Duplicate review**: after detection, flag (a) the same monetary amount
-//!   billed by two *distinct* detected merchants (the two-£12.99 case) and (b)
-//!   the same merchant detected at two *distinct* prices (a likely price change
-//!   or an overlapping plan).
+//! - Consider **debits** only (outgoing money). Group by the **canonical
+//!   merchant alone** — NOT `(merchant, exact amount)`. A subscription whose GBP
+//!   price wobbles month-to-month (FX-priced services) would otherwise split
+//!   into several phantom "subscriptions"; grouping by merchant collapses those
+//!   into ONE, with a *representative* amount (the most common charge) and an
+//!   amount *range* (min–max) when the price varies.
+//! - **PayPal recovery**: a bare bank `PAYPAL PAYMENT` row carries no merchant.
+//!   When a [`crate::paypal::RecoveryIndex`] is supplied and has a recovered
+//!   merchant for the row's `import_id`, that recovered name (canonicalised) is
+//!   used as the grouping key instead of the literal "PAYPAL PAYMENT" — so
+//!   recovered PayPal subscriptions become visible. Rows with no recovery keep
+//!   the raw key.
+//! - Sort each merchant group's dates, compute consecutive day-gaps, take the
+//!   **median** gap. Classify monthly (median 25..=35 days, >= 3 occurrences) or
+//!   annual (median 350..=380 days, >= 2 occurrences). The median absorbs a
+//!   single doubled gap, so detection survives one missing month.
+//! - **Duplicate review**: after detection, flag (a) the same *representative*
+//!   amount billed by two *distinct* merchants (the two-£12.99 case — still a
+//!   useful cross-check, since distinct merchants are now distinct keys) and (b)
+//!   — purely **informational** — a single merchant whose amount range is *wide*
+//!   (a likely real price change). Case (b) is no longer two subscriptions: it
+//!   is ONE subscription with a price range, noted but never double-counted.
 
+use crate::paypal::RecoveryIndex;
 use crate::query::DateFilter;
 use crate::Transaction;
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
 use std::collections::BTreeMap;
+
+/// A merchant's amount range is "wide" — and therefore worth an informational
+/// price-change note — when `max - min` exceeds this fraction of the
+/// representative amount. 0.10 = a >10% spread. Deliberately a *relative*
+/// threshold so a £2 service and a £200 service are judged on the same footing,
+/// and small FX wobble (a few pence on a £10 charge) does NOT trip the note.
+const WIDE_RANGE_FRACTION: f64 = 0.10;
 
 // ---------------------------------------------------------------------------
 // Conservative merchant-name canonicalisation
@@ -174,12 +191,18 @@ impl Default for DetectOptions {
     }
 }
 
-/// One detected subscription.
+/// One detected subscription (one per canonical merchant).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Subscription {
     pub merchant: String,
-    /// The (positive) per-charge amount.
+    /// The (positive) *representative* per-charge amount: the most common charge
+    /// in the group (ties broken by the lower amount). Used for the annualised
+    /// cost and the same-amount duplicate cross-check.
     pub amount: Decimal,
+    /// Lowest charge seen in the group (== `amount` when the price is fixed).
+    pub amount_min: Decimal,
+    /// Highest charge seen in the group (== `amount` when the price is fixed).
+    pub amount_max: Decimal,
     pub cadence: Cadence,
     pub occurrences: usize,
     pub first_seen: NaiveDate,
@@ -187,26 +210,38 @@ pub struct Subscription {
 }
 
 impl Subscription {
-    /// Annualised cost: monthly charge x12, annual charge x1.
+    /// Annualised cost: monthly charge x12, annual charge x1. Uses the
+    /// representative amount.
     pub fn annualised(&self) -> Decimal {
         self.amount * self.cadence.annual_multiplier()
+    }
+
+    /// Does the per-charge amount vary across the group (a price range)?
+    pub fn amount_varies(&self) -> bool {
+        self.amount_min != self.amount_max
     }
 }
 
 /// A flagged review item: a cluster worth a human glance.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReviewFlag {
-    /// Two or more *distinct* merchants billing the same amount (e.g. two
-    /// separate £12.99 streams). The classic forgotten-duplicate signal.
+    /// Two or more *distinct* merchants billing the same *representative* amount
+    /// (e.g. two separate £12.99 streams). The classic forgotten-duplicate
+    /// signal. Distinct merchants are now distinct grouping keys, so two genuine
+    /// £12.99 subscriptions remain two subscriptions and this cross-check still
+    /// fires.
     SameAmountDifferentMerchants {
         amount: Decimal,
         merchants: Vec<String>,
     },
-    /// One merchant detected at two or more *distinct* prices (price change or
-    /// overlapping plan).
-    SameMerchantDifferentAmounts {
+    /// **Informational** — a single merchant whose per-charge amount range is
+    /// *wide* (a likely real price change). This is NOT a duplicate and NOT two
+    /// subscriptions: it is ONE subscription spanning a price range. Surfaced as
+    /// a note so the spread is visible, never double-counted.
+    WidePriceRange {
         merchant: String,
-        amounts: Vec<Decimal>,
+        amount_min: Decimal,
+        amount_max: Decimal,
     },
 }
 
@@ -261,11 +296,75 @@ fn classify(dates: &[NaiveDate], opts: &DetectOptions) -> Option<Cadence> {
     None
 }
 
+/// Resolve the grouping key for a bank row.
+///
+/// A bare `PAYPAL PAYMENT` row carries no merchant. When `recoveries` is
+/// supplied AND the row is a bare PayPal payment AND a recovery exists for its
+/// `import_id`, the recovered (real) merchant — canonicalised — becomes the key,
+/// so recovered PayPal subscriptions are visible. Otherwise the canonicalised
+/// bank `description` is used (the raw key — what an unrecovered row keeps).
+fn grouping_key(tx: &Transaction, recoveries: Option<&RecoveryIndex>) -> String {
+    if let Some(idx) = recoveries {
+        if crate::paypal::is_bare_paypal_payment(tx) {
+            if let Some(m) = idx.recovered_merchant_for(&tx.import_id) {
+                let canon = canonical_merchant(m);
+                if !canon.is_empty() {
+                    return canon;
+                }
+            }
+        }
+    }
+    canonical_merchant(&tx.description)
+}
+
+/// The *representative* amount of a group: the most common charge, ties broken
+/// by the LOWER amount (deterministic, and conservatively reports the cheaper of
+/// two equally-common prices). `amounts` is non-empty.
+fn representative_amount(amounts: &[Decimal]) -> Decimal {
+    let mut counts: BTreeMap<Decimal, usize> = BTreeMap::new();
+    for a in amounts {
+        *counts.entry(*a).or_default() += 1;
+    }
+    // BTreeMap iterates ascending by amount, so the first max-count entry seen is
+    // the lowest amount among the most-common — exactly the tie-break we want.
+    counts
+        .into_iter()
+        .max_by_key(|&(amount, count)| (count, std::cmp::Reverse(amount)))
+        .map(|(amount, _)| amount)
+        .unwrap_or(Decimal::ZERO)
+}
+
 /// Run the full subscriptions audit over a transaction set within `filter`.
+///
+/// PayPal recovery is NOT applied — bare `PAYPAL PAYMENT` rows group under their
+/// literal description. Use [`audit_with_recovery`] to resolve them to their
+/// recovered merchant.
 pub fn audit(txs: &[Transaction], filter: DateFilter, opts: DetectOptions) -> Audit {
-    // Group debit charges by (merchant, exact amount). BTreeMap keeps output
-    // deterministic without an extra sort pass on the keys.
-    let mut groups: BTreeMap<(String, Decimal), Vec<NaiveDate>> = BTreeMap::new();
+    audit_inner(txs, filter, opts, None)
+}
+
+/// Run the audit, additionally resolving bare `PAYPAL PAYMENT` rows to their
+/// recovered merchant via `recoveries` (from `paypal_matches.jsonl`).
+pub fn audit_with_recovery(
+    txs: &[Transaction],
+    filter: DateFilter,
+    opts: DetectOptions,
+    recoveries: &RecoveryIndex,
+) -> Audit {
+    audit_inner(txs, filter, opts, Some(recoveries))
+}
+
+fn audit_inner(
+    txs: &[Transaction],
+    filter: DateFilter,
+    opts: DetectOptions,
+    recoveries: Option<&RecoveryIndex>,
+) -> Audit {
+    // Group debit charges by canonical MERCHANT alone (no amount in the key), so
+    // a merchant whose price wobbles month-to-month stays ONE subscription. Each
+    // charge keeps its amount so we can derive a representative amount + range.
+    // BTreeMap keeps output deterministic without an extra sort pass on the keys.
+    let mut groups: BTreeMap<String, Vec<(NaiveDate, Decimal)>> = BTreeMap::new();
 
     for tx in txs {
         if !filter.matches(tx.date) {
@@ -275,28 +374,46 @@ pub fn audit(txs: &[Transaction], filter: DateFilter, opts: DetectOptions) -> Au
         if !tx.is_debit() {
             continue;
         }
-        // Conservative canonicalisation so cosmetic variants of the SAME
-        // merchant (branch town, masked card tail, gateway stub) collapse to
-        // one grouping key — without merging genuinely distinct merchants.
-        let merchant = canonical_merchant(&tx.description);
+        // Grouping key: recovered PayPal merchant (when available) else the
+        // conservative canonicalisation of the bank description. Cosmetic
+        // variants of the SAME merchant (branch town, masked card tail, gateway
+        // stub) collapse to one key without merging genuinely distinct merchants.
+        let merchant = grouping_key(tx, recoveries);
         // Skip rows that normalise to nothing (defensive — shouldn't happen).
         if merchant.is_empty() {
             continue;
         }
         let amount = tx.amount.abs();
-        groups.entry((merchant, amount)).or_default().push(tx.date);
+        groups.entry(merchant).or_default().push((tx.date, amount));
     }
 
     let mut subscriptions = Vec::new();
-    for ((merchant, amount), mut dates) in groups {
-        dates.sort_unstable();
-        // Collapse same-day duplicates: two charges on one day don't establish
-        // a cadence (could be a retry / split). Cadence is about *spacing*.
-        dates.dedup();
+    for (merchant, mut charges) in groups {
+        // Sort charges by date so cadence spacing is computed in order.
+        charges.sort_by(|a, b| a.0.cmp(&b.0));
+
+        // Cadence is about *spacing*: collapse same-day charges to one date (two
+        // charges on one day could be a retry / split). We keep the amount of
+        // the FIRST charge on a day for the representative/range stats — the
+        // amount picture is over distinct billing events.
+        let mut dates: Vec<NaiveDate> = Vec::with_capacity(charges.len());
+        let mut day_amounts: Vec<Decimal> = Vec::with_capacity(charges.len());
+        for (date, amount) in &charges {
+            if dates.last() != Some(date) {
+                dates.push(*date);
+                day_amounts.push(*amount);
+            }
+        }
+
         if let Some(cadence) = classify(&dates, &opts) {
+            let amount = representative_amount(&day_amounts);
+            let amount_min = day_amounts.iter().copied().min().unwrap();
+            let amount_max = day_amounts.iter().copied().max().unwrap();
             subscriptions.push(Subscription {
                 merchant,
                 amount,
+                amount_min,
+                amount_max,
                 cadence,
                 occurrences: dates.len(),
                 first_seen: *dates.first().unwrap(),
@@ -320,11 +437,27 @@ pub fn audit(txs: &[Transaction], filter: DateFilter, opts: DetectOptions) -> Au
     }
 }
 
+/// Is `[min, max]` a *wide* range relative to `representative`? Used to decide
+/// whether a merchant's price spread is worth an informational note (a real
+/// price change) rather than mere FX wobble. A zero/negative representative
+/// (defensive) is never "wide".
+fn is_wide_range(min: Decimal, max: Decimal, representative: Decimal) -> bool {
+    use rust_decimal::prelude::ToPrimitive;
+    if representative <= Decimal::ZERO {
+        return false;
+    }
+    let spread = (max - min).to_f64().unwrap_or(0.0);
+    let base = representative.to_f64().unwrap_or(0.0);
+    base > 0.0 && (spread / base) > WIDE_RANGE_FRACTION
+}
+
 /// Build the "review these" flags from the detected subscriptions.
 fn build_flags(subs: &[Subscription]) -> Vec<ReviewFlag> {
     let mut flags = Vec::new();
 
-    // (a) Same amount, distinct merchants.
+    // (a) Same *representative* amount, distinct merchants. Distinct merchants
+    // are distinct grouping keys, so two genuine £12.99 subscriptions stay two
+    // subscriptions and still trip this cross-check.
     let mut by_amount: BTreeMap<Decimal, Vec<String>> = BTreeMap::new();
     for s in subs {
         let entry = by_amount.entry(s.amount).or_default();
@@ -339,18 +472,18 @@ fn build_flags(subs: &[Subscription]) -> Vec<ReviewFlag> {
         }
     }
 
-    // (b) Same merchant, distinct amounts.
-    let mut by_merchant: BTreeMap<String, Vec<Decimal>> = BTreeMap::new();
+    // (b) INFORMATIONAL: one merchant, one subscription, but a WIDE price range
+    // (a likely real price change). This is no longer a duplicate — the merchant
+    // is a single subscription with a price range — so we note it once, never
+    // splitting it into two. Subscriptions are pre-sorted, so iterating in order
+    // keeps the notes deterministic.
     for s in subs {
-        let entry = by_merchant.entry(s.merchant.clone()).or_default();
-        if !entry.contains(&s.amount) {
-            entry.push(s.amount);
-        }
-    }
-    for (merchant, mut amounts) in by_merchant {
-        if amounts.len() >= 2 {
-            amounts.sort();
-            flags.push(ReviewFlag::SameMerchantDifferentAmounts { merchant, amounts });
+        if s.amount_varies() && is_wide_range(s.amount_min, s.amount_max, s.amount) {
+            flags.push(ReviewFlag::WidePriceRange {
+                merchant: s.merchant.clone(),
+                amount_min: s.amount_min,
+                amount_max: s.amount_max,
+            });
         }
     }
 
@@ -365,6 +498,22 @@ fn build_flags(subs: &[Subscription]) -> Vec<ReviewFlag> {
 /// but always positive (charges are stored as their absolute value here).
 fn fmt_gbp(amount: Decimal) -> String {
     format!("£{:.2}", amount)
+}
+
+/// The Amount cell for a subscription: the representative amount, plus a compact
+/// "(£min-£max)" suffix when the per-charge amount varies (an FX-priced or
+/// price-changed merchant). A fixed-price subscription shows just the amount.
+fn fmt_amount_cell(s: &Subscription) -> String {
+    if s.amount_varies() {
+        format!(
+            "{} ({}-{})",
+            fmt_gbp(s.amount),
+            fmt_gbp(s.amount_min),
+            fmt_gbp(s.amount_max)
+        )
+    } else {
+        fmt_gbp(s.amount)
+    }
 }
 
 fn truncate(s: &str, width: usize) -> String {
@@ -383,15 +532,15 @@ pub fn render(audit: &Audit) -> String {
         out.push_str("No recurring subscriptions detected.\n");
     } else {
         out.push_str(&format!(
-            "{:<32} {:>9}  {:<8} {:>4}  {:<11} {:<11} {:>11}\n",
+            "{:<32} {:>17}  {:<8} {:>4}  {:<11} {:<11} {:>11}\n",
             "Merchant", "Amount", "Cadence", "Occ", "First seen", "Last seen", "Annualised"
         ));
-        out.push_str(&format!("{}\n", "-".repeat(92)));
+        out.push_str(&format!("{}\n", "-".repeat(100)));
         for s in &audit.subscriptions {
             out.push_str(&format!(
-                "{:<32} {:>9}  {:<8} {:>4}  {:<11} {:<11} {:>11}\n",
+                "{:<32} {:>17}  {:<8} {:>4}  {:<11} {:<11} {:>11}\n",
                 truncate(&s.merchant, 32),
-                fmt_gbp(s.amount),
+                fmt_amount_cell(s),
                 s.cadence.as_str(),
                 s.occurrences,
                 s.first_seen,
@@ -399,9 +548,9 @@ pub fn render(audit: &Audit) -> String {
                 fmt_gbp(s.annualised()),
             ));
         }
-        out.push_str(&format!("{}\n", "-".repeat(92)));
+        out.push_str(&format!("{}\n", "-".repeat(100)));
         out.push_str(&format!(
-            "{:<32} {:>9}  {:<8} {:>4}  {:<11} {:<11} {:>11}\n",
+            "{:<32} {:>17}  {:<8} {:>4}  {:<11} {:<11} {:>11}\n",
             "TOTAL annualised subscription spend",
             "",
             "",
@@ -425,13 +574,18 @@ pub fn render(audit: &Audit) -> String {
                         merchants.join(", "),
                     ));
                 }
-                ReviewFlag::SameMerchantDifferentAmounts { merchant, amounts } => {
-                    let priced: Vec<String> = amounts.iter().map(|a| fmt_gbp(*a)).collect();
+                ReviewFlag::WidePriceRange {
+                    merchant,
+                    amount_min,
+                    amount_max,
+                } => {
+                    // Informational: ONE subscription, wide price range (likely a
+                    // real price change). Not a duplicate, not double-counted.
                     out.push_str(&format!(
-                        "  ! {} appears at {} prices: {}\n",
+                        "  i {} price ranges {}-{} (one subscription, likely a price change)\n",
                         merchant,
-                        amounts.len(),
-                        priced.join(", "),
+                        fmt_gbp(*amount_min),
+                        fmt_gbp(*amount_max),
                     ));
                 }
             }
@@ -500,6 +654,10 @@ mod tests {
         let s = &audit.subscriptions[0];
         assert_eq!(s.merchant, "STREAMFLIX");
         assert_eq!(s.amount, dec("9.99"));
+        // Fixed price -> min == max == representative, and the range is flat.
+        assert_eq!(s.amount_min, dec("9.99"));
+        assert_eq!(s.amount_max, dec("9.99"));
+        assert!(!s.amount_varies());
         assert_eq!(s.cadence, Cadence::Monthly);
         assert_eq!(s.occurrences, 5);
         assert_eq!(s.first_seen, NaiveDate::from_ymd_opt(2025, 1, 15).unwrap());
@@ -507,6 +665,8 @@ mod tests {
         // Annualised = 9.99 * 12.
         assert_eq!(s.annualised(), dec("119.88"));
         assert_eq!(audit.total_annualised(), dec("119.88"));
+        // A fixed-price subscription produces no flags.
+        assert!(audit.flags.is_empty());
     }
 
     #[test]
@@ -574,12 +734,16 @@ mod tests {
     #[test]
     fn non_recurring_merchant_is_not_flagged() {
         // Irregular one-off shopping at the same merchant, varying amounts and
-        // erratic spacing -> NOT a subscription, and no flags.
+        // genuinely ERRATIC spacing -> NOT a subscription, and no flags. (Under
+        // merchant-only grouping all five rows form one group, so the spacing
+        // must be irregular enough that the median day-gap falls outside both
+        // the monthly and annual bands: clustered early visits then a long gap
+        // gives a median of ~3 days, far below the 25-day monthly floor.)
         let txs = vec![
             debit("2025-01-03", "23.40", "CORNER SHOP"),
-            debit("2025-01-19", "8.10", "CORNER SHOP"),
-            debit("2025-03-02", "55.00", "CORNER SHOP"),
-            debit("2025-03-04", "12.00", "CORNER SHOP"),
+            debit("2025-01-05", "8.10", "CORNER SHOP"),
+            debit("2025-01-08", "55.00", "CORNER SHOP"),
+            debit("2025-01-12", "12.00", "CORNER SHOP"),
             debit("2025-06-30", "7.25", "CORNER SHOP"),
         ];
         let audit = audit(&txs, DateFilter::default(), DetectOptions::default());
@@ -604,10 +768,11 @@ mod tests {
     }
 
     #[test]
-    fn same_merchant_two_prices_is_flagged() {
-        // A price rise mid-stream: same merchant, two distinct prices. Both
-        // sub-streams need >= 3 occurrences to detect; then the merchant is
-        // flagged as appearing at two prices.
+    fn same_merchant_price_rise_is_one_subscription_with_range() {
+        // A price rise mid-stream: same merchant, two distinct prices. Under the
+        // new merchant-only grouping this is ONE subscription spanning a price
+        // range, NOT two — and the wide spread (10->12 = 20% > 10%) is surfaced
+        // as an INFORMATIONAL price-change note, never double-counted.
         let txs = vec![
             // Old price.
             debit("2024-07-12", "10.00", "NEWSDAILY"),
@@ -619,20 +784,43 @@ mod tests {
             debit("2025-03-12", "12.00", "NEWSDAILY"),
         ];
         let audit = audit(&txs, DateFilter::default(), DetectOptions::default());
-        // Two detected sub-streams for the same merchant at two prices.
-        assert_eq!(audit.subscriptions.len(), 2);
+        // ONE subscription for the merchant, spanning a price range.
+        assert_eq!(audit.subscriptions.len(), 1);
+        let s = &audit.subscriptions[0];
+        assert_eq!(s.merchant, "NEWSDAILY");
+        assert_eq!(s.amount_min, dec("10.00"));
+        assert_eq!(s.amount_max, dec("12.00"));
+        assert!(s.amount_varies());
+        assert_eq!(s.occurrences, 6);
+        // Three charges at each price; tie on count -> representative is the
+        // LOWER amount (£10.00), and annualised uses it.
+        assert_eq!(s.amount, dec("10.00"));
+        assert_eq!(s.annualised(), dec("120.00"));
+
+        // The wide spread is flagged as an informational price-change note.
         let flagged: Vec<&ReviewFlag> = audit
             .flags
             .iter()
-            .filter(|f| matches!(f, ReviewFlag::SameMerchantDifferentAmounts { .. }))
+            .filter(|f| matches!(f, ReviewFlag::WidePriceRange { .. }))
             .collect();
         assert_eq!(flagged.len(), 1);
-        if let ReviewFlag::SameMerchantDifferentAmounts { merchant, amounts } = flagged[0] {
+        if let ReviewFlag::WidePriceRange {
+            merchant,
+            amount_min,
+            amount_max,
+        } = flagged[0]
+        {
             assert_eq!(merchant, "NEWSDAILY");
-            assert_eq!(amounts, &vec![dec("10.00"), dec("12.00")]);
+            assert_eq!(*amount_min, dec("10.00"));
+            assert_eq!(*amount_max, dec("12.00"));
         } else {
             unreachable!();
         }
+        // And NO same-amount-distinct-merchants flag (only one merchant).
+        assert!(!audit
+            .flags
+            .iter()
+            .any(|f| matches!(f, ReviewFlag::SameAmountDifferentMerchants { .. })));
     }
 
     #[test]
@@ -850,6 +1038,170 @@ mod tests {
         } else {
             unreachable!();
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Change 1: merchant-only grouping — an FX-varying merchant collapses to ONE
+    // subscription with a price range.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn fx_varying_merchant_collapses_to_one_subscription_with_range() {
+        // A foreign-priced subscription whose GBP charge wobbles every month
+        // (FX drift). Under (merchant, exact-amount) grouping this would split
+        // into several phantom subscriptions; under merchant-only grouping it is
+        // ONE subscription with a representative amount and a min-max range.
+        let txs = vec![
+            debit("2025-01-10", "9.41", "FOREIGNSAAS"),
+            debit("2025-02-10", "9.62", "FOREIGNSAAS"),
+            debit("2025-03-10", "9.20", "FOREIGNSAAS"),
+            debit("2025-04-10", "9.41", "FOREIGNSAAS"),
+            debit("2025-05-10", "9.55", "FOREIGNSAAS"),
+        ];
+        let audit = audit(&txs, DateFilter::default(), DetectOptions::default());
+        // Exactly ONE subscription despite five different prices.
+        assert_eq!(audit.subscriptions.len(), 1);
+        let s = &audit.subscriptions[0];
+        assert_eq!(s.merchant, "FOREIGNSAAS");
+        assert_eq!(s.cadence, Cadence::Monthly);
+        assert_eq!(s.occurrences, 5);
+        // Representative = most common (9.41 appears twice); range spans min-max.
+        assert_eq!(s.amount, dec("9.41"));
+        assert_eq!(s.amount_min, dec("9.20"));
+        assert_eq!(s.amount_max, dec("9.62"));
+        assert!(s.amount_varies());
+        // Annualised uses the representative amount.
+        assert_eq!(s.annualised(), dec("112.92"));
+        // Range here is narrow (9.20..9.62 = 0.42, < 10% of 9.41), so it does
+        // NOT trip the informational wide-range note — small FX wobble is quiet.
+        assert!(audit.flags.is_empty());
+        // The rendered Amount cell shows the representative plus the range.
+        let text = render(&audit);
+        assert!(text.contains("£9.41 (£9.20-£9.62)"), "rendered: {text}");
+    }
+
+    // -----------------------------------------------------------------------
+    // Change 1: two DISTINCT merchants at the same amount stay separate and are
+    // still flagged (the duplicate cross-check survives merchant-only grouping).
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn distinct_merchants_same_amount_stay_separate_and_flagged() {
+        // Two genuinely distinct £12.99 monthly streams. Distinct merchants are
+        // distinct grouping keys, so they remain TWO subscriptions, and the
+        // same-amount cross-check still fires.
+        let mut txs = Vec::new();
+        for m in 1u32..=5 {
+            txs.push(debit(&format!("2025-{:02}-05", m), "12.99", "VIDEOSTREAM"));
+            txs.push(debit(&format!("2025-{:02}-20", m), "12.99", "MUSICPREMIUM"));
+        }
+        let audit = audit(&txs, DateFilter::default(), DetectOptions::default());
+        assert_eq!(audit.subscriptions.len(), 2);
+
+        let flagged: Vec<&ReviewFlag> = audit
+            .flags
+            .iter()
+            .filter(|f| matches!(f, ReviewFlag::SameAmountDifferentMerchants { .. }))
+            .collect();
+        assert_eq!(flagged.len(), 1, "expected exactly one same-amount flag");
+        if let ReviewFlag::SameAmountDifferentMerchants { amount, merchants } = flagged[0] {
+            assert_eq!(*amount, dec("12.99"));
+            assert_eq!(merchants.len(), 2);
+            assert!(merchants.contains(&"VIDEOSTREAM".to_string()));
+            assert!(merchants.contains(&"MUSICPREMIUM".to_string()));
+        } else {
+            unreachable!();
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Change 2: bare PAYPAL PAYMENT rows resolve to their recovered merchant.
+    // -----------------------------------------------------------------------
+
+    /// A bare `PAYPAL PAYMENT` debit with a given `import_id`, so a recovery
+    /// index can key off it.
+    fn paypal_debit(date: &str, magnitude: &str, import_id: &str) -> Transaction {
+        Transaction {
+            date: NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap(),
+            account: Account::Current,
+            tx_type: TxType::DirectDebit,
+            amount: -Decimal::from_str(magnitude).unwrap(),
+            description: "PAYPAL PAYMENT".to_string(),
+            raw_description: "PAYPAL PAYMENT".to_string(),
+            balance: None,
+            tags: Vec::new(),
+            import_id: import_id.to_string(),
+        }
+    }
+
+    fn recovery_index(pairs: &[(&str, &str)]) -> RecoveryIndex {
+        let rows = pairs
+            .iter()
+            .map(|(id, merchant)| crate::paypal::RecoveryRow {
+                bank_import_id: id.to_string(),
+                recovered_merchant: merchant.to_string(),
+                currency: "GBP".to_string(),
+                leg: "direct-gbp".to_string(),
+            })
+            .collect();
+        RecoveryIndex::from_rows(rows)
+    }
+
+    #[test]
+    fn bare_paypal_row_with_recovery_groups_under_recovered_merchant() {
+        // Five monthly bare PAYPAL PAYMENT rows, each recovered to the same real
+        // merchant. They must group under the RECOVERED merchant, not the literal
+        // "PAYPAL PAYMENT" key — so the subscription becomes visible.
+        let txs = vec![
+            paypal_debit("2025-01-15", "7.99", "pp-1"),
+            paypal_debit("2025-02-15", "7.99", "pp-2"),
+            paypal_debit("2025-03-15", "7.99", "pp-3"),
+            paypal_debit("2025-04-15", "7.99", "pp-4"),
+            paypal_debit("2025-05-15", "7.99", "pp-5"),
+        ];
+        let idx = recovery_index(&[
+            ("pp-1", "Dharmachakra"),
+            ("pp-2", "Dharmachakra"),
+            ("pp-3", "Dharmachakra"),
+            ("pp-4", "Dharmachakra"),
+            ("pp-5", "Dharmachakra"),
+        ]);
+        let audit =
+            audit_with_recovery(&txs, DateFilter::default(), DetectOptions::default(), &idx);
+        assert_eq!(audit.subscriptions.len(), 1);
+        let s = &audit.subscriptions[0];
+        // Recovered merchant is canonicalised ("Dharmachakra" -> uppercase).
+        assert_eq!(s.merchant, "DHARMACHAKRA");
+        assert_eq!(s.cadence, Cadence::Monthly);
+        assert_eq!(s.occurrences, 5);
+        assert_eq!(s.amount, dec("7.99"));
+        // It did NOT group under the literal PayPal key.
+        assert!(audit
+            .subscriptions
+            .iter()
+            .all(|s| s.merchant != "PAYPAL PAYMENT"));
+    }
+
+    #[test]
+    fn bare_paypal_row_without_recovery_falls_back_to_raw_key() {
+        // Bare PAYPAL PAYMENT rows with NO recovery for their ids keep the raw
+        // "PAYPAL PAYMENT" key (the index is empty / lacks these ids).
+        let txs = vec![
+            paypal_debit("2025-01-15", "5.00", "pp-x1"),
+            paypal_debit("2025-02-15", "5.00", "pp-x2"),
+            paypal_debit("2025-03-15", "5.00", "pp-x3"),
+        ];
+        // Recovery index knows about an UNRELATED id only.
+        let idx = recovery_index(&[("some-other-id", "Streamflix")]);
+        let with_idx =
+            audit_with_recovery(&txs, DateFilter::default(), DetectOptions::default(), &idx);
+        assert_eq!(with_idx.subscriptions.len(), 1);
+        assert_eq!(with_idx.subscriptions[0].merchant, "PAYPAL PAYMENT");
+
+        // And the plain `audit` (no index at all) behaves identically.
+        let no_idx = audit(&txs, DateFilter::default(), DetectOptions::default());
+        assert_eq!(no_idx.subscriptions.len(), 1);
+        assert_eq!(no_idx.subscriptions[0].merchant, "PAYPAL PAYMENT");
     }
 
     #[test]
