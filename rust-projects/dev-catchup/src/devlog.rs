@@ -5,7 +5,7 @@ use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-const DEVLOG_PROMPT: &str = r#"You are writing ONE entry for a developer's work log. Given a day's coding work on a single project (files touched, skills, user messages — possibly from several sessions), write 1-3 plain past-tense sentences naming the PROBLEM addressed and WHAT was done. Use specific names (files, features, modules). No preamble, no "dev::", no counts, no markdown headers — just the sentences. Then, on a final separate line, output 1-3 short kebab-case topic tags as: TOPICS: tag-one, tag-two"#;
+const DEVLOG_PROMPT: &str = r#"You are writing ONE entry for a developer's work log, describing one project's work on a single day. You are given the project name, the files touched, and the commit subjects. Write 1-3 plain past-tense sentences naming the PROBLEM addressed and WHAT was done, grounded ONLY in the provided commits and files — do not speculate beyond them, and do not mention anything not present here. Use specific names (files, features, modules). Output ONLY the sentences — no preamble, no meta-commentary, no "dev::", no counts, no headers. Then a final line: TOPICS: tag-one, tag-two"#;
 
 /// A single DevLog entry: one project's work on one day.
 #[derive(Debug, Clone)]

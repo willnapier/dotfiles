@@ -181,8 +181,6 @@ struct Bucket {
     /// abs file path -> summed edit count
     files: BTreeMap<String, u32>,
     repo_root: Option<PathBuf>,
-    /// session_id -> session detail (dedup per session)
-    details: BTreeMap<String, String>,
 }
 
 /// Generate the weekly DevLog for the ISO weeks covered by `dates`.
@@ -240,9 +238,6 @@ fn run_devlog(dates: &[NaiveDate], no_ai: bool, write: bool) -> Result<()> {
                     if b.repo_root.is_none() {
                         b.repo_root = repo_root;
                     }
-                    b.details
-                        .entry(cc.session_id.clone())
-                        .or_insert_with(|| unified.detail.clone());
                 }
             }
         }
@@ -268,9 +263,6 @@ fn run_devlog(dates: &[NaiveDate], no_ai: bool, write: bool) -> Result<()> {
                 let m = incidental_merge.entry(date).or_default();
                 for (f, e) in bucket.files {
                     *m.files.entry(f).or_insert(0) += e;
-                }
-                for (sid, d) in bucket.details {
-                    m.details.entry(sid).or_insert(d);
                 }
             }
         }
@@ -305,62 +297,82 @@ fn build_entry(date: NaiveDate, project: String, bucket: Bucket, no_ai: bool) ->
     let files_count = bucket.files.len();
     let edits: u32 = bucket.files.values().sum();
 
-    let (commits, prs) = match &bucket.repo_root {
-        Some(root) => {
-            let rel: Vec<String> = bucket
-                .files
-                .keys()
-                .filter_map(|f| git::relativize(root, f))
-                .collect();
-            if rel.is_empty() {
-                (Vec::new(), Vec::new())
-            } else {
-                let day_start = date.and_hms_opt(0, 0, 0).unwrap().and_utc();
-                let day_end = date
-                    .succ_opt()
-                    .unwrap_or(date)
-                    .and_hms_opt(0, 0, 0)
-                    .unwrap()
-                    .and_utc();
-                let found = git::commits_in_window(root, day_start, day_end, &rel);
-                let mut shas: Vec<String> = Vec::new();
-                let mut pr_set: BTreeSet<u32> = BTreeSet::new();
-                for c in &found {
-                    if let Some(pr) = c.pr {
-                        pr_set.insert(pr);
-                    }
-                    // Keep the real work commits in the SHA list; merge commits
-                    // contribute their PR number but not SHA clutter.
-                    if !c.subject.starts_with("Merge ") && !shas.contains(&c.short_sha) {
+    // git: file-scoped commits → work SHAs (non-merge), PR numbers, and the
+    // commit subjects that will ground the prose.
+    let mut shas: Vec<String> = Vec::new();
+    let mut pr_set: BTreeSet<u32> = BTreeSet::new();
+    let mut subjects: Vec<String> = Vec::new();
+    if let Some(root) = &bucket.repo_root {
+        let rel: Vec<String> = bucket
+            .files
+            .keys()
+            .filter_map(|f| git::relativize(root, f))
+            .collect();
+        if !rel.is_empty() {
+            let day_start = date.and_hms_opt(0, 0, 0).unwrap().and_utc();
+            let day_end = date
+                .succ_opt()
+                .unwrap_or(date)
+                .and_hms_opt(0, 0, 0)
+                .unwrap()
+                .and_utc();
+            for c in git::commits_in_window(root, day_start, day_end, &rel) {
+                if let Some(pr) = c.pr {
+                    pr_set.insert(pr);
+                }
+                // Merge commits give their PR number but not SHA/subject clutter.
+                if !c.subject.starts_with("Merge ") {
+                    if !shas.contains(&c.short_sha) {
                         shas.push(c.short_sha.clone());
                     }
+                    subjects.push(c.subject);
                 }
-                (shas, pr_set.into_iter().collect::<Vec<_>>())
             }
         }
-        None => (Vec::new(), Vec::new()),
-    };
+    }
+    let prs: Vec<u32> = pr_set.into_iter().collect();
 
-    // Stable cache key: date + project + hash of the contributing session set.
+    // Prose is grounded ONLY in this project's code facts (file names + commit
+    // subjects) — never raw session messages — so entries can't cross-contaminate
+    // or leak personal/off-topic content, and no chat is sent to the model.
+    let basenames: Vec<String> = bucket
+        .files
+        .keys()
+        .filter_map(|f| {
+            std::path::Path::new(f)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+        })
+        .collect();
+    let mut prose_input = format!("Project: {}\nFiles: {}\n", project, basenames.join(", "));
+    if subjects.is_empty() {
+        prose_input.push_str("(no commits this day)\n");
+    } else {
+        prose_input.push_str("Commits:\n");
+        for s in &subjects {
+            prose_input.push_str(&format!("- {}\n", s));
+        }
+    }
+
+    // Stable cache key: date + project + hash of (files, work SHAs). Re-drafts
+    // only when the day's files or commits change.
     let mut hasher = DefaultHasher::new();
-    for sid in bucket.details.keys() {
-        sid.hash(&mut hasher);
+    for f in bucket.files.keys() {
+        f.hash(&mut hasher);
+    }
+    for s in &shas {
+        s.hash(&mut hasher);
     }
     let cache_key = format!("{}-{}-{:x}", date, project, hasher.finish());
-    let detail = bucket
-        .details
-        .values()
-        .cloned()
-        .collect::<Vec<_>>()
-        .join("\n\n");
-    let (prose, topics) = devlog::resolve_prose(&cache_key, &detail, no_ai);
+
+    let (prose, topics) = devlog::resolve_prose(&cache_key, &prose_input, no_ai);
 
     devlog::DevLogEntry {
         date,
         primary_project: project.clone(),
         all_projects: vec![project],
         prs,
-        commits,
+        commits: shas,
         topics,
         prose,
         files_count,
