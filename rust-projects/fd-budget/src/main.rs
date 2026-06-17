@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use fd_budget::{
     dedup, enrich, import, is_card_payment, paypal, query,
     store::CsvStore,
+    subscriptions::{self, DetectOptions},
     tags::{apply_rules, apply_rules_with_recovery, reapply_rules, TagRules},
     Account,
 };
@@ -96,6 +97,28 @@ enum Commands {
         /// Also categorize untagged credit (incoming) rows
         #[arg(long)]
         include_credits: bool,
+    },
+    /// Audit recurring outgoings for subscriptions.
+    ///
+    /// Groups debits by normalised merchant + exact amount, detects monthly
+    /// (~28-31 day) and annual (~365 day) cadences, and reports each detected
+    /// subscription with its annualised cost (sorted by annualised cost, with a
+    /// grand total). A "review these" section flags possible duplicates: the
+    /// same amount billed by two distinct merchants, or one merchant appearing
+    /// at two prices.
+    Subscriptions {
+        /// Filter to a single calendar year
+        #[arg(long)]
+        year: Option<i32>,
+        /// Filter to a single calendar month (YYYY-MM)
+        #[arg(long)]
+        month: Option<String>,
+        /// Only consider rows on or after this date (YYYY-MM-DD)
+        #[arg(long)]
+        since: Option<NaiveDate>,
+        /// Minimum occurrences for a monthly subscription (default 3)
+        #[arg(long, default_value_t = 3)]
+        min_occurrences: usize,
     },
     /// Reconcile bank rows against mailcurator email-evidence
     Enrich {
@@ -325,6 +348,14 @@ fn main() -> anyhow::Result<()> {
         } => {
             cmd_categorize(limit, include_credits)?;
         }
+        Commands::Subscriptions {
+            year,
+            month,
+            since,
+            min_occurrences,
+        } => {
+            cmd_subscriptions(year, month.as_deref(), since, min_occurrences)?;
+        }
         Commands::Enrich {
             from,
             out,
@@ -339,6 +370,29 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
+    Ok(())
+}
+
+fn cmd_subscriptions(
+    year: Option<i32>,
+    month: Option<&str>,
+    since: Option<NaiveDate>,
+    min_occurrences: usize,
+) -> anyhow::Result<()> {
+    let store = CsvStore::new(get_store_path());
+    let transactions = store.load_all()?;
+    if transactions.is_empty() {
+        eprintln!("No transactions in store; run `fd-budget import` first.");
+        return Ok(());
+    }
+
+    let filter = query::DateFilter::from_flags(year, month, since)?;
+    let opts = DetectOptions {
+        min_monthly: min_occurrences,
+        ..DetectOptions::default()
+    };
+    let audit = subscriptions::audit(&transactions, filter, opts);
+    print!("{}", subscriptions::render(&audit));
     Ok(())
 }
 
