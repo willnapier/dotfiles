@@ -1,6 +1,7 @@
 pub mod dedup;
 pub mod enrich;
 pub mod import;
+pub mod paypal;
 pub mod query;
 pub mod store;
 pub mod tags;

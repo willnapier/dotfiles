@@ -5,6 +5,7 @@
 //! tables to stdout. They share the join logic in [`load_joined`].
 
 use crate::enrich::{self, EmailRow};
+use crate::paypal::RecoveryIndex;
 use crate::Transaction;
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
@@ -54,11 +55,17 @@ pub fn load_matches<P: AsRef<Path>>(path: P) -> std::io::Result<Vec<MatchRow>> {
 // ---------------------------------------------------------------------------
 
 /// A bank row joined to its match record and (resolved) email evidence.
+///
+/// `recovered` carries the PayPal merchant recovered from `paypal_matches.jsonl`
+/// for a bare `PAYPAL PAYMENT` bank row (see [`crate::paypal`]). It is `None`
+/// unless the row was built via [`join_with_recovery`].
 #[derive(Debug, Clone)]
 pub struct JoinedRow<'a> {
     pub tx: &'a Transaction,
     pub confidence: &'a str,
     pub emails: Vec<&'a EmailRow>,
+    /// Recovered PayPal merchant for this row, if any.
+    pub recovered: Option<&'a str>,
 }
 
 impl<'a> JoinedRow<'a> {
@@ -72,15 +79,22 @@ impl<'a> JoinedRow<'a> {
 
     /// The resolved counterparty for this row.
     ///
-    /// Rules:
-    /// - If any email evidence: use the first email's `effective_vendor()`
-    ///   (utility row → `vendor`; PayPal row → `counterparty`).
-    /// - Otherwise: normalise the bank `description` (uppercase, collapse
-    ///   whitespace, first `~25` chars).
+    /// Priority:
+    /// 1. Email evidence — first email's `effective_vendor()` (utility row →
+    ///    `vendor`; PayPal row → `counterparty`).
+    /// 2. PayPal-recovered merchant (a bare `PAYPAL PAYMENT` whose merchant we
+    ///    recovered from PayPal's own CSV).
+    /// 3. Normalise the bank `description` (uppercase, collapse whitespace,
+    ///    first `~25` chars).
     pub fn counterparty_name(&self) -> String {
         if let Some(email) = self.emails.first() {
             if let Some(v) = email.effective_vendor() {
                 return v.to_string();
+            }
+        }
+        if let Some(merchant) = self.recovered {
+            if !merchant.trim().is_empty() {
+                return merchant.to_string();
             }
         }
         normalise_description(&self.tx.description)
@@ -89,7 +103,17 @@ impl<'a> JoinedRow<'a> {
     /// Source label for reporting.
     pub fn source(&self) -> Source {
         match self.emails.first() {
-            None => Source::BankOnly,
+            None => {
+                if self
+                    .recovered
+                    .map(|m| !m.trim().is_empty())
+                    .unwrap_or(false)
+                {
+                    Source::PayPalRecovered
+                } else {
+                    Source::BankOnly
+                }
+            }
             Some(e) if e.is_paypal() => Source::EmailViaPayPal,
             Some(_) => Source::EmailDirect,
         }
@@ -101,6 +125,8 @@ impl<'a> JoinedRow<'a> {
 pub enum Source {
     EmailDirect,
     EmailViaPayPal,
+    /// Merchant recovered from PayPal's own CSV (no email evidence).
+    PayPalRecovered,
     BankOnly,
 }
 
@@ -109,6 +135,7 @@ impl Source {
         match self {
             Source::EmailDirect => "email-direct",
             Source::EmailViaPayPal => "email-via-PayPal",
+            Source::PayPalRecovered => "paypal-recovered",
             Source::BankOnly => "bank-only",
         }
     }
@@ -125,10 +152,36 @@ pub fn normalise_description(desc: &str) -> String {
 }
 
 /// Build the joined dataset from the three source vectors.
+///
+/// No PayPal recovery is applied (`recovered == None` on every row). Use
+/// [`join_with_recovery`] to also surface recovered PayPal merchants.
 pub fn join<'a>(
     transactions: &'a [Transaction],
     emails: &'a [EmailRow],
     matches: &'a [MatchRow],
+) -> Vec<JoinedRow<'a>> {
+    join_inner(transactions, emails, matches, None)
+}
+
+/// Build the joined dataset, additionally surfacing recovered PayPal merchants.
+///
+/// For a bare `PAYPAL PAYMENT` bank row with no email evidence, the recovered
+/// merchant (from `paypal_matches.jsonl`) becomes its counterparty and the row's
+/// [`Source`] is reported as [`Source::PayPalRecovered`].
+pub fn join_with_recovery<'a>(
+    transactions: &'a [Transaction],
+    emails: &'a [EmailRow],
+    matches: &'a [MatchRow],
+    recoveries: &'a RecoveryIndex,
+) -> Vec<JoinedRow<'a>> {
+    join_inner(transactions, emails, matches, Some(recoveries))
+}
+
+fn join_inner<'a>(
+    transactions: &'a [Transaction],
+    emails: &'a [EmailRow],
+    matches: &'a [MatchRow],
+    recoveries: Option<&'a RecoveryIndex>,
 ) -> Vec<JoinedRow<'a>> {
     let by_msg_id: HashMap<&str, &EmailRow> =
         emails.iter().map(|e| (e.message_id.as_str(), e)).collect();
@@ -147,10 +200,12 @@ pub fn join<'a>(
                 .iter()
                 .filter_map(|id| by_msg_id.get(id.as_str()).copied())
                 .collect();
+            let recovered = recoveries.and_then(|r| r.recovered_merchant_for(&tx.import_id));
             JoinedRow {
                 tx,
                 confidence,
                 emails,
+                recovered,
             }
         })
         .collect()
@@ -290,7 +345,16 @@ fn aggregate_by_counterparty(
         let gbp_emails: Vec<&EmailRow> =
             row.emails.iter().filter(|e| e.is_gbp()).copied().collect();
 
-        // Skip a row if its only evidence was non-GBP — fall back to bank-only.
+        // Counterparty resolution priority:
+        //   1. GBP email evidence (email-direct / email-via-PayPal)
+        //   2. PayPal-recovered merchant (paypal-recovered)
+        //   3. normalised bank description (bank-only)
+        // A non-GBP email is dropped above, so a PayPal-recovered merchant can
+        // still rescue the row from bank-only.
+        let recovered = row
+            .recovered
+            .filter(|m| !m.trim().is_empty())
+            .map(|m| m.to_string());
         let (counterparty, source) = if let Some(email) = gbp_emails.first() {
             let name = email
                 .effective_vendor()
@@ -302,11 +366,10 @@ fn aggregate_by_counterparty(
                 Source::EmailDirect
             };
             (name, src)
+        } else if let Some(merchant) = recovered {
+            (merchant, Source::PayPalRecovered)
         } else {
-            (
-                normalise_description(&row.tx.description),
-                Source::BankOnly,
-            )
+            (normalise_description(&row.tx.description), Source::BankOnly)
         };
 
         let amount = row.tx.amount.abs();
@@ -323,8 +386,12 @@ fn aggregate_by_counterparty(
         // First-seen-source wins; if a row mixes sources we keep the original.
         // (TODO: in practice a vendor name should map to one source — flag if not.)
 
+        // PayPal-recovered rows are now attributable to a real merchant, so
+        // they count toward the reconciled total alongside email-evidenced rows.
         match source {
-            Source::EmailDirect | Source::EmailViaPayPal => reconciled_total += amount,
+            Source::EmailDirect | Source::EmailViaPayPal | Source::PayPalRecovered => {
+                reconciled_total += amount
+            }
             Source::BankOnly => bank_only_total += amount,
         }
     }
@@ -332,6 +399,22 @@ fn aggregate_by_counterparty(
     let mut out: Vec<CounterpartyAggregate> = buckets.into_values().collect();
     out.sort_by(|a, b| b.total_outgoing.cmp(&a.total_outgoing));
     (out, internal_count, reconciled_total, bank_only_total)
+}
+
+/// Test/integration helper: aggregate outgoing spend by counterparty over all
+/// dates, returning `(name, total, source)` tuples plus the reconciled and
+/// bank-only totals. Exposes the otherwise-private [`CounterpartyAggregate`]
+/// shape to integration tests without leaking internal types.
+pub fn aggregate_for_test(
+    rows: &[JoinedRow<'_>],
+) -> (Vec<(String, Decimal, Source)>, usize, Decimal, Decimal) {
+    let (agg, internal, reconciled, bank_only) =
+        aggregate_by_counterparty(rows, DateFilter::default());
+    let tuples = agg
+        .into_iter()
+        .map(|a| (a.name, a.total_outgoing, a.source))
+        .collect();
+    (tuples, internal, reconciled, bank_only)
 }
 
 /// Print a stats-by-counterparty table.
@@ -405,11 +488,7 @@ pub fn cmd_tx_by_vendor(
         if with_evidence {
             let evidence = if let Some(email) = row.emails.first() {
                 let mid = truncate_msg_id(&email.message_id, 36);
-                format!(
-                    "-> {:<38} {:<10}",
-                    mid,
-                    row.confidence
-                )
+                format!("-> {:<38} {:<10}", mid, row.confidence)
             } else {
                 format!("{:<41} {}", "(no email evidence)", row.confidence)
             };
@@ -438,10 +517,7 @@ pub fn cmd_tx_by_vendor(
         } else {
             0.0
         };
-        println!(
-            "\n{} rows, {} with evidence ({:.1}%)",
-            total, with_ev, pct
-        );
+        println!("\n{} rows, {} with evidence ({:.1}%)", total, with_ev, pct);
     } else {
         println!("\n{} rows", total);
     }
@@ -625,6 +701,70 @@ mod tests {
         assert_eq!(joined[0].source(), Source::BankOnly);
     }
 
+    fn recovery_index(pairs: &[(&str, &str)]) -> crate::paypal::RecoveryIndex {
+        let rows = pairs
+            .iter()
+            .map(|(id, merchant)| crate::paypal::RecoveryRow {
+                bank_import_id: id.to_string(),
+                recovered_merchant: merchant.to_string(),
+                currency: "GBP".to_string(),
+                leg: "direct-gbp".to_string(),
+            })
+            .collect();
+        crate::paypal::RecoveryIndex::from_rows(rows)
+    }
+
+    #[test]
+    fn counterparty_uses_recovered_paypal_merchant() {
+        // A bare PAYPAL PAYMENT with no email evidence but a recovery.
+        let tx = mk_tx("2025-10-13", "-12.99", "PAYPAL PAYMENT", "tx1");
+        let txs = vec![tx];
+        let emails: Vec<EmailRow> = vec![];
+        let ms: Vec<MatchRow> = vec![];
+        let idx = recovery_index(&[("tx1", "Streamflix")]);
+        let joined = join_with_recovery(&txs, &emails, &ms, &idx);
+        assert_eq!(joined[0].counterparty_name(), "Streamflix");
+        assert_eq!(joined[0].source(), Source::PayPalRecovered);
+    }
+
+    #[test]
+    fn recovered_merchant_aggregates_as_reconciled() {
+        let tx = mk_tx("2025-10-13", "-12.99", "PAYPAL PAYMENT", "tx1");
+        let txs = vec![tx];
+        let emails: Vec<EmailRow> = vec![];
+        let ms: Vec<MatchRow> = vec![];
+        let idx = recovery_index(&[("tx1", "Streamflix")]);
+        let joined = join_with_recovery(&txs, &emails, &ms, &idx);
+        let (agg, _, reconciled, bank_only) =
+            aggregate_by_counterparty(&joined, DateFilter::default());
+        assert_eq!(agg.len(), 1);
+        assert_eq!(agg[0].name, "Streamflix");
+        assert_eq!(agg[0].source, Source::PayPalRecovered);
+        assert_eq!(reconciled, Decimal::from_str("12.99").unwrap());
+        assert_eq!(bank_only, Decimal::ZERO);
+    }
+
+    #[test]
+    fn email_evidence_outranks_recovery() {
+        // If both an email match AND a recovery exist, email wins.
+        let tx = mk_tx("2025-10-13", "-12.99", "PAYPAL PAYMENT", "tx1");
+        let email = mk_email(
+            "<p@1>",
+            Some("PayPal"),
+            Some("Netflix"),
+            Some("12.99"),
+            Some("GBP"),
+        );
+        let m = mk_match("tx1", "high", &["<p@1>"]);
+        let txs = vec![tx];
+        let emails = vec![email];
+        let ms = vec![m];
+        let idx = recovery_index(&[("tx1", "Streamflix")]);
+        let joined = join_with_recovery(&txs, &emails, &ms, &idx);
+        assert_eq!(joined[0].counterparty_name(), "Netflix");
+        assert_eq!(joined[0].source(), Source::EmailViaPayPal);
+    }
+
     #[test]
     fn aggregate_excludes_non_gbp_email_evidence() {
         // Cliniko bills are in AUD; matching to a GBP bank row should fall
@@ -657,8 +797,7 @@ mod tests {
         let txs = vec![tx_normal, tx_xfer];
         let emails = vec![email];
         let joined = join(&txs, &emails, &ms);
-        let (agg, internal_count, _, _) =
-            aggregate_by_counterparty(&joined, DateFilter::default());
+        let (agg, internal_count, _, _) = aggregate_by_counterparty(&joined, DateFilter::default());
         assert_eq!(internal_count, 1);
         assert_eq!(agg.len(), 1);
         assert_eq!(agg[0].name, "Vodafone");
@@ -673,8 +812,7 @@ mod tests {
         let emails: Vec<EmailRow> = vec![];
         let ms: Vec<MatchRow> = vec![];
         let joined = join(&txs, &emails, &ms);
-        let (agg, _, _, bank_only) =
-            aggregate_by_counterparty(&joined, DateFilter::default());
+        let (agg, _, _, bank_only) = aggregate_by_counterparty(&joined, DateFilter::default());
         let total: Decimal = agg.iter().map(|a| a.total_outgoing).sum();
         // Only the debit contributes.
         assert_eq!(total, Decimal::from_str("55.67").unwrap());
@@ -722,10 +860,7 @@ mod tests {
         let ms: Vec<MatchRow> = vec![]; // both unmatched (treated as "none")
         let joined = join(&txs, &emails, &ms);
 
-        let unmatched: Vec<&JoinedRow> = joined
-            .iter()
-            .filter(|r| r.confidence == "none")
-            .collect();
+        let unmatched: Vec<&JoinedRow> = joined.iter().filter(|r| r.confidence == "none").collect();
         assert_eq!(unmatched.len(), 2);
 
         let over_50: Vec<&JoinedRow> = unmatched
@@ -749,12 +884,8 @@ mod tests {
     #[test]
     fn date_filter_since_overrides_year_when_later() {
         // --since constrains start; if --since is later than --year start, it wins.
-        let f = DateFilter::from_flags(
-            Some(2025),
-            None,
-            NaiveDate::from_ymd_opt(2025, 6, 1),
-        )
-        .unwrap();
+        let f =
+            DateFilter::from_flags(Some(2025), None, NaiveDate::from_ymd_opt(2025, 6, 1)).unwrap();
         assert!(!f.matches(NaiveDate::from_ymd_opt(2025, 5, 31).unwrap()));
         assert!(f.matches(NaiveDate::from_ymd_opt(2025, 6, 1).unwrap()));
         assert!(f.matches(NaiveDate::from_ymd_opt(2025, 12, 31).unwrap()));
@@ -780,4 +911,11 @@ pub fn load_all(
     let matches = load_matches(matches_path)
         .map_err(|e| anyhow::anyhow!("failed to load {}: {}", matches_path.display(), e))?;
     Ok((txs, emails, matches))
+}
+
+/// Load the PayPal recovery sidecar (`paypal_matches.jsonl`) into a lookup
+/// index. A missing file yields an empty index (recovery is optional).
+pub fn load_recovery_index(paypal_matches_path: &Path) -> anyhow::Result<RecoveryIndex> {
+    RecoveryIndex::load(paypal_matches_path)
+        .map_err(|e| anyhow::anyhow!("failed to load {}: {}", paypal_matches_path.display(), e))
 }

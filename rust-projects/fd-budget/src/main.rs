@@ -1,9 +1,9 @@
 use chrono::{Datelike, NaiveDate};
 use clap::{Parser, Subcommand};
 use fd_budget::{
-    dedup, enrich, import, query,
+    dedup, enrich, import, paypal, query,
     store::CsvStore,
-    tags::{apply_rules, reapply_rules, TagRules},
+    tags::{apply_rules, apply_rules_with_recovery, reapply_rules, TagRules},
     Account,
 };
 use rust_decimal::Decimal;
@@ -101,6 +101,43 @@ enum Commands {
         #[arg(long)]
         date_window: Option<i64>,
         /// Print summary only; don't write file
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Recover PayPal merchants stripped by First Direct's export.
+    ///
+    /// FD posts every PayPal purchase as a bare `PAYPAL PAYMENT  -£X`. PayPal's
+    /// own CSV export carries the merchant. `paypal import` loads that export
+    /// into a sidecar (`paypal.csv`); `paypal recover` joins it back to the bank
+    /// rows and writes `paypal_matches.jsonl` (a sidecar keyed by
+    /// bank_import_id) — `transactions.csv` is never rewritten.
+    Paypal {
+        #[command(subcommand)]
+        action: PaypalAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum PaypalAction {
+    /// Import one or more PayPal activity CSV exports into the sidecar
+    /// (`paypal.csv`). Idempotent by PayPal `Transaction ID` across overlapping
+    /// date-range exports.
+    Import {
+        /// Path(s) to PayPal CSV export(s) (UTF-8-with-BOM, 15 columns).
+        #[arg(required = true)]
+        files: Vec<PathBuf>,
+    },
+    /// Join the PayPal sidecar to bank `PAYPAL PAYMENT` rows and recover the
+    /// merchant for each, writing `paypal_matches.jsonl`.
+    Recover {
+        /// Path to write the recovery sidecar (default
+        /// ~/.config/fd-budget/paypal_matches.jsonl).
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Bank↔PayPal date window in days (default 5).
+        #[arg(long)]
+        window: Option<i64>,
+        /// Print the summary only; don't write the sidecar.
         #[arg(long)]
         dry_run: bool,
     },
@@ -263,6 +300,9 @@ fn main() -> anyhow::Result<()> {
         } => {
             cmd_enrich(from, out, amount_tolerance, date_window, dry_run)?;
         }
+        Commands::Paypal { action } => {
+            cmd_paypal(action)?;
+        }
     }
 
     Ok(())
@@ -276,6 +316,32 @@ fn default_bills_jsonl() -> PathBuf {
 
 fn default_matches_jsonl() -> PathBuf {
     get_data_dir().join("matches.jsonl")
+}
+
+/// The PayPal sidecar CSV (typed PayPal rows). Mirrors `get_store_path()`.
+fn get_paypal_store_path() -> PathBuf {
+    get_data_dir().join("paypal.csv")
+}
+
+/// The PayPal merchant-recovery sidecar (keyed by bank_import_id). Mirrors
+/// `default_matches_jsonl()`.
+fn default_paypal_matches_jsonl() -> PathBuf {
+    get_data_dir().join("paypal_matches.jsonl")
+}
+
+/// Snapshot `transactions.csv` to `/tmp` before a destructive rewrite (primer
+/// rule 3). The canonical bank timeline is immutable in spirit; tag writes are
+/// the one allowed mutation, and they must be recoverable. No-op if the store
+/// does not exist yet.
+fn snapshot_transactions(store_path: &PathBuf) -> std::io::Result<()> {
+    if !store_path.exists() {
+        return Ok(());
+    }
+    let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
+    let backup = std::env::temp_dir().join(format!("fd-budget-transactions.backup-{stamp}.csv"));
+    std::fs::copy(store_path, &backup)?;
+    eprintln!("Snapshotted transactions.csv -> {}", backup.display());
+    Ok(())
 }
 
 fn cmd_enrich(
@@ -366,6 +432,119 @@ fn cmd_enrich(
 }
 
 // ---------------------------------------------------------------------------
+// PayPal merchant recovery (paypal import / paypal recover)
+// ---------------------------------------------------------------------------
+
+fn cmd_paypal(action: PaypalAction) -> anyhow::Result<()> {
+    match action {
+        PaypalAction::Import { files } => cmd_paypal_import(&files),
+        PaypalAction::Recover {
+            out,
+            window,
+            dry_run,
+        } => cmd_paypal_recover(out, window, dry_run),
+    }
+}
+
+fn cmd_paypal_import(files: &[PathBuf]) -> anyhow::Result<()> {
+    let store = paypal::PayPalStore::new(get_paypal_store_path());
+    let mut existing = store.load_transaction_ids()?;
+    eprintln!("Loaded {} existing PayPal rows", existing.len());
+
+    let mut total_parsed = 0usize;
+    let mut total_imported = 0usize;
+    for file in files {
+        let reader = BufReader::new(File::open(file)?);
+        let parsed = paypal::parse_paypal_csv(reader)
+            .map_err(|e| anyhow::anyhow!("failed to parse {}: {}", file.display(), e))?;
+        total_parsed += parsed.len();
+        // Dedup against the store AND against rows already imported this run
+        // (overlapping export files), then grow the seen-set.
+        let fresh = paypal::deduplicate(parsed, &existing);
+        for r in &fresh {
+            existing.insert(r.transaction_id.clone());
+        }
+        let n = store.append(&fresh)?;
+        total_imported += n;
+        eprintln!("  {}: {} new rows", file.display(), n);
+    }
+
+    println!(
+        "Imported {} new PayPal rows ({} parsed across {} file(s)).",
+        total_imported,
+        total_parsed,
+        files.len()
+    );
+    Ok(())
+}
+
+fn cmd_paypal_recover(
+    out: Option<PathBuf>,
+    window: Option<i64>,
+    dry_run: bool,
+) -> anyhow::Result<()> {
+    let out_path = out.unwrap_or_else(default_paypal_matches_jsonl);
+
+    let store = CsvStore::new(get_store_path());
+    let transactions = store.load_all()?;
+    if transactions.is_empty() {
+        eprintln!("No transactions in store; run `fd-budget import` first.");
+        return Ok(());
+    }
+
+    let pp_store = paypal::PayPalStore::new(get_paypal_store_path());
+    let paypal_rows = pp_store.load_all()?;
+    if paypal_rows.is_empty() {
+        eprintln!(
+            "No PayPal rows in {}; run `fd-budget paypal import <file>` first.",
+            get_paypal_store_path().display()
+        );
+        return Ok(());
+    }
+
+    let mut opts = paypal::RecoverOptions::default();
+    if let Some(w) = window {
+        opts.bank_window_days = w;
+    }
+
+    let (recoveries, summary) = paypal::recover(&transactions, &paypal_rows, opts);
+
+    println!(
+        "Scanned {} bank PAYPAL rows against {} PayPal rows.",
+        summary.bare_paypal_rows,
+        paypal_rows.len()
+    );
+    println!(
+        "  recovered        {:>4} / {} merchants",
+        summary.recovered, summary.bare_paypal_rows
+    );
+    println!("    direct-gbp     {:>4}", summary.direct_gbp);
+    println!("    two-leg        {:>4}", summary.two_leg);
+    println!("    fx-chain       {:>4}", summary.fx_chain);
+    println!(
+        "  £-value recovered  £{:.2} / £{:.2} ({:.1}%)",
+        summary.recovered_value,
+        summary.total_value,
+        summary.pct_value_recovered()
+    );
+
+    if dry_run {
+        println!("(dry-run; no file written)");
+    } else {
+        paypal::write_recoveries(&out_path, &recoveries)?;
+        println!(
+            "Wrote {} ({} recoveries).",
+            out_path.display(),
+            recoveries.len()
+        );
+        println!(
+            "Tip: `fd-budget tag reapply` now also tags PAYPAL rows by their recovered merchant."
+        );
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Stage 2 query commands (stats --by-counterparty, tx vendor, tx unmatched)
 // ---------------------------------------------------------------------------
 
@@ -380,7 +559,8 @@ fn cmd_stats_by_counterparty(
         &default_bills_jsonl(),
         &default_matches_jsonl(),
     )?;
-    let joined = query::join(&txs, &emails, &matches);
+    let recoveries = query::load_recovery_index(&default_paypal_matches_jsonl())?;
+    let joined = query::join_with_recovery(&txs, &emails, &matches, &recoveries);
     let filter = query::DateFilter::from_flags(year, month, since)?;
     query::cmd_stats_by_counterparty(&joined, filter, limit)
 }
@@ -391,7 +571,8 @@ fn cmd_tx(action: TxAction) -> anyhow::Result<()> {
         &default_bills_jsonl(),
         &default_matches_jsonl(),
     )?;
-    let joined = query::join(&txs, &emails, &matches);
+    let recoveries = query::load_recovery_index(&default_paypal_matches_jsonl())?;
+    let joined = query::join_with_recovery(&txs, &emails, &matches, &recoveries);
 
     match action {
         TxAction::Vendor {
@@ -571,24 +752,41 @@ fn cmd_tag(action: TagAction) -> anyhow::Result<()> {
         TagAction::Reapply { reset } => {
             let store = CsvStore::new(get_store_path());
             let mut transactions = store.load_all()?;
+            // The PayPal recovery sidecar lets rules tag bare `PAYPAL PAYMENT`
+            // rows by their recovered merchant (e.g. a "Streamflix" rule fires
+            // on the recovered name even though the bank text is just
+            // "PAYPAL PAYMENT"). Empty if `paypal recover` has not been run.
+            let recoveries = query::load_recovery_index(&default_paypal_matches_jsonl())?;
             if reset {
-                // DESTRUCTIVE: clear every tag, then rebuild purely from rules.
+                // DESTRUCTIVE: clear every tag, then rebuild purely from rules
+                // (raw_description), then layer recovered-merchant matches.
                 reapply_rules(&mut transactions, &rules);
-            } else {
-                // Additive: only append rule matches; manual tags survive.
-                apply_rules(&mut transactions, &rules);
             }
+            // Additive in both modes: append rule matches against the
+            // raw_description AND the recovered PayPal merchant. (After --reset
+            // the base tags are already raw_description-only; this adds the
+            // recovered-merchant matches on top.)
+            apply_rules_with_recovery(&mut transactions, &rules, &recoveries);
+
+            // This mutates transactions.csv — snapshot first (primer rule 3).
+            snapshot_transactions(&get_store_path())?;
             store.rewrite(&transactions)?;
             let tagged = transactions.iter().filter(|t| !t.tags.is_empty()).count();
+            let via_recovery = if recoveries.is_empty() {
+                String::new()
+            } else {
+                format!(" [{} PayPal recoveries consulted]", recoveries.len())
+            };
             eprintln!(
-                "Re-tagged {} transactions ({} with tags){}",
+                "Re-tagged {} transactions ({} with tags){}{}",
                 transactions.len(),
                 tagged,
                 if reset {
                     " [--reset: prior tags cleared]"
                 } else {
                     " [additive: manual tags preserved]"
-                }
+                },
+                via_recovery
             );
         }
     }
@@ -717,7 +915,10 @@ fn cmd_stats(
     println!("Untagged: {}", untagged);
     println!("Date range: {} to {}", min_date, max_date);
     println!();
-    println!("{:<54} £{:.2}", "Spend (recurring personal living cost):", spend);
+    println!(
+        "{:<54} £{:.2}",
+        "Spend (recurring personal living cost):", spend
+    );
     println!("{:<54} £{:.2}", "Income (all credits):", income);
     println!(
         "{:<54} £{:.2}",
