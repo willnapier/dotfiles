@@ -416,14 +416,31 @@ fn cmd_import(file: &PathBuf, account: Account) -> anyhow::Result<()> {
     let existing_ids = store.load_import_ids()?;
     eprintln!("Loaded {} existing transactions", existing_ids.len());
 
-    // Parse the midata file. FD's current-account export uses a
-    // 5-column schema (with Type + Balance); the Visa-card export
-    // uses a 4-column schema (Date, Description, Amount, Reference).
-    // Different parsers per account.
+    // Parse the export. The Visa card uses a 4-column schema
+    // (Date, Description, Amount, Reference). The current account's midata
+    // changed over time: the legacy export is 5-column (Date, Type,
+    // Merchant/Description, Debit/Credit, Balance); FD's current export is a
+    // leaner 4-column one (Date, Description, Amount, Balance) — no Type, a
+    // single signed Amount. Peek the header to pick the right layout so both
+    // old and new current-account downloads import. `--account` stays
+    // authoritative for the account label.
+    let header = {
+        let f = BufReader::new(File::open(file)?);
+        f.lines().next().transpose()?.unwrap_or_default()
+    };
     let reader = BufReader::new(File::open(file)?);
     let transactions = match account {
         Account::Visa => import::parse_midata_visa(reader, account)?,
-        _ => import::parse_midata(reader, account)?,
+        Account::Current => {
+            let has_type = header
+                .split(',')
+                .any(|h| h.trim().eq_ignore_ascii_case("type"));
+            if has_type {
+                import::parse_midata(reader, account)?
+            } else {
+                import::parse_midata_current_4col(reader, account)?
+            }
+        }
     };
     eprintln!("Parsed {} transactions from file", transactions.len());
 

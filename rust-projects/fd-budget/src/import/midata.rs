@@ -153,6 +153,79 @@ pub fn parse_midata_visa<R: Read>(
     Ok(transactions)
 }
 
+/// Parse First Direct's **current-account midata in its newer 4-column
+/// schema**: `Date, Description, Amount, Balance`.
+///
+/// FD slimmed the current-account midata export down from the older
+/// 5-column shape (`Date, Type, Merchant/Description, Debit/Credit,
+/// Balance`, parsed by [`parse_midata`]): the new export drops the
+/// transaction-type code and folds debit/credit into a single signed
+/// `Amount`. So `tx_type` is `Unknown` (the bank no longer supplies it),
+/// but the running `Balance` IS preserved — which is what distinguishes
+/// this from the Visa 4-column schema (whose 4th column is a Reference and
+/// is discarded; see [`parse_midata_visa`]). The caller supplies the
+/// account label; `cmd_import` dispatches here vs `parse_midata` by
+/// inspecting the header for a `Type` column.
+pub fn parse_midata_current_4col<R: Read>(
+    reader: R,
+    account: Account,
+) -> Result<Vec<Transaction>, ParseError> {
+    let mut csv_reader = ReaderBuilder::new()
+        .has_headers(true)
+        .flexible(true)
+        .from_reader(reader);
+
+    let mut transactions = Vec::new();
+
+    for result in csv_reader.records() {
+        let record = match result {
+            Ok(r) => r,
+            Err(_) => break,
+        };
+
+        if record.len() < 4 || record.get(0).map(|s| s.trim().is_empty()).unwrap_or(true) {
+            break;
+        }
+
+        let date_str = record.get(0).unwrap_or("");
+        let description_str = record.get(1).unwrap_or("");
+        let amount_str = record.get(2).unwrap_or("");
+        let balance_str = record.get(3).unwrap_or("");
+
+        let date = match NaiveDate::parse_from_str(date_str, "%d/%m/%Y") {
+            Ok(d) => d,
+            Err(_) => break,
+        };
+
+        let amount = match parse_amount(amount_str) {
+            Ok(a) => a,
+            Err(_) => break,
+        };
+
+        // Balance is the 4th column here (not a Reference); keep it.
+        let balance = parse_amount(balance_str).ok();
+
+        let description = clean_description(description_str);
+        let raw_description = description_str.to_string();
+
+        let import_id = compute_import_id(&date, &amount, &raw_description);
+
+        transactions.push(Transaction {
+            date,
+            account,
+            tx_type: TxType::Unknown(0),
+            amount,
+            description,
+            raw_description,
+            balance,
+            tags: Vec::new(),
+            import_id,
+        });
+    }
+
+    Ok(transactions)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -196,5 +269,32 @@ mod tests {
         assert_eq!(widget.amount, Decimal::from_str("-10.00").unwrap());
         assert_eq!(widget.account, Account::Visa);
         assert!(widget.description.starts_with("Acme Widgets"));
+    }
+
+    #[test]
+    fn test_parse_midata_current_4col_sample() {
+        // New FD current-account midata: Date, Description, Amount, Balance.
+        // Single signed Amount (no Debit/Credit column), no Type column.
+        let csv_data = "Date,Description,Amount,Balance\n\
+                        17/06/2026,ACME COFFEE     Anytown,-12.99,1000.00\n\
+                        16/06/2026,EXAMPLE SALARY,2500.00,3500.00";
+
+        let transactions =
+            parse_midata_current_4col(csv_data.as_bytes(), Account::Current).unwrap();
+
+        assert_eq!(transactions.len(), 2);
+
+        let debit = &transactions[0];
+        assert_eq!(debit.date, NaiveDate::from_ymd_opt(2026, 6, 17).unwrap());
+        assert_eq!(debit.amount, Decimal::from_str("-12.99").unwrap());
+        assert_eq!(debit.account, Account::Current);
+        assert_eq!(debit.tx_type, TxType::Unknown(0));
+        assert_eq!(debit.balance, Some(Decimal::from_str("1000.00").unwrap()));
+        assert_eq!(debit.description, "ACME COFFEE Anytown");
+
+        // A credit (income) stays positive and keeps its balance.
+        let credit = &transactions[1];
+        assert!(credit.amount.is_sign_positive());
+        assert_eq!(credit.balance, Some(Decimal::from_str("3500.00").unwrap()));
     }
 }
