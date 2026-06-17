@@ -4343,8 +4343,11 @@ alias wb = wiki-back       # Go back in navigation history
 alias ft = ftodo           # Toggle todo checkbox
 
 # Claude Code wrapper - auto-captures to Continuum database
-def claude [...args] {
+def --wrapped claude [...args] {
     # Use continuum-claude wrapper for automatic session capture
+    # NOTE: --wrapped is REQUIRED so flags (--version, -p, --resume, --continue,
+    # -c, --model, etc.) route into ...args instead of being rejected by the
+    # nushell parser with "unknown flag". Without it, only bare `claude` works.
     let continuum_claude = ($env.HOME | path join ".local/bin/continuum-claude")
 
     if ($continuum_claude | path exists) {
