@@ -1039,7 +1039,7 @@ pub fn cmd_tx_unmatched(
 // ---------------------------------------------------------------------------
 
 /// Format a decimal amount as GBP with sign preserved: "-£55.67", "£12.99".
-fn format_money(amount: Decimal) -> String {
+pub fn format_money(amount: Decimal) -> String {
     if amount.is_sign_negative() {
         format!("-£{:.2}", amount.abs())
     } else {

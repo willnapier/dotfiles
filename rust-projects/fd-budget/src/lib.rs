@@ -4,6 +4,7 @@ pub mod enrich;
 pub mod import;
 pub mod paypal;
 pub mod query;
+pub mod smooth;
 pub mod store;
 pub mod subscriptions;
 pub mod tags;

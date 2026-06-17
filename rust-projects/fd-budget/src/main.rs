@@ -1,7 +1,7 @@
 use chrono::{Datelike, NaiveDate};
 use clap::{Parser, Subcommand};
 use fd_budget::{
-    coverage, dedup, enrich, import, is_card_payment, paypal, query,
+    coverage, dedup, enrich, import, is_card_payment, paypal, query, smooth,
     store::CsvStore,
     subscriptions::{self, DetectOptions},
     tags::{apply_rules, apply_rules_with_recovery, reapply_rules, TagRules},
@@ -174,6 +174,32 @@ enum Commands {
         #[arg(long)]
         since: Option<NaiveDate>,
     },
+    /// Size a sinking-fund buffer + monthly standing order that smooth lumpy
+    /// annual obligations (gym blocks, insurance renewals, holidays, a flat
+    /// service charge) into a steady monthly drip.
+    ///
+    /// Reads the lump categories from `~/.config/fd-budget/smoothing.toml`
+    /// (seeded with a generic template on first run), buckets the window into 12
+    /// chronological months, and reports two numbers: the MONTHLY DRIP (the
+    /// standing order into a buffer account = annual lumps / 12) and the BUFFER
+    /// TO HOLD (the peak-to-trough swing of the buffer balance, so it never runs
+    /// dry — driven by how clustered the lumps are). Window = last 12 months by
+    /// default. READ-ONLY to transactions.csv.
+    Smooth {
+        /// Filter to a single calendar year (the 12-month window Jan..Dec).
+        #[arg(long)]
+        year: Option<i32>,
+        /// Filter to a calendar month (YYYY-MM): the 12 months ENDING there.
+        #[arg(long)]
+        month: Option<String>,
+        /// Only consider rows on or after this date (YYYY-MM-DD).
+        #[arg(long)]
+        since: Option<NaiveDate>,
+        /// Also print the month-by-month buffer float trajectory and the
+        /// individual matched rows so you can sanity-check what is counted.
+        #[arg(long)]
+        detail: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -332,6 +358,12 @@ fn get_categories_path() -> PathBuf {
     get_data_dir().join("categories.toml")
 }
 
+/// Path to the user-editable lump-smoothing config. Absent → `smooth` seeds a
+/// generic, mostly-commented template (see [`smooth::default_template_toml`]).
+fn get_smoothing_path() -> PathBuf {
+    get_data_dir().join("smoothing.toml")
+}
+
 fn ensure_data_dir() -> std::io::Result<()> {
     std::fs::create_dir_all(get_data_dir())
 }
@@ -403,6 +435,14 @@ fn main() -> anyhow::Result<()> {
         Commands::Coverage { year, month, since } => {
             cmd_coverage(year, month.as_deref(), since)?;
         }
+        Commands::Smooth {
+            year,
+            month,
+            since,
+            detail,
+        } => {
+            cmd_smooth(year, month.as_deref(), since, detail)?;
+        }
     }
 
     Ok(())
@@ -435,6 +475,72 @@ fn cmd_coverage(
     let filter = query::DateFilter::from_flags(year, month, since)?;
     let report = coverage::CoverageReport::build(&transactions, &paypal_rows, filter);
     print!("{}", report.render());
+    Ok(())
+}
+
+/// `smooth` — size a sinking-fund buffer + monthly standing order for lumpy
+/// annual obligations.
+///
+/// READ-ONLY to `transactions.csv`. The only thing it ever writes is the seeded
+/// template `smoothing.toml` on first run (when none exists). Loads the lump
+/// categories, resolves a 12-month window from the date flags (last 12 months by
+/// default), runs the pure [`smooth::compute`], and prints the report. A
+/// fixed-`annual_budget` category is spread evenly across the 12 months; an
+/// actuals category is summed on each lump's real month.
+fn cmd_smooth(
+    year: Option<i32>,
+    month: Option<&str>,
+    since: Option<NaiveDate>,
+    detail: bool,
+) -> anyhow::Result<()> {
+    let store = CsvStore::new(get_store_path());
+    let transactions = store.load_all()?;
+
+    // Load the lump config, seeding a generic template on first run. A failed
+    // seed falls back to an empty set with a clear message (below).
+    let (config, status) = smooth::load_or_seed(get_smoothing_path())?;
+    match status {
+        smooth::SeedStatus::Existed => {}
+        smooth::SeedStatus::Seeded => {
+            eprintln!(
+                "No smoothing config found — seeded a template at {}.",
+                get_smoothing_path().display()
+            );
+            eprintln!(
+                "Edit it to list your lump categories (uncomment the examples), then re-run."
+            );
+        }
+        smooth::SeedStatus::SeedFailed(e) => {
+            eprintln!(
+                "No smoothing config at {} and it could not be created ({}).",
+                get_smoothing_path().display(),
+                e
+            );
+            eprintln!("Create it by hand: list each lump category as a `[[lump]]` with a `tag`.");
+        }
+    }
+
+    if config.is_empty() {
+        eprintln!("No lump categories configured; nothing to smooth.");
+        return Ok(());
+    }
+
+    let filter = query::DateFilter::from_flags(year, month, since)?;
+    let today = chrono::Local::now().date_naive();
+    let window = smooth::resolve_window(&filter, year, month, &transactions, today);
+
+    // Human label for the window: a single year/month flag names itself; the
+    // default ("last 12 months") names the rolling window.
+    let period_label = if let Some(m) = month {
+        format!("12 months ending {}", m)
+    } else if let Some(y) = year {
+        format!("year {}", y)
+    } else {
+        "last 12 months".to_string()
+    };
+
+    let result = smooth::compute(&config, &transactions, window);
+    print!("{}", smooth::render(&result, &period_label, detail));
     Ok(())
 }
 
