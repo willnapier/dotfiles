@@ -1,7 +1,7 @@
 use chrono::{Datelike, NaiveDate};
 use clap::{Parser, Subcommand};
 use fd_budget::{
-    dedup, enrich, import, is_card_payment, paypal, query,
+    coverage, dedup, enrich, import, is_card_payment, paypal, query,
     store::CsvStore,
     subscriptions::{self, DetectOptions},
     tags::{apply_rules, apply_rules_with_recovery, reapply_rules, TagRules},
@@ -148,6 +148,27 @@ enum Commands {
     Paypal {
         #[command(subcommand)]
         action: PaypalAction,
+    },
+    /// Report per-source data coverage and flag gaps.
+    ///
+    /// The Spend floor silently UNDER-counts when a data source doesn't cover the
+    /// full period. This reports, per source — bank `current` rows, bank `visa`
+    /// rows, and the PayPal export — the date span, the count of distinct
+    /// year-months present, and the list of MISSING months (gaps), flagging a
+    /// source whose coverage is sparse (<80% of the months in its span). It also
+    /// reports the killer metric: how many bank `PAYPAL PAYMENT` rows fall WITHIN
+    /// the PayPal export's span (i.e. are even recoverable), which explains a low
+    /// `paypal recover` %.
+    Coverage {
+        /// Filter to a single calendar year
+        #[arg(long)]
+        year: Option<i32>,
+        /// Filter to a single calendar month (YYYY-MM)
+        #[arg(long)]
+        month: Option<String>,
+        /// Only consider rows on or after this date (YYYY-MM-DD)
+        #[arg(long)]
+        since: Option<NaiveDate>,
     },
 }
 
@@ -368,8 +389,41 @@ fn main() -> anyhow::Result<()> {
         Commands::Paypal { action } => {
             cmd_paypal(action)?;
         }
+        Commands::Coverage { year, month, since } => {
+            cmd_coverage(year, month.as_deref(), since)?;
+        }
     }
 
+    Ok(())
+}
+
+/// `coverage` — report per-source data coverage and flag month gaps.
+///
+/// Loads the bank store (split into `current`/`visa` by `Account`) and the
+/// PayPal sidecar export, builds a [`coverage::CoverageReport`] over the date
+/// window, and prints the table + per-source verdicts. Each source is handled
+/// gracefully when absent (its row renders as empty). No file is written.
+fn cmd_coverage(
+    year: Option<i32>,
+    month: Option<&str>,
+    since: Option<NaiveDate>,
+) -> anyhow::Result<()> {
+    let store = CsvStore::new(get_store_path());
+    let transactions = store.load_all()?;
+
+    // The PayPal export sidecar is optional — a missing file loads as empty and
+    // the report flags it as absent rather than erroring.
+    let pp_store = paypal::PayPalStore::new(get_paypal_store_path());
+    let paypal_rows = pp_store.load_all()?;
+
+    if transactions.is_empty() && paypal_rows.is_empty() {
+        eprintln!("No transactions or PayPal rows in store; nothing to report.");
+        return Ok(());
+    }
+
+    let filter = query::DateFilter::from_flags(year, month, since)?;
+    let report = coverage::CoverageReport::build(&transactions, &paypal_rows, filter);
+    print!("{}", report.render());
     Ok(())
 }
 

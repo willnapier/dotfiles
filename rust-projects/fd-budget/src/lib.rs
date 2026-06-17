@@ -1,3 +1,4 @@
+pub mod coverage;
 pub mod dedup;
 pub mod enrich;
 pub mod import;
