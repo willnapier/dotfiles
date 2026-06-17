@@ -1,50 +1,52 @@
 use anyhow::{Context, Result};
-use chrono::{DateTime, Datelike, NaiveDate, Utc};
+use chrono::{Datelike, NaiveDate};
 use std::fs;
 use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-const DEVLOG_PROMPT: &str = r#"You are writing ONE entry for a developer's work log. Given a single coding session (files touched, skills, user messages), write 1-3 plain past-tense sentences naming the PROBLEM addressed and WHAT was done. Use specific names (files, features, modules). No preamble, no "dev::", no counts, no markdown headers — just the sentences. Then, on a final separate line, output 1-3 short kebab-case topic tags as: TOPICS: tag-one, tag-two"#;
+const DEVLOG_PROMPT: &str = r#"You are writing ONE entry for a developer's work log. Given a day's coding work on a single project (files touched, skills, user messages — possibly from several sessions), write 1-3 plain past-tense sentences naming the PROBLEM addressed and WHAT was done. Use specific names (files, features, modules). No preamble, no "dev::", no counts, no markdown headers — just the sentences. Then, on a final separate line, output 1-3 short kebab-case topic tags as: TOPICS: tag-one, tag-two"#;
 
-/// A single DevLog entry, one per non-trivial CC coding session.
+/// A single DevLog entry: one project's work on one day.
 #[derive(Debug, Clone)]
 pub struct DevLogEntry {
     pub date: NaiveDate,
-    pub start: Option<DateTime<Utc>>,
     pub primary_project: String,
     pub all_projects: Vec<String>,
     pub prs: Vec<u32>,        // sorted unique
     pub commits: Vec<String>, // short shas, dedup, in log order
     pub topics: Vec<String>,  // kebab tags from the AI draft, may be empty
     pub prose: String,
-    pub minutes: i64, // (end-start) in minutes, 0 if unknown
-    pub msg_count: usize,
+    pub files_count: usize, // distinct files touched in this project that day
+    pub edits: u32,         // summed edit count across those files
 }
 
-/// Path to the per-session prose/topics cache file.
-fn cache_path(session_id: &str) -> PathBuf {
-    cache_dir().join(format!("{}.md", session_id))
+/// Path to the per-key prose/topics cache file.
+fn cache_path(cache_key: &str) -> PathBuf {
+    cache_dir().join(format!("{}.md", cache_key))
 }
 
+/// Prose cache dir — `~/.local/share/devlog-cache` (matches the daypage-pending
+/// convention, not the macOS Application Support dir).
 fn cache_dir() -> PathBuf {
-    dirs::data_local_dir()
+    dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("devlog-cache")
+        .join(".local/share/devlog-cache")
 }
 
-/// Resolve prose + topics for a session, using the cache when present.
+/// Resolve prose + topics for a (date, project) bucket, using the cache when
+/// present.
 ///
 /// - If the cache file exists, parse a trailing `TOPICS:` line (if any); the
 ///   rest is the prose.
-/// - Otherwise, unless `no_ai`, call `claude -p` with the session detail and
+/// - Otherwise, unless `no_ai`, call `claude -p` with the bucket detail and
 ///   cache the result.
 /// - If `no_ai`, prose = "(no AI draft)", topics = [], and no cache is written.
-pub fn resolve_prose(session_id: &str, detail: &str, no_ai: bool) -> (String, Vec<String>) {
-    let path = cache_path(session_id);
+pub fn resolve_prose(cache_key: &str, detail: &str, no_ai: bool) -> (String, Vec<String>) {
+    let path = cache_path(cache_key);
 
     if let Ok(contents) = fs::read_to_string(&path) {
-        return parse_cached(&contents);
+        return parse_claude_response(&contents);
     }
 
     if no_ai {
@@ -57,15 +59,10 @@ pub fn resolve_prose(session_id: &str, detail: &str, no_ai: bool) -> (String, Ve
             (prose, topics)
         }
         Err(e) => {
-            eprintln!("Warning: AI draft failed for session {}: {}", session_id, e);
+            eprintln!("Warning: AI draft failed for {}: {}", cache_key, e);
             ("(no AI draft)".to_string(), vec![])
         }
     }
-}
-
-/// Parse a cache file's contents into (prose, topics).
-fn parse_cached(contents: &str) -> (String, Vec<String>) {
-    parse_claude_response(contents)
 }
 
 /// Split a claude/cache response into prose + topics by the last `TOPICS:` line.
@@ -105,7 +102,7 @@ fn kebab(s: &str) -> String {
     out.trim_matches('-').to_string()
 }
 
-/// Call `claude -p` with the DevLog prompt and the session detail on stdin.
+/// Call `claude -p` with the DevLog prompt and the bucket detail on stdin.
 fn call_claude(detail: &str) -> Result<(String, Vec<String>)> {
     let mut child = Command::new("claude");
     child.env_remove("ANTHROPIC_API_KEY");
@@ -173,13 +170,22 @@ pub fn render_week(week_label: &str, entries: &[DevLogEntry]) -> String {
     let mut out = format!("# DevLog {}\n\n", week_label);
 
     let mut sorted: Vec<&DevLogEntry> = entries.iter().collect();
-    sorted.sort_by(|a, b| a.date.cmp(&b.date).then_with(|| a.start.cmp(&b.start)));
+    sorted.sort_by(|a, b| {
+        a.date
+            .cmp(&b.date)
+            .then_with(|| a.primary_project.cmp(&b.primary_project))
+    });
 
     for e in sorted {
         out.push_str(&render_entry(e));
     }
 
     out
+}
+
+/// "1 file" / "2 files" — pluralize a count.
+fn plural(n: usize, noun: &str) -> String {
+    format!("{} {}{}", n, noun, if n == 1 { "" } else { "s" })
 }
 
 /// Render a single entry block (Format B).
@@ -192,7 +198,7 @@ fn render_entry(e: &DevLogEntry) -> String {
         heading.push_str(&format!(" · #{}", first_pr));
     }
 
-    // Tag line.
+    // Tag line: #project/… (one — the entry is a single project), #pr/…, #topic/…
     let mut tags: Vec<String> = e
         .all_projects
         .iter()
@@ -206,16 +212,16 @@ fn render_entry(e: &DevLogEntry) -> String {
     }
     let tag_line = tags.join(" ");
 
-    // Meta line.
+    // Meta line: reliable facts only — commits (file-scoped) + edit volume.
+    let size = format!(
+        "{} · {}",
+        plural(e.files_count, "file"),
+        plural(e.edits as usize, "edit")
+    );
     let meta_line = if e.commits.is_empty() {
-        format!("~{}min · {}x", e.minutes, e.msg_count)
+        size
     } else {
-        format!(
-            "commits: {} · ~{}min · {}x",
-            e.commits.join(" "),
-            e.minutes,
-            e.msg_count
-        )
+        format!("commits: {} · {}", e.commits.join(" "), size)
     };
 
     format!(
@@ -236,15 +242,14 @@ mod tests {
     fn test_render_week_with_pr_and_commits() {
         let entry = DevLogEntry {
             date: date(2026, 6, 17),
-            start: None,
             primary_project: "dev-catchup".to_string(),
             all_projects: vec!["dev-catchup".to_string()],
             prs: vec![124],
             commits: vec!["abc1234".to_string(), "def5678".to_string()],
             topics: vec!["devlog".to_string()],
             prose: "Added a DevLog generation mode.".to_string(),
-            minutes: 45,
-            msg_count: 12,
+            files_count: 3,
+            edits: 14,
         };
 
         let rendered = render_week("2026-W25", &[entry]);
@@ -255,7 +260,7 @@ mod tests {
 Added a DevLog generation mode.\n\
 \n\
 #project/dev-catchup #pr/124 #topic/devlog\n\
-commits: abc1234 def5678 · ~45min · 12x\n\
+commits: abc1234 def5678 · 3 files · 14 edits\n\
 \n";
         assert_eq!(rendered, expected);
     }
@@ -264,15 +269,14 @@ commits: abc1234 def5678 · ~45min · 12x\n\
     fn test_render_entry_no_pr_no_commits() {
         let entry = DevLogEntry {
             date: date(2026, 6, 16),
-            start: None,
             primary_project: "misc".to_string(),
             all_projects: vec!["misc".to_string()],
             prs: vec![],
             commits: vec![],
             topics: vec![],
             prose: "(no AI draft)".to_string(),
-            minutes: 0,
-            msg_count: 3,
+            files_count: 1,
+            edits: 1,
         };
 
         let rendered = render_week("2026-W25", &[entry]);
@@ -283,36 +287,34 @@ commits: abc1234 def5678 · ~45min · 12x\n\
 (no AI draft)\n\
 \n\
 #project/misc\n\
-~0min · 3x\n\
+1 file · 1 edit\n\
 \n";
         assert_eq!(rendered, expected);
     }
 
     #[test]
-    fn test_render_week_sorts_by_date_then_start() {
+    fn test_render_week_sorts_by_date_then_project() {
         let later = DevLogEntry {
             date: date(2026, 6, 17),
-            start: Some("2026-06-17T10:00:00Z".parse().unwrap()),
-            primary_project: "b".to_string(),
-            all_projects: vec!["b".to_string()],
+            primary_project: "zzz".to_string(),
+            all_projects: vec!["zzz".to_string()],
             prs: vec![],
             commits: vec![],
             topics: vec![],
             prose: "second".to_string(),
-            minutes: 0,
-            msg_count: 5,
+            files_count: 1,
+            edits: 1,
         };
         let earlier = DevLogEntry {
             date: date(2026, 6, 16),
-            start: Some("2026-06-16T09:00:00Z".parse().unwrap()),
-            primary_project: "a".to_string(),
-            all_projects: vec!["a".to_string()],
+            primary_project: "aaa".to_string(),
+            all_projects: vec!["aaa".to_string()],
             prs: vec![],
             commits: vec![],
             topics: vec![],
             prose: "first".to_string(),
-            minutes: 0,
-            msg_count: 5,
+            files_count: 1,
+            edits: 1,
         };
 
         let rendered = render_week("2026-W25", &[later, earlier]);

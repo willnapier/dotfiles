@@ -21,22 +21,27 @@ pub fn commits_in_window(
     repo_root: &Path,
     start: DateTime<Utc>,
     end: DateTime<Utc>,
+    rel_files: &[String],
 ) -> Vec<Commit> {
     let since = start.to_rfc3339_opts(SecondsFormat::Secs, true);
     let until = end.to_rfc3339_opts(SecondsFormat::Secs, true);
 
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(repo_root)
-        .args([
-            "log",
-            "--since",
-            &since,
-            "--until",
-            &until,
-            "--pretty=%h%x09%s",
-        ])
-        .output();
+    let mut cmd = Command::new("git");
+    cmd.arg("-C").arg(repo_root).args([
+        "log",
+        "--since",
+        &since,
+        "--until",
+        &until,
+        "--pretty=%h%x09%s",
+    ]);
+    // Scope to the exact files touched so a busy day's unrelated commits don't
+    // get swept in. Pathspecs are interpreted relative to the repo root.
+    if !rel_files.is_empty() {
+        cmd.arg("--");
+        cmd.args(rel_files);
+    }
+    let output = cmd.output();
 
     let output = match output {
         Ok(o) if o.status.success() => o,
@@ -68,6 +73,14 @@ pub fn commits_in_window(
     }
 
     commits
+}
+
+/// Make an absolute path repo-relative for use as a git pathspec. Returns
+/// `None` if `abs_path` isn't under `repo_root`.
+pub fn relativize(repo_root: &Path, abs_path: &str) -> Option<String> {
+    let root = repo_root.to_str()?;
+    let rest = abs_path.strip_prefix(root)?;
+    Some(rest.trim_start_matches('/').to_string())
 }
 
 /// Find the first PR number in a commit subject: locate `(#`, then read
@@ -135,7 +148,18 @@ mod tests {
             Path::new("/nonexistent/not/a/repo"),
             "2026-01-01T00:00:00Z".parse().unwrap(),
             "2026-01-02T00:00:00Z".parse().unwrap(),
+            &[],
         );
         assert!(commits.is_empty());
+    }
+
+    #[test]
+    fn test_relativize() {
+        let root = Path::new("/Users/will/Code/practiceforge");
+        assert_eq!(
+            relativize(root, "/Users/will/Code/practiceforge/src/main.rs"),
+            Some("src/main.rs".to_string())
+        );
+        assert_eq!(relativize(root, "/elsewhere/x.rs"), None);
     }
 }

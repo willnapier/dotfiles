@@ -12,7 +12,10 @@ use anyhow::Result;
 use chrono::{Datelike, Days, Local, NaiveDate, Weekday};
 use clap::Parser;
 
-use std::collections::BTreeSet;
+use std::collections::hash_map::DefaultHasher;
+use std::collections::{BTreeMap, BTreeSet};
+use std::hash::{Hash, Hasher};
+use std::path::PathBuf;
 
 use types::*;
 
@@ -172,10 +175,24 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-/// Generate the weekly DevLog for the ISO weeks covered by `dates`.
-fn run_devlog(dates: &[NaiveDate], no_ai: bool, write: bool) -> Result<()> {
-    use devlog::DevLogEntry;
+/// A (date, project) aggregation bucket.
+#[derive(Default)]
+struct Bucket {
+    /// abs file path -> summed edit count
+    files: BTreeMap<String, u32>,
+    repo_root: Option<PathBuf>,
+    /// session_id -> session detail (dedup per session)
+    details: BTreeMap<String, String>,
+}
 
+/// Generate the weekly DevLog for the ISO weeks covered by `dates`.
+///
+/// Grain is (date × project): all of a day's CC sessions are bucketed by the
+/// project each modified file belongs to, so one entry == one project's work on
+/// one day. Incidental buckets (memory/config/notes churn) are dropped on any
+/// day that also has substantive work; a day with only incidental work collapses
+/// to a single "misc" entry. git commits are scoped to the exact files touched.
+fn run_devlog(dates: &[NaiveDate], no_ai: bool, write: bool) -> Result<()> {
     // Distinct set of ISO weeks (iso_year, iso_week) covered by the dates.
     let mut weeks: BTreeSet<(i32, u32)> = BTreeSet::new();
     for d in dates {
@@ -195,8 +212,10 @@ fn run_devlog(dates: &[NaiveDate], no_ai: bool, write: bool) -> Result<()> {
             .filter_map(|i| monday.checked_add_days(Days::new(i)))
             .collect();
 
-        let mut entries: Vec<DevLogEntry> = Vec::new();
-
+        // Bucket every file of every non-trivial, non-clinical CC session by
+        // (date, project). A session that spans projects contributes its files
+        // to each project's bucket. continuum_sessions are ignored (v1).
+        let mut buckets: BTreeMap<(NaiveDate, String), Bucket> = BTreeMap::new();
         for date in &week_dates {
             let activity = match activity::fetch_activity(*date) {
                 Ok(a) => a,
@@ -205,8 +224,6 @@ fn run_devlog(dates: &[NaiveDate], no_ai: bool, write: bool) -> Result<()> {
                     continue;
                 }
             };
-
-            // CC sessions only for v1 — ignore continuum_sessions entirely.
             for cc in &activity.cc_sessions {
                 if matching::is_clinical(cc) {
                     continue;
@@ -215,55 +232,55 @@ fn run_devlog(dates: &[NaiveDate], no_ai: bool, write: bool) -> Result<()> {
                 if matching::is_trivial(&unified) {
                     continue;
                 }
-
-                let (primary, all_projects, repo_root) =
-                    project::primary_project(&cc.files_modified);
-
-                // Commits/PRs only when we have a repo root and both timestamps.
-                let (commits, prs) = match (&repo_root, cc.start_time, cc.end_time) {
-                    (Some(root), Some(start), Some(end)) => {
-                        let found = git::commits_in_window(root, start, end);
-                        let mut shas: Vec<String> = Vec::new();
-                        let mut pr_set: BTreeSet<u32> = BTreeSet::new();
-                        for c in &found {
-                            if !shas.contains(&c.short_sha) {
-                                shas.push(c.short_sha.clone());
-                            }
-                            if let Some(pr) = c.pr {
-                                pr_set.insert(pr);
-                            }
-                        }
-                        (shas, pr_set.into_iter().collect::<Vec<_>>())
+                for (path, edits) in &cc.files_modified {
+                    let (project, repo_root) =
+                        project::classify(path).unwrap_or_else(|| ("misc".to_string(), None));
+                    let b = buckets.entry((*date, project)).or_default();
+                    *b.files.entry(path.clone()).or_insert(0) += *edits;
+                    if b.repo_root.is_none() {
+                        b.repo_root = repo_root;
                     }
-                    _ => (Vec::new(), Vec::new()),
-                };
-
-                let minutes = match (cc.start_time, cc.end_time) {
-                    (Some(start), Some(end)) => (end - start).num_minutes().max(0),
-                    _ => 0,
-                };
-
-                let (prose, topics) = devlog::resolve_prose(&cc.session_id, &unified.detail, no_ai);
-
-                entries.push(DevLogEntry {
-                    date: *date,
-                    start: cc.start_time,
-                    primary_project: primary,
-                    all_projects,
-                    prs,
-                    commits,
-                    topics,
-                    prose,
-                    minutes,
-                    msg_count: unified.message_count,
-                });
+                    b.details
+                        .entry(cc.session_id.clone())
+                        .or_insert_with(|| unified.detail.clone());
+                }
             }
         }
 
-        let rendered = devlog::render_week(&week_label, &entries);
+        // Which dates have at least one substantive bucket?
+        let mut substantive_dates: BTreeSet<NaiveDate> = BTreeSet::new();
+        for (date, project) in buckets.keys() {
+            if project::is_substantive(project) {
+                substantive_dates.insert(*date);
+            }
+        }
 
+        // Keep substantive buckets on substantive days; collapse an all-incidental
+        // day into one "misc" entry so it isn't silently dropped.
+        let mut entries: Vec<devlog::DevLogEntry> = Vec::new();
+        let mut incidental_merge: BTreeMap<NaiveDate, Bucket> = BTreeMap::new();
+        for ((date, project), bucket) in buckets {
+            if substantive_dates.contains(&date) {
+                if project::is_substantive(&project) {
+                    entries.push(build_entry(date, project, bucket, no_ai));
+                }
+            } else {
+                let m = incidental_merge.entry(date).or_default();
+                for (f, e) in bucket.files {
+                    *m.files.entry(f).or_insert(0) += e;
+                }
+                for (sid, d) in bucket.details {
+                    m.details.entry(sid).or_insert(d);
+                }
+            }
+        }
+        for (date, bucket) in incidental_merge {
+            entries.push(build_entry(date, "misc".to_string(), bucket, no_ai));
+        }
+
+        let rendered = devlog::render_week(&week_label, &entries);
+        let path = devlog::week_path(monday);
         if write {
-            let path = devlog::week_path(monday);
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent)
                     .map_err(|e| anyhow::anyhow!("Failed to create DevLog dir: {}", e))?;
@@ -272,11 +289,79 @@ fn run_devlog(dates: &[NaiveDate], no_ai: bool, write: bool) -> Result<()> {
                 .map_err(|e| anyhow::anyhow!("Failed to write {}: {}", path.display(), e))?;
             eprintln!("Wrote {} ({} entries)", path.display(), entries.len());
         } else {
-            let path = devlog::week_path(monday);
             println!("--- {} ---", path.display());
             print!("{}", rendered);
         }
     }
 
     Ok(())
+}
+
+/// Build a DevLog entry from a (date, project) bucket: scope git to the exact
+/// files touched, derive a stable prose-cache key from the contributing session
+/// set (so a finished day's prose is cached, but the current day re-drafts as it
+/// grows).
+fn build_entry(date: NaiveDate, project: String, bucket: Bucket, no_ai: bool) -> devlog::DevLogEntry {
+    let files_count = bucket.files.len();
+    let edits: u32 = bucket.files.values().sum();
+
+    let (commits, prs) = match &bucket.repo_root {
+        Some(root) => {
+            let rel: Vec<String> = bucket
+                .files
+                .keys()
+                .filter_map(|f| git::relativize(root, f))
+                .collect();
+            if rel.is_empty() {
+                (Vec::new(), Vec::new())
+            } else {
+                let day_start = date.and_hms_opt(0, 0, 0).unwrap().and_utc();
+                let day_end = date
+                    .succ_opt()
+                    .unwrap_or(date)
+                    .and_hms_opt(0, 0, 0)
+                    .unwrap()
+                    .and_utc();
+                let found = git::commits_in_window(root, day_start, day_end, &rel);
+                let mut shas: Vec<String> = Vec::new();
+                let mut pr_set: BTreeSet<u32> = BTreeSet::new();
+                for c in &found {
+                    if !shas.contains(&c.short_sha) {
+                        shas.push(c.short_sha.clone());
+                    }
+                    if let Some(pr) = c.pr {
+                        pr_set.insert(pr);
+                    }
+                }
+                (shas, pr_set.into_iter().collect::<Vec<_>>())
+            }
+        }
+        None => (Vec::new(), Vec::new()),
+    };
+
+    // Stable cache key: date + project + hash of the contributing session set.
+    let mut hasher = DefaultHasher::new();
+    for sid in bucket.details.keys() {
+        sid.hash(&mut hasher);
+    }
+    let cache_key = format!("{}-{}-{:x}", date, project, hasher.finish());
+    let detail = bucket
+        .details
+        .values()
+        .cloned()
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    let (prose, topics) = devlog::resolve_prose(&cache_key, &detail, no_ai);
+
+    devlog::DevLogEntry {
+        date,
+        primary_project: project.clone(),
+        all_projects: vec![project],
+        prs,
+        commits,
+        topics,
+        prose,
+        files_count,
+        edits,
+    }
 }

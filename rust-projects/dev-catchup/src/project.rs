@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// Classify a file path into a (project_name, repo_root) pair.
@@ -54,41 +53,12 @@ fn segment_after(path: &str, marker: &str) -> Option<(String, PathBuf)> {
     Some((seg.to_string(), root))
 }
 
-/// Determine the primary project (highest summed edit-count) across modified
-/// files, the sorted-unique list of all projects, and the repo_root of the
-/// primary project.
-///
-/// If no path classifies, primary = "misc", list = ["misc"], repo_root = None.
-pub fn primary_project(files: &BTreeMap<String, u32>) -> (String, Vec<String>, Option<PathBuf>) {
-    let mut counts: BTreeMap<String, u32> = BTreeMap::new();
-    let mut roots: BTreeMap<String, Option<PathBuf>> = BTreeMap::new();
-
-    for (path, edits) in files {
-        if let Some((project, root)) = classify(path) {
-            *counts.entry(project.clone()).or_insert(0) += *edits;
-            // Record a repo_root for this project if we don't already have one.
-            roots.entry(project).or_insert(root);
-        }
-    }
-
-    if counts.is_empty() {
-        return ("misc".to_string(), vec!["misc".to_string()], None);
-    }
-
-    // Primary = highest summed edit-count; ties broken by name (BTreeMap order).
-    let primary = counts
-        .iter()
-        .max_by(|a, b| a.1.cmp(b.1).then_with(|| b.0.cmp(a.0)))
-        .map(|(name, _)| name.clone())
-        .unwrap();
-
-    let mut all: Vec<String> = counts.keys().cloned().collect();
-    all.sort();
-    all.dedup();
-
-    let repo_root = roots.get(&primary).cloned().flatten();
-
-    (primary, all, repo_root)
+/// Whether a project bucket is substantive dev work, as opposed to incidental
+/// churn — memory/config edits ("claude"), notes ("forge"), or unclassifiable
+/// files ("misc"). Used to suppress incidental buckets on days that also have
+/// real project work.
+pub fn is_substantive(project: &str) -> bool {
+    !matches!(project, "claude" | "misc" | "forge")
 }
 
 #[cfg(test)]
@@ -156,24 +126,12 @@ mod tests {
     }
 
     #[test]
-    fn test_primary_project_picks_highest_count() {
-        let mut files = BTreeMap::new();
-        files.insert("/Users/will/Code/meli/a.rs".to_string(), 5);
-        files.insert("/Users/will/Code/meli/b.rs".to_string(), 3);
-        files.insert("/Users/will/dotfiles/x.kdl".to_string(), 2);
-        let (primary, all, root) = primary_project(&files);
-        assert_eq!(primary, "meli");
-        assert_eq!(all, vec!["dotfiles".to_string(), "meli".to_string()]);
-        assert_eq!(root, Some(PathBuf::from("/Users/will/Code/meli")));
-    }
-
-    #[test]
-    fn test_primary_project_misc_when_unclassified() {
-        let mut files = BTreeMap::new();
-        files.insert("/Users/will/Documents/notes.txt".to_string(), 4);
-        let (primary, all, root) = primary_project(&files);
-        assert_eq!(primary, "misc");
-        assert_eq!(all, vec!["misc".to_string()]);
-        assert_eq!(root, None);
+    fn test_is_substantive() {
+        assert!(is_substantive("practiceforge"));
+        assert!(is_substantive("dotfiles"));
+        assert!(is_substantive("skills"));
+        assert!(!is_substantive("claude"));
+        assert!(!is_substantive("misc"));
+        assert!(!is_substantive("forge"));
     }
 }
