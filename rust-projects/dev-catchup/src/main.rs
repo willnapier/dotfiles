@@ -325,7 +325,11 @@ fn build_entry(date: NaiveDate, project: String, bucket: Bucket, no_ai: bool) ->
                     if !shas.contains(&c.short_sha) {
                         shas.push(c.short_sha.clone());
                     }
-                    subjects.push(c.subject);
+                    // Auto-commit daemon subjects carry no description — keep the
+                    // SHA but don't feed the noise to the prose grounding.
+                    if !c.subject.starts_with("Auto-commit") {
+                        subjects.push(c.subject);
+                    }
                 }
             }
         }

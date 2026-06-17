@@ -65,25 +65,38 @@ pub fn resolve_prose(cache_key: &str, detail: &str, no_ai: bool) -> (String, Vec
     }
 }
 
-/// Split a claude/cache response into prose + topics by the last `TOPICS:` line.
+/// Split a claude/cache response into prose + topics.
+///
+/// Robust to the model misbehaving: a `TOPICS:` line is pulled out wherever it
+/// appears (not only trailing; last one wins), and leading preamble/meta lines
+/// (blank, or chatter ending in ':') are dropped — real prose doesn't end ':'.
 fn parse_claude_response(text: &str) -> (String, Vec<String>) {
-    let trimmed = text.trim_end();
-    let mut lines: Vec<&str> = trimmed.lines().collect();
-
     let mut topics: Vec<String> = vec![];
-    if let Some(last) = lines.last() {
-        let last_trim = last.trim();
-        if let Some(rest) = last_trim.strip_prefix("TOPICS:") {
+    let mut body: Vec<&str> = Vec::new();
+
+    for line in text.trim().lines() {
+        if let Some(rest) = line.trim().strip_prefix("TOPICS:") {
             topics = rest
                 .split(',')
                 .map(|t| kebab(t.trim()))
                 .filter(|t| !t.is_empty())
                 .collect();
-            lines.pop();
+        } else {
+            body.push(line);
         }
     }
 
-    let prose = lines.join("\n").trim().to_string();
+    // Drop leading blank or preamble lines (e.g. "here's the entry:").
+    while let Some(first) = body.first() {
+        let t = first.trim();
+        if t.is_empty() || t.ends_with(':') {
+            body.remove(0);
+        } else {
+            break;
+        }
+    }
+
+    let prose = body.join("\n").trim().to_string();
     (prose, topics)
 }
 
@@ -337,6 +350,22 @@ commits: abc1234 def5678 · 3 files · 14 edits\n\
         let (prose, topics) = parse_claude_response(resp);
         assert_eq!(prose, "Did a thing.");
         assert!(topics.is_empty());
+    }
+
+    #[test]
+    fn test_parse_claude_response_topics_first() {
+        let resp = "TOPICS: alpha, beta\nDid the work.";
+        let (prose, topics) = parse_claude_response(resp);
+        assert_eq!(prose, "Did the work.");
+        assert_eq!(topics, vec!["alpha".to_string(), "beta".to_string()]);
+    }
+
+    #[test]
+    fn test_parse_claude_response_strips_preamble() {
+        let resp = "TOPICS line aside, here's the entry:\nFixed the bug.\nTOPICS: bug";
+        let (prose, topics) = parse_claude_response(resp);
+        assert_eq!(prose, "Fixed the bug.");
+        assert_eq!(topics, vec!["bug".to_string()]);
     }
 
     #[test]
