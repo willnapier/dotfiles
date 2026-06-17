@@ -182,8 +182,16 @@ enum TagAction {
         /// Description to test
         description: String,
     },
-    /// Re-apply all rules to existing transactions
-    Reapply,
+    /// Re-apply all rules to existing transactions. Additive by default
+    /// (preserves manual / `categorize` tags); pass --reset to clear all
+    /// tags first and rebuild purely from rules.
+    Reapply {
+        /// Clear all existing tags before re-applying. DESTRUCTIVE: drops any
+        /// manual tags not reproducible from rules. Without this flag, reapply
+        /// only ADDS rule matches to existing tags.
+        #[arg(long)]
+        reset: bool,
+    },
 }
 
 fn get_data_dir() -> PathBuf {
@@ -560,16 +568,27 @@ fn cmd_tag(action: TagAction) -> anyhow::Result<()> {
                 println!("(Note: tested with amount=0, date={})", today);
             }
         }
-        TagAction::Reapply => {
+        TagAction::Reapply { reset } => {
             let store = CsvStore::new(get_store_path());
             let mut transactions = store.load_all()?;
-            reapply_rules(&mut transactions, &rules);
+            if reset {
+                // DESTRUCTIVE: clear every tag, then rebuild purely from rules.
+                reapply_rules(&mut transactions, &rules);
+            } else {
+                // Additive: only append rule matches; manual tags survive.
+                apply_rules(&mut transactions, &rules);
+            }
             store.rewrite(&transactions)?;
             let tagged = transactions.iter().filter(|t| !t.tags.is_empty()).count();
             eprintln!(
-                "Re-tagged {} transactions ({} with tags)",
+                "Re-tagged {} transactions ({} with tags){}",
                 transactions.len(),
-                tagged
+                tagged,
+                if reset {
+                    " [--reset: prior tags cleared]"
+                } else {
+                    " [additive: manual tags preserved]"
+                }
             );
         }
     }

@@ -59,4 +59,36 @@ mod tests {
         assert_eq!(transactions[0].tags, vec!["groceries"]);
         assert!(transactions[1].tags.is_empty());
     }
+
+    #[test]
+    fn apply_rules_is_additive_preserves_manual_tags() {
+        let mut rules = TagRules::default();
+        rules.add_rule("TESCO", vec!["groceries".to_string()], None, None, None, None, None);
+
+        let mut tx = make_tx("TESCO STORES LONDON");
+        tx.tags = vec!["manual-tag".to_string()]; // e.g. applied via `categorize`
+        let mut transactions = vec![tx];
+
+        apply_rules(&mut transactions, &rules);
+
+        // manual tag survives AND the rule match is appended
+        assert!(transactions[0].tags.contains(&"manual-tag".to_string()));
+        assert!(transactions[0].tags.contains(&"groceries".to_string()));
+    }
+
+    #[test]
+    fn reapply_rules_clears_then_rebuilds() {
+        let mut rules = TagRules::default();
+        rules.add_rule("TESCO", vec!["groceries".to_string()], None, None, None, None, None);
+
+        let mut tx = make_tx("TESCO STORES LONDON");
+        tx.tags = vec!["manual-tag".to_string()];
+        let mut transactions = vec![tx];
+
+        reapply_rules(&mut transactions, &rules);
+
+        // clear-then-rebuild: the manual tag is dropped, only the rule remains
+        assert!(!transactions[0].tags.contains(&"manual-tag".to_string()));
+        assert_eq!(transactions[0].tags, vec!["groceries".to_string()]);
+    }
 }
