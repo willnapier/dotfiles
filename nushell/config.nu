@@ -4408,7 +4408,9 @@ def --wrapped claude [...args] {
 
 # Codex wrapper - auto-captures to Continuum database
 # Codex wrapper - auto-captures to Continuum database
-def codex [...args] {
+def --wrapped codex [...args] {
+    # --wrapped so flags (-p, --version, etc.) pass through instead of being
+    # rejected by the nushell parser as "unknown flag" (same fix as `claude`).
     # Persona cues -> brief names (mirrors Claude skills)
     let persona_aliases = {
         "senior-dev": "claude-code",
