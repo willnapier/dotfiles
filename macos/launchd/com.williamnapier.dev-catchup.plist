@@ -8,7 +8,8 @@
     <key>ProgramArguments</key>
     <array>
         <string>/Users/williamnapier/.local/bin/dev-catchup</string>
-        <string>--apply</string>
+        <string>--devlog</string>
+        <string>--write</string>
     </array>
 
     <key>StartCalendarInterval</key>
