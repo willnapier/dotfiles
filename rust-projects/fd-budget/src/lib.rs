@@ -104,8 +104,11 @@ impl Transaction {
     /// personal-cost figure is trustworthy (the figure the forward "pots" layer
     /// allocates against). Matched case-insensitively. Rides the existing `tags`
     /// column — no schema change.
+    /// `fdvisa` = a payment to the First Direct Visa card: an internal transfer,
+    /// excluded because the Visa *purchases* are itemised separately (counting
+    /// the payment too would double-count).
     pub const NONSPEND_TAGS: &'static [&'static str] =
-        &["transfer", "income", "tax", "one-off", "business"];
+        &["transfer", "income", "tax", "one-off", "business", "fdvisa"];
 
     pub fn is_debit(&self) -> bool {
         self.amount.is_sign_negative()
