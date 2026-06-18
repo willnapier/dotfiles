@@ -64,6 +64,18 @@ enum Commands {
         /// Food, Transport, …). Mapping is a refinable default. No effect otherwise.
         #[arg(long)]
         rollup: bool,
+        /// With --by-category, list the individual rows behind each category total
+        /// (date, amount, description, tags), sorted by absolute amount descending
+        /// so the big drivers are at the top. Lets you verify the categorisation.
+        /// No effect without --by-category.
+        #[arg(long)]
+        detail: bool,
+        /// With --by-category, restrict the breakdown to a single category
+        /// (case-insensitive match against the primary-tag name, e.g. "groceries"
+        /// or "uncategorised"). Combine with --detail to review one category's
+        /// rows. No effect without --by-category.
+        #[arg(long, value_name = "CATEGORY")]
+        only: Option<String>,
         /// Filter to a single calendar year
         #[arg(long)]
         year: Option<i32>,
@@ -390,6 +402,8 @@ fn main() -> anyhow::Result<()> {
             by_counterparty,
             by_category,
             rollup,
+            detail,
+            only,
             year,
             month,
             since,
@@ -398,8 +412,18 @@ fn main() -> anyhow::Result<()> {
             if by_counterparty {
                 cmd_stats_by_counterparty(year, month.as_deref(), since, limit)?;
             } else if by_category {
-                cmd_stats_by_category(year, month.as_deref(), since, limit, rollup)?;
+                cmd_stats_by_category(
+                    year,
+                    month.as_deref(),
+                    since,
+                    limit,
+                    rollup,
+                    detail,
+                    only.as_deref(),
+                )?;
             } else {
+                // --detail / --only have no effect without --by-category (like
+                // --rollup); they are simply not consulted on this path.
                 cmd_stats(year, month.as_deref(), since)?;
             }
         }
@@ -829,12 +853,15 @@ fn cmd_stats_by_counterparty(
     query::cmd_stats_by_counterparty(&joined, filter, limit)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn cmd_stats_by_category(
     year: Option<i32>,
     month: Option<&str>,
     since: Option<NaiveDate>,
     limit: usize,
     rollup: bool,
+    detail: bool,
+    only: Option<&str>,
 ) -> anyhow::Result<()> {
     // Category = the row's primary tag, which lives on the transaction itself, so
     // this needs only transactions.csv — no matches.jsonl / bills.jsonl join.
@@ -860,7 +887,15 @@ fn cmd_stats_by_category(
         query::CategoryMap::default_taxonomy()
     };
 
-    query::cmd_stats_by_category(&transactions, filter, limit, rollup, &category_map)
+    query::cmd_stats_by_category(
+        &transactions,
+        filter,
+        limit,
+        rollup,
+        detail,
+        only,
+        &category_map,
+    )
 }
 
 fn cmd_tx(action: TxAction) -> anyhow::Result<()> {

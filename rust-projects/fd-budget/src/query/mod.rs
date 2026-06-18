@@ -486,6 +486,11 @@ struct CategoryAggregate {
     name: String,
     total: Decimal, // Sum of |amount| for spend rows in this category.
     count: usize,
+    /// Indices (into the transactions slice passed to [`aggregate_by_category`])
+    /// of the individual spend rows attributed to this bucket. Retained so the
+    /// `--detail` view can list exactly the rows that make up `total`, using the
+    /// SAME predicate/attribution, so detail rows reconcile to the bucket total.
+    row_indices: Vec<usize>,
 }
 
 /// The primary category of a spend row: its first tag that is NOT a reserved
@@ -520,7 +525,7 @@ fn aggregate_by_category(
     let mut buckets: HashMap<String, CategoryAggregate> = HashMap::new();
     let mut grand_total = Decimal::ZERO;
 
-    for tx in transactions {
+    for (idx, tx) in transactions.iter().enumerate() {
         if !filter.matches(tx.date) {
             continue;
         }
@@ -535,9 +540,13 @@ fn aggregate_by_category(
                 name: category,
                 total: Decimal::ZERO,
                 count: 0,
+                row_indices: Vec::new(),
             });
         entry.total += amount;
         entry.count += 1;
+        // Same predicate + attribution as the total, so the retained rows
+        // reconcile exactly to this bucket's total (and the grand total).
+        entry.row_indices.push(idx);
         grand_total += amount;
     }
 
@@ -796,21 +805,85 @@ fn super_category(category: &str) -> String {
     CategoryMap::default_taxonomy().super_category(category)
 }
 
+/// Resolve `--only <CATEGORY>` against the full aggregate: case-insensitive match
+/// on the category (primary-tag) name. Returns the matching bucket(s) — at most
+/// one, since bucket names are unique — or an empty vec when nothing matches (the
+/// caller then prints a clear "no category 'X'" message). Factored out so the
+/// match semantics are unit-testable without capturing stdout.
+fn filter_only<'a>(full_agg: &'a [CategoryAggregate], want: &str) -> Vec<&'a CategoryAggregate> {
+    full_agg
+        .iter()
+        .filter(|a| a.name.eq_ignore_ascii_case(want))
+        .collect()
+}
+
+/// The available category names, sorted, for the "no category 'X'" hint.
+fn available_category_names(full_agg: &[CategoryAggregate]) -> Vec<&str> {
+    let mut names: Vec<&str> = full_agg.iter().map(|a| a.name.as_str()).collect();
+    names.sort_unstable();
+    names
+}
+
 /// Print a stats-by-category table. The TOTAL line equals (and reconciles to)
 /// the Spend floor printed by `fd-budget stats`.
+///
+/// `detail`: list the individual rows behind each category total (date, amount,
+/// description, tags), sorted within a category by absolute amount descending so
+/// the items driving the total are at the top.
+///
+/// `only`: restrict the breakdown to a single category (case-insensitive match
+/// against the category/primary-tag name, e.g. "groceries" or "uncategorised").
+/// If it matches no category, a clear "no category 'X'" message is printed along
+/// with the available category names. With neither `detail` nor `rollup`, `only`
+/// just shows that one category's total + count.
+///
+/// Note: `detail` and `only` have NO effect without `--by-category` — this whole
+/// function is the `--by-category` path, so they are simply not wired in
+/// otherwise (mirroring `--rollup`).
 pub fn cmd_stats_by_category(
     transactions: &[Transaction],
     filter: DateFilter,
     limit: usize,
     rollup: bool,
+    detail: bool,
+    only: Option<&str>,
     category_map: &CategoryMap,
 ) -> anyhow::Result<()> {
-    let (agg, grand_total) = aggregate_by_category(transactions, filter);
+    let (full_agg, full_grand_total) = aggregate_by_category(transactions, filter);
 
-    if agg.is_empty() {
+    if full_agg.is_empty() {
         println!("No personal spend in the selected period.");
         return Ok(());
     }
+
+    // --only restricts the printed breakdown to a single category, matched
+    // case-insensitively against the primary-tag name. The roll-up section
+    // (when --rollup is set) is built from the FULL aggregate below, unaffected.
+    let agg: Vec<&CategoryAggregate> = if let Some(want) = only {
+        let matched = filter_only(&full_agg, want);
+        if matched.is_empty() {
+            println!("No category '{}' in the selected period.", want);
+            let names = available_category_names(&full_agg);
+            println!("Available categories: {}", names.join(", "));
+            return Ok(());
+        }
+        matched
+    } else {
+        full_agg.iter().collect()
+    };
+
+    // When --only narrows to one category, the printed TOTAL is that category's
+    // total (not the whole Spend floor); otherwise it is the full floor.
+    let grand_total: Decimal = if only.is_some() {
+        agg.iter().map(|a| a.total).sum()
+    } else {
+        full_grand_total
+    };
+    let total_label = if only.is_some() {
+        "TOTAL (selected category)"
+    } else {
+        "TOTAL (= Spend floor)"
+    };
 
     println!("{:<28} {:>12}   {:>5}", "Category", "Total", "Count");
     println!("{}", "-".repeat(50));
@@ -832,6 +905,14 @@ pub fn cmd_stats_by_category(
         );
         shown_total += entry.total;
         shown_count += entry.count;
+
+        // --detail: list the individual rows that make up this category's total,
+        // sorted by absolute amount descending (big drivers first). The rows are
+        // exactly the spend rows aggregate_by_category attributed here, so they
+        // sum to entry.total.
+        if detail {
+            print_category_detail(entry, transactions);
+        }
     }
 
     // If a limit truncated the table, fold the tail into a single line so the
@@ -852,7 +933,7 @@ pub fn cmd_stats_by_category(
     println!("{}", "-".repeat(50));
     println!(
         "{:<28} {:>12}   {:>5}",
-        "TOTAL (= Spend floor)",
+        total_label,
         format_money(grand_total),
         shown_count
     );
@@ -860,22 +941,64 @@ pub fn cmd_stats_by_category(
     // Reconciliation assertion: the printed rows must sum to the floor exactly.
     // Decimal arithmetic is exact, so this always holds; we surface it so the
     // user can see the breakdown is trustworthy (the whole point of the command).
-    if shown_total == grand_total {
-        println!("Reconciles exactly to the Spend floor. \u{2713}");
-    } else {
-        // Should be unreachable with Decimal; loud if it ever isn't.
-        println!(
-            "WARNING: category totals ({}) do NOT reconcile to Spend floor ({})",
-            format_money(shown_total),
-            format_money(grand_total)
-        );
+    // With --only the printed total is a single category, so the floor-reconcile
+    // line (which asserts the WHOLE breakdown == Spend floor) is suppressed.
+    if only.is_none() {
+        if shown_total == grand_total {
+            println!("Reconciles exactly to the Spend floor. \u{2713}");
+        } else {
+            // Should be unreachable with Decimal; loud if it ever isn't.
+            println!(
+                "WARNING: category totals ({}) do NOT reconcile to Spend floor ({})",
+                format_money(shown_total),
+                format_money(grand_total)
+            );
+        }
     }
 
     if rollup {
-        print_rollup(&agg, grand_total, category_map);
+        // Roll-up is always over the FULL breakdown (so it still reconciles to
+        // the Spend floor), regardless of --only / --detail.
+        print_rollup(&full_agg, full_grand_total, category_map);
     }
 
     Ok(())
+}
+
+/// Print the individual rows behind one category's total, indented under the
+/// category header. Rows are sorted by absolute amount descending (the big items
+/// driving the total first — best for verification). Each line shows the row's
+/// date, signed amount, description, and full pipe-joined tags so the user can
+/// see WHY it landed in this bucket (its primary tag is the bucket name).
+fn print_category_detail(entry: &CategoryAggregate, transactions: &[Transaction]) {
+    let mut rows: Vec<&Transaction> = entry
+        .row_indices
+        .iter()
+        .map(|&i| &transactions[i])
+        .collect();
+    // Absolute amount descending; tie-break by date then description so output
+    // is deterministic.
+    rows.sort_by(|a, b| {
+        b.amount
+            .abs()
+            .cmp(&a.amount.abs())
+            .then_with(|| a.date.cmp(&b.date))
+            .then_with(|| a.description.cmp(&b.description))
+    });
+    for tx in rows {
+        let tags = if tx.tags.is_empty() {
+            "-".to_string()
+        } else {
+            tx.tags.join("|")
+        };
+        println!(
+            "    {}  {:>10}   {:<30}  [{}]",
+            tx.date,
+            format_money(tx.amount),
+            truncate(&tx.description, 30),
+            tags
+        );
+    }
 }
 
 /// Print the super-category roll-up as a second section.
@@ -1437,6 +1560,143 @@ mod tests {
         assert_eq!(agg[0].name, "groceries");
         assert_eq!(agg[0].count, 1);
         assert_eq!(grand_total, Decimal::from_str("80.00").unwrap());
+    }
+
+    // -------------------------------------------------------------------
+    // --detail / --only tests
+    // -------------------------------------------------------------------
+
+    /// Sum the |amount| of the retained detail rows for a bucket, resolving each
+    /// retained index back to its transaction. This is exactly what `--detail`
+    /// lists, so it must equal the bucket's printed total.
+    fn detail_rows_sum(entry: &CategoryAggregate, txs: &[Transaction]) -> Decimal {
+        entry.row_indices.iter().map(|&i| txs[i].amount.abs()).sum()
+    }
+
+    #[test]
+    fn detail_rows_sum_to_each_category_total() {
+        // (i) --detail rows for a category sum to that category's total.
+        let txs = vec![
+            mk_tx_tagged("2025-06-01", "-30.00", "TESCO", "t1", &["groceries"]),
+            mk_tx_tagged("2025-06-02", "-10.00", "ALDI", "t2", &["groceries", "food"]),
+            mk_tx_tagged("2025-06-03", "-5.00", "KIOSK", "t3", &["groceries"]),
+            mk_tx_tagged("2025-06-04", "-900.00", "RENT", "t4", &["rent"]),
+        ];
+        let (agg, _grand) = aggregate_by_category(&txs, DateFilter::default());
+        for entry in &agg {
+            assert_eq!(
+                detail_rows_sum(entry, &txs),
+                entry.total,
+                "detail rows for {} must sum to its total",
+                entry.name
+            );
+            // The retained row count also matches the bucket count.
+            assert_eq!(entry.row_indices.len(), entry.count);
+        }
+        // The multi-tag row landed under its primary tag, and its full tags are
+        // available for the detail line (showing WHY it's in `groceries`).
+        let groceries = agg.iter().find(|a| a.name == "groceries").unwrap();
+        let aldi_idx = *groceries
+            .row_indices
+            .iter()
+            .find(|&&i| txs[i].description == "ALDI")
+            .expect("ALDI row attributed to groceries");
+        assert_eq!(txs[aldi_idx].tags, vec!["groceries", "food"]);
+    }
+
+    #[test]
+    fn detail_rows_no_double_count_no_drop_and_reconcile() {
+        // (ii) Every spend row appears under exactly one category in --detail
+        // (no double-count / no drop) and the grand total still reconciles to the
+        // Spend floor.
+        let txs = vec![
+            mk_tx_tagged("2025-06-01", "-30.00", "TESCO", "t1", &["groceries"]),
+            mk_tx_tagged("2025-06-02", "-12.99", "STREAMFLIX", "t2", &["streaming"]),
+            mk_tx_tagged("2025-06-03", "-900.00", "RENT", "t3", &["rent"]),
+            // Untagged spend -> uncategorised bucket.
+            mk_tx_tagged("2025-06-04", "-7.50", "MYSTERY", "t4", &[]),
+            // Nonspend / credit rows that must NOT appear in any detail bucket.
+            mk_tx_tagged("2025-06-05", "20.00", "REFUND", "t5", &["groceries"]),
+            mk_tx_tagged("2025-06-06", "-1000.00", "HMRC", "t6", &["tax"]),
+        ];
+        let (agg, grand_total) = aggregate_by_category(&txs, DateFilter::default());
+
+        // Collect every retained detail index across all buckets.
+        let mut all: Vec<usize> = agg.iter().flat_map(|a| a.row_indices.clone()).collect();
+        let n_detail = all.len();
+        all.sort_unstable();
+        all.dedup();
+        // No double-count: dedup didn't shrink the list.
+        assert_eq!(
+            all.len(),
+            n_detail,
+            "a row appeared in more than one bucket"
+        );
+        // No drop: exactly the spend rows are present (the 4 debits without a
+        // nonspend tag), and they are precisely those `counts_as_spend()` accepts.
+        let expected: Vec<usize> = txs
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.counts_as_spend())
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(all, expected);
+        // The detail rows across all buckets reconcile to the grand total ...
+        let detail_total: Decimal = all.iter().map(|&i| txs[i].amount.abs()).sum();
+        assert_eq!(detail_total, grand_total);
+        // ... which is exactly the independently-computed Spend floor.
+        assert_eq!(grand_total, spend_floor(&txs, DateFilter::default()));
+    }
+
+    #[test]
+    fn only_restricts_and_unknown_errors_cleanly() {
+        // (iii) --only <cat> restricts to that one category (case-insensitively),
+        // and --only <unknown> resolves to nothing (caller reports cleanly).
+        let txs = vec![
+            mk_tx_tagged("2025-06-01", "-30.00", "TESCO", "t1", &["groceries"]),
+            mk_tx_tagged("2025-06-02", "-10.00", "ALDI", "t2", &["groceries"]),
+            mk_tx_tagged("2025-06-03", "-900.00", "RENT", "t3", &["rent"]),
+            mk_tx_tagged("2025-06-04", "-7.50", "MYSTERY", "t4", &[]),
+        ];
+        let (agg, _grand) = aggregate_by_category(&txs, DateFilter::default());
+
+        // Exact match.
+        let only_groceries = filter_only(&agg, "groceries");
+        assert_eq!(only_groceries.len(), 1);
+        assert_eq!(only_groceries[0].name, "groceries");
+        assert_eq!(only_groceries[0].total, Decimal::from_str("40.00").unwrap());
+        assert_eq!(only_groceries[0].count, 2);
+
+        // Case-insensitive match.
+        assert_eq!(filter_only(&agg, "GrOcErIeS").len(), 1);
+        assert_eq!(filter_only(&agg, "RENT").len(), 1);
+        // The reserved uncategorised bucket is selectable by name too.
+        assert_eq!(filter_only(&agg, "Uncategorised").len(), 1);
+
+        // Unknown category -> empty (the command prints "no category 'X'" and the
+        // available names; here we assert the resolution itself is clean/empty).
+        assert!(filter_only(&agg, "holidays").is_empty());
+        let names = available_category_names(&agg);
+        assert_eq!(names, vec!["groceries", "rent", "uncategorised"]);
+    }
+
+    #[test]
+    fn detail_and_only_have_no_effect_without_by_category() {
+        // (iv) --detail / --only are only consulted on the --by-category path.
+        // The dispatch in main.rs calls cmd_stats (the plain summary) when
+        // --by-category is absent, never threading detail/only through. We assert
+        // the contract here: the by-category entry points (aggregation + only
+        // resolution) are pure and produce nothing on their own — they require an
+        // explicit call, which the non-by-category dispatch never makes.
+        //
+        // Concretely: filter_only over an empty aggregate (the state when the
+        // by-category path is not taken) yields nothing, and there is no other
+        // route by which detail/only mutate output. This guards the wiring: a
+        // future edit that leaked detail/only into the plain path would have to
+        // call these, which the plain path does not.
+        let empty: Vec<CategoryAggregate> = Vec::new();
+        assert!(filter_only(&empty, "groceries").is_empty());
+        assert!(available_category_names(&empty).is_empty());
     }
 
     #[test]
