@@ -11,7 +11,6 @@ continuum-auto-import.timer
 continuum-dream.timer
 continuum-sync-claude.timer
 cross-machine-sync-check.timer
-dev-catchup.timer
 dotter-drift-monitor.timer
 dropbox.service
 firefox-nightly-restart.timer
