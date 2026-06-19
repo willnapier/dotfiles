@@ -160,6 +160,14 @@ impl Transaction {
         self.tags.iter().any(|t| t.eq_ignore_ascii_case("business"))
     }
 
+    /// True if the row is a one-off / lumpy non-recurring cost (tag "one-off",
+    /// case-insensitive). A subset of `is_nonspend` — broken out so the
+    /// recurring floor and the lumpy spend can be reported (and amortised)
+    /// separately rather than buried in the generic Excluded bucket.
+    pub fn is_one_off(&self) -> bool {
+        self.tags.iter().any(|t| t.eq_ignore_ascii_case("one-off"))
+    }
+
     /// True when the row is recurring personal spend: a debit not carrying a
     /// non-spend tag. Credits (income/refunds) and non-spend-tagged debits
     /// (transfers, tax, one-offs, business) are excluded.
@@ -208,6 +216,15 @@ mod transaction_tests {
             );
             assert!(tx("-500.00", &[t]).is_nonspend());
         }
+    }
+
+    #[test]
+    fn one_off_is_a_recognised_nonspend_subset() {
+        let t = tx("-1599.00", &["one-off"]);
+        assert!(t.is_one_off());
+        assert!(t.is_nonspend());
+        assert!(!t.counts_as_spend());
+        assert!(!tx("-10.00", &["groceries"]).is_one_off());
     }
 
     #[test]

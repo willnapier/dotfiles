@@ -1562,9 +1562,23 @@ fn cmd_stats(
         .filter(|t| t.is_debit() && t.is_business())
         .map(|t| t.amount.abs())
         .sum();
+    // One-off / lumpy costs (a subset of nonspend) shown on their own line +
+    // amortised over the data span, so the recurring floor is read cleanly and
+    // the lumpy spend isn't simply lost in the generic Excluded bucket.
+    let one_off: Decimal = rows
+        .iter()
+        .filter(|t| t.is_debit() && t.is_one_off())
+        .map(|t| t.amount.abs())
+        .sum();
+    // Annualise the one-off pile over the actual data span (clamped to ≥1yr so
+    // a short window can't over-annualise). The sinking-fund-style figure: what
+    // the lumpy spend costs per year on average. `smooth` sizes the buffer; this
+    // is just the headline annual amortisation alongside the floor.
+    let span_days = (*max_date - *min_date).num_days().max(365);
+    let one_off_annual = one_off * Decimal::from(365) / Decimal::from(span_days);
     let excluded: Decimal = rows
         .iter()
-        .filter(|t| t.is_debit() && t.is_nonspend() && !t.is_business())
+        .filter(|t| t.is_debit() && t.is_nonspend() && !t.is_business() && !t.is_one_off())
         .map(|t| t.amount.abs())
         .sum();
     let untagged_debits = rows
@@ -1593,8 +1607,12 @@ fn cmd_stats(
         "Business (professional — excluded from floor):", business
     );
     println!(
+        "{:<54} £{:.2}  (≈£{:.0}/yr amortised)",
+        "One-off (lumpy — excluded from floor):", one_off, one_off_annual
+    );
+    println!(
         "{:<54} £{:.2}",
-        "Excluded (transfer/income/tax/one-off):", excluded
+        "Excluded (transfer/income/tax):", excluded
     );
     if untagged_debits > 0 {
         println!(
