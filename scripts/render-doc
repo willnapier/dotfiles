@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# render-doc — render a markdown document to HTML (+ PDF) with the known-good
+# pandoc build, then sync the HTML to iCloud. Encapsulates the three hard-won
+# pandoc gotchas so the build lives in ONE command, not a copy-paste block.
+# (Origin: WILLIAM-FINANCIAL-PLANNING-CONTEXT-ISSUES.md + the 2026-06-19 dev tasks.)
+#
+# Stage 1 of the doc-render facility (project_diagram_tool). The diagram
+# pre-render stage (embedded d2/mermaid fences -> SVG, inlined before pandoc)
+# is DEFERRED — see the prerender_diagrams stub below; it is not wired yet, but
+# the pipeline is shaped so it can slot in without restructuring.
+#
+# Bash, not nu: a direct pandoc pipeline matching the proven command exactly.
+#
+# Usage:
+#   render-doc <file.md>                # -> ~/<stem>.html + ~/<stem>.pdf + iCloud HTML
+#   render-doc <file.md> --out ~/foo    # custom output basename (no extension)
+#   render-doc <file.md> --no-pdf       # HTML only
+#   render-doc <file.md> --no-icloud    # skip the iCloud HTML copy
+#   render-doc <file.md> --title "..."  # explicit <title>/pagetitle (default: filename stem)
+#   render-doc <file.md> --style <path> # override the CSS header
+set -euo pipefail
+
+usage() {
+  echo "usage: render-doc <file.md> [--out BASE] [--title T] [--style PATH] [--no-pdf] [--no-icloud]" >&2
+}
+
+SRC=""
+OUT=""
+TITLE=""
+STYLE="$HOME/Assistants/shared/render-doc.style.html"
+DO_PDF=1
+DO_ICLOUD=1
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --out)       OUT="$2"; shift 2;;
+    --title)     TITLE="$2"; shift 2;;
+    --style)     STYLE="$2"; shift 2;;
+    --no-pdf)    DO_PDF=0; shift;;
+    --no-icloud) DO_ICLOUD=0; shift;;
+    -h|--help)   usage; exit 0;;
+    -*)          echo "render-doc: unknown option $1" >&2; usage; exit 2;;
+    *)           if [[ -z "$SRC" ]]; then SRC="$1"; else echo "render-doc: unexpected arg $1" >&2; exit 2; fi; shift;;
+  esac
+done
+
+[[ -z "$SRC" ]] && { usage; exit 2; }
+SRC="${SRC/#\~/$HOME}"                       # expand a leading ~
+[[ -f "$SRC" ]] || { echo "render-doc: source not found: $SRC" >&2; exit 1; }
+command -v pandoc >/dev/null || { echo "render-doc: pandoc not on PATH" >&2; exit 1; }
+
+stem="$(basename "$SRC")"; stem="${stem%.*}"
+[[ -z "$OUT" ]] && OUT="$HOME/$stem"
+OUT="${OUT/#\~/$HOME}"
+[[ -z "$TITLE" ]] && TITLE="$stem"
+STYLE="${STYLE/#\~/$HOME}"
+
+# The three LOSSLESS format-flag subtractions (the gotchas), kept together so
+# the build never regresses to the corrupting defaults:
+#   -yaml_metadata_block               leading `---` dividers are NOT YAML metadata
+#   -simple_tables -multiline_tables   a `---`-wrapped section is NOT a table border
+#   -citations                         `@1.15` (an FX rate) is NOT a citation key
+FMT="markdown-yaml_metadata_block-simple_tables-multiline_tables-citations"
+
+# [DEFERRED] prerender_diagrams "$SRC"
+#   When built: extract embedded ```d2 / ```mermaid fences, render each to SVG
+#   (d2 --layout elk; see the `charting` skill), inline them, and feed the
+#   resulting markdown to pandoc below. Resist a daemon; keep it a function call.
+
+echo "render-doc: $SRC -> $OUT.html"
+if [[ -f "$STYLE" ]]; then
+  pandoc "$SRC" -f "$FMT" -t html5 --standalone --toc --toc-depth=2 \
+    -V pagetitle="$TITLE" --include-in-header="$STYLE" -o "$OUT.html"
+else
+  echo "render-doc: note — style header not found ($STYLE); rendering without it" >&2
+  pandoc "$SRC" -f "$FMT" -t html5 --standalone --toc --toc-depth=2 \
+    -V pagetitle="$TITLE" -o "$OUT.html"
+fi
+
+if [[ "$DO_PDF" == 1 ]]; then
+  echo "render-doc: $SRC -> $OUT.pdf  (typst)"
+  pandoc "$SRC" -f "$FMT" --pdf-engine=typst --toc --toc-depth=2 -o "$OUT.pdf"
+fi
+
+if [[ "$DO_ICLOUD" == 1 ]]; then
+  icloud_dir="$HOME/Library/Mobile Documents/com~apple~CloudDocs"
+  if [[ -d "$icloud_dir" ]]; then
+    cp "$OUT.html" "$icloud_dir/$stem.html"
+    echo "render-doc: synced HTML -> iCloud ($stem.html)"
+  else
+    echo "render-doc: note — iCloud dir not found; skipped the HTML copy" >&2
+  fi
+fi
+
+echo "render-doc: done."
