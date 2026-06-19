@@ -76,6 +76,12 @@ enum Commands {
         /// rows. No effect without --by-category.
         #[arg(long, value_name = "CATEGORY")]
         only: Option<String>,
+        /// With --by-category, add an annualised actual-vs-target column read
+        /// from `~/.config/fd-budget/budgets.toml` (`[budgets]`, category =
+        /// annual £). Seeds a starter template (every category, commented) on
+        /// first use. No effect without --by-category.
+        #[arg(long)]
+        budget: bool,
         /// Filter to a single calendar year
         #[arg(long)]
         year: Option<i32>,
@@ -396,6 +402,11 @@ fn get_rules_path() -> PathBuf {
     get_data_dir().join("rules.toml")
 }
 
+/// Per-category annual spend targets for `stats --by-category --budget`.
+fn get_budgets_path() -> PathBuf {
+    get_data_dir().join("budgets.toml")
+}
+
 /// Path to the user-editable super-category roll-up config. Absent → the
 /// `stats --by-category --rollup` command falls back to the embedded default
 /// taxonomy (see [`query::CategoryMap::load`]).
@@ -437,6 +448,7 @@ fn main() -> anyhow::Result<()> {
             rollup,
             detail,
             only,
+            budget,
             year,
             month,
             since,
@@ -453,6 +465,7 @@ fn main() -> anyhow::Result<()> {
                     rollup,
                     detail,
                     only.as_deref(),
+                    budget,
                 )?;
             } else {
                 // --detail / --only have no effect without --by-category (like
@@ -895,6 +908,7 @@ fn cmd_stats_by_category(
     rollup: bool,
     detail: bool,
     only: Option<&str>,
+    budget: bool,
 ) -> anyhow::Result<()> {
     // Category = the row's primary tag, which lives on the transaction itself, so
     // this needs only transactions.csv — no matches.jsonl / bills.jsonl join.
@@ -920,6 +934,25 @@ fn cmd_stats_by_category(
         query::CategoryMap::default_taxonomy()
     };
 
+    // --budget: per-category annual targets. On first use seed a starter
+    // budgets.toml listing every observed category (commented) so it's quick to
+    // fill in; subsequent runs load whatever is on disk. Best-effort seed.
+    let budgets = if budget {
+        let path = get_budgets_path();
+        if !path.exists() {
+            let seed_filter = query::DateFilter::from_flags(year, month, since)?;
+            let names = query::spend_category_names(&transactions, seed_filter);
+            let _ = std::fs::write(&path, query::BudgetMap::seed_toml(&names));
+            eprintln!(
+                "Seeded a starter budgets.toml at {} — uncomment categories and set annual £ targets, then re-run with --budget.",
+                path.display()
+            );
+        }
+        query::BudgetMap::load(&path)?
+    } else {
+        query::BudgetMap::default()
+    };
+
     query::cmd_stats_by_category(
         &transactions,
         filter,
@@ -928,6 +961,7 @@ fn cmd_stats_by_category(
         detail,
         only,
         &category_map,
+        &budgets,
     )
 }
 

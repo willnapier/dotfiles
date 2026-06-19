@@ -840,6 +840,117 @@ fn available_category_names(full_agg: &[CategoryAggregate]) -> Vec<&str> {
 /// Note: `detail` and `only` have NO effect without `--by-category` — this whole
 /// function is the `--by-category` path, so they are simply not wired in
 /// otherwise (mirroring `--rollup`).
+/// Per-category ANNUAL spend targets (£/yr), keyed by lowercased primary-tag
+/// name. Loaded from `~/.config/fd-budget/budgets.toml` `[budgets]`. The
+/// `--budget` comparison annualises each category's actual over the data span,
+/// so a target set in £/yr (the planning-doc "anchor figures") lines up directly.
+#[derive(Debug, Clone, Default)]
+pub struct BudgetMap {
+    targets: std::collections::BTreeMap<String, Decimal>,
+}
+
+impl BudgetMap {
+    pub fn load(path: &std::path::Path) -> anyhow::Result<Self> {
+        if !path.exists() {
+            return Ok(Self::default());
+        }
+        Self::from_toml_str(&std::fs::read_to_string(path)?)
+    }
+
+    /// Parse from a `[budgets]` TOML string (split out for unit-testing).
+    pub fn from_toml_str(content: &str) -> anyhow::Result<Self> {
+        let parsed: toml::Value = toml::from_str(content)?;
+        let mut targets = std::collections::BTreeMap::new();
+        if let Some(tbl) = parsed.get("budgets").and_then(|v| v.as_table()) {
+            for (k, v) in tbl {
+                let amt = v
+                    .as_float()
+                    .and_then(|f| Decimal::try_from(f).ok())
+                    .or_else(|| v.as_integer().map(Decimal::from));
+                if let Some(a) = amt {
+                    targets.insert(k.to_lowercase(), a);
+                }
+            }
+        }
+        Ok(Self { targets })
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.targets.is_empty()
+    }
+
+    pub fn target(&self, category: &str) -> Option<Decimal> {
+        self.targets.get(&category.to_lowercase()).copied()
+    }
+
+    /// A starter `budgets.toml` listing the observed categories as commented
+    /// `# <category> = 0.0` lines under `[budgets]` for the user to fill in.
+    pub fn seed_toml(categories: &[String]) -> String {
+        let mut s = String::from(
+            "# fd-budget per-category ANNUAL spend targets (£/yr).\n\
+             # Uncomment a line and set the figure; `stats --by-category --budget`\n\
+             # then shows actual-vs-target (actuals annualised over the data span).\n\
+             # Keys are the primary (first non-reserved) tag, lowercase.\n\n[budgets]\n",
+        );
+        for c in categories {
+            if c != UNCATEGORISED {
+                s.push_str(&format!("# {} = 0.0\n", c));
+            }
+        }
+        s
+    }
+}
+
+/// Sorted distinct primary-category names of the spend rows in the window
+/// (used to seed a starter `budgets.toml`).
+pub fn spend_category_names(transactions: &[Transaction], filter: DateFilter) -> Vec<String> {
+    let (agg, _) = aggregate_by_category(transactions, filter);
+    agg.into_iter().map(|a| a.name).collect()
+}
+
+/// Print the per-category actual-vs-target comparison (annualised £/yr). Only
+/// categories that have a target set are shown; the rest are summarised in a
+/// trailing note so an unset budget is visible, not silently dropped.
+fn print_budget_comparison(agg: &[CategoryAggregate], span_days: i64, budgets: &BudgetMap) {
+    let days = Decimal::from(span_days.max(365));
+    let year = Decimal::from(365);
+    println!();
+    println!("Budget (annualised actual vs target, £/yr):");
+    println!(
+        "{:<24} {:>12} {:>12} {:>12}",
+        "Category", "Actual/yr", "Target/yr", "Δ/yr"
+    );
+    println!("{}", "-".repeat(64));
+    let mut compared = 0;
+    for entry in agg {
+        if let Some(target) = budgets.target(&entry.name) {
+            let actual_annual = entry.total * year / days;
+            let delta = actual_annual - target;
+            let delta_str = if delta > Decimal::ZERO {
+                format!("+{}", format_money(delta))
+            } else {
+                format_money(delta)
+            };
+            println!(
+                "{:<24} {:>12} {:>12} {:>12}",
+                truncate(&entry.name, 24),
+                format_money(actual_annual),
+                format_money(target),
+                delta_str,
+            );
+            compared += 1;
+        }
+    }
+    if compared == 0 {
+        println!("(no category in this period has a target set in budgets.toml)");
+    } else {
+        let unset = agg.len() - compared;
+        if unset > 0 {
+            println!("({} other categor{} have no target set)", unset, if unset == 1 { "y" } else { "ies" });
+        }
+    }
+}
+
 pub fn cmd_stats_by_category(
     transactions: &[Transaction],
     filter: DateFilter,
@@ -848,6 +959,7 @@ pub fn cmd_stats_by_category(
     detail: bool,
     only: Option<&str>,
     category_map: &CategoryMap,
+    budgets: &BudgetMap,
 ) -> anyhow::Result<()> {
     let (full_agg, full_grand_total) = aggregate_by_category(transactions, filter);
 
@@ -954,6 +1066,25 @@ pub fn cmd_stats_by_category(
                 format_money(grand_total)
             );
         }
+    }
+
+    // --budget: annualised actual-vs-target per category. Span comes from the
+    // spend rows' own dates (via row_indices) so no DateFilter reuse is needed.
+    if !budgets.is_empty() {
+        let mut min_d: Option<chrono::NaiveDate> = None;
+        let mut max_d: Option<chrono::NaiveDate> = None;
+        for entry in &full_agg {
+            for &i in &entry.row_indices {
+                let d = transactions[i].date;
+                min_d = Some(min_d.map_or(d, |m| m.min(d)));
+                max_d = Some(max_d.map_or(d, |m| m.max(d)));
+            }
+        }
+        let span_days = match (min_d, max_d) {
+            (Some(a), Some(b)) => (b - a).num_days(),
+            _ => 365,
+        };
+        print_budget_comparison(&full_agg, span_days, budgets);
     }
 
     if rollup {
@@ -1197,6 +1328,31 @@ mod tests {
     use super::*;
     use crate::{Account, TxType};
     use std::str::FromStr;
+
+    #[test]
+    fn budget_map_parses_and_is_case_insensitive() {
+        let b = BudgetMap::from_toml_str("[budgets]\nfood = 6000\ngroceries = 4800.0\n").unwrap();
+        assert!(!b.is_empty());
+        assert_eq!(b.target("Food"), Some(Decimal::from(6000)));
+        assert_eq!(b.target("groceries"), Decimal::from_str("4800.0").ok());
+        assert_eq!(b.target("transport"), None);
+    }
+
+    #[test]
+    fn budget_map_empty_when_no_section() {
+        assert!(BudgetMap::from_toml_str("# nothing here\n").unwrap().is_empty());
+        assert!(BudgetMap::default().is_empty());
+    }
+
+    #[test]
+    fn budget_seed_lists_categories_commented_skips_uncategorised() {
+        let toml =
+            BudgetMap::seed_toml(&["food".into(), "uncategorised".into(), "transport".into()]);
+        assert!(toml.contains("[budgets]"));
+        assert!(toml.contains("# food = 0.0"));
+        assert!(toml.contains("# transport = 0.0"));
+        assert!(!toml.contains("uncategorised"));
+    }
 
     fn mk_tx(date_str: &str, amount: &str, desc: &str, id: &str) -> Transaction {
         Transaction {
