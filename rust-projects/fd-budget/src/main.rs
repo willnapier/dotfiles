@@ -345,6 +345,39 @@ enum TagAction {
     /// floor. Additive and idempotent — manual tags are preserved and rows
     /// already carrying `transfer` are left unchanged.
     TagTransfers,
+    /// Rename a tag everywhere — across rule definitions AND existing
+    /// transactions — so a merge takes effect immediately (not just on the next
+    /// import). De-duplicates: if a row/rule already carries `new`, the `old`
+    /// entry is dropped. This is the safe path for tidies/merges that `reapply`
+    /// (additive — can't remove the old tag) and `--reset` (destroys manual
+    /// tags) cannot do cleanly. transactions.csv is snapshotted first.
+    Rename {
+        /// The existing tag to rename.
+        old: String,
+        /// The replacement tag (a merge if it already exists elsewhere).
+        new: String,
+        /// Scope the rename to rules whose pattern — and transactions whose
+        /// description — contain this substring (case-insensitive). Use to
+        /// retag one merchant only (e.g. `--merchant "BT GROUP"`, leaving
+        /// `VODAFONE`'s `phone` alone).
+        #[arg(long)]
+        merchant: Option<String>,
+    },
+    /// Move a tag to the primary (first) position on every matching row, so it
+    /// becomes the `stats --by-category` primary. Data-only; rules are left
+    /// unchanged. transactions.csv is snapshotted first.
+    Promote {
+        /// The tag to promote to primary.
+        tag: String,
+        /// Only promote on rows that also carry this tag (e.g.
+        /// `--where-tag taxi`).
+        #[arg(long = "where-tag")]
+        where_tag: Option<String>,
+        /// Only promote on rows whose description contains this substring
+        /// (case-insensitive).
+        #[arg(long)]
+        merchant: Option<String>,
+    },
 }
 
 fn get_data_dir() -> PathBuf {
@@ -1141,8 +1174,105 @@ fn cmd_tag(action: TagAction) -> anyhow::Result<()> {
         TagAction::TagTransfers => {
             cmd_tag_transfers()?;
         }
+        TagAction::Rename { old, new, merchant } => {
+            cmd_tag_rename(&mut rules, &rules_path, &old, &new, merchant.as_deref())?;
+        }
+        TagAction::Promote {
+            tag,
+            where_tag,
+            merchant,
+        } => {
+            cmd_tag_promote(&tag, where_tag.as_deref(), merchant.as_deref())?;
+        }
     }
 
+    Ok(())
+}
+
+/// Rename a tag across BOTH the rule definitions and the existing
+/// transactions, so a merge lands immediately. De-duplicates (a merge into an
+/// already-present tag). Optionally scoped to a merchant substring. Snapshots
+/// transactions.csv before the rewrite (primer rule 3).
+fn cmd_tag_rename(
+    rules: &mut TagRules,
+    rules_path: &std::path::Path,
+    old: &str,
+    new: &str,
+    merchant: Option<&str>,
+) -> anyhow::Result<()> {
+    // 1) Rule definitions (so future imports stay canonical).
+    let rules_changed = rules.rename_tag(old, new, merchant);
+    rules.save(rules_path)?;
+
+    // 2) Already-tagged transactions (so the merge is visible now, not just on
+    //    the next import — `reapply` is additive and can't remove `old`).
+    let store = CsvStore::new(get_store_path());
+    let mut transactions = store.load_all()?;
+    let needle = merchant.map(|s| s.to_lowercase());
+    let mut rows_changed = 0;
+    for tx in transactions.iter_mut() {
+        if let Some(ref m) = needle {
+            let hay = format!("{} {}", tx.description, tx.raw_description).to_lowercase();
+            if !hay.contains(m) {
+                continue;
+            }
+        }
+        if fd_budget::tags::rename_tag_in_list(&mut tx.tags, old, new) {
+            rows_changed += 1;
+        }
+    }
+    snapshot_transactions(&get_store_path())?;
+    store.rewrite(&transactions)?;
+
+    let scope = merchant
+        .map(|m| format!(" (merchant ~ '{}')", m))
+        .unwrap_or_default();
+    eprintln!(
+        "Renamed tag '{}' -> '{}'{}: {} rule(s), {} transaction(s) updated",
+        old, new, scope, rules_changed, rows_changed
+    );
+    Ok(())
+}
+
+/// Move `tag` to the primary (first) position on every matching transaction.
+/// Data-only. Optionally restricted to rows carrying `where_tag` and/or whose
+/// description contains `merchant`. Snapshots transactions.csv before rewrite.
+fn cmd_tag_promote(
+    tag: &str,
+    where_tag: Option<&str>,
+    merchant: Option<&str>,
+) -> anyhow::Result<()> {
+    let store = CsvStore::new(get_store_path());
+    let mut transactions = store.load_all()?;
+    let needle = merchant.map(|s| s.to_lowercase());
+    let mut rows_changed = 0;
+    for tx in transactions.iter_mut() {
+        if let Some(wt) = where_tag {
+            if !tx.tags.iter().any(|t| t == wt) {
+                continue;
+            }
+        }
+        if let Some(ref m) = needle {
+            let hay = format!("{} {}", tx.description, tx.raw_description).to_lowercase();
+            if !hay.contains(m) {
+                continue;
+            }
+        }
+        if fd_budget::tags::promote_tag_in_list(&mut tx.tags, tag) {
+            rows_changed += 1;
+        }
+    }
+    if rows_changed > 0 {
+        snapshot_transactions(&get_store_path())?;
+        store.rewrite(&transactions)?;
+    }
+    let scope = where_tag
+        .map(|w| format!(" (where tagged '{}')", w))
+        .unwrap_or_default();
+    eprintln!(
+        "Promoted '{}' to primary on {} transaction(s){}",
+        tag, rows_changed, scope
+    );
     Ok(())
 }
 

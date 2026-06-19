@@ -182,11 +182,128 @@ impl TagRules {
 
         tags
     }
+
+    /// Rename tag `old` to `new` across all rule definitions, de-duplicating
+    /// within each rule's tag list. When `merchant` is `Some`, only rules whose
+    /// `pattern` contains that substring (case-insensitive) are touched — used
+    /// to scope a rename to one merchant (e.g. `BT GROUP` phone→internet without
+    /// disturbing `VODAFONE`'s `phone`). Returns the number of rules changed.
+    pub fn rename_tag(&mut self, old: &str, new: &str, merchant: Option<&str>) -> usize {
+        let needle = merchant.map(|s| s.to_lowercase());
+        let mut changed = 0;
+        for rule in self.rules.iter_mut() {
+            if let Some(ref m) = needle {
+                if !rule.pattern.to_lowercase().contains(m) {
+                    continue;
+                }
+            }
+            if rename_tag_in_list(&mut rule.tags, old, new) {
+                changed += 1;
+            }
+        }
+        changed
+    }
+}
+
+/// Replace tag `old` with `new` in a tag list, preserving order and
+/// de-duplicating: if `new` is already present the `old` entry is simply
+/// dropped (a merge). Returns `true` if the list changed.
+pub fn rename_tag_in_list(tags: &mut Vec<String>, old: &str, new: &str) -> bool {
+    if !tags.iter().any(|t| t == old) {
+        return false;
+    }
+    let mut out: Vec<String> = Vec::with_capacity(tags.len());
+    for t in tags.iter() {
+        let mapped = if t == old { new } else { t.as_str() };
+        if !out.iter().any(|x| x == mapped) {
+            out.push(mapped.to_string());
+        }
+    }
+    let changed = out != *tags;
+    *tags = out;
+    changed
+}
+
+/// Move `tag` to the front (the `stats --by-category` primary position) of a
+/// tag list. Returns `true` if it was present and not already first.
+pub fn promote_tag_in_list(tags: &mut Vec<String>, tag: &str) -> bool {
+    match tags.iter().position(|t| t == tag) {
+        Some(0) | None => false,
+        Some(pos) => {
+            let t = tags.remove(pos);
+            tags.insert(0, t);
+            true
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rename_tag_in_list_replaces_preserving_order() {
+        let mut t = vec!["a".to_string(), "workfood".to_string(), "b".to_string()];
+        assert!(rename_tag_in_list(&mut t, "workfood", "food"));
+        assert_eq!(t, vec!["a", "food", "b"]);
+    }
+
+    #[test]
+    fn rename_tag_in_list_dedups_when_new_already_present() {
+        let mut t = vec![
+            "subscription".to_string(),
+            "subscriptions".to_string(),
+            "digital".to_string(),
+        ];
+        assert!(rename_tag_in_list(&mut t, "subscriptions", "subscription"));
+        assert_eq!(t, vec!["subscription", "digital"]);
+    }
+
+    #[test]
+    fn rename_tag_in_list_noop_when_absent() {
+        let mut t = vec!["food".to_string()];
+        assert!(!rename_tag_in_list(&mut t, "workfood", "food"));
+        assert_eq!(t, vec!["food"]);
+    }
+
+    #[test]
+    fn promote_tag_moves_to_front() {
+        let mut t = vec![
+            "subscription".to_string(),
+            "transport".to_string(),
+            "taxi".to_string(),
+        ];
+        assert!(promote_tag_in_list(&mut t, "transport"));
+        assert_eq!(t, vec!["transport", "subscription", "taxi"]);
+    }
+
+    #[test]
+    fn promote_tag_noop_when_already_primary_or_absent() {
+        let mut already = vec!["transport".to_string(), "taxi".to_string()];
+        assert!(!promote_tag_in_list(&mut already, "transport"));
+        let mut absent = vec!["food".to_string()];
+        assert!(!promote_tag_in_list(&mut absent, "transport"));
+    }
+
+    #[test]
+    fn rename_tag_scoped_by_merchant_leaves_others() {
+        let mut rules = TagRules::default();
+        rules.add_rule(
+            "BT GROUP",
+            vec!["bills".into(), "phone".into()],
+            None, None, None, None, None,
+        );
+        rules.add_rule(
+            "VODAFONE",
+            vec!["bills".into(), "phone".into()],
+            None, None, None, None, None,
+        );
+        assert_eq!(rules.rename_tag("phone", "internet", Some("BT GROUP")), 1);
+        let bt = rules.rules.iter().find(|r| r.pattern == "BT GROUP").unwrap();
+        assert_eq!(bt.tags, vec!["bills", "internet"]);
+        let vf = rules.rules.iter().find(|r| r.pattern == "VODAFONE").unwrap();
+        assert_eq!(vf.tags, vec!["bills", "phone"]);
+    }
     use std::str::FromStr;
 
     fn date(y: i32, m: u32, d: u32) -> NaiveDate {
