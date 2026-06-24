@@ -21,6 +21,16 @@ def main [] {
         exit 1
     }
 
+    # Inside an existing Zellij session, Zellij refuses to start/attach a
+    # nested session, so the create/attach path below silently no-ops.
+    # Open the rust-learning workspace as a new TAB in the current session
+    # instead (the layout names the tab "rust-learning").
+    if ($env.ZELLIJ? | is-not-empty) {
+        print $"(ansi cyan)Inside a Zellij session — opening rust-learning as a new tab...(ansi reset)"
+        zellij action new-tab --layout $layout
+        return
+    }
+
     let sessions = (
         try { zellij list-sessions | ansi strip | lines }
         catch { [] }
