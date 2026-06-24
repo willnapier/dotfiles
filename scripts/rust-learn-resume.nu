@@ -8,7 +8,10 @@
 #   - If no `rust-learning` session exists: start fresh from the layout
 #
 # Layout: ~/rust-learning/unified/learning-layout.kdl
-#   → 3 panes: book (Helix on current chapter) | claude (CC) | workshop (course-system loaded)
+#   → 2 panes: claude (CC) | workshop (course-system loaded).
+#     The Rust book is read in a BROWSER (3-panel design deprecated):
+#       `rust-learn book`       → online Brown book (rust-book.cs.brown.edu)
+#       `rust-learn book-serve` → offline: mdbook serves book-brown on :3000
 
 const SESSION_NAME = "rust-learning"
 const LAYOUT_PATH = "~/rust-learning/unified/learning-layout.kdl"
