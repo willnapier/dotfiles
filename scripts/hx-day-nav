@@ -1,33 +1,19 @@
 #!/usr/bin/env nu
-# Smart prev/next navigation for Helix via Zellij keystroke injection.
+# Smart prev/next DayPage navigation for Helix via Zellij keystroke injection.
 # Usage: hx-day-nav <prev|next> [buffer_name]
 #
-# Dispatch by buffer location:
-#   - Rust Book chapter (~/rust-learning/book/src/ch*.md) → previous/next chapter
-#   - Otherwise                                            → previous/next DayPage
+# Steps the DayPage date by ±1 day (from the buffer's YYYY-MM-DD.md name, or
+# today if the buffer isn't a DayPage), creating the target from the template
+# if it doesn't exist, then sends `:open <path><Enter>` to Helix via Zellij.
 #
-# In both cases, sends `:open <path><Enter>` to Helix via Zellij keystrokes.
+# (The former Rust-Book-chapter dispatch was removed 2026-06-24 — the book is
+#  now read in a browser, not in Helix. See `rust-learn book` / `book-serve`.)
 
 def main [direction: string, buffer_name?: string] {
-    let book_dir = $"($env.HOME)/rust-learning/book/src"
-
     # Debug log — inspect with: open /tmp/hx-day-nav.log
     $"[(date now | format date '%H:%M:%S')] dir=($direction) buffer=($buffer_name)\n" | save -a /tmp/hx-day-nav.log
 
-    # Dispatch by buffer basename. The book pane's CWD is book/src, so
-    # Helix's %{buffer_name} arrives as a bare basename like
-    # `ch01-00-getting-started.md` — a `starts-with absolute-path` check
-    # never matches. Match on the chapter-file naming pattern instead;
-    # that scopes navigation to the rust-learning context without needing
-    # Zellij session detection.
-    let basename = if ($buffer_name != null) { $buffer_name | path basename } else { "" }
-    let is_book_file = ($basename =~ '^ch\d+')
-
-    let target_path = if $is_book_file {
-        book-nav $direction $basename $book_dir
-    } else {
-        daypage-nav $direction $buffer_name
-    }
+    let target_path = (daypage-nav $direction $buffer_name)
 
     # Expose target for other consumers
     $target_path | save -f /tmp/helix-day-target.txt
@@ -40,24 +26,6 @@ def main [direction: string, buffer_name?: string] {
     ^zellij action write-chars $":open ($target_path)"
     sleep 100ms
     ^zellij action write 13
-}
-
-# Sequential navigation through the main Rust Book chapters (ch*.md).
-# Lexicographic order matches reading order because chapters use
-# zero-padded NN-NN numbering (ch01-00, ch01-01, ch01-02, ch02-00...).
-# Appendices and front-matter are reachable via SUMMARY.md + gf.
-def book-nav [direction: string, buffer_name: string, book_dir: string] {
-    let chapters = (ls ($"($book_dir)/ch*.md" | into glob) | get name | each { path basename } | sort)
-    let current = ($buffer_name | path basename)
-    let matches = ($chapters | enumerate | where item == $current)
-    let current_idx = if ($matches | is-empty) { 0 } else { ($matches | first | get index) }
-    let last_idx = (($chapters | length) - 1)
-    let target_idx = if $direction == "next" {
-        [($current_idx + 1), $last_idx] | math min
-    } else {
-        [($current_idx - 1), 0] | math max
-    }
-    $"($book_dir)/" + ($chapters | get $target_idx)
 }
 
 def daypage-nav [direction: string, buffer_name?: string] {

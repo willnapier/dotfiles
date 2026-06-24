@@ -160,11 +160,9 @@ Q = ":quit!"                                # Force quit without saving
 # Custom g-prefix commands
 [keys.normal.g]
 R = ":reload-all"  # Reload all buffers (refresh external changes)
-# Smart prev/next: Rust Book chapters (~/rust-learning/book/src/ch*.md) → prev/next chapter
-#                  otherwise                                            → prev/next DayPage
+# Prev/next DayPage (date arithmetic on YYYY-MM-DD.md; creates from template if absent)
 "[" = ":sh hx-day-nav prev %{buffer_name}"
 "]" = ":sh hx-day-nav next %{buffer_name}"
-I = ":open ~/rust-learning/book/src/SUMMARY.md"  # Rust Book Index (table of contents)
 f = ["extend_to_line_bounds", ":pipe-to hx-smart-gf-rust", ":open /tmp/helix-gf-target.md"]  # Smart file opener (Rust/Nushell version with fd, rg)
 x = ["extend_to_line_bounds", ":pipe-to hx-open-url"]  # Open URLs
 w = ["extend_to_line_bounds", ":pipe-to hx-wiki.nu", ":sh sleep 0.1 && hx-wiki-open-smart"]  # Wiki link navigation (smart: text in popup, media in viewer)
