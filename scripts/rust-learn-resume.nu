@@ -49,9 +49,9 @@ def main [] {
     } else if ($exited | length) > 0 {
         print $"(ansi yellow)Found stale ($SESSION_NAME) session — deleting + starting fresh from layout...(ansi reset)"
         zellij delete-session $SESSION_NAME
-        zellij --session $SESSION_NAME --layout $layout
+        zellij --session $SESSION_NAME --new-session-with-layout $layout
     } else {
         print $"(ansi cyan)Starting fresh ($SESSION_NAME) session from layout...(ansi reset)"
-        zellij --session $SESSION_NAME --layout $layout
+        zellij --session $SESSION_NAME --new-session-with-layout $layout
     }
 }
