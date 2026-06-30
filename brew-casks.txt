@@ -18,6 +18,7 @@ mactex
 mochi-diffusion
 mouseless
 sf-symbols
+sioyek
 surfshark
 vlc
 wezterm
