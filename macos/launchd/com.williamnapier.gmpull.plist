@@ -30,9 +30,16 @@
         <key>NOTMUCH_CONFIG</key>
         <string>/Users/williamnapier/Mail/.notmuch-config</string>
     </dict>
-    <!-- 300s = 5min, matching the cadence lieer was running at. -->
+    <!-- 60s poll (was 300s). Shortened 2026-07-03 to cut new-mail
+         arrival latency vs Gmail's push web UI: at 300s new mail could
+         sit up to 5 min before mailforge saw it. Idle ticks take the
+         cheap users.history.list path (~5 quota units, sub-second), so
+         60s is negligible local load and well within Gmail's
+         15k-units/100s per-user limit. The StandardOutPath log grows
+         ~5x faster at this cadence -> rotated via
+         /etc/newsyslog.d/gmpull.conf. See ~/Assistants/shared/gmpull.md. -->
     <key>StartInterval</key>
-    <integer>300</integer>
+    <integer>60</integer>
     <key>RunAtLoad</key>
     <false/>
     <key>StandardOutPath</key>
