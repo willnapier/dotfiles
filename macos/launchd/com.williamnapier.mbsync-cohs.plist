@@ -31,7 +31,11 @@
         <string>/Users/williamnapier/Mail/.notmuch-config</string>
     </dict>
     <key>StartInterval</key>
-    <integer>900</integer>
+    <!-- 120s (was 900/15min). Shortened 2026-07-06 so COHS/M365 mail
+         arrives promptly in the background; mailforge's Refresh button
+         also triggers `mbsync cohs` on demand. notmuch new is fast now
+         (mailcurator throttled out of the hot path). -->
+    <integer>120</integer>
     <key>RunAtLoad</key>
     <false/>
     <key>StandardOutPath</key>

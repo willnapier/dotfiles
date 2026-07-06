@@ -29,11 +29,27 @@ notmuch tag +spam -- 'path:"cohs/Junk Email/**" and not tag:spam'
 notmuch tag -inbox -- 'tag:inbox and not date:6M..'
 
 # --- Rule 2: mailcurator (per-sender policies) ---
-# Runs the mailcurator Rust binary which reads ~/.config/mailcurator/policies.toml
-# and applies sender-specific lifecycle rules (tag on arrival, archive at N days,
-# trash at M days). Safe to fail — logs to stderr but doesn't break the hook.
-if command -v mailcurator >/dev/null 2>&1; then
-    mailcurator run 2>&1 | sed 's/^/[mailcurator] /' || true
+# Runs the mailcurator Rust binary (reads ~/.config/mailcurator/policies.toml)
+# applying sender-specific lifecycle rules. It selects messages by its own
+# curator-<name>-seen / -extracted tags — NOT tag:new — so it still catches
+# every new message whenever it runs.
+#
+# It's the heavy part of this hook (~9s), so two guards (2026-07-06) keep it
+# from making every reindex slow:
+#   1. MAILFORGE_FAST_REINDEX — set by mailforge's on-demand Refresh — skips
+#      it entirely: the interactive refresh only needs new mail indexed +
+#      tagged (done above); extraction catches up on the next background tick.
+#   2. Throttle — run at most once per 120s, so back-to-back background
+#      reindexes (gmpull 60s, mbsync ticks) don't stack 9s passes.
+# Safe to fail — logs to stderr, never breaks the hook.
+if command -v mailcurator >/dev/null 2>&1 && [ -z "${MAILFORGE_FAST_REINDEX:-}" ]; then
+    mc_stamp="${TMPDIR:-/tmp}/mailcurator-lastrun"
+    mc_now=$(date +%s)
+    mc_last=$(cat "$mc_stamp" 2>/dev/null || echo 0)
+    if [ "$((mc_now - mc_last))" -ge 120 ]; then
+        printf '%s\n' "$mc_now" > "$mc_stamp" 2>/dev/null || true
+        mailcurator run 2>&1 | sed 's/^/[mailcurator] /' || true
+    fi
 fi
 
 # --- Rule 3.5: tag outgoing unsubscribe messages ---
