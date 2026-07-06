@@ -35,10 +35,13 @@
         <string>/Users/williamnapier/Code/mailforge/static</string>
     </dict>
 
+    <!-- Interactive, NOT Background (2026-07-06). This is a mail UI the
+         user actively waits on. Background QoS pinned the daemon AND every
+         notmuch subprocess it spawns to E-cores + throttled I/O — a
+         measured ~4.3x penalty per notmuch call (10ms -> 43ms) plus
+         multi-second starvation under any foreground CPU load. Interactive
+         runs it (and its query children) at normal app QoS. -->
     <key>ProcessType</key>
-    <string>Background</string>
-
-    <key>Nice</key>
-    <integer>5</integer>
+    <string>Interactive</string>
 </dict>
 </plist>
