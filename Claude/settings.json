@@ -161,7 +161,7 @@
     }
   },
   "alwaysThinkingEnabled": true,
-  "effortLevel": "xhigh",
+  "effortLevel": "high",
   "skipWorkflowUsageWarning": true,
   "agentPushNotifEnabled": true,
   "voiceEnabled": true,
