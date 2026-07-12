@@ -879,11 +879,22 @@ fn cmd_paypal_import(files: &[PathBuf]) -> anyhow::Result<()> {
 
     let mut total_parsed = 0usize;
     let mut total_imported = 0usize;
+    let mut total_skipped = 0usize;
     for file in files {
         let reader = BufReader::new(File::open(file)?);
-        let parsed = paypal::parse_paypal_csv(reader)
+        // Counted parser (M17): surfaces malformed rows that would otherwise be
+        // silently dropped, so a mangled genuine transaction can't vanish unseen.
+        let (parsed, skipped) = paypal::store::parse_paypal_csv_counted(reader)
             .map_err(|e| anyhow::anyhow!("failed to parse {}: {}", file.display(), e))?;
         total_parsed += parsed.len();
+        total_skipped += skipped.total();
+        if !skipped.is_empty() {
+            eprintln!(
+                "  {}: skipped {} unparseable row(s)",
+                file.display(),
+                skipped.total()
+            );
+        }
         // Dedup against the store AND against rows already imported this run
         // (overlapping export files), then grow the seen-set.
         let fresh = paypal::deduplicate(parsed, &existing);
@@ -901,6 +912,12 @@ fn cmd_paypal_import(files: &[PathBuf]) -> anyhow::Result<()> {
         total_parsed,
         files.len()
     );
+    if total_skipped > 0 {
+        println!(
+            "\u{26a0} skipped {} unparseable row(s) — check the export for malformed lines.",
+            total_skipped
+        );
+    }
     Ok(())
 }
 
