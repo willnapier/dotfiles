@@ -301,9 +301,23 @@ fn tokenize(s: &str) -> HashSet<String> {
         .collect()
 }
 
+/// Generic corporate-suffix / noise tokens that carry no vendor identity. A
+/// whole-token match on one of these (e.g. `group`, `ltd`, `com`) would pair
+/// wildly unrelated names (GROUPON vs BT Group) whenever amount+date coincide,
+/// so they are excluded from name-match consideration entirely.
+fn is_stopword(t: &str) -> bool {
+    matches!(
+        t,
+        "ltd" | "plc" | "limited" | "com" | "group" | "the" | "www" | "uk" | "inc" | "co"
+    )
+}
+
 /// Compute name-match tier between bank description and email's effective vendor.
 ///
-/// Returns `Some(High)` for substring match, `Some(Medium)` for token overlap > 0.5,
+/// Returns `Some(High)` when the two names share at least one WHOLE identifying
+/// token (exact token equality, stopwords excluded — never substring
+/// containment, which fired High on generic fragments like `group`/`com` and
+/// on unrelated partial-word overlaps), `Some(Medium)` for token overlap > 0.5,
 /// or `None` if neither.
 fn name_tier(bank_desc: &str, email: &EmailRow) -> Option<Tier> {
     let vendor = email.effective_vendor()?;
@@ -314,17 +328,19 @@ fn name_tier(bank_desc: &str, email: &EmailRow) -> Option<Tier> {
     let desc_lower = bank_desc.to_lowercase();
     let vendor_lower = vendor.to_lowercase();
 
-    // Substring check (vendor word inside bank description, or vice versa).
     let desc_tokens = tokenize(&desc_lower);
     let vendor_tokens = tokenize(&vendor_lower);
 
+    // High tier: a shared WHOLE identifying token (exact equality), stopwords
+    // excluded. Substring containment (in either direction) is deliberately
+    // dropped — it awarded High on generic fragments (`group`, `com`, `ltd`)
+    // and on partial-word overlaps between unrelated vendors. The former
+    // vendor⊇description-token direction is gone entirely.
     for vt in &vendor_tokens {
-        if desc_lower.contains(vt) {
-            return Some(Tier::High);
+        if is_stopword(vt) {
+            continue;
         }
-    }
-    for dt in &desc_tokens {
-        if vendor_lower.contains(dt) {
+        if desc_tokens.contains(vt) {
             return Some(Tier::High);
         }
     }
@@ -677,6 +693,24 @@ mod tests {
         let email = mk_email("<v@1>", Some("Vodafone"), None, Some("55.67"), None, None);
         let tier = name_tier("VODAFONE LTD", &email);
         assert_eq!(tier, Some(Tier::High));
+    }
+
+    #[test]
+    fn test_generic_token_does_not_high_match_unrelated_vendor() {
+        // M13: "GROUPON UK" must NOT High-match a "BT Group" bill. The old
+        // substring logic fired High because the generic token `group` (a
+        // stopword) is a substring of "groupon" — matching wildly unrelated
+        // vendors whenever amount+date coincided. Whole-token equality with a
+        // stopword set means `groupon` != `group`, and `group` is excluded.
+        let bt = mk_email("<g@1>", Some("BT Group"), None, Some("42.00"), None, None);
+        assert_eq!(name_tier("GROUPON UK", &bt), None);
+        assert_eq!(name_tier("GROUPON UK LTD", &bt), None);
+
+        // A genuine shared identifying (non-stopword) token still awards High:
+        // "GROUPON UK" against a real Groupon bill shares the whole token
+        // `groupon`.
+        let groupon = mk_email("<g@2>", Some("Groupon Ltd"), None, Some("42.00"), None, None);
+        assert_eq!(name_tier("GROUPON UK", &groupon), Some(Tier::High));
     }
 
     #[test]

@@ -20,6 +20,15 @@
 //! INSTEAD of summing actuals — for categories the bank data under-captures, e.g.
 //! holidays paid partly on other cards). A fixed-budget category is spread evenly
 //! across the 12 months; an actuals category is summed on each lump's real month.
+//!
+//! **Scope — this is a one-shot RETROSPECTIVE sizing calc.** It looks back over
+//! a 12-month window, sizes a single drip + buffer figure, and prints them. It
+//! does NOT maintain a forward per-pot running balance, nor does it track a live
+//! pot or raise a "this pot won't cover its next due lump" shortfall flag — no
+//! such forward ledger exists here. The only forward-looking hints are the
+//! plausibility `notes` (e.g. window-drift double-counting, a tag with no
+//! matches, thin data coverage), which caveat the retrospective figures rather
+//! than track a balance going forward.
 
 use crate::query::DateFilter;
 use crate::Transaction;
@@ -299,9 +308,13 @@ pub struct Smoothing {
     pub drip: Decimal,
     /// Total outflow in each of the 12 months (all categories).
     pub monthly_outflow: [Decimal; WINDOW_MONTHS],
-    /// Cumulative buffer float at the end of each month: `cum += drip - outflow`.
+    /// Buffer float at the END of each month (after that month's drip and
+    /// outflow): `cum[i] = cum[i-1] - outflow[i] + drip`.
     pub cum: [Decimal; WINDOW_MONTHS],
-    /// `max(cum) - min(cum)` — the steady-state peak-to-trough float to hold.
+    /// Peak-to-trough float to hold, sized PESSIMISTICALLY: the highest
+    /// end-of-month peak minus the worst-case intra-month (pre-drip) trough,
+    /// i.e. assuming a lump can pay before the drip arrives. One drip larger
+    /// than the naive `max(cum) - min(cum)` swing.
     pub buffer: Decimal,
     /// Plausibility notes surfaced during compute — e.g. an annual bill caught
     /// twice by window drift (counted once for the drip), or a configured tag
@@ -318,8 +331,11 @@ pub struct Smoothing {
 /// Then:
 ///   * `annual_total` = Σ over categories (each category's budget-or-actuals total).
 ///   * `drip` = annual_total / 12.
-///   * walk the 12 months in order, `cum = 0`, `cum += drip - outflow_this_month`,
-///     recording `cum` each month; `buffer = max(cum) - min(cum)`.
+///   * walk the 12 months in order with PESSIMISTIC intra-month ordering: debit
+///     the outflow first (recording the pre-drip low), then add the drip and
+///     record the end-of-month `cum`. `buffer = max(cum) - min(pre_drip_low)` —
+///     one drip larger than the naive swing, so it covers the worst-case
+///     ordering where a bill pays before the drip lands.
 pub fn compute(
     config: &SmoothingConfig,
     transactions: &[Transaction],
@@ -402,6 +418,41 @@ pub fn compute(
         });
     }
 
+    // M3: short-history coverage caveat. Actuals-based drips sum tagged debits
+    // within the window; a month with NO data in the store is silently treated
+    // as £0 outflow, so if the transaction store does not SPAN the full window
+    // the drip can be understated. Emit a note (still compute) so a partial
+    // figure is not read as complete. Fixed-budget-only configs don't depend on
+    // actuals coverage, so the note is skipped when no actuals category exists.
+    let has_actuals = config.lump.iter().any(|l| l.annual_budget.is_none());
+    if has_actuals {
+        if let (Some(first), Some(last)) = (
+            transactions.iter().map(|t| t.date).min(),
+            transactions.iter().map(|t| t.date).max(),
+        ) {
+            let (ws_y, ws_m) = window.month_of(0);
+            let (we_y, we_m) = window.month_of(WINDOW_MONTHS - 1);
+            let key = |y: i32, m: u32| y * 12 + m as i32;
+            let short_start = key(first.year(), first.month()) > key(ws_y, ws_m);
+            let short_end = key(last.year(), last.month()) < key(we_y, we_m);
+            if short_start || short_end {
+                notes.push(format!(
+                    "transaction data spans {:04}-{:02}..{:04}-{:02}, short of the \
+                     {:04}-{:02}..{:04}-{:02} window — actuals-based drips may be \
+                     understated for lack of coverage.",
+                    first.year(),
+                    first.month(),
+                    last.year(),
+                    last.month(),
+                    ws_y,
+                    ws_m,
+                    we_y,
+                    we_m,
+                ));
+            }
+        }
+    }
+
     // Per-month total outflow across every category.
     let mut monthly_outflow = [Decimal::ZERO; WINDOW_MONTHS];
     for cat in &categories {
@@ -413,16 +464,29 @@ pub fn compute(
     let drip = annual_total / twelve;
 
     // Walk the 12 months; record the cumulative buffer float each month.
+    //
+    // Ordering is PESSIMISTIC within a month: we cannot assume the standing
+    // order (drip) lands before the bill each month. If the bill pays first,
+    // the true intra-month trough is one drip lower than the end-of-month
+    // float. So each month we DEBIT the outflow first — recording that
+    // pre-drip low as the worst case the buffer must cover — and only THEN
+    // credit the drip. `cum[i]` stays the end-of-month float (for the detail
+    // view); `pre_drip[i]` is the worst-case low used to size the buffer.
     let mut cum = [Decimal::ZERO; WINDOW_MONTHS];
+    let mut pre_drip = [Decimal::ZERO; WINDOW_MONTHS];
     let mut running = Decimal::ZERO;
     for i in 0..WINDOW_MONTHS {
-        running += drip - monthly_outflow[i];
-        cum[i] = running;
+        running -= monthly_outflow[i]; // bill pays first (worst-case ordering)
+        pre_drip[i] = running; // worst-case intra-month low
+        running += drip; // then the drip arrives
+        cum[i] = running; // end-of-month float
     }
 
-    // Buffer = peak-to-trough swing of the recorded cumulative series.
+    // Buffer = highest end-of-month peak to the worst-case (pre-drip) trough.
+    // Using the pre-drip lows makes the buffer robust to the bill landing
+    // before the drip in any month (one drip larger than the naive swing).
     let max = cum.iter().copied().max().unwrap_or(Decimal::ZERO);
-    let min = cum.iter().copied().min().unwrap_or(Decimal::ZERO);
+    let min = pre_drip.iter().copied().min().unwrap_or(Decimal::ZERO);
     let buffer = max - min;
 
     Smoothing {
@@ -693,8 +757,33 @@ mod tests {
             assert_eq!(s.cum[i], dec(e), "cum[{}] mismatch", i);
         }
 
-        // max = 600, min = -500 -> buffer = 1100.00
-        assert_eq!(s.buffer, dec("1100.00"));
+        // Pessimistic buffer (M1): the peak end-of-month float is 600; the
+        // worst-case intra-month trough is month 6's PRE-drip low of
+        // 600 - 1200 = -600 (the £1200 bill can pay before the £100 drip
+        // arrives). buffer = 600 - (-600) = 1200.00 — one drip (£100) more than
+        // the old naive max(cum) - min(cum) = 1100, which optimistically
+        // assumed the drip always landed first.
+        assert_eq!(s.buffer, dec("1200.00"));
+    }
+
+    #[test]
+    fn buffer_is_pessimistic_one_drip_above_naive_swing() {
+        // M1: for any single-lump case the pessimistic buffer is exactly one
+        // drip larger than the naive end-of-month peak-to-trough swing, because
+        // the worst-case trough sits one drip below the end-of-month low.
+        let config = SmoothingConfig {
+            lump: vec![Lump {
+                tag: "insurance".into(),
+                annual_budget: None,
+            }],
+        };
+        let txs = vec![debit(2025, 7, 15, "-1200.00", "insurance")];
+        let s = compute(&config, &txs, Window::starting(2025, 1));
+
+        let naive_max = s.cum.iter().copied().max().unwrap();
+        let naive_min = s.cum.iter().copied().min().unwrap();
+        let naive_swing = naive_max - naive_min; // old buffer definition
+        assert_eq!(s.buffer, naive_swing + s.drip);
     }
 
     // -- Window-drift guard (H10) -------------------------------------------
@@ -764,13 +853,77 @@ mod tests {
         );
     }
 
+    #[test]
+    fn short_history_store_emits_coverage_note() {
+        // M3: the window is the full 12 months of 2025, but the store only holds
+        // data for July 2025. Actuals-based drips can be understated because the
+        // uncovered months are silently £0, so a coverage note must be emitted
+        // (while still computing).
+        let config = SmoothingConfig {
+            lump: vec![Lump {
+                tag: "insurance".into(),
+                annual_budget: None,
+            }],
+        };
+        let txs = vec![debit(2025, 7, 15, "-1200.00", "insurance")];
+        let s = compute(&config, &txs, Window::starting(2025, 1));
+        assert_eq!(s.annual_total, dec("1200.00")); // still computes
+        assert!(
+            s.notes.iter().any(|n| n.contains("lack of coverage")),
+            "expected a short-history coverage note, got: {:?}",
+            s.notes
+        );
+    }
+
+    #[test]
+    fn full_coverage_store_emits_no_coverage_note() {
+        // A store spanning the whole window must NOT get a coverage note.
+        let config = SmoothingConfig {
+            lump: vec![Lump {
+                tag: "insurance".into(),
+                annual_budget: None,
+            }],
+        };
+        let txs = vec![
+            debit(2025, 1, 5, "-10.00", "misc"),
+            debit(2025, 7, 15, "-1200.00", "insurance"),
+            debit(2025, 12, 20, "-10.00", "misc"),
+        ];
+        let s = compute(&config, &txs, Window::starting(2025, 1));
+        assert!(
+            !s.notes.iter().any(|n| n.contains("lack of coverage")),
+            "unexpected coverage note, got: {:?}",
+            s.notes
+        );
+    }
+
+    #[test]
+    fn fixed_budget_only_config_skips_coverage_note() {
+        // Fixed-budget-only configs don't depend on actuals coverage, so no
+        // coverage note even with a short/empty store.
+        let config = SmoothingConfig {
+            lump: vec![Lump {
+                tag: "holiday".into(),
+                annual_budget: Some(dec("6000")),
+            }],
+        };
+        let txs = vec![debit(2025, 7, 15, "-50.00", "groceries")];
+        let s = compute(&config, &txs, Window::starting(2025, 1));
+        assert!(
+            !s.notes.iter().any(|n| n.contains("lack of coverage")),
+            "unexpected coverage note for fixed-budget-only config, got: {:?}",
+            s.notes
+        );
+    }
+
     // -- Fixed budget spread evenly -----------------------------------------
 
     #[test]
     fn fixed_budget_is_spread_evenly() {
         // A fixed £6000 holiday budget, no actuals. Spread evenly = £500/month,
-        // which exactly equals the drip, so the cumulative float never moves and
-        // the buffer is £0 (perfectly smoothed by construction).
+        // which exactly equals the drip, so the end-of-month float never moves.
+        // The pessimistic buffer is one drip (£500) — the worst-case intra-month
+        // gap if the slice pays before the drip lands.
         let config = SmoothingConfig {
             lump: vec![Lump {
                 tag: "holiday".into(),
@@ -788,11 +941,14 @@ mod tests {
         for m in &s.monthly_outflow {
             assert_eq!(*m, dec("500"));
         }
-        // drip - outflow = 0 every month -> flat cum -> zero buffer.
+        // End-of-month cum is flat at £0 (drip == outflow each month).
         for c in &s.cum {
             assert_eq!(*c, Decimal::ZERO);
         }
-        assert_eq!(s.buffer, Decimal::ZERO);
+        // But pessimistically (M1) the £500 slice can pay before the £500 drip
+        // arrives, so each month's worst-case pre-drip trough is -£500. The
+        // buffer covers that: 0 - (-500) = £500 = one drip.
+        assert_eq!(s.buffer, dec("500"));
     }
 
     #[test]
@@ -825,9 +981,12 @@ mod tests {
                 assert_eq!(*m, dec("500"));
             }
         }
-        // cum: (600-500)=100 each month, then month 6 dips by 1100.
-        // 100,200,300,400,500,600,-500,-400,-300,-200,-100,0  -> same shape as golden.
-        assert_eq!(s.buffer, dec("1100"));
+        // End-of-month cum: (600-500)=100 each month, then month 6 dips by 1100.
+        // 100,200,300,400,500,600,-500,-400,-300,-200,-100,0 -> same shape as golden.
+        // Pessimistic buffer (M1): peak 600, worst-case pre-drip trough at month
+        // 6 = 600 - 1700 = -1100, so buffer = 600 - (-1100) = 1700 — one drip
+        // (£600) above the old naive 1100.
+        assert_eq!(s.buffer, dec("1700"));
     }
 
     // -- Configured tag matching no rows ------------------------------------
@@ -909,10 +1068,15 @@ mod tests {
         let s = compute(&config, &txs, Window::starting(2025, 1));
         let held = s.held_balance();
         // First month: cum 100 + 500 = 600; trough month 6: -500 + 500 = 0.
+        // held_balance floors by the END-of-month min (-500), a per-month
+        // display, so its peak is 1100.
         assert_eq!(held[0], dec("600"));
         assert_eq!(held[6], Decimal::ZERO);
-        // Peak held = buffer.
-        assert_eq!(held[5], s.buffer); // month 5 cum=600 -> held=1100
+        assert_eq!(held[5], dec("1100")); // month 5 cum=600 -> held=1100
+        // The buffer to hold (1200) is one drip MORE than the end-of-month held
+        // peak, because it also covers the worst-case intra-month pre-drip
+        // trough (M1) that the per-month display does not surface.
+        assert_eq!(s.buffer, held[5] + s.drip);
     }
 
     // -- Config load / seed --------------------------------------------------
