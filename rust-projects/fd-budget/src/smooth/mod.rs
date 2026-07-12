@@ -303,6 +303,10 @@ pub struct Smoothing {
     pub cum: [Decimal; WINDOW_MONTHS],
     /// `max(cum) - min(cum)` — the steady-state peak-to-trough float to hold.
     pub buffer: Decimal,
+    /// Plausibility notes surfaced during compute — e.g. an annual bill caught
+    /// twice by window drift (counted once for the drip), or a configured tag
+    /// with no payments in the window (an obligation invisible here).
+    pub notes: Vec<String>,
 }
 
 /// Compute the smoothing for a window over the configured lump categories.
@@ -324,6 +328,7 @@ pub fn compute(
     let twelve = Decimal::from(WINDOW_MONTHS as u64);
     let mut categories = Vec::with_capacity(config.lump.len());
     let mut annual_total = Decimal::ZERO;
+    let mut notes: Vec<String> = Vec::new();
 
     for lump in &config.lump {
         let mut monthly = [Decimal::ZERO; WINDOW_MONTHS];
@@ -337,9 +342,8 @@ pub fn compute(
             }
             (budget, Basis::FixedBudget)
         } else {
-            // Actuals: sum the debit rows carrying this tag, each on its month.
-            let mut sum = Decimal::ZERO;
-            let mut count = 0usize;
+            // Actuals: collect the debit rows carrying this tag within the window.
+            let mut matched: Vec<(usize, NaiveDate, Decimal)> = Vec::new();
             for tx in transactions {
                 if !tx.is_debit() {
                     continue;
@@ -350,17 +354,42 @@ pub fn compute(
                 let Some(idx) = window.bucket(tx.date) else {
                     continue;
                 };
-                let mag = tx.amount.abs();
-                monthly[idx] += mag;
-                sum += mag;
-                count += 1;
+                matched.push((idx, tx.date, tx.amount.abs()));
+            }
+
+            // Window-drift guard: an ANNUAL bill can land TWICE in a rolling
+            // 12-month window when its renewal date drifts across the edge (last
+            // year's + this year's both caught), doubling the drip and buffer.
+            // If exactly two similar-amount matches sit ~a year apart, keep only
+            // the most recent — the steady-state obligation is one per year.
+            if is_annual_drift_double(&matched) {
+                matched.sort_by_key(|(_, d, _)| *d);
+                let kept = matched.pop().unwrap();
+                notes.push(format!(
+                    "{}: an annual bill appears twice in the 12-month window \
+                     (~a year apart) — counted once for the drip.",
+                    lump.tag
+                ));
+                matched = vec![kept];
+            } else if matched.is_empty() {
+                notes.push(format!(
+                    "{}: no payments matched in the 12-month window — an annual \
+                     obligation due outside it would be invisible here.",
+                    lump.tag
+                ));
+            }
+
+            let mut sum = Decimal::ZERO;
+            for (idx, date, mag) in &matched {
+                monthly[*idx] += *mag;
+                sum += *mag;
                 rows.push(MatchedRow {
-                    date: tx.date,
-                    amount: mag,
+                    date: *date,
+                    amount: *mag,
                     tag: lump.tag.clone(),
                 });
             }
-            (sum, Basis::Actuals(count))
+            (sum, Basis::Actuals(matched.len()))
         };
 
         annual_total += total;
@@ -404,7 +433,26 @@ pub fn compute(
         monthly_outflow,
         cum,
         buffer,
+        notes,
     }
+}
+
+/// True when a tag's matched actuals look like ONE annual bill caught TWICE by
+/// window drift: exactly two payments, ~a year apart, of a similar amount. Such
+/// a pair should size the drip as one occurrence, not two.
+fn is_annual_drift_double(matched: &[(usize, chrono::NaiveDate, Decimal)]) -> bool {
+    use rust_decimal::prelude::ToPrimitive;
+    if matched.len() != 2 {
+        return false;
+    }
+    let gap_days = (matched[1].1 - matched[0].1).num_days().abs();
+    if gap_days < 330 {
+        return false; // not ~annual apart (e.g. a genuine semi-annual bill)
+    }
+    let a = matched[0].2.to_f64().unwrap_or(0.0).abs();
+    let b = matched[1].2.to_f64().unwrap_or(0.0).abs();
+    let base = a.min(b).max(f64::MIN_POSITIVE);
+    (a - b).abs() / base <= 0.25 // similar amount => same recurring bill
 }
 
 impl Smoothing {
@@ -490,6 +538,10 @@ pub fn render(s: &Smoothing, period_label: &str, detail: bool) -> String {
             out,
             "  note: fixed-budget categories are assumed spread evenly across the 12 months."
         );
+    }
+
+    for note in &s.notes {
+        let _ = writeln!(out, "  \u{26a0} {}", note);
     }
 
     if detail {
@@ -643,6 +695,73 @@ mod tests {
 
         // max = 600, min = -500 -> buffer = 1100.00
         assert_eq!(s.buffer, dec("1100.00"));
+    }
+
+    // -- Window-drift guard (H10) -------------------------------------------
+
+    #[test]
+    fn annual_bill_caught_twice_by_drift_counts_once() {
+        // An annual insurance bill whose renewal drifted: last year's (Jan) and
+        // this year's (Dec) both land in the 12-month window. It must size the
+        // drip as ONE occurrence, not the doubled sum, and say so.
+        let config = SmoothingConfig {
+            lump: vec![Lump {
+                tag: "insurance".into(),
+                annual_budget: None,
+            }],
+        };
+        let txs = vec![
+            debit(2025, 1, 15, "-1200.00", "insurance"),
+            debit(2025, 12, 20, "-1210.00", "insurance"),
+        ];
+        let s = compute(&config, &txs, Window::starting(2025, 1));
+        assert_eq!(s.annual_total, dec("1210.00"), "sum must not double the annual bill");
+        assert!(matches!(s.categories[0].basis, Basis::Actuals(1)));
+        assert!(
+            s.notes.iter().any(|n| n.contains("twice")),
+            "expected a drift note, got: {:?}",
+            s.notes
+        );
+    }
+
+    #[test]
+    fn two_similar_charges_only_six_months_apart_are_not_deduped() {
+        // A genuine semi-annual bill (two similar charges ~6 months apart) is NOT
+        // window drift — both count.
+        let config = SmoothingConfig {
+            lump: vec![Lump {
+                tag: "insurance".into(),
+                annual_budget: None,
+            }],
+        };
+        let txs = vec![
+            debit(2025, 1, 15, "-600.00", "insurance"),
+            debit(2025, 7, 15, "-600.00", "insurance"),
+        ];
+        let s = compute(&config, &txs, Window::starting(2025, 1));
+        assert_eq!(s.annual_total, dec("1200.00"));
+        assert!(matches!(s.categories[0].basis, Basis::Actuals(2)));
+    }
+
+    #[test]
+    fn zero_match_actuals_tag_is_noted() {
+        // A configured actuals tag with no payments in the window: its obligation
+        // is invisible here, so the report must flag it rather than show a silent
+        // £0.
+        let config = SmoothingConfig {
+            lump: vec![Lump {
+                tag: "insurance".into(),
+                annual_budget: None,
+            }],
+        };
+        let txs = vec![debit(2025, 3, 1, "-50.00", "groceries")];
+        let s = compute(&config, &txs, Window::starting(2025, 1));
+        assert_eq!(s.annual_total, Decimal::ZERO);
+        assert!(
+            s.notes.iter().any(|n| n.contains("no payments matched")),
+            "expected a no-match note, got: {:?}",
+            s.notes
+        );
     }
 
     // -- Fixed budget spread evenly -----------------------------------------
