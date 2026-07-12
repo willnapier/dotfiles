@@ -53,15 +53,21 @@ pub enum TxType {
 }
 
 impl TxType {
+    /// Parse a transaction type from EITHER the raw bank code (`)))`, `DD`, …)
+    /// used at import OR the canonical `as_str` name (`contactless`,
+    /// `direct_debit`, …) that the CSV store persists. Accepting both makes the
+    /// store round-trip loss-less: previously the store wrote `as_str` names but
+    /// only bank codes parsed, so every reload collapsed the type to `Unknown`
+    /// and the next `tag` rewrite erased it permanently.
     pub fn from_code(code: &str) -> Self {
         match code.trim() {
-            ")))" => TxType::Contactless,
-            "MAS" => TxType::Mastercard,
-            "DD" => TxType::DirectDebit,
-            "BP" => TxType::BankPayment,
-            "SO" => TxType::StandingOrder,
-            "TFR" => TxType::Transfer,
-            "ATM" => TxType::Atm,
+            ")))" | "contactless" => TxType::Contactless,
+            "MAS" | "mastercard" => TxType::Mastercard,
+            "DD" | "direct_debit" => TxType::DirectDebit,
+            "BP" | "bank_payment" => TxType::BankPayment,
+            "SO" | "standing_order" => TxType::StandingOrder,
+            "TFR" | "transfer" => TxType::Transfer,
+            "ATM" | "atm" => TxType::Atm,
             _ => TxType::Unknown(0),
         }
     }
