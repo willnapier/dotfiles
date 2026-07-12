@@ -5,6 +5,24 @@
 **Scope:** `~/dotfiles/rust-projects/fd-budget` @ `13e5f54` (~11k LOC). Read-only; no code changed.
 **Baseline:** run `cargo test` before applying any fix — findings are against a (presumed) green tree; confirm it.
 
+## STATUS — 2026-07-12 (Opus fix pass, deployed + migrated)
+
+**All 8 HIGH findings FIXED, tested (170 lib + 8 + 3 e2e green), deployed to `~/.local/bin/fd-budget` (rollback `.prev`), and the real store migrated (2747 rows re-keyed, 28 collision groups un-collided, totals byte-identical; backup `~/fd-budget-migrate-backup-2026-07-12-163623`).**
+
+| Finding | Status | Note |
+|---|---|---|
+| H1 store-load laundering | ✅ FIXED | `TryFrom` fail-closed + refuse-to-rewrite; +7 tests |
+| H2 mid-file import truncation | ✅ FIXED | date is the sole footer discriminator; +3 tests |
+| H3 dedup collision | ✅ FIXED | occurrence-indexed id + `migrate-ids` migration; +4 tests |
+| H4 FX rate-direction | ✅ SUBSUMED by H5 | real data has NO rate → pass-1 never fires; the live path is the fallback, now hardened by H5 |
+| H5 FX amount-blind fallback | ✅ FIXED | tight time-gate + MEDIUM confidence; +2 tests |
+| H6/H7 subscriptions grouping | ✅ FIXED | amount-clustering within a merchant; +3 tests |
+| H8/H9 coverage | ✅ FIXED | end-truncation caveat + month-presence recoverability; +2 tests |
+| H10 smoothing window-drift | ✅ FIXED | annual-double counted once + notes; +3 tests |
+| M14 tx_type erased on rewrite | ✅ FIXED | folded into H1 (`from_code` accepts `as_str` names) |
+
+**MEDIUM + LOW findings below remain OPEN** (M1–M13, L1–L15, minus M14). The medium batch (business+one-off double-count, `--budget` annualisation, case-sensitive buckets, `--by-counterparty` stale-matches, enrich substring, tag `|`/whitespace, etc.) is the natural next pass. **Open sub-question from H4/H5:** does PayPal's raw export omit the `Exchange Rate` column, or does the importer drop it? (The stored sidecar has it empty; a fresh raw export would tell — reviving pass-1 would beat hardening the fallback.)
+
 ---
 
 ## TL;DR — two spines run through almost every finding
