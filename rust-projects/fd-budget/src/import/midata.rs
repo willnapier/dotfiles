@@ -1,8 +1,9 @@
 use crate::{Account, Transaction, TxType};
-use crate::dedup::compute_import_id;
+use crate::dedup::{compute_import_id, occurrence_key};
 use crate::import::normalize::{clean_description, parse_amount};
 use chrono::NaiveDate;
 use csv::ReaderBuilder;
+use std::collections::HashMap;
 use std::io::Read;
 use thiserror::Error;
 
@@ -31,6 +32,9 @@ pub fn parse_midata<R: Read>(
         .from_reader(reader);
 
     let mut transactions = Vec::new();
+    // Count identical (date, 2dp-amount, description) rows in file order so each
+    // gets a distinct occurrence index in its dedup id (see compute_import_id).
+    let mut occ_counts: HashMap<String, usize> = HashMap::new();
 
     for (i, result) in csv_reader.records().enumerate() {
         let record = match result {
@@ -81,7 +85,11 @@ pub fn parse_midata<R: Read>(
         let raw_description = description_str.to_string();
 
         // Compute dedup ID
-        let import_id = compute_import_id(&date, &amount, &raw_description);
+        let occurrence = *occ_counts
+            .entry(occurrence_key(&date, &amount, &raw_description))
+            .and_modify(|c| *c += 1)
+            .or_insert(0);
+        let import_id = compute_import_id(&date, &amount, &raw_description, occurrence);
 
         transactions.push(Transaction {
             date,
@@ -116,6 +124,9 @@ pub fn parse_midata_visa<R: Read>(
         .from_reader(reader);
 
     let mut transactions = Vec::new();
+    // Count identical (date, 2dp-amount, description) rows in file order so each
+    // gets a distinct occurrence index in its dedup id (see compute_import_id).
+    let mut occ_counts: HashMap<String, usize> = HashMap::new();
 
     for (i, result) in csv_reader.records().enumerate() {
         let record = match result {
@@ -154,7 +165,11 @@ pub fn parse_midata_visa<R: Read>(
         let description = clean_description(description_str);
         let raw_description = description_str.to_string();
 
-        let import_id = compute_import_id(&date, &amount, &raw_description);
+        let occurrence = *occ_counts
+            .entry(occurrence_key(&date, &amount, &raw_description))
+            .and_modify(|c| *c += 1)
+            .or_insert(0);
+        let import_id = compute_import_id(&date, &amount, &raw_description, occurrence);
 
         transactions.push(Transaction {
             date,
@@ -195,6 +210,9 @@ pub fn parse_midata_current_4col<R: Read>(
         .from_reader(reader);
 
     let mut transactions = Vec::new();
+    // Count identical (date, 2dp-amount, description) rows in file order so each
+    // gets a distinct occurrence index in its dedup id (see compute_import_id).
+    let mut occ_counts: HashMap<String, usize> = HashMap::new();
 
     for (i, result) in csv_reader.records().enumerate() {
         let record = match result {
@@ -237,7 +255,11 @@ pub fn parse_midata_current_4col<R: Read>(
         let description = clean_description(description_str);
         let raw_description = description_str.to_string();
 
-        let import_id = compute_import_id(&date, &amount, &raw_description);
+        let occurrence = *occ_counts
+            .entry(occurrence_key(&date, &amount, &raw_description))
+            .and_modify(|c| *c += 1)
+            .or_insert(0);
+        let import_id = compute_import_id(&date, &amount, &raw_description, occurrence);
 
         transactions.push(Transaction {
             date,
@@ -365,5 +387,21 @@ mod tests {
                         02/01/2025,DD,ONLY THREE COLS\n";
         let err = parse_midata(csv_data.as_bytes(), Account::Current).unwrap_err();
         assert!(err.to_string().contains("row 3"), "got: {err}");
+    }
+
+    #[test]
+    fn identical_same_day_rows_get_distinct_import_ids() {
+        // Two identical contactless taps the same day are DISTINCT transactions
+        // that must both survive import. The old (date+amount+desc) id collided,
+        // silently dropping one on the next overlapping re-import.
+        let csv_data = "Date,Type,Merchant/Description,Debit/Credit,Balance\n\
+                        03/06/2026,))),ACME COFFEE,-£4.50,+£100.00\n\
+                        03/06/2026,))),ACME COFFEE,-£4.50,+£95.50\n";
+        let txns = parse_midata(csv_data.as_bytes(), Account::Current).unwrap();
+        assert_eq!(txns.len(), 2);
+        assert_ne!(
+            txns[0].import_id, txns[1].import_id,
+            "identical same-day rows must not collide"
+        );
     }
 }
