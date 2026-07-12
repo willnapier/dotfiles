@@ -36,7 +36,7 @@ pub fn compute_import_id(
 /// index. Callers count identical keys in file order to assign `occurrence`.
 /// Kept here so the parser's counting key can never drift from the hash input.
 pub fn occurrence_key(date: &NaiveDate, amount: &Decimal, raw_description: &str) -> String {
-    format!("{date}|{}|{raw_description}", amount.round_dp(2))
+    format!("{date}|{:.2}|{raw_description}", amount)
 }
 
 /// Filter out transactions that already exist in the store
