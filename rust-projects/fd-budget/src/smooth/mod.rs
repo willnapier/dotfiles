@@ -78,6 +78,22 @@ impl SmoothingConfig {
             .map_err(|e| anyhow::anyhow!("failed to read {}: {}", path.display(), e))?;
         let config: SmoothingConfig = toml::from_str(&content)
             .map_err(|e| anyhow::anyhow!("failed to parse {}: {}", path.display(), e))?;
+        // A fixed `annual_budget` must be strictly positive. A zero or negative
+        // budget spreads a nonsense (zero/negative) monthly outflow and prints a
+        // meaningless negative drip, so reject it at load, naming the tag.
+        for lump in &config.lump {
+            if let Some(budget) = lump.annual_budget {
+                if budget <= Decimal::ZERO {
+                    return Err(anyhow::anyhow!(
+                        "lump '{}' has a non-positive annual_budget ({}) in {}; \
+                         it must be greater than zero",
+                        lump.tag,
+                        budget,
+                        path.display()
+                    ));
+                }
+            }
+        }
         Ok(config)
     }
 
@@ -533,6 +549,20 @@ impl Smoothing {
         }
         held
     }
+
+    /// The monthly standing-order figure to actually pay into the buffer: the
+    /// raw `drip` rounded UP (away from zero) to whole pence.
+    ///
+    /// The raw `drip` (`annual_total / 12`) can carry sub-penny fractions. A user
+    /// who pays the *printed* £X.XX standing order would then diverge from the
+    /// model by up to £0.005/month — a shortfall that compounds over years and
+    /// leaves the buffer perpetually a touch short. Rounding the presented figure
+    /// UP guarantees the standing order is always a hair's surplus, never a
+    /// shortfall: `standing_order() * 12 >= annual_total`.
+    pub fn standing_order(&self) -> Decimal {
+        self.drip
+            .round_dp_with_strategy(2, rust_decimal::RoundingStrategy::AwayFromZero)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -588,7 +618,7 @@ pub fn render(s: &Smoothing, period_label: &str, detail: bool) -> String {
         out,
         "  {:<16} {:>10}   <- standing order into the buffer account",
         "Monthly drip",
-        format_money(s.drip)
+        format_money(s.standing_order())
     );
     let _ = writeln!(
         out,
@@ -1128,5 +1158,72 @@ annual_budget = 6000
         // No flags, no data: anchor on today.
         let w = resolve_window(&filter, None, None, &[], today);
         assert_eq!(w, Window::ending(2026, 1));
+    }
+
+    // -- L4: presented standing order is rounded UP, never a shortfall -------
+
+    #[test]
+    fn standing_order_times_twelve_covers_annual_total() {
+        // annual_total = 1000 -> raw drip = 83.3333... The presented standing
+        // order must round UP to 83.34 so that 12 payments (£1000.08) never
+        // fall short of the £1000 annual obligation.
+        let config = SmoothingConfig {
+            lump: vec![Lump {
+                tag: "holiday".into(),
+                annual_budget: Some(dec("1000")),
+            }],
+        };
+        let s = compute(&config, &[], Window::starting(2025, 1));
+        let so = s.standing_order();
+        assert_eq!(so, dec("83.34"), "standing order rounds up to whole pence");
+        assert!(
+            so * Decimal::from(WINDOW_MONTHS as u64) >= s.annual_total,
+            "printed drip * 12 ({}) must cover the annual total ({})",
+            so * Decimal::from(WINDOW_MONTHS as u64),
+            s.annual_total
+        );
+        // The render surfaces the rounded figure, not the raw drip.
+        let text = render(&s, "test", false);
+        assert!(text.contains("83.34"), "rendered: {text}");
+    }
+
+    // -- L6: a non-positive annual_budget is rejected at load ----------------
+
+    #[test]
+    fn negative_annual_budget_is_rejected_at_load() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+
+        // Write `content` to a unique temp file, run `load`, then clean up.
+        fn load_toml(content: &str) -> anyhow::Result<SmoothingConfig> {
+            let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "fd-budget-smoothing-test-{}-{}.toml",
+                std::process::id(),
+                n
+            ));
+            std::fs::write(&path, content).unwrap();
+            let result = SmoothingConfig::load(&path);
+            let _ = std::fs::remove_file(&path);
+            result
+        }
+
+        let err = load_toml("[[lump]]\ntag = \"holiday\"\nannual_budget = -6000")
+            .expect_err("negative annual_budget must be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("holiday"), "error must name the tag: {msg}");
+        assert!(
+            msg.contains("non-positive") || msg.contains("greater than zero"),
+            "error must explain the constraint: {msg}"
+        );
+
+        // Zero is likewise rejected.
+        let err = load_toml("[[lump]]\ntag = \"gym\"\nannual_budget = 0")
+            .expect_err("zero annual_budget must be rejected");
+        assert!(err.to_string().contains("gym"));
+
+        // A positive budget still loads fine.
+        let cfg = load_toml("[[lump]]\ntag = \"holiday\"\nannual_budget = 6000").unwrap();
+        assert_eq!(cfg.lump[0].annual_budget, Some(dec("6000")));
     }
 }

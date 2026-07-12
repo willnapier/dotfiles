@@ -419,9 +419,11 @@ fn match_one<'e>(
             if let Some(dir) = email.direction.as_deref() {
                 let dir_lower = dir.to_lowercase();
                 let is_credit_email = dir_lower == "received" || dir_lower == "refund";
-                if is_credit && !is_credit_email && dir_lower != "sent" {
-                    // bank credit but email isn't a credit — skip
-                    // We allow "sent" only for debit-side.
+                if is_credit && !is_credit_email {
+                    // Bank credit but the email isn't a credit — skip. A "sent"
+                    // email is debit-only (money you sent OUT); it must never be
+                    // attributed to an incoming bank CREDIT, or a refund would be
+                    // pinned to an outgoing payment.
                     continue;
                 }
                 if !is_credit && (dir_lower == "received" || dir_lower == "refund") {
@@ -840,5 +842,55 @@ mod tests {
     fn test_parse_due_date_garbage_returns_none() {
         assert!(parse_due_date("not a date", None).is_none());
         assert!(parse_due_date("", None).is_none());
+    }
+
+    /// Like [`mk_email`] but with an explicit `direction`.
+    fn mk_email_dir(
+        msg_id: &str,
+        vendor: Option<&str>,
+        amount: Option<&str>,
+        received: Option<&str>,
+        direction: Option<&str>,
+    ) -> EmailRow {
+        let mut row = mk_email(msg_id, vendor, None, amount, received, None);
+        row.direction = direction.map(String::from);
+        row
+    }
+
+    #[test]
+    fn sent_email_does_not_match_bank_credit() {
+        // L9: a "sent" email is money you sent OUT (debit-only). It must NEVER be
+        // attributed to an incoming bank CREDIT — otherwise a PayPal "you sent
+        // £50" gets pinned to an unrelated £50 refund landing in the account.
+        let credit_tx = mk_tx("2025-10-04", "50.00", "VODAFONE LTD", "credit-1");
+        assert!(credit_tx.is_credit());
+
+        let sent_email = mk_email_dir(
+            "<s@1>",
+            Some("Vodafone"),
+            Some("50.00"),
+            Some("Sat, 4 Oct 2025 11:04:54 -0000"),
+            Some("sent"),
+        );
+        let (results, _) = enrich(&[credit_tx.clone()], &[sent_email], MatchOptions::default());
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0].confidence,
+            Confidence::None,
+            "a 'sent' email must not match a bank credit"
+        );
+
+        // Control: a genuine "received"/credit-side email DOES match the same
+        // bank credit, proving it is specifically the "sent" direction excluded.
+        let received_email = mk_email_dir(
+            "<r@1>",
+            Some("Vodafone"),
+            Some("50.00"),
+            Some("Sat, 4 Oct 2025 11:04:54 -0000"),
+            Some("received"),
+        );
+        let (results, _) = enrich(&[credit_tx], &[received_email], MatchOptions::default());
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].confidence, Confidence::High);
     }
 }

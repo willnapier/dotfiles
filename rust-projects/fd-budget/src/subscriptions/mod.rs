@@ -82,14 +82,29 @@ const AMOUNT_CLUSTER_GAP: f64 = 0.25;
 const TRAILING_LOCATIONS: &[&str] = &["LONDON", "CORK", "DUBLIN", "SWINDON", "LUTON", "CHARD"];
 
 /// Is `tok` pure mask / numeric noise? True for runs of `*` (`**********`,
-/// `***`) and tokens made up entirely of `*`, digits, and ASCII punctuation
-/// (no letters), e.g. masked card tails. Such a token carries no merchant
-/// identity, so when TRAILING it is dropped.
+/// `***`) and mask-shaped tokens made up entirely of `*`, digits, and ASCII
+/// punctuation (no letters), e.g. masked card tails. Such a token carries no
+/// merchant identity, so when TRAILING it is dropped.
+///
+/// EXCEPTION: a token that is ENTIRELY digits is only noise when it is LONG
+/// (>= 3 digits) — the masked card-tail shape. A short 1-2 digit trailing token
+/// is a *distinguishing* part of the merchant name (`CHANNEL 4`, `CHANNEL 5`,
+/// `RADIO 1`, `STUDIO 54`) and must be kept, or those merchants would collapse
+/// together. Long digit runs and any `*`/punctuation-bearing masked tail still
+/// strip as before.
 fn is_mask_noise(tok: &str) -> bool {
-    !tok.is_empty()
-        && tok
-            .chars()
-            .all(|c| c == '*' || c.is_ascii_digit() || c.is_ascii_punctuation())
+    if tok.is_empty() {
+        return false;
+    }
+    // Purely numeric: strip only the long (>= 3 digit) masked-tail shape; keep
+    // short 1-2 digit tokens that distinguish a merchant name.
+    if tok.chars().all(|c| c.is_ascii_digit()) {
+        return tok.len() >= 3;
+    }
+    // Otherwise: mask / punctuation noise (runs of `*`, masked digits carrying
+    // `*` or punctuation, e.g. `**********`, `***`, `****1234`).
+    tok.chars()
+        .all(|c| c == '*' || c.is_ascii_digit() || c.is_ascii_punctuation())
 }
 
 /// Is `tok` a trailing payment-gateway / processor fragment? These are the
@@ -1040,6 +1055,26 @@ mod tests {
         assert_eq!(canonical_merchant("APPLE.COM/BILL"), "APPLE.COM/BILL");
         // Mask-only or gateway-only inputs collapse to the surviving core.
         assert_eq!(canonical_merchant("AUDIBLE UK *** 1234"), "AUDIBLE UK");
+    }
+
+    #[test]
+    fn canonical_keeps_short_trailing_digit_tokens_but_strips_masked_tail() {
+        // L7: a short (1-2 digit) trailing number DISTINGUISHES the merchant and
+        // must be kept — `CHANNEL 4` and `CHANNEL 5` are different channels and
+        // must NOT collapse to a bare `CHANNEL`.
+        let c4 = canonical_merchant("CHANNEL 4");
+        let c5 = canonical_merchant("CHANNEL 5");
+        assert_eq!(c4, "CHANNEL 4");
+        assert_eq!(c5, "CHANNEL 5");
+        assert_ne!(c4, c5);
+        // Two-digit trailing numbers survive too (STUDIO 54, RADIO on 1).
+        assert_eq!(canonical_merchant("STUDIO 54"), "STUDIO 54");
+        assert_eq!(canonical_merchant("RADIO 1"), "RADIO 1");
+        // But a long (>= 3 digit) masked card tail is STILL stripped as noise.
+        assert_eq!(canonical_merchant("MERCHANT 1234"), "MERCHANT");
+        assert_eq!(canonical_merchant("MERCHANT 999"), "MERCHANT");
+        // And a `*` mask tail still strips regardless of length.
+        assert_eq!(canonical_merchant("MERCHANT **"), "MERCHANT");
     }
 
     // -----------------------------------------------------------------------
