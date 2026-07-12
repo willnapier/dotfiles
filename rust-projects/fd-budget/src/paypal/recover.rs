@@ -746,6 +746,38 @@ mod tests {
     }
 
     #[test]
+    fn rate_less_far_time_fx_leg_is_not_bound() {
+        // No exchange rate on the foreign leg (the common real-export case), and
+        // the only foreign leg posts HOURS from the conversion — an unrelated
+        // payment. The amount-blind fallback must REFUSE to bind it (H5: no
+        // wrong-merchant attribution), leaving the bank row unrecovered.
+        let txs = vec![bank("2026-05-10", "-272.01", "bank-x")];
+        let paypal = pp(
+            "10/05/2026,09:00:00,GMT,,Bank Deposit to PP Account ,Completed,GBP,272.01,0,272.01,,,272.01,PP-DEP,\n\
+             10/05/2026,09:01:00,GMT,,General Currency Conversion,Completed,GBP,-272.01,0,-272.01,,,0,PP-CONV,\n\
+             10/05/2026,15:00:00,GMT,Unrelated Merchant,Express Checkout Payment,Completed,USD,-5.00,0,-5.00,,,0,PP-FX,Thing\n",
+        );
+        let (_recs, summary) = recover(&txs, &paypal, RecoverOptions::default());
+        assert_eq!(summary.fx_chain, 0, "far-time rate-less leg must not bind");
+    }
+
+    #[test]
+    fn rate_less_close_time_fx_leg_binds_as_medium() {
+        // Same, but the foreign leg posts within seconds of the conversion — a
+        // real chain. Bind it, but as MEDIUM (amount-blind), never High.
+        let txs = vec![bank("2026-05-10", "-272.01", "bank-y")];
+        let paypal = pp(
+            "10/05/2026,09:00:00,GMT,,Bank Deposit to PP Account ,Completed,GBP,272.01,0,272.01,,,272.01,PP-DEP,\n\
+             10/05/2026,09:01:00,GMT,,General Currency Conversion,Completed,GBP,-272.01,0,-272.01,,,0,PP-CONV,\n\
+             10/05/2026,09:01:05,GMT,Acme Foreign GmbH,Express Checkout Payment,Completed,EUR,-299.40,0,-299.40,,,0,PP-FX,Widget\n",
+        );
+        let (recs, summary) = recover(&txs, &paypal, RecoverOptions::default());
+        assert_eq!(summary.fx_chain, 1);
+        assert_eq!(recs[0].recovered_merchant, "Acme Foreign GmbH");
+        assert_eq!(recs[0].confidence.as_str(), "medium");
+    }
+
+    #[test]
     fn recurring_amount_disambiguated_by_date() {
         // Two -12.99 bank rows in a month; two Streamflix-ish payments.
         // Each bank row should bind to its nearest-dated PayPal leg.
