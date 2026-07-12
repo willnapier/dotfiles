@@ -298,16 +298,18 @@ pub fn recover(
                 let conv_dt = paypal[conv_idx].datetime();
                 let conv_id = paypal[conv_idx].transaction_id.clone();
                 // Foreign payment leg: a non-GBP payment carrying a merchant.
-                // Bind it to THIS chain by the strongest available signal — the
-                // amount link `foreign_amount.abs() * exchange_rate ≈ bank_abs`
-                // (the conversion's GBP value) — with timestamp-nearest-to-the
-                // -conversion as the tie-break. Falls back to pure
-                // timestamp-nearest only when no leg carries an exchange rate.
+                // Bind it to THIS chain via the amount link, using the exchange
+                // rate carried on the GBP conversion row (`conv_idx`) — PayPal
+                // records the rate there, not on the foreign leg. Tie-break by
+                // timestamp-nearest-to-the-conversion; falls back to a tight
+                // time-window MEDIUM bind when the conversion has no usable rate.
+                let conv_rate = paypal[conv_idx].exchange_rate;
                 if let Some((fx_idx, confidence)) = nearest_fx_leg(
                     paypal,
                     &consumed,
                     conv_date,
                     conv_dt,
+                    conv_rate,
                     bank_abs,
                     PP_CHAIN_WINDOW_DAYS,
                 ) {
@@ -464,69 +466,77 @@ fn is_foreign_payment_leg(p: &PayPalTxn) -> bool {
     p.is_payment_leg() && !p.currency.eq_ignore_ascii_case("GBP")
 }
 
-/// Pick the foreign payment leg of an FX chain, binding to THIS chain by the
-/// strongest available signal.
+/// Pick the foreign payment leg of an FX chain, binding it to THIS chain.
 ///
-/// Primary binder: the AMOUNT link. A foreign leg's `amount.abs() *
-/// exchange_rate` reconstructs the GBP it cost — which equals the conversion's
-/// GBP amount, i.e. `bank_abs`. Among non-GBP payment legs that carry an
-/// exchange rate AND whose reconstructed GBP is within `GBP_TOLERANCE` of
-/// `bank_abs`, pick the one nearest in timestamp to the conversion (tie-break
-/// by Transaction ID). This prevents two same-day FX chains from swapping
-/// foreign legs.
+/// Primary binder: the AMOUNT link, using the exchange rate from the GBP
+/// `General Currency Conversion` row (`conv_rate`) — which is where PayPal
+/// actually records it. The rate is NOT on the foreign payment leg (that cell is
+/// blank in real exports), which is why keying off the leg's own rate never
+/// fired. A foreign leg's amount reconstructs the GBP it cost via the rate;
+/// PayPal's rate can be GBP-per-foreign OR foreign-per-GBP (real data is the
+/// latter: `amount / rate = GBP`), so accept a candidate whose reconstruction by
+/// EITHER `amount * rate` or `amount / rate` is within `GBP_TOLERANCE` of
+/// `bank_abs`. Among matches pick the one nearest in timestamp to the conversion
+/// (tie-break by Transaction ID) — stops two same-second FX chains swapping
+/// foreign legs. -> High.
 ///
-/// Fallback: if no candidate carries a usable exchange rate, fall back to pure
-/// timestamp-nearest-to-the-conversion among non-GBP payment legs (the old
-/// behaviour, but tightened from day- to second-granular).
+/// Fallback: if the conversion carries no usable rate, or nothing links by
+/// amount, bind only a foreign leg posting within a TIGHT time window of the
+/// conversion (a real chain's legs post within seconds) as MEDIUM — never an
+/// amount-blind "high" bind of an unrelated payment.
 fn nearest_fx_leg(
     paypal: &[PayPalTxn],
     consumed: &HashSet<String>,
     conv_date: NaiveDate,
     conv_dt: NaiveDateTime,
+    conv_rate: Option<Decimal>,
     bank_abs: Decimal,
     window: i64,
 ) -> Option<(usize, RecoveryConfidence)> {
-    // Pass 1: amount-linked candidates (the true structural binder) -> High.
-    let mut best: Option<(usize, i64)> = None;
-    for (i, p) in paypal.iter().enumerate() {
-        if consumed.contains(&p.transaction_id) {
-            continue;
-        }
-        if date_delta(p.date, conv_date) > window {
-            continue;
-        }
-        if !is_foreign_payment_leg(p) {
-            continue;
-        }
-        let rate = match p.exchange_rate {
-            Some(r) => r,
-            None => continue,
-        };
-        if !within(p.amount.abs() * rate, bank_abs, GBP_TOLERANCE) {
-            continue;
-        }
-        let td = time_delta_secs(p.datetime(), conv_dt);
-        match best {
-            Some((bi, bd)) => {
-                let better = td < bd || (td == bd && p.transaction_id < paypal[bi].transaction_id);
-                if better {
-                    best = Some((i, td));
+    // Pass 1: amount-link via the conversion row's exchange rate -> High.
+    if let Some(rate) = conv_rate {
+        if !rate.is_zero() {
+            let mut best: Option<(usize, i64)> = None;
+            for (i, p) in paypal.iter().enumerate() {
+                if consumed.contains(&p.transaction_id) {
+                    continue;
+                }
+                if date_delta(p.date, conv_date) > window {
+                    continue;
+                }
+                if !is_foreign_payment_leg(p) {
+                    continue;
+                }
+                let amt = p.amount.abs();
+                let links = within(amt * rate, bank_abs, GBP_TOLERANCE)
+                    || within(amt / rate, bank_abs, GBP_TOLERANCE);
+                if !links {
+                    continue;
+                }
+                let td = time_delta_secs(p.datetime(), conv_dt);
+                match best {
+                    Some((bi, bd)) => {
+                        let better =
+                            td < bd || (td == bd && p.transaction_id < paypal[bi].transaction_id);
+                        if better {
+                            best = Some((i, td));
+                        }
+                    }
+                    None => best = Some((i, td)),
                 }
             }
-            None => best = Some((i, td)),
+            if let Some((i, _)) = best {
+                return Some((i, RecoveryConfidence::High));
+            }
         }
     }
-    if let Some((i, _)) = best {
-        return Some((i, RecoveryConfidence::High));
-    }
 
-    // Pass 2 (fallback): no leg carried a usable exchange rate (the common case
-    // when the export omits the rate column, so pass 1 never fires). We cannot
-    // reconstruct GBP to check the amount, so bind ONLY a foreign leg that posts
-    // within a TIGHT time window of the conversion — a real chain's legs post
-    // within seconds — and record it as MEDIUM, never High. This refuses to
-    // attribute an unrelated payment days away, which the old amount-blind
-    // nearest-within-window bind did (and mislabelled "high").
+    // Pass 2 (fallback): the conversion carried no usable rate, or nothing
+    // linked by amount. We cannot reconstruct GBP to check the amount, so bind
+    // ONLY a foreign leg that posts within a TIGHT time window of the conversion
+    // — a real chain's legs post within seconds — and record it as MEDIUM, never
+    // High. This refuses to attribute an unrelated payment days away, which the
+    // old amount-blind nearest-within-window bind did (and mislabelled "high").
     let idx = nearest_unconsumed_by_time(
         paypal,
         consumed,
@@ -725,22 +735,25 @@ mod tests {
 
     #[test]
     fn fx_chain_recovers_foreign_merchant() {
-        // Bank -272.01 → deposit +272.01 → conversion -272.01 GBP → -299.40 EUR.
-        let txs = vec![bank("2026-05-10", "-272.01", "bank-3")];
+        // REAL PayPal structure: the exchange rate is on the GBP conversion row,
+        // NOT the foreign payment leg (that cell is blank in real exports).
+        // bank -197.62 -> deposit +197.62 -> GBP conversion -197.62 @
+        // 1.265008669165684 -> USD payment -249.99
+        // (249.99 / 1.265008669165684 = 197.62). The amount-link fires -> High.
+        let txs = vec![bank("2026-05-10", "-197.62", "bank-3")];
         let paypal = pp(
-            "10/05/2026,09:00:00,GMT,,Bank Deposit to PP Account ,Completed,GBP,272.01,0,272.01,,,272.01,PP-DEP,\n\
-             10/05/2026,09:01:00,GMT,,General Currency Conversion,Completed,GBP,-272.01,0,-272.01,,,0,PP-CONV,\n\
-             10/05/2026,09:02:00,GMT,Acme Foreign GmbH,Express Checkout Payment,Completed,EUR,-299.40,0,-299.40,1.1009,,0,PP-FX,Widget\n",
+            "10/05/2026,09:00:00,GMT,,Bank Deposit to PP Account ,Completed,GBP,197.62,0,197.62,,,197.62,PP-DEP,\n\
+             10/05/2026,09:01:00,GMT,,General Currency Conversion,Completed,GBP,-197.62,0,-197.62,1.265008669165684,,0,PP-CONV,\n\
+             10/05/2026,09:02:00,GMT,Acme Foreign Inc,Pre-approved Payment Bill User Payment,Completed,USD,-249.99,0,-249.99,,,0,PP-FX,Widget\n",
         );
         let (recs, summary) = recover(&txs, &paypal, RecoverOptions::default());
         assert_eq!(recs.len(), 1);
-        assert_eq!(recs[0].recovered_merchant, "Acme Foreign GmbH");
+        assert_eq!(recs[0].recovered_merchant, "Acme Foreign Inc");
         assert_eq!(recs[0].leg, Leg::FxChain);
-        assert_eq!(recs[0].currency, "EUR");
-        assert_eq!(
-            recs[0].merchant_amount,
-            Decimal::from_str("-299.40").unwrap()
-        );
+        assert_eq!(recs[0].currency, "USD");
+        assert_eq!(recs[0].merchant_amount, Decimal::from_str("-249.99").unwrap());
+        // Amount-linked via the conversion row's rate -> High (not the fallback).
+        assert_eq!(recs[0].confidence.as_str(), "high");
         assert_eq!(recs[0].chain_txn_ids, vec!["PP-DEP", "PP-CONV", "PP-FX"]);
         assert_eq!(summary.fx_chain, 1);
     }
