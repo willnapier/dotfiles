@@ -218,6 +218,18 @@ enum Commands {
         #[arg(long)]
         detail: bool,
     },
+    /// Migrate stored dedup ids to the occurrence-indexed scheme (one-off).
+    ///
+    /// Rewrites `transactions.csv` so identical same-day/same-amount rows get
+    /// distinct ids. REQUIRED once after the id-scheme change — otherwise the
+    /// next overlapping import re-imports every row as a duplicate. Dry-run by
+    /// default; `--apply` writes (backing up first). Regenerate the derived
+    /// sidecars afterwards: `fd-budget paypal recover` and `fd-budget enrich`.
+    MigrateIds {
+        /// Actually rewrite transactions.csv (default is a preview).
+        #[arg(long)]
+        apply: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -513,8 +525,88 @@ fn main() -> anyhow::Result<()> {
         } => {
             cmd_smooth(year, month.as_deref(), since, detail)?;
         }
+        Commands::MigrateIds { apply } => {
+            cmd_migrate_ids(apply)?;
+        }
     }
 
+    Ok(())
+}
+
+/// `migrate-ids` — one-off rewrite of `transactions.csv` to the occurrence-
+/// indexed dedup id (see `dedup::compute_import_id`). Deterministic: recomputes
+/// each row's id from (date, 2dp-amount, raw_description) + its occurrence index
+/// among identical rows in file order. Dry-run unless `apply`.
+///
+/// The derived sidecars (`matches.jsonl`, `paypal_matches.jsonl`) key off the
+/// bank id, so after applying regenerate them with `enrich` / `paypal recover`
+/// rather than remapping — they recompute cleanly against the new ids.
+fn cmd_migrate_ids(apply: bool) -> anyhow::Result<()> {
+    let store_path = get_store_path();
+    let store = CsvStore::new(&store_path);
+    let mut txns = store.load_all()?; // ordered; fails closed on a corrupt row
+
+    let mut occ: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut seen_new: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut changed = 0usize;
+    let mut disambiguated = 0usize;
+
+    for tx in &mut txns {
+        let occurrence = *occ
+            .entry(dedup::occurrence_key(&tx.date, &tx.amount, &tx.raw_description))
+            .and_modify(|c| *c += 1)
+            .or_insert(0);
+        if occurrence > 0 {
+            disambiguated += 1;
+        }
+        let new_id =
+            dedup::compute_import_id(&tx.date, &tx.amount, &tx.raw_description, occurrence);
+        if new_id != tx.import_id {
+            changed += 1;
+        }
+        *seen_new.entry(new_id.clone()).or_insert(0) += 1;
+        tx.import_id = new_id;
+    }
+
+    let residual_collisions = seen_new.values().filter(|&&c| c > 1).count();
+
+    println!("rows:                       {}", txns.len());
+    println!("ids changed:                {}", changed);
+    println!("rows disambiguated by occ:  {}", disambiguated);
+    println!("residual new-id collisions: {} (must be 0)", residual_collisions);
+
+    if !apply {
+        println!("\nDRY RUN — nothing written. Re-run with --apply to migrate.");
+        println!("After --apply, regenerate the derived sidecars:");
+        println!("  fd-budget paypal recover");
+        println!("  fd-budget enrich <usual args>");
+        return Ok(());
+    }
+
+    if residual_collisions > 0 {
+        anyhow::bail!(
+            "refusing to write: {residual_collisions} new ids still collide — occurrence \
+             indexing did not disambiguate; investigate before migrating"
+        );
+    }
+
+    // Back up transactions.csv + both sidecars OUTSIDE the config tree first.
+    let stamp = chrono::Local::now().format("%Y-%m-%d-%H%M%S").to_string();
+    let backup_dir = dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(format!("fd-budget-migrate-backup-{stamp}"));
+    std::fs::create_dir_all(&backup_dir)?;
+    for name in ["transactions.csv", "matches.jsonl", "paypal_matches.jsonl"] {
+        let src = get_data_dir().join(name);
+        if src.exists() {
+            std::fs::copy(&src, backup_dir.join(name))?;
+        }
+    }
+    println!("Backed up transactions.csv + sidecars to {}", backup_dir.display());
+
+    store.rewrite(&txns)?;
+    println!("transactions.csv migrated ({changed} ids changed).");
+    println!("Now regenerate sidecars: `fd-budget paypal recover`, then `fd-budget enrich ...`");
     Ok(())
 }
 
