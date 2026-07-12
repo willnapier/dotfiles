@@ -14,14 +14,14 @@
 | H1 store-load laundering | ✅ FIXED | `TryFrom` fail-closed + refuse-to-rewrite; +7 tests |
 | H2 mid-file import truncation | ✅ FIXED | date is the sole footer discriminator; +3 tests |
 | H3 dedup collision | ✅ FIXED | occurrence-indexed id + `migrate-ids` migration; +4 tests |
-| H4 FX rate-direction | ✅ SUBSUMED by H5 | real data has NO rate → pass-1 never fires; the live path is the fallback, now hardened by H5 |
+| H4 FX rate-direction | ✅ FIXED (properly) | root cause confirmed vs a real export: PayPal puts the rate on the GBP conversion row, not the foreign leg — amount-link now reads it there, direction-agnostic (real data is `amount/rate`); 39 real recoveries went medium→**high** (amount-verified) |
 | H5 FX amount-blind fallback | ✅ FIXED | tight time-gate + MEDIUM confidence; +2 tests |
 | H6/H7 subscriptions grouping | ✅ FIXED | amount-clustering within a merchant; +3 tests |
 | H8/H9 coverage | ✅ FIXED | end-truncation caveat + month-presence recoverability; +2 tests |
 | H10 smoothing window-drift | ✅ FIXED | annual-double counted once + notes; +3 tests |
 | M14 tx_type erased on rewrite | ✅ FIXED | folded into H1 (`from_code` accepts `as_str` names) |
 
-**MEDIUM + LOW findings below remain OPEN** (M1–M13, L1–L15, minus M14). The medium batch (business+one-off double-count, `--budget` annualisation, case-sensitive buckets, `--by-counterparty` stale-matches, enrich substring, tag `|`/whitespace, etc.) is the natural next pass. **Open sub-question from H4/H5:** does PayPal's raw export omit the `Exchange Rate` column, or does the importer drop it? (The stored sidecar has it empty; a fresh raw export would tell — reviving pass-1 would beat hardening the fallback.)
+**MEDIUM + LOW findings below remain OPEN** (M1–M13, L1–L15, minus M14). The medium batch (business+one-off double-count, `--budget` annualisation, case-sensitive buckets, `--by-counterparty` stale-matches, enrich substring, tag `|`/whitespace, etc.) is the natural next pass. **H4/H5 sub-question RESOLVED (2026-07-12):** a fresh real export (`~/Downloads/Download.CSV`) showed the `Exchange Rate` column IS present and populated — but on the GBP `General Currency Conversion` row (e.g. `1.265008669165684`), not the foreign payment leg (blank). The importer captured it correctly; the recovery algorithm read it from the wrong row. Fixed properly (see H4 above): pass-1 now sources the rate from the conversion row, so the amount-link fires on real data and all 39 FX recoveries are amount-verified (High).
 
 ---
 
