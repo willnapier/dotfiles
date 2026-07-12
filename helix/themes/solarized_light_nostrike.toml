@@ -1,0 +1,9 @@
+# Solarized Light, identical to the built-in theme but with strikethrough rendering OFF.
+#
+# Pair of solarized_dark_nostrike. Why: Helix maps `markup.strikethrough` to the
+# terminal crossed_out modifier, and the markdown tree-sitter grammar pairs up
+# `~` characters — so "approx ~5 to ~10" gets the middle span struck through.
+# This theme inherits every solarized_light colour unchanged and only clears that
+# one modifier (Markdown Tilde Rule).
+inherits = "solarized_light"
+"markup.strikethrough" = {}

@@ -3,9 +3,9 @@
 # Helix Configuration for Colemak-DH
 # Sync test: $(date)
 
-# Theme selection
-# solarized_dark_nostrike = solarized_dark with strikethrough rendering disabled
-# (so `~` for "approximately" doesn't render crossed out). Theme file in themes/.
+# Theme selection — hx-auto rewrites this line from system appearance on every
+# launch (dark → solarized_dark_nostrike, light → solarized_light_nostrike).
+# Both themes disable markup.strikethrough so `~` stays "approximately".
 theme = "solarized_dark_nostrike"
 
 [editor]

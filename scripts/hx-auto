@@ -1,52 +1,79 @@
 #!/bin/bash
-# Auto-detect system appearance and set Helix theme accordingly
+# Auto-detect system appearance and set Helix theme accordingly.
+#
+# Canonical pair (strikethrough disabled for the Markdown Tilde Rule):
+#   dark  → solarized_dark_nostrike
+#   light → solarized_light_nostrike
+#
+# Replaces the theme assignment line in both platform configs so
+# helix-config-sync-check stays clean after a switch. Then launches the
+# real Helix binary (never this wrapper / ~/.local/bin/hx).
 
-# Resolve symlink to get actual file location
-CONFIG_FILE="$(readlink -f "$HOME/.config/helix/config.toml" 2>/dev/null || realpath "$HOME/.config/helix/config.toml" 2>/dev/null || echo "$HOME/.config/helix/config.toml")"
+set -euo pipefail
 
-# If still a symlink or doesn't exist, use the dotfiles location directly
-if [ ! -f "$CONFIG_FILE" ] || [ -L "$CONFIG_FILE" ]; then
-    CONFIG_FILE="$HOME/dotfiles/helix/config.toml"
-fi
-
-# Get system theme using cross-platform detection
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 THEME=$("$SCRIPT_DIR/get-system-theme.sh")
 
 if [[ "$THEME" == "dark" ]]; then
-    # Dark mode detected
-    sd 'theme = "solarized_light_modal"' 'theme = "solarized_dark_modal"' "$CONFIG_FILE"
-    sd 'theme = "solarized_light"' 'theme = "solarized_dark"' "$CONFIG_FILE"
-    # Debug output
-    >&2 echo "hx-auto: Set dark theme"
+    HELIX_THEME="solarized_dark_nostrike"
 else
-    # Light mode
-    sd 'theme = "solarized_dark_modal"' 'theme = "solarized_light_modal"' "$CONFIG_FILE"
-    sd 'theme = "solarized_dark"' 'theme = "solarized_light"' "$CONFIG_FILE"
-    # Debug output
-    >&2 echo "hx-auto: Set light theme"
+    HELIX_THEME="solarized_light_nostrike"
 fi
 
-# Launch Helix with all arguments (cross-platform)
-# Look for the actual Helix binary, not our wrapper scripts
-# Check specific locations first to avoid finding our wrapper script
+# Source files managed by Dotter (always update both when present)
+CONFIG_FILES=(
+    "$HOME/dotfiles/helix/config.toml"
+    "$HOME/dotfiles/helix/config-linux.toml"
+)
+
+# If the active config resolves somewhere else (unusual), include it too
+ACTIVE_CONFIG=""
+if command -v realpath >/dev/null 2>&1; then
+    ACTIVE_CONFIG="$(realpath "$HOME/.config/helix/config.toml" 2>/dev/null || true)"
+elif command -v readlink >/dev/null 2>&1; then
+    ACTIVE_CONFIG="$(readlink -f "$HOME/.config/helix/config.toml" 2>/dev/null || true)"
+fi
+
+if [[ -n "$ACTIVE_CONFIG" && -f "$ACTIVE_CONFIG" ]]; then
+    already=0
+    for f in "${CONFIG_FILES[@]}"; do
+        if [[ "$f" == "$ACTIVE_CONFIG" ]]; then
+            already=1
+            break
+        fi
+    done
+    if [[ $already -eq 0 ]]; then
+        CONFIG_FILES+=("$ACTIVE_CONFIG")
+    fi
+fi
+
+for CONFIG_FILE in "${CONFIG_FILES[@]}"; do
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        continue
+    fi
+    # Only rewrite the assignment line (not comments that mention theme names)
+    if rg -q '^theme = "' "$CONFIG_FILE"; then
+        sd '^theme = ".*"' "theme = \"$HELIX_THEME\"" "$CONFIG_FILE"
+    fi
+done
+
+if [[ "${HX_AUTO_DEBUG:-}" == "1" ]]; then
+    >&2 echo "hx-auto: system=$THEME helix_theme=$HELIX_THEME"
+fi
+
+# Launch Helix with all arguments (cross-platform). Prefer real binaries over
+# our ~/.local/bin wrappers to avoid recursion.
 if [[ -x "/opt/homebrew/bin/hx" ]]; then
-    # macOS with Homebrew
     exec /opt/homebrew/bin/hx "$@"
 elif [[ -x "/usr/bin/helix" ]]; then
-    # Linux standard location
     exec /usr/bin/helix "$@"
 elif [[ -x "/usr/local/bin/helix" ]]; then
-    # Linux alternative location
     exec /usr/local/bin/helix "$@"
 elif [[ -x "$HOME/.cargo/bin/helix" ]]; then
-    # Rust cargo installation
     exec "$HOME/.cargo/bin/helix" "$@"
 elif [[ -x "/usr/bin/hx" ]]; then
-    # Alternative Linux location
     exec /usr/bin/hx "$@"
 else
-    # Last resort: try to find helix (not hx to avoid recursion)
     if command -v helix &> /dev/null; then
         exec helix "$@"
     else
