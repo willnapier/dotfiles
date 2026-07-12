@@ -885,35 +885,28 @@ mod tests {
 
     /// REGRESSION (HIGH — FX foreign-leg cross-link, recover.rs:266-269 pre-fix).
     ///
-    /// Two FX chains on the SAME DAY, distinct amounts/merchants. The old code
-    /// picked the foreign leg as `is_payment_leg() && non-GBP` nearest by DAY to
-    /// the conversion, tie-broken by Transaction ID — so when both foreign legs
-    /// are same-day, the first-processed bank row grabbed whichever leg had the
-    /// lower Transaction ID, regardless of which chain it belonged to. Here the
-    /// foreign-leg ids are ordered so the OLD code swaps them (bank-1 would have
-    /// grabbed "RIGHT-B" because PP-FX-B < PP-FX-A). The amount link
-    /// (`foreign_amount.abs() * exchange_rate ≈ bank_abs`) now binds each leg to
-    /// its true chain.
+    /// Two FX chains on the SAME timestamp, distinct amounts/merchants, with the
+    /// exchange rate on each GBP conversion row (the real PayPal shape). Time
+    /// cannot disambiguate, and the foreign-leg ids are ordered so a naive
+    /// id/time tie-break would SWAP them (RIGHT-B's `PP-FX-1` sorts before
+    /// RIGHT-A's `PP-FX-2`). The amount-link via each chain's conversion rate
+    /// binds each foreign leg to its OWN chain regardless.
     #[test]
     fn two_same_day_fx_chains_do_not_swap() {
         let txs = vec![
             bank("2026-05-10", "-100.00", "bank-1"),
             bank("2026-05-10", "-200.00", "bank-2"),
         ];
-        // EUR leg: 110 * 0.909091 ≈ 100.00 (links to the -100 chain).
-        // USD leg: 260 * 0.769231 ≈ 200.00 (links to the -200 chain).
-        // Foreign-leg ids chosen so the OLD nearest-day + id tie-break SWAPS:
-        // both foreign legs are same-day, so the old code broke the tie by
-        // Transaction ID — and RIGHT-B's leg (PP-FX-1) sorts BEFORE RIGHT-A's
-        // leg (PP-FX-2), so bank-1 (processed first) wrongly grabbed RIGHT-B.
-        // The amount link now binds each leg to its own chain regardless of id.
+        // Chain A: EUR 110 / 1.10 = 100  (links to the -100 chain).
+        // Chain B: USD 260 / 1.30 = 200  (links to the -200 chain).
+        // Everything at the same second so only the amount-link can bind them.
         let paypal = pp(
             "10/05/2026,09:00:00,GMT,,Bank Deposit to PP Account ,Completed,GBP,100.00,0,100.00,,,100.00,PP-DEP-A,\n\
-             10/05/2026,09:00:01,GMT,,General Currency Conversion,Completed,GBP,-100.00,0,-100.00,,,0,PP-CONV-A,\n\
-             10/05/2026,09:00:02,GMT,RIGHT-A,Express Checkout Payment,Completed,EUR,-110.00,0,-110.00,0.909091,,0,PP-FX-2,Widget\n\
-             10/05/2026,11:00:00,GMT,,Bank Deposit to PP Account ,Completed,GBP,200.00,0,200.00,,,200.00,PP-DEP-B,\n\
-             10/05/2026,11:00:01,GMT,,General Currency Conversion,Completed,GBP,-200.00,0,-200.00,,,0,PP-CONV-B,\n\
-             10/05/2026,11:00:02,GMT,RIGHT-B,Express Checkout Payment,Completed,USD,-260.00,0,-260.00,0.769231,,0,PP-FX-1,Gadget\n",
+             10/05/2026,09:00:00,GMT,,General Currency Conversion,Completed,GBP,-100.00,0,-100.00,1.10,,0,PP-CONV-A,\n\
+             10/05/2026,09:00:00,GMT,RIGHT-A,Express Checkout Payment,Completed,EUR,-110.00,0,-110.00,,,0,PP-FX-2,Widget\n\
+             10/05/2026,09:00:00,GMT,,Bank Deposit to PP Account ,Completed,GBP,200.00,0,200.00,,,200.00,PP-DEP-B,\n\
+             10/05/2026,09:00:00,GMT,,General Currency Conversion,Completed,GBP,-200.00,0,-200.00,1.30,,0,PP-CONV-B,\n\
+             10/05/2026,09:00:00,GMT,RIGHT-B,Express Checkout Payment,Completed,USD,-260.00,0,-260.00,,,0,PP-FX-1,Gadget\n",
         );
         let (recs, summary) = recover(&txs, &paypal, RecoverOptions::default());
         assert_eq!(summary.fx_chain, 2);
@@ -925,10 +918,10 @@ mod tests {
         // The amount link binds each foreign leg to its OWN chain — no swap.
         assert_eq!(by_id["bank-1"].recovered_merchant, "RIGHT-A");
         assert_eq!(by_id["bank-1"].currency, "EUR");
-        assert_eq!(by_id["bank-1"].leg, Leg::FxChain);
+        assert_eq!(by_id["bank-1"].confidence.as_str(), "high");
         assert_eq!(by_id["bank-2"].recovered_merchant, "RIGHT-B");
         assert_eq!(by_id["bank-2"].currency, "USD");
-        assert_eq!(by_id["bank-2"].leg, Leg::FxChain);
+        assert_eq!(by_id["bank-2"].confidence.as_str(), "high");
     }
 
     /// REGRESSION (MEDIUM-HIGH — two-leg same-amount mis-pick, recover.rs:226-231
