@@ -201,5 +201,8 @@ def main [
     }
 
     let position_spec = $"($daily_file):($cursor_line):1"
-    run-external hx $position_spec
+    # hx-auto (not bare hx): Homebrew installs /opt/homebrew/bin/hx which can
+    # shadow ~/.local/bin/hx depending on PATH order. Always go through the
+    # theme-detecting wrapper so daily-note follows system light/dark.
+    run-external hx-auto $position_spec
 }
