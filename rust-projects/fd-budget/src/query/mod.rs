@@ -331,7 +331,18 @@ fn aggregate_by_counterparty(
         if !filter.matches(row.tx.date) {
             continue;
         }
-        if row.is_internal_transfer() {
+        // Exclude internal transfers / card payments from the counterparty
+        // aggregate. The jsonl `internal-transfer` confidence is only one of the
+        // signals: it goes stale the moment a new statement is imported without
+        // re-running enrich (the row then defaults to "none"). So also honour the
+        // tag-layer exclusion directly — a non-spend-tagged row (transfer, tax,
+        // income, business, one-off, fdvisa) or a First Direct Visa card payment
+        // detected straight from the raw description — otherwise a card payoff is
+        // double-counted on top of its itemised purchases.
+        if row.is_internal_transfer()
+            || row.tx.is_nonspend()
+            || crate::is_card_payment(&row.tx.raw_description)
+        {
             internal_count += 1;
             continue;
         }
@@ -532,12 +543,16 @@ fn aggregate_by_category(
         if !tx.counts_as_spend() {
             continue;
         }
-        let category = primary_category(tx).unwrap_or(UNCATEGORISED).to_string();
+        // Bucket on a case-folded key so `Groceries` and `groceries` merge into
+        // one category (matching the case-insensitive NONSPEND/`--only`/budget
+        // machinery downstream). Keep the FIRST-seen original casing for display.
+        let display = primary_category(tx).unwrap_or(UNCATEGORISED).to_string();
+        let key = display.to_lowercase();
         let amount = tx.amount.abs();
         let entry = buckets
-            .entry(category.clone())
+            .entry(key)
             .or_insert_with(|| CategoryAggregate {
-                name: category,
+                name: display,
                 total: Decimal::ZERO,
                 count: 0,
                 row_indices: Vec::new(),
@@ -911,11 +926,44 @@ pub fn spend_category_names(transactions: &[Transaction], filter: DateFilter) ->
 /// Print the per-category actual-vs-target comparison (annualised £/yr). Only
 /// categories that have a target set are shown; the rest are summarised in a
 /// trailing note so an unset budget is visible, not silently dropped.
+/// The floor (in days) below which the actual span is treated as a real
+/// annualisation divisor rather than clamped up. See [`annualise_over_span`].
+const MIN_ANNUALISE_SPAN: i64 = 1;
+
+/// A window shorter than this (in days) yields an annual figure that is an
+/// extrapolation, not a settled actual, so the caller flags it.
+const EXTRAPOLATION_SPAN_DAYS: i64 = 300;
+
+/// Annualise a window total to a £/yr figure over the ACTUAL span, never
+/// clamping the divisor up to a year. The old code did `span_days.max(365)`,
+/// which made a sub-year window (e.g. `--month`) a no-op divisor — one month's
+/// spend was compared directly against a £/yr target, so every category read as
+/// comfortably under budget. The divisor is guarded at >= 1 day only, to avoid
+/// division by zero when all rows share a single date.
+fn annualise_over_span(total: Decimal, span_days: i64) -> Decimal {
+    let span = span_days.max(MIN_ANNUALISE_SPAN);
+    total * Decimal::from(365) / Decimal::from(span)
+}
+
+/// True when the window is short enough that the annualised figure is an
+/// extrapolation and should be labelled as such.
+fn is_extrapolated_span(span_days: i64) -> bool {
+    span_days.max(MIN_ANNUALISE_SPAN) < EXTRAPOLATION_SPAN_DAYS
+}
+
 fn print_budget_comparison(agg: &[CategoryAggregate], span_days: i64, budgets: &BudgetMap) {
-    let days = Decimal::from(span_days.max(365));
-    let year = Decimal::from(365);
+    let span = span_days.max(MIN_ANNUALISE_SPAN);
     println!();
     println!("Budget (annualised actual vs target, £/yr):");
+    // A short window means the annual figure is an extrapolation, not a settled
+    // actual — flag it so a month's £400 grossed up to ~£4.9k/yr isn't misread.
+    if is_extrapolated_span(span_days) {
+        println!(
+            "(actuals extrapolated from {} day{} of data — treat as an estimate)",
+            span,
+            if span == 1 { "" } else { "s" }
+        );
+    }
     println!(
         "{:<24} {:>12} {:>12} {:>12}",
         "Category", "Actual/yr", "Target/yr", "Δ/yr"
@@ -924,7 +972,7 @@ fn print_budget_comparison(agg: &[CategoryAggregate], span_days: i64, budgets: &
     let mut compared = 0;
     for entry in agg {
         if let Some(target) = budgets.target(&entry.name) {
-            let actual_annual = entry.total * year / days;
+            let actual_annual = annualise_over_span(entry.total, span_days);
             let delta = actual_annual - target;
             let delta_str = if delta > Decimal::ZERO {
                 format!("+{}", format_money(delta))
@@ -2100,6 +2148,70 @@ Food = ["groceries", "food"]
         assert!(!f.matches(NaiveDate::from_ymd_opt(2025, 5, 31).unwrap()));
         assert!(f.matches(NaiveDate::from_ymd_opt(2025, 6, 1).unwrap()));
         assert!(f.matches(NaiveDate::from_ymd_opt(2025, 12, 31).unwrap()));
+    }
+
+    // -------------------------------------------------------------------
+    // Medium-severity regression tests (M9 / M10 / M11)
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn m9_sub_year_window_annualises_over_actual_span() {
+        // £400 spent across a ~30-day window annualises to ~£4,866/yr, which is
+        // OVER a £4,800/yr target — the old `span_days.max(365)` clamp forced the
+        // divisor to 365, so £400 was compared directly and read as under budget.
+        let annual = annualise_over_span(Decimal::from(400), 30);
+        assert!(
+            annual > Decimal::from(4800),
+            "expected annualised > 4800, got {annual}"
+        );
+        // A full-year span is a no-op (divisor == 365), unchanged from before.
+        assert_eq!(
+            annualise_over_span(Decimal::from(400), 365),
+            Decimal::from(400)
+        );
+        // Single-date window must not divide by zero (divisor guarded at >= 1).
+        assert_eq!(annualise_over_span(Decimal::from(1), 0), Decimal::from(365));
+        // Short windows are flagged as extrapolations; a full year is not.
+        assert!(is_extrapolated_span(30));
+        assert!(!is_extrapolated_span(365));
+    }
+
+    #[test]
+    fn m10_category_buckets_merge_across_casing() {
+        // `Groceries` and `groceries` are one category; they must merge into a
+        // single bucket totalling both, displayed with the first-seen casing.
+        let txs = vec![
+            mk_tx_tagged("2025-03-01", "-30.00", "TESCO", "tx1", &["Groceries"]),
+            mk_tx_tagged("2025-03-08", "-20.00", "ALDI", "tx2", &["groceries"]),
+        ];
+        let (agg, grand) = aggregate_by_category(&txs, DateFilter::default());
+        assert_eq!(agg.len(), 1, "casings must collapse to one bucket");
+        assert_eq!(
+            agg[0].name, "Groceries",
+            "first-seen casing is kept for display"
+        );
+        assert_eq!(agg[0].total, Decimal::from_str("50.00").unwrap());
+        assert_eq!(agg[0].count, 2);
+        assert_eq!(grand, Decimal::from_str("50.00").unwrap());
+    }
+
+    #[test]
+    fn m11_card_payment_excluded_from_counterparty_without_matches() {
+        // A `transfer`-tagged FIRST DIRECT VISA payoff must be excluded from the
+        // counterparty aggregate even when matches.jsonl is empty/stale (so its
+        // confidence defaults to "none"), otherwise it double-counts the payoff
+        // on top of the itemised card purchases imported separately.
+        let tx_visa =
+            mk_tx_tagged("2025-06-23", "-460.00", "FIRST DIRECT VISA", "tx1", &["transfer"]);
+        let tx_purchase = mk_tx("2025-06-13", "-55.67", "VODAFONE LTD", "tx2");
+        let txs = vec![tx_visa, tx_purchase];
+        let emails: Vec<EmailRow> = vec![];
+        let ms: Vec<MatchRow> = vec![]; // empty matches.jsonl → confidence "none"
+        let joined = join(&txs, &emails, &ms);
+        let (agg, excluded, _, _) = aggregate_by_counterparty(&joined, DateFilter::default());
+        assert_eq!(excluded, 1, "the card payment must be counted as excluded");
+        assert_eq!(agg.len(), 1, "only the real purchase remains");
+        assert_eq!(agg[0].total_outgoing, Decimal::from_str("55.67").unwrap());
     }
 }
 
