@@ -1272,6 +1272,13 @@ fn cmd_tag(action: TagAction) -> anyhow::Result<()> {
             // the base tags are already raw_description-only; this adds the
             // recovered-merchant matches on top.)
             apply_rules_with_recovery(&mut transactions, &rules, &recoveries);
+            // Re-apply the system `transfer` tag to card-payment rows (FIRST
+            // DIRECT VISA / F/D GOLD). This is NOT reproducible from user rules,
+            // so --reset would otherwise strip it and re-float Visa payoffs into
+            // the Spend floor. Matches what import does for new rows; additive
+            // and idempotent, so it's a no-op on the non-reset path and makes
+            // --reset self-healing (no manual `tag tag-transfers` follow-up).
+            auto_tag_card_payments(&mut transactions);
 
             // This mutates transactions.csv — snapshot first (primer rule 3).
             snapshot_transactions(&get_store_path())?;
@@ -1681,19 +1688,30 @@ fn cmd_stats(
         .filter(|t| t.is_credit())
         .map(|t| t.amount)
         .sum();
-    // Business / professional costs (a subset of nonspend) shown on their own
-    // line; the generic Excluded line then carries only transfer/income/tax/one-off.
-    let business: Decimal = rows
-        .iter()
-        .filter(|t| t.is_debit() && t.is_business())
-        .map(|t| t.amount.abs())
-        .sum();
+    // The exclusion lines (One-off / Business / Excluded) form a PRECEDENCE
+    // CHAIN so each non-spend debit is counted on exactly one line. A row
+    // carrying BOTH `one-off` and `business` must not appear in full on two
+    // lines — that would double-count it and break the identity below.
+    // Precedence: one-off FIRST (lumpy spend is the most report-salient bucket
+    // and is amortised), then business-but-not-one-off, then the generic
+    // Excluded remainder (transfer/income/tax). With this chain the printed
+    // lines satisfy exactly:  Spend + Business + One-off + Excluded == all debits.
+    //
     // One-off / lumpy costs (a subset of nonspend) shown on their own line +
     // amortised over the data span, so the recurring floor is read cleanly and
     // the lumpy spend isn't simply lost in the generic Excluded bucket.
     let one_off: Decimal = rows
         .iter()
         .filter(|t| t.is_debit() && t.is_one_off())
+        .map(|t| t.amount.abs())
+        .sum();
+    // Business / professional costs (a subset of nonspend) shown on their own
+    // line — but only those NOT already claimed by the one-off line above, so a
+    // dual-tagged row lands in One-off only. The generic Excluded line then
+    // carries only transfer/income/tax.
+    let business: Decimal = rows
+        .iter()
+        .filter(|t| t.is_debit() && t.is_business() && !t.is_one_off())
         .map(|t| t.amount.abs())
         .sum();
     // Annualise the one-off pile over the actual data span (clamped to ≥1yr so
@@ -2186,5 +2204,79 @@ mod p4_p5_tests {
                 .count(),
             1
         );
+    }
+
+    // --- M8: stats exclusion lines are a precedence chain (no double-count) --
+
+    /// The four printed money lines (Spend / Business / One-off / Excluded)
+    /// must partition every debit exactly once, so they sum to total debits.
+    /// A row carrying BOTH `business` and `one-off` previously appeared in full
+    /// on the Business AND One-off lines, over-counting it. The precedence chain
+    /// (one-off first, then business-and-not-one-off, then the Excluded
+    /// remainder) is exercised here via the same predicates cmd_stats uses.
+    #[test]
+    fn exclusion_lines_partition_debits_with_dual_tagged_row() {
+        let rows = vec![
+            mk("s1", "-40.00", "TESCO", &["groceries"]), // spend
+            mk("t1", "-500.00", "FIRST DIRECT VISA", &["transfer"]), // excluded
+            mk("o1", "-300.00", "HMRC TAX", &["one-off"]), // one-off only
+            mk("b1", "-80.00", "INDEMNITY INSURANCE", &["business"]), // business only
+            mk("d1", "-120.00", "CONFERENCE FEE", &["business", "one-off"]), // BOTH
+            mk("c1", "1200.00", "SALARY", &["income"]),  // credit (not a debit)
+        ];
+
+        let abs_sum = |f: &dyn Fn(&Transaction) -> bool| -> Decimal {
+            rows.iter().filter(|t| f(t)).map(|t| t.amount.abs()).sum()
+        };
+
+        let spend = abs_sum(&|t: &Transaction| t.counts_as_spend());
+        // Precedence chain, mirroring cmd_stats after the M8 fix.
+        let one_off = abs_sum(&|t: &Transaction| t.is_debit() && t.is_one_off());
+        let business =
+            abs_sum(&|t: &Transaction| t.is_debit() && t.is_business() && !t.is_one_off());
+        let excluded = abs_sum(&|t: &Transaction| {
+            t.is_debit() && t.is_nonspend() && !t.is_business() && !t.is_one_off()
+        });
+        let all_debits = abs_sum(&|t: &Transaction| t.is_debit());
+
+        // The invariant: each debit counted on exactly one line.
+        assert_eq!(spend + business + one_off + excluded, all_debits);
+
+        // The dual-tagged row (£120) lands in One-off only, not Business.
+        assert_eq!(one_off, Decimal::from_str("420.00").unwrap()); // 300 + 120
+        assert_eq!(business, Decimal::from_str("80.00").unwrap()); // NOT 200
+        assert_eq!(excluded, Decimal::from_str("500.00").unwrap()); // transfer
+        assert_eq!(spend, Decimal::from_str("40.00").unwrap());
+
+        // Guard: the old non-exclusive Business predicate double-counted the
+        // dual row, so the lines no longer summed to total debits.
+        let business_buggy = abs_sum(&|t: &Transaction| t.is_debit() && t.is_business());
+        assert_ne!(spend + business_buggy + one_off + excluded, all_debits);
+    }
+
+    // --- M12: reapply --reset re-applies the auto card-payment transfer tag ---
+
+    /// A `--reset` clears every tag then rebuilds from rules + PayPal recovery,
+    /// none of which reproduce the system `transfer` tag on card-payment rows.
+    /// The reapply path now re-runs auto_tag_card_payments, so a FIRST DIRECT
+    /// VISA row that lost `transfer` on reset gets it back and stays out of the
+    /// Spend floor. This simulates that clear-then-heal sequence.
+    #[test]
+    fn reset_reapplies_transfer_to_first_direct_visa_row() {
+        // Row as it exists pre-reset: card payment carrying the system tag.
+        let mut txs = vec![mk("v1", "-1500.00", "FIRST DIRECT VISA", &["transfer"])];
+
+        // --reset clears every tag (reapply_rules would rebuild from rules, but
+        // no user rule reproduces `transfer` for this row).
+        for t in &mut txs {
+            t.tags.clear();
+        }
+        assert!(txs[0].counts_as_spend()); // now (wrongly) floats into Spend
+
+        // The M12 fix: auto_tag_card_payments runs after reapply, self-healing.
+        let (newly, _) = auto_tag_card_payments(&mut txs);
+        assert_eq!(newly, 1);
+        assert!(txs[0].tags.iter().any(|t| t == "transfer"));
+        assert!(!txs[0].counts_as_spend()); // back out of the Spend floor
     }
 }
