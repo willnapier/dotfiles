@@ -53,6 +53,17 @@ use std::collections::BTreeMap;
 /// and small FX wobble (a few pence on a £10 charge) does NOT trip the note.
 const WIDE_RANGE_FRACTION: f64 = 0.10;
 
+/// Within one merchant, charges whose amounts differ by MORE than this fraction
+/// (relative to the smaller) start a new amount-cluster — i.e. a separate
+/// candidate subscription. Chosen so two genuinely distinct streams from one
+/// biller (e.g. `APPLE.COM/BILL` £2.99 and £9.99, >200% apart) are detected
+/// separately, while FX-wobble and modest price drift of ONE subscription
+/// (a few % on a £10 charge) stay in the same cluster. Grouping by merchant
+/// alone used to interleave the two streams' dates, wrecking the cadence so
+/// BOTH vanished; and it let two dissimilar one-offs a year apart masquerade as
+/// an annual subscription.
+const AMOUNT_CLUSTER_GAP: f64 = 0.25;
+
 // ---------------------------------------------------------------------------
 // Conservative merchant-name canonicalisation
 // ---------------------------------------------------------------------------
@@ -334,6 +345,34 @@ fn representative_amount(amounts: &[Decimal]) -> Decimal {
         .unwrap_or(Decimal::ZERO)
 }
 
+/// Split one merchant's charges into amount-clusters so two DISTINCT
+/// subscriptions from the same biller are detected separately, while FX-wobble
+/// / modest price drift of a single subscription stays together. Charges are
+/// sorted by amount and split wherever consecutive amounts differ by more than
+/// [`AMOUNT_CLUSTER_GAP`] relative to the smaller. Amounts are the pre-abs'd
+/// positive magnitudes stored in the group.
+fn cluster_by_amount(mut charges: Vec<(NaiveDate, Decimal)>) -> Vec<Vec<(NaiveDate, Decimal)>> {
+    use rust_decimal::prelude::ToPrimitive;
+    charges.sort_by(|a, b| a.1.cmp(&b.1));
+    let mut clusters: Vec<Vec<(NaiveDate, Decimal)>> = Vec::new();
+    for charge in charges {
+        match clusters.last_mut() {
+            Some(cluster) => {
+                let prev = cluster.last().unwrap().1.to_f64().unwrap_or(0.0).abs();
+                let cur = charge.1.to_f64().unwrap_or(0.0).abs();
+                let base = prev.min(cur).max(f64::MIN_POSITIVE);
+                if (cur - prev).abs() / base > AMOUNT_CLUSTER_GAP {
+                    clusters.push(vec![charge]);
+                } else {
+                    cluster.push(charge);
+                }
+            }
+            None => clusters.push(vec![charge]),
+        }
+    }
+    clusters
+}
+
 /// Run the full subscriptions audit over a transaction set within `filter`.
 ///
 /// PayPal recovery is NOT applied — bare `PAYPAL PAYMENT` rows group under their
@@ -388,37 +427,43 @@ fn audit_inner(
     }
 
     let mut subscriptions = Vec::new();
-    for (merchant, mut charges) in groups {
-        // Sort charges by date so cadence spacing is computed in order.
-        charges.sort_by(|a, b| a.0.cmp(&b.0));
+    for (merchant, charges) in groups {
+        // Split a merchant's charges into amount-clusters first, so two distinct
+        // subscriptions from one biller are detected separately (and two
+        // dissimilar one-offs a year apart don't fabricate an annual sub), while
+        // FX-wobble of one subscription stays as a single cluster.
+        for mut cluster in cluster_by_amount(charges) {
+            // Sort by date so cadence spacing is computed in order.
+            cluster.sort_by(|a, b| a.0.cmp(&b.0));
 
-        // Cadence is about *spacing*: collapse same-day charges to one date (two
-        // charges on one day could be a retry / split). We keep the amount of
-        // the FIRST charge on a day for the representative/range stats — the
-        // amount picture is over distinct billing events.
-        let mut dates: Vec<NaiveDate> = Vec::with_capacity(charges.len());
-        let mut day_amounts: Vec<Decimal> = Vec::with_capacity(charges.len());
-        for (date, amount) in &charges {
-            if dates.last() != Some(date) {
-                dates.push(*date);
-                day_amounts.push(*amount);
+            // Cadence is about *spacing*: collapse same-day charges to one date
+            // (two charges on one day could be a retry / split). Within a
+            // cluster the amounts are near-identical, so keeping the first day
+            // amount for the representative/range stats is safe.
+            let mut dates: Vec<NaiveDate> = Vec::with_capacity(cluster.len());
+            let mut day_amounts: Vec<Decimal> = Vec::with_capacity(cluster.len());
+            for (date, amount) in &cluster {
+                if dates.last() != Some(date) {
+                    dates.push(*date);
+                    day_amounts.push(*amount);
+                }
             }
-        }
 
-        if let Some(cadence) = classify(&dates, &opts) {
-            let amount = representative_amount(&day_amounts);
-            let amount_min = day_amounts.iter().copied().min().unwrap();
-            let amount_max = day_amounts.iter().copied().max().unwrap();
-            subscriptions.push(Subscription {
-                merchant,
-                amount,
-                amount_min,
-                amount_max,
-                cadence,
-                occurrences: dates.len(),
-                first_seen: *dates.first().unwrap(),
-                last_seen: *dates.last().unwrap(),
-            });
+            if let Some(cadence) = classify(&dates, &opts) {
+                let amount = representative_amount(&day_amounts);
+                let amount_min = day_amounts.iter().copied().min().unwrap();
+                let amount_max = day_amounts.iter().copied().max().unwrap();
+                subscriptions.push(Subscription {
+                    merchant: merchant.clone(),
+                    amount,
+                    amount_min,
+                    amount_max,
+                    cadence,
+                    occurrences: dates.len(),
+                    first_seen: *dates.first().unwrap(),
+                    last_seen: *dates.last().unwrap(),
+                });
+            }
         }
     }
 
@@ -637,6 +682,52 @@ mod tests {
 
     fn dec(s: &str) -> Decimal {
         Decimal::from_str(s).unwrap()
+    }
+
+    #[test]
+    fn two_distinct_amount_subs_from_one_merchant_both_detected() {
+        // Two streams under ONE descriptor (Apple £2.99 on the 5th, £9.99 on the
+        // 19th), interleaved. Grouping by merchant alone wrecked the cadence so
+        // BOTH vanished; amount-clustering now detects each.
+        let txs = vec![
+            debit("2025-01-05", "2.99", "APPLE.COM/BILL"),
+            debit("2025-01-19", "9.99", "APPLE.COM/BILL"),
+            debit("2025-02-05", "2.99", "APPLE.COM/BILL"),
+            debit("2025-02-19", "9.99", "APPLE.COM/BILL"),
+            debit("2025-03-05", "2.99", "APPLE.COM/BILL"),
+            debit("2025-03-19", "9.99", "APPLE.COM/BILL"),
+        ];
+        let audit = audit(&txs, DateFilter::default(), DetectOptions::default());
+        assert_eq!(audit.subscriptions.len(), 2, "both Apple streams should be detected");
+        let mut amts: Vec<Decimal> = audit.subscriptions.iter().map(|s| s.amount).collect();
+        amts.sort();
+        assert_eq!(amts, vec![dec("2.99"), dec("9.99")]);
+    }
+
+    #[test]
+    fn fx_wobble_stays_one_subscription() {
+        // One FX-priced sub whose GBP wobbles a few % must NOT split into several.
+        let txs = vec![
+            debit("2025-01-10", "9.20", "FOREIGN SAAS"),
+            debit("2025-02-10", "9.71", "FOREIGN SAAS"),
+            debit("2025-03-10", "9.48", "FOREIGN SAAS"),
+            debit("2025-04-10", "9.55", "FOREIGN SAAS"),
+        ];
+        let audit = audit(&txs, DateFilter::default(), DetectOptions::default());
+        assert_eq!(audit.subscriptions.len(), 1, "FX wobble must not split");
+        assert_eq!(audit.subscriptions[0].occurrences, 4);
+    }
+
+    #[test]
+    fn two_dissimilar_oneoffs_a_year_apart_are_not_an_annual_sub() {
+        // Seasonal shopping: £85 last December, £12.50 this December. Different
+        // amounts -> different single-charge clusters -> no phantom annual sub.
+        let txs = vec![
+            debit("2024-12-20", "85.00", "GARDEN CENTRE"),
+            debit("2025-12-18", "12.50", "GARDEN CENTRE"),
+        ];
+        let audit = audit(&txs, DateFilter::default(), DetectOptions::default());
+        assert_eq!(audit.subscriptions.len(), 0, "seasonal one-offs must not be an annual sub");
     }
 
     #[test]
