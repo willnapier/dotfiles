@@ -70,6 +70,30 @@ const FX_FALLBACK_MAX_SECS: i64 = 120;
 /// bank↔direct-payment). PayPal GBP legs match the bank debit to the penny.
 const GBP_TOLERANCE: Decimal = Decimal::from_parts(1, 0, 0, false, 2); // 0.01
 
+/// Fractional tolerance for the FX amount-LINK only (0.5%). The FX
+/// reconstruction (`foreign_amount * rate` or `/ rate`) carries an error that
+/// grows with the amount, because PayPal exports the rate to only a handful of
+/// decimal places: the reconstruction error is roughly `bank_abs *
+/// rate_quantisation`. A fixed £0.01 penny tolerance therefore fails a LARGE FX
+/// purchase whose rate is coarsely rounded, dropping it to the weaker time
+/// fallback. So the FX amount-link uses a tolerance that SCALES with the bank
+/// amount. This is NOT applied to the exact GBP matches (deposit / direct-GBP /
+/// two-leg), which stay tight at `GBP_TOLERANCE`.
+const FX_LINK_TOLERANCE_PCT: Decimal = Decimal::from_parts(5, 0, 0, false, 3); // 0.005
+
+/// Tolerance for the FX amount-link at a given bank amount: `max(£0.01,
+/// bank_abs * 0.5%)`. 0.5% of a few hundred pounds is only a pound or two — far
+/// below the gap between distinct merchants' amounts, so this cannot make a
+/// different-merchant leg spuriously link.
+fn fx_link_tolerance(bank_abs: Decimal) -> Decimal {
+    let scaled = bank_abs.abs() * FX_LINK_TOLERANCE_PCT;
+    if scaled > GBP_TOLERANCE {
+        scaled
+    } else {
+        GBP_TOLERANCE
+    }
+}
+
 /// Which chain a recovery followed — recorded in the sidecar for auditability.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -508,8 +532,12 @@ fn nearest_fx_leg(
                     continue;
                 }
                 let amt = p.amount.abs();
-                let links = within(amt * rate, bank_abs, GBP_TOLERANCE)
-                    || within(amt / rate, bank_abs, GBP_TOLERANCE);
+                // M16: the amount-link tolerance SCALES with the bank amount so
+                // a large FX purchase whose exported rate is coarsely rounded
+                // still links (its reconstruction error grows with the amount).
+                let tol = fx_link_tolerance(bank_abs);
+                let links =
+                    within(amt * rate, bank_abs, tol) || within(amt / rate, bank_abs, tol);
                 if !links {
                     continue;
                 }
@@ -788,6 +816,32 @@ mod tests {
         assert_eq!(summary.fx_chain, 1);
         assert_eq!(recs[0].recovered_merchant, "Acme Foreign GmbH");
         assert_eq!(recs[0].confidence.as_str(), "medium");
+    }
+
+    /// M16 — a LARGE FX purchase whose conversion rate is exported to few
+    /// decimal places still AMOUNT-LINKS (High), instead of failing the fixed
+    /// £0.01 penny tolerance and dropping to the weaker time MEDIUM fallback.
+    ///
+    /// bank -2000.00 → deposit +2000.00 → GBP conversion -2000.00 @ 1.2650 →
+    /// USD payment -2530.05. `2530.05 / 1.2650 = 2000.0395…`, i.e. £0.0395 off
+    /// the £2000 bank amount — beyond £0.01 (penny) but well within 0.5%
+    /// (£10). The legs post seconds apart, so a penny-only link would still
+    /// bind via the time fallback but only as MEDIUM. Asserting High proves the
+    /// amount-scaled link fired.
+    #[test]
+    fn large_fx_purchase_coarse_rate_still_amount_links_high() {
+        let txs = vec![bank("2026-08-01", "-2000.00", "bank-fx")];
+        let paypal = pp(
+            "01/08/2026,09:00:00,GMT,,Bank Deposit to PP Account ,Completed,GBP,2000.00,0,2000.00,,,2000.00,PP-DEP,\n\
+             01/08/2026,09:00:01,GMT,,General Currency Conversion,Completed,GBP,-2000.00,0,-2000.00,1.2650,,0,PP-CONV,\n\
+             01/08/2026,09:00:02,GMT,BigForeign Inc,Pre-approved Payment Bill User Payment,Completed,USD,-2530.05,0,-2530.05,,,0,PP-FX,Bulk\n",
+        );
+        let (recs, summary) = recover(&txs, &paypal, RecoverOptions::default());
+        assert_eq!(summary.fx_chain, 1);
+        assert_eq!(recs[0].recovered_merchant, "BigForeign Inc");
+        assert_eq!(recs[0].currency, "USD");
+        // Amount-linked despite the coarse 4-dp rate -> High (not the fallback).
+        assert_eq!(recs[0].confidence.as_str(), "high");
     }
 
     #[test]

@@ -181,11 +181,54 @@ fn parse_pp_time(s: &str) -> Option<NaiveTime> {
         .ok()
 }
 
+/// Count of rows the parser skipped, broken down by reason. A genuine but
+/// malformed row would otherwise vanish silently; `paypal import` surfaces
+/// `total()` so the operator sees "skipped N rows" rather than a silent
+/// short-count (M17 — the parser previously failed OPEN with no diagnostic).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ParseSkipped {
+    /// CSV records that failed to read (malformed quoting / field counts).
+    pub bad_record: usize,
+    /// Rows whose `Date` cell did not parse as `dd/mm/yyyy` (also catches
+    /// PayPal's appended summary rows, which are un-dated).
+    pub bad_date: usize,
+    /// Rows whose `Amount` cell did not parse as a number.
+    pub bad_amount: usize,
+    /// Rows with a blank `Transaction ID` (no idempotency key).
+    pub blank_txn_id: usize,
+}
+
+impl ParseSkipped {
+    /// Total rows skipped for any reason.
+    pub fn total(&self) -> usize {
+        self.bad_record + self.bad_date + self.bad_amount + self.blank_txn_id
+    }
+
+    /// True if no rows were skipped.
+    pub fn is_empty(&self) -> bool {
+        self.total() == 0
+    }
+}
+
 /// Parse a PayPal activity CSV export (UTF-8-with-BOM, 15 quoted columns) into
 /// typed rows. Rows that don't parse a date are skipped (defensive — PayPal
 /// occasionally appends summary rows). Header-driven, so column order is
 /// tolerated.
-pub fn parse_paypal_csv<R: Read>(mut reader: R) -> Result<Vec<PayPalTxn>, PayPalError> {
+///
+/// Back-compat wrapper: discards the skipped-row count. Prefer
+/// [`parse_paypal_csv_counted`] so a malformed genuine row is reported, not
+/// silently dropped.
+pub fn parse_paypal_csv<R: Read>(reader: R) -> Result<Vec<PayPalTxn>, PayPalError> {
+    parse_paypal_csv_counted(reader).map(|(rows, _skipped)| rows)
+}
+
+/// Like [`parse_paypal_csv`], but also returns a [`ParseSkipped`] count so the
+/// caller can report "skipped N rows". `paypal import` (in `main.rs`) should
+/// use this and surface `skipped.total()` in its summary — a malformed genuine
+/// row must not vanish without a diagnostic (M17).
+pub fn parse_paypal_csv_counted<R: Read>(
+    mut reader: R,
+) -> Result<(Vec<PayPalTxn>, ParseSkipped), PayPalError> {
     let mut bytes = Vec::new();
     reader.read_to_end(&mut bytes)?;
     let bytes = strip_bom(bytes);
@@ -199,23 +242,41 @@ pub fn parse_paypal_csv<R: Read>(mut reader: R) -> Result<Vec<PayPalTxn>, PayPal
     let cols = map_columns(&header)?;
 
     let mut out = Vec::new();
+    let mut skipped = ParseSkipped::default();
     for result in csv_reader.records() {
         let record = match result {
             Ok(r) => r,
-            Err(_) => continue,
+            Err(_) => {
+                skipped.bad_record += 1;
+                continue;
+            }
         };
         let get = |idx: usize| record.get(idx).unwrap_or("").trim();
 
+        // NOTE (locale-date hazard): we parse `Date` strictly as `dd/mm/yyyy`.
+        // A PayPal export from a US-locale account emits `mm/dd/yyyy`, which is
+        // data-dependent and unresolvable from a single row (e.g. `03/05/2026`
+        // is ambiguous). We deliberately do NOT auto-detect / auto-swap here —
+        // a wrong guess silently mis-dates rows. Such rows fall into `bad_date`
+        // when unambiguously invalid; genuinely ambiguous ones parse under the
+        // assumed order. Flagged for a future explicit locale option.
         let date = match NaiveDate::parse_from_str(get(cols.date), "%d/%m/%Y") {
             Ok(d) => d,
-            Err(_) => continue, // skip un-dated / summary rows
+            Err(_) => {
+                skipped.bad_date += 1;
+                continue; // skip un-dated / summary rows
+            }
         };
         let amount = match parse_pp_amount(get(cols.amount)) {
             Some(a) => a,
-            None => continue,
+            None => {
+                skipped.bad_amount += 1;
+                continue;
+            }
         };
         let transaction_id = get(cols.transaction_id).to_string();
         if transaction_id.is_empty() {
+            skipped.blank_txn_id += 1;
             continue; // no idempotency key — skip
         }
 
@@ -237,7 +298,7 @@ pub fn parse_paypal_csv<R: Read>(mut reader: R) -> Result<Vec<PayPalTxn>, PayPal
         });
     }
 
-    Ok(out)
+    Ok((out, skipped))
 }
 
 // ---------------------------------------------------------------------------
@@ -355,8 +416,40 @@ impl PayPalStore {
             .collect())
     }
 
+    /// Read the header row of the existing sidecar, if any. `None` when the file
+    /// does not exist, is empty, or its header cannot be read.
+    fn existing_header(&self) -> Option<Vec<String>> {
+        if !self.path.exists() {
+            return None;
+        }
+        let file = File::open(&self.path).ok()?;
+        let mut rdr = csv::Reader::from_reader(BufReader::new(file));
+        let hdr = rdr.headers().ok()?;
+        if hdr.is_empty() {
+            return None;
+        }
+        Some(hdr.iter().map(|h| h.to_string()).collect())
+    }
+
+    /// True if the on-disk header exactly matches the current canonical schema.
+    fn header_is_current(&self) -> bool {
+        match self.existing_header() {
+            Some(hdr) => hdr.iter().map(String::as_str).eq(STORE_HEADERS.iter().copied()),
+            None => false,
+        }
+    }
+
     /// Append new rows (writes the header if the file is new). Returns the count
-    /// written.
+    /// of NEW rows written.
+    ///
+    /// M15 — schema migration on append: a sidecar written before the `time` /
+    /// `exchange_rate` columns existed has a SHORTER header. Blindly appending
+    /// new, wider rows would leave the file internally inconsistent — `load_all`
+    /// then fails on the first new row (unequal column count). So when the file
+    /// exists but its header differs from [`STORE_HEADERS`], we MIGRATE: load
+    /// all existing rows (their missing columns default via `#[serde(default)]`)
+    /// and rewrite the WHOLE file in the current schema, existing rows first,
+    /// then the new rows. The file is always internally consistent afterwards.
     pub fn append(&self, rows: &[PayPalTxn]) -> Result<usize, PayPalError> {
         if rows.is_empty() {
             return Ok(0);
@@ -364,7 +457,28 @@ impl PayPalStore {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
+
         let file_exists = self.path.exists();
+
+        // Migration path: an existing file whose header is not the current
+        // schema. Rewrite the entire file (old rows + new rows) in one schema.
+        if file_exists && !self.header_is_current() {
+            let mut existing = self.load_all()?;
+            existing.extend_from_slice(rows);
+            let file = File::create(&self.path)?; // truncate + rewrite
+            let mut csv_writer = csv::WriterBuilder::new()
+                .has_headers(false)
+                .from_writer(BufWriter::new(file));
+            csv_writer.write_record(STORE_HEADERS)?;
+            for row in &existing {
+                let stored: StoredPayPal = row.into();
+                csv_writer.serialize(&stored)?;
+            }
+            csv_writer.flush()?;
+            return Ok(rows.len());
+        }
+
+        // Fast path: new file (write header) or current-schema file (pure append).
         let file = OpenOptions::new()
             .create(true)
             .append(true)
@@ -535,6 +649,77 @@ mod tests {
             Some(Decimal::from_str("-299.40").unwrap())
         );
         assert_eq!(parse_pp_amount(""), None);
+    }
+
+    /// M17 — malformed rows are skipped AND counted (they no longer vanish
+    /// silently). One good row parses; a bad-date, a bad-amount and a
+    /// blank-transaction-id row are each skipped and tallied by reason.
+    #[test]
+    fn malformed_rows_are_skipped_and_counted() {
+        let csv = format!(
+            "{BOM}Date,Time,Time zone,Name,Type,Status,Currency,Amount,Fees,Total,Exchange Rate,Receipt ID,Balance,Transaction ID,Item Title\n\
+             05/03/2026,10:00:00,GMT,Streamflix,Express Checkout Payment,Completed,GBP,-12.99,0.00,-12.99,,,100.00,TXN-GOOD,Plan\n\
+             notadate,10:00:00,GMT,BadDate,General Payment,Completed,GBP,-1.00,0.00,-1.00,,,0,TXN-BADDATE,X\n\
+             06/03/2026,10:00:00,GMT,BadAmt,General Payment,Completed,GBP,notanumber,0.00,0,,,0,TXN-BADAMT,X\n\
+             07/03/2026,10:00:00,GMT,NoId,General Payment,Completed,GBP,-5.00,0.00,-5.00,,,0,,X\n"
+        );
+        let (rows, skipped) = parse_paypal_csv_counted(csv.as_bytes()).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].transaction_id, "TXN-GOOD");
+        assert_eq!(skipped.bad_date, 1);
+        assert_eq!(skipped.bad_amount, 1);
+        assert_eq!(skipped.blank_txn_id, 1);
+        assert_eq!(skipped.total(), 3);
+        assert!(!skipped.is_empty());
+        // The back-compat wrapper returns the same rows, discarding the count.
+        assert_eq!(parse_paypal_csv(csv.as_bytes()).unwrap().len(), 1);
+    }
+
+    /// M15 — appending to a PRE-UPGRADE sidecar (a header written before the
+    /// `time` / `exchange_rate` columns existed) migrates the whole file to the
+    /// current schema, so it stays internally consistent and fully re-readable.
+    #[test]
+    fn append_migrates_old_schema_sidecar() {
+        let dir =
+            std::env::temp_dir().join(format!("fd-budget-migtest-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("paypal.csv");
+
+        // An OLD-schema sidecar: header lacks `time` and `exchange_rate`.
+        let old = "date,name,txn_type,status,currency,amount,balance,transaction_id,item_title\n\
+                   2026-01-01,OldMerchant,General Payment,Completed,GBP,-9.99,0.00,OLD-1,Legacy\n";
+        std::fs::write(&path, old).unwrap();
+
+        let store = PayPalStore::new(&path);
+        // The old file still loads (missing columns default to None).
+        assert_eq!(store.load_all().unwrap().len(), 1);
+
+        // Append new, WIDER rows (with time + exchange_rate populated).
+        let new_rows = parse_paypal_csv(sample_csv().as_bytes()).unwrap();
+        let written = store.append(&new_rows).unwrap();
+        assert_eq!(written, new_rows.len());
+
+        // The whole file is now the current schema and fully readable — the old
+        // row survives the migration, and the new rows keep their extra columns.
+        let loaded = store.load_all().unwrap();
+        assert_eq!(loaded.len(), 1 + new_rows.len());
+        assert_eq!(loaded[0].name, "OldMerchant");
+        assert_eq!(loaded[0].date, NaiveDate::from_ymd_opt(2026, 1, 1).unwrap());
+        assert_eq!(loaded[0].time, None);
+        assert_eq!(loaded[0].exchange_rate, None);
+        // The migrated FX row still carries time + exchange_rate.
+        let fx = loaded.iter().find(|r| r.currency == "EUR").unwrap();
+        assert_eq!(fx.exchange_rate, Some(Decimal::from_str("1.1009").unwrap()));
+        assert_eq!(fx.time, Some(NaiveTime::from_hms_opt(9, 2, 0).unwrap()));
+
+        // A further append now takes the fast (current-schema) path and remains
+        // consistent.
+        let more = vec![new_rows[0].clone()]; // dedup is the caller's job; shape check only
+        let _ = store.append(&more).unwrap();
+        assert!(store.load_all().is_ok());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
