@@ -32,37 +32,46 @@ pub fn parse_midata<R: Read>(
 
     let mut transactions = Vec::new();
 
-    for result in csv_reader.records() {
+    for (i, result) in csv_reader.records().enumerate() {
         let record = match result {
             Ok(r) => r,
-            Err(_) => break, // Stop on malformed rows (footer section)
+            Err(_) => break, // malformed CSV structure => end of data / footer
         };
 
-        // Skip empty rows
-        if record.len() < 5 || record.get(0).map(|s| s.trim().is_empty()).unwrap_or(true) {
+        // Footer begins at the first blank line.
+        if record.get(0).map(|s| s.trim().is_empty()).unwrap_or(true) {
             break;
         }
 
         let date_str = record.get(0).unwrap_or("");
+        // The date is the footer discriminator: summary / overdraft footer rows
+        // don't parse as a date. Once the first field IS a date this row is a
+        // genuine transaction, so a failure on its OTHER fields is corruption,
+        // NOT the footer — fail closed with the row number instead of silently
+        // truncating the rest of the import (which used to print "success").
+        let date = match NaiveDate::parse_from_str(date_str, "%d/%m/%Y") {
+            Ok(d) => d,
+            Err(_) => break, // not a date => footer section
+        };
+
+        if record.len() < 5 {
+            return Err(ParseError::MissingField(format!(
+                "row {} (date {date_str}): expected 5 columns, got {}",
+                i + 2,
+                record.len()
+            )));
+        }
+
         let tx_type_str = record.get(1).unwrap_or("");
         let description_str = record.get(2).unwrap_or("");
         let amount_str = record.get(3).unwrap_or("");
         let balance_str = record.get(4).unwrap_or("");
 
-        // Parse date (DD/MM/YYYY) - stop if date doesn't parse (footer row)
-        let date = match NaiveDate::parse_from_str(date_str, "%d/%m/%Y") {
-            Ok(d) => d,
-            Err(_) => break, // Footer section doesn't have valid dates
-        };
-
-        // Parse transaction type
         let tx_type = TxType::from_code(tx_type_str);
 
-        // Parse amount
-        let amount = match parse_amount(amount_str) {
-            Ok(a) => a,
-            Err(_) => break, // Footer section
-        };
+        let amount = parse_amount(amount_str).map_err(|_| {
+            ParseError::InvalidAmount(amount_str.to_string(), format!("row {}", i + 2))
+        })?;
 
         // Parse balance (optional, might fail on some rows)
         let balance = parse_amount(balance_str).ok();
@@ -108,29 +117,39 @@ pub fn parse_midata_visa<R: Read>(
 
     let mut transactions = Vec::new();
 
-    for result in csv_reader.records() {
+    for (i, result) in csv_reader.records().enumerate() {
         let record = match result {
             Ok(r) => r,
-            Err(_) => break,
+            Err(_) => break, // malformed CSV structure => end of data / footer
         };
 
-        if record.len() < 3 || record.get(0).map(|s| s.trim().is_empty()).unwrap_or(true) {
+        // Footer begins at the first blank line.
+        if record.get(0).map(|s| s.trim().is_empty()).unwrap_or(true) {
             break;
         }
 
         let date_str = record.get(0).unwrap_or("");
-        let description_str = record.get(1).unwrap_or("");
-        let amount_str = record.get(2).unwrap_or("");
-
+        // Date is the footer discriminator; a dated row with bad fields is
+        // corruption, not footer — fail closed rather than silently truncate.
         let date = match NaiveDate::parse_from_str(date_str, "%d/%m/%Y") {
             Ok(d) => d,
             Err(_) => break,
         };
 
-        let amount = match parse_amount(amount_str) {
-            Ok(a) => a,
-            Err(_) => break,
-        };
+        if record.len() < 3 {
+            return Err(ParseError::MissingField(format!(
+                "row {} (date {date_str}): expected 3 columns, got {}",
+                i + 2,
+                record.len()
+            )));
+        }
+
+        let description_str = record.get(1).unwrap_or("");
+        let amount_str = record.get(2).unwrap_or("");
+
+        let amount = parse_amount(amount_str).map_err(|_| {
+            ParseError::InvalidAmount(amount_str.to_string(), format!("row {}", i + 2))
+        })?;
 
         let description = clean_description(description_str);
         let raw_description = description_str.to_string();
@@ -177,30 +196,40 @@ pub fn parse_midata_current_4col<R: Read>(
 
     let mut transactions = Vec::new();
 
-    for result in csv_reader.records() {
+    for (i, result) in csv_reader.records().enumerate() {
         let record = match result {
             Ok(r) => r,
-            Err(_) => break,
+            Err(_) => break, // malformed CSV structure => end of data / footer
         };
 
-        if record.len() < 4 || record.get(0).map(|s| s.trim().is_empty()).unwrap_or(true) {
+        // Footer begins at the first blank line.
+        if record.get(0).map(|s| s.trim().is_empty()).unwrap_or(true) {
             break;
         }
 
         let date_str = record.get(0).unwrap_or("");
-        let description_str = record.get(1).unwrap_or("");
-        let amount_str = record.get(2).unwrap_or("");
-        let balance_str = record.get(3).unwrap_or("");
-
+        // Date is the footer discriminator; a dated row with bad fields is
+        // corruption, not footer — fail closed rather than silently truncate.
         let date = match NaiveDate::parse_from_str(date_str, "%d/%m/%Y") {
             Ok(d) => d,
             Err(_) => break,
         };
 
-        let amount = match parse_amount(amount_str) {
-            Ok(a) => a,
-            Err(_) => break,
-        };
+        if record.len() < 4 {
+            return Err(ParseError::MissingField(format!(
+                "row {} (date {date_str}): expected 4 columns, got {}",
+                i + 2,
+                record.len()
+            )));
+        }
+
+        let description_str = record.get(1).unwrap_or("");
+        let amount_str = record.get(2).unwrap_or("");
+        let balance_str = record.get(3).unwrap_or("");
+
+        let amount = parse_amount(amount_str).map_err(|_| {
+            ParseError::InvalidAmount(amount_str.to_string(), format!("row {}", i + 2))
+        })?;
 
         // Balance is the 4th column here (not a Reference); keep it.
         let balance = parse_amount(balance_str).ok();
@@ -296,5 +325,45 @@ mod tests {
         let credit = &transactions[1];
         assert!(credit.amount.is_sign_positive());
         assert_eq!(credit.balance, Some(Decimal::from_str("3500.00").unwrap()));
+    }
+
+    #[test]
+    fn footer_after_data_stops_cleanly_without_error() {
+        // Data rows, then a First-Direct-style footer (blank line + overdraft
+        // text). The non-date footer rows must end parsing WITHOUT an error.
+        let csv_data = "Date,Type,Merchant/Description,Debit/Credit,Balance\n\
+                        01/01/2025,))),ACME COFFEE,-£5.00,+£1000.00\n\
+                        02/01/2025,DD,EXAMPLE TELECOM,-£50.00,+£950.00\n\
+                        \n\
+                        Arranged overdraft limit,£0.00,,,\n";
+        let txns = parse_midata(csv_data.as_bytes(), Account::Current).unwrap();
+        assert_eq!(txns.len(), 2);
+    }
+
+    #[test]
+    fn corrupt_amount_midfile_aborts_not_truncates() {
+        // Row 2 has a broken amount. The OLD code `break`d and silently returned
+        // ONLY row 1 with a success — losing every later row. Now it fails
+        // closed so the truncation can never masquerade as a complete import.
+        let csv_data = "Date,Type,Merchant/Description,Debit/Credit,Balance\n\
+                        01/01/2025,))),ACME COFFEE,-£5.00,+£1000.00\n\
+                        02/01/2025,DD,EXAMPLE TELECOM,not-a-number,+£950.00\n\
+                        03/01/2025,))),EXAMPLE SHOP,-£9.99,+£940.01\n";
+        let err = parse_midata(csv_data.as_bytes(), Account::Current).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("amount") && msg.contains("row 3"),
+            "expected a row-numbered amount error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn short_dated_row_aborts_not_truncates() {
+        // A dated row missing columns is corruption, not a footer.
+        let csv_data = "Date,Type,Merchant/Description,Debit/Credit,Balance\n\
+                        01/01/2025,))),ACME COFFEE,-£5.00,+£1000.00\n\
+                        02/01/2025,DD,ONLY THREE COLS\n";
+        let err = parse_midata(csv_data.as_bytes(), Account::Current).unwrap_err();
+        assert!(err.to_string().contains("row 3"), "got: {err}");
     }
 }
