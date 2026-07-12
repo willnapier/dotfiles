@@ -20,7 +20,7 @@
 //!   merchant alone** — NOT `(merchant, exact amount)`. A subscription whose GBP
 //!   price wobbles month-to-month (FX-priced services) would otherwise split
 //!   into several phantom "subscriptions"; grouping by merchant collapses those
-//!   into ONE, with a *representative* amount (the most common charge) and an
+//!   into ONE, with a *representative* amount (the median charge) and an
 //!   amount *range* (min–max) when the price varies.
 //! - **PayPal recovery**: a bare bank `PAYPAL PAYMENT` row carries no merchant.
 //!   When a [`crate::paypal::RecoveryIndex`] is supplied and has a recovered
@@ -46,11 +46,14 @@ use chrono::NaiveDate;
 use rust_decimal::Decimal;
 use std::collections::BTreeMap;
 
-/// A merchant's amount range is "wide" — and therefore worth an informational
-/// price-change note — when `max - min` exceeds this fraction of the
-/// representative amount. 0.10 = a >10% spread. Deliberately a *relative*
-/// threshold so a £2 service and a £200 service are judged on the same footing,
-/// and small FX wobble (a few pence on a £10 charge) does NOT trip the note.
+/// A merchant's price has undergone a sustained LEVEL SHIFT — and therefore
+/// warrants an informational price-change note — when the *directional* move
+/// from the earliest to the latest charge, `|last - first|`, exceeds this
+/// fraction of the representative amount. 0.10 = a >10% step. Deliberately a
+/// *relative* threshold so a £2 service and a £200 service are judged on the
+/// same footing. Being directional (first→last), not amplitude-only (max-min),
+/// it distinguishes a genuine sustained rise/drop from symmetric FX wobble or
+/// scatter that returns to its starting level — the latter no longer trips it.
 const WIDE_RANGE_FRACTION: f64 = 0.10;
 
 /// Within one merchant, charges whose amounts differ by MORE than this fraction
@@ -206,14 +209,20 @@ impl Default for DetectOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Subscription {
     pub merchant: String,
-    /// The (positive) *representative* per-charge amount: the most common charge
-    /// in the group (ties broken by the lower amount). Used for the annualised
-    /// cost and the same-amount duplicate cross-check.
+    /// The (positive) *representative* per-charge amount: the MEDIAN charge in
+    /// the group. Used for the annualised cost and the same-amount duplicate
+    /// cross-check.
     pub amount: Decimal,
     /// Lowest charge seen in the group (== `amount` when the price is fixed).
     pub amount_min: Decimal,
     /// Highest charge seen in the group (== `amount` when the price is fixed).
     pub amount_max: Decimal,
+    /// The earliest (date-ordered) charge's amount. With [`Self::last_amount`],
+    /// lets the price-change note detect a *directional* level shift rather than
+    /// mere amplitude — see [`WIDE_RANGE_FRACTION`].
+    pub first_amount: Decimal,
+    /// The latest (date-ordered) charge's amount.
+    pub last_amount: Decimal,
     pub cadence: Cadence,
     pub occurrences: usize,
     pub first_seen: NaiveDate,
@@ -245,10 +254,12 @@ pub enum ReviewFlag {
         amount: Decimal,
         merchants: Vec<String>,
     },
-    /// **Informational** — a single merchant whose per-charge amount range is
-    /// *wide* (a likely real price change). This is NOT a duplicate and NOT two
-    /// subscriptions: it is ONE subscription spanning a price range. Surfaced as
-    /// a note so the spread is visible, never double-counted.
+    /// **Informational** — a single merchant whose price has undergone a
+    /// sustained directional LEVEL SHIFT from its earliest to its latest charge
+    /// (a likely real price change), not mere FX wobble/scatter. This is NOT a
+    /// duplicate and NOT two subscriptions: it is ONE subscription spanning a
+    /// price range. Surfaced as a note (with the min/max seen) so the change is
+    /// visible, never double-counted.
     WidePriceRange {
         merchant: String,
         amount_min: Decimal,
@@ -272,15 +283,16 @@ impl Audit {
     }
 }
 
-/// Median of a *non-empty* sorted slice of day-gaps.
+/// LOWER median of a *non-empty* sorted slice of day-gaps.
+///
+/// Always returns a REAL observed gap (`sorted[(n-1)/2]`) — never an average of
+/// two central gaps. Averaging (the old even-count behaviour) could fuse two
+/// out-of-band gaps INTO the band (e.g. gaps [20, 40] average to a false
+/// "monthly" 30) or pull a genuine cadence out of it. The lower median rejects
+/// [20, 40] (→ 20, correctly not monthly) and keeps [31, 59] (→ 31, a real
+/// monthly with one skipped month). For odd `n` this equals the ordinary median.
 fn median_gap(sorted_gaps: &[i64]) -> i64 {
-    let n = sorted_gaps.len();
-    if n % 2 == 1 {
-        sorted_gaps[n / 2]
-    } else {
-        // Even count: mean of the two central values (integer-rounded).
-        (sorted_gaps[n / 2 - 1] + sorted_gaps[n / 2]) / 2
-    }
+    sorted_gaps[(sorted_gaps.len() - 1) / 2]
 }
 
 /// Classify a group of (already sorted, deduped-by-date) charges into a cadence.
@@ -294,14 +306,21 @@ fn classify(dates: &[NaiveDate], opts: &DetectOptions) -> Option<Cadence> {
     let mut gaps: Vec<i64> = dates.windows(2).map(|w| (w[1] - w[0]).num_days()).collect();
     gaps.sort_unstable();
     let median = median_gap(&gaps);
+    // Largest observed gap (gaps is sorted ascending). A single very large gap
+    // must not be smuggled past the median: it means the cadence lapsed, so the
+    // spacing is not really regular. Reject when the max gap exceeds 3x the
+    // band's upper bound (monthly 3x35 = 105 days; annual 3x380 = 1140 days).
+    // This rejects e.g. [30, 200] (200 > 105) while keeping a doubled/skipped
+    // gap like [31, 59] (59 <= 105).
+    let max_gap = *gaps.last().unwrap();
 
     // Monthly: ~28-31 day cadence. Allow 25..=35 to tolerate billing-day drift
     // and short/long months. Median absorbs one doubled gap (a missed month).
-    if (25..=35).contains(&median) && dates.len() >= opts.min_monthly {
+    if (25..=35).contains(&median) && max_gap <= 105 && dates.len() >= opts.min_monthly {
         return Some(Cadence::Monthly);
     }
     // Annual: ~365 day cadence. Allow 350..=380 for leap years / billing drift.
-    if (350..=380).contains(&median) && dates.len() >= opts.min_annual {
+    if (350..=380).contains(&median) && max_gap <= 1140 && dates.len() >= opts.min_annual {
         return Some(Cadence::Annual);
     }
     None
@@ -328,21 +347,20 @@ fn grouping_key(tx: &Transaction, recoveries: Option<&RecoveryIndex>) -> String 
     canonical_merchant(&tx.description)
 }
 
-/// The *representative* amount of a group: the most common charge, ties broken
-/// by the LOWER amount (deterministic, and conservatively reports the cheaper of
-/// two equally-common prices). `amounts` is non-empty.
+/// The *representative* amount of a group: the MEDIAN charge. `amounts` is
+/// non-empty.
+///
+/// A mode (most-common charge) degenerates to the MINIMUM for FX-priced subs
+/// where every charge is distinct — the old count-then-lowest tie-break returned
+/// the cheapest of the (all equally-common, count 1) amounts, systematically
+/// understating the annualised cost. The median is a real charge from the group,
+/// resists both an outlier FX spike and a one-off partial charge, and is
+/// deterministic. For an even count we take the UPPER median (`sorted[len/2]`),
+/// so a genuine old→new price step reports at the newer (current) level.
 fn representative_amount(amounts: &[Decimal]) -> Decimal {
-    let mut counts: BTreeMap<Decimal, usize> = BTreeMap::new();
-    for a in amounts {
-        *counts.entry(*a).or_default() += 1;
-    }
-    // BTreeMap iterates ascending by amount, so the first max-count entry seen is
-    // the lowest amount among the most-common — exactly the tie-break we want.
-    counts
-        .into_iter()
-        .max_by_key(|&(amount, count)| (count, std::cmp::Reverse(amount)))
-        .map(|(amount, _)| amount)
-        .unwrap_or(Decimal::ZERO)
+    let mut sorted: Vec<Decimal> = amounts.to_vec();
+    sorted.sort_unstable();
+    sorted[sorted.len() / 2]
 }
 
 /// Split one merchant's charges into amount-clusters so two DISTINCT
@@ -437,27 +455,36 @@ fn audit_inner(
             cluster.sort_by(|a, b| a.0.cmp(&b.0));
 
             // Cadence is about *spacing*: collapse same-day charges to one date
-            // (two charges on one day could be a retry / split). Within a
-            // cluster the amounts are near-identical, so keeping the first day
-            // amount for the representative/range stats is safe.
+            // for the gap analysis (two charges on one day could be a retry /
+            // split). But the amount STATS must keep every charge — a second
+            // same-day charge of a DIFFERENT amount (within the cluster) is a
+            // real charge and must feed the min/max/representative, not be
+            // dropped. So `amounts` sees all charges; `dates` is deduped by day.
             let mut dates: Vec<NaiveDate> = Vec::with_capacity(cluster.len());
-            let mut day_amounts: Vec<Decimal> = Vec::with_capacity(cluster.len());
+            let mut amounts: Vec<Decimal> = Vec::with_capacity(cluster.len());
             for (date, amount) in &cluster {
+                amounts.push(*amount);
                 if dates.last() != Some(date) {
                     dates.push(*date);
-                    day_amounts.push(*amount);
                 }
             }
 
             if let Some(cadence) = classify(&dates, &opts) {
-                let amount = representative_amount(&day_amounts);
-                let amount_min = day_amounts.iter().copied().min().unwrap();
-                let amount_max = day_amounts.iter().copied().max().unwrap();
+                let amount = representative_amount(&amounts);
+                let amount_min = amounts.iter().copied().min().unwrap();
+                let amount_max = amounts.iter().copied().max().unwrap();
+                // `cluster` is date-sorted, so its first/last charge give the
+                // earliest and latest amount for the directional price-change
+                // check. (Same-day ordering is the stable input order.)
+                let first_amount = cluster.first().unwrap().1;
+                let last_amount = cluster.last().unwrap().1;
                 subscriptions.push(Subscription {
                     merchant: merchant.clone(),
                     amount,
                     amount_min,
                     amount_max,
+                    first_amount,
+                    last_amount,
                     cadence,
                     occurrences: dates.len(),
                     first_seen: *dates.first().unwrap(),
@@ -482,18 +509,20 @@ fn audit_inner(
     }
 }
 
-/// Is `[min, max]` a *wide* range relative to `representative`? Used to decide
-/// whether a merchant's price spread is worth an informational note (a real
-/// price change) rather than mere FX wobble. A zero/negative representative
-/// (defensive) is never "wide".
-fn is_wide_range(min: Decimal, max: Decimal, representative: Decimal) -> bool {
+/// Has the price undergone a sustained directional LEVEL SHIFT? True when the
+/// move from the earliest charge (`first`) to the latest (`last`) exceeds
+/// [`WIDE_RANGE_FRACTION`] of `representative`. Unlike an amplitude (max-min)
+/// test this fires on a genuine step (e.g. £10.99 → £11.99) but stays quiet for
+/// FX wobble/scatter that returns near its starting level. A zero/negative
+/// representative (defensive) never counts as a shift.
+fn is_level_shift(first: Decimal, last: Decimal, representative: Decimal) -> bool {
     use rust_decimal::prelude::ToPrimitive;
     if representative <= Decimal::ZERO {
         return false;
     }
-    let spread = (max - min).to_f64().unwrap_or(0.0);
+    let step = (last - first).abs().to_f64().unwrap_or(0.0);
     let base = representative.to_f64().unwrap_or(0.0);
-    base > 0.0 && (spread / base) > WIDE_RANGE_FRACTION
+    base > 0.0 && (step / base) > WIDE_RANGE_FRACTION
 }
 
 /// Build the "review these" flags from the detected subscriptions.
@@ -517,13 +546,14 @@ fn build_flags(subs: &[Subscription]) -> Vec<ReviewFlag> {
         }
     }
 
-    // (b) INFORMATIONAL: one merchant, one subscription, but a WIDE price range
-    // (a likely real price change). This is no longer a duplicate — the merchant
-    // is a single subscription with a price range — so we note it once, never
-    // splitting it into two. Subscriptions are pre-sorted, so iterating in order
-    // keeps the notes deterministic.
+    // (b) INFORMATIONAL: one merchant, one subscription, whose price stepped to a
+    // new sustained LEVEL between its earliest and latest charge (a likely real
+    // price change) — not mere FX wobble/scatter. This is no longer a duplicate —
+    // the merchant is a single subscription with a price range — so we note it
+    // once, never splitting it into two. Subscriptions are pre-sorted, so
+    // iterating in order keeps the notes deterministic.
     for s in subs {
-        if s.amount_varies() && is_wide_range(s.amount_min, s.amount_max, s.amount) {
+        if s.amount_varies() && is_level_shift(s.first_amount, s.last_amount, s.amount) {
             flags.push(ReviewFlag::WidePriceRange {
                 merchant: s.merchant.clone(),
                 amount_min: s.amount_min,
@@ -860,15 +890,18 @@ mod tests {
 
     #[test]
     fn same_merchant_price_rise_is_one_subscription_with_range() {
-        // A price rise mid-stream: same merchant, two distinct prices. Under the
-        // new merchant-only grouping this is ONE subscription spanning a price
-        // range, NOT two — and the wide spread (10->12 = 20% > 10%) is surfaced
-        // as an INFORMATIONAL price-change note, never double-counted.
+        // A price rise mid-stream: same merchant, two distinct prices, billed
+        // continuously each month. Under the new merchant-only grouping this is
+        // ONE subscription spanning a price range, NOT two — and the sustained
+        // directional shift (10->12 = 20% > 10%) is surfaced as an INFORMATIONAL
+        // price-change note, never double-counted. (Billing is continuous: the
+        // M6 max-gap guard now rejects a multi-month lapse, so the old->new
+        // change happens between consecutive months.)
         let txs = vec![
             // Old price.
-            debit("2024-07-12", "10.00", "NEWSDAILY"),
-            debit("2024-08-12", "10.00", "NEWSDAILY"),
-            debit("2024-09-12", "10.00", "NEWSDAILY"),
+            debit("2024-10-12", "10.00", "NEWSDAILY"),
+            debit("2024-11-12", "10.00", "NEWSDAILY"),
+            debit("2024-12-12", "10.00", "NEWSDAILY"),
             // New price.
             debit("2025-01-12", "12.00", "NEWSDAILY"),
             debit("2025-02-12", "12.00", "NEWSDAILY"),
@@ -883,10 +916,11 @@ mod tests {
         assert_eq!(s.amount_max, dec("12.00"));
         assert!(s.amount_varies());
         assert_eq!(s.occurrences, 6);
-        // Three charges at each price; tie on count -> representative is the
-        // LOWER amount (£10.00), and annualised uses it.
-        assert_eq!(s.amount, dec("10.00"));
-        assert_eq!(s.annualised(), dec("120.00"));
+        // Representative is the MEDIAN charge. Six charges [10,10,10,12,12,12];
+        // the upper median (sorted[6/2]) is £12.00 — the newer, current level —
+        // and annualised uses it.
+        assert_eq!(s.amount, dec("12.00"));
+        assert_eq!(s.annualised(), dec("144.00"));
 
         // The wide spread is flagged as an informational price-change note.
         let flagged: Vec<&ReviewFlag> = audit
@@ -1293,6 +1327,176 @@ mod tests {
         let no_idx = audit(&txs, DateFilter::default(), DetectOptions::default());
         assert_eq!(no_idx.subscriptions.len(), 1);
         assert_eq!(no_idx.subscriptions[0].merchant, "PAYPAL PAYMENT");
+    }
+
+    // -----------------------------------------------------------------------
+    // M4: representative amount is the MEDIAN, not the minimum. For an FX-priced
+    // sub where every charge is distinct, the old mode+lowest tie-break returned
+    // the MINIMUM, understating the annualised cost.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn representative_is_median_not_min_for_fx_sub() {
+        // Five all-distinct monthly charges (FX wobble). Median = £9.50; the old
+        // behaviour would have picked the minimum £8.50 and understated the year.
+        let txs = vec![
+            debit("2025-01-10", "8.50", "FXSTREAM"),
+            debit("2025-02-10", "9.00", "FXSTREAM"),
+            debit("2025-03-10", "9.50", "FXSTREAM"),
+            debit("2025-04-10", "10.00", "FXSTREAM"),
+            debit("2025-05-10", "10.50", "FXSTREAM"),
+        ];
+        let audit = audit(&txs, DateFilter::default(), DetectOptions::default());
+        assert_eq!(audit.subscriptions.len(), 1);
+        let s = &audit.subscriptions[0];
+        assert_eq!(s.occurrences, 5);
+        // Median of [8.50, 9.00, 9.50, 10.00, 10.50] is 9.50 — NOT the min 8.50.
+        assert_eq!(s.amount, dec("9.50"));
+        assert_ne!(s.amount, s.amount_min);
+        assert_eq!(s.annualised(), dec("114.00"));
+    }
+
+    // -----------------------------------------------------------------------
+    // M6: lower-median gap + max-gap guard. [20,40] must NOT average into a
+    // false monthly; [31,59] (a skipped month) must stay monthly; [30,200]
+    // (a lapsed cadence) must be rejected by the max-gap guard.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn even_gap_count_uses_lower_median_not_average() {
+        // Gaps [20, 40]: the old even-count median averaged to 30 (a false
+        // monthly). The lower median is 20 -> outside the 25..=35 band -> rejected.
+        let txs = vec![
+            debit("2025-01-01", "5.00", "GAP2040"),
+            debit("2025-01-21", "5.00", "GAP2040"), // +20
+            debit("2025-03-02", "5.00", "GAP2040"), // +40
+        ];
+        let audit = audit(&txs, DateFilter::default(), DetectOptions::default());
+        assert!(
+            audit.subscriptions.is_empty(),
+            "gaps [20,40] must not average into a false monthly"
+        );
+    }
+
+    #[test]
+    fn skipped_month_gaps_31_59_still_monthly() {
+        // Gaps [31, 59] (one skipped month): lower median 31 is in-band and the
+        // max gap 59 <= 105, so this stays a real monthly.
+        let txs = vec![
+            debit("2025-01-01", "5.00", "SKIP3159"),
+            debit("2025-02-01", "5.00", "SKIP3159"), // +31
+            debit("2025-04-01", "5.00", "SKIP3159"), // +59
+        ];
+        let audit = audit(&txs, DateFilter::default(), DetectOptions::default());
+        assert_eq!(audit.subscriptions.len(), 1);
+        assert_eq!(audit.subscriptions[0].cadence, Cadence::Monthly);
+    }
+
+    #[test]
+    fn large_irregular_gap_30_200_rejected_by_max_gap_guard() {
+        // Gaps [30, 200]: lower median 30 is in-band, but the 200-day gap means
+        // the cadence lapsed. The max-gap guard (>105) rejects it.
+        let txs = vec![
+            debit("2025-01-01", "5.00", "LAPSE30200"),
+            debit("2025-01-31", "5.00", "LAPSE30200"), // +30
+            debit("2025-08-19", "5.00", "LAPSE30200"), // +200
+        ];
+        let audit = audit(&txs, DateFilter::default(), DetectOptions::default());
+        assert!(
+            audit.subscriptions.is_empty(),
+            "a 200-day gap must be rejected by the max-gap guard"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // M7: price-change flag is DIRECTIONAL. A sustained rise is flagged; FX
+    // scatter that returns near its start is NOT (even though its amplitude
+    // max-min exceeds 10%, which the old amplitude-only flag would have tripped).
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn sustained_price_rise_is_flagged() {
+        // A sustained rise £9.99 -> £11.99 (a real step > 10%).
+        let txs = vec![
+            debit("2024-10-12", "9.99", "STREAMRISE"),
+            debit("2024-11-12", "9.99", "STREAMRISE"),
+            debit("2024-12-12", "9.99", "STREAMRISE"),
+            debit("2025-01-12", "11.99", "STREAMRISE"),
+            debit("2025-02-12", "11.99", "STREAMRISE"),
+            debit("2025-03-12", "11.99", "STREAMRISE"),
+        ];
+        let audit = audit(&txs, DateFilter::default(), DetectOptions::default());
+        assert_eq!(audit.subscriptions.len(), 1);
+        let s = &audit.subscriptions[0];
+        assert_eq!(s.first_amount, dec("9.99"));
+        assert_eq!(s.last_amount, dec("11.99"));
+        let flagged = audit
+            .flags
+            .iter()
+            .filter(|f| matches!(f, ReviewFlag::WidePriceRange { .. }))
+            .count();
+        assert_eq!(flagged, 1, "a sustained level shift should be flagged");
+    }
+
+    #[test]
+    fn fx_scatter_returning_to_start_is_not_flagged() {
+        // Amounts scatter (max-min = 11.50-9.20 = 2.30, a 23% amplitude that the
+        // OLD amplitude-only flag would trip) but the earliest (10.00) and latest
+        // (10.10) charges are essentially level -> no directional shift -> quiet.
+        let txs = vec![
+            debit("2025-01-10", "10.00", "FXSCATTER"),
+            debit("2025-02-10", "11.50", "FXSCATTER"),
+            debit("2025-03-10", "9.20", "FXSCATTER"),
+            debit("2025-04-10", "10.80", "FXSCATTER"),
+            debit("2025-05-10", "10.10", "FXSCATTER"),
+        ];
+        let audit = audit(&txs, DateFilter::default(), DetectOptions::default());
+        assert_eq!(audit.subscriptions.len(), 1);
+        let s = &audit.subscriptions[0];
+        assert!(s.amount_varies(), "amounts do vary (wide amplitude)");
+        assert_eq!(s.first_amount, dec("10.00"));
+        assert_eq!(s.last_amount, dec("10.10"));
+        // Amplitude is wide, but the directional first->last move is < 10%.
+        assert!(
+            !audit
+                .flags
+                .iter()
+                .any(|f| matches!(f, ReviewFlag::WidePriceRange { .. })),
+            "FX scatter that returns to its start must NOT be flagged"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // M5: a same-day second charge of a DIFFERENT amount (within one cluster)
+    // must still feed the amount stats (min/max/representative), not be dropped,
+    // while the dates are collapsed for cadence.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn same_day_different_amount_feeds_amount_stats() {
+        // Five monthly £10.00 charges, plus an extra £11.00 charge on the SAME day
+        // as the March charge. Cadence sees 5 dates (monthly); the amount stats
+        // must include the £11.00 -> amount_max = 11.00.
+        let txs = vec![
+            debit("2025-01-15", "10.00", "RETRYSUB"),
+            debit("2025-02-15", "10.00", "RETRYSUB"),
+            debit("2025-03-15", "10.00", "RETRYSUB"),
+            debit("2025-04-15", "10.00", "RETRYSUB"),
+            debit("2025-05-15", "10.00", "RETRYSUB"),
+            // Same-day, different amount (within the 25% cluster).
+            debit("2025-03-15", "11.00", "RETRYSUB"),
+        ];
+        let audit = audit(&txs, DateFilter::default(), DetectOptions::default());
+        assert_eq!(audit.subscriptions.len(), 1);
+        let s = &audit.subscriptions[0];
+        assert_eq!(s.cadence, Cadence::Monthly);
+        // Dates collapsed to 5 for cadence...
+        assert_eq!(s.occurrences, 5);
+        // ...but the same-day £11.00 is NOT dropped from the stats.
+        assert_eq!(s.amount_min, dec("10.00"));
+        assert_eq!(s.amount_max, dec("11.00"));
+        // Median of [10,10,10,10,10,11] is £10.00.
+        assert_eq!(s.amount, dec("10.00"));
     }
 
     #[test]
