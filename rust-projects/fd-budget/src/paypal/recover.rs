@@ -60,6 +60,12 @@ pub const DEFAULT_BANK_WINDOW_DAYS: i64 = 5;
 /// day of each other.
 const PP_CHAIN_WINDOW_DAYS: i64 = 2;
 
+/// Max seconds between a rate-less foreign leg and the currency conversion for
+/// the amount-blind FX fallback to bind them. A real chain's legs post within
+/// seconds; beyond this we refuse to guess (a wrong-merchant bind is worse than
+/// a miss). Generous vs the same-second reality of real exports.
+const FX_FALLBACK_MAX_SECS: i64 = 120;
+
 /// Amount tolerance for GBP-side matches (bank↔deposit, deposit↔conversion,
 /// bank↔direct-payment). PayPal GBP legs match the bank debit to the penny.
 const GBP_TOLERANCE: Decimal = Decimal::from_parts(1, 0, 0, false, 2); // 0.01
@@ -297,7 +303,7 @@ pub fn recover(
                 // (the conversion's GBP value) — with timestamp-nearest-to-the
                 // -conversion as the tie-break. Falls back to pure
                 // timestamp-nearest only when no leg carries an exchange rate.
-                if let Some(fx_idx) = nearest_fx_leg(
+                if let Some((fx_idx, confidence)) = nearest_fx_leg(
                     paypal,
                     &consumed,
                     conv_date,
@@ -315,7 +321,7 @@ pub fn recover(
                         currency: fx.currency.clone(),
                         merchant_amount: fx.amount,
                         bank_amount: tx.amount,
-                        confidence: RecoveryConfidence::High,
+                        confidence,
                         leg: Leg::FxChain,
                         chain_txn_ids: vec![dep_id, conv_id, fx.transaction_id.clone()],
                     });
@@ -479,8 +485,8 @@ fn nearest_fx_leg(
     conv_dt: NaiveDateTime,
     bank_abs: Decimal,
     window: i64,
-) -> Option<usize> {
-    // Pass 1: amount-linked candidates (the true structural binder).
+) -> Option<(usize, RecoveryConfidence)> {
+    // Pass 1: amount-linked candidates (the true structural binder) -> High.
     let mut best: Option<(usize, i64)> = None;
     for (i, p) in paypal.iter().enumerate() {
         if consumed.contains(&p.transaction_id) {
@@ -511,18 +517,28 @@ fn nearest_fx_leg(
         }
     }
     if let Some((i, _)) = best {
-        return Some(i);
+        return Some((i, RecoveryConfidence::High));
     }
 
-    // Pass 2 (fallback): no exchange rate available — nearest in timestamp.
-    nearest_unconsumed_by_time(
+    // Pass 2 (fallback): no leg carried a usable exchange rate (the common case
+    // when the export omits the rate column, so pass 1 never fires). We cannot
+    // reconstruct GBP to check the amount, so bind ONLY a foreign leg that posts
+    // within a TIGHT time window of the conversion — a real chain's legs post
+    // within seconds — and record it as MEDIUM, never High. This refuses to
+    // attribute an unrelated payment days away, which the old amount-blind
+    // nearest-within-window bind did (and mislabelled "high").
+    let idx = nearest_unconsumed_by_time(
         paypal,
         consumed,
         conv_date,
         conv_dt,
         window,
         is_foreign_payment_leg,
-    )
+    )?;
+    if time_delta_secs(paypal[idx].datetime(), conv_dt) > FX_FALLBACK_MAX_SECS {
+        return None;
+    }
+    Some((idx, RecoveryConfidence::Medium))
 }
 
 // ---------------------------------------------------------------------------
