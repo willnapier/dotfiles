@@ -754,7 +754,7 @@ mod tests {
             pp("2025-03-01", "Streamflix", "-20.00"),
             pp("2025-03-31", "Acme Shop", "-99.00"),
         ];
-        let m = paypal_recoverability(&transactions, &paypal_rows, DateFilter::year(2025));
+        let m = paypal_recoverability(&transactions, &paypal_rows, DateFilter::year(2025).unwrap());
         // Only the two 2025 rows count; the 2024 row is filtered.
         assert_eq!(m.bank_paypal_rows, 2);
         assert_eq!(m.within_export_span, 1); // only the Mar row is within the Mar span

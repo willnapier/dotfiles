@@ -222,13 +222,36 @@ pub struct DateFilter {
     pub until: Option<NaiveDate>,
 }
 
+/// Sane inclusive bounds for a `--year` filter. Outside this range chrono's
+/// `NaiveDate::from_ymd_opt` returns `None`, which — left unchecked — would make
+/// the filter match EVERY row instead of the requested year (see [`DateFilter::year`]).
+pub const MIN_FILTER_YEAR: i32 = 1900;
+pub const MAX_FILTER_YEAR: i32 = 2200;
+
 impl DateFilter {
     /// Year filter: `YYYY` → 1 Jan to 31 Dec.
-    pub fn year(year: i32) -> Self {
-        Self {
-            since: NaiveDate::from_ymd_opt(year, 1, 1),
-            until: NaiveDate::from_ymd_opt(year, 12, 31),
+    ///
+    /// Fails for a year outside [`MIN_FILTER_YEAR`]..=[`MAX_FILTER_YEAR`]. Without
+    /// this guard an absurd year (outside chrono's representable range) makes
+    /// `from_ymd_opt` return `None`, leaving `since`/`until` as `None` — an
+    /// unbounded "match everything" filter that silently returns all rows.
+    pub fn year(year: i32) -> anyhow::Result<Self> {
+        if !(MIN_FILTER_YEAR..=MAX_FILTER_YEAR).contains(&year) {
+            anyhow::bail!(
+                "--year {} out of range ({}..={})",
+                year,
+                MIN_FILTER_YEAR,
+                MAX_FILTER_YEAR
+            );
         }
+        let since = NaiveDate::from_ymd_opt(year, 1, 1)
+            .ok_or_else(|| anyhow::anyhow!("invalid year {}", year))?;
+        let until = NaiveDate::from_ymd_opt(year, 12, 31)
+            .ok_or_else(|| anyhow::anyhow!("invalid year {}", year))?;
+        Ok(Self {
+            since: Some(since),
+            until: Some(until),
+        })
     }
 
     /// Month filter: `YYYY-MM` → first of month to last of month.
@@ -264,7 +287,7 @@ impl DateFilter {
     ) -> anyhow::Result<Self> {
         let mut filter = match (month, year) {
             (Some(m), _) => Self::month(m)?,
-            (None, Some(y)) => Self::year(y),
+            (None, Some(y)) => Self::year(y)?,
             (None, None) => Self::default(),
         };
         if let Some(s) = since {
@@ -1607,11 +1630,28 @@ mod tests {
 
     #[test]
     fn date_filter_year_includes_only_target_year() {
-        let f = DateFilter::year(2025);
+        let f = DateFilter::year(2025).unwrap();
         assert!(f.matches(NaiveDate::from_ymd_opt(2025, 1, 1).unwrap()));
         assert!(f.matches(NaiveDate::from_ymd_opt(2025, 12, 31).unwrap()));
         assert!(!f.matches(NaiveDate::from_ymd_opt(2024, 12, 31).unwrap()));
         assert!(!f.matches(NaiveDate::from_ymd_opt(2026, 1, 1).unwrap()));
+    }
+
+    #[test]
+    fn date_filter_out_of_range_year_errors_not_matches_all() {
+        // L3: an absurd year (outside chrono's representable range) must ERROR,
+        // not silently become an unbounded "match everything" filter. The old
+        // code left since/until as None, so every row matched.
+        assert!(DateFilter::year(1_000_000).is_err());
+        assert!(DateFilter::year(-1_000_000).is_err());
+        assert!(DateFilter::year(MAX_FILTER_YEAR + 1).is_err());
+        assert!(DateFilter::year(MIN_FILTER_YEAR - 1).is_err());
+        // Threaded through from_flags too.
+        assert!(DateFilter::from_flags(Some(1_000_000), None, None).is_err());
+        // A sane year still builds a bounded filter that excludes other years.
+        let f = DateFilter::year(2025).unwrap();
+        assert!(f.since.is_some() && f.until.is_some());
+        assert!(!f.matches(NaiveDate::from_ymd_opt(1999, 1, 1).unwrap()));
     }
 
     #[test]
@@ -1632,7 +1672,7 @@ mod tests {
         let emails: Vec<EmailRow> = vec![];
         let ms: Vec<MatchRow> = vec![];
         let joined = join(&txs, &emails, &ms);
-        let (agg, _, _, _) = aggregate_by_counterparty(&joined, DateFilter::year(2025));
+        let (agg, _, _, _) = aggregate_by_counterparty(&joined, DateFilter::year(2025).unwrap());
         assert_eq!(agg.len(), 1);
         assert_eq!(agg[0].count, 1);
     }
@@ -1910,11 +1950,11 @@ mod tests {
             mk_tx_tagged("2025-06-15", "-25.00", "NEW", "t2", &["groceries"]),
             mk_tx_tagged("2026-01-01", "-99.00", "FUTURE", "t3", &["groceries"]),
         ];
-        let (agg, grand_total) = aggregate_by_category(&txs, DateFilter::year(2025));
+        let (agg, grand_total) = aggregate_by_category(&txs, DateFilter::year(2025).unwrap());
         assert_eq!(agg.len(), 1);
         assert_eq!(agg[0].count, 1);
         assert_eq!(grand_total, Decimal::from_str("25.00").unwrap());
-        assert_eq!(grand_total, spend_floor(&txs, DateFilter::year(2025)));
+        assert_eq!(grand_total, spend_floor(&txs, DateFilter::year(2025).unwrap()));
     }
 
     #[test]

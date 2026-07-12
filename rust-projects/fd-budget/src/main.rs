@@ -85,8 +85,8 @@ enum Commands {
         /// Filter to a single calendar year
         #[arg(long)]
         year: Option<i32>,
-        /// Filter to a single calendar month (YYYY-MM)
-        #[arg(long)]
+        /// Filter to a single calendar month (YYYY-MM). Conflicts with --year.
+        #[arg(long, conflicts_with = "year")]
         month: Option<String>,
         /// Filter rows on or after this date (YYYY-MM-DD)
         #[arg(long)]
@@ -132,8 +132,8 @@ enum Commands {
         /// Filter to a single calendar year
         #[arg(long)]
         year: Option<i32>,
-        /// Filter to a single calendar month (YYYY-MM)
-        #[arg(long)]
+        /// Filter to a single calendar month (YYYY-MM). Conflicts with --year.
+        #[arg(long, conflicts_with = "year")]
         month: Option<String>,
         /// Only consider rows on or after this date (YYYY-MM-DD)
         #[arg(long)]
@@ -185,8 +185,8 @@ enum Commands {
         /// Filter to a single calendar year
         #[arg(long)]
         year: Option<i32>,
-        /// Filter to a single calendar month (YYYY-MM)
-        #[arg(long)]
+        /// Filter to a single calendar month (YYYY-MM). Conflicts with --year.
+        #[arg(long, conflicts_with = "year")]
         month: Option<String>,
         /// Only consider rows on or after this date (YYYY-MM-DD)
         #[arg(long)]
@@ -208,7 +208,8 @@ enum Commands {
         #[arg(long)]
         year: Option<i32>,
         /// Filter to a calendar month (YYYY-MM): the 12 months ENDING there.
-        #[arg(long)]
+        /// Conflicts with --year.
+        #[arg(long, conflicts_with = "year")]
         month: Option<String>,
         /// Only consider rows on or after this date (YYYY-MM-DD).
         #[arg(long)]
@@ -270,8 +271,8 @@ enum TxAction {
         /// Filter to a single calendar year.
         #[arg(long)]
         year: Option<i32>,
-        /// Filter to a single calendar month (YYYY-MM).
-        #[arg(long)]
+        /// Filter to a single calendar month (YYYY-MM). Conflicts with --year.
+        #[arg(long, conflicts_with = "year")]
         month: Option<String>,
         /// Filter rows on or after this date (YYYY-MM-DD).
         #[arg(long)]
@@ -285,8 +286,8 @@ enum TxAction {
         /// Filter to a single calendar year.
         #[arg(long)]
         year: Option<i32>,
-        /// Filter to a single calendar month (YYYY-MM).
-        #[arg(long)]
+        /// Filter to a single calendar month (YYYY-MM). Conflicts with --year.
+        #[arg(long, conflicts_with = "year")]
         month: Option<String>,
         /// Filter rows on or after this date (YYYY-MM-DD).
         #[arg(long)]
@@ -1196,6 +1197,9 @@ fn cmd_tag(action: TagAction) -> anyhow::Result<()> {
             day_of_month,
             day_window,
         } => {
+            // Reject `|`-containing / whitespace-only tags at the entry point so
+            // a rule can never inject a tag that reloads as two bogus tags.
+            let tags = validate_tags(&tags)?;
             rules.add_rule(
                 &pattern,
                 tags.clone(),
@@ -1350,6 +1354,13 @@ fn cmd_tag_rename(
     new: &str,
     merchant: Option<&str>,
 ) -> anyhow::Result<()> {
+    // Trim + reject `|`-containing / whitespace-only tags. `old` is trimmed too
+    // so `" transfer"` resolves to the real reserved tag; `new` must be clean
+    // since it is what gets persisted onto rules and rows.
+    let old = validate_tag(old)?;
+    let new = validate_tag(new)?;
+    let (old, new) = (old.as_str(), new.as_str());
+
     // 1) Rule definitions (so future imports stay canonical).
     let rules_changed = rules.rename_tag(old, new, merchant);
     rules.save(rules_path)?;
@@ -1479,6 +1490,35 @@ fn resolve_import_id(transactions: &[fd_budget::Transaction], needle: &str) -> R
     }
 }
 
+/// Validate and normalise a single user-supplied tag name.
+///
+/// Tags are stored pipe-joined and re-split on `|` (see `CsvStore`), and the
+/// NONSPEND/reserved-tag machinery compares with `eq_ignore_ascii_case`. So a
+/// tag containing `|` (e.g. `"one|off"`) would reload as two bogus tags —
+/// defeating the `one-off` NONSPEND exclusion — and a tag with surrounding
+/// whitespace (e.g. `" transfer"`) would fail those case-insensitive matches.
+/// TRIM the tag and REJECT it if it is empty after trimming or contains `|`.
+/// Returns the trimmed tag. Pure — unit-testable.
+fn validate_tag(tag: &str) -> anyhow::Result<String> {
+    let trimmed = tag.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("tag must not be empty (or whitespace-only)");
+    }
+    if trimmed.contains('|') {
+        anyhow::bail!(
+            "tag '{}' must not contain '|' — tags are stored pipe-delimited and a '|' would split into bogus tags",
+            trimmed
+        );
+    }
+    Ok(trimmed.to_string())
+}
+
+/// Validate and trim a whole list of user-supplied tags. Errors on the first
+/// invalid tag (empty/whitespace-only or containing `|`). Pure — unit-testable.
+fn validate_tags(tags: &[String]) -> anyhow::Result<Vec<String>> {
+    tags.iter().map(|t| validate_tag(t)).collect()
+}
+
 /// Additively add `tags` to a single row (dedup, preserve existing). Returns the
 /// tags that were actually newly added. Pure — unit-testable.
 fn add_tags_to_row(tx: &mut fd_budget::Transaction, tags: &[String]) -> Vec<String> {
@@ -1526,6 +1566,10 @@ fn cmd_tag_set(import_id: &str, tags: &[String]) -> anyhow::Result<()> {
         anyhow::bail!("import_id must not be empty");
     }
 
+    // Trim + reject `|`-containing / whitespace-only tags before touching the
+    // store, so a bad tag can't be persisted (and silently split on reload).
+    let tags = validate_tags(tags)?;
+
     let idx = match resolve_import_id(&transactions, import_id) {
         RowMatch::One(i) => i,
         RowMatch::None => {
@@ -1555,7 +1599,7 @@ fn cmd_tag_set(import_id: &str, tags: &[String]) -> anyhow::Result<()> {
     let backup = snapshot_store(&transactions[idx].import_id)?;
 
     // Additive: append given tags, dedup, preserve existing.
-    let added = add_tags_to_row(&mut transactions[idx], tags);
+    let added = add_tags_to_row(&mut transactions[idx], &tags);
 
     store.rewrite(&transactions)?;
 
@@ -1848,8 +1892,16 @@ fn cmd_categorize(limit: Option<usize>, include_credits: bool) -> anyhow::Result
             continue;
         }
 
-        // Parse tags
+        // Parse tags. `split_whitespace` already trims, but a token can still
+        // contain `|` (e.g. "one|off"), which would persist and reload split.
         let tags: Vec<String> = input.split_whitespace().map(String::from).collect();
+        let tags = match validate_tags(&tags) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("Invalid tag: {e} — skipping this row.");
+                continue;
+            }
+        };
 
         // Apply tags to this transaction
         transactions[idx].tags = tags.clone();
@@ -2295,5 +2347,56 @@ mod p4_p5_tests {
         assert_eq!(newly, 1);
         assert!(txs[0].tags.iter().any(|t| t == "transfer"));
         assert!(!txs[0].counts_as_spend()); // back out of the Spend floor
+    }
+
+    // --- L1: tag name validation (`|` / whitespace) -----------------------
+
+    #[test]
+    fn tag_set_rejects_pipe_tag_and_trims_round_trip() {
+        // A `|`-containing tag (as `tag set <id> "one|off"` would supply) is
+        // rejected: stored pipe-joined it would reload as two bogus tags
+        // (`one`,`off`), defeating the `one-off` NONSPEND exclusion.
+        assert!(validate_tags(&["one|off".to_string()]).is_err());
+        assert!(validate_tag("a|b").is_err());
+        // Whitespace-only tags are rejected too.
+        assert!(validate_tag("   ").is_err());
+        assert!(validate_tags(&["ok".to_string(), "  ".to_string()]).is_err());
+
+        // A tag with surrounding whitespace is TRIMMED, so it matches the
+        // case-insensitive reserved-tag check (which `" transfer"` would fail).
+        let cleaned = validate_tags(&[" transfer ".to_string()]).unwrap();
+        assert_eq!(cleaned, vec!["transfer".to_string()]);
+        assert!(cleaned[0].eq_ignore_ascii_case("transfer"));
+
+        // The validated tag round-trips through the pipe-join/split storage as a
+        // single tag (no `|` inside to split on), and lands on the row correctly.
+        let cleaned = validate_tags(&[" one-off ".to_string()]).unwrap();
+        assert_eq!(cleaned, vec!["one-off".to_string()]);
+        let joined = cleaned.join("|");
+        let reloaded: Vec<String> = joined.split('|').map(String::from).collect();
+        assert_eq!(reloaded, cleaned); // round-trips to ONE tag
+        let mut tx = mk("aaaa111122223333", "-9.99", "STREAMFLIX", &[]);
+        let added = add_tags_to_row(&mut tx, &cleaned);
+        assert_eq!(added, vec!["one-off".to_string()]);
+        assert_eq!(tx.tags, vec!["one-off".to_string()]);
+    }
+
+    // --- L2: --month / --year are mutually exclusive ----------------------
+
+    #[test]
+    fn month_and_year_flags_conflict() {
+        // Passing both must be a clap error, not a silent discard of --year.
+        assert!(Cli::try_parse_from([
+            "fd-budget", "stats", "--month", "2025-01", "--year", "2025",
+        ])
+        .is_err());
+        // Enforced on another command carrying both flags, too.
+        assert!(Cli::try_parse_from([
+            "fd-budget", "coverage", "--month", "2025-01", "--year", "2025",
+        ])
+        .is_err());
+        // Each flag alone is still accepted.
+        assert!(Cli::try_parse_from(["fd-budget", "stats", "--month", "2025-01"]).is_ok());
+        assert!(Cli::try_parse_from(["fd-budget", "stats", "--year", "2025"]).is_ok());
     }
 }
