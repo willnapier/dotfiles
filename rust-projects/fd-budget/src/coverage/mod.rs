@@ -196,8 +196,10 @@ impl SourceCoverage {
 
         if gaps == 0 {
             return format!(
-                "{}: covers {}..{} — {} of {} months present, no gaps.",
-                self.label, first, last, present, span
+                "{}: covers {}..{} — {} of {} months present, no interior gaps \
+                 (span only; months before {} or after {} are NOT covered by this source, \
+                 so the floor still under-counts outside it).",
+                self.label, first, last, present, span, first, last
             );
         }
 
@@ -241,7 +243,9 @@ pub struct PaypalRecoverability {
     /// The PayPal export's span (None when the export is empty).
     pub export_earliest: Option<NaiveDate>,
     pub export_latest: Option<NaiveDate>,
-    /// Bank PAYPAL rows whose date is within `[export_earliest..=export_latest]`.
+    /// Bank PAYPAL rows whose date falls in a MONTH the export has rows for
+    /// (month-presence — NOT merely between the export's first and last dates,
+    /// since interior export gaps have no data to join to).
     pub within_export_span: usize,
 }
 
@@ -270,8 +274,8 @@ impl PaypalRecoverability {
         }
         match (self.export_earliest, self.export_latest) {
             (Some(e), Some(l)) => format!(
-                "PayPal recoverability: {} of {} bank PAYPAL rows ({:.1}%) fall within the export span {}..{}; \
-                 the other {} are unrecoverable until the export is widened.",
+                "PayPal recoverability: {} of {} bank PAYPAL rows ({:.1}%) fall in a month the export covers (span {}..{}); \
+                 the other {} are unrecoverable for lack of export coverage in their month.",
                 self.within_export_span,
                 self.bank_paypal_rows,
                 self.pct_within(),
@@ -295,8 +299,18 @@ pub fn paypal_recoverability(
     paypal_rows: &[PayPalTxn],
     filter: DateFilter,
 ) -> PaypalRecoverability {
+    use chrono::Datelike;
     let export_earliest = paypal_rows.iter().map(|p| p.date).min();
     let export_latest = paypal_rows.iter().map(|p| p.date).max();
+    // Months the export actually HAS rows for. A bank row is recoverable only if
+    // the export covers its MONTH — merely falling between the export's first and
+    // last dates is not enough, because an interior export gap has no data to
+    // join to (e.g. a Jan export + a Dec export make Feb–Nov look "within span"
+    // while `paypal recover` fails on every one of those rows).
+    let export_months: std::collections::HashSet<(i32, u32)> = paypal_rows
+        .iter()
+        .map(|p| (p.date.year(), p.date.month()))
+        .collect();
 
     let mut bank_paypal_rows = 0usize;
     let mut within = 0usize;
@@ -308,10 +322,8 @@ pub fn paypal_recoverability(
             continue;
         }
         bank_paypal_rows += 1;
-        if let (Some(e), Some(l)) = (export_earliest, export_latest) {
-            if tx.date >= e && tx.date <= l {
-                within += 1;
-            }
+        if export_months.contains(&(tx.date.year(), tx.date.month())) {
+            within += 1;
         }
     }
 
@@ -423,6 +435,43 @@ impl CoverageReport {
             out.push_str(&format!("  {}\n", s.verdict()));
         }
         out.push_str(&format!("  {}\n", self.paypal.verdict()));
+
+        // Cross-source end-truncation: a source that starts LATER or ends EARLIER
+        // than the combined data window is truncated at that end. Its own span
+        // can't see this (span = its own min/max), so those months read as "no
+        // gaps" when they are simply absent — the exact case (Visa Jun–Dec vs a
+        // Jan–Dec current account) this module exists to surface.
+        use chrono::Datelike;
+        let ym = |d: NaiveDate| (d.year(), d.month());
+        let union_earliest = self.sources.iter().filter_map(|s| s.earliest).map(ym).min();
+        let union_latest = self.sources.iter().filter_map(|s| s.latest).map(ym).max();
+        if let (Some(ue), Some(ul)) = (union_earliest, union_latest) {
+            let mut notes = Vec::new();
+            for s in &self.sources {
+                if let (Some(se), Some(sl)) = (s.earliest, s.latest) {
+                    if ym(se) > ue {
+                        notes.push(format!(
+                            "  {} starts {} but combined data begins earlier — the leading months are not covered by this source.",
+                            s.label, se
+                        ));
+                    }
+                    if ym(sl) < ul {
+                        notes.push(format!(
+                            "  {} ends {} but combined data continues later — the trailing months are not covered by this source.",
+                            s.label, sl
+                        ));
+                    }
+                }
+            }
+            if !notes.is_empty() {
+                out.push('\n');
+                out.push_str("Cross-source coverage (end-truncation vs the combined window):\n");
+                for n in notes {
+                    out.push_str(&n);
+                    out.push('\n');
+                }
+            }
+        }
 
         out
     }
@@ -562,8 +611,10 @@ mod tests {
         assert!(!cov.is_sparse());
         assert!((cov.coverage_fraction() - 1.0).abs() < f64::EPSILON);
         let v = cov.verdict();
-        assert!(v.contains("no gaps"), "verdict was: {v}");
+        assert!(v.contains("no interior gaps"), "verdict was: {v}");
         assert!(v.contains("3 of 3 months"));
+        // H8: even a no-interior-gap source must caveat that its span is a limit.
+        assert!(v.contains("covered by this source"), "verdict was: {v}");
     }
 
     #[test]
@@ -607,20 +658,21 @@ mod tests {
 
     #[test]
     fn paypal_rows_within_export_coverage() {
-        // Bank PAYPAL rows across Jan..Jun 2025; the PayPal export only covers
-        // Mar..May 2025. So 3 of the 5 bank rows are within the export span and
+        // Bank PAYPAL rows across Jan..Jun 2025; the PayPal export covers each of
+        // Mar, Apr, May 2025. So 3 of the 5 bank rows are in a covered month and
         // are even recoverable; the Jan and Jun rows are not.
         let transactions = vec![
             tx("2025-01-10", Account::Current, "-10.00", "PAYPAL PAYMENT"), // before export
-            tx("2025-03-10", Account::Current, "-20.00", "PAYPAL PAYMENT"), // within
-            tx("2025-04-10", Account::Current, "-30.00", "PAYPAL PAYMENT"), // within
-            tx("2025-05-10", Account::Current, "-40.00", "PAYPAL PAYMENT"), // within
+            tx("2025-03-10", Account::Current, "-20.00", "PAYPAL PAYMENT"), // covered month
+            tx("2025-04-10", Account::Current, "-30.00", "PAYPAL PAYMENT"), // covered month
+            tx("2025-05-10", Account::Current, "-40.00", "PAYPAL PAYMENT"), // covered month
             tx("2025-06-10", Account::Current, "-50.00", "PAYPAL PAYMENT"), // after export
             // a non-PayPal control that must not be counted
             tx("2025-04-11", Account::Current, "-5.00", "TESCO STORES"),
         ];
         let paypal_rows = vec![
             pp("2025-03-05", "Streamflix", "-20.00"),
+            pp("2025-04-15", "Midmonth", "-30.00"),
             pp("2025-05-25", "Acme Shop", "-40.00"),
         ];
         let m = paypal_recoverability(&transactions, &paypal_rows, DateFilter::default());
@@ -648,6 +700,43 @@ mod tests {
         assert_eq!(m.export_earliest, None);
         assert_eq!(m.pct_within(), 0.0);
         assert!(m.verdict().contains("export is empty"));
+    }
+
+    #[test]
+    fn interior_export_gap_is_not_counted_recoverable() {
+        // H9: a Jan export + a Dec export, nothing between. Bank PAYPAL rows in
+        // the interior months have no export data to join to and must NOT read
+        // as recoverable, even though they fall between the export's endpoints.
+        let transactions = vec![
+            tx("2025-01-10", Account::Current, "-10.00", "PAYPAL PAYMENT"),
+            tx("2025-06-10", Account::Current, "-20.00", "PAYPAL PAYMENT"),
+            tx("2025-12-10", Account::Current, "-30.00", "PAYPAL PAYMENT"),
+        ];
+        let paypal_rows = vec![
+            pp("2025-01-05", "Jan Merchant", "-10.00"),
+            pp("2025-12-20", "Dec Merchant", "-30.00"),
+        ];
+        let m = paypal_recoverability(&transactions, &paypal_rows, DateFilter::default());
+        assert_eq!(m.bank_paypal_rows, 3);
+        // Only the Jan and Dec rows are in a covered MONTH; June is not.
+        assert_eq!(m.within_export_span, 2, "the interior June row must not count");
+    }
+
+    #[test]
+    fn render_flags_end_truncated_source() {
+        // H8: current account spans Jan..Dec; Visa only Jun..Dec. Visa's own span
+        // shows no interior gaps, but it is truncated vs the combined window and
+        // the report must surface that (the ~£2k-of-Visa-spend-absent case).
+        let transactions = vec![
+            tx("2025-01-15", Account::Current, "-10.00", "A"),
+            tx("2025-12-15", Account::Current, "-10.00", "B"),
+            tx("2025-06-15", Account::Visa, "-10.00", "C"),
+            tx("2025-12-20", Account::Visa, "-10.00", "D"),
+        ];
+        let report = CoverageReport::build(&transactions, &[], DateFilter::default());
+        let out = report.render();
+        assert!(out.contains("Cross-source coverage"), "render was:\n{out}");
+        assert!(out.contains("bank visa starts"), "render was:\n{out}");
     }
 
     #[test]
