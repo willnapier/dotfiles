@@ -4423,7 +4423,7 @@ def --wrapped codex [...args] {
     mut stripped_args = $args
 
     # Normalize helper (works with pipeline)
-    let clean_key = {|s| $s | str downcase | str trim | str trim -c "/" }
+    let clean_key = { $in | str downcase | str trim | str trim -c "/" }
 
     let lower_tokens = ($args | each {|x| $x | str downcase })
 
