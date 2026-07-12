@@ -29,6 +29,17 @@ pub enum PayPalError {
     Csv(#[from] csv::Error),
     #[error("unexpected PayPal CSV header: {0}")]
     BadHeader(String),
+    #[error(
+        "corrupt sidecar row {row} (transaction_id {transaction_id}): {detail}. \
+         Refusing to load — fix or remove that row in paypal.csv. A silent \
+         £0/1970 default would let a hand-edited/partial-write cell participate \
+         in recovery as a phantom row."
+    )]
+    CorruptRow {
+        row: usize,
+        transaction_id: String,
+        detail: String,
+    },
 }
 
 /// A single normalised row from a PayPal activity CSV export.
@@ -157,9 +168,34 @@ fn map_columns(headers: &csv::StringRecord) -> Result<ColumnMap, PayPalError> {
 /// Parse a PayPal `Amount`-style cell: strips thousands commas and any stray
 /// currency symbol, keeps the sign. PayPal amounts are like `-12.99`,
 /// `1,234.56`, `-299.40`.
+///
+/// L14 — decimal-comma locale: a European-locale export writes `-299,40` for
+/// -299.40. Blindly stripping every comma as a thousands separator turned that
+/// into `-29940` (a silent 100× error). So we first detect the decimal-comma
+/// case — a SINGLE comma, no dot, and exactly two trailing digits after the
+/// comma — and treat that comma as the decimal point. Everything else keeps the
+/// normal thousands-separator handling (`1,234.56` → `1234.56`); a shape we
+/// cannot make sense of (e.g. `1.234,56`) parses to `None` rather than being
+/// silently mangled.
 fn parse_pp_amount(s: &str) -> Option<Decimal> {
-    let cleaned: String = s
-        .trim()
+    let trimmed = s.trim();
+    // Decimal-comma detection: no dot, exactly one comma, and the fraction after
+    // it is exactly two digits (e.g. `-299,40`).
+    let is_decimal_comma = !trimmed.contains('.')
+        && trimmed.matches(',').count() == 1
+        && trimmed
+            .rsplit(',')
+            .next()
+            .map(|frac| frac.len() == 2 && frac.chars().all(|c| c.is_ascii_digit()))
+            .unwrap_or(false);
+    let normalised = if is_decimal_comma {
+        // Comma is the decimal point.
+        trimmed.replace(',', ".")
+    } else {
+        // Comma is a thousands separator — drop it.
+        trimmed.replace(',', "")
+    };
+    let cleaned: String = normalised
         .chars()
         .filter(|c| c.is_ascii_digit() || *c == '-' || *c == '.')
         .collect();
@@ -360,22 +396,60 @@ impl From<&PayPalTxn> for StoredPayPal {
     }
 }
 
-impl From<StoredPayPal> for PayPalTxn {
-    fn from(s: StoredPayPal) -> Self {
-        Self {
-            date: NaiveDate::parse_from_str(&s.date, "%Y-%m-%d")
-                .unwrap_or_else(|_| NaiveDate::from_ymd_opt(1970, 1, 1).unwrap()),
-            time: parse_pp_time(&s.time),
+impl TryFrom<StoredPayPal> for PayPalTxn {
+    type Error = String;
+
+    /// L13 — fallible read-back, fail CLOSED. Mirrors the bank store's
+    /// `TryFrom<StoredTransaction>`: a blank optional cell is a legitimate
+    /// absence (`None`), but a NON-blank cell that does not parse is CORRUPTION
+    /// — not a `£0.00`/`1970-01-01`/`None` default. Silently defaulting used to
+    /// turn a hand-edited or partial-write cell into a participating phantom row
+    /// (a £0 amount joins recovery as a spurious candidate; a 1970 date blows the
+    /// date window open). Erroring here makes `load_all` fail closed instead.
+    fn try_from(s: StoredPayPal) -> Result<Self, String> {
+        // `date` and `amount` are required — a non-parsing cell is corruption.
+        let date = NaiveDate::parse_from_str(&s.date, "%Y-%m-%d")
+            .map_err(|_| format!("unparseable date {:?}", s.date))?;
+        let amount =
+            Decimal::from_str(s.amount.trim()).map_err(|_| format!("unparseable amount {:?}", s.amount))?;
+        // Optional fields: blank stays `None`; a non-blank unparseable cell errors.
+        let time = if s.time.trim().is_empty() {
+            None
+        } else {
+            Some(
+                parse_pp_time(&s.time)
+                    .ok_or_else(|| format!("unparseable time {:?}", s.time))?,
+            )
+        };
+        let exchange_rate = if s.exchange_rate.trim().is_empty() {
+            None
+        } else {
+            Some(
+                Decimal::from_str(s.exchange_rate.trim())
+                    .map_err(|_| format!("unparseable exchange_rate {:?}", s.exchange_rate))?,
+            )
+        };
+        let balance = if s.balance.trim().is_empty() {
+            None
+        } else {
+            Some(
+                Decimal::from_str(s.balance.trim())
+                    .map_err(|_| format!("unparseable balance {:?}", s.balance))?,
+            )
+        };
+        Ok(Self {
+            date,
+            time,
             name: s.name,
             txn_type: s.txn_type,
             status: s.status,
             currency: s.currency,
-            amount: Decimal::from_str(&s.amount).unwrap_or_default(),
-            exchange_rate: Decimal::from_str(s.exchange_rate.trim()).ok(),
-            balance: Decimal::from_str(&s.balance).ok(),
+            amount,
+            exchange_rate,
+            balance,
             transaction_id: s.transaction_id,
             item_title: s.item_title,
-        }
+        })
     }
 }
 
@@ -400,9 +474,15 @@ impl PayPalStore {
         let reader = BufReader::new(file);
         let mut csv_reader = csv::Reader::from_reader(reader);
         let mut out = Vec::new();
-        for result in csv_reader.deserialize() {
-            let stored: StoredPayPal = result?;
-            out.push(stored.into());
+        for (i, result) in csv_reader.deserialize::<StoredPayPal>().enumerate() {
+            let stored = result?;
+            let transaction_id = stored.transaction_id.clone();
+            let txn = PayPalTxn::try_from(stored).map_err(|detail| PayPalError::CorruptRow {
+                row: i + 2, // 1-based data row, +1 for the header line
+                transaction_id,
+                detail,
+            })?;
+            out.push(txn);
         }
         Ok(out)
     }
@@ -649,6 +729,83 @@ mod tests {
             Some(Decimal::from_str("-299.40").unwrap())
         );
         assert_eq!(parse_pp_amount(""), None);
+    }
+
+    /// L14 — a decimal-comma locale cell (`-299,40`) must parse as -299.40, NOT
+    /// -29940 (the old strip-every-comma behaviour silently 100×'d it). Normal
+    /// thousands-separator handling (`1,234.56`) must keep working.
+    #[test]
+    fn parse_amount_handles_decimal_comma() {
+        assert_eq!(
+            parse_pp_amount("-299,40"),
+            Some(Decimal::from_str("-299.40").unwrap())
+        );
+        // Regression guard: NOT the 100×-mangled value.
+        assert_ne!(
+            parse_pp_amount("-299,40"),
+            Some(Decimal::from_str("-29940").unwrap())
+        );
+        // Thousands separator with a dot decimal still works.
+        assert_eq!(
+            parse_pp_amount("1,234.56"),
+            Some(Decimal::from_str("1234.56").unwrap())
+        );
+        // A pure thousands group (3 trailing digits, no dot) still strips.
+        assert_eq!(
+            parse_pp_amount("1,000"),
+            Some(Decimal::from_str("1000").unwrap())
+        );
+    }
+
+    /// L13 — the sidecar read-back fails CLOSED. A non-blank unparseable amount
+    /// or date cell (a hand-edit / partial write) is REJECTED, not silently
+    /// defaulted to £0 / 1970 (which would join recovery as a phantom row).
+    /// Blank optional cells (time / exchange_rate / balance) still read as None.
+    #[test]
+    fn corrupt_amount_or_date_cell_is_rejected_not_defaulted() {
+        let dir =
+            std::env::temp_dir().join(format!("fd-budget-corrupt-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let hdr = "date,time,name,txn_type,status,currency,amount,exchange_rate,balance,transaction_id,item_title\n";
+
+        // Non-blank unparseable AMOUNT -> CorruptRow, not £0.00.
+        let bad_amount_path = dir.join("bad_amount.csv");
+        std::fs::write(
+            &bad_amount_path,
+            format!("{hdr}2026-03-05,10:00:00,Streamflix,General Payment,Completed,GBP,notanumber,,0.00,TXN-1,Plan\n"),
+        )
+        .unwrap();
+        let err = PayPalStore::new(&bad_amount_path).load_all().unwrap_err();
+        assert!(matches!(err, PayPalError::CorruptRow { .. }), "got: {err:?}");
+        assert!(err.to_string().contains("amount"), "got: {err}");
+
+        // Non-blank unparseable DATE -> CorruptRow, not 1970-01-01.
+        let bad_date_path = dir.join("bad_date.csv");
+        std::fs::write(
+            &bad_date_path,
+            format!("{hdr}31/06/2026,10:00:00,Streamflix,General Payment,Completed,GBP,-12.99,,0.00,TXN-2,Plan\n"),
+        )
+        .unwrap();
+        let err = PayPalStore::new(&bad_date_path).load_all().unwrap_err();
+        assert!(matches!(err, PayPalError::CorruptRow { .. }), "got: {err:?}");
+        assert!(err.to_string().contains("date"), "got: {err}");
+
+        // Blank optional cells stay None — a valid row still loads.
+        let ok_path = dir.join("ok.csv");
+        std::fs::write(
+            &ok_path,
+            format!("{hdr}2026-03-05,,Streamflix,General Payment,Completed,GBP,-12.99,,,TXN-3,Plan\n"),
+        )
+        .unwrap();
+        let rows = PayPalStore::new(&ok_path).load_all().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].time, None);
+        assert_eq!(rows[0].exchange_rate, None);
+        assert_eq!(rows[0].balance, None);
+        assert_eq!(rows[0].amount, Decimal::from_str("-12.99").unwrap());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// M17 — malformed rows are skipped AND counted (they no longer vanish

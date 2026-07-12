@@ -155,15 +155,22 @@ pub struct Recovery {
 
 /// True if the bank row is a bare PayPal payment that needs recovery.
 ///
-/// FD posts these as `PAYPAL PAYMENT` (the merchant stripped). We match on
-/// `raw_description` containing "paypal" AND it being a debit — the recovery
-/// only applies to outgoing PayPal spend.
+/// FD posts these as `PAYPAL PAYMENT` (the merchant stripped). We anchor on the
+/// BARE form — the trimmed `raw_description` must START WITH `PAYPAL PAYMENT`
+/// (case-insensitive) — rather than merely CONTAINING "paypal".
+///
+/// L15 — the old `contains("paypal")` over-matched: `PAYPAL *NETFLIX` already
+/// carries its merchant (needs no recovery) and `TO PAYPAL` transfers are not
+/// spend, yet both were pulled in — polluting the metric and letting them
+/// consume PayPal legs away from genuine bare rows. Anchoring on the bare prefix
+/// excludes those while still matching the real FD bare form (`PAYPAL PAYMENT`,
+/// with or without a trailing reference).
 pub fn is_bare_paypal_payment(tx: &Transaction) -> bool {
     if !tx.is_debit() {
         return false;
     }
-    let d = tx.raw_description.to_lowercase();
-    d.contains("paypal")
+    let d = tx.raw_description.trim().to_lowercase();
+    d.starts_with("paypal payment")
 }
 
 fn within(a: Decimal, b: Decimal, tol: Decimal) -> bool {
@@ -728,6 +735,42 @@ mod tests {
     fn pp(rows: &str) -> Vec<PayPalTxn> {
         let csv = format!("{BOM}{HEADER}\n{rows}");
         parse_paypal_csv(csv.as_bytes()).unwrap()
+    }
+
+    /// L15 — `is_bare_paypal_payment` anchors on the BARE `PAYPAL PAYMENT` form,
+    /// not any substring "paypal". The real bare form matches; a row that already
+    /// carries its merchant (`PAYPAL *NETFLIX`) and a transfer (`TO PAYPAL`) do
+    /// NOT — they were wrongly pulled in by the old `contains("paypal")`.
+    #[test]
+    fn is_bare_paypal_payment_anchors_on_bare_form() {
+        let bare = {
+            let mut t = bank("2026-03-05", "-12.99", "b1");
+            t.raw_description = "PAYPAL PAYMENT".into();
+            t
+        };
+        assert!(is_bare_paypal_payment(&bare));
+
+        // Bare form with a trailing reference still matches (starts_with).
+        let bare_ref = {
+            let mut t = bank("2026-03-05", "-12.99", "b1b");
+            t.raw_description = "PAYPAL PAYMENT 1234".into();
+            t
+        };
+        assert!(is_bare_paypal_payment(&bare_ref));
+
+        let netflix = {
+            let mut t = bank("2026-03-05", "-9.99", "b2");
+            t.raw_description = "PAYPAL *NETFLIX".into();
+            t
+        };
+        assert!(!is_bare_paypal_payment(&netflix));
+
+        let transfer = {
+            let mut t = bank("2026-03-05", "-50.00", "b3");
+            t.raw_description = "TO PAYPAL".into();
+            t
+        };
+        assert!(!is_bare_paypal_payment(&transfer));
     }
 
     #[test]
