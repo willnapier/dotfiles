@@ -75,7 +75,7 @@ async fn healthz_returns_ok() {
 }
 
 #[tokio::test]
-async fn valid_slug_returns_markdown() {
+async fn valid_slug_returns_html() {
     let srv = start_server().await;
     let resp = client()
         .get(format!("http://{}/{}", srv.addr, FINANCIAL_SLUG))
@@ -91,7 +91,7 @@ async fn valid_slug_returns_markdown() {
         .to_str()
         .unwrap()
         .to_string();
-    assert!(ct.starts_with("text/markdown"));
+    assert!(ct.starts_with("text/html"));
     let cc = resp
         .headers()
         .get(reqwest::header::CACHE_CONTROL)

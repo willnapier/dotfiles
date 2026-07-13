@@ -156,13 +156,30 @@ pub async fn scroll(
         }
     };
 
-    // Step 5: serve the file.
-    let body_len = bytes.len();
-    let mut resp = (StatusCode::OK, bytes).into_response();
+    // Step 5: serve the file as HTML.
+    //
+    // We wrap the markdown in a minimal HTML document and serve `text/html`
+    // (not `text/plain`/`text/markdown`) because AI browse pipelines — notably
+    // ChatGPT's — frequently fail to *open* a non-HTML URL and then silently
+    // fall back to a web search, returning unrelated pages. Escaping the scroll
+    // into a <pre> preserves the content byte-for-byte (load-bearing for the
+    // figures) while presenting a page these tools will actually fetch and read.
+    let text = String::from_utf8_lossy(&bytes);
+    let escaped = text
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+    // `slug` is already validated to `[a-z0-9-]` so it is safe to embed in the
+    // <title> without further escaping.
+    let html = format!(
+        "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"robots\" content=\"noindex\">\n<title>{slug}</title>\n</head>\n<body>\n<pre>\n{escaped}\n</pre>\n</body>\n</html>\n"
+    );
+    let body_len = html.len();
+    let mut resp = (StatusCode::OK, html).into_response();
     let h = resp.headers_mut();
     h.insert(
         header::CONTENT_TYPE,
-        "text/plain; charset=utf-8".parse().unwrap(),
+        "text/html; charset=utf-8".parse().unwrap(),
     );
     h.insert(
         header::CACHE_CONTROL,
