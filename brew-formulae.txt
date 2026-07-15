@@ -1,3 +1,4 @@
+abseil
 actionlint
 aom
 aribb24
@@ -105,6 +106,7 @@ libidn
 libidn2
 libimagequant
 libksba
+liblinear
 liblqr
 libmediainfo
 libmicrohttpd
@@ -151,6 +153,7 @@ little-cms2
 llvm
 lpeg
 lsusb
+lua
 luajit
 luv
 lz4
@@ -167,6 +170,7 @@ mingw-w64
 mlx
 mlx-c
 molten-vk
+mosh
 mpdecimal
 mpfr
 mpg123
@@ -177,6 +181,7 @@ ncurses
 neovim
 nettle
 ninja
+nmap
 node
 node@22
 notmuch
@@ -208,6 +213,7 @@ pngquant
 poppler
 potrace
 procs
+protobuf
 pybind11
 pycparser
 pydantic
