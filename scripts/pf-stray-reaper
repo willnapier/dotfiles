@@ -1,0 +1,86 @@
+#!/usr/bin/env nu
+# pf-stray-reaper — kill orphaned / wedged `practiceforge` capture-sync processes.
+#
+# WHY: the TM3 diary capture runs from several triggers (the hourly
+# `com.williamnapier.tm3-diary-live` launchd chain `tm3-cookie-sync;
+# tm3-diary-capture --live; practiceforge sync-docs`, the dashboard's own
+# `clinic_tm3_refresh` activity protocol, `tm3-watcher`, `tm3-session-broker`).
+# When the TM3 session is dead (as it was for a week from 2026-07-10), a failing
+# `practiceforge sync-docs` / capture invocation can orphan itself (parent shell
+# exits -> PPID 1) and busy-loop on its main thread — burning a whole core
+# undetected. On 2026-07-17 one such stray (PID 21425) span at 93% CPU for ~17h
+# and caused system-wide choppiness. This is the same orphan-accumulation family
+# that has repeatedly leaked headless-Chrome processes (see ASSISTANT-HANDOFF).
+#
+# WHAT: every run, find `practiceforge` processes that are (a) NOT the dashboard
+# server (`admin-dashboard` in argv — the one legitimate long-lived instance),
+# (b) burning > CPU_PCT %CPU, AND (c) older than AGE_SECS. Those are spinning
+# strays: SIGTERM, then SIGKILL if they survive. A legitimate sync-docs / capture
+# sits near 0% CPU (it waits on the network + child binaries), so it is never hit;
+# heavy work (OCR, PDF) lives in child processes (ocrmypdf/pdftotext), not in
+# `practiceforge` itself — so `practiceforge`-proper at >50% for >10min is a spin.
+#
+# SAFETY: dry-run unless `--apply` (the launchd plist passes --apply). Never
+# touches `admin-dashboard`. Every action logged to
+# ~/.local/share/pf-stray-reaper.log. Runs every 10 min via launchd (mac).
+#
+# Docs: ~/Assistants/shared/DISK-SPACE-MAINTENANCE.md (companion reaper),
+#       memory reference_mac_disk_full_not_memory (orphan family).
+
+const CPU_PCT = 50.0     # %CPU above which a practiceforge non-server proc is "spinning"
+const AGE_SECS = 600     # only reap once it has lived >= 10 min (avoids a brief CPU burst)
+
+def log [msg: string] {
+    let f = ($env.HOME | path join ".local/share/pf-stray-reaper.log")
+    let line = $"(date now | format date '%Y-%m-%d %H:%M:%S') ($msg)"
+    print $line
+    $line | save --append $f
+}
+
+# Parse a ps etime field ([[DD-]HH:]MM:SS) to total seconds.
+def etime-to-secs [e: string] {
+    mut days = 0
+    mut rest = $e
+    if ($rest | str contains "-") {
+        let parts = ($rest | split row "-")
+        $days = ($parts.0 | into int)
+        $rest = $parts.1
+    }
+    let hms = ($rest | split row ":")
+    let n = ($hms | length)
+    if $n == 3 {
+        ($days * 86400) + (($hms.0 | into int) * 3600) + (($hms.1 | into int) * 60) + ($hms.2 | into int)
+    } else if $n == 2 {
+        ($days * 86400) + (($hms.0 | into int) * 60) + ($hms.1 | into int)
+    } else {
+        0
+    }
+}
+
+def main [--apply] {
+    let rows = (^ps -Ao "pid=,pcpu=,etime=,command=" | lines | each { |l| $l | str trim })
+    for l in $rows {
+        let m = ($l | parse --regex '^(?<pid>\d+)\s+(?<cpu>[\d.]+)\s+(?<etime>[\d:-]+)\s+(?<cmd>.*)$')
+        if ($m | is-empty) { continue }
+        let r = $m.0
+        # Only the practiceforge binary; never the dashboard server.
+        if not ($r.cmd | str contains "bin/practiceforge") { continue }
+        if ($r.cmd | str contains "admin-dashboard") { continue }
+        let cpu = ($r.cpu | into float)
+        let age = (etime-to-secs $r.etime)
+        if $cpu > $CPU_PCT and $age > $AGE_SECS {
+            if $apply {
+                log $"KILL pid=($r.pid) cpu=($cpu)% age=($age)s cmd=($r.cmd)"
+                ^kill -TERM $r.pid
+                sleep 2sec
+                let alive = (^ps -p $r.pid -o pid= | complete | get stdout | str trim)
+                if ($alive | is-not-empty) {
+                    log $"SIGKILL pid=($r.pid) (survived TERM)"
+                    ^kill -KILL $r.pid
+                }
+            } else {
+                log $"WOULD-KILL pid=($r.pid) cpu=($cpu)% age=($age)s cmd=($r.cmd)"
+            }
+        }
+    }
+}

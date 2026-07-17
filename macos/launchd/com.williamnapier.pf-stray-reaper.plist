@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.williamnapier.pf-stray-reaper</string>
+
+    <!-- Kills orphaned/wedged practiceforge capture-sync strays (never the
+         admin-dashboard server). See scripts/pf-stray-reaper for the full
+         rationale (the 2026-07-17 PID-21425 17h busy-loop). -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/nu</string>
+        <string>/Users/williamnapier/.local/bin/pf-stray-reaper</string>
+        <string>--apply</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/williamnapier/.local/bin:/Users/williamnapier/.cargo/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>/Users/williamnapier</string>
+    </dict>
+
+    <!-- Every 10 minutes -->
+    <key>StartInterval</key>
+    <integer>600</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/williamnapier/.local/share/pf-stray-reaper.stdout</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/williamnapier/.local/share/pf-stray-reaper.stderr</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>Nice</key>
+    <integer>15</integer>
+</dict>
+</plist>
