@@ -4,6 +4,7 @@
 #
 # Usage: messageboard-edit insert "message content"
 #        messageboard-edit remove-section "### 2026-01-11 — device"
+#        messageboard-edit refresh-header
 #        messageboard-edit show
 
 # Trigger an immediate Syncthing rescan so a new/removed entry reaches the
@@ -149,6 +150,22 @@ def main [action: string, content?: string] {
             print $"✅ Removed section containing: ($content)"
         }
 
+        "refresh-header" => {
+            let current = (open $file)
+            let old = "> **Usage**: This header persists. Messages below get cleared by the\n> receiving assistant once addressed (action taken, information noted,\n> or question resolved). 30-day fallback for stale items. Newest at top.\n> Format: `### YYYY-MM-DD — device`"
+            let new = "> **Usage**: This header persists. Ordinary inbox messages below get\n> cleared by the responsible receiver once addressed (action taken, information\n> noted, or question resolved). **Design-forum pointers are attention gateways,\n> not per-assistant inbox tasks:** follow them to `design-forum/INDEX.md`; do not\n> clear them merely because one assistant has participated. Retire or supersede\n> them only when they no longer point to relevant open forum work. 30-day\n> fallback applies to stale ordinary items. Newest at top.\n> Format: `### YYYY-MM-DD — device`"
+
+            if not ($current | str contains $old) {
+                print "Messageboard usage header is already current or has changed; no edit made"
+                return
+            }
+
+            let updated = ($current | str replace $old $new)
+            $updated | save -f $file
+            trigger-sync
+            print "✅ Refreshed MESSAGEBOARD.md usage header"
+        }
+
         "show" => {
             open $file | print
         }
@@ -157,6 +174,7 @@ def main [action: string, content?: string] {
             print "Usage:"
             print "  messageboard-edit insert \"message\""
             print "  messageboard-edit remove-section \"### 2026-01-11 — device\""
+            print "  messageboard-edit refresh-header"
             print "  messageboard-edit show"
         }
     }
