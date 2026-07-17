@@ -1,0 +1,17 @@
+[package]
+name = "forum"
+version = "0.1.0"
+edition = "2021"
+description = "Vendor-neutral orchestration for William's multi-assistant design forum"
+
+[dependencies]
+anyhow = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+clap = { version = "4", features = ["derive", "env"] }
+dirs = "6"
+fs2 = "0.4"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+[dev-dependencies]
+tempfile = "3"
