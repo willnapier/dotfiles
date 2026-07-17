@@ -9,7 +9,7 @@ records.
 ## Core workflow
 
 ```nu
-forum open --id meta-example --system meta --level architecture --title "Example decision" --context "What should we decide?" --opened-by codex
+forum open --id meta-example --system assistant-infrastructure --area meta --level architecture --title "Example decision" --context "What should we decide?" --opened-by codex
 forum post meta-example --author codex --body "**Claim:** ..."
 forum convene meta-example --caller codex --panel others
 forum status meta-example
@@ -58,7 +58,7 @@ using it):
 [harnesses.grok-build]
 enabled = true
 command = "grok"
-args = ["--single", "--permission-mode", "plan", "--no-subagents"]
+args = ["--permission-mode", "plan", "--no-subagents", "--single"]
 prompt_mode = "argument"
 
 [panels]

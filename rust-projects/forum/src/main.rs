@@ -53,6 +53,9 @@ struct OpenArgs {
     id: String,
     #[arg(long)]
     system: String,
+    /// Directory under the forum root; defaults to --system (for example: meta)
+    #[arg(long)]
+    area: Option<String>,
     #[arg(long, value_enum)]
     level: Level,
     #[arg(long)]
@@ -273,11 +276,11 @@ fn default_config() -> Config {
             display_name: "Grok Build".into(),
             command: "grok".into(),
             args: vec![
-                "--single".into(),
                 "--permission-mode".into(),
                 "plan".into(),
                 "--no-subagents".into(),
                 "--disable-web-search".into(),
+                "--single".into(),
             ],
             prompt_mode: PromptMode::Argument,
             enabled: true,
@@ -347,6 +350,13 @@ fn load_config(path: Option<&Path>) -> Result<Config> {
 fn cmd_open(root: &Path, args: OpenArgs) -> Result<()> {
     validate_id(&args.id)?;
     validate_id(&args.system)?;
+    validate_id(&args.opened_by)?;
+    validate_single_line("title", &args.title)?;
+    if let Some(topic) = &args.topic {
+        validate_single_line("topic", topic)?;
+    }
+    let area = args.area.as_deref().unwrap_or(&args.system);
+    validate_id(area)?;
     let _lock = ForumLock::acquire(root)?;
     let index_path = root.join("INDEX.md");
     if !index_path.exists() {
@@ -360,7 +370,7 @@ fn cmd_open(root: &Path, args: OpenArgs) -> Result<()> {
         .unwrap_or_else(|| "Describe the problem, constraints, and relevant evidence here.".into());
     let date = Local::now().format("%Y-%m-%d").to_string();
     let filename = format!("{}-{}.md", date, slugify(&args.title));
-    let system_dir = root.join(&args.system);
+    let system_dir = root.join(area);
     fs::create_dir_all(&system_dir)?;
     let thread_path = system_dir.join(filename);
     if thread_path.exists() {
@@ -402,8 +412,16 @@ fn cmd_open(root: &Path, args: OpenArgs) -> Result<()> {
 }
 
 fn cmd_post(root: &Path, args: PostArgs) -> Result<()> {
+    validate_id(&args.author)?;
+    if let Some(name) = &args.name {
+        validate_single_line("name", name)?;
+    }
+    if let Some(reply_to) = &args.reply_to {
+        validate_single_line("reply-to", reply_to)?;
+    }
     let body = read_text_arg(args.body, args.body_file, true)?
         .ok_or_else(|| anyhow!("contribution body is empty"))?;
+    validate_contribution(&body)?;
     let path = require_thread(root, &args.id)?;
     let _lock = ForumLock::acquire(root)?;
     let mut thread = fs::read_to_string(&path)?;
@@ -428,6 +446,7 @@ fn cmd_post(root: &Path, args: PostArgs) -> Result<()> {
 }
 
 fn cmd_convene(root: &Path, config: &Config, args: ConveneArgs) -> Result<()> {
+    validate_id(&args.caller)?;
     let path = require_thread(root, &args.id)?;
     let snapshot = fs::read_to_string(&path)?;
     ensure_open(&snapshot)?;
@@ -440,7 +459,7 @@ fn cmd_convene(root: &Path, config: &Config, args: ConveneArgs) -> Result<()> {
     let requested = resolve_panel(config, &args.panel, &args.caller)?;
     let pending: Vec<Harness> = requested
         .into_iter()
-        .filter(|h| !has_round_marker(&snapshot, round, &h.id))
+        .filter(|h| !has_round_contribution(&snapshot, round, &h.id))
         .collect();
 
     if pending.is_empty() {
@@ -507,7 +526,7 @@ fn cmd_convene(root: &Path, config: &Config, args: ConveneArgs) -> Result<()> {
         let mut current = fs::read_to_string(&path)?;
         ensure_open(&current)?;
         for result in successes {
-            if has_round_marker(&current, round, &result.harness.id) {
+            if has_round_contribution(&current, round, &result.harness.id) {
                 continue;
             }
             append_contribution(
@@ -717,6 +736,7 @@ fn clean_model_output(raw: &str) -> Result<String> {
     if body.starts_with("---\n") {
         bail!("harness returned forbidden frontmatter");
     }
+    validate_contribution(&body)?;
     Ok(body)
 }
 
@@ -843,6 +863,24 @@ fn has_round_marker(thread: &str, round: u32, harness: &str) -> bool {
     thread.contains(&format!("<!-- forum-round:{round} harness:{harness} -->"))
 }
 
+fn has_round_contribution(thread: &str, round: u32, harness: &str) -> bool {
+    has_round_marker(thread, round, harness)
+        || (round == 1 && participants(thread).iter().any(|item| item == harness))
+}
+
+fn participants(thread: &str) -> Vec<String> {
+    let Some(value) = frontmatter_value(thread, "participants") else {
+        return Vec::new();
+    };
+    value
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .split(',')
+        .map(|item| item.trim().to_string())
+        .filter(|item| !item.is_empty())
+        .collect()
+}
+
 fn round_markers(thread: &str) -> BTreeMap<u32, BTreeSet<String>> {
     let mut result: BTreeMap<u32, BTreeSet<String>> = BTreeMap::new();
     for line in thread.lines() {
@@ -867,11 +905,14 @@ fn choose_round(thread: &str, requested: Option<u32>, new_round: bool) -> u32 {
     if let Some(round) = requested {
         return round.max(1);
     }
-    let highest = round_markers(thread)
+    let mut highest = round_markers(thread)
         .keys()
         .next_back()
         .copied()
         .unwrap_or(0);
+    if highest == 0 && (thread.contains("### Position —") || thread.contains("### Reply —")) {
+        highest = 1;
+    }
     if new_round {
         highest + 1
     } else {
@@ -969,6 +1010,29 @@ fn validate_id(id: &str) -> Result<()> {
     Ok(())
 }
 
+fn validate_single_line(label: &str, value: &str) -> Result<()> {
+    if value.trim().is_empty() || value.contains(['\n', '\r']) {
+        bail!("{label} must be a non-empty single line");
+    }
+    Ok(())
+}
+
+fn validate_contribution(body: &str) -> Result<()> {
+    const RESERVED: [&str; 5] = [
+        "## Positions",
+        "## Open questions",
+        "## Decision",
+        "## Consequences / follow-ups",
+        "<!-- forum-round:",
+    ];
+    for line in body.lines().map(str::trim) {
+        if RESERVED.iter().any(|reserved| line.starts_with(reserved)) {
+            bail!("contribution contains reserved forum structure: {line}");
+        }
+    }
+    Ok(())
+}
+
 fn slugify(value: &str) -> String {
     let mut out = String::new();
     let mut dash = false;
@@ -1050,6 +1114,7 @@ impl ForumLock {
         fs::create_dir_all(root)?;
         let file = OpenOptions::new()
             .create(true)
+            .truncate(false)
             .read(true)
             .write(true)
             .open(root.join(".forum.lock"))?;
@@ -1123,6 +1188,24 @@ mod tests {
     }
 
     #[test]
+    fn legacy_participants_count_as_round_one_only() {
+        let mut thread = sample_thread();
+        append_contribution(
+            &mut thread,
+            "grok-build",
+            "Grok Build",
+            ContributionKind::Position,
+            None,
+            "Manual legacy contribution.",
+            None,
+        )
+        .unwrap();
+        assert!(has_round_contribution(&thread, 1, "grok-build"));
+        assert!(!has_round_contribution(&thread, 2, "grok-build"));
+        assert_eq!(choose_round(&thread, None, true), 2);
+    }
+
+    #[test]
     fn panel_others_excludes_caller() {
         let config = default_config();
         let panel = resolve_panel(&config, "others", "codex").unwrap();
@@ -1164,5 +1247,23 @@ mod tests {
             clean_model_output("```markdown\nClaim.\n```").unwrap(),
             "Claim."
         );
+        assert!(clean_model_output("Claim.\n\n## Decision\nNo.").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn cold_starts_a_configured_headless_process() {
+        let temp = TempDir::new().unwrap();
+        let harness = Harness {
+            id: "fake".into(),
+            display_name: "Fake Harness".into(),
+            command: "/bin/sh".into(),
+            args: vec!["-c".into(), "printf '**Claim:** cold-started\\n'".into()],
+            prompt_mode: PromptMode::Argument,
+            enabled: true,
+        };
+        let result = invoke_harness(harness, temp.path(), "ignored prompt");
+        assert_eq!(result.body.as_deref(), Some("**Claim:** cold-started"));
+        assert!(result.error.is_none());
     }
 }
