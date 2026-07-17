@@ -5,6 +5,7 @@
 depends = []
 
 [shared.files]
+"codex/AGENTS.md" = { target = "~/.codex/AGENTS.md", type = "symbolic" }
 "ssh/config" = "~/.ssh/config"
 "scripts/tm3-cookie-sync" = "~/.local/bin/tm3-cookie-sync"
 "scripts/cc-clinical" = "~/.local/bin/cc-clinical"
