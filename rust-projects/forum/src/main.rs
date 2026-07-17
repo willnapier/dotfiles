@@ -1486,6 +1486,14 @@ mod tests {
         "---\nid: test-thread\nsystem: meta\nlevel: architecture\nstatus: open\nopened: 2026-07-17\nopened_by: will\nparticipants: [will]\ndecision: null\n---\n\n# Test\n\n## Context\n\nContext.\n\n## Positions\n\n_(awaiting positions)_\n\n## Open questions\n\n- Question?\n\n## Decision\n\n_(none)_\n".into()
     }
 
+    fn write_temp_forum(temp: &TempDir) {
+        fs::write(temp.path().join("INDEX.md"), "# Index\n").unwrap();
+        fs::write(temp.path().join("PROTOCOL.md"), "# Protocol\n").unwrap();
+        let dir = temp.path().join("meta");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("thread.md"), sample_thread()).unwrap();
+    }
+
     #[test]
     fn contribution_updates_participants_and_adds_marker() {
         let mut thread = sample_thread();
@@ -1564,11 +1572,35 @@ mod tests {
     }
 
     #[test]
+    fn background_convene_creates_a_durable_exact_round_job() {
+        let temp = TempDir::new().unwrap();
+        write_temp_forum(&temp);
+        let args = ConveneArgs {
+            id: "test-thread".into(),
+            caller: "codex".into(),
+            panel: "others".into(),
+            round: None,
+            new_round: false,
+            kind: None,
+            dry_run: false,
+            background: true,
+            max_attempts: 3,
+        };
+        enqueue_convene(temp.path(), &default_config(), args).unwrap();
+        let files = job_files(&queue_dir(temp.path())).unwrap();
+        assert_eq!(files.len(), 1);
+        let job: QueueJob = toml::from_str(&fs::read_to_string(&files[0]).unwrap()).unwrap();
+        assert_eq!(job.thread_id, "test-thread");
+        assert_eq!(job.round, 1);
+        assert_eq!(job.attempts, 0);
+        assert_eq!(job.max_attempts, 3);
+        assert!(matches!(job.kind, ContributionKind::Position));
+    }
+
+    #[test]
     fn resolves_thread_by_frontmatter_id() {
         let temp = TempDir::new().unwrap();
-        let dir = temp.path().join("meta");
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("thread.md"), sample_thread()).unwrap();
+        write_temp_forum(&temp);
         assert!(resolve_thread(temp.path(), "test-thread")
             .unwrap()
             .is_some());

@@ -15,6 +15,19 @@ forum convene meta-example --caller codex --panel others
 forum status meta-example
 ```
 
+Queue a round and return immediately:
+
+```nu
+forum convene meta-example --caller codex --panel others --background
+forum jobs
+```
+
+The Mac LaunchAgent runs `forum worker --poll-seconds 10`. Jobs live under the
+Syncthing-shared `design-forum/.orchestrator/`, so nimbini can enqueue work for
+the Mac without running a competing worker. A claimed job is retried up to
+three times with exponential backoff; successful, failed, and cancelled job
+records remain inspectable with `forum jobs --all`.
+
 Panels:
 
 - `core`: Codex, Claude Code, and Grok Build
@@ -46,7 +59,21 @@ forum convene meta-example --caller codex --panel others --dry-run
 - Forum threads must remain `status: open`; decided/parked/rejected threads are
   refused.
 - A single coordinator host is still required. Syncthing does not provide a
-  distributed lock across Mac and nimbini.
+  distributed lock across Mac and nimbini. The Mac is the elected worker host.
+
+## Background worker operations
+
+```nu
+forum worker --once                    # process available jobs, then exit
+forum worker --poll-seconds 10         # long-running worker
+forum jobs                             # queued/running/failed/cancelled
+forum jobs --all                       # include completed jobs
+forum cancel <job-id>                  # queued jobs only
+```
+
+The queue is explicit. Editing or saving Markdown never launches models. A
+worker that restarts moves abandoned `running/` jobs back to `queue/`; round
+markers make replay safe after partial completion.
 
 ## Optional configuration
 

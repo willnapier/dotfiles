@@ -405,6 +405,7 @@ depends = ["shared"]
 "macos/launchd/com.williamnapier.tm3-session-broker.plist" = "~/Library/LaunchAgents/com.williamnapier.tm3-session-broker.plist"
 "macos/launchd/com.williamnapier.cross-machine-sync-check.plist" = "~/Library/LaunchAgents/com.williamnapier.cross-machine-sync-check.plist"
 "macos/launchd/com.williamnapier.dev-catchup.plist" = "~/Library/LaunchAgents/com.williamnapier.dev-catchup.plist"
+"macos/launchd/com.williamnapier.forum-worker.plist" = "~/Library/LaunchAgents/com.williamnapier.forum-worker.plist"
 "macos/launchd/com.williamnapier.morning-briefing.plist" = "~/Library/LaunchAgents/com.williamnapier.morning-briefing.plist"
 "scripts/morning-briefing" = "~/.local/bin/morning-briefing"
 "macos/launchd/com.williamnapier.subscriptions-check.plist" = "~/Library/LaunchAgents/com.williamnapier.subscriptions-check.plist"
