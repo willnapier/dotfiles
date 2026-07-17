@@ -534,7 +534,7 @@ fn cmd_convene(root: &Path, config: &Config, args: ConveneArgs) -> Result<()> {
         return Ok(());
     }
 
-    let job_dir = create_job_dir(&args.id, round)?;
+    let job_dir = create_job_dir(root, &args.id, round)?;
     atomic_write(&job_dir.join("snapshot.md"), &snapshot)?;
     let mut handles = Vec::new();
     for harness in pending {
@@ -1395,9 +1395,14 @@ fn capitalize(value: &str) -> String {
         .unwrap_or_default()
 }
 
-fn create_job_dir(id: &str, round: u32) -> Result<PathBuf> {
+fn create_job_dir(root: &Path, id: &str, round: u32) -> Result<PathBuf> {
     let timestamp = Local::now().format("%Y%m%d-%H%M%S");
-    let path = default_state_root()
+    let state_root = if root == default_root() {
+        default_state_root()
+    } else {
+        orchestrator_dir(root).join("local-state")
+    };
+    let path = state_root
         .join("jobs")
         .join(format!("{id}-r{round}-{timestamp}"));
     fs::create_dir_all(&path)?;
@@ -1595,6 +1600,52 @@ mod tests {
         assert_eq!(job.attempts, 0);
         assert_eq!(job.max_attempts, 3);
         assert!(matches!(job.kind, ContributionKind::Position));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn queued_job_runs_end_to_end_with_a_fake_harness() {
+        let temp = TempDir::new().unwrap();
+        write_temp_forum(&temp);
+        let fake = Harness {
+            id: "fake".into(),
+            display_name: "Fake Harness".into(),
+            command: "/bin/sh".into(),
+            args: vec![
+                "-c".into(),
+                "printf '**Claim:** queued worker ran\\n'".into(),
+            ],
+            prompt_mode: PromptMode::Argument,
+            enabled: true,
+        };
+        let mut harnesses = BTreeMap::new();
+        harnesses.insert("fake".into(), fake);
+        let config = Config {
+            harnesses,
+            panels: BTreeMap::new(),
+        };
+        enqueue_convene(
+            temp.path(),
+            &config,
+            ConveneArgs {
+                id: "test-thread".into(),
+                caller: "will".into(),
+                panel: "fake".into(),
+                round: None,
+                new_round: false,
+                kind: None,
+                dry_run: false,
+                background: true,
+                max_attempts: 2,
+            },
+        )
+        .unwrap();
+        assert!(process_next_job(temp.path(), &config).unwrap());
+        assert!(job_files(&queue_dir(temp.path())).unwrap().is_empty());
+        assert_eq!(job_files(&completed_dir(temp.path())).unwrap().len(), 1);
+        let thread = fs::read_to_string(temp.path().join("meta/thread.md")).unwrap();
+        assert!(thread.contains("**Claim:** queued worker ran"));
+        assert!(thread.contains("<!-- forum-round:1 harness:fake -->"));
     }
 
     #[test]
