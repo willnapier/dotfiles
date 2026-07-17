@@ -2,13 +2,14 @@ use anyhow::{anyhow, bail, Context, Result};
 use chrono::Local;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use fs2::FileExt;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
+use std::time::Duration;
 
 const DEFAULT_ROOT_SUFFIX: &str = "Assistants/shared/design-forum";
 
@@ -39,6 +40,23 @@ enum Commands {
     Post(PostArgs),
     /// Cold-start a panel of headless assistants for one numbered round
     Convene(ConveneArgs),
+    /// Run the durable background queue worker
+    Worker {
+        /// Process available jobs once, then exit
+        #[arg(long)]
+        once: bool,
+        /// Seconds between queue scans in daemon mode
+        #[arg(long, default_value_t = 10)]
+        poll_seconds: u64,
+    },
+    /// List queued, running, completed, and failed jobs
+    Jobs {
+        /// Include completed jobs
+        #[arg(long)]
+        all: bool,
+    },
+    /// Cancel a job that has not yet been claimed
+    Cancel { job_id: String },
     /// Show one thread's status, participants, and orchestrated rounds
     Status { id: String },
     /// List forum threads from INDEX.md
@@ -112,8 +130,14 @@ struct ConveneArgs {
     #[arg(long, value_enum)]
     kind: Option<ContributionKind>,
     /// Print planned invocations without calling models or writing the thread
-    #[arg(long)]
+    #[arg(long, conflicts_with = "background")]
     dry_run: bool,
+    /// Queue the round for the background worker and return immediately
+    #[arg(long)]
+    background: bool,
+    /// Total attempts before a background job is archived as failed
+    #[arg(long, default_value_t = 3)]
+    max_attempts: u32,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -135,7 +159,8 @@ impl Level {
     }
 }
 
-#[derive(Clone, Copy, Debug, ValueEnum)]
+#[derive(Clone, Copy, Debug, ValueEnum, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 enum ContributionKind {
     Position,
     Reply,
@@ -196,6 +221,23 @@ struct InvocationResult {
     error: Option<String>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct QueueJob {
+    version: u32,
+    job_id: String,
+    thread_id: String,
+    caller: String,
+    panel: String,
+    round: u32,
+    kind: ContributionKind,
+    attempts: u32,
+    max_attempts: u32,
+    created_at: String,
+    next_attempt_at: i64,
+    completed_at: Option<String>,
+    last_error: Option<String>,
+}
+
 fn main() {
     if let Err(error) = run() {
         eprintln!("error: {error:#}");
@@ -212,6 +254,9 @@ fn run() -> Result<()> {
         Commands::Open(args) => cmd_open(&root, args),
         Commands::Post(args) => cmd_post(&root, args),
         Commands::Convene(args) => cmd_convene(&root, &config, args),
+        Commands::Worker { once, poll_seconds } => cmd_worker(&root, &config, once, poll_seconds),
+        Commands::Jobs { all } => cmd_jobs(&root, all),
+        Commands::Cancel { job_id } => cmd_cancel(&root, &job_id),
         Commands::Status { id } => cmd_status(&root, &id),
         Commands::List => cmd_list(&root),
         Commands::Doctor => cmd_doctor(&root, &config),
@@ -447,6 +492,12 @@ fn cmd_post(root: &Path, args: PostArgs) -> Result<()> {
 
 fn cmd_convene(root: &Path, config: &Config, args: ConveneArgs) -> Result<()> {
     validate_id(&args.caller)?;
+    if args.max_attempts == 0 {
+        bail!("max-attempts must be at least 1");
+    }
+    if args.background {
+        return enqueue_convene(root, config, args);
+    }
     let path = require_thread(root, &args.id)?;
     let snapshot = fs::read_to_string(&path)?;
     ensure_open(&snapshot)?;
@@ -558,6 +609,280 @@ fn cmd_convene(root: &Path, config: &Config, args: ConveneArgs) -> Result<()> {
         );
     }
     Ok(())
+}
+
+fn enqueue_convene(root: &Path, config: &Config, args: ConveneArgs) -> Result<()> {
+    let _lock = ForumLock::acquire(root)?;
+    let path = require_thread(root, &args.id)?;
+    let snapshot = fs::read_to_string(&path)?;
+    ensure_open(&snapshot)?;
+    let round = choose_round(&snapshot, args.round, args.new_round);
+    let kind = args.kind.unwrap_or(if round == 1 {
+        ContributionKind::Position
+    } else {
+        ContributionKind::Reply
+    });
+    let pending: Vec<Harness> = resolve_panel(config, &args.panel, &args.caller)?
+        .into_iter()
+        .filter(|h| !has_round_contribution(&snapshot, round, &h.id))
+        .collect();
+    if pending.is_empty() {
+        println!("Round {round} already contains every requested harness; nothing queued.");
+        return Ok(());
+    }
+
+    ensure_queue_dirs(root)?;
+    let now = Local::now();
+    let nonce = now
+        .timestamp_nanos_opt()
+        .unwrap_or_else(|| now.timestamp_micros() * 1_000);
+    let job_id = format!("{}-r{}-{}-{}", args.id, round, nonce, std::process::id());
+    let job = QueueJob {
+        version: 1,
+        job_id: job_id.clone(),
+        thread_id: args.id,
+        caller: args.caller,
+        panel: args.panel,
+        round,
+        kind,
+        attempts: 0,
+        max_attempts: args.max_attempts,
+        created_at: now.to_rfc3339(),
+        next_attempt_at: now.timestamp(),
+        completed_at: None,
+        last_error: None,
+    };
+    let raw = toml::to_string_pretty(&job)?;
+    atomic_write(&queue_dir(root).join(format!("{job_id}.toml")), &raw)?;
+    println!("Queued forum job: {job_id}");
+    println!(
+        "Thread {} round {}: {}",
+        job.thread_id,
+        round,
+        pending
+            .iter()
+            .map(|h| h.id.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    Ok(())
+}
+
+fn cmd_worker(root: &Path, config: &Config, once: bool, poll_seconds: u64) -> Result<()> {
+    if poll_seconds == 0 {
+        bail!("poll-seconds must be at least 1");
+    }
+    ensure_queue_dirs(root)?;
+    let _worker_lock = WorkerLock::acquire(root)?;
+    recover_running_jobs(root)?;
+    println!("forum worker active for {}", root.display());
+    loop {
+        let processed = process_next_job(root, config)?;
+        if once {
+            if !processed {
+                return Ok(());
+            }
+            continue;
+        }
+        if !processed {
+            thread::sleep(Duration::from_secs(poll_seconds));
+        }
+    }
+}
+
+fn process_next_job(root: &Path, config: &Config) -> Result<bool> {
+    let now = Local::now().timestamp();
+    let mut candidates = job_files(&queue_dir(root))?;
+    candidates.sort();
+    let Some((queued_path, mut job)) = candidates.into_iter().find_map(|path| {
+        let raw = fs::read_to_string(&path).ok()?;
+        let job: QueueJob = toml::from_str(&raw).ok()?;
+        (job.next_attempt_at <= now).then_some((path, job))
+    }) else {
+        return Ok(false);
+    };
+
+    let running_path = running_dir(root).join(queued_path.file_name().unwrap_or_default());
+    match fs::rename(&queued_path, &running_path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.into()),
+    }
+    println!("processing forum job {}", job.job_id);
+
+    let result = cmd_convene(
+        root,
+        config,
+        ConveneArgs {
+            id: job.thread_id.clone(),
+            caller: job.caller.clone(),
+            panel: job.panel.clone(),
+            round: Some(job.round),
+            new_round: false,
+            kind: Some(job.kind),
+            dry_run: false,
+            background: false,
+            max_attempts: job.max_attempts,
+        },
+    );
+
+    match result {
+        Ok(()) => {
+            job.completed_at = Some(Local::now().to_rfc3339());
+            job.last_error = None;
+            archive_job(&running_path, &completed_dir(root), &job)?;
+            println!("completed forum job {}", job.job_id);
+        }
+        Err(error) => {
+            job.attempts += 1;
+            job.last_error = Some(format!("{error:#}"));
+            if job.attempts < job.max_attempts {
+                let exponent = job.attempts.saturating_sub(1).min(6);
+                let delay = 60_i64 * (1_i64 << exponent);
+                job.next_attempt_at = Local::now().timestamp() + delay;
+                archive_job(&running_path, &queue_dir(root), &job)?;
+                eprintln!(
+                    "forum job {} failed attempt {}/{}; retry in {}s: {}",
+                    job.job_id,
+                    job.attempts,
+                    job.max_attempts,
+                    delay,
+                    job.last_error.as_deref().unwrap_or("unknown error")
+                );
+            } else {
+                job.completed_at = Some(Local::now().to_rfc3339());
+                archive_job(&running_path, &failed_dir(root), &job)?;
+                eprintln!(
+                    "forum job {} failed permanently after {} attempt(s): {}",
+                    job.job_id,
+                    job.attempts,
+                    job.last_error.as_deref().unwrap_or("unknown error")
+                );
+            }
+        }
+    }
+    Ok(true)
+}
+
+fn cmd_jobs(root: &Path, all: bool) -> Result<()> {
+    ensure_queue_dirs(root)?;
+    let mut found = false;
+    let states: Vec<(&str, PathBuf)> = vec![
+        ("queued", queue_dir(root)),
+        ("running", running_dir(root)),
+        ("failed", failed_dir(root)),
+        ("cancelled", cancelled_dir(root)),
+        ("completed", completed_dir(root)),
+    ];
+    for (state, dir) in states {
+        if !all && state == "completed" {
+            continue;
+        }
+        for path in job_files(&dir)? {
+            let raw = fs::read_to_string(&path)?;
+            let job: QueueJob = toml::from_str(&raw)?;
+            println!(
+                "{}\t{}\tthread={} round={} attempts={}/{}{}",
+                state,
+                job.job_id,
+                job.thread_id,
+                job.round,
+                job.attempts,
+                job.max_attempts,
+                job.last_error
+                    .as_deref()
+                    .map(|error| format!(" error={}", error.replace('\n', " ")))
+                    .unwrap_or_default()
+            );
+            found = true;
+        }
+    }
+    if !found {
+        println!("No forum jobs.");
+    }
+    Ok(())
+}
+
+fn cmd_cancel(root: &Path, job_id: &str) -> Result<()> {
+    validate_single_line("job-id", job_id)?;
+    ensure_queue_dirs(root)?;
+    let source = queue_dir(root).join(format!("{job_id}.toml"));
+    if !source.exists() {
+        bail!("queued job not found (running jobs cannot be cancelled): {job_id}");
+    }
+    let destination = cancelled_dir(root).join(format!("{job_id}.toml"));
+    fs::rename(source, destination)?;
+    println!("Cancelled forum job: {job_id}");
+    Ok(())
+}
+
+fn archive_job(running_path: &Path, destination_dir: &Path, job: &QueueJob) -> Result<()> {
+    let raw = toml::to_string_pretty(job)?;
+    atomic_write(running_path, &raw)?;
+    let destination = destination_dir.join(running_path.file_name().unwrap_or_default());
+    fs::rename(running_path, destination)?;
+    Ok(())
+}
+
+fn recover_running_jobs(root: &Path) -> Result<()> {
+    for path in job_files(&running_dir(root))? {
+        let destination = queue_dir(root).join(path.file_name().unwrap_or_default());
+        if !destination.exists() {
+            fs::rename(&path, destination)?;
+        }
+    }
+    Ok(())
+}
+
+fn ensure_queue_dirs(root: &Path) -> Result<()> {
+    for dir in [
+        queue_dir(root),
+        running_dir(root),
+        completed_dir(root),
+        failed_dir(root),
+        cancelled_dir(root),
+    ] {
+        fs::create_dir_all(dir)?;
+    }
+    Ok(())
+}
+
+fn orchestrator_dir(root: &Path) -> PathBuf {
+    root.join(".orchestrator")
+}
+
+fn queue_dir(root: &Path) -> PathBuf {
+    orchestrator_dir(root).join("queue")
+}
+
+fn running_dir(root: &Path) -> PathBuf {
+    orchestrator_dir(root).join("running")
+}
+
+fn completed_dir(root: &Path) -> PathBuf {
+    orchestrator_dir(root).join("completed")
+}
+
+fn failed_dir(root: &Path) -> PathBuf {
+    orchestrator_dir(root).join("failed")
+}
+
+fn cancelled_dir(root: &Path) -> PathBuf {
+    orchestrator_dir(root).join("cancelled")
+}
+
+fn job_files(dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+    if !dir.exists() {
+        return Ok(files);
+    }
+    for entry in fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path.extension().and_then(|value| value.to_str()) == Some("toml") {
+            files.push(path);
+        }
+    }
+    Ok(files)
 }
 
 fn cmd_status(root: &Path, id: &str) -> Result<()> {
@@ -1124,6 +1449,29 @@ impl ForumLock {
 }
 
 impl Drop for ForumLock {
+    fn drop(&mut self) {
+        let _ = FileExt::unlock(&self.0);
+    }
+}
+
+struct WorkerLock(File);
+
+impl WorkerLock {
+    fn acquire(root: &Path) -> Result<Self> {
+        let path = orchestrator_dir(root).join("worker.lock");
+        let file = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&path)?;
+        file.try_lock_exclusive()
+            .with_context(|| format!("another forum worker already owns {}", path.display()))?;
+        Ok(Self(file))
+    }
+}
+
+impl Drop for WorkerLock {
     fn drop(&mut self) {
         let _ = FileExt::unlock(&self.0);
     }
