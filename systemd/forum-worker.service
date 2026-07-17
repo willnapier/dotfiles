@@ -1,0 +1,19 @@
+[Unit]
+Description=Design Forum multi-harness background worker
+After=network-online.target syncthing.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/forum worker --poll-seconds 10
+WorkingDirectory=%h/Assistants/shared/design-forum
+Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=%h
+Restart=always
+RestartSec=10
+Nice=10
+StandardOutput=append:%h/.local/share/forum-worker.stdout
+StandardError=append:%h/.local/share/forum-worker.stderr
+
+[Install]
+WantedBy=default.target

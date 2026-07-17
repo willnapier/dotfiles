@@ -488,6 +488,7 @@ depends = ["shared"]
 "systemd/helix-undo-cleanup.service" = "~/.config/systemd/user/helix-undo-cleanup.service"
 "systemd/helix-undo-cleanup.timer" = "~/.config/systemd/user/helix-undo-cleanup.timer"
 "systemd/cross-machine-sync-check.service" = "~/.config/systemd/user/cross-machine-sync-check.service"
+"systemd/forum-worker.service" = "~/.config/systemd/user/forum-worker.service"
 "systemd/cross-machine-sync-check.timer" = "~/.config/systemd/user/cross-machine-sync-check.timer"
 "systemd/dev-catchup.service" = "~/.config/systemd/user/dev-catchup.service"
 "systemd/dev-catchup.timer" = "~/.config/systemd/user/dev-catchup.timer"

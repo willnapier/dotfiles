@@ -22,9 +22,9 @@ forum convene meta-example --caller codex --panel others --background
 forum jobs
 ```
 
-The Mac LaunchAgent runs `forum worker --poll-seconds 10`. Jobs live under the
-Syncthing-shared `design-forum/.orchestrator/`, so nimbini can enqueue work for
-the Mac without running a competing worker. A claimed job is retried up to
+The nimbini systemd user service runs `forum worker --poll-seconds 10`. Jobs
+live under the Syncthing-shared `design-forum/.orchestrator/`, so either machine
+can enqueue work without running competing workers. A claimed job is retried up to
 three times with exponential backoff; successful, failed, and cancelled job
 records remain inspectable with `forum jobs --all`.
 
@@ -59,7 +59,8 @@ forum convene meta-example --caller codex --panel others --dry-run
 - Forum threads must remain `status: open`; decided/parked/rejected threads are
   refused.
 - A single coordinator host is still required. Syncthing does not provide a
-  distributed lock across Mac and nimbini. The Mac is the elected worker host.
+  distributed lock across Mac and nimbini. nimbini is the elected worker host;
+  the installed Mac LaunchAgent remains disabled as a manual fallback.
 
 ## Background worker operations
 
