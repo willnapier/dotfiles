@@ -59,6 +59,8 @@ enum Commands {
     Cancel { job_id: String },
     /// Show one thread's status, participants, and orchestrated rounds
     Status { id: String },
+    /// Turn an accepted decision into one bounded implementation work order
+    Dispatch(DispatchArgs),
     /// List forum threads from INDEX.md
     List,
     /// Validate paths, harness commands, and the forum index
@@ -138,6 +140,29 @@ struct ConveneArgs {
     /// Total attempts before a background job is archived as failed
     #[arg(long, default_value_t = 3)]
     max_attempts: u32,
+}
+
+#[derive(Args)]
+struct DispatchArgs {
+    id: String,
+    /// Single implementation owner
+    #[arg(long)]
+    assignee: String,
+    /// One bounded file, system, or responsibility in scope; repeat as needed
+    #[arg(long = "scope", required = true)]
+    scope: Vec<String>,
+    /// One observable completion condition; repeat as needed
+    #[arg(long = "acceptance", required = true)]
+    acceptance: Vec<String>,
+    /// Independent reviewer harness; repeat as needed
+    #[arg(long = "reviewer", required = true)]
+    reviewers: Vec<String>,
+    /// Human or harness authorizing the dispatch
+    #[arg(long, default_value = "will")]
+    requested_by: String,
+    /// Print the exact work order without changing the thread or Messageboard
+    #[arg(long)]
+    dry_run: bool,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -258,6 +283,7 @@ fn run() -> Result<()> {
         Commands::Jobs { all } => cmd_jobs(&root, all),
         Commands::Cancel { job_id } => cmd_cancel(&root, &job_id),
         Commands::Status { id } => cmd_status(&root, &id),
+        Commands::Dispatch(args) => cmd_dispatch(&root, args),
         Commands::List => cmd_list(&root),
         Commands::Doctor => cmd_doctor(&root, &config),
     }
@@ -913,6 +939,204 @@ fn cmd_status(root: &Path, id: &str) -> Result<()> {
                 harnesses.into_iter().collect::<Vec<_>>().join(", ")
             );
         }
+    }
+    Ok(())
+}
+
+fn cmd_dispatch(root: &Path, args: DispatchArgs) -> Result<()> {
+    validate_id(&args.id)?;
+    validate_id(&args.assignee)?;
+    validate_id(&args.requested_by)?;
+    validate_bounded_items("scope", &args.scope)?;
+    validate_bounded_items("acceptance", &args.acceptance)?;
+
+    let mut reviewer_set = BTreeSet::new();
+    for reviewer in &args.reviewers {
+        validate_id(reviewer)?;
+        if reviewer == &args.assignee {
+            bail!("reviewer {reviewer} is also the assignee; review must be independent");
+        }
+        if !reviewer_set.insert(reviewer.clone()) {
+            bail!("duplicate reviewer: {reviewer}");
+        }
+    }
+
+    let _lock = ForumLock::acquire(root)?;
+    let path = require_thread(root, &args.id)?;
+    let mut thread = fs::read_to_string(&path)?;
+    let status = frontmatter_value(&thread, "status")
+        .ok_or_else(|| anyhow!("thread lacks status frontmatter"))?;
+    if status != "decided" {
+        bail!("thread is {status}, not decided; only accepted decisions can be dispatched");
+    }
+    let decision = frontmatter_value(&thread, "decision")
+        .map(|value| unquote_frontmatter(&value))
+        .filter(|value| !value.is_empty() && value != "null")
+        .ok_or_else(|| anyhow!("decided thread lacks a non-null decision summary"))?;
+    let dispatch_marker = format!("<!-- forum-dispatch:{} -->", args.id);
+    if thread.contains(&dispatch_marker) {
+        bail!("thread {} has already been dispatched", args.id);
+    }
+
+    let relative = path.strip_prefix(root).unwrap_or(&path);
+    let work_order = build_work_order(
+        &args.id,
+        &decision,
+        &args.assignee,
+        &args.requested_by,
+        &args.scope,
+        &args.acceptance,
+        &args.reviewers,
+        relative,
+    );
+    if args.dry_run {
+        println!("{work_order}");
+        return Ok(());
+    }
+
+    let messageboard_marker = format!("<!-- forum-work-order:{} -->", args.id);
+    let messageboard_path = root
+        .parent()
+        .ok_or_else(|| anyhow!("forum root has no shared-directory parent"))?
+        .join("MESSAGEBOARD.md");
+    let already_posted = messageboard_path.is_file()
+        && fs::read_to_string(&messageboard_path)?.contains(&messageboard_marker);
+    if !already_posted {
+        post_messageboard_work_order(&work_order)?;
+    }
+
+    let receipt = build_dispatch_receipt(
+        &args.id,
+        &args.assignee,
+        &args.requested_by,
+        &args.scope,
+        &args.acceptance,
+        &args.reviewers,
+    );
+    if !thread.ends_with('\n') {
+        thread.push('\n');
+    }
+    thread.push_str(&receipt);
+    atomic_write(&path, &thread)?;
+
+    if already_posted {
+        println!("Recovered existing Messageboard work order for {}", args.id);
+    } else {
+        println!("Posted bounded Messageboard work order for {}", args.id);
+    }
+    println!("Assigned to: {}", args.assignee);
+    println!("Dispatch receipt: {}", path.display());
+    Ok(())
+}
+
+fn validate_bounded_items(label: &str, items: &[String]) -> Result<()> {
+    if items.is_empty() {
+        bail!("at least one {label} item is required");
+    }
+    for item in items {
+        validate_single_line(label, item)?;
+        if item.len() > 500 {
+            bail!("{label} item exceeds 500 characters");
+        }
+    }
+    Ok(())
+}
+
+fn unquote_frontmatter(value: &str) -> String {
+    value
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .unwrap_or(value)
+        .replace("\\\"", "\"")
+        .trim()
+        .to_string()
+}
+
+fn build_work_order(
+    id: &str,
+    decision: &str,
+    assignee: &str,
+    requested_by: &str,
+    scope: &[String],
+    acceptance: &[String],
+    reviewers: &[String],
+    relative_thread: &Path,
+) -> String {
+    let scope = markdown_list(scope);
+    let acceptance = markdown_list(acceptance);
+    let reviewers = reviewers
+        .iter()
+        .map(|reviewer| format!("`{reviewer}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "FORUM WORK ORDER — `{id}`\n\n\
+**Accepted decision:** {decision}\n\n\
+**Implementation owner:** `{assignee}`  \n\
+**Requested by:** `{requested_by}`\n\n\
+**Bounded scope:**\n{scope}\n\n\
+**Acceptance criteria:**\n{acceptance}\n\n\
+**Independent reviewers:** {reviewers}\n\n\
+**Decision record:** `design-forum/{}`\n\n\
+Implement only the accepted decision and bounded scope above. Debate does not reopen during implementation; material ambiguity or scope expansion returns to the forum or William. Record shipped work in ASSISTANT-HANDOFF and obtain independent review before treating the work order as complete.\n\n\
+<!-- forum-work-order:{id} -->",
+        relative_thread.display()
+    )
+}
+
+fn build_dispatch_receipt(
+    id: &str,
+    assignee: &str,
+    requested_by: &str,
+    scope: &[String],
+    acceptance: &[String],
+    reviewers: &[String],
+) -> String {
+    let date = Local::now().format("%Y-%m-%d");
+    let reviewers = reviewers
+        .iter()
+        .map(|reviewer| format!("`{reviewer}`"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "\n### Implementation dispatch — {date}\n\n\
+- **Owner:** `{assignee}`\n\
+- **Requested by:** `{requested_by}`\n\
+- **Scope:** {}\n\
+- **Acceptance:** {}\n\
+- **Independent reviewers:** {reviewers}\n\n\
+<!-- forum-dispatch:{id} -->\n",
+        scope.join("; "),
+        acceptance.join("; ")
+    )
+}
+
+fn markdown_list(items: &[String]) -> String {
+    items
+        .iter()
+        .map(|item| format!("- {item}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn post_messageboard_work_order(work_order: &str) -> Result<()> {
+    if !command_exists("messageboard-edit") {
+        bail!("messageboard-edit is not available on PATH");
+    }
+    let output = Command::new("messageboard-edit")
+        .arg("insert")
+        .arg(work_order)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .context("failed to run messageboard-edit")?;
+    if !output.status.success() {
+        bail!(
+            "messageboard-edit failed with {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
     }
     Ok(())
 }
