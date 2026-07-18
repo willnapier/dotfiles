@@ -104,9 +104,9 @@ def forum-inbox-summary [] {
 
 def assemble-payload [harness: string host: string budget: int body: string] {
     let content_hash = ($body | hash sha256)
-    let placeholder = "00000000"
+    let placeholder = "########"
     let header = $"# Effective Assistant Startup Contract\n\norientation-schema: ($ORIENTATION_SCHEMA)\nharness: ($harness)\nhost: ($host)\ncontent-sha256: ($content_hash)\npayload-bytes: ($placeholder)\nbudget-bytes: ($budget)\n"
-    let template = $"($header)\n($body)\n"
+    let template = $"($header)\n($body)"
     let total = ($template | str length --utf-8-bytes)
     if $total > 99999999 {
         error make { msg: "startup payload exceeds the fixed eight-digit byte field" }
@@ -155,7 +155,12 @@ def verify-payload [payload: string expected_harness: string expected_host: stri
 }
 
 def claude-fallback [host: string error_message: string] {
-    $"# Orientation renderer fallback\n\nThe full startup contract could not be assembled: ($error_message)\n\nBefore beginning the task, read `~/Assistants/shared/ORIENTATION.md`, `~/Assistants/context/machines/($host).md`, and `~/Assistants/context/briefings/claude-code.md`; then inspect the current Messageboard head, `design-forum/INDEX.md`, and `forum inbox`. Treat those sources as mandatory context."
+    let machine_source = if ($host | is-empty) {
+        "the applicable file under `~/Assistants/context/machines/`"
+    } else {
+        $"`~/Assistants/context/machines/($host).md`"
+    }
+    $"# Orientation renderer fallback\n\nThe full startup contract could not be assembled: ($error_message)\n\nBefore beginning the task, read `~/Assistants/shared/ORIENTATION.md`, ($machine_source), and `~/Assistants/context/briefings/claude-code.md`; then inspect the current Messageboard head, `design-forum/INDEX.md`, and `forum inbox`. Treat those sources as mandatory context."
 }
 
 def render-contract [harness: string host: string budget: int] {
@@ -264,32 +269,41 @@ def main [
     } else {
         $assistant | default "" | str downcase
     }
-    let machine = (resolve-host $host)
-
     match $operation {
         "render" => {
             if ($selected | str trim | is-empty) {
                 error make { msg: "usage: ai-brief.nu render --harness <codex|claude-code|grok-build|api> [--host macos|nimbini]" }
             }
             match $format {
-                "markdown" => { print (render-contract $selected $machine $budget) }
+                "markdown" => {
+                    let machine = (resolve-host $host)
+                    print --no-newline (render-contract $selected $machine $budget)
+                }
                 "claude-hook" => {
-                    let payload = try {
-                        render-contract $selected $machine $budget
+                    let host_result = try {
+                        { host: (resolve-host $host) error: "" }
                     } catch {|error|
-                        claude-fallback $machine $error.msg
+                        { host: "" error: $error.msg }
+                    }
+                    let payload = try {
+                        if ($host_result.host | is-empty) {
+                            error make { msg: $host_result.error }
+                        }
+                        render-contract $selected $host_result.host $budget
+                    } catch {|error|
+                        claude-fallback $host_result.host $error.msg
                     }
                     {
                         hookSpecificOutput: {
                             hookEventName: "SessionStart"
                             additionalContext: $payload
                         }
-                    } | to json --raw | print
+                    } | to json --raw | print --no-newline
                 }
                 _ => { error make { msg: $"unknown format: ($format)" } }
             }
         }
-        "doctor" => { doctor $machine $budget }
+        "doctor" => { doctor (resolve-host $host) $budget }
         _ => { error make { msg: $"unknown action: ($operation); expected render or doctor" } }
     }
 }

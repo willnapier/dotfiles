@@ -873,6 +873,7 @@ fn cmd_cancel(root: &Path, job_id: &str) -> Result<()> {
 }
 
 fn publish_completion(root: &Path, job: &QueueJob) -> Result<()> {
+    let _lock = ForumLock::acquire(root)?;
     let path = require_thread(root, &job.thread_id)?;
     let thread = fs::read_to_string(path)?;
     let receipt = InboxReceipt {
