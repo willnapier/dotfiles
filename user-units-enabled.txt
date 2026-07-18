@@ -15,6 +15,7 @@ dotter-drift-monitor.timer
 dropbox.service
 firefox-nightly-restart.timer
 forge-link-manager.service
+forum-worker.service
 frecency-daemon.timer
 git-auto-pull-watcher.service
 git-auto-push-watcher.service
