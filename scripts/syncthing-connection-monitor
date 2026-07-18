@@ -1,7 +1,11 @@
 #!/usr/bin/env nu
 
-# Syncthing Connection Monitor - Auto-heal disconnected devices
-# Monitors Syncthing connections and automatically restarts when devices disconnect
+# Syncthing Connection Monitor - Keep the local daemon available
+#
+# Syncthing already retries peer connections itself. In particular, mobile peers
+# are expected to be offline for long periods. Restarting the local daemon merely
+# because any peer is disconnected can therefore turn a harmless offline phone
+# into a complete Mac <-> nimbini outage.
 
 def main [] {
     let config_file = $"($env.HOME)/.config/syncthing-monitor/config.nu"
@@ -23,10 +27,14 @@ def main [] {
     loop {
         let status = check_connections $api_key
 
-        if $status.needs_restart {
-            log_warning $"💔 Disconnected devices detected: ($status.disconnected | str join ', ')"
-            restart_syncthing $api_key
-            sleep 30sec  # Give it time to restart and reconnect
+        if not $status.api_reachable {
+            log_error "Syncthing API is unavailable; restarting the local service"
+            restart_local_service
+            sleep 30sec  # Give the daemon time to start and expose its API
+        } else if ($status.disconnected | length) > 0 {
+            # Peer availability is informational. Syncthing owns reconnection;
+            # never bounce the healthy local daemon for an offline peer.
+            log_warning $"Offline devices (no restart): ($status.disconnected | str join ', ')"
         } else {
             log_info $"✅ All devices connected: ($status.connected | str join ', ')"
         }
@@ -69,29 +77,35 @@ def check_connections [api_key: string] {
         }
 
         {
+            api_reachable: true,
             connected: $connected,
-            disconnected: $disconnected,
-            needs_restart: (($disconnected | length) > 0)
+            disconnected: $disconnected
         }
     } catch {
         log_error "Failed to check connections - Syncthing may be down"
         {
+            api_reachable: false,
             connected: [],
-            disconnected: [],
-            needs_restart: true
+            disconnected: []
         }
     }
 }
 
-# Restart Syncthing to force device rediscovery
-def restart_syncthing [api_key: string] {
-    log_info "🔄 Restarting Syncthing to force device rediscovery..."
+# Restart only when the local API itself is unavailable. Do this through the
+# platform service manager; the REST restart endpoint cannot help when the API is
+# down and, with Homebrew's --no-restart flag, intentionally exits with code 3.
+def restart_local_service [] {
+    let result = if $nu.os-info.name == "macos" {
+        let domain = $"gui/((id -u | str trim))/homebrew.mxcl.syncthing"
+        (launchctl kickstart -k $domain | complete)
+    } else {
+        (systemctl --user restart syncthing.service | complete)
+    }
 
-    try {
-        http post $"http://localhost:8384/rest/system/restart" "" --headers [X-API-Key $api_key]
-        log_info "✅ Restart signal sent successfully"
-    } catch {
-        log_error "❌ Failed to restart Syncthing via API"
+    if $result.exit_code == 0 {
+        log_info "✅ Local Syncthing service restart requested"
+    } else {
+        log_error $"❌ Local Syncthing service restart failed: ($result.stderr | str trim)"
     }
 }
 
