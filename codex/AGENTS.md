@@ -8,7 +8,7 @@ startup contract as mandatory context. If the renderer is unavailable, read
 `~/Assistants/shared/ORIENTATION.md`, the current file under
 `~/Assistants/context/machines/`, and
 `~/Assistants/context/briefings/codex.md`, then inspect the Messageboard and
-forum index manually.
+forum index and run `forum inbox` manually.
 
 The renderer supplies the compact Messageboard head, open-forum summary, and
 forum inbox. Act on relevant Codex-directed work orders. Load full forum threads

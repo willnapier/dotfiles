@@ -987,6 +987,7 @@ fn cmd_inbox(root: &Path, all: bool, format: InboxFormat) -> Result<()> {
 fn cmd_acknowledge(root: &Path, id: &str) -> Result<()> {
     validate_single_line("thread-or-job-id", id)?;
     ensure_queue_dirs(root)?;
+    let _lock = ForumLock::acquire(root)?;
     let mut moved = 0;
     for path in receipt_files(&unread_inbox_dir(root))? {
         let raw = fs::read_to_string(&path)?;

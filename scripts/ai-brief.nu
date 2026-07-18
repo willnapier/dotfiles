@@ -3,6 +3,9 @@
 const ORIENTATION_SCHEMA = 1
 const DEFAULT_BUDGET = 18000
 const HARNESSES = [codex claude-code grok-build api]
+const MESSAGEBOARD_BUDGET = 4500
+const FORUM_INDEX_BUDGET = 3500
+const FORUM_INBOX_BUDGET = 2000
 
 def required-text [path: path] {
     if not ($path | path exists) {
@@ -30,13 +33,35 @@ def resolve-host [requested: string] {
     }
 }
 
+def cap-component [text: string budget: int label: string] {
+    if ($text | str length --utf-8-bytes) <= $budget {
+        return $text
+    }
+    let notice = $"\n… [($label) truncated at startup; load the source on demand]"
+    let content_budget = $budget - ($notice | str length --utf-8-bytes)
+    mut kept = []
+    mut used = 0
+    for line in ($text | lines) {
+        let addition = if ($kept | is-empty) { $line } else { $"\n($line)" }
+        let bytes = ($addition | str length --utf-8-bytes)
+        if ($used + $bytes) > $content_budget {
+            break
+        }
+        $kept = ($kept | append $line)
+        $used = $used + $bytes
+    }
+    let joined = ($kept | str join "\n")
+    $"($joined)($notice)"
+}
+
 def messageboard-head [path: path] {
     let raw = (required-text $path)
     let sections = ($raw | split row "\n### " | skip 1)
     if ($sections | is-empty) {
         return "No current Messageboard entries."
     }
-    $"### (($sections | first | str trim))"
+    let head = $"### (($sections | first | str trim | str replace --regex '\n---$' ''))"
+    cap-component $head $MESSAGEBOARD_BUDGET "Messageboard head"
 }
 
 def forum-open-summary [path: path] {
@@ -55,24 +80,82 @@ def forum-open-summary [path: path] {
     if ($rows | is-empty) {
         "No open forum threads."
     } else {
-        $rows | str join "\n"
+        cap-component ($rows | str join "\n") $FORUM_INDEX_BUDGET "forum index summary"
     }
 }
 
 def forum-inbox-summary [] {
     if (which forum | is-empty) {
-        return "Forum CLI unavailable; inspect design-forum/INDEX.md directly."
+        return "WARNING: forum CLI unavailable; unread completion state could not be checked."
     }
     try {
         let summary = (^forum inbox --format brief | complete)
         if $summary.exit_code == 0 and not ($summary.stdout | str trim | is-empty) {
-            $summary.stdout | str trim
+            cap-component ($summary.stdout | str trim) $FORUM_INBOX_BUDGET "forum inbox"
+        } else if $summary.exit_code == 0 {
+            "WARNING: forum inbox returned empty output; unread completion state is unknown."
         } else {
-            "No unread forum completions, or this forum version predates inbox support."
+            $"WARNING: forum inbox failed with exit ($summary.exit_code): ($summary.stderr | str trim)"
         }
-    } catch {
-        "No unread forum completions, or this forum version predates inbox support."
+    } catch {|error|
+        $"WARNING: forum inbox check failed: ($error.msg)"
     }
+}
+
+def assemble-payload [harness: string host: string budget: int body: string] {
+    let content_hash = ($body | hash sha256)
+    let placeholder = "00000000"
+    let header = $"# Effective Assistant Startup Contract\n\norientation-schema: ($ORIENTATION_SCHEMA)\nharness: ($harness)\nhost: ($host)\ncontent-sha256: ($content_hash)\npayload-bytes: ($placeholder)\nbudget-bytes: ($budget)\n"
+    let template = $"($header)\n($body)\n"
+    let total = ($template | str length --utf-8-bytes)
+    if $total > 99999999 {
+        error make { msg: "startup payload exceeds the fixed eight-digit byte field" }
+    }
+    if $total > $budget {
+        error make { msg: $"startup payload is ($total) bytes, exceeding the hard budget of ($budget)" }
+    }
+    let byte_field = ($total | into string | fill --alignment right --character "0" --width 8)
+    $template | str replace $placeholder $byte_field
+}
+
+def metadata-value [payload: string key: string] {
+    let prefix = $"($key):"
+    $payload | lines | where {|line| $line | str starts-with $prefix } | first | str replace $prefix "" | str trim
+}
+
+def verify-payload [payload: string expected_harness: string expected_host: string] {
+    let marker = "## Vendor-neutral kernel"
+    let split = ($payload | split row $marker)
+    if ($split | length) != 2 {
+        error make { msg: "effective payload lacks a unique vendor-neutral body marker" }
+    }
+    let body = $"($marker)(($split | last | str trim --right))"
+    let actual_hash = ($body | hash sha256)
+    let claimed_hash = (metadata-value $payload "content-sha256")
+    let actual_bytes = ($payload | str length --utf-8-bytes)
+    let claimed_bytes = (metadata-value $payload "payload-bytes" | into int)
+    let budget = (metadata-value $payload "budget-bytes" | into int)
+    let schema = (metadata-value $payload "orientation-schema" | into int)
+    let harness = (metadata-value $payload "harness")
+    let host = (metadata-value $payload "host")
+
+    if $actual_hash != $claimed_hash {
+        error make { msg: $"content hash mismatch: claimed ($claimed_hash), actual ($actual_hash)" }
+    }
+    if $actual_bytes != $claimed_bytes {
+        error make { msg: $"payload byte mismatch: claimed ($claimed_bytes), actual ($actual_bytes)" }
+    }
+    if $actual_bytes > $budget {
+        error make { msg: $"payload is ($actual_bytes) bytes, exceeding budget ($budget)" }
+    }
+    if $schema != $ORIENTATION_SCHEMA or $harness != $expected_harness or $host != $expected_host {
+        error make { msg: "payload schema, harness, or host metadata does not match the render request" }
+    }
+    { bytes: $actual_bytes hash: $actual_hash }
+}
+
+def claude-fallback [host: string error_message: string] {
+    $"# Orientation renderer fallback\n\nThe full startup contract could not be assembled: ($error_message)\n\nBefore beginning the task, read `~/Assistants/shared/ORIENTATION.md`, `~/Assistants/context/machines/($host).md`, and `~/Assistants/context/briefings/claude-code.md`; then inspect the current Messageboard head, `design-forum/INDEX.md`, and `forum inbox`. Treat those sources as mandatory context."
 }
 
 def render-contract [harness: string host: string budget: int] {
@@ -114,18 +197,7 @@ def render-contract [harness: string host: string budget: int] {
         "## Forum inbox"
         (forum-inbox-summary)
     ] | str join "\n\n")
-    let content_hash = ($body | hash sha256)
-    mut total = 0
-    mut payload = ""
-    for _ in 1..3 {
-        let header = $"# Effective Assistant Startup Contract\n\norientation-schema: ($ORIENTATION_SCHEMA)\nharness: ($harness)\nhost: ($host)\ncontent-sha256: ($content_hash)\npayload-bytes: ($total)\nbudget-bytes: ($budget)\n"
-        $payload = $"($header)\n($body)\n"
-        $total = ($payload | str length --utf-8-bytes)
-    }
-    if $total > $budget {
-        error make { msg: $"startup payload is ($total) bytes, exceeding the hard budget of ($budget)" }
-    }
-    $payload
+    assemble-payload $harness $host $budget $body
 }
 
 def verify-startup-surface [label: string path: path needle: string] {
@@ -145,14 +217,24 @@ def doctor [host: string budget: int] {
     for harness in $HARNESSES {
         let result = try {
             let payload = (render-contract $harness $host $budget)
-            let bytes = ($payload | str length --utf-8-bytes)
-            let hash_line = ($payload | lines | where {|line| $line | str starts-with "content-sha256:" } | first)
-            { harness: $harness status: "ok" detail: $"rendered ($bytes) bytes; ($hash_line)" }
+            let verified = (verify-payload $payload $harness $host)
+            { harness: $harness status: "ok" detail: $"verified ($verified.bytes) bytes; sha256: ($verified.hash)" }
         } catch {|error|
             { harness: $harness status: "FAIL" detail: $error.msg }
         }
         $results = ($results | append $result)
     }
+
+    let boundary = try {
+        let filler = ("" | fill --width 9760 --character "x")
+        let body = $"## Vendor-neutral kernel\n\n($filler)"
+        let payload = (assemble-payload "boundary-test" $host 18000 $body)
+        let verified = (verify-payload $payload "boundary-test" $host)
+        { harness: "byte-boundary" status: "ok" detail: $"verified fixed-width metadata at ($verified.bytes) bytes" }
+    } catch {|error|
+        { harness: "byte-boundary" status: "FAIL" detail: $error.msg }
+    }
+    $results = ($results | append $boundary)
 
     let home = $env.HOME
     $results = ($results | append (verify-startup-surface codex ($home | path join ".codex/AGENTS.md") "ai-brief.nu render --harness codex"))
@@ -189,10 +271,14 @@ def main [
             if ($selected | str trim | is-empty) {
                 error make { msg: "usage: ai-brief.nu render --harness <codex|claude-code|grok-build|api> [--host macos|nimbini]" }
             }
-            let payload = (render-contract $selected $machine $budget)
             match $format {
-                "markdown" => { print $payload }
+                "markdown" => { print (render-contract $selected $machine $budget) }
                 "claude-hook" => {
+                    let payload = try {
+                        render-contract $selected $machine $budget
+                    } catch {|error|
+                        claude-fallback $machine $error.msg
+                    }
                     {
                         hookSpecificOutput: {
                             hookEventName: "SessionStart"

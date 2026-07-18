@@ -57,6 +57,8 @@ Every successful background round writes a synced unread completion receipt.
 moves matching receipts to acknowledged history. The worker also posts one short
 Messageboard pointer and, when a graphical Linux session is available, sends a
 best-effort desktop notification. Neither transient signal owns forum state.
+Acknowledgement takes the forum lock; use one host at a time because the lock is
+local and Syncthing is not a distributed lock.
 
 Panels:
 
