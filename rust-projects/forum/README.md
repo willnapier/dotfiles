@@ -15,6 +15,28 @@ forum convene meta-example --caller codex --panel others
 forum status meta-example
 ```
 
+Once William has accepted the decision and the thread is `status: decided`,
+turn it into one bounded implementation assignment:
+
+```nu
+forum dispatch meta-example \
+  --assignee codex \
+  --scope "forum CLI and its documentation" \
+  --acceptance "cargo test passes" \
+  --acceptance "the decided thread contains a dispatch receipt" \
+  --reviewer claude-code \
+  --reviewer grok-build \
+  --dry-run
+
+# Remove --dry-run after checking the exact work order.
+```
+
+`dispatch` refuses open threads, null decisions, empty bounds, duplicate
+reviewers, and an assignee reviewing their own work. It posts through the
+guarded `messageboard-edit` command, then records an idempotency marker and
+dispatch receipt in the decided thread. It assigns work; it never launches an
+implementation model or edits product code.
+
 Queue a round and return immediately:
 
 ```nu
@@ -57,7 +79,8 @@ forum convene meta-example --caller codex --panel others --dry-run
 - Only `forum` appends to the canonical thread, under a local exclusive lock and
   atomic file replacement.
 - Forum threads must remain `status: open`; decided/parked/rejected threads are
-  refused.
+  refused by deliberation commands. `dispatch` has the inverse guard and accepts
+  only decided threads.
 - A single coordinator host is still required. Syncthing does not provide a
   distributed lock across Mac and nimbini. nimbini is the elected worker host;
   the installed Mac LaunchAgent remains disabled as a manual fallback.

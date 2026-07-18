@@ -1715,6 +1715,15 @@ mod tests {
         "---\nid: test-thread\nsystem: meta\nlevel: architecture\nstatus: open\nopened: 2026-07-17\nopened_by: will\nparticipants: [will]\ndecision: null\n---\n\n# Test\n\n## Context\n\nContext.\n\n## Positions\n\n_(awaiting positions)_\n\n## Open questions\n\n- Question?\n\n## Decision\n\n_(none)_\n".into()
     }
 
+    fn decided_thread() -> String {
+        sample_thread()
+            .replace("status: open", "status: decided")
+            .replace(
+                "decision: null",
+                "decision: \"Adopt the bounded implementation.\"",
+            )
+    }
+
     fn write_temp_forum(temp: &TempDir) {
         fs::write(temp.path().join("INDEX.md"), "# Index\n").unwrap();
         fs::write(temp.path().join("PROTOCOL.md"), "# Protocol\n").unwrap();
@@ -1920,5 +1929,85 @@ mod tests {
         let result = invoke_harness(harness, temp.path(), "ignored prompt");
         assert_eq!(result.body.as_deref(), Some("**Claim:** cold-started"));
         assert!(result.error.is_none());
+    }
+
+    #[test]
+    fn work_order_contains_the_required_bounds_and_traceability() {
+        let work_order = build_work_order(
+            "test-thread",
+            "Adopt the bounded implementation.",
+            "codex",
+            "will",
+            &["forum dispatch command only".into()],
+            &["all forum tests pass".into()],
+            &["claude-code".into(), "grok-build".into()],
+            Path::new("meta/thread.md"),
+        );
+        assert!(work_order.contains("**Implementation owner:** `codex`"));
+        assert!(work_order.contains("- forum dispatch command only"));
+        assert!(work_order.contains("- all forum tests pass"));
+        assert!(work_order.contains("`claude-code`, `grok-build`"));
+        assert!(work_order.contains("`design-forum/meta/thread.md`"));
+        assert!(work_order.contains("<!-- forum-work-order:test-thread -->"));
+    }
+
+    #[test]
+    fn dispatch_dry_run_requires_a_decision_and_does_not_mutate() {
+        let temp = TempDir::new().unwrap();
+        write_temp_forum(&temp);
+        let thread_path = temp.path().join("meta/thread.md");
+        fs::write(&thread_path, decided_thread()).unwrap();
+        let before = fs::read_to_string(&thread_path).unwrap();
+        cmd_dispatch(
+            temp.path(),
+            DispatchArgs {
+                id: "test-thread".into(),
+                assignee: "codex".into(),
+                scope: vec!["forum dispatch command".into()],
+                acceptance: vec!["tests pass".into()],
+                reviewers: vec!["claude-code".into()],
+                requested_by: "will".into(),
+                dry_run: true,
+            },
+        )
+        .unwrap();
+        assert_eq!(fs::read_to_string(&thread_path).unwrap(), before);
+    }
+
+    #[test]
+    fn dispatch_rejects_open_threads_and_non_independent_review() {
+        let temp = TempDir::new().unwrap();
+        write_temp_forum(&temp);
+        let open_error = cmd_dispatch(
+            temp.path(),
+            DispatchArgs {
+                id: "test-thread".into(),
+                assignee: "codex".into(),
+                scope: vec!["bounded scope".into()],
+                acceptance: vec!["observable result".into()],
+                reviewers: vec!["claude-code".into()],
+                requested_by: "will".into(),
+                dry_run: true,
+            },
+        )
+        .unwrap_err();
+        assert!(open_error.to_string().contains("not decided"));
+
+        let reviewer_error = cmd_dispatch(
+            temp.path(),
+            DispatchArgs {
+                id: "test-thread".into(),
+                assignee: "codex".into(),
+                scope: vec!["bounded scope".into()],
+                acceptance: vec!["observable result".into()],
+                reviewers: vec!["codex".into()],
+                requested_by: "will".into(),
+                dry_run: true,
+            },
+        )
+        .unwrap_err();
+        assert!(reviewer_error
+            .to_string()
+            .contains("review must be independent"));
     }
 }
