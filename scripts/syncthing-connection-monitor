@@ -34,7 +34,7 @@ def main [] {
         } else if ($status.disconnected | length) > 0 {
             # Peer availability is informational. Syncthing owns reconnection;
             # never bounce the healthy local daemon for an offline peer.
-            log_warning $"Offline devices (no restart): ($status.disconnected | str join ', ')"
+            log_warning $"Offline devices; no restart: ($status.disconnected | str join ', ')"
         } else {
             log_info $"✅ All devices connected: ($status.connected | str join ', ')"
         }
