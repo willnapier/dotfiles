@@ -8,7 +8,6 @@
 # into a complete Mac <-> nimbini outage.
 
 def main [] {
-    let config_file = $"($env.HOME)/.config/syncthing-monitor/config.nu"
     let log_file = $"($env.HOME)/.local/share/syncthing-monitor.log"
     let api_key = get_syncthing_api_key
 
@@ -46,9 +45,13 @@ def main [] {
 # Get Syncthing API key from config
 def get_syncthing_api_key [] {
     try {
-        let mac_path = $"($env.HOME)/Library/Application Support/Syncthing/config.xml"
-        let linux_path = $"($env.HOME)/.config/syncthing/config.xml"
-        let config_path = if ($mac_path | path exists) { $mac_path } else { $linux_path }
+        # Syncthing v2 follows XDG state-directory conventions on Linux. Keep
+        # the legacy path last so upgraded and older installations both work.
+        let config_path = ([
+            $"($env.HOME)/Library/Application Support/Syncthing/config.xml"
+            $"($env.HOME)/.local/state/syncthing/config.xml"
+            $"($env.HOME)/.config/syncthing/config.xml"
+        ] | where {|path| $path | path exists } | first)
 
         open --raw $config_path |
         lines |

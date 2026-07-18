@@ -1,6 +1,6 @@
 [Unit]
 Description=Syncthing Connection Monitor
-Documentation=Automatically monitors and heals Syncthing device connections
+Documentation=https://docs.syncthing.net/
 After=syncthing.service
 Wants=syncthing.service
 
