@@ -37,6 +37,7 @@ com.williamnapier.continuum-dream
 com.williamnapier.continuum-sync-claude
 com.williamnapier.cross-machine-sync-check
 com.williamnapier.dev-catchup
+com.williamnapier.forum-worker
 com.williamnapier.ghostty-config-validate
 com.williamnapier.git-auto-pull-watcher
 com.williamnapier.git-auto-push-watcher
@@ -50,6 +51,7 @@ com.williamnapier.mailcurator-drift
 com.williamnapier.mailforge
 com.williamnapier.mbsync-cohs
 com.williamnapier.morning-briefing
+com.williamnapier.pf-stray-reaper
 com.williamnapier.pizauth
 com.williamnapier.pizauth-dump
 com.williamnapier.practiceforge-dashboard
