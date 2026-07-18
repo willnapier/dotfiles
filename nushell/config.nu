@@ -120,37 +120,12 @@ def reception [] {
 }
 
 # ---- AI Collaboration Helpers ----
-def ai-brief [assistant?: string] {
-    if ($assistant | default "" | str trim | is-empty) {
-        print "Usage: ai-brief <assistant-name>"
-        print "Known assistants: codex, claude-code"
-        return
+def ai-brief [...args: string] {
+    let renderer = ($env.HOME | path join ".local/bin/ai-brief.nu")
+    if not ($renderer | path exists) {
+        error make { msg: $"ai-brief renderer is not deployed at ($renderer)" }
     }
-
-    let normalized = ($assistant | str downcase)
-    let briefings = [
-        { name: "codex" path: $"($env.HOME)/Assistants/briefings/codex.md" }
-        { name: "claude-code" path: $"($env.HOME)/Assistants/briefings/claude-code.md" }
-    ]
-
-    let entry = ($briefings | where name == $normalized | get 0? )
-
-    if $entry == null {
-        print $"⚠️ ai-brief: no briefing configured for '($assistant)'"
-        return
-    }
-
-    let briefing_path = $entry.path
-
-    if not ($briefing_path | path exists) {
-        print $"⚠️ ai-brief: briefing file missing at ($briefing_path)"
-        return
-    }
-
-    let content = (open --raw $briefing_path | decode utf-8)
-    print $content
-    print ""
-    print "Supplemental docs: Assistants/index.md · claude.md · Claude/CLAUDE-TOOLCHAIN-PREFERENCES.md · Claude/CLAUDE-DEBUGGING-PATTERNS.md · Claude/STONE-IN-SHOE-DEBUGGING-PHILOSOPHY.md · Claude/NUSHELL-KNOWLEDGE-TOOLS-README.md"
+    ^$renderer ...$args
 }
 
 def codex-brief [] { ai-brief codex }

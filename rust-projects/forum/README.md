@@ -42,6 +42,8 @@ Queue a round and return immediately:
 ```nu
 forum convene meta-example --caller codex --panel others --background
 forum jobs
+forum inbox
+forum acknowledge meta-example
 ```
 
 The nimbini systemd user service runs `forum worker --poll-seconds 10`. Jobs
@@ -49,6 +51,12 @@ live under the Syncthing-shared `design-forum/.orchestrator/`, so either machine
 can enqueue work without running competing workers. A claimed job is retried up to
 three times with exponential backoff; successful, failed, and cancelled job
 records remain inspectable with `forum jobs --all`.
+
+Every successful background round writes a synced unread completion receipt.
+`forum inbox` is the durable human-attention view; `forum acknowledge <thread-or-job>`
+moves matching receipts to acknowledged history. The worker also posts one short
+Messageboard pointer and, when a graphical Linux session is available, sends a
+best-effort desktop notification. Neither transient signal owns forum state.
 
 Panels:
 
@@ -93,6 +101,10 @@ forum worker --poll-seconds 10         # long-running worker
 forum jobs                             # queued/running/failed/cancelled
 forum jobs --all                       # include completed jobs
 forum cancel <job-id>                  # queued jobs only
+forum inbox                            # unread completed rounds
+forum inbox --all                      # include acknowledged receipts
+forum inbox --format brief             # compact session-start summary
+forum acknowledge <thread-or-job-id>   # mark matching receipts seen
 ```
 
 The queue is explicit. Editing or saving Markdown never launches models. A

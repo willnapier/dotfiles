@@ -61,6 +61,17 @@ enum Commands {
     Status { id: String },
     /// Turn an accepted decision into one bounded implementation work order
     Dispatch(DispatchArgs),
+    /// List completed background rounds awaiting William's attention
+    Inbox {
+        /// Include acknowledged completion receipts
+        #[arg(long)]
+        all: bool,
+        /// Human table or compact startup summary
+        #[arg(long, value_enum, default_value_t = InboxFormat::Table)]
+        format: InboxFormat,
+    },
+    /// Mark unread completion receipts for a thread or job as seen
+    Acknowledge { id: String },
     /// List forum threads from INDEX.md
     List,
     /// Validate paths, harness commands, and the forum index
@@ -191,6 +202,12 @@ enum ContributionKind {
     Reply,
 }
 
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum InboxFormat {
+    Table,
+    Brief,
+}
+
 impl ContributionKind {
     fn heading(self) -> &'static str {
         match self {
@@ -263,6 +280,16 @@ struct QueueJob {
     last_error: Option<String>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct InboxReceipt {
+    version: u32,
+    job_id: String,
+    thread_id: String,
+    round: u32,
+    completed_at: String,
+    participants: Vec<String>,
+}
+
 fn main() {
     if let Err(error) = run() {
         eprintln!("error: {error:#}");
@@ -284,6 +311,8 @@ fn run() -> Result<()> {
         Commands::Cancel { job_id } => cmd_cancel(&root, &job_id),
         Commands::Status { id } => cmd_status(&root, &id),
         Commands::Dispatch(args) => cmd_dispatch(&root, args),
+        Commands::Inbox { all, format } => cmd_inbox(&root, all, format),
+        Commands::Acknowledge { id } => cmd_acknowledge(&root, &id),
         Commands::List => cmd_list(&root),
         Commands::Doctor => cmd_doctor(&root, &config),
     }
@@ -756,6 +785,7 @@ fn process_next_job(root: &Path, config: &Config) -> Result<bool> {
         Ok(()) => {
             job.completed_at = Some(Local::now().to_rfc3339());
             job.last_error = None;
+            publish_completion(root, &job)?;
             archive_job(&running_path, &completed_dir(root), &job)?;
             println!("completed forum job {}", job.job_id);
         }
@@ -842,6 +872,152 @@ fn cmd_cancel(root: &Path, job_id: &str) -> Result<()> {
     Ok(())
 }
 
+fn publish_completion(root: &Path, job: &QueueJob) -> Result<()> {
+    let path = require_thread(root, &job.thread_id)?;
+    let thread = fs::read_to_string(path)?;
+    let receipt = InboxReceipt {
+        version: 1,
+        job_id: job.job_id.clone(),
+        thread_id: job.thread_id.clone(),
+        round: job.round,
+        completed_at: job
+            .completed_at
+            .clone()
+            .unwrap_or_else(|| Local::now().to_rfc3339()),
+        participants: participants(&thread),
+    };
+    let receipt_path = unread_inbox_dir(root).join(format!("{}.toml", job.job_id));
+    if !receipt_path.exists()
+        && !acknowledged_inbox_dir(root)
+            .join(format!("{}.toml", job.job_id))
+            .exists()
+    {
+        atomic_write(&receipt_path, &toml::to_string_pretty(&receipt)?)?;
+    }
+
+    if root == default_root() {
+        let marker = format!("<!-- forum-complete:{} -->", job.job_id);
+        let messageboard = root
+            .parent()
+            .ok_or_else(|| anyhow!("forum root has no shared-directory parent"))?
+            .join("MESSAGEBOARD.md");
+        let already_notified =
+            messageboard.is_file() && fs::read_to_string(&messageboard)?.contains(&marker);
+        if !already_notified {
+            let message = format!(
+                "FORUM COMPLETE — `{}` round {}\n\nThe background panel has finished. Durable results are in the forum thread. Review with `forum inbox` or `forum status {}`; acknowledge after reading with `forum acknowledge {}`.\n\n{}",
+                job.thread_id, job.round, job.thread_id, job.thread_id, marker
+            );
+            if let Err(error) = post_messageboard_message(&message) {
+                eprintln!(
+                    "warning: completion receipt is durable but Messageboard notification failed: {error:#}"
+                );
+            }
+        }
+        notify_completion_best_effort(&job.thread_id, job.round);
+    }
+    Ok(())
+}
+
+fn notify_completion_best_effort(thread_id: &str, round: u32) {
+    if !command_exists("notify-send")
+        || (std::env::var_os("DISPLAY").is_none() && std::env::var_os("WAYLAND_DISPLAY").is_none())
+    {
+        return;
+    }
+    let _ = Command::new("notify-send")
+        .arg("Forum round complete")
+        .arg(format!("{thread_id} round {round} is ready for review"))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+fn cmd_inbox(root: &Path, all: bool, format: InboxFormat) -> Result<()> {
+    ensure_queue_dirs(root)?;
+    let mut receipts = read_receipts(&unread_inbox_dir(root), false)?;
+    if all {
+        receipts.extend(read_receipts(&acknowledged_inbox_dir(root), true)?);
+    }
+    receipts.sort_by(|a, b| b.1.completed_at.cmp(&a.1.completed_at));
+    if receipts.is_empty() {
+        println!("No unread forum completions.");
+        return Ok(());
+    }
+    match format {
+        InboxFormat::Table => {
+            println!("state\tthread\tround\tcompleted\tparticipants\tjob");
+            for (acknowledged, receipt) in receipts {
+                println!(
+                    "{}\t{}\t{}\t{}\t{}\t{}",
+                    if acknowledged {
+                        "acknowledged"
+                    } else {
+                        "unread"
+                    },
+                    receipt.thread_id,
+                    receipt.round,
+                    receipt.completed_at,
+                    receipt.participants.join(","),
+                    receipt.job_id
+                );
+            }
+        }
+        InboxFormat::Brief => {
+            for (acknowledged, receipt) in receipts {
+                println!(
+                    "{}: `{}` round {} completed {}; participants: {}",
+                    if acknowledged {
+                        "acknowledged"
+                    } else {
+                        "UNREAD"
+                    },
+                    receipt.thread_id,
+                    receipt.round,
+                    receipt.completed_at,
+                    receipt.participants.join(", ")
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn cmd_acknowledge(root: &Path, id: &str) -> Result<()> {
+    validate_single_line("thread-or-job-id", id)?;
+    ensure_queue_dirs(root)?;
+    let mut moved = 0;
+    for path in receipt_files(&unread_inbox_dir(root))? {
+        let raw = fs::read_to_string(&path)?;
+        let receipt: InboxReceipt = toml::from_str(&raw)?;
+        if receipt.job_id == id || receipt.thread_id == id {
+            let destination =
+                acknowledged_inbox_dir(root).join(path.file_name().unwrap_or_default());
+            fs::rename(path, destination)?;
+            moved += 1;
+        }
+    }
+    if moved == 0 {
+        bail!("no unread completion receipt matches: {id}");
+    }
+    println!("Acknowledged {moved} forum completion(s) for {id}");
+    Ok(())
+}
+
+fn read_receipts(dir: &Path, acknowledged: bool) -> Result<Vec<(bool, InboxReceipt)>> {
+    let mut receipts = Vec::new();
+    for path in receipt_files(dir)? {
+        let raw = fs::read_to_string(path)?;
+        receipts.push((acknowledged, toml::from_str(&raw)?));
+    }
+    Ok(receipts)
+}
+
+fn receipt_files(dir: &Path) -> Result<Vec<PathBuf>> {
+    job_files(dir)
+}
+
 fn archive_job(running_path: &Path, destination_dir: &Path, job: &QueueJob) -> Result<()> {
     let raw = toml::to_string_pretty(job)?;
     atomic_write(running_path, &raw)?;
@@ -867,6 +1043,8 @@ fn ensure_queue_dirs(root: &Path) -> Result<()> {
         completed_dir(root),
         failed_dir(root),
         cancelled_dir(root),
+        unread_inbox_dir(root),
+        acknowledged_inbox_dir(root),
     ] {
         fs::create_dir_all(dir)?;
     }
@@ -895,6 +1073,14 @@ fn failed_dir(root: &Path) -> PathBuf {
 
 fn cancelled_dir(root: &Path) -> PathBuf {
     orchestrator_dir(root).join("cancelled")
+}
+
+fn unread_inbox_dir(root: &Path) -> PathBuf {
+    orchestrator_dir(root).join("inbox/unread")
+}
+
+fn acknowledged_inbox_dir(root: &Path) -> PathBuf {
+    orchestrator_dir(root).join("inbox/acknowledged")
 }
 
 fn job_files(dir: &Path) -> Result<Vec<PathBuf>> {
@@ -1002,7 +1188,7 @@ fn cmd_dispatch(root: &Path, args: DispatchArgs) -> Result<()> {
     let already_posted = messageboard_path.is_file()
         && fs::read_to_string(&messageboard_path)?.contains(&messageboard_marker);
     if !already_posted {
-        post_messageboard_work_order(&work_order)?;
+        post_messageboard_message(&work_order)?;
     }
 
     let receipt = build_dispatch_receipt(
@@ -1119,13 +1305,13 @@ fn markdown_list(items: &[String]) -> String {
         .join("\n")
 }
 
-fn post_messageboard_work_order(work_order: &str) -> Result<()> {
+fn post_messageboard_message(message: &str) -> Result<()> {
     if !command_exists("messageboard-edit") {
         bail!("messageboard-edit is not available on PATH");
     }
     let output = Command::new("messageboard-edit")
         .arg("insert")
-        .arg(work_order)
+        .arg(message)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -1876,9 +2062,27 @@ mod tests {
         assert!(process_next_job(temp.path(), &config).unwrap());
         assert!(job_files(&queue_dir(temp.path())).unwrap().is_empty());
         assert_eq!(job_files(&completed_dir(temp.path())).unwrap().len(), 1);
+        assert_eq!(
+            receipt_files(&unread_inbox_dir(temp.path())).unwrap().len(),
+            1
+        );
         let thread = fs::read_to_string(temp.path().join("meta/thread.md")).unwrap();
         assert!(thread.contains("**Claim:** queued worker ran"));
         assert!(thread.contains("<!-- forum-round:1 harness:fake -->"));
+
+        let receipts = read_receipts(&unread_inbox_dir(temp.path()), false).unwrap();
+        assert_eq!(receipts[0].1.thread_id, "test-thread");
+        assert_eq!(receipts[0].1.round, 1);
+        cmd_acknowledge(temp.path(), "test-thread").unwrap();
+        assert!(receipt_files(&unread_inbox_dir(temp.path()))
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            receipt_files(&acknowledged_inbox_dir(temp.path()))
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[test]
