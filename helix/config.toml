@@ -89,10 +89,11 @@ t = ["extend_to_line_bounds", ":pipe hx-toggle-todo"]
 
 # Manual theme refresh - Space+T (capital T)  
 T = ":config-reload"
-# Process activity durations - write, compute durations in place, reload buffer
-# (terminal-agnostic: was hx-process-durations-wezterm, which only refreshed via
-#  a WezTerm pane and broke under Ghostty/Zellij; ':reload' works everywhere)
-p = [":write!", ":sh activity-duration-processor %{buffer_name}", ":reload"]
+# Process activity durations in-buffer (Space+p).
+# Uses :pipe (same pattern as Space+t) so Helix never depends on write→external
+# →:reload races — those often needed a second press / manual :rl to show results.
+# Processor stdin mode: activity-duration-processor -
+p = ["select_all", ":pipe activity-duration-processor -", "collapse_selection"]
 # Delete current file - Space+x (eXpunge, no confirmation)
 x = [":sh trash '%{buffer_name}'", ":quit!"]
 # Export selection to external register - Space+E (then type register letter)

@@ -6,57 +6,15 @@
 # Works with any activity code (single or multi-letter): w::, e::, m::, test::, etc.
 # Supports shorthand: "p:: 0845-55" -> "p:: 10min 0845-0855"
 # Created: 2025-09-07, Expanded: 2025-09-09
+#
+# Modes:
+#   activity-duration-processor PATH   — read/write file on disk
+#   activity-duration-processor -      — stdin → stdout (Helix :pipe, no :reload race)
+#   activity-duration-processor        — process recently modified vault .md files
 
-def main [file_path?: string] {
-    let target_file = if ($file_path | is-empty) {
-        # If no file specified, find recently modified .md files
-        let files = (glob $"($env.HOME)/Forge/**/*.md")
-        
-        if ($files | length) == 0 {
-            print "No markdown files found in vault"
-            return
-        }
-        
-        # Process files modified in the last 5 minutes
-        let recent_files = ($files 
-            | each { |file| 
-                let stats = ($file | path expand | stat)
-                {path: $file, modified: $stats.modified}
-            }
-            | where {|it| $it.modified > ((date now) - 5min)}
-            | get path)
-        
-        if ($recent_files | length) == 0 {
-            print "No recently modified markdown files found"
-            return
-        }
-        
-        # Process all recent files
-        for file in $recent_files {
-            print $"Processing: ($file)"
-            # Recursively call self with each file
-            ^activity-duration-processor $file
-        }
-        return  # Exit after processing all files
-    } else {
-        $file_path
-    }
-    
-    if not ($target_file | path exists) {
-        print $"File not found: ($target_file)"
-        return
-    }
-    
-    # Read file content with retry logic for file system reliability
-    let content = (try {
-        open $target_file
-    } catch { |err|
-        # Retry once after brief delay if file read fails
-        sleep 50ms
-        open $target_file
-    })
+def process-content [content: string] {
     let lines = ($content | lines)
-    
+
     let processed_lines = ($lines | each { |line|
         # Look for ALL time range patterns in the line (handles nested entries)
         # Match time patterns (HHMM) but NOT dates (YYYY-MM-DD)
@@ -87,16 +45,16 @@ def main [file_path?: string] {
                 }
             })
         }
-        
+
         if ($time_range_matches | length) > 0 {
             mut current_line = $line
-            
+
             # Process each time pattern found in the line
             for match in $time_range_matches {
                 let start_time = ($match | get capture0)
                 let end_time_raw = ($match | get capture1)
                 let time_range_text = $"($start_time)-($end_time_raw)"
-                
+
                 # Skip this pattern if it's already processed (has duration before it)
                 # Look for pattern like "15min 1430-45" or "2hr 30min 0900-30"
                 # Only match actual duration units: min, hr, sec, hour, minute, second
@@ -104,14 +62,14 @@ def main [file_path?: string] {
                 if $has_duration {
                     continue  # This specific pattern already has duration, skip it
                 }
-                
+
                 # Handle both full HHMM and shorthand MM formats for end time
                 let end_time = if ($end_time_raw | str length) == 2 {
                     # Shorthand: expand 2-digit end time to HHMM
                     let start_hour = ($start_time | str substring 0..<2 | into int)
                     let start_min = ($start_time | str substring 2..<4 | into int)
                     let end_min = ($end_time_raw | into int)
-                    
+
                     if $end_min <= $start_min {
                         # Next hour
                         let end_hour_raw = $start_hour + 1
@@ -127,27 +85,27 @@ def main [file_path?: string] {
                 } else {
                     "" # Invalid
                 }
-                
+
                 if ($end_time | str length) == 4 {
                     # Convert HHMM to HH:MM format for datetime parsing
                     let start_formatted = ($start_time | str substring 0..<2) + ":" + ($start_time | str substring 2..<4)
                     let end_formatted = ($end_time | str substring 0..<2) + ":" + ($end_time | str substring 2..<4)
-                    
+
                     try {
                         # Use Nushell's native datetime parsing and calculation
                         let start_dt = ($start_formatted | into datetime)
                         let end_dt = ($end_formatted | into datetime)
-                        
+
                         # Calculate duration (handle overnight)
                         let duration = if $end_dt < $start_dt {
                             ($end_dt + 1day) - $start_dt
                         } else {
                             $end_dt - $start_dt
                         }
-                        
+
                         # Format as Nushell duration string
                         let duration_str = ($duration | to text)
-                        
+
                         # Replace the time pattern with duration + expanded time in current line
                         $current_line = ($current_line | str replace $time_range_text $"($duration_str) ($start_time)-($end_time)")
                     } catch {
@@ -155,7 +113,7 @@ def main [file_path?: string] {
                     }
                 }
             }
-            
+
             $current_line
         } else {
             $line  # No time patterns found
@@ -164,11 +122,70 @@ def main [file_path?: string] {
 
     # Add final newline if original had one
     let needs_final_newline = ($content | str ends-with "\n")
-    let processed_content = if $needs_final_newline {
+    if $needs_final_newline {
         ($processed_lines | str join "\n") + "\n"
     } else {
-        ($processed_lines | str join "\n")
+        $processed_lines | str join "\n"
     }
+}
+
+def main [file_path?: string] {
+    # Helix :pipe mode — transform buffer in place (no disk race / :reload)
+    if $file_path == "-" {
+        let content = (open /dev/stdin --raw | decode utf-8)
+        print -n (process-content $content)
+        return
+    }
+
+    let target_file = if ($file_path | is-empty) {
+        # If no file specified, find recently modified .md files
+        let files = (glob $"($env.HOME)/Forge/**/*.md")
+
+        if ($files | length) == 0 {
+            print "No markdown files found in vault"
+            return
+        }
+
+        # Process files modified in the last 5 minutes
+        let recent_files = ($files
+            | each { |file|
+                let stats = ($file | path expand | stat)
+                {path: $file, modified: $stats.modified}
+            }
+            | where {|it| $it.modified > ((date now) - 5min)}
+            | get path)
+
+        if ($recent_files | length) == 0 {
+            print "No recently modified markdown files found"
+            return
+        }
+
+        # Process all recent files
+        for file in $recent_files {
+            print $"Processing: ($file)"
+            # Recursively call self with each file
+            ^activity-duration-processor $file
+        }
+        return  # Exit after processing all recent files
+    } else {
+        $file_path
+    }
+
+    if not ($target_file | path exists) {
+        print $"File not found: ($target_file)"
+        return
+    }
+
+    # Read file content with retry logic for file system reliability
+    let content = (try {
+        open $target_file
+    } catch { |err|
+        # Retry once after brief delay if file read fails
+        sleep 50ms
+        open $target_file
+    })
+
+    let processed_content = (process-content $content)
 
     # Only write if content changed
     if $processed_content != $content {
