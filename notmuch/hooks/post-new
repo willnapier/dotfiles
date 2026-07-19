@@ -71,6 +71,33 @@ notmuch tag +unsubscribed -inbox -- \
      and tag:new
      and (to:unsubscribe or to:unsub or to:list-unsubscribe or to:opt-out or to:remove-me)'
 
+# --- Rule 3.6: file personal (Gmail) outgoing mail as Sent ---
+# Gmail's SMTP saves a copy of every sent message to the Sent folder;
+# gmailieer pulls it back. But the personal account is a FLAT Maildir (no
+# "Sent" subfolder like COHS), so the path-based `+sent` rule in Rule 0
+# can't catch it, and nothing else maps Gmail's SENT label to notmuch
+# `sent`. Meanwhile notmuch's [new] config stamps every newly-indexed file
+# `new;unread;inbox`. Net effect before this rule: outgoing personal mail
+# (replies, forwards) wrongly landed in the Inbox as UNREAD and never
+# appeared in the Sent view (`tag:sent and not path:cohs/**`). COHS is
+# already handled by Rule 0's `cohs/Sent Items/**` path match.
+#
+# Fix: tag from-self personal mail `+sent`. For mail sent to OTHERS also
+# strip `inbox`/`unread` — a reply/forward you sent shouldn't sit unread in
+# your own inbox. Self-addressed mail (to:self — e.g. PracticeForge OTPs)
+# KEEPS inbox/unread, matching the inbox view's deliberate from-self
+# exception (see notmuch_db.rs inbox query). Keyed on `tag:new` so it only
+# touches this tick's arrivals; idempotent. Must run before Rule 4 strips
+# `new`. Effects propagate to Gmail on the next push (a sent-to-others
+# message has no INBOX label there, so `-inbox` is a local-only correction;
+# `-unread` marks the Sent copy read, which it is).
+notmuch tag +sent -inbox -unread -- \
+    'from:will@willnapier.com and tag:new and not path:"cohs/**"
+     and not to:will@willnapier.com'
+notmuch tag +sent -- \
+    'from:will@willnapier.com and tag:new and not path:"cohs/**"
+     and to:will@willnapier.com'
+
 # --- Rule 4: strip the transient `new` tag ---
 # notmuch's [new] config applies `new;unread;inbox` to every newly-
 # indexed file. The `new` tag is supposed to be *transient* — used
