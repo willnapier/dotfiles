@@ -5,15 +5,16 @@
 #
 # How it works:
 # 1. Writes current timestamp to a heartbeat file in Forge
-# 2. Checks if Nimbini's copy of a previous heartbeat is recent
-# 3. Alerts if sync appears stalled (Nimbini copy > 10 mins behind)
+# 2. Polls Nimbini for that exact heartbeat
+# 3. Alerts if it has not propagated within one minute
 #
 # Run via launchd every 5 minutes
 
 set -euo pipefail
 
 HEARTBEAT_FILE="$HOME/Forge/.syncthing-heartbeat-mac"
-STALE_THRESHOLD_SECONDS=600  # 10 minutes
+PROPAGATION_TIMEOUT_SECONDS=60
+POLL_INTERVAL_SECONDS=5
 LOG_FILE="$HOME/Library/Logs/syncthing-watchdog.log"
 NIMBINI_HOST="will@nimbini"
 
@@ -40,40 +41,38 @@ write_heartbeat() {
     now=$(date +%s)
     echo "$now" > "$HEARTBEAT_FILE"
     log "Wrote heartbeat: $now"
+    printf '%s\n' "$now"
 }
 
-# Check if Nimbini received recent heartbeat
+# Check whether Nimbini receives the heartbeat written by this run. Comparing
+# against the previous heartbeat's age produced false alarms whenever the Mac
+# woke from sleep, before Syncthing had a chance to send the new file.
 check_nimbini_heartbeat() {
+    local expected_timestamp="$1"
     local remote_file="/home/will/Forge/.syncthing-heartbeat-mac"
     local remote_timestamp
-    local now
-    local age
+    local deadline
 
-    # Get timestamp from Nimbini (with timeout)
-    if ! remote_timestamp=$(ssh -o ConnectTimeout=10 "$NIMBINI_HOST" "cat $remote_file" 2>/dev/null); then
-        log "Could not read heartbeat from Nimbini (SSH failed or file missing)"
-        # Don't alert on first run or if Nimbini is offline
-        return 0
-    fi
+    deadline=$(( $(date +%s) + PROPAGATION_TIMEOUT_SECONDS ))
 
-    # Validate it's a number
-    if ! [[ "$remote_timestamp" =~ ^[0-9]+$ ]]; then
-        log "Invalid timestamp from Nimbini: $remote_timestamp"
-        return 0
-    fi
+    while [ "$(date +%s)" -le "$deadline" ]; do
+        remote_timestamp=$(ssh -o ConnectTimeout=5 "$NIMBINI_HOST" \
+            "bat --style=plain --paging=never $remote_file" 2>/dev/null || true)
 
-    now=$(date +%s)
-    age=$((now - remote_timestamp))
+        if [[ "$remote_timestamp" =~ ^[0-9]+$ ]] && \
+           [ "$remote_timestamp" -ge "$expected_timestamp" ]; then
+            log "Heartbeat reached Nimbini: $remote_timestamp"
+            clear_alert
+            return 0
+        fi
 
-    log "Nimbini heartbeat age: ${age}s (threshold: ${STALE_THRESHOLD_SECONDS}s)"
+        sleep "$POLL_INTERVAL_SECONDS"
+    done
 
-    if [ "$age" -gt "$STALE_THRESHOLD_SECONDS" ]; then
-        alert "Sync stalled! Nimbini heartbeat is ${age}s old (threshold: ${STALE_THRESHOLD_SECONDS}s)"
-        return 1
-    else
-        clear_alert
-        return 0
-    fi
+    alert "Sync stalled: heartbeat $expected_timestamp did not reach Nimbini within ${PROPAGATION_TIMEOUT_SECONDS}s"
+    # A detected sync problem is a monitoring result, not a watchdog process
+    # failure. Exit successfully so launchd continues its StartInterval schedule.
+    return 0
 }
 
 main() {
@@ -81,8 +80,8 @@ main() {
 
     case "${1:-run}" in
         run)
-            write_heartbeat
-            check_nimbini_heartbeat
+            heartbeat=$(write_heartbeat)
+            check_nimbini_heartbeat "$heartbeat"
             ;;
         status)
             if [ -f "$HOME/.syncthing-watchdog-status" ]; then
@@ -96,9 +95,14 @@ main() {
             ;;
         test)
             echo "Testing watchdog..."
-            write_heartbeat
+            heartbeat=$(write_heartbeat)
             echo "Heartbeat written. Checking Nimbini..."
-            check_nimbini_heartbeat && echo "OK: Sync is healthy" || echo "ALERT: Sync appears stalled"
+            check_nimbini_heartbeat "$heartbeat"
+            if rg -q '^OK:' "$HOME/.syncthing-watchdog-status"; then
+                echo "OK: Sync is healthy"
+            else
+                echo "ALERT: Sync appears stalled"
+            fi
             ;;
         *)
             echo "Syncthing Sync Watchdog"
