@@ -21,11 +21,7 @@ SECRETS="${HOME}/.config/practiceforge/secrets.toml"
 CLINICAL_MARKER_DIR="${HOME}/.local/share/continuum/claude-clinical-sessions"
 
 is_uuid() {
-  [[ "$1" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]
-}
-
-normalise_uuid() {
-  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+  [[ "$1" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]
 }
 
 register_clinical_session() {
@@ -60,18 +56,18 @@ for ((i = 0; i < ${#CLAUDE_ARGS[@]}; i++)); do
     --session-id)
       ((i += 1))
       if ((i >= ${#CLAUDE_ARGS[@]})) || ! is_uuid "${CLAUDE_ARGS[$i]}"; then
-        echo "cc-clinical: --session-id requires an explicit UUID." >&2
+        echo "cc-clinical: --session-id requires an explicit lowercase UUID." >&2
         exit 2
       fi
-      explicit_session_id="$(normalise_uuid "${CLAUDE_ARGS[$i]}")"
+      explicit_session_id="${CLAUDE_ARGS[$i]}"
       ;;
     --session-id=*)
       value="${arg#--session-id=}"
       if ! is_uuid "$value"; then
-        echo "cc-clinical: --session-id requires an explicit UUID." >&2
+        echo "cc-clinical: --session-id requires an explicit lowercase UUID." >&2
         exit 2
       fi
-      explicit_session_id="$(normalise_uuid "$value")"
+      explicit_session_id="$value"
       ;;
     -r|--resume)
       ((i += 1))
@@ -79,7 +75,7 @@ for ((i = 0; i < ${#CLAUDE_ARGS[@]}; i++)); do
         echo "cc-clinical: resume requires an explicit session UUID; the interactive picker is disabled." >&2
         exit 2
       fi
-      resume_session_id="$(normalise_uuid "${CLAUDE_ARGS[$i]}")"
+      resume_session_id="${CLAUDE_ARGS[$i]}"
       ;;
     --resume=*)
       value="${arg#--resume=}"
@@ -87,7 +83,15 @@ for ((i = 0; i < ${#CLAUDE_ARGS[@]}; i++)); do
         echo "cc-clinical: resume requires an explicit session UUID; named/picker resume is disabled." >&2
         exit 2
       fi
-      resume_session_id="$(normalise_uuid "$value")"
+      resume_session_id="$value"
+      ;;
+    -r?*)
+      value="${arg#-r}"
+      if ! is_uuid "$value"; then
+        echo "cc-clinical: resume requires an explicit lowercase session UUID." >&2
+        exit 2
+      fi
+      resume_session_id="$value"
       ;;
     -c|--continue)
       echo "cc-clinical: --continue is disabled because its session cannot be protected before launch; use --resume <UUID>." >&2
