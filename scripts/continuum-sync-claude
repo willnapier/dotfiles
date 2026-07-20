@@ -1,16 +1,36 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Continuum Claude Code Sync - imports recently modified sessions
 # Runs periodically via launchd to ensure conversations are always captured
+set -euo pipefail
 
-CONTINUUM_BIN="$HOME/.local/bin/continuum"
-CLAUDE_PROJECTS="$HOME/.claude/projects"
-LOG_FILE="$HOME/.local/share/continuum/sync.log"
+CONTINUUM_BIN="${CONTINUUM_BIN:-$HOME/.local/bin/continuum}"
+CLAUDE_PROJECTS="${CLAUDE_PROJECTS:-$HOME/.claude/projects}"
+LOG_FILE="${CONTINUUM_SYNC_LOG:-$HOME/.local/share/continuum/sync.log}"
+CLINICAL_MARKER_DIR="${CONTINUUM_CLAUDE_CLINICAL_MARKERS:-$HOME/.local/share/continuum/claude-clinical-sessions}"
 
-mkdir -p "$(dirname "$LOG_FILE")"
+install -d -m 700 "$(dirname "$LOG_FILE")" "$CLINICAL_MARKER_DIR"
+
+if command -v fd >/dev/null 2>&1; then
+    FD_BIN="$(command -v fd)"
+elif [[ -x /opt/homebrew/bin/fd ]]; then
+    FD_BIN=/opt/homebrew/bin/fd
+elif [[ -x "$HOME/.cargo/bin/fd" ]]; then
+    FD_BIN="$HOME/.cargo/bin/fd"
+else
+    echo "$(date '+%Y-%m-%d %H:%M:%S') Refusing Claude sync: fd is unavailable" >> "$LOG_FILE"
+    exit 1
+fi
 
 # Find session files modified in the last 30 minutes
-find "$CLAUDE_PROJECTS" -name "*.jsonl" -mmin -30 ! -name "agent-*" 2>/dev/null | while read -r session_file; do
+"$FD_BIN" --hidden --type f --extension jsonl --changed-within 30min --exclude 'agent-*' . "$CLAUDE_PROJECTS" 2>/dev/null | while IFS= read -r session_file; do
     session_id=$(basename "$session_file" .jsonl)
+
+    # cc-clinical registers the UUID before starting Claude. Never pass a
+    # protected transcript to the importer, even if it was modified recently.
+    if [[ -f "$CLINICAL_MARKER_DIR/$session_id" ]]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') Skipping protected cc-clinical session: $session_id" >> "$LOG_FILE"
+        continue
+    fi
     
     # Skip if already imported recently (check if continuum log exists and is newer)
     # For now, just import - the import is idempotent

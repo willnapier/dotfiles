@@ -18,6 +18,104 @@
 set -euo pipefail
 
 SECRETS="${HOME}/.config/practiceforge/secrets.toml"
+CLINICAL_MARKER_DIR="${HOME}/.local/share/continuum/claude-clinical-sessions"
+
+is_uuid() {
+  [[ "$1" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]
+}
+
+normalise_uuid() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
+register_clinical_session() {
+  local session_id="$1"
+
+  if ! install -d -m 700 "$CLINICAL_MARKER_DIR"; then
+    echo "cc-clinical: cannot create the Continuum clinical-session registry; refusing to start." >&2
+    exit 1
+  fi
+
+  # Register before Claude starts, closing the race in which the periodic sync
+  # could otherwise see a new transcript before learning that it is clinical.
+  if ! install -m 600 /dev/null "$CLINICAL_MARKER_DIR/$session_id"; then
+    echo "cc-clinical: cannot register protected session $session_id; refusing to start." >&2
+    exit 1
+  fi
+}
+
+# Continuum identifies Claude sessions by UUID. Ensure every clinical launch has
+# a known ID that can be registered before any PHI enters the session. Interactive
+# resume selection (`--continue`, bare `--resume`) is therefore deliberately
+# unavailable here; resume a clinical session by its explicit UUID instead.
+declare -a CLAUDE_ARGS=("$@")
+declare -a SESSION_IDS=()
+explicit_session_id=""
+resume_session_id=""
+fork_session=false
+
+for ((i = 0; i < ${#CLAUDE_ARGS[@]}; i++)); do
+  arg="${CLAUDE_ARGS[$i]}"
+  case "$arg" in
+    --session-id)
+      ((i += 1))
+      if ((i >= ${#CLAUDE_ARGS[@]})) || ! is_uuid "${CLAUDE_ARGS[$i]}"; then
+        echo "cc-clinical: --session-id requires an explicit UUID." >&2
+        exit 2
+      fi
+      explicit_session_id="$(normalise_uuid "${CLAUDE_ARGS[$i]}")"
+      ;;
+    --session-id=*)
+      value="${arg#--session-id=}"
+      if ! is_uuid "$value"; then
+        echo "cc-clinical: --session-id requires an explicit UUID." >&2
+        exit 2
+      fi
+      explicit_session_id="$(normalise_uuid "$value")"
+      ;;
+    -r|--resume)
+      ((i += 1))
+      if ((i >= ${#CLAUDE_ARGS[@]})) || ! is_uuid "${CLAUDE_ARGS[$i]}"; then
+        echo "cc-clinical: resume requires an explicit session UUID; the interactive picker is disabled." >&2
+        exit 2
+      fi
+      resume_session_id="$(normalise_uuid "${CLAUDE_ARGS[$i]}")"
+      ;;
+    --resume=*)
+      value="${arg#--resume=}"
+      if ! is_uuid "$value"; then
+        echo "cc-clinical: resume requires an explicit session UUID; named/picker resume is disabled." >&2
+        exit 2
+      fi
+      resume_session_id="$(normalise_uuid "$value")"
+      ;;
+    -c|--continue)
+      echo "cc-clinical: --continue is disabled because its session cannot be protected before launch; use --resume <UUID>." >&2
+      exit 2
+      ;;
+    --fork-session)
+      fork_session=true
+      ;;
+  esac
+done
+
+if [[ "$fork_session" == true && -z "$explicit_session_id" ]]; then
+  echo "cc-clinical: --fork-session requires an explicit --session-id <UUID> for the protected fork." >&2
+  exit 2
+fi
+
+if [[ -z "$explicit_session_id" && -z "$resume_session_id" ]]; then
+  explicit_session_id="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+  CLAUDE_ARGS+=(--session-id "$explicit_session_id")
+fi
+
+[[ -n "$resume_session_id" ]] && SESSION_IDS+=("$resume_session_id")
+[[ -n "$explicit_session_id" ]] && SESSION_IDS+=("$explicit_session_id")
+
+for session_id in "${SESSION_IDS[@]}"; do
+  register_clinical_session "$session_id"
+done
+
 if [ ! -f "$SECRETS" ]; then
   echo "cc-clinical: $SECRETS not found — cannot obtain the DPA'd API key." >&2
   exit 1
@@ -39,4 +137,4 @@ fi
 
 export ANTHROPIC_API_KEY="$KEY"
 echo "cc-clinical: DPA / no-training API session active — clinical-data reads are permitted here." >&2
-exec claude "$@"
+exec claude "${CLAUDE_ARGS[@]}"
