@@ -133,6 +133,11 @@ depends = []
 "dprint/dprint.json" = "~/.config/dprint/dprint.json"
 # Claude Code settings (hooks, plugins - NOT permissions which are machine-local)
 "Claude/settings.json" = "~/.claude/settings.json"
+# Claude Code hook SCRIPTS. settings.json wires these by ~/.claude/hooks/<name>.sh,
+# so the config travelled to both machines but the scripts did not — nimbini had
+# every hook configured and none present (found 2026-07-25). Managed as a directory
+# so a new hook is deployed by adding the file, with no global.toml edit.
+"Claude/hooks" = "~/.claude/hooks"
 # Himalaya CLI email client configuration (added 2026-02-12)
 
 # Essential scripts (most commonly used)
