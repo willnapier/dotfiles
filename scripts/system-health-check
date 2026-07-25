@@ -149,11 +149,29 @@ def check_services [verbose: bool, fix: bool, log_path: string] {
     mut reported_names = []
 
     # Part A: any unit in failed state
-    let failed = (do { systemctl --user --state=failed --no-legend --no-pager } | complete)
+    #
+    # `--plain` is load-bearing: without it systemd prefixes each failed unit
+    # with a "●" status glyph, so `split row " " | get 0` returned the BULLET,
+    # not the unit name. Symptom was a report reading "Service failed: ●"
+    # three times — it could tell you something broke but not what (seen
+    # 2026-07-25 after a reboot took the three mail units down). NB the
+    # `list-unit-files` call in check_timers has no glyph and is unaffected.
+    #
+    # Self-exclusion is also load-bearing: this script exits 1 when it finds
+    # any problem, which puts its OWN unit into the failed state — so the next
+    # run would find itself here, report a problem, and exit 1 again. Once it
+    # failed once it could never self-clear, even after the real fault was
+    # fixed. Skip ourselves; systemd already surfaces our own exit status.
+    let self_unit = "system-health-check.service"
+    let failed = (do { systemctl --user --state=failed --no-legend --no-pager --plain } | complete)
     if $failed.exit_code == 0 and ($failed.stdout | str trim | is-not-empty) {
         let lines = ($failed.stdout | str trim | lines | where ($it | str trim | is-not-empty))
         for line in $lines {
-            let unit = ($line | str trim | split row " " | get 0)
+            # Belt-and-braces against a future formatting change: drop a
+            # leading token that isn't a unit name.
+            let fields = ($line | str trim | split row " " | where ($it | is-not-empty))
+            let unit = (if ($fields | first | str contains ".") { $fields | first } else { $fields | get 1 })
+            if $unit == $self_unit { continue }
             let name = ($unit | str replace ".service" "" | str replace ".timer" "")
 
             if $fix {
