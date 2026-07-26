@@ -4,4 +4,9 @@ Description=Prune stale Claude-Code agent git worktrees and warn on low disk
 [Service]
 Type=oneshot
 Environment=PATH=/home/will/.cargo/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=/usr/bin/nu %h/.local/bin/claude-worktree-cleaner --apply
+# `nu` is cargo-installed at ~/.cargo/bin/nu on this machine — there is no
+# /usr/bin/nu, so the old absolute path failed 203/EXEC on every run. Use the
+# same `%h/.cargo/bin/nu` form as the sibling nu-based units
+# (forge-link-manager, git-auto-pull-watcher). Note the Environment=PATH above
+# does NOT help an absolute ExecStart — systemd execs the given path directly.
+ExecStart=%h/.cargo/bin/nu %h/.local/bin/claude-worktree-cleaner --apply
