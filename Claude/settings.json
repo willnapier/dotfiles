@@ -32,7 +32,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cat ~/Assistants/shared/WILLIAM-BIOGRAPHICAL-PHILOSOPHICAL.md ~/Assistants/shared/WILLIAM-BIOGRAPHICAL-SOCIAL.md 2>/dev/null || true"
+            "command": "cat ~/Assistants/shared/WILLIAM-BIOGRAPHICAL.md ~/Assistants/shared/WILLIAM-PHILOSOPHICAL.md ~/Assistants/shared/WILLIAM-SOCIAL.md 2>/dev/null || true"
           }
         ]
       }
@@ -159,7 +159,7 @@
   },
   "enabledPlugins": {
     "rust-analyzer-lsp@claude-plugins-official": true,
-    "frontend-design@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": false,
     "last30days@last30days-skill": true
   },
   "extraKnownMarketplaces": {
