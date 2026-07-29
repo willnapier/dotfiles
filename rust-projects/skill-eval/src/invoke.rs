@@ -102,7 +102,9 @@ fn run_claude(skill: &str, scenario: &Scenario, sandbox_dir: Option<&Path>) -> R
 
 fn run_gemini(skill: &str, scenario: &Scenario) -> Result<Vec<LogEntry>> {
     let prompt = format!(
-        "Please read and follow the skill instructions in ~/.claude/skills/{}/SKILL.md\n\n{}{}",
+        // Canonical vendor-neutral path (2026-07-29): this prompt goes to a
+        // NON-Claude harness, so it must not point at a Claude-owned directory.
+        "Please read and follow the skill instructions in ~/Assistants/skills/{}/SKILL.md\n\n{}{}",
         skill, SESSION_CUE, scenario.prompt
     );
 

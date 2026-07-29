@@ -26,7 +26,7 @@ enum Commands {
         #[arg(long, default_value = "claude")]
         cli: String,
 
-        /// Skill name (directory under ~/.claude/skills/)
+        /// Skill name (directory under ~/Assistants/skills/)
         #[arg(long)]
         skill: String,
 

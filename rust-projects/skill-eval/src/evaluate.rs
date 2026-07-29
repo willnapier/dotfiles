@@ -205,16 +205,17 @@ pub(crate) fn try_mechanical_check(log_entries: &[LogEntry], assertion: &Asserti
             ],
             "Edit/Write on dotfiles/ without subsequent git commit and push",
         )),
-        "S16" => Some(check_tool_sequence(
+        // S16 INVERTED 2026-07-29. It used to REQUIRE `skill-mirror` after a
+        // skill edit. That command is retired: skills now live at the canonical
+        // ~/Assistants/skills/ and ~/.claude/skills is a symlink to it, so there
+        // is no mirror to sync — and the old script would recreate the retired
+        // vendor-named directory as a rogue second tree. Running it is now the
+        // failure, not omitting it.
+        "S16" => Some(check_no_bash_command(
             log_entries,
             assertion,
-            &|e| matches!(&e.content_type, EntryType::ToolUse { tool_name, input }
-                if (tool_name == "Edit" || tool_name == "Write") && input.contains(".claude/skills/")),
-            &[
-                &|e| matches!(&e.content_type, EntryType::ToolUse { tool_name, input }
-                    if tool_name == "Bash" && input.contains("skill-mirror")),
-            ],
-            "Edit/Write on .claude/skills/ without subsequent skill-mirror",
+            "skill-mirror",
+            "Ran skill-mirror, which was retired 2026-07-29 (it would recreate ~/Assistants/claude-skills/ as a second live tree)",
         )),
 
         // === Conditional integrity checks ===
