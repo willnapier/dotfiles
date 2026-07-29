@@ -45,12 +45,15 @@
         <string>/Users/williamnapier/.local/bin:/Users/williamnapier/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
         <key>HOME</key>
         <string>/Users/williamnapier</string>
-        <!-- Forensic HTML dump for cross-day-attribution bug recurrence
-             (handoff 2026-05-28). Dumps to /tmp/tm3-live-dump-YYYY-MM-DD.html;
-             ~16MB per capture; auto-prunes after 7 days. Remove once the
-             extract_day_columns root-cause fix lands and one clean week passes. -->
-        <key>DUMP_HTML</key>
-        <string>1</string>
+        <!-- DUMP_HTML=1 REMOVED 2026-07-29. It was forensic instrumentation for
+             the cross-day-attribution bug (handoff 2026-05-28), dumping ~16MB of
+             raw TM3 diary HTML per capture to /tmp/tm3-live-dump-YYYY-MM-DD.html
+             — i.e. an uncapped PHI sink. Its own removal condition was "once the
+             extract_day_columns root-cause fix lands and one clean week passes".
+             That fix landed 2026-06-19 (tm3-diary-capture df038d7, "scope
+             offered-red detection PER DAY"), is in main, and the deployed binary
+             dates from 23 Jun — five clean weeks. Condition met; sink closed.
+             If the bug ever recurs, re-add the key rather than reinventing it. -->
     </dict>
 
     <key>ProcessType</key>

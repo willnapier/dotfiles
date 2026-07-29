@@ -28,14 +28,16 @@
              which would break every bookmark and link. For frontend
              iteration, run a second dashboard manually with PF_DEV=1 on
              port 3458, leaving prod 3457 untouched. -->
-        <!-- Forensic HTML dump for cross-day-attribution bug recurrence
-             (handoff 2026-05-28). Inherited by tm3-diary-capture --live
-             subprocess invocations from the dashboard's TM3 refresh flow.
-             Dumps to /tmp/tm3-live-dump-YYYY-MM-DD.html; auto-prunes after
-             7 days. Remove once the extract_day_columns root-cause fix lands
-             and one clean week passes. -->
-        <key>DUMP_HTML</key>
-        <string>1</string>
+        <!-- DUMP_HTML=1 REMOVED 2026-07-29. It was forensic instrumentation for
+             the cross-day-attribution bug (handoff 2026-05-28), inherited by
+             tm3-diary-capture --live subprocesses from the dashboard's TM3
+             refresh flow and dumping raw TM3 diary HTML to
+             /tmp/tm3-live-dump-YYYY-MM-DD.html — i.e. an uncapped PHI sink.
+             Its own removal condition was "once the extract_day_columns
+             root-cause fix lands and one clean week passes". That fix landed
+             2026-06-19 (tm3-diary-capture df038d7), is in main, and the deployed
+             binary dates from 23 Jun — five clean weeks. Condition met; sink
+             closed. If the bug recurs, re-add the key rather than reinventing it. -->
     </dict>
 </dict>
 </plist>
