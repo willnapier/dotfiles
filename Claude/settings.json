@@ -16,6 +16,7 @@
     "deny": [],
     "defaultMode": "auto"
   },
+  "model": "opus",
   "hooks": {
     "SessionStart": [
       {
@@ -177,6 +178,5 @@
   "voiceEnabled": true,
   "feedbackSurveyState": {
     "lastShownTime": 1754246159316
-  },
-  "model": "opus"
+  }
 }
