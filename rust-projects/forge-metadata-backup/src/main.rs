@@ -34,7 +34,11 @@ enum Commands {
         directory: PathBuf,
 
         /// Custom input file (default: DIR/.metadata-backup.csv)
-        #[arg(short, long)]
+        ///
+        /// `--output` is accepted as an alias: the nushell implementation this replaces
+        /// used one `--output` flag for both subcommands, and that spelling is in the
+        /// usage comments people copy from.
+        #[arg(short, long, alias = "output")]
         input: Option<PathBuf>,
 
         /// Show what would be restored without making changes
@@ -43,10 +47,23 @@ enum Commands {
     },
 }
 
+/// One row of `.metadata-backup.csv`.
+///
+/// The column names are **not** free to change. `~/Forge/.metadata-backup.csv` already
+/// holds 7,000+ rows written by the nushell implementation this binary replaces, under
+/// the header `path,birth_time,mod_time`, and a second copy lives in Dropbox. The whole
+/// point of the tool is that those files survive a restore that loses filesystem
+/// metadata — so the code conforms to the data already on disk, not the reverse.
+///
+/// Without these renames the Rust build serialised `path,created,modified` and could not
+/// read a single existing backup. That incompatibility was what made "just switch to the
+/// Rust one" impracticable until 2026-07-31.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 struct FileMetadata {
     path: String,
+    #[serde(rename = "birth_time")]
     created: u64,
+    #[serde(rename = "mod_time")]
     modified: u64,
 }
 
