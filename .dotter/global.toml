@@ -333,7 +333,11 @@ depends = []
 # Frecency daemon wrapper - cross-platform API key handling
 "scripts/frecency-daemon-wrapper" = "~/.local/bin/frecency-daemon-wrapper"
 "scripts/service-health-check" = "~/.local/bin/service-health-check"
-"scripts/forge-metadata-backup" = "~/.local/bin/forge-metadata-backup"
+# forge-metadata-backup itself is NO LONGER a script (2026-07-31). It is the Rust binary
+# at rust-projects/forge-metadata-backup, deployed to ~/.local/bin by `rust-redeploy`.
+# Do NOT re-add a mapping here: it would symlink ~/.local/bin/forge-metadata-backup back
+# into scripts/, and a later `cp` onto that path writes THROUGH the link into the source
+# tree. The -monthly wrapper stays a script — thin scheduling glue is what nu is for.
 "scripts/forge-metadata-backup-monthly" = "~/.local/bin/forge-metadata-backup-monthly"
 # Reminder notification daemon
 "scripts/remind-notify" = "~/.local/bin/remind-notify"
