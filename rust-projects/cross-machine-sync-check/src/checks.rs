@@ -152,6 +152,26 @@ fn newest_source_mtime(project_dir: &Path) -> Result<Option<i64>> {
     Ok(newest)
 }
 
+/// If `path` is a symlink whose resolved target lies outside `bin_dir`, return that target.
+///
+/// Returns `None` for a regular file, and also for a symlink that stays inside `bin_dir`
+/// (a versioned-name link next to its binary is still this project's artifact).
+pub fn resolved_link_outside_bin_dir(path: &Path, bin_dir: &Path) -> Option<PathBuf> {
+    let meta = std::fs::symlink_metadata(path).ok()?;
+    if !meta.file_type().is_symlink() {
+        return None;
+    }
+    // Fall back to the raw link text if the target does not resolve — a dangling link
+    // pointing out of the directory is still not ours to overwrite.
+    let target = std::fs::canonicalize(path).unwrap_or(std::fs::read_link(path).ok()?);
+    let bin_dir = std::fs::canonicalize(bin_dir).unwrap_or_else(|_| bin_dir.to_path_buf());
+    if target.starts_with(&bin_dir) {
+        None
+    } else {
+        Some(target)
+    }
+}
+
 pub fn rust_binary_freshness() -> Result<Vec<CheckResult>> {
     let rust_projects = home_dir().join("dotfiles/rust-projects");
     let bin_dir = home_dir().join(".local/bin");
@@ -182,6 +202,34 @@ pub fn rust_binary_freshness() -> Result<Vec<CheckResult>> {
             continue;
         }
 
+        // A same-named script can occupy the binary's deploy path. `forge-metadata-backup`
+        // exists both as a Rust project (never deployed) and as ~/dotfiles/scripts/<name>
+        // (nushell, the one actually in use), reached by a symlink at ~/.local/bin/<name>.
+        // The "not deployed -> skip" test above is just `path exists`, which such a symlink
+        // satisfies — so we used to compare the Rust source's mtime against the SCRIPT and
+        // report drift for a binary that has never been deployed at all.
+        //
+        // This is not cosmetic. On 2026-07-31 that false positive was acted on, and the
+        // standard deploy step `cp ~/.cargo/bin/<name> ~/.local/bin/` followed the symlink
+        // and overwrote the nu script in the dotfiles source tree with a 1.5 MB ELF.
+        //
+        // A symlink whose target leaves ~/.local/bin is somebody else's artifact. Say so
+        // out loud rather than measuring it.
+        if let Some(target) = resolved_link_outside_bin_dir(&binary_path, &bin_dir) {
+            results.push(CheckResult {
+                name: format!("rust-binary/{}", project_name),
+                status: Status::Skipped,
+                details: vec![
+                    format!("~/.local/bin/{} is a symlink to {}", project_name, target.display()),
+                    "that target is outside ~/.local/bin, so it is not this project's binary"
+                        .to_string(),
+                    "freshness not measured; do NOT `cp` onto this path (cp writes through the link)"
+                        .to_string(),
+                ],
+            });
+            continue;
+        }
+
         let bin_meta = std::fs::metadata(&binary_path)?;
         let bin_mtime = bin_meta
             .modified()?
@@ -201,8 +249,10 @@ pub fn rust_binary_freshness() -> Result<Vec<CheckResult>> {
         }
     }
 
-    // Only report if there's drift — don't clutter output with N clean binaries
-    if results.is_empty() {
+    // Only report if there's drift — don't clutter output with N clean binaries.
+    // Keyed on absence of Drift, not absence of results: a Skipped entry (symlinked
+    // deploy path) must not suppress the "all fresh" summary line.
+    if !results.iter().any(|r| r.status == Status::Drift) {
         results.push(CheckResult {
             name: "rust-binaries-local".to_string(),
             status: Status::Clean,
