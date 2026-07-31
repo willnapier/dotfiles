@@ -87,13 +87,15 @@ fn run(cli: &Cli) -> Result<()> {
                 checks::Status::Drift => "DRIFT",
                 checks::Status::Skipped => "skipped",
             };
-            if r.status == checks::Status::Drift {
-                println!("{}{} — {}", icon, r.name, label);
+            println!("{}{} — {}", icon, r.name, label);
+            // Skipped checks print their reason too. A bare "- skipped" reads as a
+            // deliberate no-op, which is how a broken SSH target hid the fact that
+            // the three remote checks had never run on nimbini (see detect_remote).
+            // Clean checks stay quiet — there is nothing to explain.
+            if matches!(r.status, checks::Status::Drift | checks::Status::Skipped) {
                 for detail in &r.details {
                     println!("    {}", detail);
                 }
-            } else {
-                println!("{}{} — {}", icon, r.name, label);
             }
         }
 
@@ -132,11 +134,24 @@ fn detect_remote() -> Option<String> {
                 .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         })?;
 
+    // Both arms return an ssh_config Host alias rather than a literal
+    // user@hostname. ~/.ssh/config is dotter-managed and shared, so it is the
+    // single source of truth for how to reach the other machine — including the
+    // Tailscale IP, which changes far more often than the alias does.
+    //
+    // The nimbini arm used to hardcode "williamnapier@williams-macbook-air.local".
+    // That mDNS name matches no Host block in ssh_config (the block is
+    // "Host mac Mac williams-macbook-air") so it never picked up HostName, and it
+    // is absent from known_hosts (which holds the bare "williams-macbook-air"), so
+    // every connection died on "Host key verification failed". All three remote
+    // checks then returned Skipped — silently, since skip reasons were not
+    // printed. Result: on nimbini the cross-machine half of this tool had never
+    // run. Fixed 2026-07-31 along with the skip-reason reporting in run().
     let h = hostname.to_lowercase();
     if h.contains("macbook") || h.contains("william") {
-        Some("will@nimbini".to_string())
+        Some("nimbini".to_string())
     } else if h.contains("nimbini") {
-        Some("williamnapier@williams-macbook-air.local".to_string())
+        Some("mac".to_string())
     } else {
         None
     }
