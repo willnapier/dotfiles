@@ -119,6 +119,30 @@ pub fn dotfiles_remote_sync(remote: &str) -> Result<CheckResult> {
 
 // --- 2. Rust binary freshness ---
 
+/// Newest mtime among every file under `dir`, recursively.
+///
+/// Recursion is load-bearing, not tidiness. This used to read only the top level of
+/// `src/`, which on 2026-07-31 meant it was blind to most of the source it was supposed
+/// to be watching: `fd-budget` keeps 19 files with 3 at the top level, `mailcurator`
+/// 26 with 18, `pageprobe` 16 with 4, `sr` 11 with 4. An edit to any nested module was
+/// invisible, so the binary could be arbitrarily stale and still report clean.
+fn newest_mtime_recursive(dir: &Path, newest: &mut Option<i64>) -> Result<()> {
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let meta = entry.metadata()?;
+        if meta.is_dir() {
+            newest_mtime_recursive(&entry.path(), newest)?;
+        } else if meta.is_file() {
+            let mtime = meta
+                .modified()?
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_secs() as i64;
+            *newest = Some(newest.map_or(mtime, |n: i64| n.max(mtime)));
+        }
+    }
+    Ok(())
+}
+
 fn newest_source_mtime(project_dir: &Path) -> Result<Option<i64>> {
     let src_dir = project_dir.join("src");
     if !src_dir.exists() {
@@ -126,17 +150,7 @@ fn newest_source_mtime(project_dir: &Path) -> Result<Option<i64>> {
     }
 
     let mut newest: Option<i64> = None;
-    for entry in std::fs::read_dir(&src_dir)? {
-        let entry = entry?;
-        let meta = entry.metadata()?;
-        if meta.is_file() {
-            let mtime = meta
-                .modified()?
-                .duration_since(std::time::UNIX_EPOCH)?
-                .as_secs() as i64;
-            newest = Some(newest.map_or(mtime, |n: i64| n.max(mtime)));
-        }
-    }
+    newest_mtime_recursive(&src_dir, &mut newest)?;
 
     // Also check Cargo.toml
     let cargo_toml = project_dir.join("Cargo.toml");
@@ -265,16 +279,39 @@ pub fn rust_binary_freshness() -> Result<Vec<CheckResult>> {
 
 pub fn rust_binary_freshness_remote(remote: &str) -> Result<Vec<CheckResult>> {
     // Get list of projects and their newest source mtime
+    // ⚠️ This probe must be POSIX-portable. It runs on whichever machine is the REMOTE,
+    // so from nimbini it executes on macOS, where `find -printf` and `stat -c` do not
+    // exist. The original used both. On macOS they failed, `src_time` came back empty,
+    // it parsed to 0.0, and `src_time > bin_time` was therefore never true — so
+    // **nimbini's remote binary check silently reported "clean" for the Mac no matter
+    // what**, which is the worst possible direction for a detector to fail in. It was
+    // found on 2026-07-31 only because the Mac's own local run disagreed with it.
+    //
+    // `stat -c %Y || stat -f %m` covers GNU then BSD: GNU succeeds first, and GNU never
+    // reaches `-f` (which would mean something else entirely there).
+    //
+    // Fields: name|newest_src_mtime|bin_mtime|escaping_symlink_target
     let projects_output = match ssh_cmd(
         remote,
         concat!(
-            "for d in ~/dotfiles/rust-projects/*/; do ",
+            "for d in \"$HOME\"/dotfiles/rust-projects/*/; do ",
             "  name=$(basename \"$d\"); ",
-            "  if [ -f \"$d/Cargo.toml\" ]; then ",
-            "    src_time=$(find \"$d/src\" \"$d/Cargo.toml\" -type f -printf '%T@\\n' 2>/dev/null | sort -rn | head -1); ",
-            "    bin_time=$(stat -c '%Y' ~/.local/bin/$name 2>/dev/null || echo 0); ",
-            "    echo \"$name|$src_time|$bin_time\"; ",
+            "  [ -f \"$d/Cargo.toml\" ] || continue; ",
+            "  newest=0; ",
+            "  for f in $(find \"$d/src\" -type f 2>/dev/null) \"$d/Cargo.toml\"; do ",
+            "    [ -f \"$f\" ] || continue; ",
+            "    t=$(stat -c %Y \"$f\" 2>/dev/null || stat -f %m \"$f\" 2>/dev/null || echo 0); ",
+            "    [ \"$t\" -gt \"$newest\" ] 2>/dev/null && newest=\"$t\"; ",
+            "  done; ",
+            "  bin=\"$HOME/.local/bin/$name\"; bin_time=0; link=; ",
+            "  if [ -e \"$bin\" ] || [ -L \"$bin\" ]; then ",
+            "    bin_time=$(stat -c %Y \"$bin\" 2>/dev/null || stat -f %m \"$bin\" 2>/dev/null || echo 0); ",
+            "    if [ -L \"$bin\" ]; then ",
+            "      tgt=$(readlink -f \"$bin\" 2>/dev/null || readlink \"$bin\" 2>/dev/null); ",
+            "      case \"$tgt\" in \"$HOME/.local/bin/\"*) ;; *) link=\"$tgt\" ;; esac; ",
+            "    fi; ",
             "  fi; ",
+            "  printf '%s|%s|%s|%s\\n' \"$name\" \"$newest\" \"$bin_time\" \"$link\"; ",
             "done"
         ),
     ) {
@@ -292,12 +329,38 @@ pub fn rust_binary_freshness_remote(remote: &str) -> Result<Vec<CheckResult>> {
 
     for line in projects_output.lines() {
         let parts: Vec<&str> = line.split('|').collect();
-        if parts.len() != 3 {
+        if parts.len() != 4 {
             continue;
         }
         let name = parts[0];
         let src_time: f64 = parts[1].parse().unwrap_or(0.0);
         let bin_time: f64 = parts[2].parse().unwrap_or(0.0);
+        let link_target = parts[3].trim();
+
+        // A source tree we could not read at all. Say so rather than silently calling it
+        // clean — that silence is precisely what hid the BSD/GNU breakage described above.
+        if src_time == 0.0 {
+            results.push(CheckResult {
+                name: format!("rust-binary-remote/{}", name),
+                status: Status::Skipped,
+                details: vec!["could not read any source mtime on remote".to_string()],
+            });
+            continue;
+        }
+
+        // Same rule as the local check: a symlink leaving ~/.local/bin is not this
+        // project's artifact, so its mtime says nothing about this project's freshness.
+        if !link_target.is_empty() {
+            results.push(CheckResult {
+                name: format!("rust-binary-remote/{}", name),
+                status: Status::Skipped,
+                details: vec![
+                    format!("remote ~/.local/bin/{} is a symlink to {}", name, link_target),
+                    "outside ~/.local/bin, so it is not this project's binary".to_string(),
+                ],
+            });
+            continue;
+        }
 
         if bin_time == 0.0 {
             // Not deployed on remote — intentional for one-off tools, skip
@@ -315,7 +378,9 @@ pub fn rust_binary_freshness_remote(remote: &str) -> Result<Vec<CheckResult>> {
         }
     }
 
-    if results.is_empty() {
+    // Keyed on absence of Drift, not absence of results — a Skipped entry must not
+    // suppress the summary line (same rule as the local check).
+    if !results.iter().any(|r| r.status == Status::Drift) {
         results.push(CheckResult {
             name: "rust-binaries-remote".to_string(),
             status: Status::Clean,
