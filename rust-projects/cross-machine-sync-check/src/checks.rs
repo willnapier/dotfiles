@@ -674,12 +674,23 @@ pub fn unmanaged_scheduled_jobs() -> Result<CheckResult> {
             details: vec![],
         })
     } else {
+        // Wording matters here. Asked plainly on 2026-08-01, "unmanaged" was read as
+        // "broken" — it is not, and every job in this list was verified running at the
+        // time it was introduced. This check measures REPRODUCIBILITY, not health:
+        // whether the job can be rebuilt from the repo on a fresh machine. Unit health
+        // is system-health-check's job. Say so in the output so the next reader cannot
+        // make the same inference.
         let mut details = vec![format!(
             "{} scheduled job(s) deployed but NOT dotter-managed:",
             unmanaged.len()
         )];
         details.extend(unmanaged.iter().map(|n| format!("  {}", n)));
-        details.push("each runs on a schedule with nothing in ~/dotfiles tracking it".to_string());
+        details.push(
+            "NOT a health check — these may be running perfectly. They are simply not in \
+             ~/dotfiles, so they would not survive a rebuild and cannot be reviewed in git."
+                .to_string(),
+        );
+        details.push("for whether they actually RUN, see system-health-check".to_string());
         Ok(CheckResult {
             name: "unmanaged-jobs".to_string(),
             status: Status::Drift,
