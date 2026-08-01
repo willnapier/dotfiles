@@ -43,7 +43,7 @@ if echo "$TARGET" | grep -Eq '/Clinical/|/tm3-appointments/|practiceforge/sessio
   jq -n '{
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
-      permissionDecision: "block",
+      permissionDecision: "deny",
       permissionDecisionReason: "BLOCKED — clinical PHI data on a consumer (Max) session. This session has no ANTHROPIC_API_KEY, so it is the no-DPA / may-train subscription path, and special-category health data must not transit it. Read clinical data only in a `cc-clinical` session (DPA + no-training API key); PHI-free code work stays here on Max. If this is a false positive (a path that merely mentions a clinical directory), rephrase to avoid the clinical-data path."
     }
   }'

@@ -20,7 +20,7 @@ if [[ "$FILE_PATH" == */Clinical/clients/*/*.md ]]; then
   jq -n '{
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
-      permissionDecision: "block",
+      permissionDecision: "deny",
       permissionDecisionReason: "BLOCKED: Do not use Write on client files — it overwrites the entire file, destroying session history. Use Edit to append the new session note instead."
     }
   }'
