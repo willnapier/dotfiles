@@ -70,6 +70,10 @@ fn run(cli: &Cli) -> Result<()> {
     // 4. Messageboard staleness
     results.push(checks::messageboard_staleness()?);
 
+    // 5. Scheduled jobs deployed but not dotter-managed. Local-only by design: the
+    // remote's own scheduled run reports its own, and a job is a machine-local fact.
+    results.push(checks::unmanaged_scheduled_jobs()?);
+
     // Output
     let has_drift = results.iter().any(|r| r.status == checks::Status::Drift);
 

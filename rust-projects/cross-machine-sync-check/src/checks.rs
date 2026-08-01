@@ -573,3 +573,117 @@ pub fn messageboard_staleness() -> Result<CheckResult> {
         })
     }
 }
+
+// --- 5. Unmanaged scheduled jobs ---
+
+/// Third-party and OS-provided job prefixes. These are installed by their own vendors
+/// and are correctly NOT in dotfiles — flagging them would be noise that trains the
+/// reader to ignore the check.
+const VENDOR_JOB_PREFIXES: &[&str] = &[
+    "com.apple.",
+    "com.dropbox.",
+    "com.google.",
+    "com.microsoft.",
+    "homebrew.mxcl.",
+    "org.mozilla.",
+    // Linux: shipped by packages into the user unit search path
+    "dropbox.",
+    "nushell-env.",
+    "ssh-import-env.",
+    "pipewire",
+    "wireplumber",
+    "xdg-",
+    "gpg-agent",
+    "dbus",
+    "podman",
+];
+
+fn is_vendor_job(name: &str) -> bool {
+    VENDOR_JOB_PREFIXES.iter().any(|p| name.starts_with(p))
+}
+
+/// Scheduled jobs that exist on disk but are NOT dotter symlinks.
+///
+/// # The gap this closes
+///
+/// `dotter-orphan-detector-v2` scans in ONE direction — dotfiles → deployed, asking
+/// "is every file in the repo mapped?" Nothing asked the reverse: **"is every deployed
+/// job backed by the repo?"** So a job installed by hand, or left behind when its
+/// successor was brought under dotter, was invisible to every check on the system.
+///
+/// Found the hard way on 2026-07-31: `com.napier.forge-metadata-backup.plist`, an
+/// unmanaged regular file from Nov 2025, had been firing monthly for ~9 months
+/// alongside its dotter-managed replacement. It was failing every single run (exit 127
+/// — it lacked the `PATH` its managed twin carries, so the wrapper's `#!/usr/bin/env nu`
+/// shebang could not resolve), and **nothing reported that**, because no tool knew the
+/// job existed.
+///
+/// A dotter-managed job is a symlink into `~/dotfiles`. A regular file is therefore the
+/// signal: it is deployed, it runs, and nothing tracks it.
+///
+/// Reports Drift, not an error — an unmanaged job may be a deliberate machine-local
+/// choice. The point is that the decision becomes visible instead of silent.
+pub fn unmanaged_scheduled_jobs() -> Result<CheckResult> {
+    let (dir, extensions) = if cfg!(target_os = "macos") {
+        (home_dir().join("Library/LaunchAgents"), vec!["plist"])
+    } else {
+        (
+            home_dir().join(".config/systemd/user"),
+            vec!["service", "timer"],
+        )
+    };
+
+    if !dir.exists() {
+        return Ok(CheckResult {
+            name: "unmanaged-jobs".to_string(),
+            status: Status::Skipped,
+            details: vec![format!("{} not found", dir.display())],
+        });
+    }
+
+    let mut unmanaged = Vec::new();
+    for entry in std::fs::read_dir(&dir)?.flatten() {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+
+        // Only real job files. A retired plist renamed out of the `.plist` suffix is
+        // inert to launchd and deliberately ignored here too.
+        let ext_ok = path
+            .extension()
+            .map(|e| extensions.contains(&e.to_string_lossy().as_ref()))
+            .unwrap_or(false);
+        if !ext_ok || is_vendor_job(&name) {
+            continue;
+        }
+
+        // symlink_metadata does NOT follow the link — a dangling dotter symlink is still
+        // managed, and is a different fault for a different tool to report.
+        if let Ok(meta) = std::fs::symlink_metadata(&path) {
+            if !meta.file_type().is_symlink() {
+                unmanaged.push(name);
+            }
+        }
+    }
+
+    unmanaged.sort();
+
+    if unmanaged.is_empty() {
+        Ok(CheckResult {
+            name: "unmanaged-jobs".to_string(),
+            status: Status::Clean,
+            details: vec![],
+        })
+    } else {
+        let mut details = vec![format!(
+            "{} scheduled job(s) deployed but NOT dotter-managed:",
+            unmanaged.len()
+        )];
+        details.extend(unmanaged.iter().map(|n| format!("  {}", n)));
+        details.push("each runs on a schedule with nothing in ~/dotfiles tracking it".to_string());
+        Ok(CheckResult {
+            name: "unmanaged-jobs".to_string(),
+            status: Status::Drift,
+            details,
+        })
+    }
+}

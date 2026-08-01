@@ -66,6 +66,11 @@
             "type": "command",
             "command": "bash ~/.claude/hooks/clinical-data-guard.sh",
             "statusMessage": "Checking clinical-data footing..."
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/git-add-commit-chain-guard.sh",
+            "statusMessage": "Checking git staging chain..."
           }
         ]
       },
