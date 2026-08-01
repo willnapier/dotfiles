@@ -401,6 +401,16 @@ depends = ["shared"]
 "launchagents/com.user.collect-projects.plist" = "~/Library/LaunchAgents/com.user.collect-projects.plist"
 "launchagents/com.user.collect-projects-watcher.plist" = "~/Library/LaunchAgents/com.user.collect-projects-watcher.plist"
 "launchagents/com.user.forge-metadata-backup.plist" = "~/Library/LaunchAgents/com.user.forge-metadata-backup.plist"
+# frecency-daemon is a deliberate SINGLE-WRITER service: the Mac is the only scheduled
+# writer (04:00 daily), because running it on both machines rewrote the Syncthing-synced
+# DYNAMIC-MEMORY.md files simultaneously and produced 107 conflict copies between March
+# and July 2026. nimbini's systemd units are already dotter-managed and deployed-but-not-
+# enabled — that pairing IS how the single-writer decision is expressed, and it only works
+# if BOTH halves are in the repo. The Mac half was an unmanaged regular file until
+# 2026-08-01, so the schedule that carries the decision was invisible to git and would not
+# have survived a rebuild. macOS-only scheduling is what [macos.files] is for; it is not a
+# reason to leave the plist unmanaged.
+"launchagents/com.user.frecency-daemon.plist" = "~/Library/LaunchAgents/com.user.frecency-daemon.plist"
 "launchd/com.user.web-clip-watcher.plist" = "~/Library/LaunchAgents/com.user.web-clip-watcher.plist"
 "launchd/com.user.readwise-sync.plist" = "~/Library/LaunchAgents/com.user.readwise-sync.plist"
 "launchd/com.user.claude-code-nightly-cleanup.plist" = "~/Library/LaunchAgents/com.user.claude-code-nightly-cleanup.plist"
@@ -459,6 +469,12 @@ depends = ["shared"]
 # Wayland/Linux terminal configs
 "wayland/foot/foot.ini" = "~/.config/foot/foot.ini"
 # Systemd user services - Re-nu Nushell-based watchers
+# Continuum auto-import (Codex/Goose session import). nimbini-only because that is where
+# those assistants run — machine-local SCHEDULING, which the [linux.files] section already
+# expresses; it is not a reason to leave the unit unmanaged. Brought under dotter
+# 2026-08-01 when its timer was found dead, so the fix is reproducible from the repo.
+"systemd/continuum-auto-import.service" = "~/.config/systemd/user/continuum-auto-import.service"
+"systemd/continuum-auto-import.timer" = "~/.config/systemd/user/continuum-auto-import.timer"
 "systemd/dotter-realtime-watcher.service" = "~/.config/systemd/user/dotter-realtime-watcher.service"
 "systemd/dotter-sync-watcher.service" = "~/.config/systemd/user/dotter-sync-watcher.service"
 "systemd/git-auto-pull-watcher.service" = "~/.config/systemd/user/git-auto-pull-watcher.service"

@@ -1,0 +1,28 @@
+[Unit]
+Description=Continuum Auto-Import Timer
+Documentation=https://github.com/user/continuum
+
+[Timer]
+# Was: OnBootSec=1min + OnUnitActiveSec=5min. That combination silently DIED — the
+# timer sat active with NextElapseUSecMonotonic=infinity, i.e. armed for never, and had
+# not fired since 2026-07-25, two boots earlier.
+#
+# Cause: OnBootSec is a MONOTONIC deadline measured from system boot, but a --user timer
+# cannot start until the user manager does. Boot was 23:17:41 and this timer only became
+# active at 23:18:47 — 66 seconds later, so its 1-minute deadline was already in the past
+# when it started. With no first trigger, OnUnitActiveSec (which is relative to the
+# SERVICE's last activation) had no base to count from either, so systemd scheduled
+# nothing at all. A race that boots losing.
+#
+# Persistent=true did not rescue it, and could not: Persistent applies ONLY to calendar
+# timers (OnCalendar=), never to monotonic ones. Its presence here is the tell that the
+# author expected catch-up behaviour that was never in effect.
+#
+# OnCalendar has no boot race — it is wall-clock, so the next :00/:05/:10 is always in
+# the future no matter when the user manager starts — and it is the form Persistent
+# actually applies to, so a missed run is caught up after a reboot or suspend.
+OnCalendar=*:0/5
+Persistent=true
+
+[Install]
+WantedBy=timers.target

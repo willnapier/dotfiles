@@ -1,0 +1,7 @@
+[Unit]
+Description=Continuum Auto-Import Service
+Documentation=https://github.com/user/continuum
+
+[Service]
+Type=oneshot
+ExecStart=/home/will/.local/bin/continuum-auto-import
