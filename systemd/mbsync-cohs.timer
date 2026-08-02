@@ -2,8 +2,8 @@
 Description=Pull COHS M365 mail every 15 minutes
 
 [Timer]
-OnBootSec=2min
-OnUnitActiveSec=15min
+# Converted from monotonic OnBootSec/OnUnitActiveSec 2026-08-02 (boot-race class, review F1 — see continuum-auto-import.timer for the full explanation)
+OnCalendar=*:0/15
 Persistent=true
 
 [Install]

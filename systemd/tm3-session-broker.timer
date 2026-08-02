@@ -2,8 +2,8 @@
 Description=Run tm3-session-broker hourly
 
 [Timer]
-OnBootSec=5min
-OnUnitActiveSec=1h
+# Converted from monotonic OnBootSec/OnUnitActiveSec 2026-08-02 (boot-race class, review F1 — see continuum-auto-import.timer for the full explanation)
+OnCalendar=hourly
 Persistent=true
 
 [Install]

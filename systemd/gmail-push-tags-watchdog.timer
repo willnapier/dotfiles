@@ -2,8 +2,8 @@
 Description=Run gmail-push-tags-watchdog every 30 minutes
 
 [Timer]
-OnBootSec=10min
-OnUnitActiveSec=30min
+# Converted from monotonic OnBootSec/OnUnitActiveSec 2026-08-02 (boot-race class, review F1 — see continuum-auto-import.timer for the full explanation)
+OnCalendar=*:0/30
 Persistent=true
 
 [Install]

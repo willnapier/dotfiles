@@ -5,8 +5,8 @@ Description=Pull personal Gmail every 5 minutes
 # 5min cadence matches the Mac launchd StartInterval (300s). 3min boot
 # offset staggers behind mbsync-cohs (2min) so the two pulls don't hit
 # the network simultaneously on login.
-OnBootSec=3min
-OnUnitActiveSec=5min
+# Converted from monotonic OnBootSec/OnUnitActiveSec 2026-08-02 (boot-race class, review F1 — see continuum-auto-import.timer for the full explanation)
+OnCalendar=*:0/5
 Persistent=true
 
 [Install]
