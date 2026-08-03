@@ -41,6 +41,7 @@ libpulse
 libva-intel-driver
 linux
 linux-firmware
+logrotate
 ly
 mako
 mdcat
