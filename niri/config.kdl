@@ -130,6 +130,8 @@ binds {
     Mod+Alt+Shift+F     { move-window-to-tiling; }
     Mod+Alt+Backspace   { switch-focus-between-floating-and-tiling; }
     Mod+F               { switch-focus-between-floating-and-tiling; }  // Quick float/tile focus toggle
+    // Tile all floats on this workspace (clear the overlay; not minimize)
+    Mod+Shift+Escape    { spawn "niri-tile-all-floating"; }
 
     // Fullscreen / Maximize family
     Mod+Alt+M           { maximize-column; }

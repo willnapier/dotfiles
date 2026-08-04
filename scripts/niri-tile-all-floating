@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Tile all floating windows on the focused workspace, then focus tiling.
+# Bound in niri as Mod+Shift+Escape.
+set -euo pipefail
+
+ws=""
+if focused=$(niri msg --json focused-window 2>/dev/null); then
+  if [[ -n "$focused" && "$focused" != "null" ]]; then
+    ws=$(jq -r '.workspace_id // empty' <<<"$focused")
+  fi
+fi
+
+if [[ -z "$ws" ]]; then
+  ws=$(niri msg --json workspaces | jq -r '.[] | select(.is_focused) | .id' | head -n1)
+fi
+
+if [[ -z "$ws" ]]; then
+  notify-send -u low "Niri" "No focused workspace" 2>/dev/null || true
+  exit 1
+fi
+
+mapfile -t ids < <(
+  niri msg --json windows \
+    | jq -r --argjson ws "$ws" \
+      '.[] | select(.is_floating == true and .workspace_id == $ws) | .id'
+)
+
+count=0
+for id in "${ids[@]+"${ids[@]}"}"; do
+  [[ -z "$id" ]] && continue
+  niri msg action move-window-to-tiling --id "$id"
+  count=$((count + 1))
+done
+
+niri msg action focus-tiling 2>/dev/null || true
+
+if command -v notify-send >/dev/null 2>&1; then
+  if [[ "$count" -eq 0 ]]; then
+    notify-send -u low "Niri" "No floating windows on this workspace"
+  else
+    notify-send -u low "Niri" "Tiled ${count} floating window(s)"
+  fi
+fi

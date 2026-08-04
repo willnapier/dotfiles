@@ -622,8 +622,11 @@ config.keys = {
     action = act.PasteFrom 'Clipboard',
   },
   
-  -- Clipboard: platform-specific so bare Ctrl+C stays SIGINT on Linux.
-  -- macOS → Cmd+C/V; Linux → Ctrl+Shift+C/V (terminal convention).
+  -- Clipboard: platform-specific base bindings.
+  -- macOS → Cmd+C/V (ZMK NAV uses LG() / Cmd — same fingers as Linux NAV).
+  -- Linux → Ctrl+Shift+C/V kept as the terminal-convention fallback; bare
+  -- Ctrl+C/V/X are handled below so ZMK Linux NAV (LC()) matches Mac muscle
+  -- memory without permanently eating SIGINT.
   {
     key = 'c',
     mods = mods.clipboard_mod,
@@ -655,7 +658,11 @@ config.keys = {
     mods = 'SUPER|SHIFT',
     action = act.PasteFrom 'Clipboard',
   },
-  
+
+  -- Linux ZMK dual-keymap contract (same NAV fingers as Mac Cmd chords):
+  -- selection-aware Ctrl+C/X + always-paste Ctrl+V. Appended when is_linux
+  -- after this table (see block below config.keys). Undo/redo stay PTY-bound.
+
   -- Command palette
   {
     key = 'P',
@@ -759,6 +766,38 @@ config.keys = {
     end),
   },
 }
+
+-- Linux: honour ZMK NAV edit muscle memory (Ctrl chords) without breaking SIGINT.
+-- Mac WezTerm already gets Cmd+C/V from ZMK LG() + clipboard_mod=CMD.
+if is_linux then
+  local function copy_if_selection_else_send(key)
+    return wezterm.action_callback(function(window, pane)
+      local sel = window:get_selection_text_for_pane(pane)
+      if sel ~= nil and sel ~= '' then
+        window:perform_action(act.CopyTo 'ClipboardAndPrimarySelection', pane)
+      else
+        window:perform_action(act.SendKey { key = key, mods = 'CTRL' }, pane)
+      end
+    end)
+  end
+
+  table.insert(config.keys, {
+    key = 'c',
+    mods = 'CTRL',
+    action = copy_if_selection_else_send('c'),
+  })
+  -- Terminal has no real cut; with a selection, copy (the useful half of NAV cut).
+  table.insert(config.keys, {
+    key = 'x',
+    mods = 'CTRL',
+    action = copy_if_selection_else_send('x'),
+  })
+  table.insert(config.keys, {
+    key = 'v',
+    mods = 'CTRL',
+    action = act.PasteFrom 'Clipboard',
+  })
+end
 
 -- Mouse bindings - explicit clipboard handling
 config.mouse_bindings = {
