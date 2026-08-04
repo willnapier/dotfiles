@@ -769,6 +769,7 @@ config.keys = {
 
 -- Linux: honour ZMK NAV edit muscle memory (Ctrl chords) without breaking SIGINT.
 -- Mac WezTerm already gets Cmd+C/V from ZMK LG() + clipboard_mod=CMD.
+-- Standing contract: ~/Assistants/shared/ZMK-NAV-CLIPBOARD-MUSCLE-MEMORY.md
 if is_linux then
   local function copy_if_selection_else_send(key)
     return wezterm.action_callback(function(window, pane)
