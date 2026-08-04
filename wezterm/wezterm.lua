@@ -116,13 +116,19 @@ local function get_platform_modifiers()
       line_mod = 'CMD',      -- Command on macOS
       primary_mod = 'CMD',   -- Primary modifier (Cmd on macOS)
       font_mod = 'CMD',      -- Font controls (Cmd on macOS)
+      -- Cmd+C/V: standard macOS clipboard; does not collide with SIGINT
+      clipboard_mod = 'CMD',
     }
   else -- Linux and other platforms
     return {
       word_mod = 'ALT',      -- Alt on Linux
       line_mod = 'CTRL',     -- Ctrl on Linux
-      primary_mod = 'CTRL',  -- Primary modifier (Ctrl on Linux)
+      primary_mod = 'CTRL',  -- Primary modifier (Ctrl on Linux) — panes, not clipboard
       font_mod = 'ALT',      -- Font controls (Alt on Linux, won't conflict with Zellij)
+      -- Ctrl+Shift+C/V: Linux terminal convention. Bare Ctrl+C MUST remain
+      -- free so the PTY receives ^C / SIGINT (was broken when clipboard used
+      -- primary_mod=CTRL and WezTerm consumed Ctrl+C as CopyTo).
+      clipboard_mod = 'CTRL|SHIFT',
     }
   end
 end
@@ -616,22 +622,28 @@ config.keys = {
     action = act.PasteFrom 'Clipboard',
   },
   
-  -- Standard macOS clipboard shortcuts
+  -- Clipboard: platform-specific so bare Ctrl+C stays SIGINT on Linux.
+  -- macOS → Cmd+C/V; Linux → Ctrl+Shift+C/V (terminal convention).
   {
     key = 'c',
-    mods = mods.primary_mod,
+    mods = mods.clipboard_mod,
     action = act.CopyTo 'Clipboard',
   },
   {
     key = 'v',
-    mods = mods.primary_mod,
+    mods = mods.clipboard_mod,
     action = act.PasteFrom 'Clipboard',
   },
-  -- Extra clipboard fallbacks (ensure both Cmd/Ctrl + Shift combos work)
+  -- Extra paste fallbacks (Cmd on Linux remote/mac-like, always-safe Shift+Ctrl)
   {
     key = 'v',
     mods = 'CTRL|SHIFT',
     action = act.PasteFrom 'Clipboard',
+  },
+  {
+    key = 'c',
+    mods = 'CTRL|SHIFT',
+    action = act.CopyTo 'Clipboard',
   },
   {
     key = 'v',

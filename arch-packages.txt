@@ -16,6 +16,7 @@ cyrus-sasl-xoauth2-git
 d2
 dmenu
 efibootmgr
+eva
 firefox
 foot
 fuzzel
