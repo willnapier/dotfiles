@@ -103,8 +103,9 @@ binds {
     // Help / Overview / Centering
     Mod+Slash           { show-hotkey-overlay; }
     Mod+Alt+Slash       { toggle-overview; }
-    Mod+Alt+C           { center-column; }
-    Mod+C               { center-column; }  // Reliable binding (Mod+Alt unreliable with HRM)
+    // Center: tiling → column; floating → window on screen (niri-center-focused)
+    Mod+Alt+C           { spawn "niri-center-focused"; }
+    Mod+C               { spawn "niri-center-focused"; }  // Reliable binding (Mod+Alt unreliable with HRM)
     Mod+Alt+Shift+C     { center-visible-columns; }
 
     // Jump to column by number (1-indexed)
@@ -130,7 +131,7 @@ binds {
     Mod+Alt+Shift+F     { move-window-to-tiling; }
     Mod+Alt+Backspace   { switch-focus-between-floating-and-tiling; }
     Mod+F               { switch-focus-between-floating-and-tiling; }  // Quick float/tile focus toggle
-    // Tile all floats on this workspace (clear the overlay; not minimize)
+    // Toggle: tile all floats on this workspace ↔ restore last bulk snapshot
     Mod+Shift+Escape    { spawn "niri-tile-all-floating"; }
 
     // Fullscreen / Maximize family
@@ -154,6 +155,7 @@ binds {
     // Power: systemctl poweroff/reboot/suspend, niri msg action quit
 
     // Focus (NEIO + arrows) - Mod+Shift for consistency
+    // Same in tiling and floating: focus / cycle (not position)
     Mod+Shift+Left  { focus-column-left; }
     Mod+Shift+Down  { focus-window-down-or-top; }
     Mod+Shift+Up    { focus-window-up-or-bottom; }
@@ -167,15 +169,17 @@ binds {
     Mod+Grave       { focus-window-down-or-top; }
     Mod+Shift+Grave { focus-window-up-or-bottom; }
 
-    // Move (NEIO + arrows) — within current structure
-    Mod+Alt+Shift+Left  { move-column-left; }
-    Mod+Alt+Shift+Down  { move-window-down; }
-    Mod+Alt+Shift+Up    { move-window-up; }
-    Mod+Alt+Shift+Right { move-column-right; }
-    Mod+Alt+Shift+N     { move-column-left; }
-    Mod+Alt+Shift+E     { move-window-down; }
-    Mod+Alt+Shift+I     { move-window-up; }
-    Mod+Alt+Shift+O     { move-column-right; }
+    // Move (NEIO + arrows) — Mod+Alt+Shift
+    // Tiling: column/window structure. Floating: nudge position (niri-move-dir).
+    // Note: Mod+Alt can be flaky with HRM; same chord family as other SA moves.
+    Mod+Alt+Shift+Left  { spawn "niri-move-dir" "left"; }
+    Mod+Alt+Shift+Down  { spawn "niri-move-dir" "down"; }
+    Mod+Alt+Shift+Up    { spawn "niri-move-dir" "up"; }
+    Mod+Alt+Shift+Right { spawn "niri-move-dir" "right"; }
+    Mod+Alt+Shift+N     { spawn "niri-move-dir" "left"; }
+    Mod+Alt+Shift+E     { spawn "niri-move-dir" "down"; }
+    Mod+Alt+Shift+I     { spawn "niri-move-dir" "up"; }
+    Mod+Alt+Shift+O     { spawn "niri-move-dir" "right"; }
 
     // Cross-structure moves (SA+Ctrl): insert/eject across columns
     Mod+Alt+Ctrl+N { consume-or-expel-window-left; }

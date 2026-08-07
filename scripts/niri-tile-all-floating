@@ -1,7 +1,20 @@
 #!/usr/bin/env bash
-# Tile all floating windows on the focused workspace, then focus tiling.
-# Bound in niri as Mod+Shift+Escape.
+# Toggle bulk float clear on the focused workspace (Mod+Shift+Escape):
+#   any floating windows → snapshot geometry + tile them all
+#   none floating       → restore last snapshot (re-float; Niri keeps size/pos)
+#
+# Snapshot: ~/.cache/niri-float-bulk-snapshot.json
 set -euo pipefail
+
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}"
+SNAPSHOT="$CACHE_DIR/niri-float-bulk-snapshot.json"
+mkdir -p "$CACHE_DIR"
+
+notify() {
+  if command -v notify-send >/dev/null 2>&1; then
+    notify-send -u low "Niri" "$1"
+  fi
+}
 
 ws=""
 if focused=$(niri msg --json focused-window 2>/dev/null); then
@@ -15,16 +28,115 @@ if [[ -z "$ws" ]]; then
 fi
 
 if [[ -z "$ws" ]]; then
-  notify-send -u low "Niri" "No focused workspace" 2>/dev/null || true
+  notify "No focused workspace"
   exit 1
 fi
 
-mapfile -t ids < <(
-  niri msg --json windows \
-    | jq -r --argjson ws "$ws" \
-      '.[] | select(.is_floating == true and .workspace_id == $ws) | .id'
-)
+windows_json=$(niri msg --json windows)
 
+float_count=$(jq --argjson ws "$ws" \
+  '[.[] | select(.is_floating == true and .workspace_id == $ws)] | length' \
+  <<<"$windows_json")
+
+# --- Restore path: no floats on this workspace ---
+if [[ "$float_count" -eq 0 ]]; then
+  if [[ ! -f "$SNAPSHOT" ]]; then
+    notify "No floating windows · no snapshot to restore"
+    exit 0
+  fi
+
+  mapfile -t ids < <(jq -r '.windows[].id // empty' "$SNAPSHOT")
+  if [[ ${#ids[@]} -eq 0 || -z "${ids[0]:-}" ]]; then
+    notify "Snapshot empty"
+    exit 0
+  fi
+
+  restored=0
+  missing=0
+  for id in "${ids[@]}"; do
+    [[ -z "$id" ]] && continue
+    exists=$(jq --argjson id "$id" '[.[] | select(.id == $id)] | length' <<<"$windows_json")
+    if [[ "$exists" -eq 0 ]]; then
+      missing=$((missing + 1))
+      continue
+    fi
+    already=$(jq --argjson id "$id" \
+      '[.[] | select(.id == $id and .is_floating == true)] | length' <<<"$windows_json")
+    if [[ "$already" -gt 0 ]]; then
+      continue
+    fi
+    niri msg action move-window-to-floating --id "$id"
+    # Best-effort geometry (Niri usually restores last float rect itself)
+    geom=$(jq -c --argjson id "$id" '.windows[] | select(.id == $id)' "$SNAPSHOT" 2>/dev/null || true)
+    if [[ -n "$geom" && "$geom" != "null" ]]; then
+      w=$(jq -r '.width // empty' <<<"$geom")
+      h=$(jq -r '.height // empty' <<<"$geom")
+      x=$(jq -r '.x // empty' <<<"$geom")
+      y=$(jq -r '.y // empty' <<<"$geom")
+      if [[ -n "$w" && -n "$h" ]]; then
+        niri msg action set-window-width --id "$id" "${w%.*}" 2>/dev/null || true
+        niri msg action set-window-height --id "$id" "${h%.*}" 2>/dev/null || true
+      fi
+      if [[ -n "$x" && -n "$y" ]]; then
+        # Relative correction to saved position (absolute -x can drift)
+        cur=$(niri msg --json windows | jq -r --argjson id "$id" \
+          '.[] | select(.id == $id) | .layout.tile_pos_in_workspace_view // empty')
+        if [[ -n "$cur" && "$cur" != "null" ]]; then
+          cx=$(jq -r '.[0]' <<<"$cur")
+          cy=$(jq -r '.[1]' <<<"$cur")
+          dx=$(awk -v a="$x" -v b="$cx" 'BEGIN { printf "%d", a - b }')
+          dy=$(awk -v a="$y" -v b="$cy" 'BEGIN { printf "%d", a - b }')
+          if [[ "$dx" -ne 0 || "$dy" -ne 0 ]]; then
+            if [[ "$dx" -ge 0 ]]; then dx_arg="+$dx"; else dx_arg="$dx"; fi
+            if [[ "$dy" -ge 0 ]]; then dy_arg="+$dy"; else dy_arg="$dy"; fi
+            niri msg action move-floating-window --id "$id" -x "$dx_arg" -y "$dy_arg" 2>/dev/null || true
+          fi
+        fi
+      fi
+    fi
+    restored=$((restored + 1))
+  done
+
+  if [[ "$restored" -eq 0 ]]; then
+    if [[ "$missing" -gt 0 ]]; then
+      notify "Snapshot windows gone ($missing closed)"
+    else
+      notify "Nothing to restore"
+    fi
+    exit 0
+  fi
+
+  niri msg action focus-floating 2>/dev/null || true
+  msg="Restored ${restored} floating window(s)"
+  [[ "$missing" -gt 0 ]] && msg+=" · ${missing} missing"
+  notify "$msg"
+  exit 0
+fi
+
+# --- Clear path: tile all floats on this workspace ---
+snapshot=$(jq --argjson ws "$ws" --arg saved "$(date -Iseconds)" '
+  {
+    workspace_id: $ws,
+    saved_at: $saved,
+    windows: [
+      .[]
+      | select(.is_floating == true and .workspace_id == $ws)
+      | {
+          id,
+          app_id,
+          title,
+          x: (.layout.tile_pos_in_workspace_view[0] // 0),
+          y: (.layout.tile_pos_in_workspace_view[1] // 0),
+          width: (.layout.tile_size[0] // .layout.window_size[0] // 0),
+          height: (.layout.tile_size[1] // .layout.window_size[1] // 0)
+        }
+    ]
+  }
+' <<<"$windows_json")
+
+echo "$snapshot" >"$SNAPSHOT"
+
+mapfile -t ids < <(jq -r '.windows[].id' <<<"$snapshot")
 count=0
 for id in "${ids[@]+"${ids[@]}"}"; do
   [[ -z "$id" ]] && continue
@@ -33,11 +145,4 @@ for id in "${ids[@]+"${ids[@]}"}"; do
 done
 
 niri msg action focus-tiling 2>/dev/null || true
-
-if command -v notify-send >/dev/null 2>&1; then
-  if [[ "$count" -eq 0 ]]; then
-    notify-send -u low "Niri" "No floating windows on this workspace"
-  else
-    notify-send -u low "Niri" "Tiled ${count} floating window(s)"
-  fi
-fi
+notify "Tiled ${count} floating window(s) · toggle to restore"

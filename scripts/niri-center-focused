@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Mod+C / Mod+Alt+C: center the focused thing.
+#   floating → center-window (on screen)
+#   tiling   → center-column (scroll layout)
+set -euo pipefail
+
+is_float=$(niri msg --json focused-window 2>/dev/null | jq -r '.is_floating // false')
+
+if [[ "$is_float" == "true" ]]; then
+  niri msg action center-window
+else
+  niri msg action center-column
+fi

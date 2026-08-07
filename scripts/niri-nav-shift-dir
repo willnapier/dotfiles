@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Deprecated: float nudge moved to Mod+Alt+Shift via niri-move-dir.
+# Kept so accidental spawns still do something sensible (move semantics).
+exec niri-move-dir "$@"
