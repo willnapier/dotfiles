@@ -4,10 +4,25 @@
 #
 # NOTE: `zellij run` prints the new pane id (terminal_N) to stdout. Helix's
 # `:sh` surfaces that as a useless cursor-following popup — discard it.
+#
+# Always open the *resolved* target when /tmp/helix-current-link.md is a
+# symlink (the normal hx-wiki bridge). Opening the symlink path itself makes
+# Helix report "file modified by external process" on :wq after auto-save /
+# Syncthing touch — forcing a :rl dance. Space+W (hx-wiki-open-right) already
+# resolved; keep Space+w consistent.
 
-# Check if temp file exists (created by hx-wiki for text files)
-if [ -f /tmp/helix-current-link.md ]; then
-    # Text file - open in floating Helix (close pane when Helix exits)
+if [ -L /tmp/helix-current-link.md ]; then
+    target=$(readlink /tmp/helix-current-link.md)
+    if [ -n "$target" ] && [ -e "$target" ]; then
+        zellij run --floating --close-on-exit --name wiki -- \
+            hx "$target" >/dev/null
+    else
+        echo "Error: wiki bridge symlink is broken: $target" >&2
+        exit 1
+    fi
+elif [ -f /tmp/helix-current-link.md ]; then
+    # Rare non-symlink buffer (e.g. media-missing error text written to the
+    # bridge path itself by hx-wiki.nu)
     zellij run --floating --close-on-exit --name wiki -- \
         hx /tmp/helix-current-link.md >/dev/null
 else

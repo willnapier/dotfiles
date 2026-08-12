@@ -12,6 +12,7 @@ This documents the current 2-step wiki link workflow that is working perfectly. 
 
 ### Link Navigation:
 - **Space+w** in Helix → Follows wiki link under cursor (opens existing or creates placeholder)
+- **Open path (2026-08-12):** `hx-wiki.nu` still sets the `/tmp/helix-current-link.md` symlink bridge; `hx-wiki-open-smart` **resolves** it and opens the real Forge path in a floating pane. Do not open the symlink path itself in Helix (causes “file modified by external process” on `:wq`).
 
 ## Current Configuration Files
 
@@ -51,8 +52,14 @@ bind "Alt l" {
 
 ```toml
 [keys.normal.space]
-# Wiki link navigation - Space+w
-w = ["extend_to_line_bounds", ":pipe-to ~/.local/bin/hx-wiki", ":open /tmp/helix-current-link.md"]
+# Wiki link navigation - Space+w (production shape; resolve bridge → real path)
+w = [
+  ":sh echo %{buffer_name} > /tmp/helix-current-file.txt",
+  ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt",
+  "extend_to_line_bounds",
+  ":pipe-to ~/.local/bin/hx-wiki.nu",
+  ":sh sleep 0.1 && hx-wiki-open-smart"
+]
 # Fuzzy link insertion - Space+l (paste from clipboard)
 l = ":insert-output pbpaste"
 ```

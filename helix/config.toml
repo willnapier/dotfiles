@@ -98,7 +98,8 @@ p = ["select_all", ":pipe activity-duration-processor -", "collapse_selection"]
 x = [":sh trash '%{buffer_name}'", ":quit!"]
 # Export selection to external register - Space+E (then type register letter)
 E = ":pipe-to hx-register-export"
-# Wiki link navigation - Space+w (smart opening: text in popup, media in Preview)
+# Wiki link navigation - Space+w (floating popup on resolved real path;
+# hx-wiki-open-smart readlinks the bridge — do not open the symlink itself)
 # Text files (.md) open in floating Helix popup (close with Ctrl+q)
 # Media files (images, PDFs) open in system viewer (Preview/xdg-open)
 w = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", "extend_to_line_bounds", ":pipe-to ~/.local/bin/hx-wiki.nu", ":sh sleep 0.1 && hx-wiki-open-smart"]
