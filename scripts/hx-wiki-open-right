@@ -1,12 +1,23 @@
 #!/bin/bash
+# Helper for Space+W — open wiki link in the pane this script was launched in
+# (typically: zellij run --direction right -- hx-wiki-open-right).
+# Resolve the IPC bridge; never edit via the symlink path itself.
 
-# Helper script for Space+W - opens wiki link in new Zellij pane to the right
-# Reads the symlink and opens the actual file in Helix
+bridge=/tmp/helix-current-link.md
 
-if [ -L "/tmp/helix-current-link.md" ]; then
-    target=$(readlink "/tmp/helix-current-link.md")
-    exec "$HOME/.local/bin/hx" "$target"
+if [ -L "$bridge" ]; then
+    target=$(readlink "$bridge")
+    if [ -z "$target" ] || [ ! -e "$target" ]; then
+        echo "Error: wiki bridge symlink is broken: $target" >&2
+        sleep 2
+        exit 1
+    fi
+elif [ -f "$bridge" ]; then
+    target=$bridge
 else
-    echo "Error: /tmp/helix-current-link.md not found or not a symlink"
+    echo "Error: $bridge not found" >&2
     sleep 2
+    exit 1
 fi
+
+exec "${HOME}/.local/bin/hx" "$target"

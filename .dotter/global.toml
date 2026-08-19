@@ -293,6 +293,7 @@ depends = []
 "scripts/git-push-reliability-monitor" = "~/.local/bin/git-push-reliability-monitor"
 "scripts/hx-wiki-open-right" = "~/.local/bin/hx-wiki-open-right"
 "scripts/hx-wiki-open-smart" = "~/.local/bin/hx-wiki-open-smart"
+"scripts/hx-wiki-open-tab" = "~/.local/bin/hx-wiki-open-tab"
 "scripts/simple-file-search.nu" = "~/.local/bin/simple-file-search.nu"
 "scripts/skim-with-preview" = "~/.local/bin/skim-with-preview"
 "scripts/yazi-project-content-search.nu" = "~/.local/bin/yazi-project-content-search.nu"
