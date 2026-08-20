@@ -17,13 +17,17 @@ idle-timeout = 500
 # Linux/Niri: Reduce scroll speed (touchpad scrolls too fast in Helix vs other apps)
 scroll-lines = 1
 
-# Enhanced auto-save configuration
+# Auto-save does NOT run in insert mode (Helix 25.07 hardcoded: it would
+# mix up the dirty flag and block later saves). The 500ms timer only
+# writes after you leave insert, or for edits made in normal mode.
+# Escape is rebound below to :write then normal_mode so drafting is
+# flushed the moment you leave insert — not 500ms later.
 [editor.auto-save]
-focus-lost = true           # Save when Helix loses focus (prevents data loss)
+focus-lost = true           # Save when Helix loses focus (WezTerm focus events)
 
 [editor.auto-save.after-delay]
-enable = true               # Save after idle period
-timeout = 500               # Save after 500ms inactivity (for activity duration processing)
+enable = true               # Save after idle — skipped while mode == insert
+timeout = 500               # After leaving insert, or for normal-mode edits
 
 # Persistent undo - not available in Helix 25.07.1
 # [editor.undo]
@@ -178,6 +182,12 @@ r = [
   ":redraw",
   ":reload-all"
 ]
+
+[keys.insert]
+# Flush to disk on leaving insert. Helix autosave will not do this while
+# INS is showing. Do not :write and stay in insert — upstream skips that
+# path because it breaks the modification indicator.
+esc = [":write", "normal_mode"]
 
 [keys.select]
 # Same navigation in select mode
