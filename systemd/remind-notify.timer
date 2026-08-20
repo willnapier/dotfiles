@@ -1,0 +1,12 @@
+[Unit]
+Description=Check DayPage reminders every minute
+
+[Timer]
+# Linux counterpart to launchd/com.user.remind-notify.plist (StartInterval 60).
+# Persistent=true so a reminder due while the machine was asleep still fires
+# on the next start rather than being silently skipped.
+OnCalendar=*:0/1
+Persistent=true
+
+[Install]
+WantedBy=timers.target

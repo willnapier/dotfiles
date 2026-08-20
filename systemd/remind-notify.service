@@ -1,0 +1,11 @@
+[Unit]
+Description=Fire notifications for due DayPage reminders
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/remind-notify
+StandardOutput=append:%h/.local/share/remind-notify.log
+StandardError=append:%h/.local/share/remind-notify.err
+
+[Install]
+WantedBy=default.target
