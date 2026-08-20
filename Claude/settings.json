@@ -183,5 +183,46 @@
   "voiceEnabled": true,
   "feedbackSurveyState": {
     "lastShownTime": 1754246159316
+  },
+  "autoMode": {
+    "environment": [
+      "### Org-wide",
+      "**Organization**: None configured — solo practitioner setup (GitHub user `willnapier`)",
+      "**Cloud provider(s)**: None configured",
+      "**Repository visibility**: not queryable here (this repo has no configured git remote, so no gh visibility check was possible); the checkout at ~/rust-learning is local-only with 0 tracked files — assume private unless a remote is added. Other checkouts under the home directory point at github.com/willnapier/* personal repos, whose visibility was not verified; `~/projects/scrolls-public` is named as if public — treat any push there as publishing.",
+      "**Internal sharing / snippet hosting**: None configured — treat public paste/gist services as outside the trust boundary",
+      "**Secrets management**: `secrets.toml` (an `[ai]` section holds the DPA/no-training Anthropic API key, loaded via the `cc-clinical` wrapper) — repo-doc-derived, not usage-corroborated",
+      "**Default / protected branches**: unknown — origin/HEAD unset and no remote; no rulesets or classic branch protection queryable",
+      "**CI/CD deploy targets**: None configured",
+      "**Network posture**: Tailscale appears in shell history (9x) alongside `ssh`, `nmcli`, and `systemctl` — two personal machines (Mac laptop + `nimbini`, Arch Linux) likely reachable over a private tailnet; no org network policy configured",
+      "**Source control**: The trusted repo and its remote(s) only (no additional orgs configured) — as scoped by the Trusted repo and Repository visibility entries above. Personal GitHub account `willnapier` is the only VCS host seen across home-directory checkouts.",
+      "**Trusted internal domains**: `127.0.0.1` local services only — `http://127.0.0.1:3457/` (PracticeForge dashboard) and `http://127.0.0.1:3000/` (local mdbook serve of the Brown Rust book). No remote internal domains configured.",
+      "**Trusted cloud buckets**: None configured",
+      "**Key internal services**: PracticeForge admin/clinical dashboard on `127.0.0.1:3457`; local mdbook server on `127.0.0.1:3000`; `daypage-append` queue into `~/Forge/NapierianLogs/DayPages/`; the Zellij workshop pty capture at `/tmp/rust-workshop.log` read via `workshop-output`",
+      "**Internal package registry**: None configured — standard crates.io / cargo plus Arch `yay`/AUR",
+      "**Sensitive data locations & audiences**: special-category health data (clinical PHI) under `~/Clinical/**` (syncs to Dropbox), `~/.local/share/tm3-appointments/`, persisted `…/practiceforge/session-*.json` rosters, `comparisons.jsonl`, and `identity.yaml`; also `~/projects/clinical-archive-2026-04-08` (no remote) and the `tm3-diary-capture` checkout. Per repo docs these must transit Anthropic only on the DPA / no-training API path (`cc-clinical`), a `clinical-data-guard` PreToolUse hook enforces this, and PHI must never be persisted to any durable store (git commits, memory, shared docs) — client codes / `[CLIENT]` placeholders only. Share only with audiences cleared at the [named+specifics] bar. Rust source under `~/Code/**` is stated to be PHI-free.",
+      "**Data retention / declassification**: None configured",
+      "**Sensitive remote targets**: any namespace, host, or container whose name carries `prod` or `production` as a whole word or name segment (hyphen/underscore/dot-delimited — e.g. matches `prod-db`, not `producer`)",
+      "**Protected deployment namespaces / environments**: None configured — fall back to the Sensitive remote targets heuristic",
+      "**Protected IaC scopes**: IAM, RBAC, networking, quota, and node-pool resources; anything whose name or tag carries `prod` or `production` as a whole word or name segment",
+      "### User-specific",
+      "**Primary use of Claude Code**: learning and reviewing Rust — guided teaching in ~/rust-learning (book, rustlings, cargo playground) anchored to the user's own PracticeForge and MailForge codebases; alongside general software development and personal-machine config work (Niri/ZMK keyboard, dotter dotfiles, systemd services)",
+      "**Trusted repo**: The git repository the agent started in (its working directory) and its configured remote(s) — here `/home/will/rust-learning`, which has no remote and no tracked files, so trust is local-only and nothing is push-cleared from it. When the repo's public/private visibility is given — by the Repository visibility entry or the user's own message — use it to scope what is OK to commit or push there: confidential material is fine in a private repo; in a public one, only that repo's own work is — and content ported, repointed, or first read from outside this session's repo is not its own work, whoever directed the port. Visibility scopes confidential material only: secrets and sensitive data (personal & entrusted) are never cleared into any repo by its visibility (see Definitions).",
+      "**Org-specific CLIs**: `rust-learn` (course-system commands: current/examples/patterns/challenge/scratch/run/rustlings/next/progress), `workshop-output` (ANSI-stripped read of /tmp/rust-workshop.log), `daypage-append`, `daily-note`, `dotter`, `continuum-activity`, `dev-catchup`, `messageboard-edit`, `forum`, `practiceforge`, `fd-budget`, `cc-clinical` (DPA-key session wrapper), `pizauth`, `niri validate`",
+      "**Shell**: Nushell is the default interactive shell on both machines (`&&`/`||`/`$VAR`/heredocs do not work as in bash); `~/.bash_history` still shows bash usage. Prefer `;`/`and`, `$env.VAR`, `rg`, `open`.",
+      "**Routine under user prefix**: read-only work under `~/rust-learning/**` (book-brown/, book/, rustlings/, playground/, unified/) and reads of `~/Code/practiceforge/**` and `~/Code/mailforge/**` are the routine teaching loop; repo docs state PracticeForge/MailForge files are read-only unless the user explicitly asks for edits, while `~/rust-learning/playground/` is freely editable."
+    ],
+    "allow": [
+      "$defaults",
+      "Bash(rust-learn:*) — course-system commands in ~/rust-learning (read-only chapter/progress/pattern queries and cargo wrappers)",
+      "Bash(workshop-output:*) — reads the local Zellij pty capture at /tmp/rust-workshop.log instead of asking the user to paste build output",
+      "Bash(daypage-append:*) — queues a DayPage line for the user to flush from Helix; repo docs forbid direct Write/Edit on ~/Forge/NapierianLogs/DayPages/*.md",
+      "Bash(niri validate) — local config validation the global CLAUDE.md requires after any Niri config change"
+    ],
+    "soft_deny": [
+      "$defaults",
+      "Write/Edit to ~/Forge/NapierianLogs/DayPages/**.md — repo docs require daypage-append; direct writes risk losing an open Helix buffer",
+      "Write/Edit under ~/Code/practiceforge/** and ~/Code/mailforge/** — read-only teaching corpus; edits only on explicit per-change instruction"
+    ]
   }
 }
