@@ -53,6 +53,8 @@ watch $path --glob "**/*.md" --debounce-ms 2000 {|operation, path, new_path|
 
 **forge-linker** -- Real-time wiki link resolution and backlink management. Detects new files and updates link targets across the knowledge base.
 
+**forge-md-revs** -- Rolling local snapshots of `~/Forge/**/*.md` writes (Helix autosave / Escape-write). 100ms debounce so a later deletion save does not collapse the previous good write. Keep last 20 snapshots per file plus anything newer than 10 minutes. Store: `~/.local/share/forge-md-revs/`. Recover: `forge-md-revs list <path>` / `restore`.
+
 ### Infrastructure Watchers
 
 **zellij-zombie-watcher** -- Detects and cleans up orphaned Zellij sessions that waste resources.

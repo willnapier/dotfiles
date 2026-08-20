@@ -1,0 +1,185 @@
+#!/usr/bin/env nu
+
+# Rolling local snapshots of ~/Forge markdown writes (Helix autosave, Esc-write, etc.).
+# Machine-local: ~/.local/share/forge-md-revs/ — not Syncthing, not Clinical.
+# Keep: every distinct write from the last 10 minutes, plus the last 20 snapshots per file.
+# Debounce is short on purpose: a 2s debounce would collapse "good save then delete save"
+# into only the deletion.
+
+const KEEP_COUNT = 20
+const KEEP_AGE = 10min
+const FORGE_REL = "Forge"
+const STORE_REL = ".local/share/forge-md-revs"
+
+def forge-root [] { $env.HOME | path join $FORGE_REL }
+def store-root [] { $env.HOME | path join $STORE_REL }
+
+def skip-path [path: string] {
+    let p = ($path | str downcase)
+    ($p | str contains "/.stversions/") or ($p | str contains "/.syncthing") or ($p | str contains "/.git/")
+}
+
+def rev-dir-for [path: string] {
+    let forge = (forge-root)
+    let rel = ($path | path relative-to $forge)
+    (store-root) | path join $rel
+}
+
+def file-hash [path: string] {
+    open --raw $path | hash sha256
+}
+
+def snapshot [path: string] {
+    if not ($path | path exists) { return }
+    if (skip-path $path) { return }
+    let ext = ($path | path parse | get extension)
+    if $ext != "md" { return }
+
+    let revdir = (rev-dir-for $path)
+    mkdir $revdir
+
+    let new_hash = (file-hash $path)
+    let existing = (ls $revdir | where type == file)
+    if not ($existing | is-empty) {
+        let latest = ($existing | sort-by modified | last)
+        let old_hash = (file-hash $latest.name)
+        if $old_hash == $new_hash { return }
+    }
+
+    let ts = (date now | format date "%Y%m%dT%H%M%S")
+    mut dest = ($revdir | path join $"($ts).md")
+    if ($dest | path exists) {
+        let ns = (date now | format date "%f")
+        $dest = ($revdir | path join $"($ts)-($ns).md")
+    }
+    open --raw $path | save $dest
+    prune $revdir
+}
+
+def prune [revdir: string] {
+    let files = (ls $revdir | where type == file | sort-by modified --reverse)
+    if ($files | is-empty) { return }
+    let cutoff = ((date now) - $KEEP_AGE)
+    $files | enumerate | each {|row|
+        let keep = ($row.index < $KEEP_COUNT) or ($row.item.modified > $cutoff)
+        if not $keep {
+            rm $row.item.name
+        }
+    }
+}
+
+def list-one [path: string] {
+    let revdir = (rev-dir-for $path)
+    if not ($revdir | path exists) {
+        print $"No snapshots for ($path)"
+        return
+    }
+    ls $revdir
+    | where type == file
+    | sort-by modified --reverse
+    | enumerate
+    | each {|row|
+        {
+            index: $row.index
+            modified: $row.item.modified
+            bytes: $row.item.size
+            file: $row.item.name
+        }
+    }
+}
+
+def list-all [] {
+    let root = (store-root)
+    if not ($root | path exists) {
+        print "No snapshots yet (watcher has not seen a Forge .md write)."
+        return
+    }
+    glob $"($root)/**/*.md"
+    | path dirname
+    | uniq
+    | each {|dir|
+        let files = (ls $dir | where type == file)
+        if ($files | is-empty) { null } else {
+            let newest = ($files | sort-by modified | last)
+            {
+                note: ($dir | path relative-to $root)
+                snapshots: ($files | length)
+                newest: $newest.modified
+                newest_bytes: $newest.size
+            }
+        }
+    }
+    | compact
+    | sort-by newest --reverse
+}
+
+def restore-one [path: string, index: int] {
+    let rows = (list-one $path)
+    if ($rows | is-empty) {
+        print $"No snapshots for ($path)"
+        return
+    }
+    let pick = ($rows | where index == $index)
+    if ($pick | is-empty) {
+        print $"No snapshot at index ($index). Newest is index 0."
+        return
+    }
+    let src = ($pick | get 0.file)
+    open --raw $src | save -f $path
+    print $"Restored ($src) -> ($path)"
+    print "If Helix has this buffer open, run :reload (gR) — do not keep typing on the stale buffer."
+}
+
+def run-watch [] {
+    let forge = (forge-root)
+    if not ($forge | path exists) {
+        print $"Forge not found: ($forge)"
+        exit 1
+    }
+    mkdir (store-root)
+    print $"forge-md-revs watching ($forge)/**/*.md -> (store-root)"
+    # 100ms: collapse duplicate inotify events from one write, but not a later autosave.
+    watch $forge --glob "**/*.md" --debounce 100ms --recursive true --quiet {|operation, path, _new_path|
+        if $operation in ["Write", "Modify", "Create"] {
+            snapshot $path
+        }
+    }
+}
+
+# action: watch | list | restore
+# path: Forge markdown path for list/restore (optional for list)
+def main [
+    action: string = "help",
+    path?: string,
+    --index (-i): int = 0  # restore: 0 = newest snapshot
+] {
+    match $action {
+        "watch" => { run-watch }
+        "list" => {
+            if ($path | is-empty) { list-all } else { list-one $path }
+        }
+        "restore" => {
+            if ($path | is-empty) {
+                print "usage: forge-md-revs restore <path> [--index 0]"
+                exit 1
+            }
+            restore-one $path $index
+        }
+        "help" => {
+            print "forge-md-revs — local rolling snapshots of ~/Forge *.md writes"
+            print ""
+            print "  forge-md-revs watch                 daemon (systemd/launchd)"
+            print "  forge-md-revs list                  notes that have snapshots"
+            print "  forge-md-revs list <path>           snapshots for one note (0 = newest)"
+            print "  forge-md-revs restore <path> [-i N] copy snapshot N back over the note"
+            print ""
+            print $"Store: (store-root)"
+            print $"Keep: last ($KEEP_COUNT) snapshots per file, and anything newer than 10 minutes."
+        }
+        _ => {
+            print $"unknown action: ($action)"
+            print "try: forge-md-revs help"
+            exit 1
+        }
+    }
+}

@@ -274,6 +274,7 @@ depends = []
 "scripts/claude-docs-watcher" = "~/.local/bin/claude-docs-watcher"
 "scripts/dotter-realtime-watcher-renu" = "~/.local/bin/dotter-realtime-watcher-renu"
 "scripts/helix-activity-watcher-renu" = "~/.local/bin/helix-activity-watcher-renu"
+"scripts/forge-md-revs" = "~/.local/bin/forge-md-revs"
 "scripts/zellij-zombie-watcher-renu" = "~/.local/bin/zellij-zombie-watcher-renu"
 "scripts/dotter-drift-watcher-renu" = "~/.local/bin/dotter-drift-watcher-renu"
 "scripts/citation-watcher-renu" = "~/.local/bin/citation-watcher-renu"
@@ -367,6 +368,7 @@ depends = ["shared"]
 "helix/config.toml" = "~/.config/helix/config.toml"
 # wezterm moved to [shared.files] for cross-platform
 "ghostty/config" = "~/.config/ghostty/config"
+"macos/launchd/com.williamnapier.forge-md-revs.plist" = "~/Library/LaunchAgents/com.williamnapier.forge-md-revs.plist"
 "macos/launchd/com.williamnapier.wiki-link-manager.plist" = "~/Library/LaunchAgents/com.williamnapier.wiki-link-manager.plist"
 "macos/launchd/com.williamnapier.syncthing-monitor.plist" = "~/Library/LaunchAgents/com.williamnapier.syncthing-monitor.plist"
 "macos/launchd/com.williamnapier.mbsync-cohs.plist" = "~/Library/LaunchAgents/com.williamnapier.mbsync-cohs.plist"
@@ -526,6 +528,7 @@ depends = ["shared"]
 "systemd/readwise-sync.timer" = "~/.config/systemd/user/readwise-sync.timer"
 # Web clip watcher - auto-move SingleFile saves
 "systemd/web-clip-watcher.service" = "~/.config/systemd/user/web-clip-watcher.service"
+"systemd/forge-md-revs.service" = "~/.config/systemd/user/forge-md-revs.service"
 # Firefox nightly restart - prevents memory leak accumulation
 "systemd/firefox-nightly-restart.service" = "~/.config/systemd/user/firefox-nightly-restart.service"
 "systemd/firefox-nightly-restart.timer" = "~/.config/systemd/user/firefox-nightly-restart.timer"

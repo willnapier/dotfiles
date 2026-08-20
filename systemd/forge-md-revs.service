@@ -1,0 +1,20 @@
+[Unit]
+Description=Forge markdown rolling snapshots (Helix autosave recovery)
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h
+ExecStart=%h/.local/bin/forge-md-revs watch
+Restart=always
+RestartSec=5
+Nice=10
+
+Environment="PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="HOME=%h"
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
