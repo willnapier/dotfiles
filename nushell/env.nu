@@ -132,6 +132,8 @@ if ($"($nu.default-config-dir)/env-secret.nu" | path exists) {
     source $"($nu.default-config-dir)/env-secret.nu"
 }
 
-if ($"($env.HOME)/.claude/auth-token.txt" | path exists) {
-    $env.CLAUDE_CODE_OAUTH_TOKEN = (open ~/.claude/auth-token.txt | str trim)
-}
+# CLAUDE_CODE_OAUTH_TOKEN is deliberately NOT exported here.
+# It overrides ~/.claude/.credentials.json, so a global export pins every
+# interactive session to a stale long-lived token and silently ignores
+# `claude /login`. Headless/cron jobs that need a token should set it
+# inline for that job only.

@@ -185,6 +185,8 @@ r = [
 # INS is showing. Do not :write and stay in insert — upstream skips that
 # path because it breaks the modification indicator.
 esc = [":write", "normal_mode"]
+# Esc then t: write, undo checkpoint (leave insert), keep typing.
+C-s = [":write", "normal_mode", "insert_mode"]
 
 [keys.select]
 # Same navigation in select mode
