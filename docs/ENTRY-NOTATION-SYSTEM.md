@@ -40,6 +40,8 @@ r:: 2026-03-15: Jenny birthday party
 
 `collect-entries` parses the `<when>` part via Nushell's `date from-human` and routes reminders to `~/Forge/NapierianLogs/Reminders/<target-date>.md`. The `remind` CLI is a convenience wrapper that queues `r::` entries via `daypage-append`.
 
+Activity logs (`~/Forge/NapierianLogs/{key}.md`) receive collected entries **newest-first under `## Journal Entries`**. Dedup is date + bullet: the same sleep window on two different nights is two entries. Content-only matching was wrong and is gone.
+
 ### Hierarchical Dot Notation
 
 Both project and activity keys support hierarchical sub-categories using dot notation:

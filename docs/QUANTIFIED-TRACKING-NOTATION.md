@@ -58,6 +58,8 @@ clinical-notes:: 12x 30min across day
 r:: next Tuesday: Call dentist           # reminder (see below)
 ```
 
+`collect-entries` writes these into `~/Forge/NapierianLogs/{key}.md` newest-first under `## Journal Entries`. Dedup is per date; recurring sleep windows are not collapsed.
+
 ### Hierarchical Dot Notation
 
 Sub-categories use dot notation to create a parent-child hierarchy:

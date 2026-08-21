@@ -609,36 +609,58 @@ def generate_project_template [hierarchy: record, entries: list] {
     $"($header)\n($entries_text)"
 }
 
-# Append entries to existing project file
+# True if this date's journal section already has this bullet (or the
+# same bullet with a narrative suffix). Content-only matching is wrong:
+# sleep times recur, and would drop a later night that happened to match
+# an earlier one.
+def entry_already_logged [existing: string, entry: record] {
+    let date_header = $"### ($entry.date)"
+    let bullet = $"- ($entry.content)"
+    mut in_section = false
+    for line in ($existing | lines) {
+        if $line == $date_header {
+            $in_section = true
+            continue
+        }
+        if $in_section {
+            if ($line | str starts-with "### ") or ($line | str starts-with "## ") {
+                $in_section = false
+                continue
+            }
+            if $line == $bullet or ($line | str starts-with $"($bullet) - ") {
+                return true
+            }
+        }
+    }
+    false
+}
+
+# Insert new entries immediately after ## Journal Entries (newest-first).
+# Appending at EOF left historically newest-first logs looking frozen at
+# the last pre-append date (sleep.md: 2026-01-12 at top, August at bottom).
 def append_entries_to_project [filepath: string, entries: list] {
     let existing = (open $filepath)
+    mut content = $existing
 
-    # Check for ## Journal Entries section
-    if not ($existing =~ '## Journal Entries') {
-        # Add section if missing
-        let updated = $"($existing)\n\n## Journal Entries\n"
-        $updated | save -f $filepath
+    if not ($content =~ '## Journal Entries') {
+        $content = $"($content)\n\n## Journal Entries\n"
     }
 
-    # Filter out duplicates by checking if entry content already exists
     let new_entries = ($entries | where {|entry|
-        # Create the entry line format that would appear in the file
-        let entry_line = $"- ($entry.content)"
-        # Check if this exact line already exists in the file
-        not ($existing | str contains $entry_line)
+        not (entry_already_logged $content $entry)
     })
 
-    # Only append if there are new entries
     if ($new_entries | is-empty) {
+        if $content != $existing {
+            $content | save -f $filepath
+        }
         return
     }
 
-    # Format new entries
     let formatted_entries = format_entries $new_entries
-
-    # Append to file
-    let content = (open $filepath)
-    $"($content)\n($formatted_entries)" | save -f $filepath
+    $content
+    | str replace '## Journal Entries' $"## Journal Entries\n\n($formatted_entries)"
+    | save -f $filepath
 }
 
 # Format entries for journal section (with optional narrative)
