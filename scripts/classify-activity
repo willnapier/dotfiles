@@ -64,14 +64,17 @@ def main [
     ] | str join (char nl)
 
     # Prepare API request body
+    # gpt-5-nano: current cheap classification model (was gpt-4o-mini).
+    # Reasoning models need max_completion_tokens; skip temperature.
     let body = {
-        model: "gpt-4o-mini",
+        model: "gpt-5-nano",
         messages: [
             {role: "system", content: "You are a precise activity classifier. Return only valid JSON."},
             {role: "user", content: $prompt}
         ],
-        temperature: 0.3,
-        max_tokens: 150
+        max_completion_tokens: 400
+        reasoning_effort: "minimal"
+        response_format: {type: "json_object"}
     } | to json
 
     # Call OpenAI API
