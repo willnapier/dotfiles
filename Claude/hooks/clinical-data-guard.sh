@@ -98,8 +98,27 @@ if echo "$PATHS" | grep -Eq "$MAIL_RE"; then
   deny "BLOCKED — reading a file inside a practice-bearing maildir on a consumer (Max) session. $BASE To check sync health without content, use \`ls\`/\`fd\`/\`stat\` on the maildir or \`notmuch count\` — those are not blocked."
 fi
 
-if echo "$CMD" | grep -Eq "$MAIL_RE" && echo "$CMD" | grep -Eq "$READER_RE"; then
-  deny "BLOCKED — this command prints the contents of practice-bearing mail into the transcript. $BASE Directory-level checks (\`ls\`, \`fd\`, \`stat\`, \`wc\`) on the same paths are not blocked, and maildir filenames are opaque."
+if echo "$CMD" | grep -Eq "$MAIL_RE"; then
+  # Match the reader PER PIPELINE SEGMENT, not across the whole string: in
+  # `ls ~/Mail/cohs | head -3` the reader never receives the maildir path, and
+  # that idiom is far too common to block. The reader must share a segment with
+  # the path to count.
+  # `|| [ -n "$seg" ]` is load-bearing: it catches a final segment with no
+  # trailing newline. Without it a single-segment command — the commonest case,
+  # e.g. a bare `cat <message-file>` — is dropped by `read` and the rule
+  # silently passes everything. Caught only because the test suite regressed.
+  while IFS= read -r seg || [ -n "$seg" ]; do
+    if echo "$seg" | grep -Eq "$MAIL_RE" && echo "$seg" | grep -Eq "$READER_RE"; then
+      deny "BLOCKED — this command prints the contents of practice-bearing mail into the transcript. $BASE Directory-level checks (\`ls\`, \`fd\`, \`stat\`, \`wc\`) on the same paths are not blocked, and maildir filenames are opaque."
+    fi
+  done < <(printf '%s\n' "$CMD" | sed -E 's/(\|\||&&|;|\|)/\n/g')
+
+  # Known-uncaught otherwise: a maildir listing piped into a reader via xargs,
+  # e.g. `ls <maildir> | xargs cat`. No segment holds both, so block the whole
+  # pipeline when xargs appears alongside a maildir path.
+  if echo "$CMD" | grep -Eq '(^|[^[:alnum:]_-])xargs([^[:alnum:]_-]|$)'; then
+    deny "BLOCKED — a maildir path piped through xargs can emit mail content. $BASE List the maildir without xargs, or work from \`notmuch count\` and file mtimes."
+  fi
 fi
 
 exit 0
