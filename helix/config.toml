@@ -102,10 +102,10 @@ p = ["select_all", ":pipe activity-duration-processor -", "collapse_selection"]
 x = [":sh trash '%{buffer_name}'", ":quit!"]
 # Export selection to external register - Space+E (then type register letter)
 E = ":pipe-to hx-register-export"
-# Wiki link navigation - Space+w (floating popup on resolved real path;
-# hx-wiki-open-smart readlinks the bridge — do not open the symlink itself)
-# Text files (.md) open in floating Helix popup (close with Ctrl+q)
-# Media files (images, PDFs) open in system viewer (Preview/xdg-open)
+# Wiki link navigation - Space+w (resolved real path; do not open the symlink)
+# Zellij: floating pane (Ctrl+q to close). Raw WezTerm: wezterm cli spawn —
+# SAME opener as Space+n (tab bar off; not a Niri window). No :write first.
+# Media files (images, PDFs) open in system viewer (xdg-open)
 w = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", "extend_to_line_bounds", ":pipe-to ~/.local/bin/hx-wiki.nu", ":sh sleep 0.1 && hx-wiki-open-smart"]
 # Web clip - Space+C: move latest SingleFile save and insert wikilink
 C = ":insert-output hx-web-clip"
@@ -117,7 +117,8 @@ D = ":insert-output hx-concert-capture"
 # Zellij: split right. Raw WezTerm: wezterm cli split-pane --right.
 W = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", "extend_to_line_bounds", ":pipe-to ~/.local/bin/hx-wiki.nu", ":sh sleep 0.1 && hx-wiki-open-right"]
 # Wiki link navigation to NEW TAB - Space+n
-# Zellij: new tab. Raw WezTerm: wezterm cli spawn.
+# Zellij: new tab. Raw WezTerm: wezterm cli spawn (same command as Space+w).
+# Also :write's the current buffer first.
 n = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer_name} >> /tmp/wiki-nav-history.txt", ":write", "extend_to_line_bounds", ":pipe-to ~/.local/bin/hx-wiki.nu", ":sh sleep 0.1 && hx-wiki-open-tab"]
 # Smart file opener - Space+o (handles all file types and wiki links)
 o = ["extend_to_line_bounds", ":pipe-to hx-open-system-rust"]  # Open in system app (Preview, Excel, etc.)
