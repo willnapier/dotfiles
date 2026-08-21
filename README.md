@@ -87,7 +87,7 @@ See the `docs/` directory for detailed system design:
 - [Universal Tool Architecture](docs/UNIVERSAL-TOOL-ARCHITECTURE.md) -- Editor-neutral function design
 - [Dotter Orphan Prevention](docs/DOTTER-ORPHAN-PREVENTION.md) -- Configuration management safety
 - [Cross-Platform Sync](docs/CROSS-PLATFORM-SYNC.md) -- Bidirectional sync architecture
-- [Activity Classification System](docs/ACTIVITY-CLASSIFICATION-SYSTEM.md) -- AI-powered semantic tagging
+- [Activity logs](docs/ACTIVITY-CLASSIFICATION-SYSTEM.md) -- collect-entries, hub lists, optional OpenAI tags on root logs
 - [Quantified Tracking Notation](docs/QUANTIFIED-TRACKING-NOTATION.md) -- Duration and activity notation spec
 
 ## Related Repositories
