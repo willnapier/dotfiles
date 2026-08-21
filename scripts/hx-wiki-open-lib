@@ -1,0 +1,100 @@
+#!/bin/bash
+# Shared by hx-wiki-open-{smart,tab,right}.
+# Resolve the IPC bridge to a real path, then open Helix:
+#   inside Zellij  → pane/tab as today
+#   inside WezTerm → new tab / right split (no "specify the session name" popup)
+# Never open the symlink path itself (Helix "file modified by external process").
+
+hx_wiki_bridge=/tmp/helix-current-link.md
+
+hx_wiki_resolve_bridge() {
+    local target
+    if [ -L "$hx_wiki_bridge" ]; then
+        target=$(readlink "$hx_wiki_bridge")
+        if [ -z "$target" ] || [ ! -e "$target" ]; then
+            echo "Error: wiki bridge symlink is broken: $target" >&2
+            return 1
+        fi
+        printf '%s\n' "$target"
+        return 0
+    elif [ -f "$hx_wiki_bridge" ]; then
+        printf '%s\n' "$hx_wiki_bridge"
+        return 0
+    else
+        echo "Error: $hx_wiki_bridge not found" >&2
+        return 1
+    fi
+}
+
+hx_wiki_hxbin() {
+    if [ -x "${HOME}/.local/bin/hx" ]; then
+        printf '%s\n' "${HOME}/.local/bin/hx"
+    else
+        printf '%s\n' hx
+    fi
+}
+
+hx_wiki_in_zellij() {
+    [ -n "${ZELLIJ:-}" ] || [ -n "${ZELLIJ_SESSION_NAME:-}" ]
+}
+
+hx_wiki_zellij() {
+    if [ -n "${ZELLIJ_SESSION_NAME:-}" ]; then
+        zellij --session "$ZELLIJ_SESSION_NAME" "$@"
+    else
+        zellij "$@"
+    fi
+}
+
+# $1 = floating | tab | right
+# $2 = absolute path to open
+hx_wiki_open_target() {
+    local mode=$1
+    local target=$2
+    local hxbin
+    hxbin=$(hx_wiki_hxbin)
+
+    if hx_wiki_in_zellij; then
+        case "$mode" in
+            floating)
+                hx_wiki_zellij run --floating --close-on-exit --name wiki -- \
+                    "$hxbin" "$target" >/dev/null
+                ;;
+            tab)
+                hx_wiki_zellij action new-tab
+                sleep 0.2
+                hx_wiki_zellij run --in-place --close-on-exit --name wiki -- \
+                    "$hxbin" "$target" >/dev/null
+                ;;
+            right)
+                hx_wiki_zellij run --direction right --close-on-exit --name wiki -- \
+                    "$hxbin" "$target" >/dev/null
+                ;;
+            *)
+                echo "Error: unknown wiki open mode: $mode" >&2
+                return 1
+                ;;
+        esac
+        return
+    fi
+
+    if [ -n "${WEZTERM_PANE:-}" ] && command -v wezterm >/dev/null 2>&1; then
+        case "$mode" in
+            floating|tab)
+                wezterm cli spawn -- "$hxbin" "$target" >/dev/null
+                ;;
+            right)
+                wezterm cli split-pane --right -- "$hxbin" "$target" >/dev/null
+                ;;
+        esac
+        return
+    fi
+
+    if command -v wezterm >/dev/null 2>&1; then
+        wezterm start -- "$hxbin" "$target" >/dev/null 2>&1 &
+        return
+    fi
+
+    echo "Error: not in Zellij or WezTerm. Open: $target" >&2
+    return 1
+}

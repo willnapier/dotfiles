@@ -1,30 +1,17 @@
 #!/bin/bash
-# Open the wiki bridge target in a new Zellij tab on the *resolved* real path.
-#
-# Why not write-chars 'hx /tmp/helix-current-link.md'?
-# - Editing via the symlink causes Helix “file modified by external process” on :wq
-# - write-chars with a real Forge path breaks on spaces (e.g. "Use of Journalling.md")
-# So: new-tab, then zellij run --in-place with argv (spaces-safe), same resolve
-# rule as hx-wiki-open-smart / hx-wiki-open-right. Bridge stays IPC only.
-
+# Space+n: open the wiki bridge target in a new Zellij tab, or a new WezTerm tab.
 set -euo pipefail
+_self="${BASH_SOURCE[0]}"
+while [ -L "$_self" ]; do
+    _dir="$(cd "$(dirname "$_self")" && pwd)"
+    _self="$(readlink "$_self")"
+    case "$_self" in
+        /*) ;;
+        *) _self="$_dir/$_self" ;;
+    esac
+done
+# shellcheck source=hx-wiki-open-lib
+source "$(cd "$(dirname "$_self")" && pwd)/hx-wiki-open-lib"
 
-bridge=/tmp/helix-current-link.md
-
-if [ -L "$bridge" ]; then
-    target=$(readlink "$bridge")
-    if [ -z "$target" ] || [ ! -e "$target" ]; then
-        echo "Error: wiki bridge symlink is broken: $target" >&2
-        exit 1
-    fi
-elif [ -f "$bridge" ]; then
-    target=$bridge
-else
-    echo "Error: $bridge not found or not a symlink" >&2
-    exit 1
-fi
-
-zellij action new-tab
-sleep 0.2
-# --in-place: run in the tab we just created; argv keeps spaces intact
-zellij run --in-place --close-on-exit --name wiki -- hx "$target" >/dev/null
+target=$(hx_wiki_resolve_bridge) || exit 1
+hx_wiki_open_target tab "$target"

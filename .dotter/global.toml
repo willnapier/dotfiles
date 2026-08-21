@@ -292,6 +292,7 @@ depends = []
 "scripts/activity-processor-periodic" = "~/.local/bin/activity-processor-periodic"
 "scripts/citation-picker.nu" = "~/.local/bin/citation-picker.nu"
 "scripts/git-push-reliability-monitor" = "~/.local/bin/git-push-reliability-monitor"
+"scripts/hx-wiki-open-lib" = "~/.local/bin/hx-wiki-open-lib"
 "scripts/hx-wiki-open-right" = "~/.local/bin/hx-wiki-open-right"
 "scripts/hx-wiki-open-smart" = "~/.local/bin/hx-wiki-open-smart"
 "scripts/hx-wiki-open-tab" = "~/.local/bin/hx-wiki-open-tab"
