@@ -1,62 +1,154 @@
 #!/usr/bin/env nu
 
-# Generate sub-activity lists for activity log parent files
-# Scans for **Parent**: [[name]] declarations and populates {Auto-generated} placeholders
+# Maintain ## Sub-activities hub lists on parent activity/person logs.
+#
+# Decided 2026-08-21 (`qtrack-parent-child-logs`): a parent file is a hub —
+# residual parent-key journal plus a complete clickable index of immediate
+# dotted children. No on-disk rollup of child journals.
+#
+# Discovery is filename-based, not **Parent**: [[…]] (that field is incomplete
+# and often points at the wrong altitude). `jenny.tv.md` → parent `jenny`;
+# `jenny.tv.diet.md` → parent `jenny.tv`. Scans NapierianLogs/*.md and
+# Social/*.md. Refreshes ## Sub-activities every run (the old {Auto-generated}
+# placeholder was one-shot and then froze).
 #
 # Usage:
-#   generate-subactivity-lists            # Update all parent files
-#   generate-subactivity-lists --dry-run  # Preview changes without modifying
-#   generate-subactivity-lists --verbose  # Show detailed processing
+#   generate-subactivity-lists            # Update parent hub lists
+#   generate-subactivity-lists --dry-run  # Preview without writing
+#   generate-subactivity-lists --verbose  # Show parents and children
 
-def main [
-    --dry-run (-d)    # Show what would be changed without modifying files
-    --verbose (-v)    # Show detailed processing information
-] {
-    let forge_dir = $"($env.HOME)/Forge/NapierianLogs"
+def immediate_parent [stem: string] {
+    let parts = ($stem | split row '.')
+    if ($parts | length) < 2 {
+        null
+    } else {
+        $parts | drop 1 | str join '.'
+    }
+}
 
-    if $verbose {
-        print $"Scanning ($forge_dir) for parent/child relationships..."
+def is_activity_log [path: string] {
+    let base = ($path | path basename)
+    if ($base | str starts-with '.') { return false }
+    if ($base | str contains 'sync-conflict') { return false }
+    ($base | str ends-with '.md')
+}
+
+# Activity keys only: jenny.tv, ex.walk — not "Note from Spain.foo" or "C.S".
+def is_dotted_key [stem: string] {
+    $stem =~ '^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]+)+$'
+}
+
+def replace_subactivities [content: string, child_list: string] {
+    let child_lines = ($child_list | lines)
+    mut out = []
+    mut in_section = false
+    mut replaced = false
+
+    for line in ($content | lines) {
+        if $line == "## Sub-activities" {
+            $out = ($out | append "## Sub-activities" | append "" | append $child_lines)
+            $in_section = true
+            $replaced = true
+            continue
+        }
+        if $in_section {
+            if ($line | str starts-with "## ") {
+                $in_section = false
+                $out = ($out | append "" | append $line)
+            }
+            continue
+        }
+        $out = ($out | append $line)
     }
 
-    # Build parent → children mapping
-    let parent_map = (
-        glob $"($forge_dir)/*.md"
-        | each { |file|
-            let content = open $file
-            let parent_match = ($content | parse --regex '\*\*Parent\*\*:\s*\[\[([^\]]+)\]\]')
+    if not $replaced {
+        mut inserted = false
+        mut with_section = []
+        for line in $out {
+            if (not $inserted) and ($line == "## Journal Entries") {
+                $with_section = (
+                    $with_section
+                    | append "## Sub-activities"
+                    | append ""
+                    | append $child_lines
+                    | append ""
+                    | append $line
+                )
+                $inserted = true
+            } else {
+                $with_section = ($with_section | append $line)
+            }
+        }
+        if $inserted {
+            $out = $with_section
+        } else {
+            $out = (
+                $out
+                | append ""
+                | append "## Sub-activities"
+                | append ""
+                | append $child_lines
+            )
+        }
+    }
 
-            if ($parent_match | is-not-empty) {
-                let parent_name = ($parent_match | first | get capture0)
-                {
-                    child: ($file | path basename | str replace '.md' '')
-                    parent: $parent_name
+    ($out | str join "\n") + "\n"
+}
+
+def main [
+    --dry-run (-d)
+    --verbose (-v)
+] {
+    let forge_dir = $"($env.HOME)/Forge/NapierianLogs"
+    let social_dir = $"($forge_dir)/Social"
+
+    if $verbose {
+        print $"Scanning ($forge_dir) and Social/ for dotted children..."
+    }
+
+    let files = (
+        (glob $"($forge_dir)/*.md")
+        | append (if ($social_dir | path exists) { glob $"($social_dir)/*.md" } else { [] })
+        | where {|f| is_activity_log $f }
+    )
+
+    let parent_map = (
+        $files
+        | each {|file|
+            let stem = ($file | path basename | str replace -r '\.md$' '')
+            if not (is_dotted_key $stem) {
+                null
+            } else {
+                let parent = (immediate_parent $stem)
+                if $parent == null {
+                    null
+                } else {
+                    {child: $stem, parent: $parent}
                 }
             }
         }
         | compact
         | group-by parent
         | transpose key children
-        | each { |row|
+        | each {|row|
             {
                 parent: $row.key
-                children: ($row.children | get child | sort)
+                children: ($row.children | get child | uniq | sort)
             }
         }
     )
 
     if $verbose {
         print $"Found ($parent_map | length) parents with children:"
-        $parent_map | each { |p|
+        $parent_map | each {|p|
             print $"  ($p.parent): ($p.children | length) children"
         }
     }
 
-    # Process each parent file
     let updates = (
-        $parent_map | each { |entry|
-            # Check for parent file in NapierianLogs root first, then Social/
+        $parent_map | each {|entry|
             let parent_file_root = $"($forge_dir)/($entry.parent).md"
-            let parent_file_social = $"($forge_dir)/Social/($entry.parent).md"
+            let parent_file_social = $"($social_dir)/($entry.parent).md"
 
             let parent_file = if ($parent_file_root | path exists) {
                 $parent_file_root
@@ -64,69 +156,64 @@ def main [
                 $parent_file_social
             } else {
                 if $verbose {
-                    print $"⚠️  Parent file not found: ($entry.parent).md - checked root and Social/"
+                    print $"⚠️  Parent file not found: ($entry.parent).md — checked root and Social/"
                 }
-                return null
+                null
             }
 
-            let content = open $parent_file
-
-            # Check if {Auto-generated} exists
-            if not ($content | str contains '{Auto-generated}') {
-                if $verbose {
-                    print $"⏭️  Skipping ($entry.parent).md - no {Auto-generated} placeholder"
+            if $parent_file == null {
+                null
+            } else {
+                let content = (open $parent_file)
+                let child_list = (
+                    $entry.children
+                    | each {|child| $"- [[($child)]]" }
+                    | str join "\n"
+                )
+                let new_content = (replace_subactivities $content $child_list)
+                if $new_content == $content {
+                    if $verbose {
+                        print $"⏭️  Unchanged: ($entry.parent).md"
+                    }
+                    null
+                } else {
+                    {
+                        file: $parent_file
+                        parent: $entry.parent
+                        children: $entry.children
+                        new_content: $new_content
+                    }
                 }
-                return null
-            }
-
-            # Generate the child list
-            let child_list = (
-                $entry.children
-                | each { |child| $"- [[($child)]]" }
-                | str join "\n"
-            )
-
-            # Replace {Auto-generated} with child list
-            let new_content = ($content | str replace '{Auto-generated}' $child_list)
-
-            {
-                file: $parent_file
-                parent: $entry.parent
-                children: $entry.children
-                new_content: $new_content
             }
         }
         | compact
     )
 
     if ($updates | is-empty) {
-        print "✅ No files to update"
+        print "✅ No hub lists to update"
         return
     }
 
-    # Show changes
-    print $"\n📋 Updates to apply:"
-    $updates | each { |u|
-        print $"  ($u.parent): ($u.children | length) sub-activities"
+    print $"\n📋 Hub lists to update:"
+    $updates | each {|u|
+        print $"  ($u.parent): ($u.children | length) children"
         if $verbose {
-            $u.children | each { |c| print $"    - ($c)" }
+            $u.children | each {|c| print $"    - [[($c)]]" }
         }
     }
 
     if $dry_run {
-        print $"\n🔍 DRY RUN - No files modified"
-        print $"   Run without --dry-run to apply changes to ($updates | length) files"
+        print $"\n🔍 DRY RUN — no files written \(($updates | length) would change\)"
         return
     }
 
-    # Apply updates
-    print $"\n✏️  Updating ($updates | length) files..."
-    $updates | each { |u|
+    print $"\n✏️  Updating ($updates | length) parent files..."
+    $updates | each {|u|
         $u.new_content | save -f $u.file
         if $verbose {
-            print $"  ✅ Updated ($u.file | path basename)"
+            print $"  ✅ ($u.file)"
         }
     }
 
-    print $"\n✅ Done! Updated ($updates | length) parent files"
+    print $"\n✅ Done. Updated ($updates | length) hub lists."
 }

@@ -136,8 +136,8 @@ def main [
         }
     }
 
-    # Generate sub-activity lists (populates {Auto-generated} placeholders)
-    # Runs after collection and classification to ensure parent/child relationships are current
+    # Refresh parent hub lists (## Sub-activities = immediate dotted children).
+    # qtrack-parent-child-logs: not a child-journal rollup; placeholder is no longer required.
     if not $dry_run {
         if $verbose {
             print "\n=== Generating Sub-Activity Lists ==="
