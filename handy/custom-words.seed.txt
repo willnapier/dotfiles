@@ -120,21 +120,16 @@ deictic
 defusion
 hexaflex
 workability
-contextualism
-contextualist
 enactivism
 enactive
 interoception
-exteroception
 proprioception
 allostasis
 allostatic
 mentalization
 Fonagy
 Bateman
-Porges
 polyvagal
-surprisal
 Markov
 Bayesian
 Relational Frame Theory
@@ -142,10 +137,13 @@ Compassion Focused Therapy
 Acceptance and Commitment Therapy
 free energy principle
 predictive processing
+predictive coding
 active inference
 functional contextualism
 psychological flexibility
 self-as-context
+self-as-process
+self-as-content
 committed action
 creative hopelessness
 experiential avoidance
@@ -165,6 +163,128 @@ generative model
 precision weighting
 Markov blanket
 variational free energy
+derived relational responding
+relational responding
+relational framing
+deictic framing
+hierarchical framing
+temporal framing
+comparative framing
+coordination frame
+opposition frame
+distinction frame
+conditional framing
+stimulus equivalence
+multiple exemplar
+functional coherence
+verbal relations
+symbolic control
+pliance
+augmenting
+Cfunc
+IRAP
+intraverbal
+autoclitic
+process-based therapy
+case conceptualization
+idiographic
+nomothetic
+transdiagnostic
+network analysis
+delay discounting
+interbehaviorism
+affective neuroscience
+constructed emotion
+relevance realization
+broaden-and-build
+soothing system
+threat system
+drive system
+social mentality
+self-criticism
+compassion-focused
+multiple selves
+expected free energy
+epistemic value
+sensory attenuation
+embodied cognition
+radical empiricism
+pragmatic maxim
+ready-to-hand
+present-at-hand
+intentionality
+pragmatism
+phenomenology
+Nonviolent Communication
+overcontrol
+Radically Open
+RO-DBT
+EMDR
+
+# --- Authors / theorists (surnames and disambiguated names, not clients) ---
+Panksepp
+Twohig
+Tomasello
+Kohlenberg
+Padesky
+Fredrickson
+Vervaeke
+Walser
+Hohwy
+Solms
+Pezzulo
+Kantor
+Dewey
+Peirce
+Heidegger
+Steven Hayes
+Louise Hayes
+Russ Harris
+Kelly Wilson
+Paul Gilbert
+Lisa Feldman Barrett
+Gabor Mate
+Anil Seth
+Jakob Hohwy
+Mark Solms
+Niklas Törneke
+Matthieu Villatte
+Dermot Barnes-Holmes
+Yvonne Barnes-Holmes
+Carmen Luciano
+Louise McHugh
+Ian Stewart
+Robert Kohlenberg
+Mavis Tsai
+Russ Harris
+Steven C. Hayes
+Paul Gilbert
+Peter Fonagy
+Anthony Bateman
+Jaak Panksepp
+John Vervaeke
+Robyn Walser
+Michael Twohig
+Michael Tomasello
+Barbara Fredrickson
+Christine Padesky
+Lisa Feldman Barrett
+Gabor Maté
+
+# --- Philosophy / planning ---
+objective-free
+stepping stones
+serendipity
+radical empiricism
+pragmatic maxim
+ready-to-hand
+present-at-hand
 
 # --- Music (dictated often) ---
 Wigmore
+Wigmore Hall
+lieder
+song cycle
+through-composed
+recitative
+Sprechstimme

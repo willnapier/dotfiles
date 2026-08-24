@@ -233,6 +233,55 @@ def harvest_identifiers() -> dict[str, str]:
     return found
 
 
+GENERIC_CAMEL = {
+    "github", "macbook", "datetime", "eventsource", "javascript", "typescript",
+    "postgresql", "youtube", "paypal", "sharepoint", "launchagent", "launchagents",
+    "mutationresult", "rwsignal", "noname", "sqlite", "linuxgnu", "ostype",
+    "hashmap", "writesignal", "readsignal", "contenttype",
+}
+
+# Internal type-name tails. These are not spoken specialist vocabulary.
+TYPE_SUFFIX = (
+    "Result", "Error", "Signal", "Handler", "Request", "Response", "Config",
+    "Info", "Type", "Client", "Message", "Entry", "Builder", "Option",
+    "Status", "Field", "Future", "Wrapper",
+)
+
+
+def harvest_doc_camels() -> dict[str, str]:
+    """CamelCase product/system names from PHI-free docs (not client records)."""
+    camel_re = re.compile(r"\b[A-Z][a-z]+(?:[A-Z][a-z0-9]+)+\b")
+    counts: Counter = Counter()
+    roots = [
+        HOME / "Assistants" / "shared",
+        HOME / "Assistants" / "skills",
+    ]
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for p in root.rglob("*.md"):
+            s = str(p)
+            if "DYNAMIC-MEMORY" in s or "design-forum" in s:
+                continue
+            try:
+                text = p.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            if len(text) > 400_000:
+                continue
+            counts.update(camel_re.findall(text))
+    found: dict[str, str] = {}
+    for word, n in counts.items():
+        if n < 8 or not (6 <= len(word) <= 40):
+            continue
+        if match_key(word) in GENERIC_CAMEL:
+            continue
+        if word.endswith(TYPE_SUFFIX):
+            continue
+        add_ident(found, word)
+    return found
+
+
 def scan_user_tokens() -> Counter:
     counts: Counter = Counter()
     files = list(CONTINUUM.glob("*/*/*/messages.jsonl"))
@@ -300,6 +349,7 @@ def collision_hits(custom: str, frequent: list[str]) -> list[str]:
 def build_dictionary(user_counts: Counter) -> tuple[list[str], dict]:
     seed = load_seed(seed_path())
     idents = harvest_identifiers()
+    doc_camels = harvest_doc_camels()
     frequent = [
         tok
         for tok, n in user_counts.items()
@@ -307,6 +357,7 @@ def build_dictionary(user_counts: Counter) -> tuple[list[str], dict]:
     ]
     stats = {
         "seed": 0,
+        "docs": 0,
         "harvested": 0,
         "rejected_collision": 0,
         "rejected_unspoken": 0,
@@ -347,6 +398,12 @@ def build_dictionary(user_counts: Counter) -> tuple[list[str], dict]:
         consider(word, require_spoken=False)
         if match_key(word) in accepted:
             stats["seed"] += 1
+
+    for word in doc_camels.values():
+        before = len(accepted)
+        consider(word, require_spoken=False)
+        if len(accepted) > before:
+            stats["docs"] += 1
 
     spoken_idents = sorted(
         ((user_count(w, user_counts), w) for w in idents.values()),
@@ -451,7 +508,7 @@ def main() -> int:
     counts = scan_user_tokens()
     words, stats = build_dictionary(counts)
     print(
-        f"seed={stats['seed']} harvested={stats['harvested']} "
+        f"seed={stats['seed']} docs={stats.get('docs', 0)} harvested={stats['harvested']} "
         f"total={stats['total']} collisions={stats['rejected_collision']} "
         f"unspoken-drop={stats['rejected_unspoken']} "
         f"user-tokens={stats['user_msgs_tokens']}",
