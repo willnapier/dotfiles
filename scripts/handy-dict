@@ -1,0 +1,480 @@
+#!/usr/bin/env python3
+"""Rebuild Handy's custom_words from a PHI-free seed plus continuum-ranked tools.
+
+Continuum is used only as a frequency and collision signal. User-message *text*
+is never printed. Tokens that appear only in conversation (typical of client
+names) never enter the dictionary unless they already exist as identifiers in
+dotfiles / Assistants/shared / skills.
+
+Handy matching is Levenshtein + Soundex at word_correction_threshold (0.18)
+with a phonetic boost, so short acronyms that collide with common speech
+(Niri/near, ACT/act, Codex/codes) are rejected.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from collections import Counter
+from pathlib import Path
+
+HOME = Path.home()
+CONTINUUM = HOME / "Assistants" / "continuum-logs"
+SETTINGS = HOME / ".local" / "share" / "com.pais.handy" / "settings_store.json"
+SEED_CANDIDATES = [
+    HOME / ".local" / "share" / "handy-dict" / "custom-words.seed.txt",
+    HOME / "dotfiles" / "handy" / "custom-words.seed.txt",
+]
+GENERATED = HOME / ".local" / "share" / "handy-dict" / "custom-words.generated.txt"
+HANDY_BIN = HOME / ".local" / "bin" / "handy"
+
+TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9+]{2,}(?:-[A-Za-z0-9]+)*")
+YEAR_RE = re.compile(r"20\d{2}")
+# Handy's default 0.18 is for a handful of names. Soundex * 0.3 at 0.18
+# lets Colemak steal "columns" and Piantor steal "pointer". 0.12 still
+# catches close ASR errors (cole mac, pianter, new shell) without those steals.
+THRESHOLD = 0.12
+MIN_SPOKEN = 3
+MAX_HARVEST = 280
+
+# Common English / generic tokens that must never become custom words.
+STOP = {
+    "the", "and", "for", "from", "with", "this", "that", "auto", "check", "sync",
+    "git", "tmp", "test", "tests", "src", "lib", "bin", "new", "old", "all",
+    "one", "two", "add", "set", "get", "run", "use", "via", "not", "yes", "non",
+    "pre", "post", "init", "main", "file", "files", "docs", "doc", "system",
+    "setup", "config", "linux", "macos", "shared", "index", "guide", "notes",
+    "note", "list", "page", "home", "user", "data", "type", "true", "false",
+    "open", "read", "write", "edit", "move", "copy", "show", "make", "build",
+    "start", "stop", "status", "error", "warning", "info", "debug", "local",
+    "remote", "server", "client", "service", "process", "script", "scripts",
+    "update", "upgrade", "install", "remove", "delete", "create", "manage",
+    "manager", "monitor", "watcher", "wrapper", "helper", "cross", "platform",
+    "complete", "summary", "overview", "reference", "quick", "master", "after",
+    "before", "about", "other", "first", "second", "third", "between", "without",
+    "using", "based", "current", "default", "enabled", "disabled", "optional",
+    "required", "email", "forum", "module", "related", "remind", "promote",
+    "reception", "semantic", "clinical", "claude", "codex", "gemini", "handy",
+    "niri", "near", "codes", "act", "harm", "raft", "greek", "zinc", "deep",
+    "notmuch", "matrix", "entropy", "attachment", "mand", "helix",
+    "squashfs", "nosave",
+}
+
+# 3–4 letter acronyms that Soundex-steal ordinary words at threshold 0.18.
+BANNED_SHORT = {
+    "zmk", "rft", "fep", "bps", "cft", "cbs", "stt", "tts", "xkb",
+    "act", "hrm", "phi", "nhs", "aarr", "grok", "codex", "near",
+}
+
+
+def soundex_code(word: str) -> str:
+    s = "".join(c for c in word.upper() if c.isascii() and c.isalpha())
+    if not s:
+        return ""
+    codes = {}
+    for letters, digit in (
+        ("BFPV", "1"),
+        ("CGJKQSXZ", "2"),
+        ("DT", "3"),
+        ("L", "4"),
+        ("MN", "5"),
+        ("R", "6"),
+    ):
+        for ch in letters:
+            codes[ch] = digit
+    first = s[0]
+    out = [first]
+    prev = codes.get(first, "0")
+    for ch in s[1:]:
+        if ch in "HW":
+            continue
+        code = codes.get(ch, "0")
+        if ch in "AEOIUY":
+            prev = "0"
+            continue
+        if code != prev:
+            out.append(code)
+            prev = code
+        if len(out) >= 4:
+            break
+    return ("".join(out) + "000")[:4]
+
+
+def levenshtein(a: str, b: str) -> int:
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            ins = cur[j - 1] + 1
+            delete = prev[j] + 1
+            sub = prev[j - 1] + (ca != cb)
+            cur.append(min(ins, delete, sub))
+        prev = cur
+    return prev[-1]
+
+
+def match_key(word: str) -> str:
+    return "".join(c.lower() for c in word if c.isalnum())
+
+
+def would_match(candidate: str, custom_key: str, threshold: float = THRESHOLD) -> bool:
+    """True if Handy's finder would replace candidate with custom_key."""
+    if not candidate or not custom_key:
+        return False
+    if not candidate.isascii() or not custom_key.isascii():
+        return False
+    if not candidate.isalnum() or not custom_key.isalnum():
+        return False
+    c_len = len(candidate)
+    k_len = len(custom_key)
+    len_diff = abs(c_len - k_len)
+    max_len = max(c_len, k_len)
+    if max_len == 0 or len_diff > max(max_len * 0.25, 2.0):
+        return False
+    lev = levenshtein(candidate, custom_key) / max_len
+    phonetic = (
+        candidate.isalpha()
+        and custom_key.isalpha()
+        and soundex_code(candidate) == soundex_code(custom_key)
+    )
+    combined = lev * 0.3 if phonetic else lev
+    return combined < threshold
+
+
+def load_seed(path: Path) -> list[str]:
+    words: list[str] = []
+    seen: set[str] = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        key = match_key(line)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        words.append(line)
+    return words
+
+
+def seed_path() -> Path:
+    for p in SEED_CANDIDATES:
+        if p.is_file():
+            return p
+    raise SystemExit("seed file not found; expected dotfiles/handy/custom-words.seed.txt")
+
+
+def add_ident(store: dict[str, str], word: str) -> None:
+    word = (word or "").strip().strip("`'\".,;:()[]{}")
+    word = re.sub(r"\.(md|nu|sh|py|rs|toml|json|kdl|txt)$", "", word, flags=re.I)
+    if not word or "/" in word or " " in word or word.startswith("-"):
+        return
+    if YEAR_RE.search(word) or ".prev" in word:
+        return
+    low_full = word.lower()
+    if any(bad in low_full for bad in ("squashfs", "screenshot", "reload-config")):
+        return
+    if word.isupper() and "-" in word:
+        return  # DOC-TITLE stems
+    letters = re.sub(r"[^A-Za-z]", "", word)
+    if len(letters) < 6:
+        return
+    low = word.lower()
+    if low in STOP or low in BANNED_SHORT:
+        return
+    parts = [p for p in re.split(r"[-_]", word) if p]
+    if len(parts) > 3:
+        return
+    key = match_key(word)
+    if len(key) < 6:
+        return
+    store.setdefault(key, word)
+
+
+def harvest_identifiers() -> dict[str, str]:
+    found: dict[str, str] = {}
+    rp = HOME / "dotfiles" / "rust-projects"
+    if rp.is_dir():
+        for p in rp.iterdir():
+            if p.is_dir() and not p.name.startswith("."):
+                add_ident(found, p.name)
+    sd = HOME / "dotfiles" / "scripts"
+    if sd.is_dir():
+        for p in sd.iterdir():
+            if p.name.startswith(".") or p.suffix == ".md":
+                continue
+            add_ident(found, p.name)
+    lb = HOME / ".local" / "bin"
+    if lb.is_dir():
+        for p in lb.iterdir():
+            if "-" in p.name:
+                add_ident(found, p.name)
+    sk = HOME / "Assistants" / "skills"
+    if sk.is_dir():
+        for p in sk.iterdir():
+            if p.is_dir() and not p.name.startswith("."):
+                add_ident(found, p.name)
+    inv = HOME / "Assistants" / "shared" / "COMMAND-INVENTORY.md"
+    if inv.is_file():
+        for m in re.findall(r"`([^`]+)`", inv.read_text(encoding="utf-8", errors="replace")):
+            tok = m.split()[0]
+            if "-" in tok or re.search(r"[a-z][A-Z]", tok):
+                add_ident(found, tok)
+    return found
+
+
+def scan_user_tokens() -> Counter:
+    counts: Counter = Counter()
+    files = list(CONTINUUM.glob("*/*/*/messages.jsonl"))
+    for fp in files:
+        try:
+            fh = fp.open(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        with fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(obj, dict):
+                    continue
+                if str(obj.get("role") or "").lower() != "user":
+                    continue
+                content = obj.get("content")
+                if not isinstance(content, str) or len(content) > 4000:
+                    continue
+                for tok in TOKEN_RE.findall(content):
+                    counts[tok.lower()] += 1
+    return counts
+
+
+def user_count(word: str, counts: Counter) -> int:
+    low = word.lower()
+    n = counts.get(low, 0)
+    mashed = match_key(word)
+    if mashed != low:
+        n += counts.get(mashed, 0)
+    return n
+
+
+def is_variant(tok: str, key: str) -> bool:
+    """Plural / prefix / near-miss of the same term, not a different word."""
+    if tok == key or tok + "s" == key or key + "s" == tok:
+        return True
+    if tok.startswith(key) or key.startswith(tok):
+        return len(min(tok, key, key=len)) >= 5
+    n = 0
+    for a, b in zip(tok, key):
+        if a != b:
+            break
+        n += 1
+    return n >= 4 and abs(len(tok) - len(key)) <= 2
+
+
+def collision_hits(custom: str, frequent: list[str]) -> list[str]:
+    key = match_key(custom)
+    hits = []
+    for tok in frequent:
+        if tok == key or is_variant(tok, key):
+            continue
+        if would_match(tok, key):
+            hits.append(tok)
+            if len(hits) >= 5:
+                break
+    return hits
+
+
+def build_dictionary(user_counts: Counter) -> tuple[list[str], dict]:
+    seed = load_seed(seed_path())
+    idents = harvest_identifiers()
+    frequent = [
+        tok
+        for tok, n in user_counts.items()
+        if n >= 80 and tok.isalpha() and tok.isascii() and 3 <= len(tok) <= 12
+    ]
+    stats = {
+        "seed": 0,
+        "harvested": 0,
+        "rejected_collision": 0,
+        "rejected_unspoken": 0,
+        "user_msgs_tokens": len(user_counts),
+    }
+    accepted: dict[str, str] = {}
+    collisions: list[tuple[str, list[str]]] = []
+
+    def consider(word: str, require_spoken: bool) -> None:
+        key = match_key(word)
+        if not key or key in accepted:
+            return
+        if require_spoken and (key in BANNED_SHORT or word.lower() in STOP):
+            return
+        if not require_spoken and key in BANNED_SHORT:
+            return
+        letters = re.sub(r"[^A-Za-z]", "", word)
+        alnum = re.sub(r"[^A-Za-z0-9]", "", word)
+        if require_spoken:
+            if len(letters) < 6:
+                return
+        else:
+            min_alnum = 3 if any(c.isdigit() for c in alnum) else 4
+            if len(alnum) < min_alnum:
+                return
+        spoken = user_count(word, user_counts)
+        if require_spoken and spoken < MIN_SPOKEN:
+            stats["rejected_unspoken"] += 1
+            return
+        hits = collision_hits(word, frequent)
+        if hits:
+            stats["rejected_collision"] += 1
+            collisions.append((word, hits))
+            return
+        accepted[key] = word
+
+    for word in seed:
+        consider(word, require_spoken=False)
+        if match_key(word) in accepted:
+            stats["seed"] += 1
+
+    spoken_idents = sorted(
+        ((user_count(w, user_counts), w) for w in idents.values()),
+        reverse=True,
+    )
+    for n, word in spoken_idents:
+        if stats["harvested"] >= MAX_HARVEST:
+            break
+        before = len(accepted)
+        consider(word, require_spoken=True)
+        if len(accepted) > before:
+            stats["harvested"] += 1
+
+    stats["collisions_sample"] = collisions[:12]
+    stats["total"] = len(accepted)
+    # Prefer seed casing; stable order: seed first, then harvested alpha.
+    seed_keys = {match_key(w) for w in seed}
+    seed_out = [accepted[match_key(w)] for w in seed if match_key(w) in accepted]
+    rest = sorted(
+        (w for k, w in accepted.items() if k not in seed_keys),
+        key=str.lower,
+    )
+    return seed_out + rest, stats
+
+
+def apply_words(words: list[str], keep: bool, restart: bool, dry_run: bool) -> None:
+    if not SETTINGS.is_file():
+        raise SystemExit(f"Handy settings not found: {SETTINGS}")
+    data = json.loads(SETTINGS.read_text(encoding="utf-8"))
+    settings = data.setdefault("settings", {})
+    existing = list(settings.get("custom_words") or [])
+    if keep:
+        have = {match_key(w) for w in words}
+        for w in existing:
+            k = match_key(w)
+            if k and k not in have:
+                words.append(w)
+                have.add(k)
+    if dry_run:
+        print(f"dry-run: would write {len(words)} words (have {len(existing)})")
+        return
+    settings["custom_words"] = words
+    settings["word_correction_threshold"] = THRESHOLD
+    tmp = SETTINGS.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    tmp.replace(SETTINGS)
+    GENERATED.parent.mkdir(parents=True, exist_ok=True)
+    GENERATED.write_text("\n".join(words) + "\n", encoding="utf-8")
+    print(f"wrote {len(words)} words to {SETTINGS}")
+    if restart:
+        restart_handy()
+
+
+def restart_handy() -> None:
+    subprocess.run(
+        ["pkill", "-f", "Handy_0.9.6_amd64.AppImage"],
+        check=False,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["pkill", "-f", "handy --start-hidden"],
+        check=False,
+        capture_output=True,
+    )
+    time.sleep(0.4)
+    if not HANDY_BIN.exists():
+        print("Handy binary missing; start it with: handy --start-hidden", file=sys.stderr)
+        return
+    spawn = ["niri", "msg", "action", "spawn", "--", str(HANDY_BIN), "--start-hidden"]
+    r = subprocess.run(spawn, capture_output=True, text=True)
+    if r.returncode != 0:
+        # Fallback if niri IPC is unavailable
+        subprocess.Popen(
+            [str(HANDY_BIN), "--start-hidden"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        print("restarted Handy via Popen")
+    else:
+        print("restarted Handy via niri spawn")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "command",
+        nargs="?",
+        default="extract",
+        choices=["extract", "apply"],
+    )
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--no-restart", action="store_true")
+    parser.add_argument(
+        "--keep",
+        action="store_true",
+        help="keep extra words already in Handy settings",
+    )
+    args = parser.parse_args()
+
+    print("scanning continuum user messages (tokens only)...", file=sys.stderr)
+    counts = scan_user_tokens()
+    words, stats = build_dictionary(counts)
+    print(
+        f"seed={stats['seed']} harvested={stats['harvested']} "
+        f"total={stats['total']} collisions={stats['rejected_collision']} "
+        f"unspoken-drop={stats['rejected_unspoken']} "
+        f"user-tokens={stats['user_msgs_tokens']}",
+        file=sys.stderr,
+    )
+    if stats["collisions_sample"]:
+        print("collision rejects (custom → stolen common speech):", file=sys.stderr)
+        for word, hits in stats["collisions_sample"]:
+            print(f"  {word}  would steal  {', '.join(hits)}", file=sys.stderr)
+
+    if args.command == "extract":
+        for w in words:
+            print(w)
+        return 0
+
+    apply_words(
+        words,
+        keep=args.keep,
+        restart=not args.no_restart,
+        dry_run=args.dry_run,
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

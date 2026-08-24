@@ -1,0 +1,170 @@
+# Handy specialist dictionary seed
+# One term or phrase per line. Applied as Handy custom_words (Levenshtein + Soundex).
+# Do not add 3–4 letter acronyms that collide with common English (ACT, Niri, HRM, RFT).
+# Do not add client names. This file is PHI-free.
+
+# --- Machines, compositor, terminal ---
+Nimbini
+Niri
+WezTerm
+Ghostty
+Zellij
+Nushell
+Dotter
+Syncthing
+Tailscale
+Wayland
+PipeWire
+Fuzzel
+AppImage
+wl-clipboard
+wtype
+CachyOS
+
+# --- Keyboard / firmware ---
+Colemak
+Colemak-DH
+Piantor
+mod-tap
+homerow
+
+# --- Editor / files ---
+Helix
+Yazi
+serpl
+zoxide
+DayPage
+DevLog
+Napierian
+Messageboard
+wikilink
+wikilinks
+
+# --- Local dictation ---
+Parakeet
+Whisper
+GGUF
+Silero
+Wispr
+SuperGrok
+Vulkan
+
+# --- Practice / mail stack (organisational, not client names) ---
+PracticeForge
+TM3
+pizauth
+mbsync
+mailcurator
+msmtp
+lieer
+Graph
+HCPC
+DPIA
+GDPR
+IAPT
+
+# --- AI / continuum ---
+Continuum
+claude-code
+grok-build
+grok-cli
+cc-clinical
+chatgpt
+Anthropic
+OpenRouter
+SpaceXAI
+senior-dev
+life-optimiser
+philosophy-tutor
+maths-tutor
+daypage-tooling
+continuum-activity
+dev-catchup
+grok-to-continuum
+chatgpt-to-continuum
+claude-to-continuum
+rust-redeploy
+fd-budget
+ai-brief
+
+# --- Projects / crates ---
+mailforge
+bequest
+easel
+pageprobe
+Dioxus
+clinical-dashboard
+clinical-portal
+clinical-core
+tm3-diary-capture
+daypage-append
+messageboard-edit
+collect-entries
+readwise-sync
+concert-capture
+state-capture
+skill-eval
+forge-linker
+cross-machine-sync-check
+
+# --- Psychology / CBS / RFT (theory terms, not client names) ---
+Karl Friston
+Torneke
+Törneke
+Villatte
+Barnes-Holmes
+McHugh
+Luciano
+Sidman
+deictic
+defusion
+hexaflex
+workability
+contextualism
+contextualist
+enactivism
+enactive
+interoception
+exteroception
+proprioception
+allostasis
+allostatic
+mentalization
+Fonagy
+Bateman
+Porges
+polyvagal
+surprisal
+Markov
+Bayesian
+Relational Frame Theory
+Compassion Focused Therapy
+Acceptance and Commitment Therapy
+free energy principle
+predictive processing
+active inference
+functional contextualism
+psychological flexibility
+self-as-context
+committed action
+creative hopelessness
+experiential avoidance
+cognitive fusion
+valued living
+mutual entailment
+combinatorial entailment
+transformation of function
+arbitrarily applicable
+rule-governed
+contingency-shaped
+motivating operation
+establishing operation
+verbal behavior
+derived stimulus
+generative model
+precision weighting
+Markov blanket
+variational free energy
+
+# --- Music (dictated often) ---
+Wigmore
