@@ -17,7 +17,7 @@
 # hyphen/dot stems from Social/*.md (person and couple keys).
 # Spoken clocks: "o one twenty to o seven ten" → 0120-0710, then duration.
 # Spoken quantities: "seven thousand steps" → 7000-steps; "forty-five minutes" → 45min.
-# Lint: glue 3500steps → 3500-steps, 45mins → 45min; on walk keys, bare 7000 → 7000-steps.
+# Lint: glue units; default-quantity-rules (walk → steps, sauna → min).
 # Do not put key:: literals in Handy custom_words.
 
 def regex-escape-spoken [s: string] {
@@ -568,11 +568,30 @@ def expand-spoken-quantities [content: string] {
     }
 }
 
-def is-steps-key [key: string] {
-    $key == "ex.walk" or $key == "walk" or ($key | str starts-with "ex.walk.")
+# Per-key default unit for a bare integer. Add a row when a new pattern is stable.
+def default-quantity-rules [] {
+    [
+        {keys: ["ex.walk", "walk"], prefixes: ["ex.walk."], unit: "steps", min: 1000, max: 100000}
+        {keys: ["sauna", "steamroom"], prefixes: ["sauna."], unit: "min", min: 1, max: 180}
+    ]
 }
 
-# Glue 3500steps → 3500-steps, 45mins → 45min. On walk keys, bare >=1000 → N-steps.
+def default-unit-for [key: string, n: int] {
+    mut found = null
+    for r in (default-quantity-rules) {
+        let hit = (
+            $key in $r.keys
+            or ($r.prefixes | any {|p| $key | str starts-with $p})
+        )
+        if $hit and $n >= $r.min and $n <= $r.max {
+            $found = $r.unit
+            break
+        }
+    }
+    $found
+}
+
+# Glue 3500steps → 3500-steps, 45mins → 45min. Bare integers use default-quantity-rules.
 def lint-token [tok: string, key: string] {
     let parsed = ($tok | parse --regex '^(\d+)([A-Za-z-]*?)([.,;]?)$')
     if ($parsed | is-empty) {
@@ -595,8 +614,9 @@ def lint-token [tok: string, key: string] {
     }
     if $rest == "" {
         let nint = ($num | into int)
-        if (is-steps-key $key) and $nint >= 1000 {
-            return $"($nint)-steps($punct)"
+        let unit = (default-unit-for $key $nint)
+        if $unit != null {
+            return $"(format-quantity $nint $unit)($punct)"
         }
     }
     $tok
