@@ -79,7 +79,7 @@ The double-colon was chosen because:
 2. It's visually distinctive in plain text
 3. It enables reliable regex extraction: `^key:: (.*)$`
 
-**Spoken form (Handy):** say `key` plus the activity (`key sleep o one twenty to o seven ten`, `key exercise walk seven thousand steps`, `key jenny TV`), then Space+p. Quantities: `seven thousand steps` → `7000-steps`, `forty-five minutes` → `45min`. Lint: `ex.walk:: 7000` → `7000-steps`, `sauna:: 15` → `15min`. See `QUANTIFIED-TRACKING.md` § Spoken dictation.
+**Spoken form (Handy):** say `key` plus the activity (`key sleep o one twenty to o seven ten`, `key exercise walk seven thousand steps`, `key jenny TV`), then Space+p. Quantities: `seven thousand steps` → `7000-steps`, `forty-five minutes` → `45min`. Lint: `ex.walk:: 7000` → `7000-steps`, `sauna:: 15` → `15min`. State: `key state tired eight` → `state:: tired-8`. See `QUANTIFIED-TRACKING.md` § Spoken dictation.
 4. It naturally reads as "key is-recorded-as value"
 
 ## Collection Architecture

@@ -18,6 +18,7 @@
 # Spoken clocks: "o one twenty to o seven ten" → 0120-0710, then duration.
 # Spoken quantities: "seven thousand steps" → 7000-steps; "forty-five minutes" → 45min.
 # Lint: glue units; default-quantity-rules (walk → steps, sauna → min).
+# State: "key state tired 8" / "tired eight" → state:: tired-8
 # Do not put key:: literals in Handy custom_words.
 
 def regex-escape-spoken [s: string] {
@@ -661,9 +662,117 @@ def lint-activity-syntax [content: string] {
     }
 }
 
+def is-mood-word [tok: string] {
+    let t = (norm-tok $tok)
+    if ($t | str length) < 2 {
+        return false
+    }
+    if $t in ["the", "and", "or", "of", "to", "from", "with", "at", "in", "on", "not", "a", "an"] {
+        return false
+    }
+    if (parse-mood-rating $tok) != null {
+        return false
+    }
+    $t =~ '^[A-Za-z][A-Za-z-]*$'
+}
+
+def is-canonical-mood [tok: string] {
+    (norm-tok $tok) =~ '^[A-Za-z][A-Za-z-]*-(0?[0-9]|10)$'
+}
+
+def parse-mood-rating [tok: string] {
+    let t = (norm-tok $tok)
+    if $t =~ '^(0?[0-9]|10)$' {
+        $t | into int
+    } else {
+        let m = {
+            zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5,
+            six: 6, seven: 7, eight: 8, nine: 9, ten: 10
+        }
+        if $t in $m {
+            $m | get $t
+        } else {
+            null
+        }
+    }
+}
+
+# After state::, "tired 8" / "tired eight" / "sleep debt 5" → tired-8 / sleep-debt-5
+def expand-state-ratings-line [line: string] {
+    let tokens = ($line | split row --regex '\s+' | where {|t| not ($t | is-empty)})
+    if ($tokens | is-empty) {
+        return $line
+    }
+    let n = ($tokens | length)
+    mut i = 0
+    mut key = ""
+    mut out = []
+    mut changed = false
+    while $i < $n {
+        let tok = ($tokens | get $i)
+        let key_hit = ($tok | parse --regex '^([A-Za-z][A-Za-z0-9.-]*)::$')
+        if not ($key_hit | is-empty) {
+            $key = ($key_hit | first | get capture0)
+            $out = ($out | append $tok)
+            $i = $i + 1
+            continue
+        }
+        if $key != "state" {
+            $out = ($out | append $tok)
+            $i = $i + 1
+            continue
+        }
+        if (is-canonical-mood $tok) {
+            $out = ($out | append $tok)
+            $i = $i + 1
+            continue
+        }
+        if (is-mood-word $tok) {
+            mut words = [$tok]
+            mut j = $i + 1
+            while $j < $n and (is-mood-word ($tokens | get $j)) {
+                $words = ($words | append ($tokens | get $j))
+                $j = $j + 1
+            }
+            if $j < $n {
+                let rating = (parse-mood-rating ($tokens | get $j))
+                if $rating != null {
+                    let joined = ($words | each {|w| norm-tok $w} | str join "-")
+                    $out = ($out | append $"($joined)-($rating)")
+                    $i = $j + 1
+                    $changed = true
+                    continue
+                }
+            }
+        }
+        $out = ($out | append $tok)
+        $i = $i + 1
+    }
+    if $changed {
+        $out | str join " "
+    } else {
+        $line
+    }
+}
+
+def expand-state-ratings [content: string] {
+    let lines = ($content | lines)
+    let out = ($lines | each {|line| expand-state-ratings-line $line })
+    let needs_nl = ($content | str ends-with "\n")
+    if $needs_nl {
+        ($out | str join "\n") + "\n"
+    } else {
+        $out | str join "\n"
+    }
+}
+
 def process-content [content: string] {
     let expanded = (
-        lint-activity-syntax (expand-spoken-quantities (expand-spoken-clocks (expand-spoken-keys $content)))
+        lint-activity-syntax (
+            expand-state-ratings (
+                expand-spoken-quantities (expand-spoken-clocks (expand-spoken-keys $content))
+            )
+        )
     )
     let lines = ($expanded | lines)
 
