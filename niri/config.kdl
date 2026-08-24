@@ -150,9 +150,9 @@ binds {
     Mod+Shift+Return { spawn "email"; }   // Open meli (matches macOS Cmd+Shift+Return via Hammerspoon)
 
     // Local dictation (Handy + Parakeet). Two-press toggle (niri has no key-release bind).
-    // Super+Shift is home-row S+T (LGUI S, LSHFT T); that chord leaked "st" into the
-    // focused field. Mod+V uses only Super + a plain key (V is &kp V, not a mod-tap).
-    Mod+V repeat=false { spawn "handy" "--toggle-transcription"; }
+    // Super+Shift is home-row S+T and leaked "st". Mod+V is a bottom-row stretch.
+    // Mod+G: Super is middle-finger S; G is a plain home-row key under the index.
+    Mod+G repeat=false { spawn "handy" "--toggle-transcription"; }
 
     // Keyboard-driven mouse (wl-kbptr)
     Mod+Shift+M    { spawn "wl-kbptr"; }
