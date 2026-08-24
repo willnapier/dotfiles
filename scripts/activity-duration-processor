@@ -16,6 +16,7 @@
 # Trigger is the word "key" plus a phrase in spoken-key-table, plus
 # hyphen/dot stems from Social/*.md (person and couple keys).
 # Spoken clocks: "o one twenty to o seven ten" → 0120-0710, then duration.
+# Spoken quantities: "seven thousand steps" → 7000-steps; "forty-five minutes" → 45min.
 # Do not put key:: literals in Handy custom_words.
 
 def regex-escape-spoken [s: string] {
@@ -200,7 +201,8 @@ def spoken-num-map [] {
         thirteen: 13, fourteen: 14, fifteen: 15,
         sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
         twenty: 20, thirty: 30, forty: 40, fifty: 50,
-        hundred: 100
+        sixty: 60, seventy: 70, eighty: 80, ninety: 90,
+        hundred: 100, thousand: 1000
     }
 }
 
@@ -401,8 +403,174 @@ def expand-spoken-clocks [content: string] {
     }
 }
 
+# Cardinal at `start`: "seven thousand", "forty-five", "3500", "three thousand five hundred".
+# Does not treat clock-style "one twenty" as 21 — tens after a 1–9 ones digit need "hundred".
+def parse-cardinal-at [tokens: list<string>, start: int] {
+    let n = ($tokens | length)
+    if $start >= $n {
+        return null
+    }
+    let raw = (norm-tok ($tokens | get $start))
+    let compact = ($raw | str replace --all "," "")
+    if $compact =~ '^\d+$' {
+        let nint = ($compact | into int)
+        if $nint > 0 {
+            return {n: $nint, next: ($start + 1)}
+        }
+    }
+
+    mut i = $start
+    mut total = 0
+    mut current = 0
+    mut saw = false
+    while $i < $n {
+        let v = (token-num ($tokens | get $i))
+        if $v == null {
+            break
+        }
+        # "forty-five" is already a complete cardinal in one token.
+        if $v >= 1 and $v <= 99 and ((norm-tok ($tokens | get $i)) | str contains "-") {
+            $current = $current + $v
+            $i = $i + 1
+            $saw = true
+            continue
+        }
+        if $v == 1000 {
+            if $current == 0 {
+                $current = 1
+            }
+            $total = $total + ($current * 1000)
+            $current = 0
+            $i = $i + 1
+            $saw = true
+            continue
+        }
+        if $v == 100 {
+            if $current == 0 {
+                $current = 1
+            }
+            $current = $current * 100
+            $i = $i + 1
+            $saw = true
+            continue
+        }
+        if $v in [20, 30, 40, 50, 60, 70, 80, 90] {
+            # Do not turn clock-style "one twenty" into 21.
+            if $current >= 1 and $current <= 9 {
+                break
+            }
+            $current = $current + $v
+            $i = $i + 1
+            $saw = true
+            if $i < $n {
+                let ones = (token-num ($tokens | get $i))
+                if $ones != null and $ones >= 1 and $ones <= 9 {
+                    $current = $current + $ones
+                    $i = $i + 1
+                }
+            }
+            continue
+        }
+        if $v >= 1 and $v <= 19 {
+            $current = $current + $v
+            $i = $i + 1
+            $saw = true
+            continue
+        }
+        break
+    }
+    $total = $total + $current
+    if $saw and $total > 0 {
+        {n: $total, next: $i}
+    } else {
+        null
+    }
+}
+
+def quantity-unit [tok: string] {
+    let t = (norm-tok $tok)
+    if $t in ["steps", "step"] {
+        "steps"
+    } else if $t in ["minutes", "minute", "mins", "min"] {
+        "min"
+    } else if $t in ["hours", "hour", "hrs", "hr"] {
+        "hr"
+    } else {
+        null
+    }
+}
+
+def format-quantity [n: int, unit: string] {
+    if $unit == "steps" {
+        $"($n)-steps"
+    } else {
+        $"($n)($unit)"
+    }
+}
+
+def expand-spoken-quantities-line [line: string] {
+    let tokens = ($line | split row --regex '\s+' | where {|t| not ($t | is-empty)})
+    if ($tokens | is-empty) {
+        return $line
+    }
+    let ntok = ($tokens | length)
+    mut i = 0
+    mut out = []
+    mut changed = false
+    while $i < $ntok {
+        let tok = ($tokens | get $i)
+        # Already canonical (45min, 7000-steps, 2hr).
+        if $tok =~ '^\d+(min|hr|sec)$' or $tok =~ '^\d+-steps$' {
+            $out = ($out | append $tok)
+            $i = $i + 1
+            continue
+        }
+        let a_hour = (
+            (norm-tok $tok) in ["a", "an"]
+            and (($i + 1) < $ntok)
+            and ((quantity-unit ($tokens | get ($i + 1))) == "hr")
+        )
+        if $a_hour {
+            $out = ($out | append "1hr")
+            $i = $i + 2
+            $changed = true
+            continue
+        }
+        let card = (parse-cardinal-at $tokens $i)
+        if $card != null and $card.next < $ntok {
+            let unit = (quantity-unit ($tokens | get $card.next))
+            if $unit != null {
+                $out = ($out | append (format-quantity $card.n $unit))
+                $i = $card.next + 1
+                $changed = true
+                continue
+            }
+        }
+        $out = ($out | append $tok)
+        $i = $i + 1
+    }
+    if $changed {
+        $out | str join " "
+    } else {
+        $line
+    }
+}
+
+def expand-spoken-quantities [content: string] {
+    let lines = ($content | lines)
+    let out = ($lines | each {|line| expand-spoken-quantities-line $line })
+    let needs_nl = ($content | str ends-with "\n")
+    if $needs_nl {
+        ($out | str join "\n") + "\n"
+    } else {
+        $out | str join "\n"
+    }
+}
+
 def process-content [content: string] {
-    let expanded = (expand-spoken-clocks (expand-spoken-keys $content))
+    let expanded = (
+        expand-spoken-quantities (expand-spoken-clocks (expand-spoken-keys $content))
+    )
     let lines = ($expanded | lines)
 
     let processed_lines = ($lines | each { |line|
