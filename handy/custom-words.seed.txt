@@ -36,6 +36,8 @@ zoxide
 DayPage
 DevLog
 Napierian
+walkpad
+steamroom
 Messageboard
 wikilink
 wikilinks

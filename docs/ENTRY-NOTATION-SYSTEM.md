@@ -78,6 +78,8 @@ The double-colon was chosen because:
 1. It doesn't conflict with standard markdown syntax
 2. It's visually distinctive in plain text
 3. It enables reliable regex extraction: `^key:: (.*)$`
+
+**Spoken form (Handy):** say `key` plus the activity (`key sleep`, `key jenny TV`), then Space+p. That expands to `sleep::` / `jenny.tv::` and fills time-range durations. STT will not produce `::` on its own; see `QUANTIFIED-TRACKING.md` § Spoken dictation.
 4. It naturally reads as "key is-recorded-as value"
 
 ## Collection Architecture

@@ -93,7 +93,8 @@ t = ["extend_to_line_bounds", ":pipe hx-toggle-todo"]
 
 # Manual theme refresh - Space+T (capital T)  
 T = ":config-reload"
-# Process activity durations in-buffer (Space+p).
+# Process spoken keys + activity durations in-buffer (Space+p).
+# "key sleep 0120-0710" → "sleep:: 5hr 50min 0120-0710"
 # Uses :pipe (same pattern as Space+t) so Helix never depends on write→external
 # →:reload races — those often needed a second press / manual :rl to show results.
 # Processor stdin mode: activity-duration-processor -

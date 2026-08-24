@@ -11,9 +11,153 @@
 #   activity-duration-processor PATH   — read/write file on disk
 #   activity-duration-processor -      — stdin → stdout (Helix :pipe, no :reload race)
 #   activity-duration-processor        — process recently modified vault .md files
+#
+# Spoken keys (Handy / STT): "key sleep" → sleep::  before durations run.
+# Trigger is the word "key" plus a phrase in spoken-key-table. Narrative
+# "sleep" is left alone. Do not put key:: literals in Handy custom_words.
+
+def regex-escape-spoken [s: string] {
+    $s | str replace --all --regex '([.\\+*?()|\[\]{}^$])' '\$1'
+}
+
+# Longer phrases must win (jenny tv before jenny; walk pad before walk).
+def spoken-key-table [] {
+    [
+        {spoken: "jenny television", key: "jenny.tv"}
+        {spoken: "jenny t v", key: "jenny.tv"}
+        {spoken: "jenny tv", key: "jenny.tv"}
+        {spoken: "jenny conversation", key: "jenny.conv"}
+        {spoken: "jenny conv", key: "jenny.conv"}
+        {spoken: "jenny family", key: "jenny.family"}
+        {spoken: "jenny garden", key: "jenny.garden"}
+        {spoken: "jenny quality time", key: "jenny.qt"}
+        {spoken: "jenny qt", key: "jenny.qt"}
+        {spoken: "piano classical", key: "piano.cl"}
+        {spoken: "piano jazz", key: "piano.jz"}
+        {spoken: "piano technical", key: "piano.tech"}
+        {spoken: "piano tech", key: "piano.tech"}
+        {spoken: "piano humour", key: "piano.humour"}
+        {spoken: "piano humor", key: "piano.humour"}
+        {spoken: "travel uber", key: "travel.uber"}
+        {spoken: "travel walk", key: "travel.walk"}
+        {spoken: "travel train", key: "travel.train"}
+        {spoken: "travel tube", key: "travel.tube"}
+        {spoken: "travel taxi", key: "travel.taxi"}
+        {spoken: "development code", key: "dev.code"}
+        {spoken: "dev code", key: "dev.code"}
+        {spoken: "development skill", key: "dev.skill"}
+        {spoken: "dev skill", key: "dev.skill"}
+        {spoken: "exercise resistance", key: "ex.res"}
+        {spoken: "resistance training", key: "ex.res"}
+        {spoken: "exercise aerobic", key: "ex.aer"}
+        {spoken: "exercise cardio", key: "ex.aer"}
+        {spoken: "exercise hiit", key: "ex.hiit"}
+        {spoken: "high intensity", key: "ex.hiit"}
+        {spoken: "exercise walk pad", key: "ex.walkpad"}
+        {spoken: "walking pad", key: "ex.walkpad"}
+        {spoken: "walk pad", key: "ex.walkpad"}
+        {spoken: "exercise walk", key: "ex.walk"}
+        {spoken: "outdoor walk", key: "ex.walk"}
+        {spoken: "dead hang", key: "ex.hang"}
+        {spoken: "exercise hang", key: "ex.hang"}
+        {spoken: "bodyweight squat", key: "ex.bsquat"}
+        {spoken: "body weight squat", key: "ex.bsquat"}
+        {spoken: "read philosophy", key: "read.phil"}
+        {spoken: "philosophy reading", key: "read.phil"}
+        {spoken: "read book", key: "read.book"}
+        {spoken: "book reading", key: "read.book"}
+        {spoken: "you tube", key: "watch.yt"}
+        {spoken: "youtube", key: "watch.yt"}
+        {spoken: "wine tasting", key: "wine-tasting"}
+        {spoken: "steam room", key: "steamroom"}
+        {spoken: "social community", key: "social.community"}
+        {spoken: "music senior common room", key: "music-scr"}
+        {spoken: "music scr", key: "music-scr"}
+        {spoken: "concert wigmore", key: "concert.wigmore"}
+        {spoken: "steamroom", key: "steamroom"}
+        {spoken: "walkpad", key: "ex.walkpad"}
+        {spoken: "meditation", key: "med"}
+        {spoken: "exercise", key: "ex"}
+        {spoken: "development", key: "dev"}
+        {spoken: "television", key: "tv"}
+        {spoken: "conversation", key: "conv"}
+        {spoken: "piano", key: "piano"}
+        {spoken: "travel", key: "travel"}
+        {spoken: "read", key: "read"}
+        {spoken: "work", key: "work"}
+        {spoken: "yoga", key: "yoga"}
+        {spoken: "jenny", key: "jenny"}
+        {spoken: "clinic", key: "clinic"}
+        {spoken: "sleep", key: "sleep"}
+        {spoken: "friends", key: "friends"}
+        {spoken: "food", key: "food"}
+        {spoken: "sauna", key: "sauna"}
+        {spoken: "film", key: "film"}
+        {spoken: "therapy", key: "therapy"}
+        {spoken: "social", key: "social"}
+        {spoken: "state", key: "state"}
+        {spoken: "med", key: "med"}
+        {spoken: "dev", key: "dev"}
+        {spoken: "tv", key: "tv"}
+        {spoken: "t v", key: "tv"}
+        {spoken: "ex", key: "ex"}
+        {spoken: "conv", key: "conv"}
+        {spoken: "walk", key: "walk"}
+        {spoken: "nap", key: "nap"}
+        {spoken: "concert", key: "concert"}
+        {spoken: "diet", key: "diet"}
+        {spoken: "health", key: "health"}
+        {spoken: "finance", key: "finance"}
+        {spoken: "family", key: "family"}
+        {spoken: "dream", key: "dream"}
+        {spoken: "admin", key: "admin"}
+        {spoken: "geoff", key: "geoff"}
+        {spoken: "diana", key: "diana"}
+        {spoken: "seneca", key: "seneca"}
+        {spoken: "clarinet", key: "clarinet"}
+        {spoken: "tesla", key: "tesla"}
+        {spoken: "cpd", key: "cpd"}
+    ]
+}
+
+def expand-spoken-keys [content: string] {
+    let ranked = (
+        spoken-key-table
+        | insert _rank {|r|
+            let words = ($r.spoken | split row " " | length)
+            $words * 1000 + ($r.spoken | str length)
+        }
+        | sort-by _rank --reverse
+    )
+
+    let lines = ($content | lines)
+    let out = ($lines | each {|line|
+        mut current = $line
+        for row in $ranked {
+            let spoken_re = (
+                $row.spoken
+                | split row " "
+                | each {|w| regex-escape-spoken $w}
+                | str join '\s+'
+            )
+            # Concatenate: $'(?i)...' interpolates (expr), so (?i) would run as a command.
+            let pattern = '(?i)\bkey\s+' + $spoken_re + '\b(?:\s*::)?'
+            $current = ($current | str replace --all --regex $pattern ($row.key + "::"))
+        }
+        $current
+    })
+
+    let needs_nl = ($content | str ends-with "\n")
+    if $needs_nl {
+        ($out | str join "\n") + "\n"
+    } else {
+        $out | str join "\n"
+    }
+}
 
 def process-content [content: string] {
-    let lines = ($content | lines)
+    let expanded = (expand-spoken-keys $content)
+    let lines = ($expanded | lines)
 
     let processed_lines = ($lines | each { |line|
         # Look for ALL time range patterns in the line (handles nested entries)
