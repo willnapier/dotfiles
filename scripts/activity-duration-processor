@@ -517,10 +517,18 @@ def expand-spoken-quantities-line [line: string] {
     }
     let ntok = ($tokens | length)
     mut i = 0
+    mut key = ""
     mut out = []
     mut changed = false
     while $i < $ntok {
         let tok = ($tokens | get $i)
+        let key_hit = ($tok | parse --regex '^([A-Za-z][A-Za-z0-9.-]*)::$')
+        if not ($key_hit | is-empty) {
+            $key = ($key_hit | first | get capture0)
+            $out = ($out | append $tok)
+            $i = $i + 1
+            continue
+        }
         # Already canonical (45min, 7000-steps, 2hr).
         if $tok =~ '^\d+(min|hr|sec)$' or $tok =~ '^\d+-steps$' {
             $out = ($out | append $tok)
@@ -539,11 +547,25 @@ def expand-spoken-quantities-line [line: string] {
             continue
         }
         let card = (parse-cardinal-at $tokens $i)
-        if $card != null and $card.next < $ntok {
-            let unit = (quantity-unit ($tokens | get $card.next))
-            if $unit != null {
+        if $card != null {
+            mut unit = ""
+            mut take_unit = false
+            if $card.next < $ntok {
+                let explicit = (quantity-unit ($tokens | get $card.next))
+                if $explicit != null {
+                    $unit = $explicit
+                    $take_unit = true
+                }
+            }
+            if $unit == "" {
+                let inferred = (default-unit-for $key $card.n)
+                if $inferred != null {
+                    $unit = $inferred
+                }
+            }
+            if $unit != "" {
                 $out = ($out | append (format-quantity $card.n $unit))
-                $i = $card.next + 1
+                $i = if $take_unit { $card.next + 1 } else { $card.next }
                 $changed = true
                 continue
             }
