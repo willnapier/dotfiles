@@ -13,8 +13,10 @@
 #   activity-duration-processor        — process recently modified vault .md files
 #
 # Spoken keys (Handy / STT): "key sleep" → sleep::  before durations run.
-# Trigger is the word "key" plus a phrase in spoken-key-table. Narrative
-# "sleep" is left alone. Do not put key:: literals in Handy custom_words.
+# Trigger is the word "key" plus a phrase in spoken-key-table, plus
+# hyphen/dot stems from Social/*.md (person and couple keys).
+# Spoken clocks: "o one twenty to o seven ten" → 0120-0710, then duration.
+# Do not put key:: literals in Handy custom_words.
 
 def regex-escape-spoken [s: string] {
     $s | str replace --all --regex '([.\\+*?()|\[\]{}^$])' '\$1'
@@ -120,9 +122,41 @@ def spoken-key-table [] {
     ]
 }
 
+def social-key-rows [] {
+    let dir = ($env.HOME | path join "Forge/NapierianLogs/Social")
+    if not ($dir | path exists) {
+        return []
+    }
+    let deny = ["parser", "variable"]
+    let files = (try { ls $dir } catch { [] })
+    $files
+    | where {|r| $r.type == "file"}
+    | get name
+    | each {|p| $p | path basename}
+    | where {|f| $f =~ '^[a-z][a-z0-9.-]+\.md$'}
+    | each {|f| $f | str replace --regex '\.md$' ''}
+    | where {|k| not ($k in $deny)}
+    | each {|k|
+        let spaced = ($k | str replace --all '.' ' ' | str replace --all '-' ' ')
+        if $spaced == $k {
+            [{spoken: $k, key: $k}]
+        } else {
+            [
+                {spoken: $spaced, key: $k}
+                {spoken: $k, key: $k}
+            ]
+        }
+    }
+    | flatten
+}
+
+def all-spoken-keys [] {
+    spoken-key-table | append (social-key-rows) | uniq-by spoken
+}
+
 def expand-spoken-keys [content: string] {
     let ranked = (
-        spoken-key-table
+        all-spoken-keys
         | insert _rank {|r|
             let words = ($r.spoken | split row " " | length)
             $words * 1000 + ($r.spoken | str length)
@@ -155,8 +189,220 @@ def expand-spoken-keys [content: string] {
     }
 }
 
+def spoken-num-map [] {
+    {
+        o: 0, oh: 0, zero: 0, nought: 0, "0": 0,
+        one: 1, two: 2, three: 3, four: 4, five: 5,
+        six: 6, seven: 7, eight: 8, nine: 9,
+        "1": 1, "2": 2, "3": 3, "4": 4, "5": 5,
+        "6": 6, "7": 7, "8": 8, "9": 9,
+        ten: 10, eleven: 11, twelve: 12,
+        thirteen: 13, fourteen: 14, fifteen: 15,
+        sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+        twenty: 20, thirty: 30, forty: 40, fifty: 50,
+        hundred: 100
+    }
+}
+
+def norm-tok [t: string] {
+    $t | str downcase | str replace --all --regex '[.,!?]+$' ''
+}
+
+def token-num [tok: string] {
+    let t = (norm-tok $tok)
+    let map = (spoken-num-map)
+    if $t in $map {
+        $map | get $t
+    } else if ($t | str contains "-") {
+        let parts = ($t | split row "-")
+        if ($parts | length) == 2 and ($parts.0 in $map) and ($parts.1 in $map) {
+            ($map | get $parts.0) + ($map | get $parts.1)
+        } else {
+            null
+        }
+    } else {
+        null
+    }
+}
+
+def is-oh [tok: string] {
+    (norm-tok $tok) in ["o", "oh", "zero", "nought", "0"]
+}
+
+def pad2 [n: int] {
+    if $n < 10 { $"0($n)" } else { $"($n)" }
+}
+
+# Hour at `start`: 0–23. Consumes twenty+one/two/three.
+def parse-hour-at [tokens: list<string>, start: int] {
+    let n = ($tokens | length)
+    if $start >= $n {
+        return null
+    }
+    let v = (token-num ($tokens | get $start))
+    if $v == null {
+        return null
+    }
+    if $v == 20 and (($start + 1) < $n) {
+        let nxt = (token-num ($tokens | get ($start + 1)))
+        if $nxt != null and $nxt >= 1 and $nxt <= 3 {
+            return {n: (20 + $nxt), next: ($start + 2)}
+        }
+    }
+    if $v >= 0 and $v <= 23 {
+        {n: $v, next: ($start + 1)}
+    } else {
+        null
+    }
+}
+
+# Minutes at `start`: 00–59. "o five", "twenty five", "ten", "hundred".
+def parse-minutes-at [tokens: list<string>, start: int] {
+    let n = ($tokens | length)
+    if $start >= $n {
+        return null
+    }
+    if (is-oh ($tokens | get $start)) and (($start + 1) < $n) {
+        let nxt = (token-num ($tokens | get ($start + 1)))
+        if $nxt != null and $nxt >= 0 and $nxt <= 9 {
+            return {n: $nxt, next: ($start + 2)}
+        }
+    }
+    let v = (token-num ($tokens | get $start))
+    if $v == null {
+        return null
+    }
+    if $v == 100 {
+        return {n: 0, next: ($start + 1)}
+    }
+    if $v in [20, 30, 40, 50] and (($start + 1) < $n) {
+        let nxt = (token-num ($tokens | get ($start + 1)))
+        if $nxt != null and $nxt >= 1 and $nxt <= 9 {
+            # "twenty two o seven" — Parakeet wrote "to" as "two".
+            let two_then_oh = (
+                $nxt == 2
+                and (($start + 2) < $n)
+                and (is-oh ($tokens | get ($start + 2)))
+            )
+            if not $two_then_oh {
+                let total = $v + $nxt
+                if $total <= 59 {
+                    return {n: $total, next: ($start + 2)}
+                }
+            }
+        }
+        return {n: $v, next: ($start + 1)}
+    }
+    if $v >= 0 and $v <= 59 {
+        {n: $v, next: ($start + 1)}
+    } else {
+        null
+    }
+}
+
+# One clock phrase starting at `start`. "o one twenty" → 0120.
+# Minutes default to 00 when the next token is a range separator.
+def parse-clock-at [tokens: list<string>, start: int] {
+    let n = ($tokens | length)
+    mut i = $start
+    if $i >= $n {
+        return null
+    }
+    if (is-oh ($tokens | get $i)) {
+        $i = $i + 1
+        if $i >= $n {
+            return null
+        }
+    }
+    let hour = (parse-hour-at $tokens $i)
+    if $hour == null {
+        return null
+    }
+    $i = $hour.next
+    let seps = ["to", "until", "till", "til", "through", "-", "–"]
+    let minutes = if $i >= $n {
+        {n: 0, next: $i}
+    } else if (norm-tok ($tokens | get $i)) in $seps {
+        {n: 0, next: $i}
+    } else {
+        let m = (parse-minutes-at $tokens $i)
+        if $m == null { {n: 0, next: $i} } else { $m }
+    }
+    if $hour.n > 23 or $minutes.n > 59 {
+        return null
+    }
+    {
+        hhmm: $"((pad2 $hour.n))((pad2 $minutes.n))"
+        next: $minutes.next
+    }
+}
+
+def is-range-sep [tok: string, next_is_oh_clock: bool] {
+    let t = (norm-tok $tok)
+    if $t in ["to", "until", "till", "til", "through", "-", "–"] {
+        true
+    } else if $t == "two" and $next_is_oh_clock {
+        # Parakeet often writes "to" as "two" before "o …"
+        true
+    } else {
+        false
+    }
+}
+
+def expand-spoken-clocks-line [line: string] {
+    let tokens = ($line | split row --regex '\s+' | where {|t| not ($t | is-empty)})
+    if ($tokens | is-empty) {
+        return $line
+    }
+    let n = ($tokens | length)
+    mut i = 0
+    mut out = []
+    mut changed = false
+    while $i < $n {
+        mut try_at = $i
+        if (norm-tok ($tokens | get $i)) == "from" and (($i + 1) < $n) {
+            $try_at = $i + 1
+        }
+        let start_clk = (parse-clock-at $tokens $try_at)
+        if $start_clk != null and $start_clk.next < $n {
+            let sep_idx = $start_clk.next
+            let after_sep = $sep_idx + 1
+            let next_oh = (
+                $after_sep < $n and (is-oh ($tokens | get $after_sep))
+            )
+            if (is-range-sep ($tokens | get $sep_idx) $next_oh) and $after_sep < $n {
+                let end_clk = (parse-clock-at $tokens $after_sep)
+                if $end_clk != null {
+                    $out = ($out | append $"($start_clk.hhmm)-($end_clk.hhmm)")
+                    $i = $end_clk.next
+                    $changed = true
+                    continue
+                }
+            }
+        }
+        $out = ($out | append ($tokens | get $i))
+        $i = $i + 1
+    }
+    if $changed {
+        $out | str join " "
+    } else {
+        $line
+    }
+}
+
+def expand-spoken-clocks [content: string] {
+    let lines = ($content | lines)
+    let out = ($lines | each {|line| expand-spoken-clocks-line $line })
+    let needs_nl = ($content | str ends-with "\n")
+    if $needs_nl {
+        ($out | str join "\n") + "\n"
+    } else {
+        $out | str join "\n"
+    }
+}
+
 def process-content [content: string] {
-    let expanded = (expand-spoken-keys $content)
+    let expanded = (expand-spoken-clocks (expand-spoken-keys $content))
     let lines = ($expanded | lines)
 
     let processed_lines = ($lines | each { |line|

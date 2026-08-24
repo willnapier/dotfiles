@@ -79,7 +79,7 @@ The double-colon was chosen because:
 2. It's visually distinctive in plain text
 3. It enables reliable regex extraction: `^key:: (.*)$`
 
-**Spoken form (Handy):** say `key` plus the activity (`key sleep`, `key jenny TV`), then Space+p. That expands to `sleep::` / `jenny.tv::` and fills time-range durations. STT will not produce `::` on its own; see `QUANTIFIED-TRACKING.md` § Spoken dictation.
+**Spoken form (Handy):** say `key` plus the activity (`key sleep o one twenty to o seven ten`, `key jenny TV`), then Space+p. That expands to `sleep:: 5hr 50min 0120-0710` / `jenny.tv::`. Social person stems (`key anna`) are included. See `QUANTIFIED-TRACKING.md` § Spoken dictation.
 4. It naturally reads as "key is-recorded-as value"
 
 ## Collection Architecture
