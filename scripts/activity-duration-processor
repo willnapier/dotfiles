@@ -17,6 +17,7 @@
 # hyphen/dot stems from Social/*.md (person and couple keys).
 # Spoken clocks: "o one twenty to o seven ten" → 0120-0710, then duration.
 # Spoken quantities: "seven thousand steps" → 7000-steps; "forty-five minutes" → 45min.
+# Lint: glue 3500steps → 3500-steps, 45mins → 45min; on walk keys, bare 7000 → 7000-steps.
 # Do not put key:: literals in Handy custom_words.
 
 def regex-escape-spoken [s: string] {
@@ -567,9 +568,82 @@ def expand-spoken-quantities [content: string] {
     }
 }
 
+def is-steps-key [key: string] {
+    $key == "ex.walk" or $key == "walk" or ($key | str starts-with "ex.walk.")
+}
+
+# Glue 3500steps → 3500-steps, 45mins → 45min. On walk keys, bare >=1000 → N-steps.
+def lint-token [tok: string, key: string] {
+    let parsed = ($tok | parse --regex '^(\d+)([A-Za-z-]*?)([.,;]?)$')
+    if ($parsed | is-empty) {
+        return $tok
+    }
+    let num = ($parsed | first | get capture0)
+    let rest = ($parsed | first | get capture1)
+    let punct = ($parsed | first | get capture2)
+    if $rest in ["steps", "step", "-step"] {
+        return $"($num)-steps($punct)"
+    }
+    if $rest in ["mins", "minutes", "minute"] {
+        return $"($num)min($punct)"
+    }
+    if $rest in ["hours", "hour", "hrs"] {
+        return $"($num)hr($punct)"
+    }
+    if $rest in ["min", "hr", "sec", "-steps"] {
+        return $tok
+    }
+    if $rest == "" {
+        let nint = ($num | into int)
+        if (is-steps-key $key) and $nint >= 1000 {
+            return $"($nint)-steps($punct)"
+        }
+    }
+    $tok
+}
+
+def lint-activity-line [line: string] {
+    let tokens = ($line | split row --regex '\s+' | where {|t| not ($t | is-empty)})
+    if ($tokens | is-empty) {
+        return $line
+    }
+    mut key = ""
+    mut out = []
+    mut changed = false
+    for tok in $tokens {
+        let key_hit = ($tok | parse --regex '^([A-Za-z][A-Za-z0-9.-]*)::$')
+        if not ($key_hit | is-empty) {
+            $key = ($key_hit | first | get capture0)
+            $out = ($out | append $tok)
+            continue
+        }
+        let linted = (lint-token $tok $key)
+        if $linted != $tok {
+            $changed = true
+        }
+        $out = ($out | append $linted)
+    }
+    if $changed {
+        $out | str join " "
+    } else {
+        $line
+    }
+}
+
+def lint-activity-syntax [content: string] {
+    let lines = ($content | lines)
+    let out = ($lines | each {|line| lint-activity-line $line })
+    let needs_nl = ($content | str ends-with "\n")
+    if $needs_nl {
+        ($out | str join "\n") + "\n"
+    } else {
+        $out | str join "\n"
+    }
+}
+
 def process-content [content: string] {
     let expanded = (
-        expand-spoken-quantities (expand-spoken-clocks (expand-spoken-keys $content))
+        lint-activity-syntax (expand-spoken-quantities (expand-spoken-clocks (expand-spoken-keys $content)))
     )
     let lines = ($expanded | lines)
 
