@@ -355,3 +355,5 @@ clinical-product
 ComparePane
 PromptInspector
 ScrubAdub
+# Linux-only tool, but worth correcting on both machines:
+continuum-auto-import
