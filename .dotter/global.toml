@@ -7,6 +7,10 @@ depends = []
 [shared.files]
 "codex/AGENTS.md" = { target = "~/.codex/AGENTS.md", type = "symbolic" }
 "grok/AGENTS.md" = { target = "~/.grok/AGENTS.md", type = "symbolic" }
+# SessionEnd → continuum-grok. Must not be a snowflake in ~/.grok/hooks/
+# (nimbini never received the July Mac-only copy; grok-cli Continuum ingest
+# then silently stopped). Directory must be real; this is a single file.
+"grok/hooks/continuum-session-end.json" = { target = "~/.grok/hooks/continuum-session-end.json", type = "symbolic" }
 "ssh/config" = "~/.ssh/config"
 "scripts/tm3-cookie-sync" = "~/.local/bin/tm3-cookie-sync"
 "scripts/cc-clinical" = "~/.local/bin/cc-clinical"
