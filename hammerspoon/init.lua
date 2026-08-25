@@ -68,6 +68,11 @@ hs.hotkey.bind({}, "F19", function()
     hs.task.new("/Applications/Handy.app/Contents/MacOS/Handy", function() end, {"--cancel"}):start()
 end)
 
+-- F20 = Handy toggle (Urchin N). Same CLI as niri F20; does not use Handy in-app chords.
+hs.hotkey.bind({}, "F20", function()
+    hs.task.new("/Applications/Handy.app/Contents/MacOS/Handy", function() end, {"--toggle-transcription"}):start()
+end)
+
 -- Cmd+Shift+Return → open meli in WezTerm.
 -- Anti-wedge: hs.task spawns asynchronously, so the callback returns
 -- without blocking Hammerspoon's main thread on `wezterm start`. Earlier
