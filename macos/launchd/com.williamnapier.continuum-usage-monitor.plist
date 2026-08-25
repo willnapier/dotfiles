@@ -20,9 +20,8 @@
     <key>RunAtLoad</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/Users/williamnapier/.local/state/continuum/usage/launchd-stdout.log</string>
+    <string>/Users/williamnapier/.local/share/continuum/usage-monitor-stdout.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/williamnapier/.local/state/continuum/usage/launchd-stderr.log</string>
+    <string>/Users/williamnapier/.local/share/continuum/usage-monitor-stderr.log</string>
 </dict>
 </plist>
-
