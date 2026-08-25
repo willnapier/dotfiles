@@ -73,6 +73,11 @@ hs.hotkey.bind({}, "F20", function()
     hs.task.new("/Applications/Handy.app/Contents/MacOS/Handy", function() end, {"--toggle-transcription"}):start()
 end)
 
+-- F21 = paste (Urchin O) when Handy paste-method is None.
+hs.hotkey.bind({}, "F21", function()
+    hs.eventtap.keyStroke({"cmd"}, "v")
+end)
+
 -- Cmd+Shift+Return → open meli in WezTerm.
 -- Anti-wedge: hs.task spawns asynchronously, so the callback returns
 -- without blocking Hammerspoon's main thread on `wezterm start`. Earlier
