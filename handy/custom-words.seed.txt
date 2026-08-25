@@ -25,6 +25,9 @@ CachyOS
 Colemak
 Colemak-DH
 Piantor
+Totem
+Temper
+Chocofi
 mod-tap
 homerow
 

@@ -14,7 +14,7 @@ Reconstruction specification for William's Linux desktop. This file, combined wi
 - **CPU**: 13th Gen Intel, 16 threads (4P+8E cores)
 - **GPU**: Intel Iris Xe (Raptor Lake-P, integrated)
 - **NVMe**: Single drive, ~2TB
-- **Keyboard**: Piantor (split, ZMK firmware handles Colemak-DH — host XKB must stay `us`)
+- **Keyboard**: Totem (38-key) and Temper (36-key) splits, ZMK firmware handles Colemak-DH — host XKB must stay `us`. Piantor and Chocofi deprecated 2026-08-25.
 
 ---
 
@@ -319,7 +319,7 @@ Once Syncthing and Dropbox are connected, data flows back automatically:
 | Syncthing | `~/Forge/`, `~/Assistants/shared/`, `~/Clinical/` | Auto-sync from Mac |
 | Dropbox | `~/Dropbox/` | Dropbox client |
 | GitHub | Code repos, `~/dotfiles/` | `git clone` |
-| GitHub | `~/piantor-zmk/` | `git clone` |
+| GitHub | `~/codmiryoku/` (Totem), `temper-zmk` (Temper) | `git clone` |
 
 ---
 

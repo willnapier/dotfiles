@@ -9,15 +9,21 @@ require("hs.ipc")
 
 -- ARCHITECTURE: this file owns "global keyboard chord → shell command".
 -- Karabiner owns "per-device key remapping" (built-in keyboard Colemak,
--- Piantor "disable built-in when connected" gate). ZMK firmware owns
--- the Piantor's layout. Three layers, three responsibilities, no overlap.
+-- the ZMK board's "disable built-in when connected" gate). ZMK firmware
+-- owns the board's layout. Three layers, three responsibilities, no overlap.
+--
+-- Boards: Totem (38-key) and Temper (36-key). The Piantor and Chocofi are
+-- deprecated as of 2026-08-25 — the Karabiner device rule survived the
+-- switch untouched because ZMK boards share vendor 7504 / product 24926,
+-- so it now matches "Totem-Mac-2" under the old Piantor name.
 --
 -- Why not put global hotkeys in Karabiner: complex_modifications only
--- fire for devices with Modify events ON. The Piantor needs Modify
--- events OFF (otherwise Karabiner's virtual-keyboard injection breaks
--- macOS's Cmd+` window cycling — discovered 2026-04-27). So Karabiner
--- can't host Piantor-originating global chords. Hammerspoon receives
--- the chord at the OS hotkey layer, regardless of source device.
+-- fire for devices with Modify events ON, so hosting board-originating
+-- global chords there couples them to a per-device toggle. Hammerspoon
+-- receives the chord at the OS hotkey layer, regardless of source device.
+-- (An earlier version of this comment said the board needs Modify events
+-- OFF for Cmd+` window cycling. That rule was superseded on 2026-05-20:
+-- Modify events is ON, because OFF leaked stuck-Cmd onto every mouse click.)
 
 local screenshotDir = os.getenv("HOME") .. "/Pictures/Screenshots/"
 hs.execute("mkdir -p '" .. screenshotDir .. "'")
