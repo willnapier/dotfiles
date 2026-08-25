@@ -22,7 +22,6 @@ import sys
 import time
 from collections import Counter
 from pathlib import Path
-from pathlib import Path as pathlib_Path
 
 HOME = Path.home()
 CONTINUUM = HOME / "Assistants" / "continuum-logs"
@@ -475,7 +474,7 @@ def restart_handy() -> None:
         subprocess.run(["pkill", "-f", "Handy.app/Contents/MacOS/handy"],
                        check=False, capture_output=True)
         time.sleep(0.4)
-        app = pathlib_Path("/Applications/Handy.app")
+        app = Path("/Applications/Handy.app")
         if not app.exists():
             print("Handy.app not found; start it with: ^open -a Handy", file=sys.stderr)
             return
