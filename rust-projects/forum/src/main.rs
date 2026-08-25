@@ -990,6 +990,7 @@ fn cmd_acknowledge(root: &Path, id: &str) -> Result<()> {
     ensure_queue_dirs(root)?;
     let _lock = ForumLock::acquire(root)?;
     let mut moved = 0;
+    let mut moved_job_ids = Vec::new();
     for path in receipt_files(&unread_inbox_dir(root))? {
         let raw = fs::read_to_string(&path)?;
         let receipt: InboxReceipt = toml::from_str(&raw)?;
@@ -997,6 +998,7 @@ fn cmd_acknowledge(root: &Path, id: &str) -> Result<()> {
             let destination =
                 acknowledged_inbox_dir(root).join(path.file_name().unwrap_or_default());
             fs::rename(path, destination)?;
+            moved_job_ids.push(receipt.job_id);
             moved += 1;
         }
     }
@@ -1004,6 +1006,16 @@ fn cmd_acknowledge(root: &Path, id: &str) -> Result<()> {
         bail!("no unread completion receipt matches: {id}");
     }
     println!("Acknowledged {moved} forum completion(s) for {id}");
+    if root == default_root() {
+        for job_id in moved_job_ids {
+            let marker = format!("<!-- forum-complete:{job_id} -->");
+            if let Err(error) = archive_messageboard_containing(&marker) {
+                eprintln!(
+                    "warning: completion acknowledged but Messageboard archive failed: {error:#}"
+                );
+            }
+        }
+    }
     Ok(())
 }
 
@@ -1308,12 +1320,19 @@ fn markdown_list(items: &[String]) -> String {
 }
 
 fn post_messageboard_message(message: &str) -> Result<()> {
+    run_messageboard_edit(&["insert", message])
+}
+
+fn archive_messageboard_containing(needle: &str) -> Result<()> {
+    run_messageboard_edit(&["archive-containing", needle])
+}
+
+fn run_messageboard_edit(args: &[&str]) -> Result<()> {
     if !command_exists("messageboard-edit") {
         bail!("messageboard-edit is not available on PATH");
     }
     let output = Command::new("messageboard-edit")
-        .arg("insert")
-        .arg(message)
+        .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

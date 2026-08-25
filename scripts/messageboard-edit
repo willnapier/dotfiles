@@ -4,8 +4,50 @@
 #
 # Usage: messageboard-edit insert "message content"
 #        messageboard-edit remove-section "### 2026-01-11 — device"
+#        messageboard-edit remove-containing "unique text"
+#        messageboard-edit archive-containing "unique text"
+#        messageboard-edit archive-unless "keep needle" "keep needle" ...
+#        messageboard-edit archive-older-than 30
 #        messageboard-edit refresh-header
 #        messageboard-edit show
+
+const LIVE_PATH_SUFFIX = "Assistants/shared/MESSAGEBOARD.md"
+const ARCHIVE_PATH_SUFFIX = "Assistants/shared/MESSAGEBOARD-ARCHIVE.md"
+
+const LIVE_HEADER = "# Messageboard
+
+> **Usage**: This header persists. Ordinary inbox messages below get
+> cleared by the responsible receiver once addressed (action taken, information
+> noted, or question resolved). **Design-forum pointers are attention gateways,
+> not per-assistant inbox tasks:** follow them to `design-forum/INDEX.md`; do not
+> clear them merely because one assistant has participated. Retire or supersede
+> them only when they no longer point to relevant open forum work.
+>
+> **Window:** live inbox only — not a ship chronicle. Shipped work goes to
+> `ASSISTANT-HANDOFF.md` (short) + named docs. `forum acknowledge` archives
+> matching FORUM COMPLETE notices; unread state lives in `forum inbox`.
+> Stale ordinary items: `messageboard-edit archive-older-than 30`.
+> Older entries: [`MESSAGEBOARD-ARCHIVE.md`](MESSAGEBOARD-ARCHIVE.md).
+> Last archive: 2026-08-25. Newest at top. Format: `### YYYY-MM-DD — device`
+>
+> **Sync is automatic.** `messageboard-edit` triggers a Syncthing rescan.
+> Raw Edit/Write is blocked; never hand-edit this file.
+>
+> **Automated daily briefings do NOT belong here.** They bloated the
+> board to 414 KB once already (cleared 2026-06-03). Status snapshots go
+> to their own file or the generator self-prunes — never the board.
+
+---
+
+## Messages"
+
+const ARCHIVE_HEADER = "# Messageboard archive
+
+Historical inbox items, newest-first. The live file is the current inbox only — see [`MESSAGEBOARD.md`](MESSAGEBOARD.md).
+
+> Last archive: 2026-08-25 (moved shipped narratives, decided-forum pointers, and stale ordinary items from 2026-06-03 through 2026-08-23). Search this file; do not grow the live inbox.
+
+## Messages"
 
 # Trigger an immediate Syncthing rescan so a new/removed entry reaches the
 # other machine without waiting for the periodic scan. Best-effort: a sync
@@ -21,8 +63,111 @@ def trigger-sync [] {
     } catch { }
 }
 
-def main [action: string, content?: string] {
-    let file = $"($env.HOME)/Assistants/shared/MESSAGEBOARD.md"
+def live-path [] { $env.HOME | path join $LIVE_PATH_SUFFIX }
+def archive-path [] { $env.HOME | path join $ARCHIVE_PATH_SUFFIX }
+
+def trim-section [section: string] {
+    $section
+    | str trim
+    | str replace --regex '\n+---\s*$' ''
+    | str trim
+}
+
+def parse-board [text: string] {
+    let lines = ($text | lines)
+    let msg_idx = try {
+        $lines | enumerate | where {|x| $x.item == "## Messages"} | first | get index
+    } catch {
+        error make { msg: "MESSAGEBOARD.md has no ## Messages heading" }
+    }
+    mut sections = []
+    mut current = []
+    mut started = false
+    for line in ($lines | skip ($msg_idx + 1)) {
+        if ($line | str starts-with "### ") {
+            if $started {
+                let trimmed = (trim-section ($current | str join "\n"))
+                if not ($trimmed | is-empty) {
+                    $sections = ($sections | append $trimmed)
+                }
+            }
+            $current = [$line]
+            $started = true
+        } else if $started {
+            $current = ($current | append $line)
+        }
+    }
+    if $started {
+        let trimmed = (trim-section ($current | str join "\n"))
+        if not ($trimmed | is-empty) {
+            $sections = ($sections | append $trimmed)
+        }
+    }
+    { sections: $sections }
+}
+
+def render-board [header: string, sections: list<string>] {
+    if ($sections | is-empty) {
+        return $"($header)\n"
+    }
+    let body = (
+        $sections
+        | each {|s| $"($s)\n\n---" }
+        | str join "\n\n"
+    )
+    $"($header)\n\n($body)\n"
+}
+
+def warn-if-bloated [sections: list<string>, text: string] {
+    let n = ($sections | length)
+    let bytes = ($text | str length --utf-8-bytes)
+    if $n > 25 or $bytes > 40000 {
+        print $"⚠️ MESSAGEBOARD.md is now ($n) items / ($bytes) bytes. Live inbox, not a chronicle. Archive stale items with: messageboard-edit archive-older-than 30"
+    }
+}
+
+def prepend-to-archive [sections: list<string>] {
+    if ($sections | is-empty) {
+        return
+    }
+    let path = (archive-path)
+    let existing_sections = if ($path | path exists) {
+        (parse-board (open $path)).sections
+    } else {
+        []
+    }
+    let combined = ($sections | append $existing_sections)
+    render-board $ARCHIVE_HEADER $combined | save -f $path
+}
+
+def write-live [sections: list<string>] {
+    let path = (live-path)
+    let text = (render-board $LIVE_HEADER $sections)
+    $text | save -f $path
+    trigger-sync
+    warn-if-bloated $sections $text
+}
+
+def section-date [section: string] {
+    let header = ($section | lines | first)
+    let stamp = (
+        $header
+        | str replace --regex '^### ' ''
+        | str substring 0..10
+    )
+    try {
+        $stamp | into datetime
+    } catch {
+        null
+    }
+}
+
+def is-forum-open [section: string] {
+    $section | str contains "FORUM OPEN —"
+}
+
+def main [action: string, content?: string, ...rest: string] {
+    let file = (live-path)
     let device = (sys host | get hostname)
     let date = (date now | format date "%Y-%m-%d")
 
@@ -33,25 +178,11 @@ def main [action: string, content?: string] {
                 return
             }
 
-            # Read current content
-            let current = (open $file)
-
-            # Find insertion point (after "## Messages" line)
-            let lines = ($current | lines)
-            let insert_idx = ($lines | enumerate | where {|x| $x.item == "## Messages"} | first | get index) + 1
-
-            # Build new message
+            let parsed = (parse-board (open $file))
             let header = $"### ($date) — ($device)"
-            let new_message = $"($header)\n\n($content)\n\n---\n"
-
-            # Insert message
-            let before = ($lines | first ($insert_idx + 1) | str join "\n")
-            let after = ($lines | skip ($insert_idx + 1) | str join "\n")
-            let updated = $"($before)\n\n($new_message)\n($after)"
-
-            # Write atomically
-            $updated | save -f $file
-            trigger-sync
+            let new_message = $"($header)\n\n($content)"
+            let sections = ([$new_message] | append $parsed.sections)
+            write-live $sections
             print $"✅ Message inserted into MESSAGEBOARD.md at ($date) — ($device)"
         }
 
@@ -61,108 +192,137 @@ def main [action: string, content?: string] {
                 return
             }
 
-            let current = (open $file)
-            let lines = ($current | lines)
-
-            # Find the section start
-            let start_idx = try {
-                $lines | enumerate | where {|x| $x.item | str starts-with $content} | first | get index
-            } catch {
+            let parsed = (parse-board (open $file))
+            let remaining = ($parsed.sections | where {|s| not ($s | str starts-with $content)})
+            if ($remaining | length) == ($parsed.sections | length) {
                 print $"Section not found: ($content)"
                 return
             }
-
-            # Find next section (next ### or end)
-            let end_idx = try {
-                let remaining = ($lines | skip ($start_idx + 1) | enumerate)
-                let next = ($remaining | where {|x| $x.item | str starts-with "###"} | first | get index)
-                $start_idx + 1 + $next
-            } catch {
-                $lines | length
-            }
-
-            # Also remove the --- before the section if present
-            let actual_start = if $start_idx > 0 and ($lines | get ($start_idx - 1)) == "---" {
-                $start_idx - 1
-            } else {
-                $start_idx
-            }
-
-            # Reconstruct without the section
-            let before = ($lines | first $actual_start | str join "\n")
-            let after = ($lines | skip $end_idx | str join "\n")
-            let updated = $"($before)\n($after)"
-
-            $updated | save -f $file
-            trigger-sync
+            write-live $remaining
             print $"✅ Removed section: ($content)"
         }
 
         "remove-containing" => {
-            # Remove section that contains a specific string (for duplicate headers)
             if ($content | is-empty) {
                 print "Error: search string required"
                 return
             }
 
-            let current = (open $file)
-            let lines = ($current | lines)
-
-            # Find line containing the unique string
-            let match_idx = try {
-                $lines | enumerate | where {|x| $x.item | str contains $content} | first | get index
-            } catch {
+            let parsed = (parse-board (open $file))
+            mut kept = []
+            mut removed = 0
+            mut seen = false
+            for section in $parsed.sections {
+                if (not $seen) and ($section | str contains $content) {
+                    $removed = $removed + 1
+                    $seen = true
+                } else {
+                    $kept = ($kept | append $section)
+                }
+            }
+            if $removed == 0 {
                 print $"No section containing: ($content)"
                 return
             }
-
-            # Find the section header (### line) before this match
-            let start_idx = try {
-                $lines | first $match_idx | enumerate | where {|x| $x.item | str starts-with "###"} | last | get index
-            } catch {
-                print "Could not find section header"
-                return
-            }
-
-            # Find next section (next ### after match or end)
-            let end_idx = try {
-                let remaining = ($lines | skip ($match_idx + 1) | enumerate)
-                let next = ($remaining | where {|x| $x.item | str starts-with "###"} | first | get index)
-                $match_idx + 1 + $next
-            } catch {
-                $lines | length
-            }
-
-            # Also remove the --- before the section if present
-            let actual_start = if $start_idx > 0 and ($lines | get ($start_idx - 1)) == "---" {
-                $start_idx - 1
-            } else {
-                $start_idx
-            }
-
-            # Reconstruct without the section
-            let before = ($lines | first $actual_start | str join "\n")
-            let after = ($lines | skip $end_idx | str join "\n")
-            let updated = $"($before)\n($after)"
-
-            $updated | save -f $file
-            trigger-sync
+            write-live $kept
             print $"✅ Removed section containing: ($content)"
         }
 
-        "refresh-header" => {
-            let current = (open $file)
-            let old = "> **Usage**: This header persists. Messages below get cleared by the\n> receiving assistant once addressed (action taken, information noted,\n> or question resolved). 30-day fallback for stale items. Newest at top.\n> Format: `### YYYY-MM-DD — device`"
-            let new = "> **Usage**: This header persists. Ordinary inbox messages below get\n> cleared by the responsible receiver once addressed (action taken, information\n> noted, or question resolved). **Design-forum pointers are attention gateways,\n> not per-assistant inbox tasks:** follow them to `design-forum/INDEX.md`; do not\n> clear them merely because one assistant has participated. Retire or supersede\n> them only when they no longer point to relevant open forum work. 30-day\n> fallback applies to stale ordinary items. Newest at top.\n> Format: `### YYYY-MM-DD — device`"
-
-            if not ($current | str contains $old) {
-                print "Messageboard usage header is already current or has changed; no edit made"
+        "archive-containing" => {
+            if ($content | is-empty) {
+                print "Error: search string required"
                 return
             }
 
-            let updated = ($current | str replace $old $new)
-            $updated | save -f $file
-            trigger-sync
+            let parsed = (parse-board (open $file))
+            let matching = ($parsed.sections | where {|s| $s | str contains $content})
+            if ($matching | is-empty) {
+                print $"No section containing: ($content)"
+                return
+            }
+            let remaining = ($parsed.sections | where {|s| not ($s | str contains $content)})
+            prepend-to-archive $matching
+            write-live $remaining
+            print $"✅ Archived ($matching | length) matching sections containing: ($content)"
+        }
+
+        "archive-unless" => {
+            let keeps = ([$content] | append $rest | compact | where {|k| not ($k | is-empty)})
+            if ($keeps | is-empty) {
+                print "Error: at least one keep-needle is required"
+                return
+            }
+
+            let parsed = (parse-board (open $file))
+            mut keep_sections = []
+            mut archive_sections = []
+            for section in $parsed.sections {
+                let keep = ($keeps | any {|needle| $section | str contains $needle})
+                if $keep {
+                    $keep_sections = ($keep_sections | append $section)
+                } else {
+                    $archive_sections = ($archive_sections | append $section)
+                }
+            }
+            if ($archive_sections | is-empty) {
+                write-live $keep_sections
+                print "No sections to archive; live header refreshed"
+                return
+            }
+            prepend-to-archive $archive_sections
+            write-live $keep_sections
+            print $"✅ Archived ($archive_sections | length) sections; kept ($keep_sections | length)"
+        }
+
+        "archive-older-than" => {
+            if ($content | is-empty) {
+                print "Error: day count required (e.g. 30)"
+                return
+            }
+            let days = try {
+                $content | into int
+            } catch {
+                print $"Error: day count must be an integer, got: ($content)"
+                return
+            }
+            if $days < 1 {
+                print "Error: day count must be >= 1"
+                return
+            }
+
+            let cutoff = (date now) - ($days * 1day)
+            let parsed = (parse-board (open $file))
+            mut keep_sections = []
+            mut archive_sections = []
+            for section in $parsed.sections {
+                if (is-forum-open $section) {
+                    $keep_sections = ($keep_sections | append $section)
+                    continue
+                }
+                let stamp = (section-date $section)
+                let stale = if $stamp == null {
+                    true
+                } else {
+                    $stamp < $cutoff
+                }
+                if $stale {
+                    $archive_sections = ($archive_sections | append $section)
+                } else {
+                    $keep_sections = ($keep_sections | append $section)
+                }
+            }
+            if ($archive_sections | is-empty) {
+                print $"No ordinary items older than ($days) days"
+                return
+            }
+            prepend-to-archive $archive_sections
+            write-live $keep_sections
+            print $"✅ Archived ($archive_sections | length) ordinary items older than ($days) days; kept ($keep_sections | length); FORUM OPEN pointers retained"
+        }
+
+        "refresh-header" => {
+            let parsed = (parse-board (open $file))
+            write-live $parsed.sections
             print "✅ Refreshed MESSAGEBOARD.md usage header"
         }
 
@@ -174,6 +334,10 @@ def main [action: string, content?: string] {
             print "Usage:"
             print "  messageboard-edit insert \"message\""
             print "  messageboard-edit remove-section \"### 2026-01-11 — device\""
+            print "  messageboard-edit remove-containing \"unique text\""
+            print "  messageboard-edit archive-containing \"unique text\""
+            print "  messageboard-edit archive-unless \"keep needle\" \"keep needle\" ..."
+            print "  messageboard-edit archive-older-than 30"
             print "  messageboard-edit refresh-header"
             print "  messageboard-edit show"
         }

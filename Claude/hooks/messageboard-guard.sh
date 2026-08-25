@@ -9,8 +9,10 @@
 # edits the handoff (or vice-versa), with no receipt to tell them apart.
 #
 # Correct method: `messageboard-edit insert "message"` (atomic, stamps the
-# header, triggers sync, prints a receipt naming the file) and
-# `messageboard-edit remove-containing "unique text"`.
+# header, triggers sync, prints a receipt naming the file),
+# `messageboard-edit remove-containing "unique text"`, or
+# `messageboard-edit archive-containing "unique text"` (moves the item to
+# MESSAGEBOARD-ARCHIVE.md).
 #
 # The hook matches only the Edit/Write TOOLS, so messageboard-edit (a Bash
 # script using nu `save`) passes through unaffected.
@@ -28,7 +30,7 @@ if [[ "$FILE_PATH" == */MESSAGEBOARD.md ]]; then
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
       permissionDecision: "block",
-      permissionDecisionReason: "BLOCKED: Do not Edit/Write MESSAGEBOARD.md directly — raw edits clobber other sessions'\'' entries and skip the stamped header + sync. Post with: messageboard-edit insert \"your message\" (it stamps a ### date — device header, inserts atomically, triggers sync, and prints a receipt). Remove an item with: messageboard-edit remove-containing \"unique text\". NOTE: this is the MESSAGEBOARD (actionable inbox). For a narrative status broadcast, edit ASSISTANT-HANDOFF.md instead — and when you tell Will you posted, name the exact file."
+      permissionDecisionReason: "BLOCKED: Do not Edit/Write MESSAGEBOARD.md directly — raw edits clobber other sessions'\'' entries and skip the stamped header + sync. Post with: messageboard-edit insert \"your message\" (it stamps a ### date — device header, inserts atomically, triggers sync, and prints a receipt). Remove an item with: messageboard-edit remove-containing \"unique text\". Archive an item with: messageboard-edit archive-containing \"unique text\". NOTE: this is the MESSAGEBOARD (live inbox, not a ship chronicle). For a narrative status broadcast, edit ASSISTANT-HANDOFF.md instead — and when you tell Will you posted, name the exact file."
     }
   }'
   exit 0
