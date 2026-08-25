@@ -23,9 +23,10 @@ const LIVE_HEADER = "# Messageboard
 > clear them merely because one assistant has participated. Retire or supersede
 > them only when they no longer point to relevant open forum work.
 >
-> **Window:** live inbox only — not a ship chronicle. Shipped work goes to
-> `ASSISTANT-HANDOFF.md` (short) + named docs. `forum acknowledge` archives
-> matching FORUM COMPLETE notices; unread state lives in `forum inbox`.
+> **Window:** live inbox only — not a ship chronicle. Short pointers for
+> cross-machine work still belong here (one line + filename). Long shipped-work
+> narratives go to `ASSISTANT-HANDOFF.md` + named docs. `forum acknowledge`
+> archives matching FORUM COMPLETE notices; unread state lives in `forum inbox`.
 > Stale ordinary items: `messageboard-edit archive-older-than 30`.
 > Older entries: [`MESSAGEBOARD-ARCHIVE.md`](MESSAGEBOARD-ARCHIVE.md).
 > Last archive: 2026-08-25. Newest at top. Format: `### YYYY-MM-DD — device`
