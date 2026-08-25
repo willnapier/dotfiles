@@ -290,3 +290,68 @@ song cycle
 through-composed
 recitative
 Sprechstimme
+
+# --- Cross-machine convergence (added 2026-08-25) ---
+# These were harvested on ONE machine only, because handy-dict gates tool
+# names on continuum frequency and each machine sees a different corpus.
+# Mac had 49 nimbini lacked; nimbini had 6 the Mac lacked. Seeding them
+# here makes both machines regenerate the same base, so the two
+# dictionaries stop drifting apart on every rebuild. Still subject to the
+# collision filter, so a term that would steal common speech is dropped.
+# Harvested on the Mac:
+activity-processor-periodic
+activity-watcher-renu
+anki-push
+audit-linked-media
+auto-tag-activities
+backup-to-dropbox
+bulk-dedupe-backlinks
+chatgpt-watcher
+citation-watcher-renu
+classify-activity
+claude-docs-watcher
+clinical-dashboard-dioxus
+clinical-dashboard-iced
+codex-brief
+collect-projects
+collect-projects-watcher
+context-staleness-check
+continuum-gemini
+continuum-goose
+continuum-sync-claude
+diagram-lint
+dotter-drift-cron
+dotter-drift-monitor
+dotter-sync-watcher
+forge-graph
+forge-link-watcher
+forge-md-revs
+forge-metadata-backup
+grok-continuum-manage
+handy-dict
+messageboard-lock
+new-script
+niri-center-focused
+package-drift-check
+pizauth-dump
+script-ready-deploy
+service-health-check
+SessionEnd
+sort-quarantine-highlights
+split-pane
+sync-service-monitor
+theme-dark
+theme-light
+tm3-status
+wiki-backlinks
+wiki-nav
+wiki-resolve-batch
+wiki-resolve-mark
+zellij-cleanup
+# Harvested on nimbini:
+AbortController
+ClientId
+clinical-product
+ComparePane
+PromptInspector
+ScrubAdub
