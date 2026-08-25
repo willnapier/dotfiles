@@ -22,10 +22,22 @@ import sys
 import time
 from collections import Counter
 from pathlib import Path
+from pathlib import Path as pathlib_Path
 
 HOME = Path.home()
 CONTINUUM = HOME / "Assistants" / "continuum-logs"
-SETTINGS = HOME / ".local" / "share" / "com.pais.handy" / "settings_store.json"
+# Handy's settings live under a platform-specific app-data dir. Linux uses the
+# XDG-ish ~/.local/share; macOS uses ~/Library/Application Support. Pick by
+# what actually exists, so a machine with both (or neither yet) still resolves.
+_SETTINGS_CANDIDATES = [
+    HOME / "Library" / "Application Support" / "com.pais.handy" / "settings_store.json",
+    HOME / ".local" / "share" / "com.pais.handy" / "settings_store.json",
+]
+if sys.platform != "darwin":
+    _SETTINGS_CANDIDATES.reverse()
+SETTINGS = next(
+    (c for c in _SETTINGS_CANDIDATES if c.is_file()), _SETTINGS_CANDIDATES[0]
+)
 SEED_CANDIDATES = [
     HOME / ".local" / "share" / "handy-dict" / "custom-words.seed.txt",
     HOME / "dotfiles" / "handy" / "custom-words.seed.txt",
@@ -458,6 +470,19 @@ def apply_words(words: list[str], keep: bool, restart: bool, dry_run: bool) -> N
 
 
 def restart_handy() -> None:
+    # macOS ships a normal .app bundle, not the AppImage + niri-spawn dance.
+    if sys.platform == "darwin":
+        subprocess.run(["pkill", "-f", "Handy.app/Contents/MacOS/handy"],
+                       check=False, capture_output=True)
+        time.sleep(0.4)
+        app = pathlib_Path("/Applications/Handy.app")
+        if not app.exists():
+            print("Handy.app not found; start it with: ^open -a Handy", file=sys.stderr)
+            return
+        subprocess.run(["open", "-a", "Handy"], check=False, capture_output=True)
+        print("restarted Handy")
+        return
+
     subprocess.run(
         ["pkill", "-f", "Handy_0.9.6_amd64.AppImage"],
         check=False,
