@@ -15,6 +15,13 @@
         <string>--provenance</string>
         <string>scheduled</string>
     </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/Users/williamnapier</string>
+        <key>PATH</key>
+        <string>/Users/williamnapier/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
     <key>StartInterval</key>
     <integer>1800</integer>
     <key>RunAtLoad</key>
