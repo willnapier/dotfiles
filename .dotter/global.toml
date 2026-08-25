@@ -11,6 +11,8 @@ depends = []
 # (nimbini never received the July Mac-only copy; grok-cli Continuum ingest
 # then silently stopped). Directory must be real; this is a single file.
 "grok/hooks/continuum-session-end.json" = { target = "~/.grok/hooks/continuum-session-end.json", type = "symbolic" }
+"grok/hooks/forum-waiter-stop.json" = { target = "~/.grok/hooks/forum-waiter-stop.json", type = "symbolic" }
+"grok/hooks/grok-forum-waiter-gate.test.sh" = { target = "~/.grok/hooks/grok-forum-waiter-gate.test.sh", type = "symbolic" }
 "ssh/config" = "~/.ssh/config"
 "scripts/tm3-cookie-sync" = "~/.local/bin/tm3-cookie-sync"
 "scripts/cc-clinical" = "~/.local/bin/cc-clinical"
@@ -33,6 +35,7 @@ depends = []
 "scripts/claude-worktree-cleaner" = "~/.local/bin/claude-worktree-cleaner"
 "scripts/pf-stray-reaper" = "~/.local/bin/pf-stray-reaper"
 "scripts/messageboard-edit" = "~/.local/bin/messageboard-edit"
+"scripts/grok-forum-waiter-gate" = "~/.local/bin/grok-forum-waiter-gate"
 "scripts/messageboard-lock" = "~/.local/bin/messageboard-lock"
 "scripts/music-notation-lint" = "~/.local/bin/music-notation-lint"
 "scripts/music-notation-lookup" = "~/.local/bin/music-notation-lookup"

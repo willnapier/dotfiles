@@ -1,0 +1,239 @@
+#!/usr/bin/env python3
+"""Grok Stop gate: a waitable forum job started this session must have a waiter.
+
+Layer-1 enforcement for Grok Build. Starting `forum convene --background`
+without attaching the `monitor` tool is the defect this blocks.
+
+Fail-open on parse/IO errors, missing session files, and `forum jobs` failure.
+Block only on a genuine end-of-turn Stop when a still-active queued/running
+forum job from this session has no waiter in the transcript.
+
+Env for tests:
+  GROK_FORUM_WAITER_CHAT_HISTORY  path to a chat_history.jsonl fixture
+  GROK_FORUM_WAITER_JOBS          fake `forum jobs` stdout
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+QUEUED_JOB_RE = re.compile(r"Queued forum job:\s*(\S+)")
+USAGE = """grok-forum-waiter-gate — Grok Stop hook for unwatched forum jobs
+
+Reads Stop-hook JSON on stdin. Exit 0 always (fail-open except an explicit
+block, which is JSON on stdout with decision=block).
+
+  grok-forum-waiter-gate --help
+"""
+
+
+def fail_open() -> int:
+    return 0
+
+
+def grok_home() -> Path:
+    raw = os.environ.get("GROK_HOME", "").strip()
+    if raw:
+        return Path(raw)
+    home = os.environ.get("HOME", "").strip()
+    if not home:
+        return Path("/nonexistent")
+    return Path(home) / ".grok"
+
+
+def find_chat_history(session_id: str) -> Path | None:
+    override = os.environ.get("GROK_FORUM_WAITER_CHAT_HISTORY", "").strip()
+    if override:
+        p = Path(override)
+        return p if p.is_file() else None
+    if not session_id:
+        return None
+    root = grok_home() / "sessions"
+    if not root.is_dir():
+        return None
+    try:
+        for cwd in root.iterdir():
+            if not cwd.is_dir():
+                continue
+            chat = cwd / session_id / "chat_history.jsonl"
+            if chat.is_file():
+                return chat
+    except OSError:
+        return None
+    return None
+
+
+def load_rows(path: Path) -> list[dict]:
+    rows: list[dict] = []
+    with path.open() as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return rows
+
+
+def job_ids_from_rows(rows: list[dict]) -> list[str]:
+    found: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        if row.get("type") != "tool_result":
+            continue
+        content = row.get("content")
+        if not isinstance(content, str):
+            continue
+        for match in QUEUED_JOB_RE.finditer(content):
+            job = match.group(1).strip()
+            if job and job not in seen:
+                seen.add(job)
+                found.append(job)
+    return found
+
+
+def tool_blob(row: dict) -> str:
+    parts: list[str] = []
+    for call in row.get("tool_calls") or []:
+        if not isinstance(call, dict):
+            continue
+        name = str(call.get("name") or "")
+        args = call.get("arguments")
+        if isinstance(args, dict):
+            args_s = json.dumps(args)
+        else:
+            args_s = str(args or "")
+        parts.append(name)
+        parts.append(args_s)
+    return "\n".join(parts)
+
+
+def is_waiter_for(row: dict, job_id: str) -> bool:
+    if row.get("type") != "assistant":
+        return False
+    blob = tool_blob(row)
+    if job_id not in blob:
+        return False
+    names = [
+        str(c.get("name") or "")
+        for c in (row.get("tool_calls") or [])
+        if isinstance(c, dict)
+    ]
+    if "monitor" in names:
+        return True
+    # Shell waiter loop used before the monitor tool was attached by habit.
+    if "run_terminal_command" in names and "forum inbox" in blob:
+        return True
+    return False
+
+
+def watched_job_ids(rows: list[dict], jobs: list[str]) -> set[str]:
+    watched: set[str] = set()
+    for row in rows:
+        for job in jobs:
+            if job not in watched and is_waiter_for(row, job):
+                watched.add(job)
+    return watched
+
+
+def forum_jobs_text() -> str | None:
+    fake = os.environ.get("GROK_FORUM_WAITER_JOBS")
+    if fake is not None:
+        return fake
+    try:
+        proc = subprocess.run(
+            ["forum", "jobs"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout or ""
+
+
+def job_still_active(jobs_out: str, job_id: str) -> bool:
+    return f"queued{job_id}" in jobs_out or f"running{job_id}" in jobs_out
+
+
+def parse_stdin() -> dict:
+    raw = sys.stdin.read()
+    if not raw.strip():
+        return {}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def session_id_from(event: dict) -> str:
+    for key in ("sessionId", "session_id"):
+        val = event.get(key)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    env = os.environ.get("GROK_SESSION_ID", "").strip()
+    return env
+
+
+def should_gate(event: dict) -> bool:
+    reason = event.get("reason")
+    if reason in (None, "", "end_turn"):
+        return True
+    return False
+
+
+def block(jobs: list[str]) -> int:
+    listed = ", ".join(jobs)
+    reason = (
+        "WAITER GATE: this session queued forum job(s) without attaching the "
+        f"monitor tool: {listed}. Call the monitor tool on that job id "
+        "(stdout: only DONE / FAILED / CANCELLED) before ending the turn."
+    )
+    sys.stdout.write(json.dumps({"decision": "block", "reason": reason}) + "\n")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    if any(a in ("-h", "--help") for a in argv):
+        sys.stdout.write(USAGE)
+        return 0
+    try:
+        event = parse_stdin()
+        if not should_gate(event):
+            return fail_open()
+        sid = session_id_from(event)
+        chat = find_chat_history(sid)
+        if chat is None:
+            return fail_open()
+        rows = load_rows(chat)
+        jobs = job_ids_from_rows(rows)
+        if not jobs:
+            return fail_open()
+        watched = watched_job_ids(rows, jobs)
+        jobs_out = forum_jobs_text()
+        if jobs_out is None:
+            return fail_open()
+        unwatched = [
+            job
+            for job in jobs
+            if job not in watched and job_still_active(jobs_out, job)
+        ]
+        if unwatched:
+            return block(unwatched)
+        return fail_open()
+    except Exception:
+        return fail_open()
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

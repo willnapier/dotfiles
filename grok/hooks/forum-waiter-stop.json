@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${HOME}/.local/bin/grok-forum-waiter-gate",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

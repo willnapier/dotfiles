@@ -15,3 +15,11 @@ forum index, and forum inbox manually.
 Project and directory rules layer after this global contract. Load full forum
 threads only when named or relevant to the task. Headless forum participation
 is deliberation only and never authorizes implementation.
+
+## Forum waiter (Stop hook)
+
+A Grok `Stop` hook (`grok-forum-waiter-gate`) blocks ending a turn when this
+session queued `forum convene --background` and did not attach the `monitor`
+tool to that job id. That is a harness gate, not a skill. Session-end Stop
+(`reason` other than `end_turn`) is ignored. Do not replace the hook with an
+instruction.

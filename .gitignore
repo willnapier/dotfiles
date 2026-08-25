@@ -12,6 +12,7 @@ karabiner/automatic_backups/
 # Temporary/backup files
 *.backup
 *.backup-*
+__pycache__/
 
 # Legacy/unused configurations (not actively deployed)
 # Neovim - User primarily uses Helix
