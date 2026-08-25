@@ -29,7 +29,7 @@ if echo "$LAST_MSG" | grep -qiE '\b(noted|understood|I understand|I will note|I.
   TRANSCRIPT=$(echo "$INPUT" | jq -r '.transcript_path // empty')
   if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
     # Look for recent Write/Edit to memory files in the last few entries
-    if tail -20 "$TRANSCRIPT" 2>/dev/null | grep -qE '(memory/|MEMORY\.md|feedback_|project_|user_|reference_)'; then
+    if tail -20 "$TRANSCRIPT" 2>/dev/null | grep -qE '(memory/|MEMORY\.md|feedback_|project_|user_|reference_|Assistants/shared/|Assistants/skills/)'; then
       exit 0
     fi
   fi
