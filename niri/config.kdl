@@ -158,8 +158,6 @@ binds {
     F20 repeat=false { spawn "handy" "--toggle-transcription"; }
     // Urchin E: abort the take before paste.
     F19 repeat=false { spawn "handy" "--cancel"; }
-    // Urchin O: paste clipboard (Handy paste-method None).
-    F21 repeat=false { spawn "wtype" "-M" "ctrl" "v" "-m" "ctrl"; }
 
     // Keyboard-driven mouse (wl-kbptr)
     Mod+Shift+M    { spawn "wl-kbptr"; }
