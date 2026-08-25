@@ -15,10 +15,12 @@
 # Spoken keys (Handy / STT): "key sleep" → sleep::  before durations run.
 # Trigger is the word "key" plus a phrase in spoken-key-table, plus
 # hyphen/dot stems from Social/*.md (person and couple keys).
+# Lines without \bkey\s skip the spoken-key table (keeps Space+P catch-up cheap).
 # Spoken clocks: "o one twenty to o seven ten" → 0120-0710, then duration.
 # Spoken quantities: "seven thousand steps" → 7000-steps; "forty-five minutes" → 45min.
 # Lint: glue units; default-quantity-rules (walk → steps, sauna → min).
 # State: "key state tired 8" / "tired eight" → state:: tired-8
+# Helix: Space+p current line; Space+P whole buffer.
 # Do not put key:: literals in Handy custom_words.
 
 def regex-escape-spoken [s: string] {
@@ -169,19 +171,24 @@ def expand-spoken-keys [content: string] {
 
     let lines = ($content | lines)
     let out = ($lines | each {|line|
-        mut current = $line
-        for row in $ranked {
-            let spoken_re = (
-                $row.spoken
-                | split row " "
-                | each {|w| regex-escape-spoken $w}
-                | str join '\s+'
-            )
-            # Concatenate: $'(?i)...' interpolates (expr), so (?i) would run as a command.
-            let pattern = '(?i)\bkey\s+' + $spoken_re + '\b(?:\s*::)?'
-            $current = ($current | str replace --all --regex $pattern ($row.key + "::"))
+        # Most journal lines never contain the spoken-key trigger; skip the table.
+        if not ($line =~ '(?i)\bkey\s') {
+            $line
+        } else {
+            mut current = $line
+            for row in $ranked {
+                let spoken_re = (
+                    $row.spoken
+                    | split row " "
+                    | each {|w| regex-escape-spoken $w}
+                    | str join '\s+'
+                )
+                # Concatenate: $'(?i)...' interpolates (expr), so (?i) would run as a command.
+                let pattern = '(?i)\bkey\s+' + $spoken_re + '\b(?:\s*::)?'
+                $current = ($current | str replace --all --regex $pattern ($row.key + "::"))
+            }
+            $current
         }
-        $current
     })
 
     let needs_nl = ($content | str ends-with "\n")

@@ -96,12 +96,12 @@ t = ["extend_to_line_bounds", ":pipe hx-toggle-todo"]
 
 # Manual theme refresh - Space+T (capital T)  
 T = ":config-reload"
-# Process spoken keys + activity durations in-buffer (Space+p).
+# Process spoken keys + activity durations (stdin: activity-duration-processor -).
+# Space+p: current line (same :pipe as Space+t). After Handy paste.
+# Space+P: whole buffer catch-up (durations + leftover spoken keys).
 # "key sleep 0120-0710" → "sleep:: 5hr 50min 0120-0710"
-# Uses :pipe (same pattern as Space+t) so Helix never depends on write→external
-# →:reload races — those often needed a second press / manual :rl to show results.
-# Processor stdin mode: activity-duration-processor -
-p = ["select_all", ":pipe activity-duration-processor -", "collapse_selection"]
+p = ["extend_to_line_bounds", ":pipe activity-duration-processor -"]
+P = ["select_all", ":pipe activity-duration-processor -", "collapse_selection"]
 # Delete current file - Space+x (eXpunge, no confirmation)
 x = [":sh trash '%{buffer_name}'", ":quit!"]
 # Export selection to external register - Space+E (then type register letter)
