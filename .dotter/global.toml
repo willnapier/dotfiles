@@ -438,6 +438,7 @@ depends = ["shared"]
 "launchd/com.user.forge-sync-conflict-cleaner.plist" = "~/Library/LaunchAgents/com.user.forge-sync-conflict-cleaner.plist"
 "launchd/com.user.claude-worktree-cleaner.plist" = "~/Library/LaunchAgents/com.user.claude-worktree-cleaner.plist"
 "macos/launchd/com.williamnapier.continuum-sync-claude.plist" = "~/Library/LaunchAgents/com.williamnapier.continuum-sync-claude.plist"
+"macos/launchd/com.williamnapier.continuum-usage-monitor.plist" = "~/Library/LaunchAgents/com.williamnapier.continuum-usage-monitor.plist"
 "macos/launchd/com.williamnapier.practiceforge-dashboard.plist" = "~/Library/LaunchAgents/com.williamnapier.practiceforge-dashboard.plist"
 "macos/launchd/com.williamnapier.practiceforge-maintain.plist" = "~/Library/LaunchAgents/com.williamnapier.practiceforge-maintain.plist"
 "macos/launchd/com.williamnapier.link-service.plist" = "~/Library/LaunchAgents/com.williamnapier.link-service.plist"
@@ -495,6 +496,8 @@ depends = ["shared"]
 # 2026-08-01 when its timer was found dead, so the fix is reproducible from the repo.
 "systemd/continuum-auto-import.service" = "~/.config/systemd/user/continuum-auto-import.service"
 "systemd/continuum-auto-import.timer" = "~/.config/systemd/user/continuum-auto-import.timer"
+"systemd/continuum-usage-monitor.service" = "~/.config/systemd/user/continuum-usage-monitor.service"
+"systemd/continuum-usage-monitor.timer" = "~/.config/systemd/user/continuum-usage-monitor.timer"
 "systemd/dotter-realtime-watcher.service" = "~/.config/systemd/user/dotter-realtime-watcher.service"
 "systemd/dotter-sync-watcher.service" = "~/.config/systemd/user/dotter-sync-watcher.service"
 "systemd/git-auto-pull-watcher.service" = "~/.config/systemd/user/git-auto-pull-watcher.service"
