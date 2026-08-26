@@ -99,7 +99,7 @@ T = ":config-reload"
 # Process spoken keys + activity durations (stdin: activity-duration-processor -).
 # Space+p: current line (same :pipe as Space+t). After Handy paste.
 # Space+P: whole buffer catch-up (durations + leftover spoken keys).
-# "key sleep 0120-0710" → "sleep:: 5hr 50min 0120-0710"
+# Spec: ~/Assistants/shared/SPOKEN-ACTIVITY-NOTATION.md
 p = ["extend_to_line_bounds", ":pipe activity-duration-processor -"]
 P = ["select_all", ":pipe activity-duration-processor -", "collapse_selection"]
 # Delete current file - Space+x (eXpunge, no confirmation)
