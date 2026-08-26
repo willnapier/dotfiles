@@ -153,9 +153,8 @@ binds {
     // Super+Shift is home-row S+T and leaked "st". Mod+V is a bottom-row stretch.
     // Mod+G: Super is middle-finger S; G is a plain home-row key under the index.
     Mod+G allow-inhibiting=false repeat=false { spawn "handy" "--toggle-transcription"; }
-    // Urchin N / Chocofi HELIX n: F20. allow-inhibiting so WezTerm/Helix cannot eat it.
-    F20 allow-inhibiting=false repeat=false { spawn "handy" "--toggle-transcription"; }
-    F19 allow-inhibiting=false repeat=false { spawn "handy" "--cancel"; }
+    // F20/F19 from Chocofi/Urchin: chocofi-handy-bind.service (evdev), not niri.
+    // Binding them here as well would double-toggle Handy. Totem stays Mod+G.
 
     // Keyboard-driven mouse (wl-kbptr)
     Mod+Shift+M    { spawn "wl-kbptr"; }

@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+"""Map Chocofi-Handy F20/F19 to Handy CLI, bypassing niri keybinds.
+
+Matches the BLE keyboard by name (event node numbers change on re-pair).
+KEY_F20 -> handy --toggle-transcription
+KEY_F19 -> handy --cancel
+"""
+
+from __future__ import annotations
+
+import os
+import struct
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+DEVICES = Path("/proc/bus/input/devices")
+EVENT_FMT = struct.Struct("llHHi")
+EV_KEY = 1
+KEY_F19 = 189
+KEY_F20 = 190
+NAMES = ("Chocofi-Handy Keyboard", "Chocofi-Handy", "Urchin-Turn Keyboard", "Urchin-Turn")
+
+
+def handy_bin() -> str:
+    home = Path.home() / ".local/bin/handy"
+    if home.is_file():
+        return str(home)
+    return "handy"
+
+
+def invoke(args: list[str]) -> None:
+    env = os.environ.copy()
+    path = env.get("PATH", "")
+    extra = str(Path.home() / ".local/bin")
+    if extra not in path.split(":"):
+        env["PATH"] = extra + ":" + path
+    try:
+        subprocess.Popen(
+            args,
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except OSError as exc:
+        print(f"chocofi-handy-bind: spawn failed: {exc}", file=sys.stderr)
+
+
+def all_event_nodes() -> list[str]:
+    text = DEVICES.read_text(errors="replace")
+    found: list[str] = []
+    seen: set[str] = set()
+    for block in text.split("\n\n"):
+        name_line = next((ln for ln in block.splitlines() if ln.startswith("N: Name=")), "")
+        if not any(n in name_line for n in NAMES):
+            continue
+        for line in block.splitlines():
+            if not line.startswith("H: Handlers="):
+                continue
+            for tok in line.split("=", 1)[1].split():
+                if tok.startswith("event"):
+                    path = f"/dev/input/{tok}"
+                    if path not in seen:
+                        seen.add(path)
+                        found.append(path)
+    return found
+
+
+def read_loop(path: str) -> None:
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+    try:
+        buf = b""
+        while True:
+            try:
+                chunk = os.read(fd, EVENT_FMT.size * 8)
+            except BlockingIOError:
+                time.sleep(0.02)
+                continue
+            if not chunk:
+                return
+            buf += chunk
+            while len(buf) >= EVENT_FMT.size:
+                rec, buf = buf[: EVENT_FMT.size], buf[EVENT_FMT.size :]
+                _sec, _usec, ev_type, code, value = EVENT_FMT.unpack(rec)
+                if ev_type != EV_KEY or value != 1:
+                    continue
+                if code == KEY_F20:
+                    invoke([handy_bin(), "--toggle-transcription"])
+                elif code == KEY_F19:
+                    invoke([handy_bin(), "--cancel"])
+    finally:
+        os.close(fd)
+
+
+def main() -> int:
+    print("chocofi-handy-bind: watching for Chocofi-Handy / Urchin-Turn F20/F19", flush=True)
+    while True:
+        nodes = all_event_nodes()
+        if not nodes:
+            time.sleep(1.0)
+            continue
+        # Prefer the Keyboard node if several exist
+        path = next((p for p in nodes if True), nodes[0])
+        print(f"chocofi-handy-bind: reading {path}", flush=True)
+        try:
+            read_loop(path)
+        except OSError as exc:
+            print(f"chocofi-handy-bind: {path} went away ({exc})", flush=True)
+        time.sleep(0.3)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,16 @@
+[Unit]
+Description=Chocofi-Handy F20/F19 -> Handy CLI (bypass niri)
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/chocofi-handy-bind
+Restart=always
+RestartSec=2
+Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=%h
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+
+[Install]
+WantedBy=default.target
