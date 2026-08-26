@@ -152,12 +152,10 @@ binds {
     // Local dictation (Handy + Parakeet). Two-press toggle (niri has no key-release bind).
     // Super+Shift is home-row S+T and leaked "st". Mod+V is a bottom-row stretch.
     // Mod+G: Super is middle-finger S; G is a plain home-row key under the index.
-    Mod+G repeat=false { spawn "handy" "--toggle-transcription"; }
-    // Urchin N: F20 so default Handy works on Mac and nimbini without OS-specific chords.
-    // F13–F18 are screenshot keys (Mac + Totem MEDIA).
-    F20 repeat=false { spawn "handy" "--toggle-transcription"; }
-    // Urchin E: abort the take before paste.
-    F19 repeat=false { spawn "handy" "--cancel"; }
+    Mod+G allow-inhibiting=false repeat=false { spawn "handy" "--toggle-transcription"; }
+    // Urchin N / Chocofi HELIX n: F20. allow-inhibiting so WezTerm/Helix cannot eat it.
+    F20 allow-inhibiting=false repeat=false { spawn "handy" "--toggle-transcription"; }
+    F19 allow-inhibiting=false repeat=false { spawn "handy" "--cancel"; }
 
     // Keyboard-driven mouse (wl-kbptr)
     Mod+Shift+M    { spawn "wl-kbptr"; }
