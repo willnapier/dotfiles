@@ -10,6 +10,7 @@ collect-projects.timer
 continuum-auto-import.timer
 continuum-dream.timer
 continuum-sync-claude.timer
+continuum-usage-monitor.timer
 cross-machine-sync-check.timer
 dotter-drift-monitor.timer
 dropbox.service
