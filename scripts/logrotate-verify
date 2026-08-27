@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# logrotate-verify — confirm a logrotate run did what it should, and in
+# particular that it did NOT silently kill logging.
+#
+# The failure mode this exists to catch: these services write via systemd
+# StandardOutput=append:, so systemd holds the file open. If a rule ever loses
+# `copytruncate`, rotation renames the file, the service keeps writing to an
+# unlinked inode, and the new log stays empty FOREVER. Rotation looks configured;
+# logging is dead. Nothing else would tell you.
+#
+# See ~/Assistants/shared/NIMBINI-LOG-ROTATION.md
+#
+# Usage: logrotate-verify        exit 0 = all good, 1 = something to look at
+
+set -uo pipefail
+S=~/.local/share
+fail=0
+note() { printf '  %-46s %s\n' "$1" "$2"; }
+bad()  { printf '  %-46s ** %s **\n' "$1" "$2"; fail=1; }
+
+# Mail logs: rotate 0 (must never keep archives) and must be 0600.
+MAIL="gmpull.log mail-sync.log mailforge.log cohs-trash-mover.log
+      mailcurator-drift.log gmail-push-tags.log gmail-push-tags-watchdog.log"
+# Non-mail: rotate 2, archives are expected and fine.
+OTHER="git-auto-pull-watcher.log git-auto-push-watcher.log
+       continuum/sync.log continuum/auto-import.log"
+# Services that should still be producing output; if one goes quiet for a long
+# stretch right after a rotation, suspect the unlinked-inode failure.
+LIVE="gmpull.log git-auto-pull-watcher.log continuum/sync.log continuum/auto-import.log"
+
+echo "== logrotate service =="
+last=$(systemctl show logrotate.service -p ExecMainStatus --value 2>/dev/null)
+when=$(systemctl show logrotate.service -p ExecMainExitTimestamp --value 2>/dev/null)
+[ "${last:-0}" = "0" ] && note "last run exit status" "0 (ok) — ${when:-unknown}" \
+                       || bad  "last run exit status" "$last — ${when:-unknown}"
+
+echo
+echo "== mail logs: must be 0600, must have NO archives =="
+for f in $MAIL; do
+    p="$S/$f"; [ -e "$p" ] || { note "$f" "absent (fine)"; continue; }
+    mode=$(stat -c%a "$p")
+    [ "$mode" = "600" ] && note "$f mode" "0600" || bad "$f mode" "0$mode — should be 0600"
+    arch=$(ls "$p".* 2>/dev/null | wc -l)
+    [ "$arch" -eq 0 ] && note "$f archives" "none (correct for rotate 0)" \
+                      || bad  "$f archives" "$arch present — rotate 0 violated, may contain mail data"
+done
+
+echo
+echo "== non-mail logs: archives allowed, mode still 0600 =="
+for f in $OTHER; do
+    p="$S/$f"; [ -e "$p" ] || { note "$f" "absent (fine)"; continue; }
+    mode=$(stat -c%a "$p")
+    [ "$mode" = "600" ] && note "$f mode" "0600" || bad "$f mode" "0$mode"
+    note "$f archives" "$(ls "$p".* 2>/dev/null | wc -l) (rotate 2 allows up to 2)"
+done
+
+echo
+echo "== still logging? (the copytruncate check) =="
+now=$(date +%s)
+for f in $LIVE; do
+    p="$S/$f"; [ -e "$p" ] || { bad "$f" "MISSING"; continue; }
+    age=$(( (now - $(stat -c%Y "$p")) / 60 ))
+    sz=$(stat -c%s "$p")
+    if [ "$age" -gt 180 ]; then
+        bad "$f" "no writes for ${age} min (size ${sz}) — check for unlinked inode"
+    else
+        note "$f" "written ${age} min ago, ${sz} bytes"
+    fi
+done
+
+echo
+if [ "$fail" -eq 0 ]; then echo "RESULT: clean"; else
+    echo "RESULT: needs attention"
+    echo "If a service stopped logging, confirm with:  sudo lsof +L1 | rg .local/share"
+    echo "A deleted-but-open log means rotation renamed instead of truncating."
+fi
+exit $fail
