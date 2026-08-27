@@ -41,6 +41,7 @@ async fn start_server() -> TestServer {
         bind,
         scroll_dir: scroll_dir.clone(),
         audit_log: audit_path.clone(),
+        mcp_token: None,
     };
 
     let audit = Arc::new(AuditLog::new(audit_path));

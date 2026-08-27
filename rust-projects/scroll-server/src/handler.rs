@@ -21,11 +21,14 @@ pub struct AppState {
     pub scroll_dir: std::path::PathBuf,
     pub rate_limiter: Arc<RateLimiter>,
     pub audit_log: Arc<AuditLog>,
+    /// Unguessable path segment for the MCP endpoint. `None` disables the
+    /// route entirely (fail closed).
+    pub mcp_token: Option<String>,
 }
 
 /// Single source of the 404 response. Every "not allowed / not found" reply
 /// must go through this so the bytes are identical regardless of the cause.
-fn not_found_response() -> Response {
+pub(crate) fn not_found_response() -> Response {
     let mut resp = (StatusCode::NOT_FOUND, "").into_response();
     let h = resp.headers_mut();
     h.insert(
@@ -35,7 +38,7 @@ fn not_found_response() -> Response {
     resp
 }
 
-fn too_many_response() -> Response {
+pub(crate) fn too_many_response() -> Response {
     let mut resp = (StatusCode::TOO_MANY_REQUESTS, "").into_response();
     let h = resp.headers_mut();
     h.insert(
@@ -64,14 +67,14 @@ fn slug_is_valid(slug: &str) -> bool {
 
 /// Parse `CF-Connecting-IP`. Returns `None` if missing or unparseable;
 /// the caller treats that as "reject" per §7.
-fn client_ip(headers: &HeaderMap) -> Option<IpAddr> {
+pub(crate) fn client_ip(headers: &HeaderMap) -> Option<IpAddr> {
     headers
         .get("cf-connecting-ip")
         .and_then(|h| h.to_str().ok())
         .and_then(|s| s.trim().parse::<IpAddr>().ok())
 }
 
-fn user_agent(headers: &HeaderMap) -> String {
+pub(crate) fn user_agent(headers: &HeaderMap) -> String {
     headers
         .get(header::USER_AGENT)
         .and_then(|h| h.to_str().ok())
@@ -80,7 +83,7 @@ fn user_agent(headers: &HeaderMap) -> String {
 }
 
 /// Build an audit entry for a completed request.
-fn audit_entry(ip: &str, ua: &str, path: &str, status: u16, bytes: usize) -> AuditEntry {
+pub(crate) fn audit_entry(ip: &str, ua: &str, path: &str, status: u16, bytes: usize) -> AuditEntry {
     AuditEntry {
         ts: Utc::now().to_rfc3339(),
         ip: ip.to_string(),

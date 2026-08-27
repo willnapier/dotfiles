@@ -12,6 +12,10 @@ RestartSec=2
 Environment=SCROLL_SERVER_BIND=127.0.0.1:8770
 Environment=SCROLL_SERVER_SCROLL_DIR=%h/Forge/scrolls/sensitive
 Environment=SCROLL_SERVER_AUDIT_LOG=%h/Forge/scroll-server.log
+# MCP endpoint token. Kept out of this file (and therefore out of git) because
+# the unit is dotter-managed and committed. Leading `-` = optional: without the
+# file the MCP route is not registered at all, so the feature fails closed.
+EnvironmentFile=-%h/.config/scroll-server/mcp.env
 
 [Install]
 WantedBy=default.target

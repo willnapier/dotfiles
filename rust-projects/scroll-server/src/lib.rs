@@ -4,10 +4,14 @@
 pub mod audit;
 pub mod config;
 pub mod handler;
+pub mod mcp;
 pub mod ratelimit;
 
 use anyhow::Result;
-use axum::{routing::get, Router};
+use axum::{
+    routing::{get, post},
+    Router,
+};
 use std::sync::Arc;
 
 use crate::audit::AuditLog;
@@ -23,10 +27,19 @@ pub fn build_app(cfg: &Config, audit_log: Arc<AuditLog>) -> Router {
         scroll_dir: cfg.scroll_dir.clone(),
         rate_limiter: Arc::new(RateLimiter::new()),
         audit_log,
+        mcp_token: cfg.mcp_token.clone(),
     };
 
-    Router::new()
-        .route("/healthz", get(healthz))
+    let mut router = Router::new().route("/healthz", get(healthz));
+
+    // Registered only when a token is configured — an unset token must not
+    // leave an unauthenticated MCP endpoint reachable.
+    if cfg.mcp_token.is_some() {
+        router = router
+            .route("/mcp/{token}", post(crate::mcp::mcp_post).get(crate::mcp::mcp_get));
+    }
+
+    router
         .route("/{slug}", get(scroll))
         .fallback(fallback)
         .with_state(state)

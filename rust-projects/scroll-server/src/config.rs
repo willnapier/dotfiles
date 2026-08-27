@@ -11,6 +11,9 @@ pub struct Config {
     pub bind: SocketAddr,
     pub scroll_dir: PathBuf,
     pub audit_log: PathBuf,
+    /// Unguessable path segment for `/mcp/{token}`. Unset ⇒ MCP route is not
+    /// registered at all, so the feature fails closed.
+    pub mcp_token: Option<String>,
 }
 
 impl Config {
@@ -45,10 +48,29 @@ impl Config {
             }
         }
 
+        // Optional: absent means "no MCP endpoint". A present-but-short token
+        // is a configuration error worth failing fast on rather than serving a
+        // guessable URL.
+        let mcp_token = match std::env::var("SCROLL_SERVER_MCP_TOKEN") {
+            Ok(t) if t.trim().is_empty() => None,
+            Ok(t) => {
+                let t = t.trim().to_string();
+                if t.len() < 24 {
+                    return Err(anyhow!(
+                        "SCROLL_SERVER_MCP_TOKEN must be at least 24 characters (got {})",
+                        t.len()
+                    ));
+                }
+                Some(t)
+            }
+            Err(_) => None,
+        };
+
         Ok(Config {
             bind,
             scroll_dir,
             audit_log,
+            mcp_token,
         })
     }
 }
