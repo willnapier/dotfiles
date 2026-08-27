@@ -1,6 +1,7 @@
 ai-export-watcher.service
 assistants-docs-watcher.service
 bequest-heartbeat.timer
+chocofi-handy-bind.service
 claude-code-nightly-cleanup.timer
 claude-worktree-cleaner.timer
 cloudflared-scrolls-work.service
@@ -20,6 +21,8 @@ forge-md-revs.service
 forum-worker.service
 git-auto-pull-watcher.service
 git-auto-push-watcher.service
+gmail-push-tags-watchdog.timer
+gmail-push-tags.timer
 gmpull.timer
 gnome-keyring-daemon.socket
 helix-undo-cleanup.timer
