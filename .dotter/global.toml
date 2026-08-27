@@ -482,6 +482,9 @@ depends = ["shared"]
 
 [linux.files]
 "shell/bashrc" = "~/.bashrc"
+# X compose sequences — £ € § on the ZMK Linux keymaps depend on this file.
+# Linux-only: macOS is on a British input source and needs no compose.
+"linux/XCompose" = "~/.XCompose"
 # Helix - Linux override (slower scroll for Niri touchpad)
 "helix/config-linux.toml" = "~/.config/helix/config.toml"
 # email launcher — Linux equivalent of the Mac scripts/email (which uses
