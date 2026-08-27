@@ -382,6 +382,30 @@ enum TagAction {
         #[arg(long)]
         merchant: Option<String>,
     },
+    /// Remove tag(s) from ROWS — the inverse of `set`, and the one operation
+    /// the tag engine has always lacked. `remove` edits a RULE; `rename` can
+    /// only merge one tag into another; `reapply` is additive. Neither can
+    /// delete a wrong tag off a row, which until now meant editing
+    /// transactions.csv by hand.
+    ///
+    /// Two forms:
+    ///   fd-budget tag unset <import_id> <tags...>        (one row)
+    ///   fd-budget tag unset --merchant <pat> <tags...>   (every matching row)
+    ///
+    /// Rules are left untouched — if a RULE is what keeps re-applying the tag,
+    /// fix it with `tag remove` as well, or the next `reapply` will restore it.
+    /// transactions.csv is snapshotted first.
+    Unset {
+        /// import_id of the row (full 16-hex, or any unique prefix). Omit when
+        /// using --merchant.
+        import_id: Option<String>,
+        /// Tags to remove.
+        tags: Vec<String>,
+        /// Bulk form: remove the tags from EVERY row whose description or
+        /// raw_description contains this substring (case-insensitive).
+        #[arg(long)]
+        merchant: Option<String>,
+    },
     /// Move a tag to the primary (first) position on every matching row, so it
     /// becomes the `stats --by-category` primary. Data-only; rules are left
     /// unchanged. transactions.csv is snapshotted first.
@@ -1331,6 +1355,13 @@ fn cmd_tag(action: TagAction) -> anyhow::Result<()> {
         TagAction::Rename { old, new, merchant } => {
             cmd_tag_rename(&mut rules, &rules_path, &old, &new, merchant.as_deref())?;
         }
+        TagAction::Unset {
+            import_id,
+            tags,
+            merchant,
+        } => {
+            cmd_tag_unset(import_id.as_deref(), &tags, merchant.as_deref())?;
+        }
         TagAction::Promote {
             tag,
             where_tag,
@@ -1530,6 +1561,166 @@ fn add_tags_to_row(tx: &mut fd_budget::Transaction, tags: &[String]) -> Vec<Stri
         }
     }
     added
+}
+
+/// Remove `tags` from a single row (dedup-safe, order-preserving). Returns the
+/// tags that were actually present and removed. Pure — unit-testable. The
+/// inverse of `add_tags_to_row`.
+fn remove_tags_from_row(tx: &mut fd_budget::Transaction, tags: &[String]) -> Vec<String> {
+    let mut removed = Vec::new();
+    for tag in tags {
+        if tx.tags.iter().any(|t| t == tag) {
+            tx.tags.retain(|t| t != tag);
+            removed.push(tag.clone());
+        }
+    }
+    removed
+}
+
+/// `tag unset` — remove tag(s) from one row (by import_id) or from every row
+/// matching `--merchant`. Rules are deliberately left alone: this fixes DATA,
+/// not the rule engine. Snapshots the store before any rewrite (primer rule 3).
+fn cmd_tag_unset(
+    import_id: Option<&str>,
+    tags: &[String],
+    merchant: Option<&str>,
+) -> anyhow::Result<()> {
+    // In the --merchant form there is no id, so clap parks the first positional
+    // in `import_id`. Fold it back onto the tag list rather than making the
+    // user remember which slot it landed in.
+    let mut tag_args: Vec<String> = Vec::new();
+    let mut row_id: Option<&str> = None;
+    match (import_id, merchant) {
+        (Some(first), Some(_)) => {
+            tag_args.push(first.to_string());
+            tag_args.extend(tags.iter().cloned());
+        }
+        (Some(id), None) => {
+            row_id = Some(id);
+            tag_args.extend(tags.iter().cloned());
+        }
+        (None, Some(_)) => tag_args.extend(tags.iter().cloned()),
+        (None, None) => {
+            anyhow::bail!(
+                "give an import_id (fd-budget tag unset <import_id> <tags...>) \
+                 or --merchant (fd-budget tag unset --merchant <pattern> <tags...>)"
+            );
+        }
+    }
+    if tag_args.is_empty() {
+        anyhow::bail!("no tags given — nothing to remove");
+    }
+    let tags = validate_tags(&tag_args)?;
+
+    let store = CsvStore::new(get_store_path());
+    let mut transactions = store.load_all()?;
+
+    if let Some(m) = merchant {
+        // ---- bulk form ----
+        let needle = m.to_lowercase();
+        if needle.trim().is_empty() {
+            anyhow::bail!("--merchant must not be empty");
+        }
+        let mut rows_changed = 0usize;
+        let mut total_removed = 0usize;
+        for tx in transactions.iter_mut() {
+            let hay = format!("{} {}", tx.description, tx.raw_description).to_lowercase();
+            if !hay.contains(&needle) {
+                continue;
+            }
+            let removed = remove_tags_from_row(tx, &tags);
+            if !removed.is_empty() {
+                rows_changed += 1;
+                total_removed += removed.len();
+            }
+        }
+        if rows_changed == 0 {
+            println!(
+                "No rows matching '{}' carried {:?} — store unchanged.",
+                m, tags
+            );
+            return Ok(());
+        }
+        let backup = snapshot_store(&format!("unset-{}", needle.replace(' ', "-")))?;
+        store.rewrite(&transactions)?;
+        if let Some(b) = backup {
+            eprintln!("Backed up store to {}", b.display());
+        }
+        println!(
+            "Removed {:?} from {} transaction(s) matching '{}' ({} tag(s) dropped in total).",
+            tags, rows_changed, m, total_removed
+        );
+        eprintln!(
+            "Note: rules are untouched. If a RULE applies one of these tags, \
+             `fd-budget tag remove <pattern> <tag>` too, or the next `reapply` restores it."
+        );
+        return Ok(());
+    }
+
+    // ---- single-row form ----
+    let needle = row_id.expect("row_id set when merchant is None");
+    let idx = match resolve_import_id(&transactions, needle) {
+        RowMatch::One(i) => i,
+        RowMatch::None => {
+            anyhow::bail!(
+                "no transaction matches import_id '{}' (exact or prefix)",
+                needle
+            );
+        }
+        RowMatch::Ambiguous(candidates) => {
+            eprintln!(
+                "import_id prefix '{}' is ambiguous — matches {} rows:",
+                needle,
+                candidates.len()
+            );
+            for &i in &candidates {
+                let t = &transactions[i];
+                eprintln!(
+                    "  {}  {}  {:>10}  {}",
+                    t.import_id, t.date, t.amount, t.raw_description
+                );
+            }
+            anyhow::bail!("ambiguous import_id prefix; supply more characters");
+        }
+    };
+
+    let removed = remove_tags_from_row(&mut transactions[idx], &tags);
+    if removed.is_empty() {
+        let t = &transactions[idx];
+        println!(
+            "{}  {}  {}  {}",
+            t.import_id, t.date, t.amount, t.raw_description
+        );
+        println!(
+            "  (none of {:?} were present) tags: [{}]",
+            tags,
+            t.tags.join(", ")
+        );
+        return Ok(());
+    }
+
+    let backup = snapshot_store(&transactions[idx].import_id)?;
+    store.rewrite(&transactions)?;
+
+    let t = &transactions[idx];
+    if let Some(b) = backup {
+        eprintln!("Backed up store to {}", b.display());
+    }
+    println!(
+        "{}  {}  {}  {}",
+        t.import_id, t.date, t.amount, t.raw_description
+    );
+    if t.tags.is_empty() {
+        println!("  removed {:?} -> tags: [] (row is now untagged)", removed);
+    } else {
+        println!("  removed {:?} -> tags: [{}]", removed, t.tags.join(", "));
+    }
+    eprintln!(
+        "Note: rules are untouched. If a RULE applies one of these tags, \
+         `fd-budget tag remove <pattern> <tag>` too, or the next `reapply` restores it."
+    );
+
+    Ok(())
 }
 
 /// Auto-tag every card-payment row (FIRST DIRECT VISA / F/D GOLD) with the
@@ -2398,5 +2589,89 @@ mod p4_p5_tests {
         // Each flag alone is still accepted.
         assert!(Cli::try_parse_from(["fd-budget", "stats", "--month", "2025-01"]).is_ok());
         assert!(Cli::try_parse_from(["fd-budget", "stats", "--year", "2025"]).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::NaiveDate;
+    use fd_budget::{Account, Transaction, TxType};
+    use rust_decimal::Decimal;
+
+    fn tx(tags: &[&str]) -> Transaction {
+        Transaction {
+            date: NaiveDate::from_ymd_opt(2026, 8, 27).unwrap(),
+            account: Account::Current,
+            tx_type: TxType::BankPayment,
+            amount: Decimal::new(-11000, 2),
+            description: "BIBRA GR / FLAT7".to_string(),
+            raw_description: "BIBRA GR / FLAT7".to_string(),
+            balance: None,
+            tags: tags.iter().map(|s| s.to_string()).collect(),
+            import_id: "abc123def4567890".to_string(),
+        }
+    }
+
+    fn s(v: &[&str]) -> Vec<String> {
+        v.iter().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn removes_only_the_named_tags_and_preserves_order() {
+        let mut t = tx(&["housing", "jenny", "flat", "holidays"]);
+        let removed = remove_tags_from_row(&mut t, &s(&["jenny", "holidays"]));
+        assert_eq!(removed, s(&["jenny", "holidays"]));
+        assert_eq!(t.tags, s(&["housing", "flat"]));
+    }
+
+    #[test]
+    fn absent_tags_are_a_no_op_not_an_error() {
+        let mut t = tx(&["housing", "flat"]);
+        let removed = remove_tags_from_row(&mut t, &s(&["jenny"]));
+        assert!(removed.is_empty());
+        assert_eq!(t.tags, s(&["housing", "flat"]));
+    }
+
+    #[test]
+    fn partial_match_removes_what_is_present_and_reports_only_that() {
+        let mut t = tx(&["housing", "jenny"]);
+        let removed = remove_tags_from_row(&mut t, &s(&["jenny", "nonexistent"]));
+        assert_eq!(removed, s(&["jenny"]));
+        assert_eq!(t.tags, s(&["housing"]));
+    }
+
+    #[test]
+    fn a_row_can_be_emptied_completely() {
+        let mut t = tx(&["jenny", "holidays"]);
+        let removed = remove_tags_from_row(&mut t, &s(&["jenny", "holidays"]));
+        assert_eq!(removed.len(), 2);
+        assert!(t.tags.is_empty());
+    }
+
+    #[test]
+    fn duplicate_tag_entries_on_a_row_are_all_dropped() {
+        // Defensive: a hand-edited store could carry the same tag twice.
+        let mut t = tx(&["jenny", "housing", "jenny"]);
+        let removed = remove_tags_from_row(&mut t, &s(&["jenny"]));
+        assert_eq!(removed, s(&["jenny"]));
+        assert_eq!(t.tags, s(&["housing"]));
+    }
+
+    #[test]
+    fn unset_is_the_exact_inverse_of_set() {
+        let mut t = tx(&["housing"]);
+        let added = add_tags_to_row(&mut t, &s(&["flat", "groundrent"]));
+        assert_eq!(added, s(&["flat", "groundrent"]));
+        let removed = remove_tags_from_row(&mut t, &s(&["flat", "groundrent"]));
+        assert_eq!(removed, s(&["flat", "groundrent"]));
+        assert_eq!(t.tags, s(&["housing"]));
+    }
+
+    #[test]
+    fn pipe_bearing_tags_are_rejected_before_touching_the_store() {
+        assert!(validate_tags(&s(&["housing|flat"])).is_err());
+        assert!(validate_tags(&s(&["  "])).is_err());
+        assert_eq!(validate_tags(&s(&["  housing  "])).unwrap(), s(&["housing"]));
     }
 }
