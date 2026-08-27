@@ -56,10 +56,27 @@ MAC=${MAC^^}
 
 # Already done? Say so rather than churning the bond.
 state=$(timeout 15 bluetoothctl info "$MAC" 2>/dev/null)
-if grep -q "Bonded: yes" <<<"$state" && rg -q "Connected: yes" <<<"$state"; then
-    echo "already paired, bonded and connected:"
-    grep -E "Name:|Bonded:|Connected:|Battery" <<<"$state"
-    exit 0
+if grep -q "Bonded: yes" <<<"$state"; then
+    if grep -q "Connected: yes" <<<"$state"; then
+        echo "already paired, bonded and connected:"
+        grep -E "Name:|Bonded:|Connected:|Battery" <<<"$state"
+        exit 0
+    fi
+    # Bonded but disconnected: a ZMK board asleep on its idle timeout, or out of
+    # range. Connect — never re-pair, which would churn a working bond.
+    echo "already bonded but disconnected — connecting (not re-pairing)..."
+    timeout 30 bluetoothctl connect "$MAC" >/dev/null 2>&1
+    sleep 3
+    state=$(timeout 15 bluetoothctl info "$MAC" 2>/dev/null)
+    if grep -q "Connected: yes" <<<"$state"; then
+        echo "connected:"
+        grep -E "Name:|Bonded:|Connected:|Battery" <<<"$state"
+        exit 0
+    fi
+    echo "still disconnected. If this is a ZMK board it is probably asleep —" >&2
+    echo "press any key on it, then run this again. The bond is intact; do NOT" >&2
+    echo "remove it or reflash." >&2
+    exit 3
 fi
 
 if [ "${2:-}" = "--fresh" ]; then
