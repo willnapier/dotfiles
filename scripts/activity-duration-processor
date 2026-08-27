@@ -276,7 +276,7 @@ def parse-minutes-at [tokens: list<string>, start: int] {
     if (is-oh ($tokens | get $start)) and (($start + 1) < $n) {
         let nxt = (token-num ($tokens | get ($start + 1)))
         if $nxt != null and $nxt >= 0 and $nxt <= 9 {
-            return {n: $nxt, next: ($start + 2), amb: false}
+            return {n: $nxt, next: ($start + 2)}
         }
     }
     let v = (token-num ($tokens | get $start))
@@ -284,35 +284,39 @@ def parse-minutes-at [tokens: list<string>, start: int] {
         return null
     }
     if $v == 100 {
-        return {n: 0, next: ($start + 1), amb: false}
+        return {n: 0, next: ($start + 1)}
     }
     if $v in [20, 30, 40, 50] and (($start + 1) < $n) {
         let nxt = (token-num ($tokens | get ($start + 1)))
         if $nxt != null and $nxt >= 1 and $nxt <= 9 {
-            # "thirty two o eight" is AMBIGUOUS, not a settled "to". Either
-            # the minutes are 32 and Parakeet dropped the separator, or the
-            # minutes are 30 and "two" is a misheard "to". Both readings are
-            # real; picking one silently writes a wrong clock time. Flag it
-            # and let the caller refuse the line. Doubled ("thirty two two")
-            # and explicit ("thirty two until") are NOT ambiguous and still
-            # resolve to 32 — only a bare tens+two before an oh-clock trips.
+            # "thirty two o eight" — Parakeet wrote "to" as "two". Which
+            # reading is right is settled DETERMINISTICALLY by the 5-minute
+            # granularity of recorded clock times (98.4% of 126 historical
+            # sleep values; see SPOKEN-ACTIVITY-NOTATION.md): the alternative
+            # minutes value is tens+2, i.e. 22/32/42/52, and none of those is
+            # a multiple of 5. So it cannot be a minutes value under that
+            # granularity, and "two" must be the separator.
+            #
+            # The mod-5 test is written out rather than assumed, so the rule
+            # stays honest if the tens set ever changes: resolve to separator
+            # ONLY when the arithmetic actually rules the minutes out.
             let two_then_oh = (
                 $nxt == 2
                 and (($start + 2) < $n)
                 and (is-oh ($tokens | get ($start + 2)))
+                and ((($v + $nxt) mod 5) != 0)
             )
-            if $two_then_oh {
-                return {n: $v, next: ($start + 1), amb: true}
-            }
-            let total = $v + $nxt
-            if $total <= 59 {
-                return {n: $total, next: ($start + 2), amb: false}
+            if not $two_then_oh {
+                let total = $v + $nxt
+                if $total <= 59 {
+                    return {n: $total, next: ($start + 2)}
+                }
             }
         }
-        return {n: $v, next: ($start + 1), amb: false}
+        return {n: $v, next: ($start + 1)}
     }
     if $v >= 0 and $v <= 59 {
-        {n: $v, next: ($start + 1), amb: false}
+        {n: $v, next: ($start + 1)}
     } else {
         null
     }
@@ -339,12 +343,12 @@ def parse-clock-at [tokens: list<string>, start: int] {
     $i = $hour.next
     let seps = ["to", "until", "till", "til", "through", "-", "–"]
     let minutes = if $i >= $n {
-        {n: 0, next: $i, amb: false}
+        {n: 0, next: $i}
     } else if (norm-tok ($tokens | get $i)) in $seps {
-        {n: 0, next: $i, amb: false}
+        {n: 0, next: $i}
     } else {
         let m = (parse-minutes-at $tokens $i)
-        if $m == null { {n: 0, next: $i, amb: false} } else { $m }
+        if $m == null { {n: 0, next: $i} } else { $m }
     }
     if $hour.n > 23 or $minutes.n > 59 {
         return null
@@ -352,7 +356,6 @@ def parse-clock-at [tokens: list<string>, start: int] {
     {
         hhmm: $"((pad2 $hour.n))((pad2 $minutes.n))"
         next: $minutes.next
-        amb: $minutes.amb
     }
 }
 
@@ -377,7 +380,6 @@ def expand-spoken-clocks-line [line: string] {
     mut i = 0
     mut out = []
     mut changed = false
-    mut ambiguous = false
     while $i < $n {
         mut try_at = $i
         if (norm-tok ($tokens | get $i)) == "from" and (($i + 1) < $n) {
@@ -390,11 +392,6 @@ def expand-spoken-clocks-line [line: string] {
             let next_oh = (
                 $after_sep < $n and (is-oh ($tokens | get $after_sep))
             )
-            if $start_clk.amb and $next_oh and (norm-tok ($tokens | get $sep_idx)) == "two" {
-                # Both readings valid — refuse rather than write a wrong time.
-                $ambiguous = true
-                break
-            }
             if (is-range-sep ($tokens | get $sep_idx) $next_oh) and $after_sep < $n {
                 let end_clk = (parse-clock-at $tokens $after_sep)
                 if $end_clk != null {
@@ -407,9 +404,6 @@ def expand-spoken-clocks-line [line: string] {
         }
         $out = ($out | append ($tokens | get $i))
         $i = $i + 1
-    }
-    if $ambiguous {
-        return $line
     }
     if $changed {
         $out | str join " "
