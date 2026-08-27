@@ -1,0 +1,35 @@
+# PHI-bearing application log rotation on nimbini (created 2026-07-29).
+#
+# tm3-diary-capture.service writes here via BOTH StandardOutput=append: and
+# StandardError=append:. The content carries TM3 clinical document titles and
+# occasional client names/DOBs — special-category health data in a durable,
+# non-DPA sink.
+#
+# History purged to zero 2026-07-29 (306 KB / ~3,766 lines). Rotation exists so
+# that purge is not a one-off.
+#
+# rotate 0 and no compression are deliberate: retaining gzipped archives would
+# mean keeping compressed copies of patient data indefinitely. Rotation here
+# DELETES.
+#
+# copytruncate is REQUIRED, not stylistic: systemd holds the file open via
+# append:, so a plain rename would leave the service writing to an unlinked
+# inode and the new file would stay empty forever.
+#
+# create 0600 will will — these were mode 644 (world-readable) until
+# 2026-07-29. Do not let rotation restore a permissive mode.
+#
+# NB deliberately NOT folded into journald. nimbini's journal was measured on
+# 2026-07-28 and is demonstrably PHI-clean (zero markers across practiceforge,
+# tm3-diary-capture and tm3-session-broker). Routing this content there would
+# dirty a clean store and make selective purge impossible — journald can only
+# vacuum by size or age, never by unit.
+
+/home/will/.local/share/tm3-diary-capture.log {
+    size 1M
+    rotate 0
+    copytruncate
+    missingok
+    notifempty
+    create 0600 will will
+}

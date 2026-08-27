@@ -287,6 +287,28 @@ mod tests {
     // round amounts. Public repo discipline: do not commit real
     // transaction data, even in tests.
     #[test]
+    fn current_account_date_range_export_keeps_reference_out_of_balance() {
+        // FD offers the SAME date-range transaction export for the current
+        // account as for the Visa: 4 columns ending in a Reference, not a
+        // Balance. It is the only FD export that is actually current --
+        // midata lags ~1 month. Dispatching on column COUNT alone sent this
+        // to parse_midata_current_4col, which read the reference as a
+        // balance: 99478520 became GBP 99,478,520, silently corrupting every
+        // balance-derived figure.
+        let csv_data = "Date,Description,Amount,Reference\n\
+                        26/08/2026,TESTMERCHANT ALPHA,-11.11,99478520\n";
+        let txs = parse_midata_visa(csv_data.as_bytes(), Account::Current).unwrap();
+        assert_eq!(txs.len(), 1);
+        assert_eq!(txs[0].account, Account::Current);
+        assert_eq!(txs[0].amount, Decimal::new(-1111, 2));
+        assert!(
+            txs[0].balance.is_none(),
+            "reference must be discarded, never stored as a balance (got {:?})",
+            txs[0].balance
+        );
+    }
+
+    #[test]
     fn test_parse_midata_sample() {
         let csv_data = r#"Date,Type,Merchant/Description,Debit/Credit,Balance
 01/01/2025,))),ACME COFFEE     Anytown,-£5.00,+£1000.00
