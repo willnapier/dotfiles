@@ -9,6 +9,27 @@
 # Does NOT rewrite (too context-dependent):
 #   sed  (different syntax from sd — correct fix is Edit tool or sd)
 #
+# 🚨 DOES NOT REWRITE INSIDE HEREDOC BODIES (added 2026-08-27).
+#   A heredoc body is DATA being written to a file, not a command being run.
+#   Rewriting it silently corrupts file content. Real case: writing a doc that
+#   quoted `pgrep -af helix | grep "filename"` produced a file containing
+#   `... | rg "filename"` instead, so a later search-and-replace against that
+#   file found nothing and the edit failed twice before the cause was spotted.
+#   The corruption is silent: the command succeeds, the file is just wrong.
+#
+# 🚨 DOES NOT REWRITE ssh COMMANDS (added 2026-08-27).
+#   Text inside an ssh command string runs on ANOTHER machine, so we cannot
+#   assume rg/fd/bat exist there. Worse, the rewrite is not semantics-preserving:
+#   grep takes BRE/ERE, rg takes Rust regex. Real case:
+#   `ssh mac "ioreg ... | grep '+-o'"` became `rg '+-o'`, which fails with
+#   "regex parse error: repetition operator missing expression".
+#
+# KNOWN LIMIT, not fixed: the same regex-dialect mismatch exists for LOCAL
+#   commands. grep patterns valid as BRE may be invalid or mean something else
+#   in rg. Rewriting the tool does not rewrite the pattern. Accepted because
+#   local rg is house policy; if a local rewrite ever mangles a pattern, that is
+#   this limitation, not a new bug.
+#
 # Input: JSON on stdin with .tool_input.command
 # Output: JSON on stdout with updatedInput if rewritten, or exit 0 to pass through
 
@@ -25,7 +46,13 @@ if not cmd:
     sys.exit(1)
 
 original = cmd
-changes = []
+
+# --- Guard 1: never touch a command that reaches another machine -------------
+# The remote host's tooling is not ours to assume, and grep→rg is not
+# semantics-preserving across regex dialects.
+if re.search(r'(?:^|[|;&(]\s*)ssh\b', cmd):
+    sys.exit(1)
+
 
 def rewrite_grep_match(m):
     """Rewrite a single grep invocation to rg."""
@@ -47,7 +74,7 @@ def rewrite_grep_match(m):
             pass  # rg uses extended regex by default
         elif c == 'P':
             new_flags.append('-P')
-        elif c in ('n', 'i', 'l', 'c', 'v', 'w', 'o', 'h', 'H'):
+        elif c in ('n', 'i', 'l', 'c', 'v', 'w', 'o', 'h', 'H', 'F'):
             new_flags.append(f'-{c}')
         elif c == ' ':
             pass
@@ -61,20 +88,7 @@ def rewrite_grep_match(m):
         flag_str = ' ' + flag_str
     return f'{prefix}rg{flag_str} {rest}'
 
-# Rewrite grep → rg
-# Match grep preceded by: start of line, pipe, semicolon, &&, ||, $(, or backtick
-# But NOT pgrep, egrep, fgrep, zgrep, xargs grep (handle xargs separately)
-# Word boundary: grep must be preceded by non-alphanumeric or start of string
-cmd = re.sub(
-    r'((?:^|[|;&`]\s*|\$\(\s*))grep\s+((?:-[a-zA-Z]+\s+)*)(.*?)(?=\s*(?:[|;&]|$))',
-    rewrite_grep_match,
-    cmd,
-    flags=re.MULTILINE
-)
 
-# Rewrite find → fd
-# Match: find <path> -name "pattern" or find <path> -name 'pattern' or find <path> -name pattern
-# Optionally with -type f or -type d
 def rewrite_find_match(m):
     prefix = m.group(1)
     path = m.group(2)
@@ -92,33 +106,83 @@ def rewrite_find_match(m):
 
     return f'{prefix}fd {quote}{pattern}{quote} {path}{fd_type}'
 
-cmd = re.sub(
-    r'((?:^|[|;&`]\s*|\$\(\s*))find\s+(\S+)\s+-name\s+(["\']?)([^"\'\s]+)\3(\s+-type\s+[fd])?',
-    rewrite_find_match,
-    cmd,
-    flags=re.MULTILINE
-)
 
-# Rewrite cat → bat (standalone only)
-# Match: cat <file> at start of command or after ; or &&
-# Do NOT rewrite: cat file | cmd (piped — bat adds formatting that breaks pipes)
-# Do NOT rewrite: cat << EOF (heredoc)
-# Do NOT rewrite: zcat, tac (compound commands)
 def rewrite_cat_match(m):
     prefix = m.group(1)
     args = m.group(2)
     return f'{prefix}bat {args}'
 
-# Only match cat when NOT followed by a pipe on the same segment
-# Strategy: split on pipes first, only rewrite cat in the LAST segment
-# (if cat output is piped, leave it alone)
-# Simpler: match cat <file> only when followed by end-of-string or semicolon, not pipe
-cmd = re.sub(
-    r'((?:^|[;&]\s*))cat\s+([^|;&\n]+?)(?=\s*(?:[;&]|$))',
-    rewrite_cat_match,
-    cmd,
-    flags=re.MULTILINE
-)
+
+def apply_rewrites(text):
+    """The three rewrites. Applied ONLY to command text, never heredoc bodies."""
+    # grep → rg. Match grep preceded by start of line, pipe, semicolon, &&, ||,
+    # $( or backtick. Not pgrep/egrep/fgrep/zgrep.
+    text = re.sub(
+        r'((?:^|[|;&`]\s*|\$\(\s*))grep\s+((?:-[a-zA-Z]+\s+)*)(.*?)(?=\s*(?:[|;&]|$))',
+        rewrite_grep_match,
+        text,
+        flags=re.MULTILINE
+    )
+    # find <path> -name "pattern" [-type f|d] → fd
+    text = re.sub(
+        r'((?:^|[|;&`]\s*|\$\(\s*))find\s+(\S+)\s+-name\s+(["\']?)([^"\'\s]+)\3(\s+-type\s+[fd])?',
+        rewrite_find_match,
+        text,
+        flags=re.MULTILINE
+    )
+    # cat <file> → bat, standalone only (not piped, bat's formatting breaks pipes)
+    text = re.sub(
+        r'((?:^|[;&]\s*))cat\s+([^|;&\n]+?)(?=\s*(?:[;&]|$))',
+        rewrite_cat_match,
+        text,
+        flags=re.MULTILINE
+    )
+    return text
+
+
+# --- Guard 2: mask heredoc bodies -------------------------------------------
+# A line is protected if it lies strictly between a heredoc introducer and its
+# terminator. The introducer line and the terminator line are themselves command
+# text and stay rewritable. Handles <<EOF, <<-EOF, <<'EOF', <<"EOF", and several
+# heredocs in one command.
+HEREDOC_START = re.compile(r'<<-?\s*(["\']?)([A-Za-z_][A-Za-z0-9_]*)\1')
+
+
+def heredoc_mask(text):
+    lines = text.split('\n')
+    mask = [False] * len(lines)
+    delim = None
+    for i, line in enumerate(lines):
+        if delim is None:
+            m = HEREDOC_START.search(line)
+            if m:
+                delim = m.group(2)
+        else:
+            if line.strip() == delim:
+                delim = None      # terminator: command text again
+            else:
+                mask[i] = True    # body: data, do not touch
+    return lines, mask
+
+
+lines, mask = heredoc_mask(cmd)
+
+out_lines = []
+run = []
+run_protected = mask[0] if mask else False
+for line, protected in zip(lines, mask):
+    if protected == run_protected:
+        run.append(line)
+    else:
+        chunk = '\n'.join(run)
+        out_lines.append(chunk if run_protected else apply_rewrites(chunk))
+        run = [line]
+        run_protected = protected
+if run:
+    chunk = '\n'.join(run)
+    out_lines.append(chunk if run_protected else apply_rewrites(chunk))
+
+cmd = '\n'.join(out_lines)
 
 if cmd != original:
     print(cmd)
