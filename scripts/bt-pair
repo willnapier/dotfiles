@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# bt-pair — pair a BLE device without falling into the two traps that cost an
+# afternoon on 2026-08-27. See ~/Assistants/shared/ZMK-HANDY-REMOTE-LESSONS.md
+# ("BLE pairing failures — nimbini").
+#
+#   1. bluetoothctl raises "[agent] Accept pairing (yes/no):" and a scripted
+#      pipe that does not answer it fails with AuthenticationRejected /
+#      AuthenticationFailed / AuthenticationCanceled — all of which read as the
+#      PEER refusing you. This script answers.
+#
+#   2. When the controller is wedged the kernel refuses MGMT Pair Device with
+#      Busy (0x0a) and BlueZ maps that onto org.bluez.Error.AuthenticationRejected
+#      — with no radio traffic reaching the device at all. This script tells
+#      you that is what happened instead of letting you go and reflash firmware.
+#
+# Usage:
+#   bt-pair <MAC>            pair, trust, connect
+#   bt-pair <MAC> --fresh    remove any stale host-side bond first
+#   bt-pair --check          report adapter health only
+
+set -uo pipefail
+
+die() { printf 'bt-pair: %s\n' "$*" >&2; exit 1; }
+
+RESET_CMD="sudo bash -lc 'rfkill block bluetooth; sleep 3; rfkill unblock bluetooth; sleep 5; systemctl restart bluetooth'"
+
+# Adapter health. A wedged controller reports Powered but fails every
+# connection with "No route to host"; `bluetoothctl power off` can also fail
+# with "Failed to set mode: Disconnected (0x0e)" and leave it half-down.
+check_adapter() {
+    local powered
+    powered=$(bluetoothctl show 2>/dev/null | awk '/Powered:/ {print $2}')
+    [ "$powered" = "yes" ] || { echo "adapter NOT powered"; return 1; }
+    echo "adapter powered: yes"
+
+    local wedged
+    wedged=$(journalctl -u bluetooth --since "-3 min" --no-pager 2>/dev/null \
+             | rg -c "No route to host \(113\)|Failed to set mode: Disconnected")
+    if [ "${wedged:-0}" -gt 0 ]; then
+        echo "WARNING: $wedged wedged-controller signatures in the last 3 min"
+        return 1
+    fi
+    echo "no wedged-controller signatures in recent log"
+    return 0
+}
+
+if [ "${1:-}" = "--check" ]; then
+    check_adapter
+    exit $?
+fi
+
+MAC="${1:-}"
+[ -n "$MAC" ] || die "usage: bt-pair <MAC> [--fresh] | bt-pair --check"
+[[ "$MAC" =~ ^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$ ]] || die "not a MAC address: $MAC"
+MAC=${MAC^^}
+
+# Already done? Say so rather than churning the bond.
+state=$(timeout 15 bluetoothctl info "$MAC" 2>/dev/null)
+if grep -q "Bonded: yes" <<<"$state" && rg -q "Connected: yes" <<<"$state"; then
+    echo "already paired, bonded and connected:"
+    grep -E "Name:|Bonded:|Connected:|Battery" <<<"$state"
+    exit 0
+fi
+
+if [ "${2:-}" = "--fresh" ]; then
+    echo "removing stale host-side bond..."
+    timeout 20 bluetoothctl remove "$MAC" >/dev/null 2>&1
+    sleep 2
+fi
+
+check_adapter || {
+    echo
+    echo "Adapter looks wedged. Reset it before pairing — 'bluetoothctl power off'"
+    echo "is NOT sufficient:"
+    echo "  $RESET_CMD"
+    exit 2
+}
+
+echo "pairing $MAC (answering the agent prompt)..."
+out=$( ( echo "agent on";      sleep 1
+         echo "default-agent"; sleep 1
+         echo "scan on";       sleep 8
+         echo "pair $MAC"
+         # The prompt can arrive any time during the handshake; answer often.
+         for _ in $(seq 1 12); do sleep 2; echo "yes"; done
+         sleep 2; echo "trust $MAC"
+         sleep 2; echo "connect $MAC"
+         sleep 12; echo "quit" ) | timeout 110 bluetoothctl 2>&1 )
+
+state=$(timeout 15 bluetoothctl info "$MAC" 2>/dev/null)
+if grep -q "Bonded: yes" <<<"$state"; then
+    echo "PAIRED."
+    grep -E "Name:|Paired:|Bonded:|Trusted:|Connected:|Battery" <<<"$state"
+    exit 0
+fi
+
+# Failed. Classify it, because the raw BlueZ string is actively misleading.
+echo "FAILED. Diagnosis:" >&2
+if grep -q "Accept pairing" <<<"$out"; then
+    echo "  The agent prompt WAS raised and answered, so the exchange reached" >&2
+    echo "  the device and it genuinely refused. Suspect the peer: occupied" >&2
+    echo "  profile slot, or firmware security config." >&2
+else
+    echo "  The agent prompt was NEVER raised — no pairing handshake started." >&2
+    echo "  This is almost certainly a wedged controller (kernel MGMT Busy 0x0a)," >&2
+    echo "  which BlueZ reports as AuthenticationRejected. The device is NOT at" >&2
+    echo "  fault. DO NOT REFLASH FIRMWARE. Reset the adapter:" >&2
+    echo "    $RESET_CMD" >&2
+    echo >&2
+    echo "  Confirm with a snoop if you want proof (no LE Create Connection to" >&2
+    echo "  the device address means it was never contacted):" >&2
+    echo "    sudo bash -lc 'timeout 60 btmon -w /tmp/bt.snoop >/dev/null 2>&1 & sleep 3; bluetoothctl --timeout 45 pair $MAC; wait; chmod 644 /tmp/bt.snoop'" >&2
+    echo "    btmon -r /tmp/bt.snoop" >&2
+fi
+echo >&2
+echo "  bluetoothctl said:" >&2
+rg -a -o "org\.bluez\.Error\.[A-Za-z]+" <<<"$out" | sort -u | sed 's/^/    /' >&2
+exit 1

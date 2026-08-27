@@ -578,6 +578,7 @@ depends = ["shared"]
 # Continuum Dream - nightly AI conversation analysis
 "systemd/continuum-dream.service" = "~/.config/systemd/user/continuum-dream.service"
 "systemd/continuum-dream.timer" = "~/.config/systemd/user/continuum-dream.timer"
+"scripts/bt-pair" = "~/.local/bin/bt-pair"
 "scripts/chocofi-handy-bind" = "~/.local/bin/chocofi-handy-bind"
 "systemd/chocofi-handy-bind.service" = "~/.config/systemd/user/chocofi-handy-bind.service"
 # TM3 diary capture - hourly live scrape during clinic hours, writes PracticeForge session files
