@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.williamnapier.usagewatch-monitor</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/sh</string>
+        <string>-c</string>
+        <string>/Users/williamnapier/.local/bin/usagewatch refresh --scheduled; /Users/williamnapier/.local/bin/usagewatch notify</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>/Users/williamnapier</string>
+        <key>PATH</key>
+        <string>/Users/williamnapier/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+    <key>StartInterval</key>
+    <integer>600</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/williamnapier/.local/share/continuum/usagewatch-monitor.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/williamnapier/.local/share/continuum/usagewatch-monitor.err</string>
+</dict>
+</plist>

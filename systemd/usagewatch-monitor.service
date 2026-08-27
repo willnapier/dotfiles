@@ -1,0 +1,13 @@
+[Unit]
+Description=Refresh cross-provider usage observations and notify limits/opportunities
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+Environment=HOME=/home/will
+Environment=PATH=/home/will/.local/bin:/usr/local/bin:/usr/bin
+# --scheduled respects the cadence gate. NEVER use a bare `refresh` here:
+# usage-probe-claude spends one Haiku token per run, and a bare refresh
+# bypasses the gate by design (it means "the user asked").
+ExecStart=/home/will/.local/bin/usagewatch refresh --scheduled
+ExecStart=/home/will/.local/bin/usagewatch notify

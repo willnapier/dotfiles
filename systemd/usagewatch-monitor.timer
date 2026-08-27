@@ -1,0 +1,12 @@
+[Unit]
+Description=Poll provider usage every 10 minutes
+
+[Timer]
+# Polls often; the per-probe cadence gate decides what actually runs, so a
+# short interval keeps passive probes fresh without spending Claude quota.
+OnBootSec=3m
+OnUnitActiveSec=10m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
