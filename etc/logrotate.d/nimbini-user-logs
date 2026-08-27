@@ -1,0 +1,34 @@
+# Non-mail, high-growth user logs on nimbini (created 2026-08-27).
+#
+# Measured growth 2026-08-27 (2-minute sample, extrapolated — these are bursty
+# watchers, so treat as order-of-magnitude):
+#   git-auto-pull-watcher.log   ~218 MB/yr
+#   continuum/sync.log          ~189 MB/yr
+#   continuum/auto-import.log   ~140 MB/yr
+#
+# rotate 2 uncompressed rather than gzipped archives: the continuum logs
+# reference AI conversation sessions, which can include clinical discussion.
+# Keeping a couple of plain rotations is enough to debug a regression without
+# accumulating a compressed history nobody will ever audit.
+#
+# copytruncate for the same reason as nimbini-mail: systemd append: holds the
+# file open.
+#
+# Not included, because measured growth was ZERO over the sample window:
+# collect-entries-watcher.log, assistants-auto-push.log, collect-entries-cron.log.
+# collect-entries-errors.log was truncated 2026-08-27 (26 MB of a single bug
+# fixed by c465b7a on 2026-01-21; nothing written since).
+
+/home/will/.local/share/git-auto-pull-watcher.log
+/home/will/.local/share/git-auto-push-watcher.log
+/home/will/.local/share/continuum/sync.log
+/home/will/.local/share/continuum/auto-import.log
+{
+    size 20M
+    rotate 2
+    nocompress
+    copytruncate
+    missingok
+    notifempty
+    create 0600 will will
+}

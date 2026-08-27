@@ -1,0 +1,41 @@
+# Mail-related application logs on nimbini (created 2026-08-27).
+#
+# rotate 0 and no compression are DELIBERATE and follow the policy set for
+# practiceforge-phi: these logs can carry the titles, senders, recipients or
+# content of practice email. Retaining gzipped archives would mean keeping
+# compressed copies of that indefinitely. Rotation here DELETES.
+#
+# Scope is every mail log, not only the obviously-COHS ones. mailforge covers
+# COHS and Napier both, and Napier practice mail is clinical data too. The risk
+# is asymmetric: rotate 0 on a PHI-free log costs only lost history, whereas
+# ordinary rotation on a PHI-bearing one leaves patient data in .gz files. So
+# the whole class gets the strict rule rather than relying on a classification
+# that could be wrong.
+#
+# copytruncate is REQUIRED, not stylistic: these services write via systemd
+# StandardOutput=append:, so systemd holds the file open. A plain rename would
+# leave the service writing to an unlinked inode and the new file would stay
+# empty forever. Same reasoning as practiceforge-phi.
+#
+# create 0600 will will — all seven of these were mode 644 (world-readable)
+# until 2026-08-27 and were chmod'ed then. Do not let rotation restore a
+# permissive mode.
+#
+# History cleared 2026-08-27: mail-sync.log (17.5 MB, last written 2026-05-04)
+# truncated. Rotation exists so that clearance is not a one-off.
+
+/home/will/.local/share/gmpull.log
+/home/will/.local/share/mail-sync.log
+/home/will/.local/share/mailforge.log
+/home/will/.local/share/cohs-trash-mover.log
+/home/will/.local/share/mailcurator-drift.log
+/home/will/.local/share/gmail-push-tags.log
+/home/will/.local/share/gmail-push-tags-watchdog.log
+{
+    size 5M
+    rotate 0
+    copytruncate
+    missingok
+    notifempty
+    create 0600 will will
+}
