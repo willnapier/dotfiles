@@ -1155,11 +1155,21 @@ fn cmd_import(file: &PathBuf, account: Account) -> anyhow::Result<()> {
     let transactions = match account {
         Account::Visa => import::parse_midata_visa(reader, account)?,
         Account::Current => {
-            let has_type = header
+            let cols: Vec<String> = header
+                .trim_start_matches('\u{feff}')
                 .split(',')
-                .any(|h| h.trim().eq_ignore_ascii_case("type"));
-            if has_type {
+                .map(|h| h.trim().to_lowercase())
+                .collect();
+            if cols.iter().any(|h| h == "type") {
                 import::parse_midata(reader, account)?
+            } else if cols.get(3).map(|h| h == "reference").unwrap_or(false) {
+                // FD's date-range transaction export (the same download the
+                // Visa uses) is also offered for the current account, and
+                // unlike midata it is CURRENT — midata lags ~1 month. Same
+                // 4-column width as the newer midata but the 4th column is a
+                // Reference, not a Balance. Dispatching on width alone parsed
+                // reference numbers as balances (e.g. 99478520 -> £99,478,520).
+                import::parse_midata_visa(reader, account)?
             } else {
                 import::parse_midata_current_4col(reader, account)?
             }
