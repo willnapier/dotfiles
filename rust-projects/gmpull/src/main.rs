@@ -113,9 +113,13 @@ fn init_tracing() {
     use tracing_subscriber::EnvFilter;
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("info,reqwest=warn,hyper=warn"));
+    // Colour only for a real terminal. Under systemd StandardOutput=append:
+    // this is a file, and tracing_subscriber's default would write ANSI escape
+    // sequences into it — unreadable, and a large share of the bytes.
     tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(false)
+        .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stderr()))
         .init();
 }
 
@@ -131,7 +135,7 @@ async fn pull(
         .map(Ok)
         .unwrap_or_else(state::default_maildir)?;
 
-    tracing::info!(
+    tracing::debug!(
         maildir = %maildir_root.display(),
         rate_limit_units_per_s = rate_limit,
         rate_burst_units = rate_burst,
@@ -143,7 +147,7 @@ async fn pull(
 
     let mut state = state::load().await?;
     let prior_pulled = state.messages_pulled;
-    tracing::info!(
+    tracing::debug!(
         resuming_from_token = ?state.last_page_token,
         last_history_id = ?state.last_history_id,
         prior_messages_pulled = prior_pulled,
@@ -164,7 +168,7 @@ async fn pull(
             .await
             .context("joining existing-ids load")??
     };
-    tracing::info!(
+    tracing::debug!(
         existing_message_count = existing_ids.len(),
         load_ms = load_started.elapsed().as_millis() as u64,
         "loaded on-disk dedup set"
@@ -182,7 +186,7 @@ async fn pull(
         let t = token_arc.read().await;
         labels::list_labels(&http, &t).await?
     };
-    tracing::info!(label_count = labels_map.len(), "fetched label cache");
+    tracing::debug!(label_count = labels_map.len(), "fetched label cache");
     let labels_arc = Arc::new(labels_map);
 
     let session_written = AtomicU64::new(0);
@@ -207,7 +211,7 @@ async fn pull(
             .last_history_id
             .clone()
             .expect("guarded above");
-        tracing::info!(
+        tracing::debug!(
             start_history_id = %start_id,
             "incremental path: using users.history.list"
         );
@@ -607,7 +611,7 @@ async fn incremental_pull(
         }
     }
 
-    tracing::info!(
+    tracing::debug!(
         pages,
         added = total_added,
         deleted = total_deleted,

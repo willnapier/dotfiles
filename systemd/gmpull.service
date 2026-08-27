@@ -13,7 +13,7 @@ Type=oneshot
 Environment=PATH=/home/will/.local/bin:/usr/local/bin:/usr/bin:/bin
 Environment=HOME=/home/will
 Environment=NOTMUCH_CONFIG=/home/will/Mail/.notmuch-config
-ExecStart=/bin/sh -c '/home/will/.local/bin/gmpull pull --resume && /usr/bin/notmuch new'
+ExecStart=/bin/sh -c '/home/will/.local/bin/gmpull pull --resume && /usr/bin/notmuch new --quiet'
 # Idle ticks are ~5 quota units / sub-second via users.history.list. Full
 # enumeration paths (cold-start, stale historyId, week-long downtime)
 # can take much longer — 30min cap is generous but bounds the rare worst
