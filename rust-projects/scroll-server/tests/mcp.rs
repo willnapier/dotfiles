@@ -243,17 +243,33 @@ async fn claude_origin_is_accepted() {
 }
 
 #[tokio::test]
-async fn unsupported_protocol_version_is_400() {
+async fn malformed_protocol_version_is_400() {
     let srv = start_server(Some(TOKEN)).await;
     let resp = reqwest::Client::new()
         .post(format!("http://{}/mcp/{TOKEN}", srv.addr))
         .header("CF-Connecting-IP", "203.0.113.7")
-        .header("MCP-Protocol-Version", "1999-01-01")
+        .header("MCP-Protocol-Version", "not-a-version")
         .json(&req(13, "initialize", json!({})))
         .send()
         .await
         .unwrap();
     assert_eq!(resp.status(), 400);
+}
+
+/// Regression: the first cut allowlisted three known versions, so claude.ai's
+/// newer proposal was rejected and every conversation opened with a wasted 400.
+#[tokio::test]
+async fn future_protocol_version_is_accepted() {
+    let srv = start_server(Some(TOKEN)).await;
+    let resp = reqwest::Client::new()
+        .post(format!("http://{}/mcp/{TOKEN}", srv.addr))
+        .header("CF-Connecting-IP", "203.0.113.7")
+        .header("MCP-Protocol-Version", "2026-11-25")
+        .json(&req(17, "initialize", json!({})))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "a newer protocol version must not be refused");
 }
 
 #[tokio::test]

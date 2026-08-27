@@ -43,11 +43,33 @@ use axum::{
 };
 use serde_json::{json, Value};
 
-/// Protocol versions we will answer to. The newest is what we advertise from
-/// `initialize`; the older two are accepted so a client that negotiated down
-/// still works.
-const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &["2025-06-18", "2025-03-26", "2024-11-05"];
+/// Oldest protocol version we will answer to. Anything at or newer than this is
+/// accepted; `initialize` still advertises what we actually speak.
+///
+/// **Why a floor rather than an allowlist.** The first cut hardcoded three
+/// known versions, and real traffic immediately showed the flaw: claude.ai
+/// proposes a version newer than any of them, so every conversation opened with
+/// a rejected request (`400 bad-version`) before the client retried. Clients
+/// recovered, so it looked healthy — but a round trip was wasted each session
+/// and one `initialize` never landed at all. Our JSON-RPC surface is
+/// version-independent, so refusing a *newer* protocol protects nothing.
+const MIN_PROTOCOL_VERSION: &str = "2024-11-05";
 const PREFERRED_PROTOCOL_VERSION: &str = "2025-06-18";
+
+/// MCP versions are ISO dates, so lexicographic ordering is chronological.
+/// Rejects anything not shaped `YYYY-MM-DD`, which keeps genuine garbage out.
+fn protocol_version_acceptable(v: &str) -> bool {
+    let b = v.as_bytes();
+    if b.len() != 10 || b[4] != b'-' || b[7] != b'-' {
+        return false;
+    }
+    if !b.iter().enumerate().all(|(i, c)| {
+        if i == 4 || i == 7 { *c == b'-' } else { c.is_ascii_digit() }
+    }) {
+        return false;
+    }
+    v >= MIN_PROTOCOL_VERSION
+}
 
 const SERVER_NAME: &str = "scroll-server";
 const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -307,8 +329,12 @@ pub async fn mcp_post(
     // Step 3: protocol version. Spec: an unsupported value MUST be 400. An
     // absent header means "assume 2025-03-26", which we support.
     if let Some(v) = headers.get("mcp-protocol-version").and_then(|h| h.to_str().ok()) {
-        if !SUPPORTED_PROTOCOL_VERSIONS.contains(&v) {
-            log_mcp(&state, &ip.to_string(), &ua, "bad-version", 400, 0).await;
+        if !protocol_version_acceptable(v) {
+            // Record the offending value — the first version of this code logged
+            // only "bad-version", which proved the rejection was happening but
+            // not what had been proposed.
+            let sanitised: String = v.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').take(24).collect();
+            log_mcp(&state, &ip.to_string(), &ua, &format!("bad-version:{sanitised}"), 400, 0).await;
             return json_response(
                 StatusCode::BAD_REQUEST,
                 rpc_error(Value::Null, INVALID_REQUEST, "unsupported MCP-Protocol-Version"),
@@ -443,6 +469,26 @@ fn describe(method: &str, msg: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn protocol_floor_accepts_current_and_future() {
+        assert!(protocol_version_acceptable("2024-11-05")); // the floor itself
+        assert!(protocol_version_acceptable("2025-03-26"));
+        assert!(protocol_version_acceptable("2025-06-18"));
+        assert!(protocol_version_acceptable("2026-11-25")); // newer than we know
+        assert!(protocol_version_acceptable("2030-01-01"));
+    }
+
+    #[test]
+    fn protocol_floor_rejects_older_and_malformed() {
+        assert!(!protocol_version_acceptable("2024-11-04")); // below floor
+        assert!(!protocol_version_acceptable("1999-01-01"));
+        assert!(!protocol_version_acceptable(""));
+        assert!(!protocol_version_acceptable("latest"));
+        assert!(!protocol_version_acceptable("2025-6-18")); // wrong shape
+        assert!(!protocol_version_acceptable("2025/06/18"));
+        assert!(!protocol_version_acceptable("2025-06-18extra"));
+    }
 
     #[test]
     fn ct_eq_matches_and_rejects() {
