@@ -8,6 +8,8 @@
 #        messageboard-edit archive-containing "unique text"
 #        messageboard-edit archive-unless "keep needle" "keep needle" ...
 #        messageboard-edit archive-older-than 30
+#        messageboard-edit unclaimed 7        (report-only)
+#        messageboard-edit sweep-stubs
 #        messageboard-edit refresh-header
 #        messageboard-edit show
 
@@ -27,7 +29,11 @@ const LIVE_HEADER = "# Messageboard
 > cross-machine work still belong here (one line + filename). Long shipped-work
 > narratives go to `ASSISTANT-HANDOFF.md` + named docs. `forum acknowledge`
 > archives matching FORUM COMPLETE notices; unread state lives in `forum inbox`.
-> Stale ordinary items: `messageboard-edit archive-older-than 30`.
+> **Clearing:** `messageboard-edit unclaimed 7` reports what nobody has cleared
+> (report-only — unclaimed is NOT the same as stale; most stranded items are
+> real work awaiting a machine that has not run a session). Verify, then
+> `archive-containing <unique text>`. `archive-older-than 30` is a blunt
+> fallback and usually a no-op: stranded items are unclaimed, not old.
 > Older entries: [`MESSAGEBOARD-ARCHIVE.md`](MESSAGEBOARD-ARCHIVE.md).
 > Last archive: 2026-08-25. Newest at top. Format: `### YYYY-MM-DD — device`
 >
@@ -74,6 +80,16 @@ def trim-section [section: string] {
     | str trim
 }
 
+# A stub is a section header with no body at all — the residue of a failed
+# insert. It carries no information, is invisible to every other action
+# (archive-containing has no text to match), and silently inflates the item
+# count. Three accumulated unnoticed between 2026-08-26 and 2026-08-27.
+# Dropped here at the parser so EVERY action that rewrites the board sweeps
+# them automatically — normalise at the producer, consumers trust one shape.
+def is-stub [section: string] {
+    ($section | lines | length) <= 1
+}
+
 def parse-board [text: string] {
     let lines = ($text | lines)
     let msg_idx = try {
@@ -104,7 +120,8 @@ def parse-board [text: string] {
             $sections = ($sections | append $trimmed)
         }
     }
-    { sections: $sections }
+    let real = ($sections | where {|s| not (is-stub $s) })
+    { sections: $real, stubs: (($sections | length) - ($real | length)) }
 }
 
 def render-board [header: string, sections: list<string>] {
@@ -123,7 +140,9 @@ def warn-if-bloated [sections: list<string>, text: string] {
     let n = ($sections | length)
     let bytes = ($text | str length --utf-8-bytes)
     if $n > 25 or $bytes > 40000 {
-        print $"⚠️ MESSAGEBOARD.md is now ($n) items / ($bytes) bytes. Live inbox, not a chronicle. Archive stale items with: messageboard-edit archive-older-than 30"
+        print $"⚠️ MESSAGEBOARD.md is now ($n) items / ($bytes) bytes. Live inbox, not a chronicle."
+        print "   Find what is stranded:  messageboard-edit unclaimed 7"
+        print "   Then verify and clear:  messageboard-edit archive-containing \"unique text\""
     }
 }
 
@@ -321,6 +340,56 @@ def main [action: string, content?: string, ...rest: string] {
             print $"✅ Archived ($archive_sections | length) ordinary items older than ($days) days; kept ($keep_sections | length); FORUM OPEN pointers retained"
         }
 
+        # Report items nobody has cleared. Deliberately READ-ONLY: an unclaimed
+        # item is not a stale item — most of these are real work addressed to a
+        # machine that has not run a session. Archiving them automatically would
+        # destroy live instructions. Flag, verify, then archive-containing.
+        "unclaimed" => {
+            let days = if ($content | is-empty) {
+                7
+            } else {
+                try { $content | into int } catch { -1 }
+            }
+            if $days < 1 {
+                print $"Error: day count must be a positive integer, got: ($content)"
+                return
+            }
+            let cutoff = (date now) - ($days * 1day)
+            let parsed = (parse-board (open $file))
+            let stale = (
+                $parsed.sections
+                | where {|s| not (is-forum-open $s) }
+                | where {|s|
+                    let d = (section-date $s)
+                    ($d == null) or ($d < $cutoff)
+                }
+            )
+            if ($stale | is-empty) {
+                print $"✅ Nothing unclaimed for more than ($days) days"
+                return
+            }
+            print $"⚠️ ($stale | length) items unclaimed for more than ($days) days."
+            print "   These are NOT automatically stale — verify each, then archive-containing."
+            for s in $stale {
+                let header = ($s | lines | first | str replace --regex "^### " "")
+                let bodylines = ($s | lines | skip 1 | where {|l| ($l | str trim) != "" })
+                let body = if ($bodylines | is-empty) { "" } else { ($bodylines | first) }
+                let d = (section-date $s)
+                let age = if $d == null { "?" } else { $"((((date now) - $d) / 1day) | math round)d" }
+                print $"  [($age)] ($header) — ($body | str substring 0..88)"
+            }
+        }
+
+        "sweep-stubs" => {
+            let parsed = (parse-board (open $file))
+            if $parsed.stubs == 0 {
+                print "✅ No header-only stub sections"
+                return
+            }
+            write-live $parsed.sections
+            print $"✅ Swept ($parsed.stubs) header-only stub sections"
+        }
+
         "refresh-header" => {
             let parsed = (parse-board (open $file))
             write-live $parsed.sections
@@ -339,6 +408,8 @@ def main [action: string, content?: string, ...rest: string] {
             print "  messageboard-edit archive-containing \"unique text\""
             print "  messageboard-edit archive-unless \"keep needle\" \"keep needle\" ..."
             print "  messageboard-edit archive-older-than 30"
+            print "  messageboard-edit unclaimed 7           # report-only: what nobody has cleared"
+            print "  messageboard-edit sweep-stubs           # remove header-only residue"
             print "  messageboard-edit refresh-header"
             print "  messageboard-edit show"
         }
