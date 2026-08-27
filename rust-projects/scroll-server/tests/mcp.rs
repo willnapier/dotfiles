@@ -335,6 +335,31 @@ async fn unknown_method_is_method_not_found() {
     assert_eq!(v["error"]["code"], -32601);
 }
 
+/// A JSON-RPC error travels on an HTTP 200. Without the code in the audit line,
+/// a refused call looks identical to a served one — how `server/discover`
+/// initially read as healthy.
+#[tokio::test]
+async fn audit_log_distinguishes_jsonrpc_errors_from_success() {
+    let srv = start_server(Some(TOKEN)).await;
+    let _ = rpc(&srv, TOKEN, req(20, "server/discover", json!({}))).await;
+    let _ = rpc(
+        &srv,
+        TOKEN,
+        req(21, "tools/call", json!({ "name": "list_scrolls", "arguments": {} })),
+    )
+    .await;
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    let log = std::fs::read_to_string(&srv.audit_path).unwrap_or_default();
+    assert!(
+        log.contains("server/discover!err-32601"),
+        "an unknown method must be logged as an error, not a bare 200: {log}"
+    );
+    assert!(
+        log.contains("tools/call:list_scrolls\""),
+        "a successful call must NOT carry an error marker: {log}"
+    );
+}
+
 #[tokio::test]
 async fn audit_log_records_the_scroll_but_never_the_token() {
     let srv = start_server(Some(TOKEN)).await;

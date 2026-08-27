@@ -419,16 +419,16 @@ pub async fn mcp_post(
         ),
     };
 
+    // A JSON-RPC error rides an HTTP 200, so logging the HTTP status alone makes
+    // a failed call indistinguishable from a successful one. Append the error
+    // code so the audit log reports what actually happened — the `server/discover`
+    // probe on 2026-08-27 read as a clean 200 while in fact returning -32601.
+    let what = match payload.pointer("/error/code").and_then(|c| c.as_i64()) {
+        Some(code) => format!("{}!err{code}", describe(method, &msg)),
+        None => describe(method, &msg),
+    };
     let body_len = payload.to_string().len();
-    log_mcp(
-        &state,
-        &ip.to_string(),
-        &ua,
-        &describe(method, &msg),
-        status.as_u16(),
-        body_len,
-    )
-    .await;
+    log_mcp(&state, &ip.to_string(), &ua, &what, status.as_u16(), body_len).await;
     let _ = INTERNAL_ERROR; // reserved for future failure paths
     json_response(status, payload)
 }
