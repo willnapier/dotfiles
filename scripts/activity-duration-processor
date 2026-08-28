@@ -412,6 +412,85 @@ def expand-spoken-clocks-line [line: string] {
     }
 }
 
+# Parakeet sometimes numeralises BOTH clocks of a span and glues them with no
+# separator at all: "o one twenty to o seven ten" came out as "O1220710"
+# (2026-08-27). The first spoken "o" survives as the LETTER O standing in for
+# the leading zero; the second becomes a digit. So the token decomposes as
+# O122 + 0710, i.e. 0122 and 0710.
+#
+# The trailing 2 of the first clock is the swallowed "to", by the same
+# 5-minute granularity argument used in parse-minutes-at: 22/32/42/52 are
+# never valid recorded minutes, so the 2 cannot belong to the clock.
+#
+# This fires ONLY on the glued form, which is always ASR output - a typed or
+# dictated span keeps its separator and never reaches here. So a deliberate
+# 0122-0710 is untouched.
+def glued-clock-token [tok: string] {
+    let digits = if ($tok =~ '^[Oo]\d{7}$') {
+        "0" + ($tok | str substring 1..)
+    } else if ($tok =~ '^\d{8}$') {
+        $tok
+    } else {
+        return null
+    }
+    # REFUSE anything that reads as YYYYMMDD. 20260828 splits into two valid
+    # clocks (20:26 and 08:28) and would silently become a 12hr "sleep",
+    # turning a date into a time range - the same class of corruption the
+    # duration filler below already guards against for ISO dates. A bare
+    # 8-digit date is rarer than a glued clock, but it is unrecoverable once
+    # written, so the guard is worth the occasional missed conversion.
+    let y = ($digits | str substring 0..<4 | into int)
+    let mo = ($digits | str substring 4..<6 | into int)
+    let dy = ($digits | str substring 6..<8 | into int)
+    if $y >= 1900 and $y <= 2100 and $mo >= 1 and $mo <= 12 and $dy >= 1 and $dy <= 31 {
+        return null
+    }
+    let h1 = ($digits | str substring 0..<2 | into int)
+    let m1 = ($digits | str substring 2..<4 | into int)
+    let h2 = ($digits | str substring 4..<6 | into int)
+    let m2 = ($digits | str substring 6..<8 | into int)
+    if $h1 > 23 or $m1 > 59 or $h2 > 23 or $m2 > 59 {
+        return null
+    }
+    # Only the tens+two shapes, matching the word-level rule. NOT every
+    # minutes value congruent to 2 mod 5: "seventeen" never absorbs a "to".
+    let m1fix = if $m1 in [22, 32, 42, 52] { $m1 - 2 } else { $m1 }
+    $"((pad2 $h1))((pad2 $m1fix))-((pad2 $h2))((pad2 $m2))"
+}
+
+
+def expand-glued-clocks-line [line: string] {
+    # Activity lines only, and never one carrying an ISO date. A bare 8-digit
+    # run in prose could be a date or an id, and Space+P sweeps whole buffers.
+    if not ($line =~ '::') or ($line =~ '\d{4}-\d{2}-\d{2}') {
+        return $line
+    }
+    let tokens = ($line | split row --regex '\s+')
+    mut out = []
+    mut changed = false
+    for tok in $tokens {
+        let fixed = (glued-clock-token $tok)
+        if $fixed == null {
+            $out = ($out | append $tok)
+        } else {
+            $out = ($out | append $fixed)
+            $changed = true
+        }
+    }
+    if $changed { $out | str join " " } else { $line }
+}
+
+
+def expand-glued-clocks [content: string] {
+    let out = ($content | lines | each {|line| expand-glued-clocks-line $line })
+    if ($content | str ends-with "\n") {
+        ($out | str join "\n") + "\n"
+    } else {
+        $out | str join "\n"
+    }
+}
+
+
 def expand-spoken-clocks [content: string] {
     let lines = ($content | lines)
     let out = ($lines | each {|line| expand-spoken-clocks-line $line })
@@ -810,7 +889,11 @@ def process-content [content: string] {
     let expanded = (
         lint-activity-syntax (
             expand-state-ratings (
-                expand-spoken-quantities (expand-spoken-clocks (expand-spoken-keys $content))
+                expand-spoken-quantities (
+                    expand-spoken-clocks (
+                        expand-glued-clocks (expand-spoken-keys $content)
+                    )
+                )
             )
         )
     )
