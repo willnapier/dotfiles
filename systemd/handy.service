@@ -17,6 +17,18 @@ ExecStart=%h/.local/bin/handy --start-hidden
 # is the point of this unit: recover from that without Will noticing.
 Restart=always
 RestartSec=5
+# Handy sets mute_while_recording, so it mutes the default sink at the start
+# of a take and unmutes at the end. If it dies mid-take that unmute never
+# fires and the speakers are left silent - which is near-undiagnosable,
+# because the symptom is "Handy stopped working" when Handy is in fact
+# recording perfectly and you simply cannot hear the beeps. That cost 15
+# minutes on 2026-08-28 after a restart loop killed instances mid-take.
+#
+# Runs on every stop, including the restart from `handy-dict use <profile>`.
+# Trade-off accepted: a deliberate mute of your own can be undone by a
+# profile switch. That is visible and one keypress to redo; silent speakers
+# after a crash are neither.
+ExecStopPost=-/usr/bin/pactl set-sink-mute @DEFAULT_SINK@ 0
 Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin
 Environment=HOME=%h
 Environment=XDG_RUNTIME_DIR=/run/user/%U
