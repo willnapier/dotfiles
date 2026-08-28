@@ -14,6 +14,7 @@ continuum-activity	0.1.0	/home/will/dotfiles/rust-projects/continuum-activity
 continuum-claude	0.1.0	/home/will/projects/continuum/continuum-claude
 continuum-dream	0.1.0	/home/will/dotfiles/rust-projects/continuum-dream
 continuum-grok	0.1.0	/home/will/projects/continuum/continuum-grok
+continuum-usage	0.1.0	/home/will/projects/continuum/continuum-usage
 cross-machine-sync-check	0.1.0	/home/will/dotfiles/rust-projects/cross-machine-sync-check
 dev-catchup	0.1.0	/home/will/dotfiles/rust-projects/dev-catchup
 dotter	0.13.4	crates.io
@@ -39,6 +40,7 @@ pizauth	1.0.11	https://github.com/ltratt/pizauth?tag=pizauth-1.0.11#f58048fc
 practiceforge	0.1.0	/home/will/Code/practiceforge/practiceforge
 ripgrep	14.1.1	crates.io
 rust-redeploy	0.1.0	/home/will/dotfiles/rust-projects/rust-redeploy
+scroll-server	0.1.0	/home/will/dotfiles/rust-projects/scroll-server
 sd	1.0.0	crates.io
 skill-eval	0.1.0	/home/will/dotfiles/rust-projects/skill-eval
 skim	0.20.5	crates.io
@@ -47,6 +49,10 @@ starship	1.23.0	crates.io
 stylance-cli	0.8.2	crates.io
 tm3-diary-capture	0.1.0	/home/will/Code/tm3-diary-capture
 trashy	2.0.0	crates.io
+usage-probe-anthropic-api	0.1.0	/home/will/projects/continuum/usage-probe-anthropic-api
+usage-probe-claude	0.1.0	/home/will/projects/continuum/usage-probe-claude
+usage-probe-codex	0.1.0	/home/will/projects/continuum/usage-probe-codex
+usage-probe-grok	0.1.0	/home/will/projects/continuum/usage-probe-grok
 yazi-cli	25.5.31	crates.io
 yazi-fm	25.5.31	crates.io
 yt-transcript	0.1.0	/home/will/dotfiles/rust-projects/yt-transcript
