@@ -6,7 +6,6 @@ claude-code-nightly-cleanup.timer
 claude-worktree-cleaner.timer
 cloudflared-scrolls-work.service
 cohs-trash-mover.timer
-collect-projects-watcher.service
 collect-projects.timer
 continuum-auto-import.timer
 continuum-dream.timer
