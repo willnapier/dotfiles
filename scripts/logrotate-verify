@@ -2,11 +2,32 @@
 # logrotate-verify — confirm a logrotate run did what it should, and in
 # particular that it did NOT silently kill logging.
 #
-# The failure mode this exists to catch: these services write via systemd
-# StandardOutput=append:, so systemd holds the file open. If a rule ever loses
-# `copytruncate`, rotation renames the file, the service keeps writing to an
-# unlinked inode, and the new log stays empty FOREVER. Rotation looks configured;
-# logging is dead. Nothing else would tell you.
+# The failure mode this exists to catch: a LONG-RUNNING service that writes via
+# systemd StandardOutput=append: has the file open for its whole life. If a rule
+# ever loses `copytruncate`, rotation renames the file, the service keeps writing
+# to the renamed-or-unlinked inode, and the new log stays empty FOREVER. Rotation
+# looks configured; logging is dead. Nothing else would tell you.
+#
+# That premise is narrower than it looks, and the check below is scoped to match
+# it (corrected 2026-08-28). Only a long-running unit can be stranded:
+#   - Type=oneshot/timer units (gmpull, cohs-trash-mover, gmail-push-tags, ...)
+#     reopen the append: target BY PATH on every start, so a rename cannot
+#     outlive a single run.
+#   - Several logs have no append: unit at all and are opened-appended-closed by
+#     the script itself: git-auto-pull-watcher.service is StandardOutput=journal
+#     and writes its log from nu (git-auto-pull-watcher:63); continuum/sync.log
+#     and continuum/auto-import.log are named by no unit whatsoever.
+# For all of those, rotation cannot strand the writer and a quiet log is just a
+# quiet log. Today only mailforge, forum-worker and dotter-realtime-watcher are
+# long-running append: units.
+#
+# So this does NOT test "has the log been written to lately" — that was the old
+# check, and it is the wrong question twice over: it fired on event-driven logs
+# that were merely idle (git-auto-pull-watcher, 2026-08-28) while never looking
+# at the only services that can actually fail. A guard that cries wolf on healthy
+# state trains you to ignore it. Instead it tests the condition DIRECTLY: every
+# open log fd must point at the path it is supposed to, not at an archive or a
+# deleted inode.
 #
 # See ~/Assistants/shared/NIMBINI-LOG-ROTATION.md
 #
@@ -24,9 +45,6 @@ MAIL="gmpull.log mail-sync.log mailforge.log cohs-trash-mover.log
 # Non-mail: rotate 2, archives are expected and fine.
 OTHER="git-auto-pull-watcher.log git-auto-push-watcher.log
        continuum/sync.log continuum/auto-import.log"
-# Services that should still be producing output; if one goes quiet for a long
-# stretch right after a rotation, suspect the unlinked-inode failure.
-LIVE="gmpull.log git-auto-pull-watcher.log continuum/sync.log continuum/auto-import.log"
 
 echo "== logrotate service =="
 last=$(systemctl show logrotate.service -p ExecMainStatus --value 2>/dev/null)
@@ -55,23 +73,37 @@ for f in $OTHER; do
 done
 
 echo
-echo "== still logging? (the copytruncate check) =="
-now=$(date +%s)
-for f in $LIVE; do
-    p="$S/$f"; [ -e "$p" ] || { bad "$f" "MISSING"; continue; }
-    age=$(( (now - $(stat -c%Y "$p")) / 60 ))
-    sz=$(stat -c%s "$p")
-    if [ "$age" -gt 180 ]; then
-        bad "$f" "no writes for ${age} min (size ${sz}) — check for unlinked inode"
-    else
-        note "$f" "written ${age} min ago, ${sz} bytes"
-    fi
+echo "== copytruncate: does every open log fd still point at its live path? =="
+# Own processes only, so no sudo: these are all systemd USER units.
+held=0
+for fd in /proc/[0-9]*/fd/*; do
+    tgt=$(readlink "$fd" 2>/dev/null) || continue
+    case "$tgt" in "$S"/*) ;; *) continue ;; esac
+    # Logs only. Daemons under $S also hold sqlite/localstorage handles
+    # (handy), which no rule rotates and which would be pure noise here.
+    case "$tgt" in
+        *.log|*.stdout|*.stderr|*' (deleted)'|*.log.[0-9]|*.stdout.[0-9]|*.stderr.[0-9]) ;;
+        *) continue ;;
+    esac
+    pid=${fd#/proc/}; pid=${pid%%/*}
+    comm=$(cat "/proc/$pid/comm" 2>/dev/null || echo '?')
+    held=$((held + 1))
+    short=${tgt#"$S"/}
+    case "$tgt" in
+        *' (deleted)')
+            bad "$comm[$pid]" "writing to DELETED ${short% (deleted)} — rotation renamed instead of truncating" ;;
+        *.[0-9]|*.[0-9].gz)
+            bad "$comm[$pid]" "writing to ARCHIVE $short — rotation renamed instead of truncating" ;;
+        *)
+            note "$comm[$pid]" "$short (live)" ;;
+    esac
 done
+[ "$held" -eq 0 ] && note "open log fds" "none held — nothing can be stranded"
 
 echo
 if [ "$fail" -eq 0 ]; then echo "RESULT: clean"; else
     echo "RESULT: needs attention"
-    echo "If a service stopped logging, confirm with:  sudo lsof +L1 | rg .local/share"
-    echo "A deleted-but-open log means rotation renamed instead of truncating."
+    echo "For a stranded writer, confirm independently with:  sudo lsof +L1 | rg .local/share"
+    echo "Fix is to restore copytruncate in the rule, then restart that unit."
 fi
 exit $fail
