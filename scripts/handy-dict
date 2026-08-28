@@ -65,6 +65,10 @@ MAX_HARVEST = 280
 #   SpaceXAI      <- "Space as a"                    (observed 2026-08-28)
 #   handy-dict    <- "Handy"                         (observed 2026-08-28)
 #   Dotter        <- "hold"                          (observed 2026-08-28)
+#   Continuum     <- "continue"                      (observed 2026-08-28, twice)
+# Continuum is a real trade - the system is referred to by name reasonably
+# often - but "continue" is far commoner in speech, and the steal was
+# observed twice in one session.
 # The last two are this script and the dotfiles manager - both said far less
 # often than the words they eat, and "Handy" in particular is the name of the
 # thing being dictated WITH, so it comes up constantly in speech about
@@ -85,7 +89,7 @@ MAX_HARVEST = 280
 # Add here only with an observed steal, not a suspected one.
 DENY = {
     "practiceforge", "clientid", "totem", "practiceowner", "interoception",
-    "spacexai", "handy-dict", "dotter",
+    "spacexai", "handy-dict", "dotter", "continuum",
 }
 
 # Whole classes of code identifier that eat a phrase said constantly. Denying
