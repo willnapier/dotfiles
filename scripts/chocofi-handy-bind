@@ -43,7 +43,46 @@ def handy_bin() -> str:
     return "handy"
 
 
+def handy_alive() -> bool:
+    """Is there a Handy instance for the CLI to talk to?"""
+    # -x matches the process NAME exactly. Do NOT use `pgrep -f "handy ..."`:
+    # -f matches full command lines, so any shell or script mentioning that
+    # string - including the command doing the checking - matches itself and
+    # the guard reports "alive" when nothing is running. That self-match was
+    # hit three separate times on 2026-08-28 (pkill -f, pgrep -c -f, and this
+    # check), each time producing a confidently wrong answer.
+    r = subprocess.run(
+        ["pgrep", "-x", "handy"],
+        capture_output=True,
+        check=False,
+    )
+    return r.returncode == 0
+
+
 def invoke(args: list[str]) -> None:
+    # NEVER let this cold-start Handy. `handy --toggle-transcription` with no
+    # running instance starts the app OUTSIDE handy.service, and that orphan
+    # then wins Handy's single-instance check - so the service's own start
+    # exits 0, Restart=always fires again, and it loops forever. Observed
+    # 2026-08-28: 30 restarts in three minutes, beeping on every F20 with no
+    # transcription, after a key press landed in a restart window.
+    #
+    # Ask systemd for an instance and drop this press. A lost keystroke is a
+    # far cheaper failure than a restart loop that looks like working audio.
+    if not handy_alive():
+        print(
+            "chocofi-handy-bind: no Handy instance; starting handy.service, "
+            "press dropped",
+            file=sys.stderr,
+            flush=True,
+        )
+        subprocess.run(
+            ["systemctl", "--user", "start", "handy.service"],
+            capture_output=True,
+            check=False,
+        )
+        return
+
     env = os.environ.copy()
     path = env.get("PATH", "")
     extra = str(Path.home() / ".local/bin")
