@@ -1,0 +1,40 @@
+# nimbini-general — non-clinical, authoritative trees on nimbini.
+#
+# Connection details are injected by ~/.local/state/rustic-backup/secrets/
+# nimbini-general.env. The repository password is a separate 0600 file.
+# This file is safe to commit: it contains no credentials or endpoint.
+#
+# Deliberately absent: [forget] and prune. Retain every snapshot until measured
+# growth justifies an attended retention decision.
+
+[global]
+no-progress = true
+log-level = "info"
+
+[repository]
+repository = "opendal:sftp"
+
+[backup]
+git-ignore = true
+exclude-if-present = ["CACHEDIR.TAG", ".nobackup"]
+
+[[backup.snapshots]]
+name = "forge"
+sources = ["/home/will/Forge"]
+
+[[backup.snapshots]]
+name = "admin"
+sources = ["/home/will/Admin"]
+
+[[backup.snapshots]]
+name = "literature"
+sources = ["/home/will/Literature"]
+
+[[backup.snapshots]]
+name = "media-logs"
+sources = ["/home/will/MediaLogs"]
+
+[[backup.snapshots]]
+name = "captures"
+sources = ["/home/will/Captures"]
+

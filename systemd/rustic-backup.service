@@ -1,0 +1,14 @@
+[Unit]
+Description=Create encrypted Rustic snapshot of nimbini general data
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=HOME=/home/will
+Environment=PATH=/home/will/.cargo/bin:/home/will/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/will/.local/bin/rustic-backup backup
+TimeoutStartSec=12h
+StandardOutput=append:/home/will/.local/share/rustic-backup.log
+StandardError=append:/home/will/.local/share/rustic-backup.log
+

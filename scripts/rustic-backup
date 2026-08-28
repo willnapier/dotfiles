@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# Safe entry point for the pinned Rustic backup profiles.
+# Secrets live outside Dotter and synced trees under ~/.local/state.
+
+set -euo pipefail
+
+PROFILE="${RUSTIC_BACKUP_PROFILE:-nimbini-general}"
+STATE_ROOT="${RUSTIC_BACKUP_STATE_ROOT:-$HOME/.local/state/rustic-backup}"
+SECRET_DIR="$STATE_ROOT/secrets"
+ENV_FILE="$SECRET_DIR/$PROFILE.env"
+PASSWORD_FILE="$SECRET_DIR/$PROFILE.password"
+SUCCESS_FILE="$STATE_ROOT/last-success/$PROFILE"
+EXPECTED_RUSTIC_VERSION="0.11.3"
+
+die() {
+    printf 'rustic-backup: %s\n' "$*" >&2
+    exit 1
+}
+
+notify_failure() {
+    local message="$1"
+    if command -v notify-send >/dev/null 2>&1; then
+        notify-send --urgency=critical "Rustic backup" "$message" >/dev/null 2>&1 || true
+    elif command -v osascript >/dev/null 2>&1; then
+        osascript -e "display notification \"$message\" with title \"Rustic backup\" sound name \"Basso\"" >/dev/null 2>&1 || true
+    fi
+}
+
+check_mode_0600() {
+    local path="$1"
+    local mode
+    if [ "$(uname -s)" = "Darwin" ]; then
+        mode="$(stat -f '%Lp' "$path")"
+    else
+        mode="$(stat -c '%a' "$path")"
+    fi
+    [ "$mode" = "600" ] || die "$path must have mode 0600 (found $mode)"
+}
+
+load_credentials() {
+    [ -f "$ENV_FILE" ] || die "not configured: missing $ENV_FILE"
+    [ -f "$PASSWORD_FILE" ] || die "not configured: missing $PASSWORD_FILE"
+    check_mode_0600 "$ENV_FILE"
+    check_mode_0600 "$PASSWORD_FILE"
+
+    # shellcheck disable=SC1090
+    set -a
+    . "$ENV_FILE"
+    set +a
+    export RUSTIC_PASSWORD_FILE="$PASSWORD_FILE"
+
+    : "${OPENDAL_ENDPOINT:?OPENDAL_ENDPOINT is required}"
+    : "${OPENDAL_USER:?OPENDAL_USER is required}"
+    : "${OPENDAL_KEY:?OPENDAL_KEY is required}"
+    : "${OPENDAL_ROOT:?OPENDAL_ROOT is required}"
+    [ -f "$OPENDAL_KEY" ] || die "SSH private key not found: $OPENDAL_KEY"
+    check_mode_0600 "$OPENDAL_KEY"
+}
+
+check_binary() {
+    command -v rustic >/dev/null 2>&1 || die "rustic is not installed"
+    local actual
+    actual="$(rustic --version | awk '{print $2}')"
+    [ "$actual" = "$EXPECTED_RUSTIC_VERSION" ] || die "expected rustic $EXPECTED_RUSTIC_VERSION, found $actual"
+}
+
+run_rustic() {
+    check_binary
+    load_credentials
+    rustic -P "$PROFILE" "$@"
+}
+
+backup() {
+    mkdir -p "$(dirname "$SUCCESS_FILE")"
+    if run_rustic backup; then
+        date -u +'%Y-%m-%dT%H:%M:%SZ' > "$SUCCESS_FILE"
+    else
+        notify_failure "$PROFILE backup failed"
+        return 1
+    fi
+}
+
+status() {
+    if [ ! -f "$ENV_FILE" ] || [ ! -f "$PASSWORD_FILE" ]; then
+        printf '%s: staged, awaiting Hetzner credentials\n' "$PROFILE"
+        return 0
+    fi
+    [ -f "$SUCCESS_FILE" ] || die "$PROFILE is configured but has no successful backup marker"
+    local now modified age
+    now="$(date +%s)"
+    if [ "$(uname -s)" = "Darwin" ]; then
+        modified="$(stat -f '%m' "$SUCCESS_FILE")"
+    else
+        modified="$(stat -c '%Y' "$SUCCESS_FILE")"
+    fi
+    age=$((now - modified))
+    [ "$age" -le 129600 ] || die "$PROFILE last succeeded $((age / 3600)) hours ago"
+    printf '%s: healthy; last success %s\n' "$PROFILE" "$(cat "$SUCCESS_FILE")"
+}
+
+usage() {
+    printf '%s\n' \
+        'usage: rustic-backup backup|check|check-data-subset|snapshots|status|init' \
+        '  init is intentionally manual and must follow Hetzner provisioning.'
+}
+
+case "${1:-}" in
+    backup) backup ;;
+    check) run_rustic check ;;
+    check-data-subset) run_rustic check --read-data-subset=10% ;;
+    snapshots) run_rustic snapshots ;;
+    status)
+        if ! status; then
+            notify_failure "$PROFILE has no recent successful backup"
+            exit 1
+        fi
+        ;;
+    init) run_rustic init ;;
+    *) usage; exit 2 ;;
+esac
+

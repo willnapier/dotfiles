@@ -46,6 +46,7 @@ depends = []
 "scripts/workshop-output" = "~/.local/bin/workshop-output"
 "scripts/tool-versions" = "~/.local/bin/tool-versions"
 "scripts/package-drift-check" = "~/.local/bin/package-drift-check"
+"scripts/rustic-backup" = "~/.local/bin/rustic-backup"
 "scripts/niri-tile-all-floating" = { target = "~/.local/bin/niri-tile-all-floating", type = "symbolic" }
 "scripts/niri-move-dir" = { target = "~/.local/bin/niri-move-dir", type = "symbolic" }
 "scripts/niri-center-focused" = { target = "~/.local/bin/niri-center-focused", type = "symbolic" }
@@ -504,6 +505,13 @@ depends = ["shared"]
 "systemd/continuum-auto-import.timer" = "~/.config/systemd/user/continuum-auto-import.timer"
 "systemd/usagewatch-monitor.service" = "~/.config/systemd/user/usagewatch-monitor.service"
 "systemd/usagewatch-monitor.timer" = "~/.config/systemd/user/usagewatch-monitor.timer"
+"rustic/nimbini-general.toml" = "~/.config/rustic/nimbini-general.toml"
+"systemd/rustic-backup.service" = "~/.config/systemd/user/rustic-backup.service"
+"systemd/rustic-backup.timer" = "~/.config/systemd/user/rustic-backup.timer"
+"systemd/rustic-check.service" = "~/.config/systemd/user/rustic-check.service"
+"systemd/rustic-check.timer" = "~/.config/systemd/user/rustic-check.timer"
+"systemd/rustic-backup-health.service" = "~/.config/systemd/user/rustic-backup-health.service"
+"systemd/rustic-backup-health.timer" = "~/.config/systemd/user/rustic-backup-health.timer"
 "systemd/dotter-realtime-watcher.service" = "~/.config/systemd/user/dotter-realtime-watcher.service"
 "systemd/dotter-sync-watcher.service" = "~/.config/systemd/user/dotter-sync-watcher.service"
 "systemd/git-auto-pull-watcher.service" = "~/.config/systemd/user/git-auto-pull-watcher.service"

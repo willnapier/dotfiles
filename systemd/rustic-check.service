@@ -1,0 +1,14 @@
+[Unit]
+Description=Check Rustic repository structure and integrity
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=HOME=/home/will
+Environment=PATH=/home/will/.cargo/bin:/home/will/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/will/.local/bin/rustic-backup check
+TimeoutStartSec=12h
+StandardOutput=append:/home/will/.local/share/rustic-check.log
+StandardError=append:/home/will/.local/share/rustic-check.log
+
