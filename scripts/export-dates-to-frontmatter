@@ -9,9 +9,56 @@
 def main [
     directory: string           # Directory to process
     --dry-run                  # Show what would be done without modifying files
+    --i-know-btime-is-unreliable   # REQUIRED to write anything: see the guard below
+    --overwrite-existing        # also replace `date created:` values already present
 ] {
     let dir = ($directory | path expand)
-    
+
+    # ------------------------------------------------------------------
+    # HARD GUARD, added 2026-08-28. Read this before overriding it.
+    #
+    # This tool's SOURCE of truth is the filesystem birth time. That source
+    # is no longer trustworthy on this system: Helix 25.07.1 saves ATOMICALLY
+    # - it renames the original away, creates a NEW file, and writes into it -
+    # so every file you have ever edited has a birth time of "whenever you
+    # last edited it", not when it was created. Confirmed 2026-08-28: a
+    # January DayPage carried a March birth time; yesterday's carried today's.
+    #
+    # So running this LIVE would replace correct frontmatter dates with
+    # meaningless recent ones - destroying exactly the record it exists to
+    # protect, and which was created because journal dates back to 2010 were
+    # already lost once in the Evernote migration.
+    #
+    # Frontmatter is now the ONLY trustworthy creation record. Filesystem
+    # birth time is derived, disposable, and wrong.
+    #
+    # If you are restoring dates from an Evernote export or similar, do NOT
+    # reach for this script: take the dates from the export manifest, which
+    # actually knows them, and write those. The right fix is a different
+    # source, not a louder flag.
+    # ------------------------------------------------------------------
+    if not $dry_run and not $i_know_btime_is_unreliable {
+        print "REFUSED: filesystem birth time is unreliable on this system."
+        print ""
+        print "  Helix saves atomically, so every edited file's btime is the"
+        print "  time you last edited it - not when it was created. Writing"
+        print "  those into frontmatter would destroy the real dates."
+        print ""
+        print "  --dry-run                     to see what it would do"
+        print "  --i-know-btime-is-unreliable  to write anyway"
+        print "  --overwrite-existing          to also replace dates already present"
+        print ""
+        print "  Restoring old dates? Use the export manifest as the source,"
+        print "  not the filesystem. See the comment in this script."
+        exit 1
+    }
+    if $overwrite_existing and not $dry_run {
+        print "WARNING: --overwrite-existing will REPLACE `date created:` values"
+        print "         that are already in frontmatter. Those are more"
+        print "         trustworthy than anything this script can read."
+        print ""
+    }
+
     print $"Scanning markdown files in ($dir)..."
     print $"Mode: (if $dry_run { 'DRY RUN' } else { 'LIVE - will modify files' })\n"
     
@@ -89,7 +136,16 @@ date modified: ($modified_str)
                     $fm_lines
                     | each { |line|
                         if ($line | str contains "date created:") {
-                            $"date created: ($birth_str)"
+                            # An existing frontmatter date is MORE trustworthy than
+                            # the filesystem birth time (which Helix's atomic save
+                            # resets on every edit). Keep it unless explicitly told
+                            # to overwrite. This is the line that would silently
+                            # destroy dates going back to 2010.
+                            if $overwrite_existing {
+                                $"date created: ($birth_str)"
+                            } else {
+                                $line
+                            }
                         } else if ($line | str contains "date modified:") {
                             $"date modified: ($modified_str)"
                         } else {
