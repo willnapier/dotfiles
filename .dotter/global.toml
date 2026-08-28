@@ -497,6 +497,7 @@ depends = ["shared"]
 # those assistants run — machine-local SCHEDULING, which the [linux.files] section already
 # expresses; it is not a reason to leave the unit unmanaged. Brought under dotter
 # 2026-08-01 when its timer was found dead, so the fix is reproducible from the repo.
+"systemd/handy.service" = "~/.config/systemd/user/handy.service"
 "systemd/continuum-auto-import.service" = "~/.config/systemd/user/continuum-auto-import.service"
 "systemd/continuum-auto-import.timer" = "~/.config/systemd/user/continuum-auto-import.timer"
 "systemd/usagewatch-monitor.service" = "~/.config/systemd/user/usagewatch-monitor.service"

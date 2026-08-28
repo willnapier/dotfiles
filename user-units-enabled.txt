@@ -24,6 +24,7 @@ gmail-push-tags-watchdog.timer
 gmail-push-tags.timer
 gmpull.timer
 gnome-keyring-daemon.socket
+handy.service
 helix-undo-cleanup.timer
 link-service.service
 mailcurator-drift.timer

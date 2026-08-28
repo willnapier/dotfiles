@@ -259,4 +259,6 @@ spawn-at-startup "gnome-keyring-daemon" "--start" "--components=secrets";
 spawn-at-startup "swaybg" "-c" "#002b36";
 spawn-at-startup "waybar";
 spawn-at-startup "mako";
-spawn-at-startup "handy" "--start-hidden";
+// Handy is a systemd user service (handy.service) so it can Restart=always.
+// Do NOT also spawn-at-startup here, and keep Handy's own "Launch at startup"
+// GUI toggle OFF — either one gives you a SECOND, visible instance.

@@ -1,0 +1,25 @@
+[Unit]
+Description=Handy local dictation (Parakeet), hidden in tray
+Documentation=file://%h/Assistants/shared/LOCAL-DICTATION.md
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+# --start-hidden is load-bearing. `handy --toggle-transcription` from the
+# Chocofi F20 bind does NOT imply it: when no instance is running, that
+# invocation cold-starts the app WITH A VISIBLE WINDOW and swallows the
+# toggle (no beep, no take). Keeping an instance alive here means F20
+# always toggles a running app instead of launching one.
+ExecStart=%h/.local/bin/handy --start-hidden
+# Handy exited on its own at 10:57 on 2026-08-28 after 1d uptime and a
+# 1.8G memory peak — no OOM, nothing scheduled killed it. Restart=always
+# is the point of this unit: recover from that without Will noticing.
+Restart=always
+RestartSec=5
+Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=%h
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+
+[Install]
+WantedBy=default.target
