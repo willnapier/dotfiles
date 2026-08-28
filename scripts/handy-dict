@@ -53,6 +53,16 @@ THRESHOLD = 0.12
 MIN_SPOKEN = 3
 MAX_HARVEST = 280
 
+# Correct system names that STEAL ordinary speech at the live threshold,
+# observed in real dictation rather than predicted. The collision check is
+# single-token, so it cannot see a steal that spans a word boundary - which
+# is exactly how the first of these gets in.
+#   PracticeForge <- "practice on" / "practice for"  (observed 2026-08-28)
+#   ClientId      <- "clients"                       (observed 2026-08-28)
+# Both are said far less often than the words they displace. Add here only
+# with an observed steal, not a suspected one.
+DENY = {"practiceforge", "clientid"}
+
 # Common English / generic tokens that must never become custom words.
 STOP = {
     "the", "and", "for", "from", "with", "this", "that", "auto", "check", "sync",
@@ -201,7 +211,7 @@ def add_ident(store: dict[str, str], word: str) -> None:
     if len(letters) < 6:
         return
     low = word.lower()
-    if low in STOP or low in BANNED_SHORT:
+    if low in STOP or low in BANNED_SHORT or low in DENY:
         return
     parts = [p for p in re.split(r"[-_]", word) if p]
     if len(parts) > 3:
@@ -381,6 +391,8 @@ def build_dictionary(user_counts: Counter) -> tuple[list[str], dict]:
         key = match_key(word)
         if not key or key in accepted:
             return
+        if word.lower() in DENY:
+            return
         if require_spoken and (key in BANNED_SHORT or word.lower() in STOP):
             return
         if not require_spoken and key in BANNED_SHORT:
@@ -480,6 +492,21 @@ def restart_handy() -> None:
             return
         subprocess.run(["open", "-a", "Handy"], check=False, capture_output=True)
         print("restarted Handy")
+        return
+
+    # Handy is a systemd user service on Linux since 2026-08-28. pkill would
+    # race Restart=always: systemd relaunches it AND the spawn below adds a
+    # SECOND, visible instance. Let systemd own the lifecycle where it does.
+    unit = subprocess.run(
+        ["systemctl", "--user", "is-enabled", "handy.service"],
+        check=False, capture_output=True, text=True,
+    )
+    if unit.returncode == 0:
+        subprocess.run(
+            ["systemctl", "--user", "restart", "handy.service"],
+            check=False, capture_output=True,
+        )
+        print("restarted Handy (systemd unit handy.service)")
         return
 
     subprocess.run(
