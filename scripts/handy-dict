@@ -63,6 +63,14 @@ MAX_HARVEST = 280
 # with an observed steal, not a suspected one.
 DENY = {"practiceforge", "clientid"}
 
+# Build artefacts and private identifiers nobody says aloud: __pycache__,
+# __init__, _private, trailing_. match_key() strips underscores, so the edge
+# markers only survive on the raw word - test there, not on the key. These
+# steal nothing (no phonetic neighbour) but they are noise in a list whose
+# whole job is words a human dictates. Inner underscores are NOT matched:
+# a name like foo_bar is still a plausible spoken identifier.
+UNDERSCORE_EDGE_RE = re.compile(r"^_|_$")
+
 # Common English / generic tokens that must never become custom words.
 STOP = {
     "the", "and", "for", "from", "with", "this", "that", "auto", "check", "sync",
@@ -212,6 +220,8 @@ def add_ident(store: dict[str, str], word: str) -> None:
         return
     low = word.lower()
     if low in STOP or low in BANNED_SHORT or low in DENY:
+        return
+    if UNDERSCORE_EDGE_RE.search(word):
         return
     parts = [p for p in re.split(r"[-_]", word) if p]
     if len(parts) > 3:
@@ -392,6 +402,8 @@ def build_dictionary(user_counts: Counter) -> tuple[list[str], dict]:
         if not key or key in accepted:
             return
         if word.lower() in DENY:
+            return
+        if UNDERSCORE_EDGE_RE.search(word):
             return
         if require_spoken and (key in BANNED_SHORT or word.lower() in STOP):
             return
