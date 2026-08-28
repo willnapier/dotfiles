@@ -66,6 +66,8 @@ MAX_HARVEST = 280
 #   handy-dict    <- "Handy"                         (observed 2026-08-28)
 #   Dotter        <- "hold"                          (observed 2026-08-28)
 #   Continuum     <- "continue"                      (observed 2026-08-28, twice)
+#   DayPage       <- "do page"                       (observed 2026-08-28)
+#   ComparePane   <- "comparing"                     (observed 2026-08-28, twice)
 # Continuum is a real trade - the system is referred to by name reasonably
 # often - but "continue" is far commoner in speech, and the steal was
 # observed twice in one session.
@@ -89,7 +91,8 @@ MAX_HARVEST = 280
 # Add here only with an observed steal, not a suspected one.
 DENY = {
     "practiceforge", "clientid", "totem", "practiceowner", "interoception",
-    "spacexai", "handy-dict", "dotter", "continuum",
+    "spacexai", "handy-dict", "dotter", "continuum", "daypage",
+    "comparepane",
 }
 
 # Whole classes of code identifier that eat a phrase said constantly. Denying
