@@ -26,8 +26,21 @@ scroll-lines = 1
 focus-lost = true           # Save when Helix loses focus (WezTerm focus events)
 
 [editor.auto-save.after-delay]
-enable = true               # Save after idle — skipped while mode == insert
-timeout = 500               # After leaving insert, or for normal-mode edits
+# DISABLED 2026-08-28. This raced `esc = [":write", "normal_mode"]` below.
+# Escape runs :write (save #1), which is an ATOMIC save: Helix renames the
+# original to <name><rand>.bck, creates a NEW file, writes, chmods, deletes
+# the backup. New inode, new mtime. Then after-delay became eligible the
+# instant mode left insert and fired save #2 ~500ms later, which found the
+# file changed since it was last read - by save #1 - and refused with
+# "file modified by an external process; use :w! to overwrite".
+#
+# No external process was ever involved. Verified by inotify on the DayPages
+# directory: exactly ONE write burst per Escape, all of it Helix's own.
+# The esc binding is kept because the DayPage tooling needs an immediate
+# flush; after-delay only duplicated it 500ms later. focus-lost stays - it
+# fires on a different trigger and does not race.
+enable = false
+timeout = 500
 
 # Persistent undo - not available in Helix 25.07.1
 # [editor.undo]
