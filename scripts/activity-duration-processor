@@ -426,6 +426,26 @@ def expand-spoken-clocks-line [line: string] {
 # dictated span keeps its separator and never reaches here. So a deliberate
 # 0122-0710 is untouched.
 def glued-clock-token [tok: string] {
+    # NINE digits with a literal 2 in the middle: the separator itself was
+    # transcribed as a digit and glued between two COMPLETE clocks.
+    # "o one thirty to o nine fifteen" -> 013020915 = 0130 | 2 | 0915
+    # (observed 2026-08-28). Strip the 2 and the 8-digit path handles the rest.
+    # Only a middle digit of exactly 2 qualifies - that is the "to"; any other
+    # digit is not a separator and the token is left alone.
+    let nine = if ($tok =~ '^[Oo]\d{8}$') {
+        "0" + ($tok | str substring 1..)
+    } else if ($tok =~ '^\d{9}$') {
+        $tok
+    } else {
+        null
+    }
+    let tok = if $nine != null and ($nine | str substring 4..<5) == "2" {
+        ($nine | str substring 0..<4) + ($nine | str substring 5..)
+    } else if $nine != null {
+        return null
+    } else {
+        $tok
+    }
     let digits = if ($tok =~ '^[Oo]\d{7}$') {
         "0" + ($tok | str substring 1..)
     } else if ($tok =~ '^\d{8}$') {
