@@ -1,0 +1,23 @@
+[Unit]
+Description=Assistants Documentation Auto-Sync Watcher
+Documentation=Automatically commits and pushes ~/Assistants changes
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/dotfiles/scripts/assistants-docs-auto-push
+Restart=always
+RestartSec=10
+Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=%h
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+# Nice to have
+Nice=15
+
+[Install]
+WantedBy=default.target

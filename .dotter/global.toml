@@ -516,6 +516,16 @@ depends = ["shared"]
 "systemd/continuum-sync-claude.service" = "~/.config/systemd/user/continuum-sync-claude.service"
 "systemd/continuum-sync-claude.timer" = "~/.config/systemd/user/continuum-sync-claude.timer"
 "systemd/link-service.service" = "~/.config/systemd/user/link-service.service"
+# Brought under dotter 2026-08-28. cross-machine-sync-check had flagged these
+# three as "deployed but NOT dotter-managed" since at least 2026-08-20, failing
+# the check daily and cascading into system-health-check. They were plain files
+# in ~/.config/systemd/user, so they would not have survived a rebuild and could
+# not be reviewed in git. Same reasoning as continuum-auto-import above.
+# dotter-drift-monitor.service also had /home/will hardcoded in ExecStart and
+# PATH; normalised to %h at the same time.
+"systemd/dotter-drift-monitor.service" = "~/.config/systemd/user/dotter-drift-monitor.service"
+"systemd/dotter-drift-monitor.timer" = "~/.config/systemd/user/dotter-drift-monitor.timer"
+"systemd/assistants-docs-watcher.service" = "~/.config/systemd/user/assistants-docs-watcher.service"
 "scripts/dotter-sync-watcher" = "~/.local/bin/dotter-sync-watcher"
 "scripts/dotter-sync-watcher-wrapper" = "~/.local/bin/dotter-sync-watcher-wrapper"
 "scripts/git-auto-push-watcher" = "~/.local/bin/git-auto-push-watcher"

@@ -1,0 +1,13 @@
+[Unit]
+Description=Dotter Configuration Drift Monitor
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/dotter-drift-monitor --check
+WorkingDirectory=%h/dotfiles
+Environment=PATH=%h/.cargo/bin:%h/.local/bin:/usr/bin:/bin
+Environment=HOME=%h
+
+[Install]
+WantedBy=default.target
