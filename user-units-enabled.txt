@@ -14,7 +14,6 @@ continuum-sync-claude.timer
 cross-machine-sync-check.timer
 dotter-drift-monitor.timer
 dropbox.service
-firefox-nightly-restart.timer
 forge-link-manager.service
 forge-md-revs.service
 forum-worker.service

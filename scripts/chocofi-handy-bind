@@ -9,6 +9,7 @@ KEY_F19 -> handy --cancel
 from __future__ import annotations
 
 import os
+import signal
 import struct
 import subprocess
 import sys
@@ -21,6 +22,18 @@ EV_KEY = 1
 KEY_F19 = 189
 KEY_F20 = 190
 NAMES = ("Chocofi-Handy Keyboard", "Chocofi-Handy", "Urchin-Turn Keyboard", "Urchin-Turn")
+
+
+# Reap children automatically. Every F19/F20 press Popen()s a `handy` CLI
+# invocation and never wait()s on it, so each press used to leave a zombie
+# ([handy] <defunct>) holding a PID until this service restarted. Setting
+# SIGCHLD to SIG_IGN tells the kernel we will never collect exit statuses,
+# so it discards them itself instead of keeping the record.
+#
+# Safe here ONLY because nothing in this file ever calls wait()/poll() or
+# reads a returncode - SIG_IGN makes those unreliable. If that ever changes,
+# remove this and reap explicitly.
+signal.signal(signal.SIGCHLD, signal.SIG_IGN)
 
 
 def handy_bin() -> str:
