@@ -101,6 +101,25 @@ OVERLAY_CANDIDATES = [
     HOME / "dotfiles" / "handy" / "overlays",
 ]
 PROFILE_STATE = HOME / ".local" / "state" / "handy-dict" / "profile"
+# The harvested base, cached so a profile SWITCH does not re-harvest. Without
+# this, `use` took ~24s (measured) because it rebuilt from the continuum logs
+# every time - which would make switching too slow to bother with, defeating
+# the point of profiles. `apply` rebuilds and refreshes this; `use` reads it.
+BASE_CACHE = HOME / ".local" / "state" / "handy-dict" / "base.txt"
+
+
+def save_base_cache(words: list[str]) -> None:
+    BASE_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    BASE_CACHE.write_text("\n".join(words) + "\n", encoding="utf-8")
+
+
+def load_base_cache() -> list[str] | None:
+    try:
+        text = BASE_CACHE.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    words = [l.strip() for l in text.splitlines() if l.strip()]
+    return words or None
 
 
 def overlay_dir() -> Path | None:
@@ -661,6 +680,11 @@ def main() -> int:
         help="build against this profile without changing the active one",
     )
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="re-harvest instead of using the cached base (use/extract)",
+    )
     parser.add_argument("--no-restart", action="store_true")
     parser.add_argument(
         "--keep",
@@ -684,20 +708,28 @@ def main() -> int:
         profile = args.profile_flag or read_active_profile()
     overlay = load_overlay(profile)
 
-    print("scanning continuum user messages (tokens only)...", file=sys.stderr)
-    counts = scan_user_tokens()
-    words, stats = build_dictionary(counts)
-    print(
-        f"seed={stats['seed']} docs={stats.get('docs', 0)} harvested={stats['harvested']} "
-        f"total={stats['total']} collisions={stats['rejected_collision']} "
-        f"unspoken-drop={stats['rejected_unspoken']} "
-        f"user-tokens={stats['user_msgs_tokens']}",
-        file=sys.stderr,
-    )
-    if stats["collisions_sample"]:
-        print("collision rejects (custom → stolen common speech):", file=sys.stderr)
-        for word, hits in stats["collisions_sample"]:
-            print(f"  {word}  would steal  {', '.join(hits)}", file=sys.stderr)
+    # A switch reuses the cached base; a rebuild is an explicit choice.
+    cached = None if args.rebuild or args.command == "apply" else load_base_cache()
+    if cached is not None:
+        words = cached
+        print(f"base from cache ({len(words)} words; --rebuild to re-harvest)",
+              file=sys.stderr)
+    else:
+        print("scanning continuum user messages (tokens only)...", file=sys.stderr)
+        counts = scan_user_tokens()
+        words, stats = build_dictionary(counts)
+        print(
+            f"seed={stats['seed']} docs={stats.get('docs', 0)} harvested={stats['harvested']} "
+            f"total={stats['total']} collisions={stats['rejected_collision']} "
+            f"unspoken-drop={stats['rejected_unspoken']} "
+            f"user-tokens={stats['user_msgs_tokens']}",
+            file=sys.stderr,
+        )
+        if stats["collisions_sample"]:
+            print("collision rejects (custom → stolen common speech):", file=sys.stderr)
+            for word, hits in stats["collisions_sample"]:
+                print(f"  {word}  would steal  {', '.join(hits)}", file=sys.stderr)
+        save_base_cache(words)
 
     words, added = merge_overlay(words, overlay)
     if profile != "general":
