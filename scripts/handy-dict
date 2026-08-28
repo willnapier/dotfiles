@@ -76,6 +76,85 @@ MAX_HARVEST = 280
 # Add here only with an observed steal, not a suspected one.
 DENY = {"practiceforge", "clientid", "totem", "practiceowner", "interoception"}
 
+# Whole classes of code identifier that eat a phrase said constantly. Denying
+# by prefix beats listing them: clinical-dashboard ate "clinical dictionary"
+# and clinical-core ate "clinical terms" on 2026-08-28, and there are ten such
+# crate names. They are NOT lost - the dev overlay carries them, so they are
+# available when dictating about PracticeForge internals and absent when
+# talking about clinical work.
+DENY_PREFIXES = ("clinical-", "clinic-")
+
+
+def denied(word: str) -> bool:
+    low = word.lower()
+    return low in DENY or low.startswith(DENY_PREFIXES)
+
+
+# ---------------------------------------------------------------- profiles
+# Handy has no profile concept and no settings CLI (only --toggle/--cancel),
+# so a profile IS "write the word list, restart the service". Overlays are
+# additive on top of the harvested base, so there is one list to curate, not
+# N. Overlay words deliberately bypass DENY and the collision check: an
+# overlay is an explicit choice to accept a collision in that context.
+OVERLAY_CANDIDATES = [
+    HOME / ".local" / "share" / "handy-dict" / "overlays",
+    HOME / "dotfiles" / "handy" / "overlays",
+]
+PROFILE_STATE = HOME / ".local" / "state" / "handy-dict" / "profile"
+
+
+def overlay_dir() -> Path | None:
+    for d in OVERLAY_CANDIDATES:
+        if d.is_dir():
+            return d
+    return None
+
+
+def available_profiles() -> list[str]:
+    d = overlay_dir()
+    if not d:
+        return []
+    return sorted(p.stem for p in d.glob("*.txt"))
+
+
+def load_overlay(name: str) -> list[str]:
+    if name == "general":
+        return []
+    d = overlay_dir()
+    if not d:
+        raise SystemExit("no overlay directory; expected dotfiles/handy/overlays/")
+    f = d / f"{name}.txt"
+    if not f.is_file():
+        have = ", ".join(["general"] + available_profiles()) or "general"
+        raise SystemExit(f"unknown profile {name!r}; available: {have}")
+    return load_seed(f)
+
+
+def read_active_profile() -> str:
+    try:
+        return PROFILE_STATE.read_text(encoding="utf-8").strip() or "general"
+    except OSError:
+        return "general"
+
+
+def write_active_profile(name: str) -> None:
+    PROFILE_STATE.parent.mkdir(parents=True, exist_ok=True)
+    PROFILE_STATE.write_text(name + "\n", encoding="utf-8")
+
+
+def merge_overlay(words: list[str], overlay: list[str]) -> tuple[list[str], int]:
+    """Append overlay words the base does not already carry, order preserved."""
+    have = {match_key(w) for w in words}
+    out = list(words)
+    added = 0
+    for w in overlay:
+        k = match_key(w)
+        if k and k not in have:
+            have.add(k)
+            out.append(w)
+            added += 1
+    return out, added
+
 # Build artefacts and private identifiers nobody says aloud: __pycache__,
 # __init__, _private, trailing_. match_key() strips underscores, so the edge
 # markers only survive on the raw word - test there, not on the key. These
@@ -232,7 +311,7 @@ def add_ident(store: dict[str, str], word: str) -> None:
     if len(letters) < 6:
         return
     low = word.lower()
-    if low in STOP or low in BANNED_SHORT or low in DENY:
+    if low in STOP or low in BANNED_SHORT or denied(word):
         return
     if UNDERSCORE_EDGE_RE.search(word):
         return
@@ -414,7 +493,7 @@ def build_dictionary(user_counts: Counter) -> tuple[list[str], dict]:
         key = match_key(word)
         if not key or key in accepted:
             return
-        if word.lower() in DENY:
+        if denied(word):
             return
         if UNDERSCORE_EDGE_RE.search(word):
             return
@@ -569,7 +648,17 @@ def main() -> int:
         "command",
         nargs="?",
         default="extract",
-        choices=["extract", "apply"],
+        choices=["extract", "apply", "use", "profiles"],
+    )
+    parser.add_argument(
+        "profile",
+        nargs="?",
+        help="profile name for `use` (general, or an overlay in dotfiles/handy/overlays/)",
+    )
+    parser.add_argument(
+        "--profile",
+        dest="profile_flag",
+        help="build against this profile without changing the active one",
     )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--no-restart", action="store_true")
@@ -579,6 +668,21 @@ def main() -> int:
         help="keep extra words already in Handy settings",
     )
     args = parser.parse_args()
+
+    if args.command == "profiles":
+        active = read_active_profile()
+        for name in ["general"] + available_profiles():
+            print(f"{'*' if name == active else ' '} {name}")
+        return 0
+
+    if args.command == "use":
+        if not args.profile:
+            raise SystemExit("usage: handy-dict use <profile>   (see: handy-dict profiles)")
+        profile = args.profile
+        load_overlay(profile)  # validate before touching anything
+    else:
+        profile = args.profile_flag or read_active_profile()
+    overlay = load_overlay(profile)
 
     print("scanning continuum user messages (tokens only)...", file=sys.stderr)
     counts = scan_user_tokens()
@@ -595,6 +699,10 @@ def main() -> int:
         for word, hits in stats["collisions_sample"]:
             print(f"  {word}  would steal  {', '.join(hits)}", file=sys.stderr)
 
+    words, added = merge_overlay(words, overlay)
+    if profile != "general":
+        print(f"profile={profile} overlay=+{added}", file=sys.stderr)
+
     if args.command == "extract":
         for w in words:
             print(w)
@@ -606,6 +714,10 @@ def main() -> int:
         restart=not args.no_restart,
         dry_run=args.dry_run,
     )
+    # Only record the profile once the write actually happened.
+    if args.command == "use" and not args.dry_run:
+        write_active_profile(profile)
+        print(f"active profile is now {profile}", file=sys.stderr)
     return 0
 
 

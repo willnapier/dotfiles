@@ -1,0 +1,22 @@
+# Dev overlay — loaded with: handy-dict use dev
+#
+# PracticeForge crate and module names. These are denied from the base list
+# by DENY_PREFIXES because they eat "clinical <something>", a phrase said
+# constantly: clinical-dashboard ate "clinical dictionary" and clinical-core
+# ate "clinical terms" on 2026-08-28. They are correct and useful when
+# dictating about the code itself, which is what this overlay is for.
+
+clinical-core
+clinical-dashboard
+clinical-dashboard-dioxus
+clinical-dashboard-iced
+clinical-portal
+clinical-product
+clinical-letter-build
+clinical-re-identify
+clinic-attendance-report
+clinic-session
+PracticeForge
+PracticeOwner
+ClientId
+ClientMap

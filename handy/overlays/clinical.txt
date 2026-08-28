@@ -1,0 +1,44 @@
+# Clinical overlay — loaded with: handy-dict use clinical
+#
+# PHI-FREE BY CONSTRUCTION. Never add a client name, initials, a client code,
+# a date of birth, an address, or anything else that identifies a person.
+# This file lives in ~/dotfiles (git, synced) and is NOT a DPA-protected
+# store, so a name here would be PHI persisted to a durable non-DPA surface —
+# exactly the line that must not be crossed.
+#
+# What belongs here: technical vocabulary that is valuable when dictating
+# clinically and HARMFUL in ordinary speech, so it cannot live in the base
+# list. Overlay terms deliberately bypass DENY and the collision check.
+
+# --- Terms observed stealing in general speech (the reason this file exists) ---
+interoception          # steals "interesting" — denied globally 2026-08-28
+
+# --- ACT / RFT / contextual behavioural science ---
+defusion
+cognitive fusion
+experiential avoidance
+self-as-context
+psychological flexibility
+committed action
+values clarification
+creative hopelessness
+relational frame
+deictic framing
+arbitrarily applicable relational responding
+functional contextualism
+workability
+hexaflex
+
+# --- Process and phenomenology ---
+alexithymia
+anhedonia
+dissociation
+depersonalisation
+derealisation
+hypervigilance
+rumination
+metacognition
+psychoeducation
+idiographic
+nomothetic
+formulation
