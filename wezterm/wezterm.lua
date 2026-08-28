@@ -281,6 +281,24 @@ config.leader = { key = 'b', mods = 'CTRL', timeout_milliseconds = 1000 }
 
 -- Cross-platform key bindings
 config.keys = {
+  -- Scroll the WezTerm scrollback by HALF a page, not a whole one.
+  -- Shift+PageUp/PageDown is a WezTerm key assignment, so it never reaches the
+  -- application — which is why it works uniformly in Claude Code, Codex and
+  -- Grok while each of their own scroll keys differs. The default
+  -- ScrollByPage(1) moves a full viewport and leaves no overlap to reorient
+  -- by; a half page keeps a few lines of context. (Ctrl+Shift+Up/Down, the
+  -- documented line-scroll default, does nothing here — verified 2026-08-28.)
+  {
+    key = 'PageUp',
+    mods = 'SHIFT',
+    action = act.ScrollByPage(-0.5),
+  },
+  {
+    key = 'PageDown',
+    mods = 'SHIFT',
+    action = act.ScrollByPage(0.5),
+  },
+
   -- Disable Cmd+W on macOS to prevent accidental tab/window closing
   -- Especially important in Claude Code where accidental close loses session
   {
