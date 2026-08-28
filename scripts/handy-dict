@@ -59,9 +59,13 @@ MAX_HARVEST = 280
 # is exactly how the first of these gets in.
 #   PracticeForge <- "practice on" / "practice for"  (observed 2026-08-28)
 #   ClientId      <- "clients"                       (observed 2026-08-28)
-# Both are said far less often than the words they displace. Add here only
-# with an observed steal, not a suspected one.
-DENY = {"practiceforge", "clientid"}
+#   Totem         <- "to them"                       (observed 2026-08-28)
+# All are said far less often than the words they displace. Totem is Will's
+# daily keyboard and was kept until it stole; his reason for dropping it is
+# the general test for this set - a tool that is working well rarely needs
+# naming, so its name earns its place less often than the phrase it eats.
+# Add here only with an observed steal, not a suspected one.
+DENY = {"practiceforge", "clientid", "totem"}
 
 # Build artefacts and private identifiers nobody says aloud: __pycache__,
 # __init__, _private, trailing_. match_key() strips underscores, so the edge
