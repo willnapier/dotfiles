@@ -15,8 +15,7 @@ log-level = "info"
 repository = "opendal:sftp"
 
 [backup]
-git-ignore = true
-exclude-if-present = ["CACHEDIR.TAG", ".nobackup"]
+exclude-if-present = ["CACHEDIR.TAG"]
 
 [[backup.snapshots]]
 name = "forge"
@@ -37,4 +36,3 @@ sources = ["/home/will/MediaLogs"]
 [[backup.snapshots]]
 name = "captures"
 sources = ["/home/will/Captures"]
-
