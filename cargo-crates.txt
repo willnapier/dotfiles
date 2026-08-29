@@ -40,6 +40,7 @@ pizauth	1.0.11	https://github.com/ltratt/pizauth?tag=pizauth-1.0.11#f58048fc
 practiceforge	0.1.0	/home/will/Code/practiceforge/practiceforge
 ripgrep	14.1.1	crates.io
 rust-redeploy	0.1.0	/home/will/dotfiles/rust-projects/rust-redeploy
+rustic-rs	0.11.3	crates.io
 scroll-server	0.1.0	/home/will/dotfiles/rust-projects/scroll-server
 sd	1.0.0	crates.io
 skill-eval	0.1.0	/home/will/dotfiles/rust-projects/skill-eval
