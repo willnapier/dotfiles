@@ -484,6 +484,10 @@ depends = ["shared"]
 
 [linux.files]
 "shell/bashrc" = "~/.bashrc"
+# sudo askpass helper — lets `sudo -A` prompt via fuzzel when there is no TTY,
+# which is the case for every agent-harness Bash tool and for the `!` inline-run
+# prefix. Linux-only: fuzzel is the niri launcher; macOS would need osascript.
+"scripts/sudo-askpass" = "~/.local/bin/sudo-askpass"
 # X compose sequences — £ € § on the ZMK Linux keymaps depend on this file.
 # Linux-only: macOS is on a British input source and needs no compose.
 "linux/XCompose" = "~/.XCompose"

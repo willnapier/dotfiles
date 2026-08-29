@@ -1,0 +1,36 @@
+#!/bin/sh
+# sudo-askpass — graphical password prompt so `sudo -A` works without a TTY.
+#
+# WHY THIS EXISTS
+#
+# Claude Code (and any other agent harness) runs commands through a Bash tool
+# with no controlling terminal, and the `!` inline-run prefix is the same. sudo
+# therefore cannot prompt, and every privileged command dies with
+# "sudo: a password is required". The long-standing workaround was to hand the
+# command to William to run in his own terminal, which breaks the loop: the
+# output never reaches the session that needed it.
+#
+# sudo's own answer to this is SUDO_ASKPASS + `sudo -A`: when sudo has no TTY it
+# execs the askpass helper, reads one line from its stdout, and uses that as the
+# password. Same authentication, same timestamp rules, no NOPASSWD rule and no
+# reduction in privilege — the only change is *where* the password is typed.
+#
+# NOT a nushell script deliberately. sudo execs this directly on every
+# authentication, so it wants POSIX sh startup (~1ms), not a nu interpreter.
+# `#!/bin/sh` is not a platform-specific path in the sense the dotfiles
+# contribution guide warns about; it is the POSIX-guaranteed one.
+#
+# Linux/Wayland only — fuzzel is the niri launcher. The macOS half of dotfiles
+# would need a different helper (osascript), which is why this is registered
+# under [linux.files] rather than [shared.files].
+
+set -eu
+
+# sudo passes its prompt string as $1 (e.g. "[sudo] password for will: ").
+# Fall back to a sane label when invoked by something that passes nothing.
+prompt="${1:-Password:}"
+
+# --dmenu with empty stdin gives a bare input field; --password masks it;
+# --lines=0 suppresses the (empty) candidate list so only the field is drawn.
+# fuzzel writes the typed line to stdout, which is exactly sudo's contract.
+exec fuzzel --dmenu --password --lines=0 --prompt "$prompt " < /dev/null

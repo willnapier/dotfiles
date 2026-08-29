@@ -113,6 +113,17 @@ if (which vivid | is-not-empty) {
     $env.LS_COLORS = (^vivid generate $theme)
 }
 
+# --- sudo askpass (Linux) ---
+# Lets `sudo -A` prompt graphically when there is no controlling terminal —
+# which is the case for every agent-harness Bash tool and for Claude Code's `!`
+# inline-run prefix. Without this, any suggested `! sudo ...` dies on
+# "sudo: a password is required" and the output never reaches the session.
+# Same auth, same timestamp rules, no NOPASSWD rule: only the prompt moves.
+# Helper: dotfiles/scripts/sudo-askpass (fuzzel). macOS needs its own.
+if $platform != "darwin" {
+    $env.SUDO_ASKPASS = $"($env.HOME)/.local/bin/sudo-askpass"
+}
+
 # --- Clinical Tools ---
 $env.CLINICAL_NOTIFY_EMAIL = "pa@willnapier.com"
 
