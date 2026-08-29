@@ -1,19 +1,21 @@
 {
   "manifest_version": 3,
-  "name": "Gemini Conversation Exporter",
+  "name": "Claude Conversation Exporter",
   "version": "1.0",
-  "description": "Export Gemini conversations to JSON for continuum logs",
+  "description": "Export Claude conversations to JSON for continuum logs",
   "permissions": [
     "activeTab",
     "downloads"
   ],
   "host_permissions": [
-    "https://gemini.google.com/*"
+    "https://claude.ai/*",
+    "https://claude.com/*"
   ],
   "content_scripts": [
     {
       "matches": [
-        "https://gemini.google.com/*"
+        "https://claude.ai/*",
+        "https://claude.com/*"
       ],
       "js": [
         "content.js"
@@ -28,7 +30,7 @@
   },
   "browser_specific_settings": {
     "gecko": {
-      "id": "gemini-exporter@willnapier",
+      "id": "claude-exporter@willnapier",
       "data_collection_permissions": {
         "required": [
           "none"

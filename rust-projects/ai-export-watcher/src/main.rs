@@ -12,7 +12,7 @@ fn main() -> Result<()> {
 
     println!("AI/Clinical Export Watcher starting...");
     println!("Watching: {:?}", downloads_dir);
-    println!("Patterns: ChatGPT-*.json, Grok-*.json, Gemini-*.json, *TM3*Diary*.html");
+    println!("Patterns: ChatGPT-*.json, Grok-*.json, Gemini-*.json, Claude-*.json, *TM3*Diary*.html");
 
     let (tx, rx) = channel();
 
@@ -28,7 +28,7 @@ fn main() -> Result<()> {
     watcher.watch(&downloads_dir, RecursiveMode::NonRecursive)?;
 
     // Regex to match AI assistant export files (case-insensitive)
-    let export_pattern = Regex::new(r"(?i)^(ChatGPT|Grok|Gemini)-.*\.json$")?;
+    let export_pattern = Regex::new(r"(?i)^(ChatGPT|Grok|Gemini|Claude)-.*\.json$")?;
     // TM3 diary HTML exports (SingleFile captures)
     let tm3_pattern = Regex::new(r"(?i)TM3.*Diary.*\.html$")?;
 

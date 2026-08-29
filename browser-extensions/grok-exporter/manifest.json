@@ -3,13 +3,24 @@
   "name": "Grok Conversation Exporter",
   "version": "1.0",
   "description": "Export Grok conversations to JSON for continuum logs",
-  "permissions": ["activeTab", "downloads"],
-  "host_permissions": ["https://grok.com/*"],
+  "permissions": [
+    "activeTab",
+    "downloads"
+  ],
+  "host_permissions": [
+    "https://grok.com/*"
+  ],
   "content_scripts": [
     {
-      "matches": ["https://grok.com/*"],
-      "js": ["content.js"],
-      "css": ["styles.css"]
+      "matches": [
+        "https://grok.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "styles.css"
+      ]
     }
   ],
   "icons": {
@@ -17,7 +28,12 @@
   },
   "browser_specific_settings": {
     "gecko": {
-      "id": "grok-exporter@willnapier"
+      "id": "grok-exporter@willnapier",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
     }
   }
 }

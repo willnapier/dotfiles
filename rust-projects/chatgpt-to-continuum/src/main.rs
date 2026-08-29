@@ -89,7 +89,7 @@ struct Cli {
     #[arg(short, long)]
     output: Option<PathBuf>,
 
-    /// Force assistant type (chatgpt, grok) - auto-detected if not specified
+    /// Force assistant type (chatgpt, grok, gemini, claude) - auto-detected if not specified
     #[arg(short, long)]
     assistant: Option<String>,
 }
@@ -369,6 +369,9 @@ fn detect_assistant(conv: &ExporterConversation) -> String {
         }
         if lower.contains("gemini") {
             return "gemini".to_string();
+        }
+        if lower.contains("claude") {
+            return "claude".to_string();
         }
     }
     // Default to chatgpt
@@ -687,7 +690,7 @@ fn process_browser_extension_export(export: &BrowserExtensionExport, output_dir:
 
 fn map_speaker_to_role(speaker: &str) -> String {
     match speaker.to_lowercase().as_str() {
-        "grok" | "assistant" | "gemini" | "chatgpt" => "assistant".to_string(),
+        "grok" | "assistant" | "gemini" | "chatgpt" | "claude" => "assistant".to_string(),
         "human" | "user" | "you" => "user".to_string(),
         _ => "user".to_string(), // Default to user for unknown speakers
     }

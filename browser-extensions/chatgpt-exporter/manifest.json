@@ -3,13 +3,26 @@
   "name": "ChatGPT Conversation Exporter",
   "version": "1.0",
   "description": "Export ChatGPT conversations to JSON for continuum logs",
-  "permissions": ["activeTab", "downloads"],
-  "host_permissions": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
+  "permissions": [
+    "activeTab",
+    "downloads"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*"
+  ],
   "content_scripts": [
     {
-      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
-      "js": ["content.js"],
-      "css": ["styles.css"]
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "styles.css"
+      ]
     }
   ],
   "icons": {
@@ -17,7 +30,12 @@
   },
   "browser_specific_settings": {
     "gecko": {
-      "id": "chatgpt-exporter@willnapier"
+      "id": "chatgpt-exporter@willnapier",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
     }
   }
 }
