@@ -93,7 +93,19 @@ def invoke(args: list[str]) -> None:
             args,
             env=env,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            # stderr is deliberately NOT DEVNULL. It was, until 2026-08-29,
+            # and that is why a total failure was indistinguishable from a
+            # keyboard sending nothing: the service had started before any
+            # compositor, so every spawned `handy` panicked on gtk::rt::init
+            # with no display — and the panic went straight to /dev/null.
+            # Nine correctly-detected F20 presses produced no beep, no log
+            # line anywhere, and three wrong hypotheses (muted sink, dead
+            # Bluetooth, unflashed keymap) before the cause was found.
+            #
+            # Inheriting the service's stderr sends it to the journal instead:
+            #   journalctl --user -u chocofi-handy-bind -f
+            # The CLI is silent on success (verified: exit 0, empty stderr),
+            # so this only speaks up when something is actually wrong.
             start_new_session=True,
         )
     except OSError as exc:

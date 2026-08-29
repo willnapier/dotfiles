@@ -34,4 +34,13 @@ Environment=HOME=%h
 Environment=XDG_RUNTIME_DIR=/run/user/%U
 
 [Install]
-WantedBy=default.target
+# graphical-session.target, NOT default.target — same defect as
+# chocofi-handy-bind.service, fixed 2026-08-29. `After=` above is inert unless
+# something also makes this unit start in the same transaction as the target;
+# WantedBy=default.target started it at login, before any compositor existed.
+#
+# Handy escaped the 2026-08-29 failure only by accident: it happened to be
+# (re)started at 13:12:34, three seconds after graphical-session.target came
+# up, so it got a usable environment. Had it started at boot like the binder
+# did, this GUI/tray app would have had no display either.
+WantedBy=graphical-session.target

@@ -13,4 +13,24 @@ Environment=HOME=%h
 Environment=XDG_RUNTIME_DIR=/run/user/%U
 
 [Install]
-WantedBy=default.target
+# 🚨 graphical-session.target, NOT default.target. This is load-bearing.
+#
+# `After=graphical-session.target` above is INERT on its own: After= only
+# orders units that are already being started in the same transaction. With
+# WantedBy=default.target this unit started with the user manager at login —
+# BEFORE any compositor existed — so After= had nothing to order against.
+#
+# What that cost, 2026-08-29: after the ly/Sway incident the compositor came
+# up late (graphical-session.target reached 13:12:31; this service had started
+# at 12:37:59). The binder inherited an environment with NO WAYLAND_DISPLAY and
+# NO DISPLAY and kept it for 2.5 hours. Every F20 press was detected correctly
+# and correctly spawned `handy --toggle-transcription` — which panicked on
+# gtk::rt::init before reaching the running instance. Silent, because invoke()
+# sent stderr to DEVNULL. Presented as "the keyboard has stopped working".
+#
+# niri --session imports the environment and then activates
+# graphical-session.target, so anything wanted by that target starts with a
+# usable display. Trade-off accepted: if the target is never reached this unit
+# does not start at all — which is strictly better than starting broken, since
+# a service that never runs is visible and one that runs blind is not.
+WantedBy=graphical-session.target
