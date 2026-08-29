@@ -1,0 +1,43 @@
+# Sway — safety net, not a daily driver.
+#
+# WHY THIS FILE EXISTS AT ALL
+#
+# Sway is not the desktop on this machine; niri is. This file exists to stop
+# sway being a LOCKOUT. On 2026-08-29 a 406-package Arch upgrade rewrote
+# /usr/share/wayland-sessions, and ly — which remembers the chosen session by
+# LIST INDEX, not by name — resolved the saved index `will:3` onto Sway instead
+# of Niri. Sway started fine. What made it unusable was the previous version of
+# THIS FILE: 25 bytes, dated Sep 2025, containing one line —
+#
+#     output HDMI-A-2 scale 2
+#
+# A user config REPLACES sway's defaults wholesale rather than extending them,
+# so that one line produced a session with ZERO keybindings: no terminal, no
+# exit, no bar. Just swaybg painting black and a mouse cursor. It read as a
+# hang. (It was escapable — getty@tty1 is running, so Ctrl+Alt+F1 gives a
+# console — but nothing on screen said so.)
+#
+# The `include` on the first line is therefore the load-bearing part of this
+# file. It pulls in /etc/sway/config, so a Sway session always has working
+# default bindings — Mod+Enter for a terminal, Mod+Shift+E to exit — no matter
+# what is added below. Do not remove it, and do not put settings above it.
+#
+# Second finding worth recording: HDMI-A-2 DOES NOT EXIST on this machine. The
+# display is a Dell U3224KBA on DP-3, 6144x3456, run at scale 2. So the old line
+# was dead weight as well as a trap. `output *` is used below rather than a
+# connector name, because a renamed connector is exactly the class of bug that
+# caused the incident, and there is only one display.
+#
+# Escape hatches, if a Sway session ever misbehaves:
+#   Ctrl+Alt+F1          text console (getty@tty1 is active)
+#   ssh will@nimbini     sshd is active; Tailscale reaches it
+#   At the ly greeter, ARROW KEYS cycle the session field. It is not a dropdown.
+
+include /etc/sway/config
+
+# 6144x3456 panel. Without this, sway renders at scale 1 and is unreadable.
+output * scale 2
+
+# /etc/sway/config binds Mod+D to `wmenu-run`, which is NOT installed here.
+# dmenu is. Rebind rather than install a package for a compositor we do not use.
+bindsym Mod4+d exec dmenu_path | dmenu | xargs swaymsg exec --

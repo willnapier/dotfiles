@@ -638,6 +638,10 @@ depends = ["shared"]
 "systemd/cohs-trash-mover.timer" = "~/.config/systemd/user/cohs-trash-mover.timer"
 # Wayland compositor configuration - Niri + Waybar + WezTerm
 "niri/config.kdl" = "~/.config/niri/config.kdl"
+# Sway is NOT the desktop — this exists only so an accidental Sway session (ly
+# saves the session by list index, so an upgrade can select it) is usable rather
+# than a keyboard-dead lockout. See the header comment in sway/config.
+"sway/config" = "~/.config/sway/config"
 "waybar/config" = "~/.config/waybar/config"
 "waybar/style.css" = "~/.config/waybar/style.css"
 "mako/config" = "~/.config/mako/config"
