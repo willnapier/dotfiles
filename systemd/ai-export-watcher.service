@@ -1,5 +1,5 @@
 [Unit]
-Description=AI Conversation Export Watcher (ChatGPT, Grok, Gemini)
+Description=AI Conversation Export Watcher (ChatGPT, Grok, Gemini, Claude)
 After=default.target
 
 [Service]
