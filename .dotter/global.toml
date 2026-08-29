@@ -6,6 +6,7 @@ depends = []
 
 [shared.files]
 "codex/AGENTS.md" = { target = "~/.codex/AGENTS.md", type = "symbolic" }
+"codex/config.toml" = { target = "~/.codex/config.toml", type = "symbolic" }
 "grok/AGENTS.md" = { target = "~/.grok/AGENTS.md", type = "symbolic" }
 # SessionEnd → continuum-grok. Must not be a snowflake in ~/.grok/hooks/
 # (nimbini never received the July Mac-only copy; grok-cli Continuum ingest

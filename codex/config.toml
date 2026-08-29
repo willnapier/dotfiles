@@ -1,0 +1,14 @@
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+
+[projects."/home/will"]
+trust_level = "trusted"
+
+[notice]
+"hide_gpt-5.1-codex-max_migration_prompt" = true
+
+[mcp_servers.continuum]
+command = "/home/will/.local/bin/continuum-mcp"
+
+[mcp_servers.continuum.env]
+CONTINUUM_DIR = "~/Assistants/continuum-logs"
