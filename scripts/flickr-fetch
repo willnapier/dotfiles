@@ -1,17 +1,35 @@
 #!/usr/bin/env python3
-"""flickr-fetch — download Flickr originals from a flickr-survey manifest.
+"""flickr-fetch — verify a Flickr archive, and top it up incrementally.
 
-Companion to `flickr-survey`. That tool enumerates the photostream and records
-a direct original URL (`url_o`) for every item; this one fetches them.
+Companion to `flickr-survey`, which enumerates the photostream and records a
+direct original URL (`url_o`) for every item.
 
-WHY NOT gallery-dl: the survey manifest already contains a direct original URL
-for all 45,260 items INCLUDING all 267 videos, and those URLs need no
-authentication. So the download needs no extractor, no OAuth, and no new
-dependency — and, more importantly, it becomes *verifiable*: we know exactly
-how many files and roughly how many bytes to expect, so a partial download is
-detectable instead of looking like success. That is the same false-green
-discipline the rest of the photo-archive project runs on
-(~/Assistants/shared/PHOTO-ARCHIVE-STRATEGY.md § 2.2).
+🚨 DO NOT USE `fetch` FOR A FULL-LIBRARY EXPORT. Measured 2026-08-30: Flickr
+rate-limits bulk downloading of `_o` originals hard. Sequential requests at
+0.0s, 0.5s, 1.0s AND 2.0s spacing all returned HTTP 429, and once tripped the
+cooldown outlasted a 45-second rest. It is not a User-Agent or header
+signature — the identical request succeeded before and after the limited
+window. A 45,260-item library cannot be pulled this way in reasonable time,
+and trying leaves the host IP in an extended penalty box.
+
+USE FLICKR'S OFFICIAL EXPORT INSTEAD: Settings -> "Your Flickr Data" ->
+"Request My Flickr Data". It produces ZIPs of originals plus metadata that
+this tool never sees — albums, tags, comments, GPS — and takes hours to weeks
+to compile. That is the supported bulk route and it yields a better archive.
+
+WHAT THIS TOOL IS STILL FOR, and it is the important half:
+
+  `verify`  — check a tree (however obtained, including an unpacked official
+              export) against the 45,260-item manifest, with a per-year
+              breakdown. THIS IS THE POINT. An official export that quietly
+              omits a year, or stops early, looks exactly like a complete one
+              until you count it. The manifest is an independent expectation
+              to check the export against, which is the same false-green
+              discipline the rest of the project runs on
+              (~/Assistants/shared/PHOTO-ARCHIVE-STRATEGY.md § 2.2).
+
+  `fetch`   — fill small gaps the export missed, or top up newly added items.
+              Fine for tens or hundreds of files. Not for tens of thousands.
 
 SAFETY PROPERTIES
   - Atomic writes: each file lands as `.part`, is size-checked, then renamed.
@@ -23,9 +41,9 @@ SAFETY PROPERTIES
   - Never deletes anything it did not itself write.
 
 USAGE
-  flickr-fetch fetch   --dest ~/FlickrArchive [--jobs 3]
+  flickr-fetch verify  --dest ~/FlickrArchive     # the primary use
+  flickr-fetch fetch   --dest ~/FlickrArchive     # gap-fill only, see above
   flickr-fetch fetch   --dest ~/FlickrArchive --retry-failures
-  flickr-fetch verify  --dest ~/FlickrArchive
 """
 
 import argparse
