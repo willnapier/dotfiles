@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""Trace everything the Chocofi emits, on every interface, across reconnects.
+
+    chocofi-trace                 # Ctrl-C to stop
+    timeout 600 chocofi-trace | save trace.log
+
+Prints one line per key event: elapsed ms, [BLE] or [USB], DOWN/up/rept, key
+name. Reads /dev/input/* directly (the `input` group grants this without
+sudo), so it shows what the BOARD sent, independent of niri, Helix or Handy.
+
+Use it before flashing, not after guessing - see rule 1 of
+~/Assistants/shared/ZMK-HANDY-REMOTE-LESSONS.md. The 0.2 ms DOWN/up pair is
+the tell for a hold-tap resolving as a tap; a real press shows ~100 ms.
+
+Two traps this has already fallen into, both of which make a HEALTHY board
+look completely dead:
+
+1. The board presents as TWO input devices when plugged in - a BLE node
+   ("Chocofi-Handy Keyboard") and a USB node ("ZMK Project ..."). ZMK prefers
+   USB when a USB host is attached. Watch both.
+2. On every BLE reconnect the kernel builds a NEW input device. The event
+   NUMBER is often reused, so the path looks unchanged while the fd you hold
+   points at a corpse that will never emit again. BlueZ still says
+   "Connected: yes" throughout. Track the unique Sysfs id, not the path.
+"""
+import os, select, struct, sys, time
+from pathlib import Path
+
+MATCH = "Chocofi"
+FMT = struct.Struct("llHHi")
+EV_KEY = 1
+RESCAN_SEC = 1.0
+
+NAMES = {
+    16:"Q",17:"W",18:"E",19:"R",20:"T",21:"Y",22:"U",23:"I",24:"O",25:"P",
+    30:"A",31:"S",32:"D",33:"F",34:"G",35:"H",36:"J",37:"K",38:"L",39:"SEMI",40:"QUOTE",
+    44:"Z",45:"X",46:"C",47:"V",48:"B",49:"N",50:"M",51:"COMMA",52:"DOT",53:"SLASH",
+    57:"SPACE",28:"ENTER",14:"BSPC",42:"LSHIFT",125:"LMETA",
+    12:"MINUS",13:"EQUAL",26:"LBRKT",27:"RBRKT",43:"BSLASH",41:"GRAVE",
+    103:"UP",105:"LEFT",106:"RIGHT",108:"DOWN",104:"PAGEUP",109:"PAGEDOWN",
+    189:"F19",190:"F20",
+}
+ACT = {0:"up  ", 1:"DOWN", 2:"rept"}
+
+def scan():
+    """-> {sysfs_id: (path, via)} for every Chocofi interface currently present."""
+    out = {}
+    for b in Path("/proc/bus/input/devices").read_text().split("\n\n"):
+        if MATCH not in b:
+            continue
+        sysfs = via = None
+        evs = []
+        for line in b.split("\n"):
+            if line.startswith("S: Sysfs="): sysfs = line.split("=", 1)[1].strip()
+            if line.startswith("P: Phys="):  via = "USB" if "usb" in line else "BLE"
+            if line.startswith("H: Handlers="):
+                evs = [t for t in line.split() if t.startswith("event")]
+        for ev in evs:
+            out[sysfs or ev] = ("/dev/input/" + ev, via or "?")
+    return out
+
+open_fds = {}   # sysfs_id -> (file, via, path)
+t0 = None
+print("watching for Chocofi interfaces; reopens automatically on reconnect\n", file=sys.stderr)
+
+while True:
+    present = scan()
+    for sid in list(open_fds):
+        if sid not in present:
+            f, via, path = open_fds.pop(sid)
+            print(f"--- {path} [{via}] went away ---", file=sys.stderr)
+            try: f.close()
+            except OSError: pass
+    for sid, (path, via) in present.items():
+        if sid in open_fds:
+            continue
+        try:
+            f = open(path, "rb", buffering=0)
+            open_fds[sid] = (f, via, path)
+            print(f"--- tracing {path} [{via}] ---", file=sys.stderr)
+            sys.stderr.flush()
+        except OSError as e:
+            print(f"cannot open {path}: {e}", file=sys.stderr)
+
+    if not open_fds:
+        time.sleep(RESCAN_SEC)
+        continue
+
+    fdmap = {f.fileno(): (f, via, path) for (f, via, path) in open_fds.values()}
+    ready, _, _ = select.select(list(fdmap), [], [], RESCAN_SEC)
+    for fd in ready:
+        f, via, path = fdmap[fd]
+        try:
+            d = f.read(FMT.size)
+        except OSError:
+            continue
+        if not d:
+            continue
+        sec, usec, typ, code, val = FMT.unpack(d)
+        if typ != EV_KEY:
+            continue
+        t = sec + usec / 1e6
+        if t0 is None:
+            t0 = t
+        print(f"{(t-t0)*1000:9.1f} ms  [{via}]  {ACT.get(val,val)}  {NAMES.get(code, f'code{code}')}")
+        sys.stdout.flush()
