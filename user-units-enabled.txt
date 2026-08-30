@@ -38,6 +38,9 @@ pizauth.service
 practiceforge.service
 readwise-sync.timer
 remind-notify.timer
+rustic-backup-health.timer
+rustic-backup.timer
+rustic-check.timer
 scroll-server.service
 ssh-agent.socket
 ssh-import-env.service
