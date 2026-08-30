@@ -1,0 +1,294 @@
+#!/usr/bin/env python3
+"""flickr-fetch — download Flickr originals from a flickr-survey manifest.
+
+Companion to `flickr-survey`. That tool enumerates the photostream and records
+a direct original URL (`url_o`) for every item; this one fetches them.
+
+WHY NOT gallery-dl: the survey manifest already contains a direct original URL
+for all 45,260 items INCLUDING all 267 videos, and those URLs need no
+authentication. So the download needs no extractor, no OAuth, and no new
+dependency — and, more importantly, it becomes *verifiable*: we know exactly
+how many files and roughly how many bytes to expect, so a partial download is
+detectable instead of looking like success. That is the same false-green
+discipline the rest of the photo-archive project runs on
+(~/Assistants/shared/PHOTO-ARCHIVE-STRATEGY.md § 2.2).
+
+SAFETY PROPERTIES
+  - Atomic writes: each file lands as `.part`, is size-checked, then renamed.
+    An interrupted run therefore never leaves a truncated file that a later
+    resume would mistake for complete.
+  - Resumable: re-running skips files already present at the expected size.
+  - Verifying: a size mismatch against Content-Length deletes the file and
+    records a failure rather than keeping a corrupt image.
+  - Never deletes anything it did not itself write.
+
+USAGE
+  flickr-fetch fetch   --dest ~/FlickrArchive [--jobs 8]
+  flickr-fetch fetch   --dest ~/FlickrArchive --retry-failures
+  flickr-fetch verify  --dest ~/FlickrArchive
+"""
+
+import argparse
+import concurrent.futures as futures
+import json
+import os
+import re
+import shutil
+import signal
+import sys
+import threading
+import time
+import urllib.error
+import urllib.request
+
+DEFAULT_MANIFEST = os.path.expanduser("~/flickr-survey.jsonl")
+DEFAULT_DEST = os.path.expanduser("~/FlickrArchive")
+UA = {"User-Agent": "flickr-fetch/1.0"}
+
+_stop = threading.Event()
+_lock = threading.Lock()
+_stats = {"ok": 0, "skip": 0, "fail": 0, "bytes": 0}
+
+
+def die(msg, code=1):
+    print(f"flickr-fetch: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def load_manifest(path):
+    path = os.path.expanduser(path)
+    if not os.path.exists(path):
+        die(f"no manifest at {path} — run `flickr-survey survey` first")
+    recs = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                recs.append(json.loads(line))
+    return recs
+
+
+def target_path(dest, rec):
+    """<dest>/<YYYY>/<YYYY-MM-DD>_<id>.<ext>
+
+    Year directories keep the tree navigable and make per-era verification
+    trivial. The photo id is retained so any file can be joined back to the
+    manifest without relying on filename parsing.
+    """
+    taken = rec.get("taken") or ""
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})", taken)
+    if m and m.group(1) != "0000":
+        year, day = m.group(1), f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+    else:
+        year, day = "unknown", "unknown"
+    url = rec.get("url_o") or ""
+    ext = os.path.splitext(url.split("?")[0])[1].lower() or ".jpg"
+    return os.path.join(dest, year, f"{day}_{rec['id']}{ext}")
+
+
+def fetch_one(rec, dest, timeout=120):
+    """Download one original. Returns ('ok'|'skip'|'fail', bytes, message)."""
+    if _stop.is_set():
+        return ("fail", 0, "interrupted")
+    url = rec.get("url_o")
+    if not url:
+        return ("fail", 0, "no url_o in manifest")
+
+    path = target_path(dest, rec)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
+    expected = rec.get("bytes")  # only set for the sampled subset
+    if os.path.exists(path):
+        size = os.path.getsize(path)
+        if size > 0 and (expected is None or size == expected):
+            return ("skip", size, "")
+        # zero-length or wrong size: fall through and re-fetch
+
+    tmp = path + ".part"
+    delay = 2.0
+    last = ""
+    for attempt in range(4):
+        if _stop.is_set():
+            return ("fail", 0, "interrupted")
+        try:
+            req = urllib.request.Request(url, headers=UA)
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                declared = r.headers.get("Content-Length")
+                declared = int(declared) if declared else None
+                with open(tmp, "wb") as out:
+                    shutil.copyfileobj(r, out, 1024 * 256)
+            got = os.path.getsize(tmp)
+            # Verify against what the server said it would send. A short read
+            # that is silently kept is exactly the failure this project exists
+            # to prevent.
+            if declared is not None and got != declared:
+                os.unlink(tmp)
+                last = f"size mismatch: got {got}, declared {declared}"
+                raise IOError(last)
+            os.replace(tmp, path)
+            return ("ok", got, "")
+        except Exception as e:  # noqa: BLE001 - any failure is retryable here
+            last = str(e) or e.__class__.__name__
+            if os.path.exists(tmp):
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+            if attempt < 3 and not _stop.is_set():
+                time.sleep(delay)
+                delay *= 2
+    return ("fail", 0, last)
+
+
+def cmd_fetch(args):
+    dest = os.path.expanduser(args.dest)
+    recs = load_manifest(args.manifest)
+
+    fail_path = os.path.join(dest, "_failures.jsonl")
+    if args.retry_failures:
+        if not os.path.exists(fail_path):
+            die(f"no failure list at {fail_path}")
+        ids = {json.loads(l)["id"] for l in open(fail_path) if l.strip()}
+        recs = [r for r in recs if r["id"] in ids]
+        print(f"Retrying {len(recs):,} previously failed items.", file=sys.stderr)
+
+    os.makedirs(dest, exist_ok=True)
+    total = len(recs)
+    est_gb = sum(r.get("bytes", 0) for r in recs) / 1e9
+    print(f"Fetching {total:,} items -> {dest}", file=sys.stderr)
+    print(f"  {args.jobs} parallel workers; resumable; Ctrl-C is safe.",
+          file=sys.stderr)
+    if est_gb:
+        print(f"  (sampled subset alone is {est_gb:.1f} GB; full set ~189 GB)",
+              file=sys.stderr)
+
+    def handler(signum, frame):
+        _stop.set()
+        print("\n  interrupt received — finishing in-flight downloads…",
+              file=sys.stderr)
+    signal.signal(signal.SIGINT, handler)
+    signal.signal(signal.SIGTERM, handler)
+
+    failures = []
+    started = time.time()
+    with open(fail_path, "w") as flog, \
+            futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
+        futs = {pool.submit(fetch_one, r, dest): r for r in recs}
+        done = 0
+        for fut in futures.as_completed(futs):
+            rec = futs[fut]
+            try:
+                status, nbytes, msg = fut.result()
+            except Exception as e:  # noqa: BLE001
+                status, nbytes, msg = "fail", 0, str(e)
+            with _lock:
+                _stats[status] = _stats.get(status, 0) + 1
+                _stats["bytes"] += nbytes
+                done += 1
+            if status == "fail":
+                failures.append(rec["id"])
+                flog.write(json.dumps({"id": rec["id"], "error": msg[:200]}) + "\n")
+                flog.flush()
+            if done % 250 == 0 or done == total:
+                el = time.time() - started
+                rate = _stats["bytes"] / el / 1048576 if el else 0
+                pct = done / total * 100
+                eta = (total - done) / (done / el) / 60 if done and el else 0
+                print(f"  {done:,}/{total:,} ({pct:.1f}%)  "
+                      f"ok={_stats['ok']:,} skip={_stats['skip']:,} "
+                      f"fail={_stats['fail']:,}  "
+                      f"{_stats['bytes']/1e9:.1f} GB  {rate:.1f} MB/s  "
+                      f"ETA {eta:.0f}m", file=sys.stderr)
+
+    report(dest, recs, started, failures)
+
+
+def report(dest, recs, started, failures):
+    el = time.time() - started
+    print("\n" + "=" * 62)
+    print("FLICKR FETCH")
+    print("=" * 62)
+    print(f"  expected        {len(recs):>10,}")
+    print(f"  downloaded      {_stats['ok']:>10,}")
+    print(f"  already present {_stats['skip']:>10,}")
+    print(f"  failed          {_stats['fail']:>10,}")
+    print(f"  bytes           {_stats['bytes']/1e9:>10.1f} GB")
+    print(f"  elapsed         {el/60:>10.1f} min")
+    accounted = _stats["ok"] + _stats["skip"]
+    if accounted == len(recs):
+        print(f"\n  ✅ COMPLETE — every manifest item is on disk.")
+    else:
+        print(f"\n  ⚠ {len(recs)-accounted:,} items NOT on disk.")
+        print(f"     Retry with:  flickr-fetch fetch --dest {dest} --retry-failures")
+    if failures:
+        print(f"     Failure ids: {os.path.join(dest, '_failures.jsonl')}")
+    print("=" * 62)
+
+
+def cmd_verify(args):
+    """Check the tree against the manifest without downloading anything."""
+    dest = os.path.expanduser(args.dest)
+    recs = load_manifest(args.manifest)
+    missing, empty, present, nbytes = [], [], 0, 0
+    by_year = {}
+    for r in recs:
+        p = target_path(dest, r)
+        year = os.path.basename(os.path.dirname(p))
+        by_year.setdefault(year, [0, 0])
+        if not os.path.exists(p):
+            missing.append(r["id"])
+            continue
+        sz = os.path.getsize(p)
+        if sz == 0:
+            empty.append(r["id"])
+            continue
+        present += 1
+        nbytes += sz
+        by_year[year][0] += 1
+        by_year[year][1] += sz
+
+    print("\n" + "=" * 62)
+    print("FLICKR ARCHIVE VERIFY")
+    print("=" * 62)
+    print(f"  manifest items  {len(recs):>10,}")
+    print(f"  on disk         {present:>10,}")
+    print(f"  missing         {len(missing):>10,}")
+    print(f"  zero-length     {len(empty):>10,}")
+    print(f"  total size      {nbytes/1e9:>10.1f} GB")
+    print(f"\n  {'year':<10}{'files':>10}{'GB':>10}")
+    print("  " + "-" * 30)
+    for y in sorted(by_year):
+        c, b = by_year[y]
+        if c:
+            print(f"  {y:<10}{c:>10,}{b/1e9:>10.2f}")
+    if not missing and not empty:
+        print(f"\n  ✅ COMPLETE — all {len(recs):,} manifest items present.")
+    else:
+        print(f"\n  ⚠ INCOMPLETE. Do NOT treat this archive as a full copy.")
+    print("=" * 62)
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        prog="flickr-fetch",
+        description="Download Flickr originals from a flickr-survey manifest.")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    f = sub.add_parser("fetch", help="download everything in the manifest")
+    f.add_argument("--manifest", default=DEFAULT_MANIFEST)
+    f.add_argument("--dest", default=DEFAULT_DEST)
+    f.add_argument("--jobs", type=int, default=8,
+                   help="parallel downloads (default 8)")
+    f.add_argument("--retry-failures", action="store_true",
+                   help="re-fetch only ids in <dest>/_failures.jsonl")
+
+    v = sub.add_parser("verify", help="check the tree against the manifest")
+    v.add_argument("--manifest", default=DEFAULT_MANIFEST)
+    v.add_argument("--dest", default=DEFAULT_DEST)
+
+    args = ap.parse_args()
+    {"fetch": cmd_fetch, "verify": cmd_verify}[args.cmd](args)
+
+
+if __name__ == "__main__":
+    main()
