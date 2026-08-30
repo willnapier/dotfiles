@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the Rustic photograph backup weekly
+
+[Timer]
+# Saturday 03:10, an hour after nimbini-general's daily 02:10, so the two never
+# contend for the uplink. Photographs change rarely; daily would be waste.
+OnCalendar=Sat *-*-* 03:10:00
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

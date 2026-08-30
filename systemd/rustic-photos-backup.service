@@ -1,0 +1,19 @@
+[Unit]
+Description=Create encrypted Rustic snapshot of the nimbini photograph archive
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+Environment=HOME=/home/will
+Environment=PATH=/home/will/.cargo/bin:/home/will/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=RUSTIC_BACKUP_PROFILE=nimbini-photos
+# Weekly cadence, so the 36h default freshness threshold would false-alarm for
+# six days out of seven. 9 days allows one missed run before alerting.
+Environment=RUSTIC_BACKUP_MAX_AGE=777600
+ExecStart=/home/will/.local/bin/rustic-backup backup
+# The photo corpus is ~156 G on first run and the uplink is the constraint,
+# not the disk. Generous, because a timeout mid-upload wastes the whole run.
+TimeoutStartSec=24h
+StandardOutput=append:/home/will/.local/share/rustic-photos.log
+StandardError=append:/home/will/.local/share/rustic-photos.log

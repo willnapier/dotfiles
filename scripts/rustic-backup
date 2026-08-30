@@ -11,6 +11,10 @@ ENV_FILE="$SECRET_DIR/$PROFILE.env"
 PASSWORD_FILE="$SECRET_DIR/$PROFILE.password"
 SUCCESS_FILE="$STATE_ROOT/last-success/$PROFILE"
 EXPECTED_RUSTIC_VERSION="0.11.3"
+# Freshness threshold for `status`. 36h suits a DAILY profile; a weekly profile
+# (nimbini-photos) would otherwise report unhealthy for six days out of seven,
+# which is a false alarm that trains you to ignore the check.
+MAX_SUCCESS_AGE="${RUSTIC_BACKUP_MAX_AGE:-129600}"
 
 die() {
     printf 'rustic-backup: %s\n' "$*" >&2
@@ -94,7 +98,7 @@ status() {
         modified="$(stat -c '%Y' "$SUCCESS_FILE")"
     fi
     age=$((now - modified))
-    [ "$age" -le 129600 ] || die "$PROFILE last succeeded $((age / 3600)) hours ago"
+    [ "$age" -le "$MAX_SUCCESS_AGE" ] || die "$PROFILE last succeeded $((age / 3600)) hours ago (threshold $((MAX_SUCCESS_AGE / 3600))h)"
     printf '%s: healthy; last success %s\n' "$PROFILE" "$(cat "$SUCCESS_FILE")"
 }
 

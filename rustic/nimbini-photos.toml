@@ -1,0 +1,65 @@
+# nimbini-photos — the photograph archive.
+#
+# Connection details are injected by ~/.local/state/rustic-backup/secrets/
+# nimbini-photos.env. The repository password is a separate 0600 file.
+# This file is safe to commit: it contains no credentials or endpoint.
+#
+# Deliberately absent: [forget] and prune. Every snapshot is retained forever,
+# and that is load-bearing twice over — it is the standing retention decision
+# for nimbini-general, AND it is what makes later curation safe: once a corpus
+# is here, deleting from the working library is reversible, so photographs can
+# be culled hard without risk. See PHOTO-ARCHIVE-STRATEGY.md 11.5.
+#
+# SCOPE: this is the FIRST TRANCHE ONLY — Corpus B, the Dropbox photo tree that
+# is already materialised on nimbini's disk. Flickr (~189 G, export pending) and
+# iCloud (~68 G, needs materialising on the Mac) are added as further snapshot
+# stanzas to THIS repository as they arrive. One repository, not several, so
+# that rustic can deduplicate byte-identical material ACROSS corpora; it cannot
+# do that between repositories. See PHOTO-ARCHIVE-STRATEGY.md 11.6.
+#
+# NOT HERE: /home/will/Dropbox/Clinical (59 G) is PHI and belongs in
+# nimbini-clinical behind its own DPA/DPIA and key-custody gates. That is the
+# ONLY clinical exclusion — ClinVid was briefly mis-flagged and is included
+# below; it is teaching video, confirmed by the controller.
+
+[global]
+no-progress = true
+log-level = "info"
+
+[repository]
+repository = "opendal:sftp"
+
+[backup]
+exclude-if-present = ["CACHEDIR.TAG"]
+
+# --- Corpus B: the Dropbox photo tree -------------------------------------
+# 45,260-item Flickr manifest and the iCloud library are NOT here yet.
+
+[[backup.snapshots]]
+name = "camera-uploads"
+sources = ["/home/will/Dropbox/Camera uploads"]
+
+[[backup.snapshots]]
+name = "old-movies"
+sources = ["/home/will/Dropbox/OldMovies"]
+
+[[backup.snapshots]]
+name = "rose"
+sources = ["/home/will/Dropbox/Rose", "/home/will/Dropbox/16 years of Rose"]
+
+[[backup.snapshots]]
+name = "dropbox-old"
+sources = ["/home/will/Dropbox/Dropbox (Old)"]
+
+[[backup.snapshots]]
+name = "clinvid"
+sources = ["/home/will/Dropbox/ClinVid"]
+
+[[backup.snapshots]]
+name = "misc-photos"
+sources = [
+    "/home/will/Dropbox/Art Stuff",
+    "/home/will/Dropbox/TheForgeEthernetPhotos",
+    "/home/will/Dropbox/My Pictures",
+    "/home/will/Dropbox/Screenshots",
+]

@@ -1,0 +1,12 @@
+[Unit]
+Description=Check the Rustic photograph repository monthly
+
+[Timer]
+# Monthly, not weekly: the corpus is cold and a structural check over ~156 G
+# is not free. First Sunday, 06:10 — clear of nimbini-general's 05:10 check.
+OnCalendar=Sun *-*-01..07 06:10:00
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
