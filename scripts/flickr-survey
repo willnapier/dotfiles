@@ -35,6 +35,7 @@ CREDENTIALS
 import argparse
 import base64
 import collections
+import getpass
 import hashlib
 import hmac
 import json
@@ -166,6 +167,12 @@ def api(creds, method, **kwargs):
 
 def cmd_auth(args):
     """One-time OAuth 1.0a dance, out-of-band (no callback server needed)."""
+    if not sys.stdin.isatty():
+        die("`auth` is interactive and needs a real terminal.\n"
+            "Neither an AI harness's shell tool nor Claude Code's `!` prefix has a\n"
+            "TTY, so the prompts cannot be answered and the secret would risk\n"
+            "landing in a transcript. Run it yourself in WezTerm/Zellij:\n"
+            "    flickr-survey auth")
     print("Flickr API key setup.")
     print("If you do not have one yet, apply (free, instant, non-commercial) at:")
     print("  https://www.flickr.com/services/apps/create/apply\n")
@@ -173,9 +180,14 @@ def cmd_auth(args):
     if os.path.exists(CRED_PATH):
         with open(CRED_PATH) as f:
             existing = json.load(f)
-    api_key = input(f"API key{' [keep existing]' if existing.get('api_key') else ''}: ").strip()
+    api_key = input(f"API key{' [enter to keep existing]' if existing.get('api_key') else ''}: ").strip()
     api_key = api_key or existing.get("api_key", "")
-    api_secret = input(f"API secret{' [keep existing]' if existing.get('api_secret') else ''}: ").strip()
+    # getpass, not input: the secret must not be echoed to the terminal, land in
+    # shell history, or reach a transcript. A Mozilla AMO secret did exactly that
+    # on 2026-08-29 and had to be regenerated — see AI-CHAT-EXPORT-PIPELINE.md.
+    api_secret = getpass.getpass(
+        f"API secret (not echoed)"
+        f"{' [enter to keep existing]' if existing.get('api_secret') else ''}: ").strip()
     api_secret = api_secret or existing.get("api_secret", "")
     if not api_key or not api_secret:
         die("both key and secret are required")
