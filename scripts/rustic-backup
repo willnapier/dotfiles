@@ -107,7 +107,7 @@ usage() {
 case "${1:-}" in
     backup) backup ;;
     check) run_rustic check ;;
-    check-data-subset) run_rustic check --read-data-subset=10% ;;
+    check-data-subset) run_rustic check --read-data --read-data-subset=10% ;;
     snapshots) run_rustic snapshots ;;
     restore)
         shift
