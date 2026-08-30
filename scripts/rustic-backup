@@ -100,7 +100,7 @@ status() {
 
 usage() {
     printf '%s\n' \
-        'usage: rustic-backup backup|check|check-data-subset|snapshots|status|init' \
+        'usage: rustic-backup backup|check|check-data-subset|snapshots|status|init|restore SNAPSHOT[:PATH] DESTINATION' \
         '  init is intentionally manual and must follow Hetzner provisioning.'
 }
 
@@ -109,6 +109,10 @@ case "${1:-}" in
     check) run_rustic check ;;
     check-data-subset) run_rustic check --read-data-subset=10% ;;
     snapshots) run_rustic snapshots ;;
+    restore)
+        shift
+        run_rustic restore "$@"
+        ;;
     status)
         if ! status; then
             notify_failure "$PROFILE has no recent successful backup"
@@ -118,4 +122,3 @@ case "${1:-}" in
     init) run_rustic init ;;
     *) usage; exit 2 ;;
 esac
-
