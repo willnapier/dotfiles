@@ -66,7 +66,7 @@ class Throttle:
     server currently tolerates instead of guessing a fixed rate.
     """
 
-    def __init__(self, initial=0.35, floor=0.15, ceiling=20.0):
+    def __init__(self, initial=0.45, floor=0.2, ceiling=4.0):
         self.delay = initial
         self.floor = floor
         self.ceiling = ceiling
@@ -78,15 +78,32 @@ class Throttle:
             d, pause = self.delay, self._pause_until
         now = time.time()
         if pause > now:
-            time.sleep(min(pause - now, 60))
+            time.sleep(min(pause - now, 15))
         time.sleep(d)
 
     def penalise(self, retry_after=None):
-        """A 429 arrived: slow everyone down, and honour Retry-After."""
+        """A 429 arrived: slow everyone down, briefly.
+
+        The pause is deliberately SHORT and capped. An earlier version used a
+        20 s ceiling and a 120 s pause, and deadlocked: every worker slept at
+        maximum backoff, every probe extended the pause again, and the pool
+        never discovered that the limit had lifted — three threads sat in
+        nanosleep with zero sockets open while a plain curl to the same CDN
+        returned 200 in 0.43 s. A backoff that cannot climb back down is a
+        deadlock, so recovery is now the priority over politeness.
+
+        Retry-After is treated as advisory and clamped; some servers send
+        minutes, or an HTTP-date we cannot parse, and neither should stall us.
+        """
+        try:
+            hinted = float(retry_after) if retry_after else None
+        except (TypeError, ValueError):
+            hinted = None  # HTTP-date form; ignore rather than crash
         with self._lock:
-            self.delay = min(self.delay * 2 + 0.5, self.ceiling)
-            pause = float(retry_after) if retry_after else self.delay * 4
-            self._pause_until = max(self._pause_until, time.time() + min(pause, 120))
+            self.delay = min(self.delay * 1.6 + 0.2, self.ceiling)
+            pause = hinted if hinted is not None else self.delay
+            self._pause_until = max(self._pause_until,
+                                    time.time() + max(0.0, min(pause, 15)))
             _stats["throttled"] += 1
             return self.delay
 
@@ -94,7 +111,7 @@ class Throttle:
         """A clean response: ease off very slowly, so we drift toward the limit
         rather than sprinting back into it."""
         with self._lock:
-            self.delay = max(self.delay * 0.98, self.floor)
+            self.delay = max(self.delay * 0.90, self.floor)
 
 
 _throttle = Throttle()
@@ -346,8 +363,8 @@ def main():
     f = sub.add_parser("fetch", help="download everything in the manifest")
     f.add_argument("--manifest", default=DEFAULT_MANIFEST)
     f.add_argument("--dest", default=DEFAULT_DEST)
-    f.add_argument("--jobs", type=int, default=3,
-                   help="parallel downloads (default 3; Flickr 429s above ~4)")
+    f.add_argument("--jobs", type=int, default=2,
+                   help="parallel downloads (default 2; Flickr 429s on bursts)")
     f.add_argument("--retry-failures", action="store_true",
                    help="re-fetch only ids in <dest>/_failures.jsonl")
 
