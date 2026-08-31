@@ -41,6 +41,8 @@ remind-notify.timer
 rustic-backup-health.timer
 rustic-backup.timer
 rustic-check.timer
+rustic-photos-backup.timer
+rustic-photos-check.timer
 scroll-server.service
 ssh-agent.socket
 ssh-import-env.service
