@@ -21,7 +21,12 @@ WHAT THIS TOOL IS STILL FOR, and it is the important half:
 
   `verify`  — check a tree (however obtained, including an unpacked official
               export) against the 45,260-item manifest, with a per-year
-              breakdown. THIS IS THE POINT. An official export that quietly
+              breakdown. THIS IS THE POINT. It is LAYOUT-AGNOSTIC: it matches
+              on the photo id embedded in the filename, so it works on this
+              tool's own `<YYYY>/<YYYY-MM-DD>_<id>.<ext>` tree AND on the
+              official export's `<title>_<id>_o.<ext>` files, wherever they sit.
+              (Until 2026-08-31 it reconstructed its OWN path and would have
+              reported all 45,260 items missing against a complete export.) An official export that quietly
               omits a year, or stops early, looks exactly like a complete one
               until you count it. The manifest is an independent expectation
               to check the export against, which is the same false-green
@@ -41,7 +46,9 @@ SAFETY PROPERTIES
   - Never deletes anything it did not itself write.
 
 USAGE
-  flickr-fetch verify  --dest ~/FlickrArchive     # the primary use
+  flickr-fetch verify  --dest ~/FlickrExport     # the primary use
+  flickr-fetch verify  --dest ~/FlickrExport --write-missing ~/gap.jsonl
+  flickr-fetch fetch   --manifest ~/gap.jsonl --dest ~/FlickrExport
   flickr-fetch fetch   --dest ~/FlickrArchive     # gap-fill only, see above
   flickr-fetch fetch   --dest ~/FlickrArchive --retry-failures
 """
@@ -60,6 +67,13 @@ import urllib.error
 import urllib.request
 
 DEFAULT_MANIFEST = os.path.expanduser("~/flickr-survey.jsonl")
+
+# Extensions treated as actual photographs/videos when indexing a tree. Anything
+# else in an unpacked export (photo_<id>.json, albums.json, comments, README)
+# is metadata, not a copy of the picture.
+MEDIA_EXT = {".jpg", ".jpeg", ".png", ".gif", ".tif", ".tiff", ".heic", ".webp",
+             ".bmp", ".mp4", ".mov", ".avi", ".m4v", ".mpg", ".mpeg", ".3gp",
+             ".mts", ".wmv", ".mkv"}
 DEFAULT_DEST = os.path.expanduser("~/FlickrArchive")
 UA = {"User-Agent": "flickr-fetch/1.0"}
 
@@ -329,22 +343,87 @@ def report(dest, recs, started, failures):
     print("=" * 62)
 
 
+def index_tree(dest, wanted_ids):
+    """Map photo-id -> (path, size) for every file under `dest`, any layout.
+
+    🚨 This exists because the official Flickr export does NOT use this tool's
+    own `<YYYY>/<YYYY-MM-DD>_<id>.<ext>` layout — it ships flat-ish directories
+    of `<title-slug>_<id>_o.<ext>` plus JSON sidecars. Verifying by
+    reconstructing our own path would report all 45,260 items missing against a
+    perfectly complete export: a total false-red, on the one control this
+    project relies on. So match on the photo id embedded in the filename
+    instead, which BOTH layouts carry.
+
+    Ids are matched against the manifest's own id set rather than a digit-length
+    heuristic, so a number appearing in a photo title cannot invent a match. Of
+    the digit runs that ARE real ids, the LAST is taken, because the export puts
+    the id at the end (`..._<id>_o.jpg`).
+    """
+    index, unmatched, sidecars, dupes = {}, 0, 0, []
+    for root, _dirs, files in os.walk(dest):
+        for name in files:
+            if name.endswith(".part"):
+                continue
+            # 🚨 The official export ships a `photo_<id>.json` sidecar BESIDE
+            # every image. Indexing those would make every single photo look
+            # like a duplicate id — 45,260 spurious warnings on a perfectly
+            # good export. A check that cries wolf is worse than no check, so
+            # only media files are candidates; sidecars are counted, not
+            # matched.
+            if os.path.splitext(name)[1].lower() not in MEDIA_EXT:
+                sidecars += 1
+                continue
+            hits = [d for d in re.findall(r"\d+", name) if d in wanted_ids]
+            if not hits:
+                unmatched += 1
+                continue
+            pid = hits[-1]
+            path = os.path.join(root, name)
+            try:
+                size = os.path.getsize(path)
+            except OSError:
+                continue
+            prev = index.get(pid)
+            if prev is None or size > prev[1]:
+                if prev is not None:
+                    dupes.append(pid)
+                index[pid] = (path, size)
+            else:
+                dupes.append(pid)
+    return index, unmatched, sidecars, dupes
+
+
 def cmd_verify(args):
-    """Check the tree against the manifest without downloading anything."""
+    """Check the tree against the manifest without downloading anything.
+
+    Layout-agnostic: works on this tool's own tree AND on an unpacked official
+    Flickr export. Years come from the manifest record, not the directory name,
+    so the per-year breakdown is meaningful either way.
+    """
     dest = os.path.expanduser(args.dest)
+    if not os.path.isdir(dest):
+        die(f"no such directory: {dest}")
     recs = load_manifest(args.manifest)
+    wanted = {str(r["id"]) for r in recs}
+
+    index, unmatched, sidecars, dupes = index_tree(dest, wanted)
+
     missing, empty, present, nbytes = [], [], 0, 0
     by_year = {}
     for r in recs:
-        p = target_path(dest, r)
-        year = os.path.basename(os.path.dirname(p))
-        by_year.setdefault(year, [0, 0])
-        if not os.path.exists(p):
-            missing.append(r["id"])
+        pid = str(r["id"])
+        taken = r.get("taken") or ""
+        m = re.match(r"(\d{4})", taken)
+        year = m.group(1) if (m and m.group(1) != "0000") else "unknown"
+        by_year.setdefault(year, [0, 0, 0])
+        by_year[year][2] += 1          # expected
+        hit = index.get(pid)
+        if hit is None:
+            missing.append(pid)
             continue
-        sz = os.path.getsize(p)
+        sz = hit[1]
         if sz == 0:
-            empty.append(r["id"])
+            empty.append(pid)
             continue
         present += 1
         nbytes += sz
@@ -354,22 +433,49 @@ def cmd_verify(args):
     print("\n" + "=" * 62)
     print("FLICKR ARCHIVE VERIFY")
     print("=" * 62)
+    print(f"  tree            {dest}")
     print(f"  manifest items  {len(recs):>10,}")
     print(f"  on disk         {present:>10,}")
     print(f"  missing         {len(missing):>10,}")
     print(f"  zero-length     {len(empty):>10,}")
     print(f"  total size      {nbytes/1e9:>10.1f} GB")
-    print(f"\n  {'year':<10}{'files':>10}{'GB':>10}")
-    print("  " + "-" * 30)
+    print(f"  metadata sidecars (json/txt/html): {sidecars:>10,}")
+    print(f"  media files matching no manifest id:{unmatched:>10,}")
+    if dupes:
+        print(f"  🚨 duplicate MEDIA for one id: {len(dupes):,} "
+              f"(largest kept) e.g. {sorted(set(dupes))[:5]}")
+
+    print(f"\n  {'year':<10}{'files':>9}{'expected':>10}{'GB':>9}  ")
+    print("  " + "-" * 40)
     for y in sorted(by_year):
-        c, b = by_year[y]
-        if c:
-            print(f"  {y:<10}{c:>10,}{b/1e9:>10.2f}")
+        c, b, exp = by_year[y]
+        if exp:
+            flag = "" if c == exp else f"  ⚠ -{exp - c:,}"
+            print(f"  {y:<10}{c:>9,}{exp:>10,}{b/1e9:>9.2f}{flag}")
+
+    if missing or empty:
+        sample = (missing or empty)[:10]
+        print(f"\n  sample missing ids: {sample}")
+        if args.write_missing:
+            out = os.path.expanduser(args.write_missing)
+            # Build the id set ONCE. Rebuilding it inside the loop is O(n^2) and
+            # on a 45,260-item manifest with a near-empty tree that is ~2e9 set
+            # insertions — it presents as a hang, not as slowness.
+            gap_ids = set(missing) | set(empty)
+            with open(out, "w") as f:
+                for r in recs:
+                    if str(r["id"]) in gap_ids:
+                        f.write(json.dumps(r) + "\n")
+            print(f"  wrote gap manifest -> {out}")
+            print(f"  gap-fill with: flickr-fetch fetch --manifest {out} "
+                  f"--dest {dest}")
+
     if not missing and not empty:
         print(f"\n  ✅ COMPLETE — all {len(recs):,} manifest items present.")
     else:
         print(f"\n  ⚠ INCOMPLETE. Do NOT treat this archive as a full copy.")
     print("=" * 62)
+    return 1 if (missing or empty) else 0
 
 
 def main():
@@ -388,10 +494,14 @@ def main():
 
     v = sub.add_parser("verify", help="check the tree against the manifest")
     v.add_argument("--manifest", default=DEFAULT_MANIFEST)
+    v.add_argument("--write-missing", metavar="PATH",
+                   help="write a manifest of only the missing/zero-length "
+                        "items, for a targeted `fetch` gap-fill")
     v.add_argument("--dest", default=DEFAULT_DEST)
 
     args = ap.parse_args()
-    {"fetch": cmd_fetch, "verify": cmd_verify}[args.cmd](args)
+    # propagate verify's exit code so a scripted check can act on INCOMPLETE
+    sys.exit({"fetch": cmd_fetch, "verify": cmd_verify}[args.cmd](args) or 0)
 
 
 if __name__ == "__main__":
