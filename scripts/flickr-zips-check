@@ -7,7 +7,11 @@ tree, so byte-exactness is checked here, where it is cheap and unambiguous.
 """
 import json, os, sys, zipfile
 
-d = os.path.expanduser(sys.argv[1] if len(sys.argv) > 1 else "~/FlickrExportZips")
+positional = [arg for arg in sys.argv[1:] if not arg.startswith("--")]
+if len(positional) > 1:
+    print("usage: flickr-zips-check [DIRECTORY] [--deep]", file=sys.stderr)
+    sys.exit(2)
+d = os.path.expanduser(positional[0] if positional else "~/FlickrExportZips")
 man = json.load(open(os.path.expanduser("~/flickr-export-sizes.json")))
 deep = "--deep" in sys.argv
 
