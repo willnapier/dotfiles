@@ -217,11 +217,14 @@ binds {
     Mod+Shift+9 { move-window-to-workspace 9; }
     Mod+Shift+0 { move-window-to-workspace 10; }
 
-    // Sizing
+    // Sizing. Minus is a plain key, so Shift still means height.
+    // Equal is inverted on purpose: ZMK plus_equal sends PLUS (LS(EQUAL))
+    // unshifted and EQUAL with Shift consumed, so T+H+, lands on Equal
+    // not Shift+Equal. Do not "correct" these two binds back.
     Mod+Alt+Minus       { set-column-width "-10%"; }
-    Mod+Alt+Equal       { set-column-width "+10%"; }
+    Mod+Alt+Equal       { set-window-height "+10%"; }
     Mod+Alt+Shift+Minus { set-window-height "-10%"; }
-    Mod+Alt+Shift+Equal { set-window-height "+10%"; }
+    Mod+Alt+Shift+Equal { set-column-width "+10%"; }
 
     // Safety
     Mod+Alt+Escape { toggle-keyboard-shortcuts-inhibit; }
