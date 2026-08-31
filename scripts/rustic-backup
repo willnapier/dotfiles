@@ -15,6 +15,8 @@ EXPECTED_RUSTIC_VERSION="0.11.3"
 # (nimbini-photos) would otherwise report unhealthy for six days out of seven,
 # which is a false alarm that trains you to ignore the check.
 MAX_SUCCESS_AGE="${RUSTIC_BACKUP_MAX_AGE:-129600}"
+LOCK_FILE="$STATE_ROOT/operation.lock"
+SSH_CONTROL_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}"
 
 die() {
     printf 'rustic-backup: %s\n' "$*" >&2
@@ -68,10 +70,41 @@ check_binary() {
     [ "$actual" = "$EXPECTED_RUSTIC_VERSION" ] || die "expected rustic $EXPECTED_RUSTIC_VERSION, found $actual"
 }
 
+acquire_operation_lock() {
+    command -v flock >/dev/null 2>&1 || die "flock is not installed"
+    mkdir -p "$STATE_ROOT"
+    exec {RUSTIC_LOCK_FD}>"$LOCK_FILE"
+    flock -n "$RUSTIC_LOCK_FD" || die "another Rustic repository operation is already running"
+}
+
+cleanup_rustic_ssh_masters() {
+    [ -n "${OPENDAL_KEY:-}" ] || return 0
+
+    # OpenDAL's SFTP backend uses detached OpenSSH multiplex masters. In
+    # practice these can survive Rustic's exit and eventually exhaust the
+    # Storage Box connection allowance. Target only masters created with this
+    # profile's dedicated key; never touch ordinary interactive SSH sessions.
+    local pid args
+    while read -r pid args; do
+        case "$args" in
+            "ssh -E $SSH_CONTROL_ROOT"/.ssh-connection*" -i $OPENDAL_KEY "*)
+                kill "$pid" 2>/dev/null || true
+                ;;
+        esac
+    done < <(ps -u "$(id -u)" -o pid=,args=)
+}
+
 run_rustic() {
     check_binary
     load_credentials
-    rustic -P "$PROFILE" "$@"
+    acquire_operation_lock
+    trap cleanup_rustic_ssh_masters EXIT
+
+    local result=0
+    rustic -P "$PROFILE" "$@" || result=$?
+    cleanup_rustic_ssh_masters
+    trap - EXIT
+    return "$result"
 }
 
 backup() {

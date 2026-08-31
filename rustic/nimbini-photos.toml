@@ -29,6 +29,10 @@ log-level = "info"
 [repository]
 repository = "opendal:sftp"
 
+[repository.options]
+# Stay below the Storage Box SSH-session ceiling during parallel pack checks.
+connections = "4"
+
 [backup]
 exclude-if-present = ["CACHEDIR.TAG"]
 
