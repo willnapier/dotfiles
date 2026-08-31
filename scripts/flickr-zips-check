@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+"""flickr-zips-check — gate the ZIPs against the HEAD-measured size manifest.
+
+Runs BEFORE unzipping. A truncated chunk unzips to a plausible-looking partial
+tree, so byte-exactness is checked here, where it is cheap and unambiguous.
+(PHOTO-ARCHIVE-STRATEGY.md 2.2a: prove a gate can return BOTH verdicts.)
+"""
+import json, os, sys, zipfile
+
+d = os.path.expanduser(sys.argv[1] if len(sys.argv) > 1 else "~/FlickrExportZips")
+man = json.load(open(os.path.expanduser("~/flickr-export-sizes.json")))
+deep = "--deep" in sys.argv
+
+done = short = absent = bad = 0
+got = 0
+for name, want in sorted(man.items()):
+    p = os.path.join(d, name)
+    if not os.path.exists(p):
+        absent += 1
+        continue
+    have = os.path.getsize(p)
+    got += have
+    if have != want:
+        short += 1
+        # show the byte DELTA, not a percentage: a one-byte shortfall on a
+        # 5 MB chunk renders as "100.0%" and reads like success.
+        print(f"  ⚠ SHORT  {name}  {have:,} of {want:,} "
+              f"(short by {want-have:,} bytes)")
+        continue
+    if deep:
+        try:
+            with zipfile.ZipFile(p) as z:
+                if z.testzip() is not None:
+                    raise zipfile.BadZipFile("bad member CRC")
+        except Exception as e:
+            bad += 1
+            print(f"  🚨 CORRUPT {name}: {e}")
+            continue
+    done += 1
+
+want_total = sum(v for v in man.values() if v)
+print(f"\n  chunks complete   {done}/{len(man)}")
+print(f"  still downloading {short}")
+print(f"  not started       {absent}")
+if deep:
+    print(f"  CRC-failed        {bad}")
+print(f"  bytes             {got/1e9:.2f} / {want_total/1e9:.2f} GB  ({got/want_total:.1%})")
+if done == len(man) and not bad:
+    print("\n  ✅ ALL CHUNKS BYTE-EXACT" + (" AND CRC-CLEAN" if deep else
+          " — re-run with --deep to CRC-test before unzipping"))
+    sys.exit(0)
+print("\n  ⚠ NOT READY TO UNZIP")
+sys.exit(1)
