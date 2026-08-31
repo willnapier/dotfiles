@@ -23,6 +23,7 @@ depends = []
 "scripts/flickr-survey" = "~/.local/bin/flickr-survey"
 "scripts/flickr-fetch" = "~/.local/bin/flickr-fetch"
 "scripts/flickr-zips-check" = "~/.local/bin/flickr-zips-check"
+"scripts/flickr-dl-supervise" = "~/.local/bin/flickr-dl-supervise"
 "scripts/render-doc" = "~/.local/bin/render-doc"
 "scripts/assistants-docs-auto-push" = "~/.local/bin/assistants-docs-auto-push"
 "scripts/skill-mirror" = "~/.local/bin/skill-mirror"

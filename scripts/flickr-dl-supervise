@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# flickr-dl-supervise — drive the Flickr export download to completion.
+#
+# 🚨 WHY THIS EXISTS. Measured 2026-08-31: downloads.flickr.com throttles a
+# LONG-LIVED connection, not the IP. The first 35 chunks came down at a steady
+# 182-190 Mbit/s for 41 minutes; then the SAME connection collapsed to 28
+# Mbit/s while a FRESH connection to an untouched chunk got 149 Mbit/s in the
+# same second, and three non-Flickr hosts proved the line itself was doing
+# 644-795 Mbit/s. So the fix is not to wait it out and not to add parallelism
+# (which is what put the host IP in an extended penalty box on 2026-08-30,
+# PHOTO-ARCHIVE-STRATEGY.md 12.6) - it is to hang up and redial.
+#
+# Judges progress by TOTAL BYTES IN THE DIRECTORY, not by one file, so a
+# handover between chunks is not mistaken for a stall. Restarts are free:
+# wget -c resumes mid-file and the server honours range requests (206).
+set -uo pipefail
+
+DIR="${FLICKR_DL_DIR:-$HOME/FlickrExportZips}"
+LIST="${FLICKR_DL_LIST:-$HOME/flickr-export-links.txt}"
+LOG="$DIR/_wget.log"
+SLOG="$DIR/_supervisor.log"
+MIN_MBPS="${FLICKR_DL_MIN_MBPS:-8}"   # MB/s below which we hang up and redial
+GRACE=90                              # s after a start before judging it
+WINDOW=60                             # s between throughput samples
+MAX_CYCLES=200
+
+mkdir -p "$DIR"
+say() { printf '%s %s\n' "$(date '+%F %T')" "$*" | tee -a "$SLOG"; }
+
+total() { du -sb "$DIR" 2>/dev/null | cut -f1; }
+
+for ((cycle=1; cycle<=MAX_CYCLES; cycle++)); do
+  if flickr-zips-check "$DIR" >/dev/null 2>&1; then
+    say "ALL CHUNKS BYTE-EXACT after $((cycle-1)) cycles — done"
+    exit 0
+  fi
+
+  say "cycle $cycle: starting wget"
+  wget --continue --tries=3 --waitretry=15 --timeout=45 --read-timeout=90 \
+       -nv -a "$LOG" -P "$DIR" -i "$LIST" &
+  WPID=$!
+
+  sleep "$GRACE"
+  while kill -0 "$WPID" 2>/dev/null; do
+    A=$(total); sleep "$WINDOW"; B=$(total)
+    kill -0 "$WPID" 2>/dev/null || break
+    RATE=$(( (B - A) / WINDOW / 1000000 ))
+    if (( RATE < MIN_MBPS )); then
+      say "throttled at ${RATE} MB/s (< ${MIN_MBPS}) — hanging up to force a fresh connection"
+      kill "$WPID" 2>/dev/null
+      # give it a moment to flush the partial file, then SIGKILL if stubborn
+      sleep 3; kill -9 "$WPID" 2>/dev/null
+      break
+    fi
+  done
+  wait "$WPID" 2>/dev/null
+  sleep 5
+done
+say "gave up after $MAX_CYCLES cycles"
+exit 1
