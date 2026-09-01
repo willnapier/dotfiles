@@ -19,7 +19,7 @@ case "$FILE_PATH" in
 esac
 
 # Extract client ID: the directory name under clients/
-# Handles EB88, AT+SS, BC, etc.
+# Handles XA01, XB+XC, XD, etc. (single code, joint pair, two-letter code)
 CLIENT_ID=$(echo "$FILE_PATH" | sed -E 's|.*/Clinical/clients/([^/]+)/.*|\1|')
 
 if [ -z "$CLIENT_ID" ]; then
