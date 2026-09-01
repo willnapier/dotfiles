@@ -70,4 +70,4 @@ done
 
 echo ""
 echo "✅ Comprehensive Dotter protection applied successfully!"
-echo "Run 'dotter-verify-protection' to check status"
+echo "Run 'dotter-drift-monitor' to check deployed state"

@@ -25,7 +25,7 @@ def main [] {
     
     print ""
     print "✅ Cross-platform Dotter protection applied successfully!"
-    print "Run 'dotter-verify-protection-cross-platform' to check status"
+    print "Run 'dotter-drift-monitor' to check deployed state"
 }
 
 def detect_dotfiles_root [] {

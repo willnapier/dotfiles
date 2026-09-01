@@ -20,8 +20,9 @@ def check_timers [verbose: bool, fix: bool, log_path: string] {
 
     let result = (do { systemctl --user list-unit-files --type=timer --state=enabled --no-legend } | complete)
     if $result.exit_code != 0 {
-        if $verbose { print "  Could not query timers" }
-        return []
+        # "Could not check" is a problem, never an empty problem list (review D2-10).
+        if $verbose { print "  ❌ Could not query timers" }
+        return ["Timers: could not query systemd (check skipped)"]
     }
 
     let timer_names = ($result.stdout | str trim | lines
@@ -33,6 +34,19 @@ def check_timers [verbose: bool, fix: bool, log_path: string] {
         if $timer == "system-health-check.timer" { continue }
 
         let status = (do { systemctl --user is-active $timer } | complete | get stdout | str trim)
+
+        # An active timer with no next elapse is armed but will never fire —
+        # the OnBootSec+OnUnitActiveSec class that killed cohs-trash-mover for
+        # months while `is-active` said "active" (review F9).
+        if $status == "active" {
+            let next = (do { systemctl --user show $timer -p NextElapseUSecRealtime -p NextElapseUSecMonotonic --value } | complete | get stdout | str trim)
+            if ($next | is-empty) {
+                let name = ($timer | str replace ".timer" "")
+                $problems = ($problems | append $"Timer never fires: ($name) [active, no next elapse]")
+                if $verbose { print $"  ❌ ($name): active but no next elapse" }
+                continue
+            }
+        }
 
         if $status != "active" {
             let name = ($timer | str replace ".timer" "")
@@ -67,8 +81,8 @@ def check_launchagents [verbose: bool, fix: bool, log_path: string] {
 
     let agents_dir = $"($env.HOME)/Library/LaunchAgents"
     if not ($agents_dir | path exists) {
-        if $verbose { print "  No LaunchAgents directory"; print "" }
-        return []
+        if $verbose { print "  ❌ No LaunchAgents directory"; print "" }
+        return ["LaunchAgents: directory missing (check skipped)"]
     }
 
     let wn_plists = (glob $"($agents_dir)/com.williamnapier.*.plist")
@@ -76,8 +90,9 @@ def check_launchagents [verbose: bool, fix: bool, log_path: string] {
     let all_plists = ($wn_plists | append $user_plists)
 
     if ($all_plists | is-empty) {
-        if $verbose { print "  No managed agents found"; print "" }
-        return []
+        # Zero agents on a machine that runs ~40 is not "clean", it is "could not check".
+        if $verbose { print "  ❌ No managed agents found"; print "" }
+        return ["LaunchAgents: no com.williamnapier/com.user plists found (check skipped)"]
     }
 
     # Get all loaded services once (format: PID\tStatus\tLabel)
@@ -93,12 +108,19 @@ def check_launchagents [verbose: bool, fix: bool, log_path: string] {
         }
     } catch { [] }
 
+    if ($loaded_list | is-empty) {
+        if $verbose { print "  ❌ launchctl list returned nothing"; print "" }
+        return ["LaunchAgents: could not read launchctl list (check skipped)"]
+    }
+
     for plist_path in $all_plists {
         let label = ($plist_path | path basename | str replace ".plist" "")
         # Skip ourselves
         if $label == "com.williamnapier.system-health-check" { continue }
 
-        let info = ($loaded_list | where label == $label | first | default null)
+        # `first` throws on an empty list — this crashed every Mac run from
+        # 2026-07-17 to 2026-09-01 whenever one plist was not loaded.
+        let info = ($loaded_list | where label == $label | get -o 0 | default null)
 
         if $info == null {
             # Agent not loaded at all
@@ -164,6 +186,10 @@ def check_services [verbose: bool, fix: bool, log_path: string] {
     # fixed. Skip ourselves; systemd already surfaces our own exit status.
     let self_unit = "system-health-check.service"
     let failed = (do { systemctl --user --state=failed --no-legend --no-pager --plain } | complete)
+    if $failed.exit_code != 0 {
+        $problems = ($problems | append "Services: could not query failed units (check skipped)")
+        if $verbose { print "  ❌ Could not query failed units" }
+    }
     if $failed.exit_code == 0 and ($failed.stdout | str trim | is-not-empty) {
         let lines = ($failed.stdout | str trim | lines | where ($it | str trim | is-not-empty))
         for line in $lines {
@@ -258,7 +284,7 @@ def check_mac_services [verbose: bool, fix: bool, log_path: string] {
             continue
         }
 
-        let info = ($loaded_list | where label == $svc | first | default null)
+        let info = ($loaded_list | where label == $svc | get -o 0 | default null)
 
         if $info == null or $info.pid == null {
             if $fix {
@@ -450,6 +476,50 @@ def check_dna_drift [verbose: bool] {
     $problems
 }
 
+# ── Check 6: Dotter drift ─────────────────────────────────────────
+# Runs the stateless intent-vs-disk checker. Its self-test is run FIRST so a
+# checker that can no longer fail is itself reported, not trusted.
+def check_dotter_drift [verbose: bool] {
+    if $verbose { print "── Dotter Drift ──" }
+    mut problems = []
+
+    if (which dotter-drift-monitor | is-empty) {
+        if $verbose { print "  ❌ dotter-drift-monitor not in PATH"; print "" }
+        return ["Dotter: dotter-drift-monitor not in PATH (check skipped)"]
+    }
+
+    let st = (do { dotter-drift-monitor --self-test } | complete)
+    if $st.exit_code != 0 {
+        $problems = ($problems | append "Dotter: drift checker FAILED its self-test — its results cannot be trusted")
+        if $verbose { print "  ❌ self-test failed" }
+    } else if $verbose {
+        print "  ✅ self-test (checker can fail)"
+    }
+
+    let r = (do { dotter-drift-monitor --quiet } | complete)
+    let drift_lines = ($r.stdout | lines | where ($it | str starts-with "❌"))
+    if $r.exit_code == 0 {
+        if $verbose { print "  ✅ deployed state matches global.toml" }
+    } else if $r.exit_code == 1 {
+        for line in $drift_lines {
+            $problems = ($problems | append $"Dotter drift: ($line | str replace '❌ ' '' | str trim)")
+            if $verbose { print $"  ($line)" }
+        }
+        if ($drift_lines | is-empty) {
+            $problems = ($problems | append "Dotter drift: reported but no detail lines parsed")
+        }
+    } else if $r.exit_code == 2 {
+        $problems = ($problems | append "Dotter: could not check (config unreadable or zero mappings)")
+        if $verbose { print "  ❌ could not check" }
+    } else {
+        $problems = ($problems | append $"Dotter: checker crashed [exit ($r.exit_code)]")
+        if $verbose { print $"  ❌ checker crashed \(exit ($r.exit_code)\)" }
+    }
+
+    if $verbose { print "" }
+    $problems
+}
+
 # ── Main ──────────────────────────────────────────────────────────
 
 def main [
@@ -482,12 +552,14 @@ def main [
     let dotfile_problems = (check_dotfiles $verbose)
     let rust_problems = (check_rust_tools $verbose)
     let dna_problems = (check_dna_drift $verbose)
+    let dotter_problems = (check_dotter_drift $verbose)
 
     let all_problems = ($timer_problems
         | append $service_problems
         | append $dotfile_problems
         | append $rust_problems
-        | append $dna_problems)
+        | append $dna_problems
+        | append $dotter_problems)
 
     if ($all_problems | is-empty) {
         log_msg $log_path "INFO" "All checks passed"
