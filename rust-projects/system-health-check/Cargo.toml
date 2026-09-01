@@ -1,0 +1,11 @@
+[package]
+name = "system-health-check"
+version = "0.2.0"
+edition = "2021"
+description = "Daily system health validator: dead timers/agents, failed services, stale dotfiles, missing Rust binaries, DNA drift, dotter drift. systemd on Linux, launchd on macOS."
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = "0.4"

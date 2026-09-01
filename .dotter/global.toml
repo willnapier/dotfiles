@@ -363,7 +363,8 @@ depends = []
 # Reminder notification daemon
 "scripts/remind-notify" = "~/.local/bin/remind-notify"
 # System health check - cross-platform daily validator (launchd on mac, systemd on linux)
-"scripts/system-health-check" = "~/.local/bin/system-health-check"
+# system-health-check is a Rust binary (rust-projects/system-health-check), copied to
+# ~/.local/bin by hand / rust-redeploy — not a dotter mapping since 2026-09-01.
 "scripts/capture-cargo-crates" = "~/.local/bin/capture-cargo-crates"
 "scripts/context-staleness-check" = "~/.local/bin/context-staleness-check"
 # Ghostty config validation - fires on app update
