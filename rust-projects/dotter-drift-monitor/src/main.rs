@@ -505,14 +505,20 @@ mod orphans {
             if line.is_empty() || line.starts_with('#') {
                 continue;
             }
+            // gitignore semantics: a leading `/` anchors to the root; a trailing
+            // `/` means "this directory and everything under it" and does NOT
+            // count as an inner slash; a pattern with no inner slash matches at
+            // any depth.
             let anchored = line.starts_with('/');
-            let mut pat = line.trim_start_matches('/').to_string();
-            if pat.ends_with('/') {
-                pat.push_str("**");
-            }
-            // no `/` inside the pattern → basename match anywhere, unless anchored
-            if !anchored && !pat.trim_end_matches("**").contains('/') {
+            let body = line.trim_start_matches('/');
+            let dir_rule = body.ends_with('/');
+            let core = body.trim_end_matches('/');
+            let mut pat = core.to_string();
+            if !anchored && !core.contains('/') {
                 pat = format!("**/{pat}");
+            }
+            if dir_rule {
+                pat.push_str("/**");
             }
             let g: Glob = GlobBuilder::new(&pat)
                 .literal_separator(true)
@@ -861,10 +867,10 @@ depends = []
     fn orphans_core_respects_mappings_dir_prefixes_and_exclude_rules() {
         let keys = vec!["helix/config.toml".to_string(), "Claude/hooks".to_string()];
         let (ex, n) = orphans::parse_excludes(
-            "# comment\n*.md\nrust-projects/\n/*.txt\n.DS_Store\n**/cache/**\n",
+            "# comment\n*.md\nrust-projects/   # inline comment\n/*.txt\n.DS_Store\n**/cache/**\n__pycache__/\n",
         )
         .unwrap();
-        assert_eq!(n, 5);
+        assert_eq!(n, 6);
         let tracked: Vec<String> = [
             "helix/config.toml",           // mapped
             "Claude/hooks/a.sh",           // under a mapped dir
@@ -875,6 +881,7 @@ depends = []
             "systemd/foo.txt",             // NOT root → not excluded → orphan
             "karabiner/.DS_Store",         // basename rule
             "semantic-search/cache/x",     // ** rule
+            "semantic-search/__pycache__/a.pyc", // nested dir rule (trailing slash is not an inner slash)
             "scripts/zellij-zombie-watcher", // orphan
         ]
         .iter()
@@ -882,7 +889,7 @@ depends = []
         .collect();
         let (orphans, excluded) = orphans::find_orphans(&tracked, &keys, &ex);
         assert_eq!(orphans, vec!["systemd/foo.txt", "scripts/zellij-zombie-watcher"]);
-        assert_eq!(excluded, 6);
+        assert_eq!(excluded, 7);
     }
 
     #[test]

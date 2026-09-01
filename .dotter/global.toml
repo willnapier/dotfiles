@@ -262,7 +262,8 @@ depends = []
 "scripts/dotter-protect-all" = "~/.local/bin/dotter-protect-all"
 "scripts/dotter-protect-all-cross-platform" = "~/.local/bin/dotter-protect-all-cross-platform"
 "scripts/citation-picker.sh" = "~/.local/bin/citation-picker.sh"
-"scripts/dotter-orphan-detector-v2" = "~/.local/bin/dotter-orphan-detector-v2"
+# dotter-orphan-detector-v2 is now the Rust dotter-drift-monitor binary invoked under that
+# name (argv[0] dispatch = --orphans); copied to ~/.local/bin, not dotter-mapped (2026-09-01).
 "scripts/dotter-enforce-compliance" = "~/.local/bin/dotter-enforce-compliance"
 # dotter-drift-monitor is a Rust binary (rust-projects/dotter-drift-monitor), copied to
 # ~/.local/bin by hand / rust-redeploy — not a dotter mapping since 2026-09-01.

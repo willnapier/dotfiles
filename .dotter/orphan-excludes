@@ -25,6 +25,11 @@ browser-extensions/        # built into signed .xpi files and installed via AMO
 __pycache__/
 **/cache/
 **/logs/
+.stfolder/                 # Syncthing folder marker — should not be tracked at all
+
+# --- run in place from the repo, never deployed into $HOME ---
+semantic-search/           # Python indexer invoked by scripts/semantic-indexer and scripts/semantic-query
+/semantic-search-backup-indexer.py
 
 # --- 4: generated — state-capture baselines written nightly to the repo root ---
 /*.txt
