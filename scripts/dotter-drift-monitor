@@ -1,230 +1,319 @@
 #!/usr/bin/env nu
 
-# dotter-drift-monitor - Continuous monitoring system to prevent Dotter Drift
-# This creates a daemon-like monitoring system to catch drift as it happens
+# dotter-drift-monitor — stateless "deployed vs intended" check for Dotter.
+#
+# Rewritten 2026-09-01. The previous version kept an mtime baseline created by
+# `--setup` and compared against it forever. Two defects made it a checker that
+# could not fail:
+#   * the config path lacked $HOME, so the baseline was `[]`, the loop ran zero
+#     times, and nimbini printed "No drift detected" four times a day for eight
+#     months while checking nothing;
+#   * the baseline was never refreshed, so on the Mac (where it did have
+#     entries) every redeploy flagged every file forever — a 60-second daemon
+#     wrote ~2 GB of "DRIFT DETECTED" lines about nothing.
+#
+# This version reads INTENT from ~/dotfiles/.dotter/global.toml on every run and
+# compares it with what is on disk. No baseline, no --setup, no daemon.
+#
+# Verdicts per deployed file:
+#   OK             symlink resolves to the dotfiles source (or template → regular file)
+#   NOT-SYMLINK    a regular file/dir sits where a symlink should — THE drift case
+#   WRONG-TARGET   symlink exists but resolves elsewhere
+#   BROKEN-LINK    symlink exists but its target is gone
+#   TGT-MISSING    nothing deployed at the target path
+#   SRC-MISSING    global.toml names a source that is not in the repo
+#
+# Exit codes: 0 clean · 1 drift found · 2 could not check (config unreadable,
+# zero mappings evaluated). A zero denominator is an error, never a pass.
+#
+# `--self-test` builds a throwaway fixture with deliberate drift and asserts the
+# checker reports every verdict class and the zero-denominator error — proof
+# that the checker can fail. system-health-check should run it.
 
 def main [
-    --setup (-s)    # Set up monitoring for the first time
-    --check (-c)    # Run a single check
-    --daemon (-d)   # Run as daemon (continuous monitoring)
+    --check (-c)          # Accepted for compatibility with the systemd unit; the check is the default
+    --json (-j)           # Emit the result record as JSON
+    --quiet (-q)          # Print only problems and the summary line
+    --self-test           # Prove the checker can fail, then exit (0 = proof held)
+    --dotfiles: string    # Override the dotfiles root (used by --self-test)
+    --home: string        # Override home for `~` expansion (used by --self-test)
 ] {
-    
-    if $setup {
-        setup_monitoring
-        return
+    if $self_test {
+        exit (run_self_test)
     }
-    
-    if $check {
-        run_drift_check
-        return
+
+    let df = ($dotfiles | default $"($env.HOME)/dotfiles")
+    let hm = ($home | default $env.HOME)
+    let live = ($dotfiles == null)
+
+    let result = (run_check $df $hm $quiet)
+
+    if $live and ($result.drift | is-not-empty) {
+        notify $"($result.drift | length) dotter-managed files have drifted \(see dotter-drift-monitor\)"
     }
-    
-    if $daemon {
-        run_daemon_monitoring
-        return
+    if $live {
+        side_checks $df
     }
-    
-    # Default: show usage
-    show_usage
+    if $json {
+        print ($result | to json)
+    }
+    exit $result.exit_code
 }
 
-def setup_monitoring [] {
-    print "🔧 SETTING UP DOTTER DRIFT MONITORING"
-    print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    print ""
-    
-    let monitor_dir = $"($env.HOME)/.config/dotter-monitor"
-    let baseline_file = $"($monitor_dir)/baseline.json"
-    
-    # Create monitoring directory
-    if not ($monitor_dir | path exists) {
-        mkdir $monitor_dir
-        print $"✅ Created monitoring directory: ($monitor_dir)"
+# ---------------------------------------------------------------------------
+# Core check
+# ---------------------------------------------------------------------------
+
+def run_check [df: string, hm: string, quiet: bool] {
+    let config_path = $"($df)/.dotter/global.toml"
+    let local_path = $"($df)/.dotter/local.toml"
+
+    if not ($config_path | path exists) {
+        print $"❌ CANNOT CHECK: ($config_path) not found"
+        return { exit_code: 2, evaluated: 0, ok: 0, drift: [], packages: [] }
     }
-    
-    # Create baseline of all Dotter-managed files
-    print "📊 Creating baseline of Dotter-managed files..."
-    let managed_files = get_dotter_managed_files
-    
-    $managed_files | to json | save $baseline_file
-    print $"✅ Baseline saved: ($baseline_file)"
-    print $"📊 Monitoring ($managed_files | length) Dotter-managed files"
-    
-    # Create launchd plist for macOS daemon
-    let plist_content = create_launchd_plist
-    let plist_path = $"($env.HOME)/Library/LaunchAgents/com.user.dotter-drift-monitor.plist"
-    
-    $plist_content | save $plist_path
-    print $"✅ Created launchd plist: ($plist_path)"
-    
-    print ""
-    print "🚀 SETUP COMPLETE! To start monitoring:"
-    print $"   launchctl load ($plist_path)"
-    print "   launchctl start com.user.dotter-drift-monitor"
-    print ""
-    print "To stop monitoring:"
-    print "   launchctl stop com.user.dotter-drift-monitor"
-    print $"   launchctl unload ($plist_path)"
+    let config = (try { open $config_path } catch { null })
+    if $config == null {
+        print $"❌ CANNOT CHECK: ($config_path) does not parse as TOML"
+        return { exit_code: 2, evaluated: 0, ok: 0, drift: [], packages: [] }
+    }
+    let local_packages = if ($local_path | path exists) {
+        (try { open $local_path | get -o packages | default [] } catch { [] })
+    } else {
+        []
+    }
+
+    let packages = (resolve_packages $config $local_packages)
+    let auto_template = (($config | get -o settings.default_target_type | default "automatic") == "automatic")
+    let mappings = (collect_mappings $config $packages $df $hm)
+    let rows = ($mappings | each {|m| evaluate $m $auto_template })
+
+    let evaluated = ($rows | length)
+    let drift = ($rows | where verdict != "OK")
+    let ok = ($evaluated - ($drift | length))
+
+    if $evaluated == 0 {
+        print $"❌ CANNOT CHECK: zero mappings evaluated for packages ($packages | str join ', ') — refusing to report clean"
+        return { exit_code: 2, evaluated: 0, ok: 0, drift: [], packages: $packages }
+    }
+
+    if not $quiet {
+        print $"🔍 dotter-drift-monitor — packages: ($packages | str join ', ')"
+    }
+    for row in $drift {
+        let shown = ($row.tgt | str replace $hm "~")
+        print $"❌ ($row.verdict | fill -w 12)  ($shown)  \(($row.entry)\)($row.detail)"
+    }
+    let exit_code = if ($drift | is-empty) { 0 } else { 1 }
+    let status = if $exit_code == 0 { "✅ clean" } else { $"🚨 ($drift | length) drifted" }
+    print $"($status) — checked ($evaluated) deployed files, ($ok) OK"
+
+    { exit_code: $exit_code, evaluated: $evaluated, ok: $ok, drift: $drift, packages: $packages }
 }
 
-def run_drift_check [] {
-    print "🔍 CHECKING FOR DOTTER DRIFT..."
-
-    # Check for uncommitted dotfiles changes first
-    print "🔍 Checking for uncommitted dotfiles changes..."
-    let uncommitted = (do { git -C $"($env.HOME)/dotfiles" status --porcelain } | complete)
-    if ($uncommitted.stdout | str trim | is-not-empty) {
-        let msg = "Uncommitted changes in ~/dotfiles — commit or lose them on next pull"
-        print $"⚠️  ($msg)"
-        print $uncommitted.stdout
-        # Desktop notification (Linux: notify-send, macOS: osascript)
-        if (which notify-send | is-not-empty) {
-            do { notify-send -u critical "Dotfiles Uncommitted" $msg } | ignore
-        } else if (which osascript | is-not-empty) {
-            do { osascript -e $'display notification "($msg)" with title "Dotfiles Uncommitted"' } | ignore
-        }
-    }
-
-    # Check Helix config sync (platform-specific configs)
-    print "🔍 Checking Helix config sync..."
-    let helix_sync_result = (do { nu ~/.local/bin/helix-config-sync-check } | complete)
-    if $helix_sync_result.exit_code != 0 {
-        print "⚠️  Helix configs are out of sync!"
-        print $helix_sync_result.stdout
-    }
-
-    let monitor_dir = $"($env.HOME)/.config/dotter-monitor"
-    let baseline_file = $"($monitor_dir)/baseline.json"
-    let drift_log = $"($monitor_dir)/drift.log"
-
-    if not ($baseline_file | path exists) {
-        print "❌ No baseline found. Run with --setup first."
-        return
-    }
-    
-    let baseline = (open $baseline_file)
-    let timestamp = (date now | format date "%Y-%m-%d %H:%M:%S")
-    mut drift_detected = false
-    
-    for file_info in $baseline {
-        let file_path = ($file_info.path | str replace '~' $env.HOME)
-        
-        if ($file_path | path exists) {
-            let current_stat = (ls -l $file_path | first)
-            let current_mtime = ($current_stat.modified | format date "%Y-%m-%d %H:%M:%S")
-
-            if $current_mtime != $file_info.mtime {
-                let drift_message = $"🚨 DRIFT DETECTED: ($file_info.path) modified at ($current_mtime)"
-                print $drift_message
-
-                # Log the drift
-                $"($timestamp): ($drift_message)" | save --append $drift_log
-
-                # Check if it's still a symlink
-                if ($current_stat.type != "symlink") {
-                    let critical_message = $"💀 CRITICAL: ($file_info.path) is no longer a symlink!"
-                    print $critical_message
-                    $"($timestamp): ($critical_message)" | save --append $drift_log
-                }
-                
-                $drift_detected = true
-            }
-        } else {
-            let missing_message = $"⚠️  MISSING: ($file_info.path) no longer exists"
-            print $missing_message
-            $"($timestamp): ($missing_message)" | save --append $drift_log
-            $drift_detected = true
-        }
-    }
-    
-    if not $drift_detected {
-        print "✅ No drift detected - all Dotter-managed files are intact"
-    }
-}
-
-def run_daemon_monitoring [] {
-    print "🔄 STARTING DOTTER DRIFT DAEMON..."
-    print "   Checking every 60 seconds for drift..."
-    print "   Press Ctrl+C to stop"
-    print ""
-    
+# Packages to evaluate: `shared` plus local.toml's packages plus their
+# transitive `depends`. Only packages that actually carry a `files` table count.
+def resolve_packages [config: record, local_packages: list<string>] {
+    mut wanted = (["shared"] | append $local_packages | uniq)
+    mut frontier = $wanted
     loop {
-        run_drift_check
-        sleep 60sec
+        let deps = (
+            $frontier
+            | each {|p| $config | get -o $p | default {} | get -o depends | default [] }
+            | flatten
+            | where $it != "default"
+            | uniq
+        )
+        let fresh = ($deps | where $it not-in $wanted)
+        if ($fresh | is-empty) { break }
+        $wanted = ($wanted | append $fresh)
+        $frontier = $fresh
     }
+    $wanted | where {|p| ($config | get -o $p | default {} | get -o files) != null }
 }
 
-def get_dotter_managed_files [] {
-    let dotter_config_path = "/dotfiles/.dotter/global.toml"
-    
-    if not ($dotter_config_path | path exists) {
-        return []
-    }
-    
-    # Parse Dotter config to get managed files
-    let dotter_config = (open $dotter_config_path)
-    
-    let managed_files = (
-        $dotter_config.shared.files
-        | transpose key value
-        | where ($it.value | describe) == "string"  # Only simple string targets
-        | each { |entry|
-            let expanded_path = ($entry.value | str replace '~' $env.HOME)
-            if ($expanded_path | path exists) {
-                let file_stat = (ls -l $expanded_path | get 0)
-                {
-                    path: $entry.value,
-                    source: $entry.key,
-                    mtime: ($file_stat.modified | format date "%Y-%m-%d %H:%M:%S"),
-                    type: $file_stat.type
+# Expand every `[<pkg>.files]` entry into one row per deployed FILE. A directory
+# source is deployed by dotter as one link per file underneath it, so it is
+# walked here the same way.
+def collect_mappings [config: record, packages: list<string>, df: string, hm: string] {
+    $packages | each {|p|
+        let files = ($config | get $p | get -o files | default {})
+        $files | transpose src tgt | each {|e|
+            let is_plain = (($e.tgt | describe) == "string")
+            let tgt_raw = if $is_plain { $e.tgt } else { ($e.tgt | get -o target | default "") }
+            let kind = if $is_plain { "auto" } else { ($e.tgt | get -o type | default "auto") }
+            let src_abs = $"($df)/($e.src)"
+            let tgt_abs = ($tgt_raw | str replace --regex '^~' $hm)
+            if ($src_abs | path type) == "dir" {
+                # glob returns canonical paths, so canonicalise the base too or
+                # `path relative-to` fails on macOS (/var vs /private/var).
+                let base = ($src_abs | path expand)
+                glob --no-dir $"($base)/**/*" | each {|f|
+                    let rel = ($f | path relative-to $base)
+                    { pkg: $p, entry: $e.src, src: $f, tgt: ($tgt_abs | path join $rel), kind: $kind }
                 }
+            } else {
+                [{ pkg: $p, entry: $e.src, src: $src_abs, tgt: $tgt_abs, kind: $kind }]
             }
+        } | flatten
+    } | flatten
+}
+
+def evaluate [m: record, auto_template: bool] {
+    if not ($m.src | path exists) {
+        return ($m | merge { verdict: "SRC-MISSING", detail: "" })
+    }
+    let kind = if $m.kind != "auto" {
+        $m.kind
+    } else if $auto_template and (is_template $m.src) {
+        "template"
+    } else {
+        "symbolic"
+    }
+    let tgt_type = ($m.tgt | path type)
+
+    if $kind == "template" {
+        let verdict = if $tgt_type == "file" { "OK" } else if $tgt_type == "" { "TGT-MISSING" } else { "NOT-FILE" }
+        return ($m | merge { verdict: $verdict, detail: " [template]" })
+    }
+
+    let verdict_detail = if $tgt_type == "" {
+        ["TGT-MISSING", ""]
+    } else if $tgt_type != "symlink" {
+        ["NOT-SYMLINK", $" [($tgt_type)]"]
+    } else {
+        let resolved = (ls -l $m.tgt | get 0.target | default "")
+        if not ($resolved | path exists) {
+            ["BROKEN-LINK", $" → ($resolved)"]
+        } else if ($resolved | path expand) == ($m.src | path expand) {
+            ["OK", ""]
+        } else {
+            ["WRONG-TARGET", $" → ($resolved)"]
         }
-        | compact
-    )
-    
-    return $managed_files
+    }
+    $m | merge { verdict: $verdict_detail.0, detail: $verdict_detail.1 }
 }
 
-def create_launchd_plist [] {
-    let plist_xml = $'<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.user.dotter-drift-monitor</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/.local/bin/dotter-drift-monitor</string>
-        <string>--daemon</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>/.config/dotter-monitor/daemon.log</string>
-    <key>StandardErrorPath</key>
-    <string>/.config/dotter-monitor/daemon.error.log</string>
-</dict>
-</plist>'
-    
-    return $plist_xml
+# Dotter's `automatic` target type deploys a file as a template (rendered
+# regular file) when it contains the handlebars opener, otherwise as a symlink.
+# The opener is assembled at runtime so this script never contains it
+# literally — otherwise dotter would template THIS file on the next deploy.
+def handlebars_opener [] { "{" + "{" }
+
+def is_template [src: string] {
+    try {
+        (open --raw $src | decode utf-8 | str contains (handlebars_opener))
+    } catch {
+        false
+    }
 }
 
-def show_usage [] {
-    print "DOTTER DRIFT MONITOR - Prevent configuration drift"
-    print ""
-    print "USAGE:"
-    print "  dotter-drift-monitor --setup     # Initial setup and baseline creation"
-    print "  dotter-drift-monitor --check     # Run a single drift check"
-    print "  dotter-drift-monitor --daemon    # Run continuous monitoring"
-    print ""
-    print "WORKFLOW:"
-    print "1. Run --setup to create baseline of all Dotter-managed files"
-    print "2. Use --check for manual verification"
-    print "3. Use --daemon for continuous monitoring (runs as background service)"
-    print ""
-    print "The monitor tracks modification times of all Dotter-managed files and"
-    print "alerts when they change, helping catch drift immediately."
+# ---------------------------------------------------------------------------
+# Side checks kept from the old script (warnings only; never affect exit code)
+# ---------------------------------------------------------------------------
+
+def side_checks [df: string] {
+    let uncommitted = (do { git -C $df status --porcelain } | complete)
+    if ($uncommitted.stdout | str trim | is-not-empty) {
+        print "⚠️  Uncommitted changes in ~/dotfiles — commit or lose them on next pull"
+        print $uncommitted.stdout
+        notify "Uncommitted changes in ~/dotfiles"
+    }
+    let helix_check = $"($env.HOME)/.local/bin/helix-config-sync-check"
+    if ($helix_check | path exists) {
+        let r = (do { nu $helix_check } | complete)
+        if $r.exit_code != 0 {
+            print "⚠️  Helix configs are out of sync!"
+            print $r.stdout
+        }
+    }
+}
+
+def notify [msg: string] {
+    if (which notify-send | is-not-empty) {
+        do { notify-send -u critical "Dotter drift" $msg } | ignore
+    } else if (which osascript | is-not-empty) {
+        do { osascript -e $'display notification "($msg)" with title "Dotter drift"' } | ignore
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Self-test: the checker must be able to fail
+# ---------------------------------------------------------------------------
+
+def run_self_test [] {
+    let root = (mktemp -d)
+    let df = $"($root)/dotfiles"
+    let hm = $"($root)/home"
+    mkdir $"($df)/.dotter" $"($df)/hooks" $"($hm)/.config/hooks"
+
+    "ok" | save $"($df)/good.txt"
+    "drift" | save $"($df)/bad.txt"
+    "hook" | save $"($df)/hooks/h1.sh"
+    "gone" | save $"($df)/gone.txt"
+    "wrong" | save $"($df)/wrong.txt"
+    "broken" | save $"($df)/broken.txt"
+    "mac" | save $"($df)/mac.txt"
+    $"name = (handlebars_opener) name }}" | save $"($df)/tpl.conf"
+
+    [
+        '[shared.files]'
+        '"good.txt" = "~/.config/good.txt"'
+        '"bad.txt" = "~/.config/bad.txt"'
+        '"hooks" = "~/.config/hooks"'
+        '"gone.txt" = "~/.config/gone.txt"'
+        '"wrong.txt" = { target = "~/.config/wrong.txt", type = "symbolic" }'
+        '"broken.txt" = "~/.config/broken.txt"'
+        '"ghost.txt" = "~/.config/ghost.txt"'
+        '"tpl.conf" = "~/.config/tpl.conf"'
+        '[macos.files]'
+        '"mac.txt" = "~/.config/mac.txt"'
+        '[settings]'
+        'default_target_type = "automatic"'
+    ] | str join "\n" | save $"($df)/.dotter/global.toml"
+    'packages = []' | save $"($df)/.dotter/local.toml"
+
+    ^ln -s $"($df)/good.txt" $"($hm)/.config/good.txt"
+    ^cp $"($df)/bad.txt" $"($hm)/.config/bad.txt"
+    ^ln -s $"($df)/hooks/h1.sh" $"($hm)/.config/hooks/h1.sh"
+    ^ln -s $"($df)/bad.txt" $"($hm)/.config/wrong.txt"
+    ^ln -s $"($root)/nowhere" $"($hm)/.config/broken.txt"
+    "rendered" | save $"($hm)/.config/tpl.conf"
+
+    print "🧪 self-test fixture with deliberate drift"
+    let r = (run_check $df $hm true)
+    let v = ($r.drift | reduce -f {} {|row, acc| $acc | merge { ($row.entry): $row.verdict } })
+
+    let checks = [
+        { name: "exit code is 1 on drift",            pass: ($r.exit_code == 1) }
+        { name: "evaluated 8 files (macos excluded)", pass: ($r.evaluated == 8) }
+        { name: "good symlink is OK (not in drift)",  pass: (($v | get -o "good.txt") == null) }
+        { name: "dir entry file is OK",               pass: (($v | get -o "hooks") == null) }
+        { name: "template file is OK",                pass: (($v | get -o "tpl.conf") == null) }
+        { name: "regular file → NOT-SYMLINK",         pass: (($v | get -o "bad.txt") == "NOT-SYMLINK") }
+        { name: "missing target → TGT-MISSING",       pass: (($v | get -o "gone.txt") == "TGT-MISSING") }
+        { name: "wrong link → WRONG-TARGET",          pass: (($v | get -o "wrong.txt") == "WRONG-TARGET") }
+        { name: "dangling link → BROKEN-LINK",        pass: (($v | get -o "broken.txt") == "BROKEN-LINK") }
+        { name: "absent source → SRC-MISSING",        pass: (($v | get -o "ghost.txt") == "SRC-MISSING") }
+    ]
+
+    print "🧪 self-test fixture with nothing to check"
+    '[shared.files]' | save --force $"($df)/.dotter/global.toml"
+    let r2 = (run_check $df $hm true)
+    let checks = ($checks | append { name: "zero mappings → exit 2, never clean", pass: ($r2.exit_code == 2) })
+
+    rm -rf $root
+
+    for c in $checks {
+        let mark = if $c.pass { "✅" } else { "❌" }
+        print $"($mark) ($c.name)"
+    }
+    let failed = ($checks | where pass == false | length)
+    if $failed == 0 {
+        print $"✅ self-test passed: the checker can fail \(($checks | length) assertions\)"
+        0
+    } else {
+        print $"❌ self-test FAILED: ($failed) of ($checks | length) assertions"
+        1
+    }
 }
