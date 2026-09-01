@@ -1,0 +1,36 @@
+# Files tracked in ~/dotfiles that are deliberately NOT dotter-mapped.
+# Read by `dotter-drift-monitor --orphans` (alias `dotter-orphan-detector-v2`).
+#
+# Every rule must cite one of the four exclusion criteria from
+# DOTTER-CROSS-PLATFORM-MASTER-GUIDE.md § "What belongs in dotter":
+#   1 secrets   2 per-machine data   3 outside $HOME / needs sudo   4 compiled or generated
+# or be repo plumbing / documentation. Anything not mapped and not matched here
+# is reported as an orphan and the check exits 1. Syntax is gitignore-flavoured:
+# no `/` = basename anywhere; trailing `/` = that directory and below;
+# `**` crosses directories, `*` does not; leading `/` anchors to the repo root.
+
+# --- repo plumbing and documentation (not deployable files) ---
+.gitignore
+.stignore
+.github/
+.dotter/
+*.md
+docs/
+git-hooks/                 # installed into .git/hooks by git-hooks/setup-hooks, not into $HOME
+.DS_Store
+
+# --- 4: sources that are built, not deployed as files ---
+rust-projects/             # deployed as binaries in ~/.local/bin (rust-redeploy)
+browser-extensions/        # built into signed .xpi files and installed via AMO
+__pycache__/
+**/cache/
+**/logs/
+
+# --- 4: generated — state-capture baselines written nightly to the repo root ---
+/*.txt
+
+# --- 3: outside $HOME, installed with sudo per gmpull.md / NIMBINI-LOG-ROTATION.md ---
+etc/
+
+# --- retired components kept for history (do not deploy) ---
+legacy/

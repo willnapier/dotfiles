@@ -218,11 +218,16 @@ def main [
     
     # Check orphan status
     print "\n🔍 Checking for configuration orphans..."
+    # Exit code is the contract: 0 none, 1 orphans, 2 could not check.
     let orphan_check = (do { ^dotter-orphan-detector-v2 --quiet } | complete)
-    if $orphan_check.exit_code == 0 and ($orphan_check.stdout | str trim | is-empty) {
+    if $orphan_check.exit_code == 0 {
         print "✅ No orphaned configuration files"
+    } else if $orphan_check.exit_code == 2 {
+        print "❌ Orphan check could not run"
+        print $orphan_check.stdout
     } else {
-        print "⚠️  Some configuration files may be orphaned"
+        print "⚠️  Unmanaged files in ~/dotfiles:"
+        print $orphan_check.stdout
         print "💡 Run: dotter-orphan-detector-v2"
     }
     

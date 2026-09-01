@@ -43,6 +43,11 @@ struct Cli {
     /// Prove the checker can fail, then exit (0 = proof held)
     #[arg(long)]
     self_test: bool,
+    /// The reverse question: which tracked files in ~/dotfiles are neither
+    /// mapped in global.toml nor excluded by a rule in .dotter/orphan-excludes?
+    /// (Also the behaviour when invoked as `dotter-orphan-detector-v2`.)
+    #[arg(long)]
+    orphans: bool,
     /// Override the dotfiles root (tests)
     #[arg(long)]
     dotfiles: Option<PathBuf>,
@@ -150,6 +155,24 @@ fn main() -> ExitCode {
         .unwrap_or_else(|| PathBuf::from("/"));
     let live = cli.dotfiles.is_none();
     let df = cli.dotfiles.clone().unwrap_or_else(|| home.join("dotfiles"));
+
+    // Multi-call: the retired nushell detector's name still appears in docs,
+    // the senior-dev skill and script-ready-deploy, so the same binary
+    // answers to it.
+    let invoked_as = std::env::args()
+        .next()
+        .and_then(|a| Path::new(&a).file_name().map(|f| f.to_string_lossy().into_owned()))
+        .unwrap_or_default();
+    if cli.orphans || invoked_as == "dotter-orphan-detector-v2" {
+        let report = orphans::run(&df, cli.quiet);
+        if cli.json {
+            match serde_json::to_string_pretty(&report) {
+                Ok(s) => println!("{s}"),
+                Err(e) => eprintln!("could not serialise report: {e}"),
+            }
+        }
+        return ExitCode::from(report.exit_code);
+    }
 
     let report = run_check(&df, &home, cli.quiet);
 
@@ -429,6 +452,200 @@ fn is_template(src: &Path) -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// Orphans: the reverse question — is every tracked file in the repo mapped?
+// ---------------------------------------------------------------------------
+
+mod orphans {
+    use super::*;
+    use globset::{Glob, GlobBuilder, GlobSet, GlobSetBuilder};
+
+    pub const EXCLUDES_FILE: &str = ".dotter/orphan-excludes";
+
+    #[derive(Debug, Serialize)]
+    pub struct Orphan {
+        pub path: String,
+        pub top: String,
+        pub suggestion: String,
+    }
+
+    #[derive(Debug, Serialize)]
+    pub struct Report {
+        pub exit_code: u8,
+        pub tracked: usize,
+        pub mapped_entries: usize,
+        pub excluded: usize,
+        pub rules: usize,
+        pub orphans: Vec<Orphan>,
+    }
+
+    /// Every `files` key in every package (deployed on this platform or not):
+    /// a file in the repo is "managed" if ANY package maps it. A key that names
+    /// a directory covers everything beneath it.
+    pub fn mapped_keys(config: &toml::Table) -> Vec<String> {
+        let mut keys = vec![];
+        for (_pkg, val) in config {
+            if let Some(files) = val.get("files").and_then(|f| f.as_table()) {
+                keys.extend(files.keys().cloned());
+            }
+        }
+        keys.sort();
+        keys.dedup();
+        keys
+    }
+
+    /// gitignore-flavoured rules: `#` comments; no `/` → matches the basename
+    /// anywhere; trailing `/` → the directory and everything under it; `**`
+    /// crosses directories, `*` does not.
+    pub fn parse_excludes(text: &str) -> Result<(GlobSet, usize)> {
+        let mut b = GlobSetBuilder::new();
+        let mut n = 0;
+        for raw in text.lines() {
+            // strip inline comments (`pattern   # why`) and whitespace
+            let line = raw.split(" #").next().unwrap_or("").trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let anchored = line.starts_with('/');
+            let mut pat = line.trim_start_matches('/').to_string();
+            if pat.ends_with('/') {
+                pat.push_str("**");
+            }
+            // no `/` inside the pattern → basename match anywhere, unless anchored
+            if !anchored && !pat.trim_end_matches("**").contains('/') {
+                pat = format!("**/{pat}");
+            }
+            let g: Glob = GlobBuilder::new(&pat)
+                .literal_separator(true)
+                .build()
+                .with_context(|| format!("bad exclude pattern `{line}`"))?;
+            b.add(g);
+            n += 1;
+        }
+        Ok((b.build()?, n))
+    }
+
+    pub fn is_mapped(path: &str, keys: &[String]) -> bool {
+        keys.iter().any(|k| path == k || path.starts_with(&format!("{k}/")))
+    }
+
+    /// Pure core, unit-tested: which tracked paths are neither mapped nor excluded.
+    pub fn find_orphans(tracked: &[String], keys: &[String], excludes: &GlobSet) -> (Vec<String>, usize) {
+        let mut excluded = 0;
+        let mut orphans = vec![];
+        for p in tracked {
+            if is_mapped(p, keys) {
+                continue;
+            }
+            if excludes.is_match(p) {
+                excluded += 1;
+                continue;
+            }
+            orphans.push(p.clone());
+        }
+        (orphans, excluded)
+    }
+
+    /// Where a file of this shape would normally be mapped to. A hint, not a rule.
+    pub fn suggest(path: &str) -> String {
+        let base = Path::new(path).file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
+        if let Some(rest) = path.strip_prefix("scripts/") {
+            format!("[shared.files] \"{path}\" = \"~/.local/bin/{rest}\"")
+        } else if path.starts_with("launchagents/") || path.starts_with("launchd/") || path.starts_with("macos/launchd/") {
+            format!("[macos.files] \"{path}\" = \"~/Library/LaunchAgents/{base}\"")
+        } else if path.starts_with("systemd/") || path.starts_with("linux/systemd/") {
+            format!("[linux.files] \"{path}\" = \"~/.config/systemd/user/{base}\"")
+        } else {
+            format!("[shared.files] \"{path}\" = \"~/.config/{path}\"")
+        }
+    }
+
+    fn git_tracked(df: &Path) -> Result<Vec<String>> {
+        let out = Command::new("git").arg("-C").arg(df).args(["ls-files", "-z"]).output().context("git not runnable")?;
+        if !out.status.success() {
+            return Err(anyhow!("git ls-files failed: {}", String::from_utf8_lossy(&out.stderr).trim()));
+        }
+        Ok(String::from_utf8_lossy(&out.stdout)
+            .split('\0')
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect())
+    }
+
+    pub fn run(df: &Path, quiet: bool) -> Report {
+        let cannot = |why: String| {
+            println!("❌ CANNOT CHECK: {why}");
+            Report { exit_code: 2, tracked: 0, mapped_entries: 0, excluded: 0, rules: 0, orphans: vec![] }
+        };
+
+        let config = match load_toml_table(&df.join(".dotter/global.toml")) {
+            Ok(t) => t,
+            Err(e) => return cannot(format!("global.toml: {e:#}")),
+        };
+        let keys = mapped_keys(&config);
+        if keys.is_empty() {
+            return cannot("global.toml maps nothing — refusing to report clean".into());
+        }
+        let tracked = match git_tracked(df) {
+            Ok(t) => t,
+            Err(e) => return cannot(format!("{e:#}")),
+        };
+        if tracked.is_empty() {
+            return cannot("git ls-files returned nothing".into());
+        }
+
+        let excludes_path = df.join(EXCLUDES_FILE);
+        let (excludes, rules) = match fs::read_to_string(&excludes_path) {
+            Ok(text) => match parse_excludes(&text) {
+                Ok(x) => x,
+                Err(e) => return cannot(format!("{}: {e:#}", excludes_path.display())),
+            },
+            Err(_) => {
+                println!("⚠️  {} not found — no exclusions applied, every unmapped file counts", excludes_path.display());
+                (GlobSet::empty(), 0)
+            }
+        };
+
+        let (paths, excluded) = find_orphans(&tracked, &keys, &excludes);
+        let orphans: Vec<Orphan> = paths
+            .iter()
+            .map(|p| Orphan {
+                path: p.clone(),
+                top: p.split('/').next().unwrap_or("").to_string(),
+                suggestion: suggest(p),
+            })
+            .collect();
+
+        if !quiet {
+            println!(
+                "🔍 dotter-drift-monitor --orphans — {} tracked files, {} mapped entries, {} excluded by {} rules",
+                tracked.len(),
+                keys.len(),
+                excluded,
+                rules
+            );
+        }
+        for o in &orphans {
+            println!("❌ ORPHAN  {}", o.path);
+            if !quiet {
+                println!("   suggest {}", o.suggestion);
+            }
+        }
+        let exit_code: u8 = if orphans.is_empty() { 0 } else { 1 };
+        if exit_code == 0 {
+            println!("✅ no orphans — {} tracked files: {} mapped, {} excluded by rule", tracked.len(), tracked.len() - excluded, excluded);
+        } else {
+            println!(
+                "🚨 {} unmanaged files — map them in .dotter/global.toml or add a rule with a reason to {}",
+                orphans.len(),
+                EXCLUDES_FILE
+            );
+        }
+
+        Report { exit_code, tracked: tracked.len(), mapped_entries: keys.len(), excluded, rules, orphans }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Side checks (warnings only; never affect the exit code)
 // ---------------------------------------------------------------------------
 
@@ -638,6 +855,59 @@ depends = []
         let _ = fs::remove_dir_all(&root);
         assert_eq!(r.exit_code, 2);
         assert_eq!(r.evaluated, 0);
+    }
+
+    #[test]
+    fn orphans_core_respects_mappings_dir_prefixes_and_exclude_rules() {
+        let keys = vec!["helix/config.toml".to_string(), "Claude/hooks".to_string()];
+        let (ex, n) = orphans::parse_excludes(
+            "# comment\n*.md\nrust-projects/\n/*.txt\n.DS_Store\n**/cache/**\n",
+        )
+        .unwrap();
+        assert_eq!(n, 5);
+        let tracked: Vec<String> = [
+            "helix/config.toml",           // mapped
+            "Claude/hooks/a.sh",           // under a mapped dir
+            "README.md",                   // *.md at root
+            "yazi/NOTES.md",               // *.md nested
+            "rust-projects/x/src/main.rs", // dir rule
+            "brew-formulae.txt",           // root-anchored *.txt
+            "systemd/foo.txt",             // NOT root → not excluded → orphan
+            "karabiner/.DS_Store",         // basename rule
+            "semantic-search/cache/x",     // ** rule
+            "scripts/zellij-zombie-watcher", // orphan
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let (orphans, excluded) = orphans::find_orphans(&tracked, &keys, &ex);
+        assert_eq!(orphans, vec!["systemd/foo.txt", "scripts/zellij-zombie-watcher"]);
+        assert_eq!(excluded, 6);
+    }
+
+    #[test]
+    fn orphan_suggestions_follow_house_layout() {
+        assert_eq!(
+            orphans::suggest("scripts/zellij-zombie-watcher"),
+            "[shared.files] \"scripts/zellij-zombie-watcher\" = \"~/.local/bin/zellij-zombie-watcher\""
+        );
+        assert_eq!(
+            orphans::suggest("launchagents/com.user.x.plist"),
+            "[macos.files] \"launchagents/com.user.x.plist\" = \"~/Library/LaunchAgents/com.user.x.plist\""
+        );
+        assert_eq!(
+            orphans::suggest("linux/systemd/w.service"),
+            "[linux.files] \"linux/systemd/w.service\" = \"~/.config/systemd/user/w.service\""
+        );
+        assert_eq!(orphans::suggest("mako/config"), "[shared.files] \"mako/config\" = \"~/.config/mako/config\"");
+    }
+
+    #[test]
+    fn mapped_keys_span_every_package() {
+        let config: toml::Table = "[shared.files]\n\"a\" = \"~/a\"\n[linux.files]\n\"b\" = { target = \"~/b\" }\n[macos]\ndepends = []\n"
+            .parse()
+            .unwrap();
+        assert_eq!(orphans::mapped_keys(&config), vec!["a", "b"]);
     }
 
     #[test]
