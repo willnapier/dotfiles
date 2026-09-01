@@ -3,7 +3,7 @@
 ## Session Startup — Mandatory
 
 At the beginning of every fresh Grok Build session, before starting the user's
-task, run `ai-brief.nu render --harness grok-build` and treat the returned
+task, run `ai-brief render --harness grok-build` and treat the returned
 effective startup contract as mandatory context. Grok SessionStart hook stdout
 is ignored, so this global rule—not a printing hook—is the loading bridge.
 

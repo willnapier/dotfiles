@@ -462,9 +462,10 @@ fn verify_startup_surface(label: &str, path: &Path, needle: &str) -> Row {
         return Row { harness: label.into(), status: "FAIL", detail: format!("missing {}", path.display()) };
     }
     let raw = fs::read_to_string(path).unwrap_or_default();
-    // Accept the historical `ai-brief.nu` spelling and the bare binary name.
-    let alt = needle.replace("ai-brief.nu", "ai-brief");
-    if raw.contains(needle) || raw.contains(&alt) {
+    // Surfaces were renamed to the bare binary name on 2026-09-01; the
+    // historical `ai-brief.nu` spelling is still accepted.
+    let legacy = needle.replace("ai-brief render", "ai-brief.nu render");
+    if raw.contains(needle) || raw.contains(&legacy) {
         Row { harness: label.into(), status: "ok", detail: format!("startup surface {}", path.display()) }
     } else {
         Row { harness: label.into(), status: "FAIL", detail: format!("startup surface does not reference renderer: {}", path.display()) }
@@ -492,14 +493,14 @@ fn doctor(home: &Path, host: &str, budget: usize) -> Result<()> {
         Err(e) => Row { harness: "byte-boundary".into(), status: "FAIL", detail: format!("{e:#}") },
     });
 
-    rows.push(verify_startup_surface("codex", &home.join(".codex/AGENTS.md"), "ai-brief.nu render --harness codex"));
+    rows.push(verify_startup_surface("codex", &home.join(".codex/AGENTS.md"), "ai-brief render --harness codex"));
     rows.push(verify_startup_surface(
         "claude-code",
         &home.join(".claude/settings.json"),
-        "ai-brief.nu render --harness claude-code --format claude-hook",
+        "ai-brief render --harness claude-code --format claude-hook",
     ));
-    rows.push(verify_startup_surface("grok-build", &home.join(".grok/AGENTS.md"), "ai-brief.nu render --harness grok-build"));
-    rows.push(verify_startup_surface("api", &home.join("Assistants/context/briefings/api.md"), "ai-brief.nu render --harness api"));
+    rows.push(verify_startup_surface("grok-build", &home.join(".grok/AGENTS.md"), "ai-brief render --harness grok-build"));
+    rows.push(verify_startup_surface("api", &home.join("Assistants/context/briefings/api.md"), "ai-brief render --harness api"));
 
     println!("{:<14} {:<6} detail", "harness", "status");
     for r in &rows {

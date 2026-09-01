@@ -23,7 +23,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.local/bin/ai-brief.nu render --harness claude-code --format claude-hook",
+            "command": "~/.local/bin/ai-brief render --harness claude-code --format claude-hook",
             "timeout": 10
           }
         ]

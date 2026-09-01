@@ -63,7 +63,7 @@ depends = []
 "notmuch/hooks/post-new" = "~/Mail/.notmuch/hooks/post-new"
 
 # ai-brief is a Rust binary (rust-projects/ai-brief) since 2026-09-01, installed to
-# ~/.local/bin as both `ai-brief` and the historical `ai-brief.nu` — not a dotter mapping.
+# ~/.local/bin/ai-brief — not a dotter mapping. The `ai-brief.nu` name is retired.
 "scripts/tag-search" = { target = "~/.local/bin/tag-search", type = "symbolic" }
 "scripts/codex-brief" = { target = "~/.local/bin/codex-brief", type = "symbolic" }
 "scripts/claude-code-brief" = { target = "~/.local/bin/claude-code-brief", type = "symbolic" }

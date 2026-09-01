@@ -3,7 +3,7 @@
 ## Session Startup — Mandatory
 
 At the beginning of every fresh Codex session, before starting the user's task,
-run `ai-brief.nu render --harness codex` and treat the returned effective
+run `ai-brief render --harness codex` and treat the returned effective
 startup contract as mandatory context. If the renderer is unavailable, read
 `~/Assistants/shared/ORIENTATION.md`, the current file under
 `~/Assistants/context/machines/`, and

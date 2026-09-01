@@ -121,7 +121,7 @@ def reception [] {
 
 # ---- AI Collaboration Helpers ----
 def ai-brief [...args: string] {
-    let renderer = ($env.HOME | path join ".local/bin/ai-brief.nu")
+    let renderer = ($env.HOME | path join ".local/bin/ai-brief")
     if not ($renderer | path exists) {
         error make { msg: $"ai-brief renderer is not deployed at ($renderer)" }
     }

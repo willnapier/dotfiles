@@ -392,6 +392,7 @@ pub fn check_dotfiles(c: &Ctx) -> Vec<String> {
 // Source in rust-projects/ but binary missing from ~/.local/bin/.
 // Actively-used tools only.
 pub const RUST_TOOLS: &[(&str, &str)] = &[
+    ("ai-brief", "ai-brief"),
     ("ai-export-watcher", "ai-export-watcher"),
     ("concert-capture", "concert-capture"),
     ("continuum-activity", "continuum-activity"),
