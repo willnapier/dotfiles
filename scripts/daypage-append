@@ -12,7 +12,7 @@
 #                         it is set. A future page is never open in Helix, so
 #                         the queue's clobber-protection is not needed.
 #
-# Usage: daypage-append "clinical-notes:: 8x 12min - EB88"
+# Usage: daypage-append "clinical-notes:: 8x 12min - XX00"
 #        daypage-append --date 2026-02-13 "concert.ilminster:: ..."
 #        daypage-append --date 2027-06-16 "dev:: REMINDER ..."   # future -> synced page
 # Flush: Space+U in Helix, or run daypage-flush from command line

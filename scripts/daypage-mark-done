@@ -3,8 +3,8 @@
 # Queues a DONE instruction for daypage-flush to process.
 # Changes "- [ ] CLIENT_ID ..." to "- [x] CLIENT_ID ..." in the clinic section.
 #
-# Usage: daypage-mark-done "EB88"
-#        daypage-mark-done "EB88" --date 2026-02-26
+# Usage: daypage-mark-done "XX00"
+#        daypage-mark-done "XX00" --date 2026-02-26
 # Flush: Space+U in Helix
 
 def main [
