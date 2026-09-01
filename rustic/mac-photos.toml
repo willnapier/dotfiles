@@ -1,0 +1,55 @@
+# mac-photos — Corpus A, the iCloud library, exported from the Mac.
+#
+# SAME REPOSITORY as nimbini-photos, deliberately. One repository so that rustic
+# can deduplicate byte-identical material ACROSS corpora; it cannot do that
+# between repositories. See PHOTO-ARCHIVE-STRATEGY.md 11.6. A separate PROFILE is
+# needed only because the sources are Mac paths and nimbini's are not — rustic
+# tags snapshots by host, so the two hosts coexist in one repository.
+#
+# Connection details come from ~/.local/state/rustic-backup/secrets/
+# mac-photos.env, which points at a MAC-SPECIFIC SSH key. nimbini's private key
+# was deliberately NOT copied here: a compromised laptop must not hand over
+# nimbini's access. Both public keys sit in the Storage Box authorized_keys.
+#
+# Deliberately absent: [forget] and prune, matching nimbini-photos. Every
+# snapshot is retained forever. That is what makes an accidental deletion in the
+# live Photos library — or in a future iCloud Shared Library, where ANY
+# participant can delete anything (11.8) — non-propagating.
+#
+# 🚨 THE SOURCE IS THE EXPORT TREE, NOT THE .photoslibrary BUNDLE.
+# The bundle is a live SQLite database and snapshotting it mid-write is the main
+# consistency hazard (7, Option A). Worse, before materialisation it was 98%
+# derivatives — a backup of it would pass every structural check and contain
+# none of the photographs. Export first, back up the export.
+
+[global]
+no-progress = true
+log-level = "info"
+
+[repository]
+repository = "opendal:sftp"
+
+[repository.options]
+# Stay below the Storage Box SSH-session ceiling.
+connections = "4"
+
+[backup]
+exclude-if-present = ["CACHEDIR.TAG"]
+
+# --- Corpus A: the iCloud library, exported with osxphotos ------------------
+# Produced by:
+#   osxphotos export ~/PhotosExport --download-missing --use-photokit \
+#     --sidecar json --export-by-date --touch-file --retry 3 --report ...
+#
+# NOT --exiftool: it rewrites metadata INTO the exported files and would destroy
+# the byte-identity with the camera original that is the entire point. Metadata
+# travels in JSON sidecars instead.
+#
+# NOT --not-syndicated: of 23 syndicated (Shared with You) items, 10 were never
+# saved and have no originals — osxphotos excludes those by itself — but 13 WERE
+# saved and are real photographs. --not-syndicated would have silently dropped
+# those 13. See 13.2.
+
+[[backup.snapshots]]
+name = "icloud-export"
+sources = ["/Users/williamnapier/PhotosExport"]

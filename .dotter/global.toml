@@ -384,6 +384,7 @@ depends = []
 depends = ["shared"]
 
 [macos.files]
+"rustic/mac-photos.toml" = "~/.config/rustic/mac-photos.toml"
 "shell/zshrc" = "~/.zshrc"
 "hammerspoon/init.lua" = "~/.hammerspoon/init.lua"
 # Helix config - macOS uses shared version (no scroll-lines override)
