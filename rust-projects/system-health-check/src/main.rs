@@ -69,6 +69,15 @@ fn main() -> ExitCode {
     problems.extend(checks::check_dna_drift(&ctx, is_macos));
     problems.extend(checks::check_dotter_drift(&ctx));
 
+    // Status file for the session-start kernel (ai-brief "Host health"):
+    // one writer per file, namespaced by machine, under the Syncthing-carried
+    // ~/Assistants tree so every session on either machine sees both hosts and
+    // the AGE of each result. A stale file is itself the signal that this
+    // check has died — the failure mode the Mac lived in for six weeks.
+    if let Err(e) = write_status(&home, is_macos, &problems) {
+        eprintln!("system-health-check: could not write status file: {e}");
+    }
+
     if problems.is_empty() {
         log("INFO", "All checks passed");
         if cli.verbose {
@@ -93,6 +102,49 @@ fn main() -> ExitCode {
     }
     notify(&problems);
     ExitCode::from(1)
+}
+
+#[derive(serde::Serialize)]
+struct Status<'a> {
+    schema: u32,
+    /// Orientation machine-layer key: "macos" or the short hostname ("nimbini")
+    host: String,
+    hostname: String,
+    checked_at: String,
+    count: usize,
+    problems: &'a [String],
+    tool_version: &'static str,
+}
+
+fn short_hostname() -> String {
+    Command::new("hostname")
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_lowercase())
+        .and_then(|h| h.split('.').next().map(String::from))
+        .filter(|h| !h.is_empty())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn write_status(home: &std::path::Path, is_macos: bool, problems: &[String]) -> std::io::Result<()> {
+    let hostname = short_hostname();
+    let host = if is_macos { "macos".to_string() } else { hostname.clone() };
+    let dir = home.join("Assistants/health");
+    std::fs::create_dir_all(&dir)?;
+    let status = Status {
+        schema: 1,
+        host: host.clone(),
+        hostname,
+        checked_at: chrono::Local::now().to_rfc3339(),
+        count: problems.len(),
+        problems,
+        tool_version: env!("CARGO_PKG_VERSION"),
+    };
+    let json = serde_json::to_string_pretty(&status).map_err(std::io::Error::other)?;
+    // atomic replace so a reader (or Syncthing) never sees a half-written file
+    let tmp = dir.join(format!(".{host}.json.tmp"));
+    std::fs::write(&tmp, json)?;
+    std::fs::rename(&tmp, dir.join(format!("{host}.json")))
 }
 
 /// Desktop notification, platform-aware. Best effort; failures are ignored.

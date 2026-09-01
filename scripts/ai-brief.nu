@@ -6,6 +6,8 @@ const HARNESSES = [codex claude-code grok-build api]
 const MESSAGEBOARD_BUDGET = 4500
 const FORUM_INDEX_BUDGET = 3500
 const FORUM_INBOX_BUDGET = 2000
+const HEALTH_BUDGET = 1200
+const HEALTH_STALE_HOURS = 26
 
 def required-text [path: path] {
     if not ($path | path exists) {
@@ -100,6 +102,45 @@ def forum-inbox-summary [] {
     } catch {|error|
         $"WARNING: forum inbox check failed: ($error.msg)"
     }
+}
+
+# Last system-health-check result per machine, with its age. Written by the
+# Rust system-health-check to ~/Assistants/health/<host>.json (one writer per
+# file; Syncthing carries the other machine's). A missing or stale file is
+# reported as such — "could not check" is never rendered as "fine".
+def host-health-summary [home: string] {
+    let dir = ($home | path join "Assistants/health")
+    let files = (try { glob ($dir | path join "*.json") } catch { [] })
+    if ($files | is-empty) {
+        return $"WARNING: no host health status under ($dir) — system-health-check has not written one on any machine; treat every host as unchecked."
+    }
+    let now = (date now)
+    let rows = ($files | sort | each {|f|
+        let s = (try { open $f } catch { null })
+        if $s == null {
+            $"($f | path basename): unreadable status file"
+        } else {
+            let checked = (try { $s.checked_at | into datetime } catch { null })
+            let age = if $checked == null { null } else { $now - $checked }
+            let age_text = if $age == null {
+                "unknown age"
+            } else if $age < 1hr {
+                $"(($age / 1min) | math round)m ago"
+            } else {
+                $"(($age / 1hr) | math round)h ago"
+            }
+            let stale = ($age == null) or ($age > ($HEALTH_STALE_HOURS * 1hr))
+            let head = if $s.count == 0 { $"($s.host): ✅ clean" } else { $"($s.host): 🚨 ($s.count) problems" }
+            let when = if $stale {
+                $" — STALE \(last check ($age_text); the health check itself may be dead)"
+            } else {
+                $" \(checked ($age_text))"
+            }
+            let problems = ($s.problems | each {|p| $"  - ($p)" } | str join "\n")
+            if $s.count == 0 { $"($head)($when)" } else { $"($head)($when)\n($problems)" }
+        }
+    })
+    cap-component ($rows | str join "\n") $HEALTH_BUDGET "host health"
 }
 
 def assemble-payload [harness: string host: string budget: int body: string] {
@@ -197,6 +238,8 @@ def render-contract [harness: string host: string budget: int] {
         (required-text $adapter_path | str trim)
         "## Messageboard head (transient)"
         (messageboard-head $messageboard_path)
+        "## Host health (last system-health-check per machine)"
+        (host-health-summary $home)
         "## Open forum summary (discovery only)"
         (forum-open-summary $index_path)
         "## Forum inbox"
