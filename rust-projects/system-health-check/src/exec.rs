@@ -1,6 +1,7 @@
 //! Command execution behind a trait, so every check can be unit-tested with
 //! canned `systemctl` / `launchctl` / `git` output instead of a live machine.
 
+#[cfg(test)]
 use std::collections::HashMap;
 use std::process::Command;
 

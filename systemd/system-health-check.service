@@ -3,4 +3,9 @@ Description=Daily system health check
 
 [Service]
 Type=oneshot
-ExecStart=/home/will/.local/bin/system-health-check
+ExecStart=%h/.local/bin/system-health-check
+# PATH is load-bearing: the checker shells out to state-capture and
+# dotter-drift-monitor and reports "not in PATH (check skipped)" without it.
+# The Nushell version hid this because nu rebuilds PATH from its own config;
+# the Rust binary uses the unit's environment as given (2026-09-01).
+Environment=PATH=%h/.cargo/bin:%h/.local/bin:/usr/bin:/bin

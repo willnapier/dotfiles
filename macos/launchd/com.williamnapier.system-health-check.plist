@@ -27,10 +27,17 @@
     <key>StandardErrorPath</key>
     <string>/Users/williamnapier/.local/share/system-health-check.stderr</string>
 
+    <!-- ~/.local/bin and ~/.cargo/bin are load-bearing: the checker shells out to
+         state-capture and dotter-drift-monitor and reports "not in PATH (check
+         skipped)" without them. The old Nushell version hid this because nu
+         rebuilds PATH from its own config at startup; the Rust binary uses
+         launchd's environment as given (found 2026-09-01). -->
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <string>/Users/williamnapier/.local/bin:/Users/williamnapier/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/williamnapier</string>
     </dict>
 
     <key>ProcessType</key>
