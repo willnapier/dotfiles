@@ -111,16 +111,46 @@ pub fn append_event(event: &SubscriptionEvent) -> Result<()> {
 /// the legacy single-file if still present). Empty Vec if no events yet.
 pub fn load_events() -> Result<Vec<SubscriptionEvent>> {
     let lines = store::read_category_lines("subscriptions")?;
+    let (events, skipped) = parse_events(&lines);
+    if skipped.legacy > 0 || skipped.malformed > 0 {
+        // Reported, never fatal: one legacy row must not blind the whole
+        // subscriptions view (it did, 2026-05 → 2026-09: the daily check
+        // exited 1 on the first row lacking `event`).
+        eprintln!(
+            "subscriptions: skipped {} legacy rows (no `event` field — pre-schema \
+             discovery output) and {} malformed rows",
+            skipped.legacy, skipped.malformed
+        );
+    }
+    Ok(events)
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct SkippedRows {
+    /// Valid JSON without an `event` field: rows written by the pre-schema
+    /// discovery track (`vendor`/`domain`/`renewal_date`/`status`).
+    pub legacy: usize,
+    /// Not JSON, or JSON that has `event` but still fails the schema.
+    pub malformed: usize,
+}
+
+/// Parse every line that is a `SubscriptionEvent`; count what is not.
+pub fn parse_events(lines: &[String]) -> (Vec<SubscriptionEvent>, SkippedRows) {
     let mut out = Vec::new();
-    for (n, line) in lines.iter().enumerate() {
+    let mut skipped = SkippedRows::default();
+    for line in lines {
         if line.trim().is_empty() {
             continue;
         }
-        let evt: SubscriptionEvent = serde_json::from_str(line)
-            .with_context(|| format!("parsing subscriptions record {}", n + 1))?;
-        out.push(evt);
+        match serde_json::from_str::<SubscriptionEvent>(line) {
+            Ok(evt) => out.push(evt),
+            Err(_) => match serde_json::from_str::<serde_json::Value>(line) {
+                Ok(v) if v.get("event").is_none() => skipped.legacy += 1,
+                _ => skipped.malformed += 1,
+            },
+        }
     }
-    Ok(out)
+    (out, skipped)
 }
 
 /// Parse a `next_renewal` string into a NaiveDate. Tries ISO format first
@@ -822,6 +852,23 @@ fn truncate(s: &str, n: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn legacy_and_malformed_rows_are_counted_not_fatal() {
+        let lines: Vec<String> = [
+            r#"{"ts":"2026-09-01T00:00:00Z","event":"charged","service":"apple.com","source":"m1"}"#,
+            r#"{"ts":"2026-05-01T00:00:00Z","vendor":"Acme","domain":"acme.com","renewal_date":"2026-06-01","status":"active","source":"m2","extracted_at":"x"}"#,
+            "not json at all",
+            "",
+            r#"{"ts":"2026-09-01T00:00:00Z","event":"charged","service":"drop.app","source":"m3"}"#,
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let (events, skipped) = super::parse_events(&lines);
+        assert_eq!(events.len(), 2);
+        assert_eq!(skipped, super::SkippedRows { legacy: 1, malformed: 1 });
+    }
+
     use super::*;
 
     fn ev(ts: &str, event: EventType, service: &str) -> SubscriptionEvent {
