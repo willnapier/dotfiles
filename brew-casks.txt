@@ -11,6 +11,7 @@ font-sf-pro
 gcloud-cli
 ghostty
 hammerspoon
+handy
 karabiner-elements
 lapce
 libreoffice

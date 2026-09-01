@@ -1,5 +1,6 @@
 abseil
 actionlint
+ada-url
 aom
 aribb24
 arm-none-eabi-binutils
@@ -12,6 +13,7 @@ avr-gcc@8
 bash
 bat
 berkeley-db@5
+bitwarden-cli
 borders
 brotli
 btop
@@ -45,7 +47,9 @@ fd
 ffmpeg
 ffmpegthumbnailer
 flac
+flock
 flyctl
+fmt
 fontconfig
 freetype
 frei0r
@@ -68,6 +72,7 @@ gpgme
 gpgmepp
 graphite2
 harfbuzz
+hdrhistogram_c
 helix
 hid_bootloader_cli
 highway
@@ -98,6 +103,7 @@ libdatrie
 libde265
 libdeflate
 libevent
+libffi
 libgcrypt
 libgit2
 libgpg-error
@@ -150,6 +156,7 @@ libxrender
 libyaml
 libzen
 little-cms2
+llhttp
 llvm
 lpeg
 lsusb
@@ -166,6 +173,7 @@ mdbtools
 mdloader
 media-info
 meli
+merve
 mingw-w64
 mlx
 mlx-c
@@ -177,6 +185,7 @@ mpg123
 mpv
 msmtp
 mujs
+nbytes
 ncurses
 neovim
 nettle
@@ -227,6 +236,7 @@ rav1e
 rclone
 readline
 rename
+restic
 ripgrep
 rubberband
 ruby
@@ -239,6 +249,7 @@ shaderc
 shared-mime-info
 shellcheck
 simdjson
+simdutf
 sk
 sketchybar
 snappy

@@ -5,15 +5,13 @@ com.dropbox.dropboxmacupdate.xpcservice
 com.google.GoogleUpdater.wake
 com.google.keystone.agent
 com.google.keystone.xpcservice
-com.napier.forge-metadata-backup
+com.napier.forge-metadata-backup.plist.retired-2026-08-01
 com.user.chatgpt-watcher
 com.user.claude-code-nightly-cleanup
 com.user.claude-docs-watcher
 com.user.claude-worktree-cleaner
 com.user.collect-projects
 com.user.collect-projects-watcher
-com.user.dotter-drift-monitor
-com.user.dotter-drift-watcher
 com.user.dotter-realtime-watcher
 com.user.forge-dropbox-sync
 com.user.forge-metadata-backup
@@ -37,6 +35,8 @@ com.williamnapier.continuum-dream
 com.williamnapier.continuum-sync-claude
 com.williamnapier.cross-machine-sync-check
 com.williamnapier.dev-catchup
+com.williamnapier.dotter-drift-monitor
+com.williamnapier.forge-md-revs
 com.williamnapier.forum-worker
 com.williamnapier.ghostty-config-validate
 com.williamnapier.git-auto-pull-watcher
@@ -63,6 +63,7 @@ com.williamnapier.system-health-check
 com.williamnapier.tm3-diary-live
 com.williamnapier.tm3-session-broker
 com.williamnapier.tm3-watcher
+com.williamnapier.usagewatch-monitor
 com.williamnapier.wiki-link-manager
 com.williamnapier.zellij-zombie-watcher
 homebrew.mxcl.syncthing
