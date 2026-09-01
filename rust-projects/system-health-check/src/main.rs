@@ -116,13 +116,20 @@ struct Status<'a> {
     tool_version: &'static str,
 }
 
+/// /etc/hostname first (Arch ships no `hostname` binary by default), then the
+/// command, then $HOSTNAME. Lower-cased, domain stripped.
 fn short_hostname() -> String {
-    Command::new("hostname")
-        .output()
-        .ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_lowercase())
-        .and_then(|h| h.split('.').next().map(String::from))
-        .filter(|h| !h.is_empty())
+    let candidates: [Option<String>; 3] = [
+        std::fs::read_to_string("/etc/hostname").ok(),
+        Command::new("hostname").output().ok().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()),
+        std::env::var("HOSTNAME").ok(),
+    ];
+    candidates
+        .into_iter()
+        .flatten()
+        .map(|h| h.trim().to_lowercase())
+        .filter_map(|h| h.split('.').next().map(String::from))
+        .find(|h| !h.is_empty())
         .unwrap_or_else(|| "unknown".to_string())
 }
 
