@@ -264,7 +264,8 @@ depends = []
 "scripts/citation-picker.sh" = "~/.local/bin/citation-picker.sh"
 "scripts/dotter-orphan-detector-v2" = "~/.local/bin/dotter-orphan-detector-v2"
 "scripts/dotter-enforce-compliance" = "~/.local/bin/dotter-enforce-compliance"
-"scripts/dotter-drift-monitor" = "~/.local/bin/dotter-drift-monitor"
+# dotter-drift-monitor is a Rust binary (rust-projects/dotter-drift-monitor), copied to
+# ~/.local/bin by hand / rust-redeploy — not a dotter mapping since 2026-09-01.
 "scripts/dotter-verify" = "~/.local/bin/dotter-verify"
 "scripts/claude-docs-backup" = "~/.local/bin/claude-docs-backup"
 "scripts/rotate-linkmanager-logs" = "~/.local/bin/rotate-linkmanager-logs"
