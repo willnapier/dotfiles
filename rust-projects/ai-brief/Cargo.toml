@@ -1,0 +1,12 @@
+[package]
+name = "ai-brief"
+version = "0.2.0"
+edition = "2021"
+description = "Renders and verifies the vendor-neutral assistant startup contract (ORIENTATION kernel + machine layer + harness adapter + live surfaces)"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
+chrono = "0.4"
