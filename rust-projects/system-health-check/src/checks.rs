@@ -41,6 +41,23 @@ const SELF_TIMER: &str = "system-health-check.timer";
 const SELF_UNIT: &str = "system-health-check.service";
 const SELF_AGENT: &str = "com.williamnapier.system-health-check";
 
+/// Intentional-divergence register: agents whose plist is deployed on this
+/// machine but which must NOT be loaded here. "Deployed but not enabled" is how
+/// a single-writer or single-worker decision is expressed (see
+/// DOTTER-CROSS-PLATFORM-MASTER-GUIDE.md), so their absence from launchctl is
+/// the intended state, not a problem.
+///
+/// - forum-worker: nimbini is the elected forum worker; the Mac must not run a
+///   competing one (machine layer `context/machines/macos.md`).
+#[cfg(target_os = "macos")]
+const INTENTIONALLY_UNLOADED_AGENTS: &[&str] = &["com.williamnapier.forum-worker"];
+#[cfg(not(target_os = "macos"))]
+const INTENTIONALLY_UNLOADED_AGENTS: &[&str] = &[];
+
+pub fn intentionally_unloaded(label: &str) -> bool {
+    INTENTIONALLY_UNLOADED_AGENTS.contains(&label)
+}
+
 // ── Check 1a: Timer health (Linux) ───────────────────────────────────
 // Any enabled timer that's not active is dead. An active timer with no next
 // elapse is armed-for-never (the OnBootSec+OnUnitActiveSec class).
@@ -175,6 +192,9 @@ pub fn check_launchagents(c: &Ctx) -> Vec<String> {
         let info = loaded.iter().find(|e| e.label == label);
 
         match info {
+            None if intentionally_unloaded(&label) => {
+                c.say(&format!("  ⚪ {label}: deliberately not loaded on this machine"));
+            }
             None => {
                 if c.fix {
                     if c.exec.run("launchctl", &["load", &plist_s]).ok() {
@@ -681,6 +701,16 @@ mod tests {
         f.respond("dotter-drift-monitor", &["--self-test"], CmdResult::success(""));
         f.respond("dotter-drift-monitor", &["--quiet"], CmdResult::failure(2, ""));
         assert_eq!(check_dotter_drift(&ctx(&f, false, &nolog)), vec!["Dotter: could not check (config unreadable or zero mappings)"]);
+    }
+
+    #[test]
+    fn intentional_divergence_register_is_platform_scoped() {
+        if cfg!(target_os = "macos") {
+            assert!(intentionally_unloaded("com.williamnapier.forum-worker"));
+        } else {
+            assert!(!intentionally_unloaded("com.williamnapier.forum-worker"));
+        }
+        assert!(!intentionally_unloaded("com.williamnapier.gmpull"));
     }
 
     #[test]

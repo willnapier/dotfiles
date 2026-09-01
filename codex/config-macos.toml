@@ -1,0 +1,35 @@
+# Codex CLI — macOS variant (dotter [macos.files] → ~/.codex/config.toml).
+# The Linux variant is codex/config.toml. They differ in absolute paths and in
+# sandbox/approval policy; keep model and reasoning effort in step by hand.
+# Codex writes runtime state into this file (the [notice] and [tui.*] tables), so
+# those tables change on their own and are committed by the auto-push watcher —
+# the same accepted pattern as Claude's settings.json.
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+
+# Prompts only when something looks risky / fails
+approval_policy = "on-failure"
+
+# Can write in the repo/workspace, but not roam your whole disk
+sandbox_mode = "workspace-write"
+
+# Search is available; keep it cached by default, switch to live only when needed
+web_search = "cached"
+
+[sandbox_workspace_write]
+network_access = true
+
+[projects."/Users/williamnapier"]
+trust_level = "trusted"
+
+[notice]
+"hide_gpt-5.3-codex_migration_prompt" = true
+
+[mcp_servers.continuum]
+command = "/Users/williamnapier/.local/bin/continuum-mcp-quiet"
+
+[mcp_servers.continuum.env]
+CONTINUUM_DIR = "/Users/williamnapier/Assistants/continuum-logs"
+
+[tui.model_availability_nux]
+"gpt-5.6-sol" = 4
