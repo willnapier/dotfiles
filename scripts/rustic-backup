@@ -67,6 +67,9 @@ check_binary() {
     command -v rustic >/dev/null 2>&1 || die "rustic is not installed"
     local actual
     actual="$(rustic --version | awk '{print $2}')"
+    # Release binaries print "rustic v0.11.3"; cargo builds print "rustic 0.11.3".
+    # Strip an optional leading "v" so the same pin works on both platforms.
+    actual="${actual#v}"
     [ "$actual" = "$EXPECTED_RUSTIC_VERSION" ] || die "expected rustic $EXPECTED_RUSTIC_VERSION, found $actual"
 }
 
