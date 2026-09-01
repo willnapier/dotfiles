@@ -191,16 +191,8 @@ end_session() {
         echo -e "${GREEN}✓ DayPage entry queued${NC}" || \
         echo -e "${YELLOW}⚠ daypage-append failed — queue manually${NC}"
 
-    # Offer attendance report
-    echo ""
-    echo -e "Run attendance report for ${SESSION_DATE}? [y/n] "
-    read -r -n 1 run_report
-    echo ""
-    if [ "${run_report,,}" = "y" ]; then
-        clinic-attendance-report --date "$SESSION_DATE" 2>&1 && \
-            echo -e "${GREEN}✓ Report saved${NC}" || \
-            echo -e "${RED}✗ Report failed${NC}"
-    fi
+    # (The attendance-report prompt that used to follow was retired 2026-09-02:
+    # PracticeForge is the source of truth for clinic scheduling and attendance.)
 }
 
 # --- Main ---
