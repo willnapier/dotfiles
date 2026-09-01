@@ -67,3 +67,24 @@ sources = [
     "/home/will/Dropbox/My Pictures",
     "/home/will/Dropbox/Screenshots",
 ]
+
+# --- Corpus D: the Flickr official export ---------------------------------
+# 201.45 GB / 45,259 media files + 45,276 metadata sidecars, unpacked from the
+# 97 official-export ZIPs. Uniquely holds 2013-2016 and everything pre-2012:
+# no other corpus has that material at all.
+#
+# The UNPACKED tree is the backup source, not ~/FlickrExportZips. Per-file
+# restore, cross-corpus dedup, and the sidecars stay readable; a ZIP is one
+# opaque blob that has to come down whole to yield one photograph.
+#
+# Gate at 2026-09-01: flickr-fetch verify reports 45,259/45,260, zero
+# zero-length. The one absentee, id 16228399711, is a 2015 video that Flickr
+# ITSELF cannot serve - its url_o in the survey manifest is Flickr's own
+# video-failure/k.png placeholder, and the export shipped the sidecar with no
+# media. Exactly 1 of 45,260 items carries that placeholder and the other 266
+# videos exported cleanly, so this is a broken source item, not an export
+# defect. Do NOT gap-fill it: that downloads a 9 KB error PNG and turns the
+# gate green over a corrupt file. See PHOTO-ARCHIVE-STRATEGY.md 12.6.
+[[backup.snapshots]]
+name = "flickr-export"
+sources = ["/home/will/FlickrExport"]
