@@ -204,14 +204,14 @@ mod tests {
     fn test_parse_session_attended() {
         let session = Session {
             clients: vec![
-                make_client("EB88", "07:50", "done", "insurer"),
-                make_client("BA90", "13:20", "done", "insurer"),
+                make_client("XA01", "07:50", "done", "insurer"),
+                make_client("XB02", "13:20", "done", "insurer"),
             ],
         };
         let entries = parse_session(&session);
         assert_eq!(entries.len(), 2);
         assert!(matches!(entries[0].status, Status::Attended));
-        assert!(entries[0].content.contains("EB88"));
+        assert!(entries[0].content.contains("XA01"));
         assert!(entries[0].content.contains("insurer"));
     }
 
@@ -231,9 +231,9 @@ mod tests {
     fn test_parse_session_cancelled_excluded() {
         let session = Session {
             clients: vec![
-                make_client("EB88", "07:50", "done", "insurer"),
-                make_client("JH91", "12:45", "cancelled", ""),
-                make_client("BA90", "13:20", "done", ""),
+                make_client("XA01", "07:50", "done", "insurer"),
+                make_client("XC03", "12:45", "cancelled", ""),
+                make_client("XB02", "13:20", "done", ""),
             ],
         };
         let entries = parse_session(&session);
@@ -242,16 +242,16 @@ mod tests {
             &entries,
         );
         assert!(msg.contains("2/2 attended"));
-        assert!(!msg.contains("JH91")); // Cancelled excluded
+        assert!(!msg.contains("XC03")); // Cancelled excluded
     }
 
     #[test]
     fn test_format_message_mixed() {
         let date = NaiveDate::from_ymd_opt(2026, 4, 16).unwrap();
         let entries = vec![
-            Entry { status: Status::Attended, content: "AB79 07:45 insurer".to_string() },
-            Entry { status: Status::DnaLc, content: "SZ84 09:35".to_string() },
-            Entry { status: Status::Attended, content: "CC71 08:35".to_string() },
+            Entry { status: Status::Attended, content: "XD04 07:45 insurer".to_string() },
+            Entry { status: Status::DnaLc, content: "XE05 09:35".to_string() },
+            Entry { status: Status::Attended, content: "XF06 08:35".to_string() },
         ];
         let msg = format_message(&date, &entries);
         assert!(msg.contains("Thu 16 Apr"));
