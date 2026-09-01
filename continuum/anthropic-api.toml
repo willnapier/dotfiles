@@ -1,0 +1,10 @@
+# usage-probe-anthropic-api configuration (continuum). Deployed by dotter to
+# ~/.config/continuum/anthropic-api.toml on both machines.
+#
+# No key lives here: `key_file` points at the application that owns the metered
+# Anthropic key, and the probe reads `[ai] api_key` from that file at run time.
+# The labels keep the observation series continuous with the pre-2026-09-02
+# hard-coded values.
+key_file = "~/.config/practiceforge/secrets.toml"
+assistant = "practiceforge"
+account = "dpa-metered"
