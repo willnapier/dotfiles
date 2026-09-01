@@ -391,6 +391,9 @@ depends = ["shared"]
 "helix/config.toml" = "~/.config/helix/config.toml"
 # wezterm moved to [shared.files] for cross-platform
 "ghostty/config" = "~/.config/ghostty/config"
+# Stateless dotter drift check, 6-hourly, same cadence as systemd/dotter-drift-monitor.timer.
+# Replaced the unmanaged com.user.dotter-drift-monitor KeepAlive daemon on 2026-09-01.
+"macos/launchd/com.williamnapier.dotter-drift-monitor.plist" = "~/Library/LaunchAgents/com.williamnapier.dotter-drift-monitor.plist"
 "macos/launchd/com.williamnapier.forge-md-revs.plist" = "~/Library/LaunchAgents/com.williamnapier.forge-md-revs.plist"
 "macos/launchd/com.williamnapier.wiki-link-manager.plist" = "~/Library/LaunchAgents/com.williamnapier.wiki-link-manager.plist"
 "macos/launchd/com.williamnapier.syncthing-monitor.plist" = "~/Library/LaunchAgents/com.williamnapier.syncthing-monitor.plist"

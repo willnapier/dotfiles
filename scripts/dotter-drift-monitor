@@ -170,7 +170,8 @@ def evaluate [m: record, auto_template: bool] {
     } else {
         "symbolic"
     }
-    let tgt_type = ($m.tgt | path type)
+    # `path type` yields null (not "") for a missing path
+    let tgt_type = ($m.tgt | path type | default "")
 
     if $kind == "template" {
         let verdict = if $tgt_type == "file" { "OK" } else if $tgt_type == "" { "TGT-MISSING" } else { "NOT-FILE" }
