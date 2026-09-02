@@ -5,7 +5,11 @@ use std::path::PathBuf;
 
 use crate::types::DreamState;
 
-const MINIMUM_HOURS: i64 = 24;
+/// The timer fires daily at 04:00; consecutive runs are ~23h59m apart
+/// and `num_hours()` truncates, so a 24 h gate skipped every other
+/// night (system review D1-3, fixed 2026-09-02). 23 h keeps the intent
+/// ("at most once a day") with an hour of slack for timer jitter.
+const MINIMUM_MINUTES: i64 = 23 * 60;
 const MINIMUM_NEW_SESSIONS: usize = 5;
 const LOCK_STALE_MINUTES: u64 = 30;
 
@@ -37,23 +41,52 @@ pub fn check_time_gate(state: &DreamState) -> GateResult {
                     }
                 }
             };
-            let elapsed = Utc::now() - last_time;
-            let hours = elapsed.num_hours();
-            if hours >= MINIMUM_HOURS {
-                GateResult {
-                    passed: true,
-                    reason: None,
-                }
-            } else {
-                GateResult {
-                    passed: false,
-                    reason: Some(format!(
-                        "time gate: {}h elapsed, {}h required",
-                        hours, MINIMUM_HOURS
-                    )),
-                }
-            }
+            time_gate_at(last_time, Utc::now())
         }
+    }
+}
+
+fn time_gate_at(last: DateTime<Utc>, now: DateTime<Utc>) -> GateResult {
+    let minutes = (now - last).num_minutes();
+    if minutes >= MINIMUM_MINUTES {
+        GateResult {
+            passed: true,
+            reason: None,
+        }
+    } else {
+        GateResult {
+            passed: false,
+            reason: Some(format!(
+                "time gate: {}h{:02}m elapsed, {}h required",
+                minutes / 60,
+                minutes % 60,
+                MINIMUM_MINUTES / 60
+            )),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Duration;
+
+    /// D1-3 regression: two 04:00 timer firings 23h59m apart must both run.
+    #[test]
+    fn consecutive_daily_firings_pass_the_gate() {
+        let now = Utc::now();
+        assert!(time_gate_at(now - Duration::minutes(23 * 60 + 59), now).passed);
+        assert!(time_gate_at(now - Duration::hours(24), now).passed);
+        assert!(time_gate_at(now - Duration::hours(23), now).passed);
+    }
+
+    #[test]
+    fn a_second_run_the_same_day_is_blocked() {
+        let now = Utc::now();
+        let g = time_gate_at(now - Duration::hours(22), now);
+        assert!(!g.passed);
+        assert_eq!(g.reason.as_deref(), Some("time gate: 22h00m elapsed, 23h required"));
+        assert!(!time_gate_at(now - Duration::minutes(5), now).passed);
     }
 }
 

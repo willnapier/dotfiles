@@ -37,8 +37,12 @@ struct Cli {
     #[arg(long)]
     since: Option<String>,
 
-    /// Cap the number of sessions processed per run (default: 50)
-    #[arg(long, default_value = "50")]
+    /// Cap the number of sessions processed per run (default: 100).
+    /// Each session contributes ~2 KB of summary to one AI call; 100 is
+    /// ~50k tokens. Raised from 50 on 2026-09-02 (review D1-4): with
+    /// ~10 new sessions a day the historic backlog of ~4,800 imported
+    /// sessions drains at (cap − inflow) per night.
+    #[arg(long, default_value = "100")]
     max_sessions: usize,
 
     /// Dump the context document to stdout instead of sending to AI
@@ -81,7 +85,7 @@ fn run_status() -> Result<()> {
     println!("\nGates:");
     let time_gate = gates::check_time_gate(&dream_state);
     println!(
-        "  Time (24h):    {}",
+        "  Time (23h):    {}",
         if time_gate.passed {
             "PASS".to_string()
         } else {
