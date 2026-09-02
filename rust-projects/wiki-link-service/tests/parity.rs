@@ -653,3 +653,26 @@ fn reconcile_apply_refuses_while_the_service_lock_is_held() {
     assert!(applied.status.success(), "{}", String::from_utf8_lossy(&applied.stderr));
     assert_eq!(read(&snapshot(home), "Forge/A.md"), "# A\n\n?[[Missing]]\n");
 }
+
+/// One graph on every host: a Syncthing conflict copy neither takes a section,
+/// contributes backlinks, nor resolves a link; and a link typed in NFC resolves
+/// a note whose file name the filesystem lists in NFD.
+#[test]
+fn conflict_copies_are_ignored_and_names_resolve_across_unicode_forms() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    write(home, "Forge/A.md", "# A\n\n[[Zoë Harcombe]] [[Ghost]]\n");
+    write(home, "Forge/Zoe\u{0308} Harcombe.md", "# Z\n\nbody\n");
+    write(home, "Forge/A.sync-conflict-20260111-122630-ALGYNMQ.md", "# A copy\n\n[[Zoë Harcombe]] [[Ghost]] [[A]]\n");
+    write(home, "Forge/Ghost.sync-conflict-20260111-122630-ALGYNMQ.md", "# Ghost copy\n");
+    let roots = vec![home.join("Forge")];
+
+    let report = reconcile::reconcile(&roots, true).unwrap();
+    assert_eq!(report.audit.notes, 2, "conflict copies are not indexed: {report:?}");
+    let after = snapshot(home);
+    assert_eq!(read(&after, "Forge/A.md"), "# A\n\n[[Zoë Harcombe]] ?[[Ghost]]\n", "NFC link resolves the NFD file; a conflict copy does not make Ghost exist; A gains no backlink from its own conflict copy");
+    assert_eq!(read(&after, "Forge/Zoe\u{0308} Harcombe.md"), "# Z\n\nbody\n\n## Backlinks\n\n- [[A]]\n");
+    assert_eq!(read(&after, "Forge/A.sync-conflict-20260111-122630-ALGYNMQ.md"), "# A copy\n\n[[Zoë Harcombe]] [[Ghost]] [[A]]\n", "conflict copy untouched");
+    assert_eq!(read(&after, "Forge/Ghost.sync-conflict-20260111-122630-ALGYNMQ.md"), "# Ghost copy\n");
+    assert_eq!(reconcile::reconcile(&roots, false).unwrap().planned, 0);
+}

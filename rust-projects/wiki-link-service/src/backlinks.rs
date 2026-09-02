@@ -57,6 +57,10 @@ fn handle_write(ctx: &Ctx, file_path: &Path, created: bool, out: &mut Outcome) {
         ctx.log(&format!("📝 Modified: {}", basename(file_path)));
     }
 
+    if wiki::is_conflict_copy(file_path) {
+        ctx.log("   ⚠️  Skipping Syncthing conflict copy - not a note");
+        return;
+    }
     let size = wiki::file_size(file_path);
     if size > wiki::LARGE_FILE_BYTES {
         ctx.log(&format!("   ⚠️  Skipping large file ({size} B) - likely garbage web clip"));
