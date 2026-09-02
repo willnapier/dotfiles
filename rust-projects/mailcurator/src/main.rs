@@ -202,6 +202,10 @@ enum Command {
         /// Drift threshold in percentage points. Default 10.
         #[arg(long, default_value_t = 10.0)]
         threshold: f64,
+        /// Absolute health floor in percent: any policy below it is
+        /// reported every run, whatever the previous snapshot said.
+        #[arg(long)]
+        floor: Option<f64>,
         /// Skip writing today's snapshot to coverage-history.jsonl. Useful
         /// when you're spot-checking and don't want to pollute the history.
         #[arg(long)]
@@ -646,13 +650,13 @@ fn main() -> Result<()> {
                 );
             }
         }
-        Command::Coverage { policy, drift, threshold, no_snapshot } => {
+        Command::Coverage { policy, drift, threshold, floor, no_snapshot } => {
             let cfg = config::load(&path)?;
             let reports = coverage::report_all(&cfg.policies, policy.as_deref())?;
             coverage::print_reports(&reports);
             if drift {
                 println!();
-                let d = coverage::drift(&reports, threshold)?;
+                let d = coverage::drift(&reports, threshold, floor)?;
                 coverage::print_drift(&d);
                 if !d.findings.is_empty() {
                     std::process::exit(1);

@@ -123,7 +123,7 @@ def main [
                 if $parent == null {
                     null
                 } else {
-                    {child: $stem, parent: $parent}
+                    {child: $stem, parent: $parent, dir: ($file | path dirname)}
                 }
             }
         }
@@ -134,6 +134,7 @@ def main [
             {
                 parent: $row.key
                 children: ($row.children | get child | uniq | sort)
+                dirs: ($row.children | get dir | uniq)
             }
         }
     )
@@ -150,21 +151,26 @@ def main [
             let parent_file_root = $"($forge_dir)/($entry.parent).md"
             let parent_file_social = $"($social_dir)/($entry.parent).md"
 
+            # A missing parent is created as a minimal hub (forum decision
+            # 2026-08-21: parent key:: files are hubs). Before 2026-09-02 it was
+            # only warned about — 3,561 "Parent file not found" lines in the
+            # collect log and the children never linked (review D1-7). It goes
+            # where its children live: Social/ if all of them do, else root.
             let parent_file = if ($parent_file_root | path exists) {
                 $parent_file_root
             } else if ($parent_file_social | path exists) {
                 $parent_file_social
             } else {
+                let all_social = ($entry.dirs | all {|d| $d == $social_dir })
+                let target = if $all_social { $parent_file_social } else { $parent_file_root }
                 if $verbose {
-                    print $"⚠️  Parent file not found: ($entry.parent).md — checked root and Social/"
+                    print $"🆕 Parent hub missing, will create: ($target)"
                 }
-                null
+                $target
             }
 
-            if $parent_file == null {
-                null
-            } else {
-                let content = (open $parent_file)
+            {
+                let content = if ($parent_file | path exists) { open $parent_file } else { $"# ($entry.parent)\n" }
                 let child_list = (
                     $entry.children
                     | each {|child| $"- [[($child)]]" }

@@ -22,6 +22,10 @@ NOW=$(date '+%Y-%m-%dT%H:%M:%S')
 # Threshold: drop in percentage points to flag. 10pp matches mailcurator's
 # default; can override here.
 THRESHOLD=10.0
+# Absolute health floor (%): a policy below this is reported every run even if
+# it never "dropped" — chronically bad extraction was permanently green before
+# 2026-09-02 (review D1-11).
+FLOOR=50
 
 case "$PLATFORM" in
     Darwin) LOG="$HOME/Library/Logs/mailcurator-drift.log" ;;
@@ -34,12 +38,12 @@ mkdir -p "$(dirname "$LOG")"
 
 # Run mailcurator coverage --drift, capturing both output and exit code.
 # Coverage runs against ~/.config/mailcurator/policies.toml (the default).
-OUT=$(mailcurator coverage --drift --threshold "$THRESHOLD" 2>&1)
+OUT=$(mailcurator coverage --drift --threshold "$THRESHOLD" --floor "$FLOOR" 2>&1)
 RC=$?
 
 {
     echo "==========================================================="
-    echo "[$NOW] mailcurator-drift-check (threshold=${THRESHOLD}pp)"
+    echo "[$NOW] mailcurator-drift-check (threshold=${THRESHOLD}pp floor=${FLOOR}%)"
     echo "exit=$RC"
     echo "$OUT"
 } >> "$LOG"
@@ -78,7 +82,7 @@ case "$PLATFORM" in
         ;;
 esac
 
-# Always exit 0 from the wrapper so launchd/systemd doesn't repeatedly
-# alert on the same drift via their own failure-restart loops. The
-# notification is the user-facing signal; the log is the audit trail.
-exit 0
+# Exit with mailcurator's own status. Neither the launchd job nor the systemd
+# oneshot restarts on failure, and system-health-check reads the last exit
+# code — a hard-coded 0 here made drift invisible to it (review D1-11).
+exit "$RC"

@@ -213,13 +213,30 @@ fn read_history() -> Result<Vec<Snapshot>> {
 /// points or more, or where any required field's coverage dropped by that
 /// margin. Exit code intent: caller propagates 1 if any drift detected, 0
 /// otherwise — useful for cron + alerting.
-pub fn drift(reports: &[Report], threshold_pp: f64) -> Result<DriftReport> {
+/// `floor_pct`: an absolute health floor (review D1-11, 2026-09-02). Drift
+/// alone compares each snapshot to the previous one, so a policy that has
+/// *always* extracted badly (uk2-hosting `status` at 11.9%) never drops
+/// enough to be flagged and stays green forever. Any policy whose health
+/// is below the floor is reported every run, prior snapshot or not.
+pub fn drift(reports: &[Report], threshold_pp: f64, floor_pct: Option<f64>) -> Result<DriftReport> {
     let history = read_history()?;
     let now = Utc::now();
     let mut findings = Vec::new();
 
     for current_report in reports {
         let current = Snapshot::from_report(current_report);
+        if let (Some(floor), Some(h_now)) = (floor_pct, current.health_pct) {
+            if h_now < floor {
+                findings.push(Finding {
+                    policy: current.policy.clone(),
+                    field: "<health floor>".into(),
+                    prev: floor,
+                    current: h_now,
+                    drop: floor - h_now,
+                    prev_ts: "absolute floor".into(),
+                });
+            }
+        }
         // Find latest historical snapshot for this policy that's strictly older.
         let prior = history
             .iter()
@@ -295,6 +312,7 @@ pub fn print_drift(d: &DriftReport) {
         return;
     }
     println!("DRIFT DETECTED in {} field/policy combination(s):", d.findings.len());
+    println!("(rows marked \"absolute floor\" are below --floor, not a drop from the previous snapshot)");
     println!();
     println!(
         "{:<25}  {:<15}  {:>9}  {:>9}  {:>6}  {}",
