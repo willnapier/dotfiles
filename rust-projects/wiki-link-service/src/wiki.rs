@@ -123,9 +123,38 @@ pub fn basename(path: &Path) -> String {
     path.file_name().unwrap_or_default().to_string_lossy().into_owned()
 }
 
-/// The note's name: its file stem.
+/// The note's name: its file stem, NFC-normalised. This is the boundary where a
+/// filesystem path becomes a wiki identifier (`wls-nfc-boundary-vs-site-patches`,
+/// decided 2026-09-02): every name derived from a path — stem, relative key,
+/// match pattern — is NFC by construction here, so no comparison site downstream
+/// has to remember. `Path`/`PathBuf` values used for I/O stay exactly as the OS
+/// supplied them (macOS lists NFD); an NFC name is never turned back into a path.
 pub fn note_name(path: &Path) -> String {
-    path.file_stem().unwrap_or_default().to_string_lossy().into_owned()
+    path.file_stem().unwrap_or_default().to_string_lossy().nfc().collect()
+}
+
+/// The key a root-relative path (without `.md`) is indexed and looked up by:
+/// `\` → `/`, case-folded, then NFC — in that order, so the *final* key carries
+/// the invariant. Used for both `by_rel` insertion and `[[Dir/Name]]` lookup;
+/// directory components carry diacritics too.
+pub fn rel_key(rel: &str) -> String {
+    rel.replace('\\', "/").to_lowercase().nfc().collect()
+}
+
+/// A regex fragment matching `name` as either its NFC or NFD spelling, for
+/// scanning note *text* (never file names). Link text is whatever an editor
+/// or a paste left behind — 0.2.5 renders NFC, but older notes and Finder
+/// paste can be NFD — so a pattern built from one form silently misses the
+/// other; this is a superset match and the replacement stays NFC. Collapses
+/// to a single alternative when the two forms are identical (ASCII).
+pub fn name_pattern(name: &str) -> String {
+    let nfc: String = name.nfc().collect();
+    let nfd: String = name.nfd().collect();
+    if nfc == nfd {
+        regex::escape(&nfc)
+    } else {
+        format!("(?:{}|{})", regex::escape(&nfc), regex::escape(&nfd))
+    }
 }
 
 /// Case-insensitive, whitespace-trimmed key a link name resolves by. A trailing
@@ -342,9 +371,13 @@ pub struct Index {
     /// duplicated across directories (a scenario and its year-archived copy); a plain
     /// `[[Name]]` refers to all of them, as the Nushell tools' rg/fd lookups always did.
     by_key: HashMap<String, Vec<usize>>,
-    /// root-relative path without `.md`, lowercased → note, for path-qualified `[[Dir/Name]]` links.
+    /// [`rel_key`] of the root-relative path without `.md` → note, for path-qualified `[[Dir/Name]]` links.
     by_rel: HashMap<String, usize>,
     pos: HashMap<PathBuf, usize>,
+    /// Pairs of distinct on-disk paths whose names are canonically equivalent
+    /// (an NFC and an NFD spelling side by side — possible on Linux, where they
+    /// are two files). Reported by `audit`; never resolved by traversal order.
+    duplicates: Vec<(PathBuf, PathBuf)>,
     contents: RefCell<HashMap<usize, Option<Rc<str>>>>,
     outgoing: RefCell<HashMap<usize, Rc<Vec<String>>>>,
     reverse: RefCell<Option<Rc<ReverseMap>>>,
@@ -363,7 +396,7 @@ impl Index {
             for e in b.build().filter_map(Result::ok) {
                 if e.file_type().is_some_and(|t| t.is_file()) && e.path().extension().is_some_and(|x| x == "md") && !is_conflict_copy(e.path()) {
                     let rel = e.path().strip_prefix(root).unwrap_or(e.path()).with_extension("");
-                    rels.push(rel.to_string_lossy().replace('\\', "/").to_lowercase());
+                    rels.push(rel_key(&rel.to_string_lossy()));
                     files.push(e.into_path());
                 }
             }
@@ -371,12 +404,26 @@ impl Index {
         let mut by_key: HashMap<String, Vec<usize>> = HashMap::new();
         let mut by_rel = HashMap::new();
         let mut pos = HashMap::new();
+        let mut by_full: HashMap<String, usize> = HashMap::new();
+        let mut duplicates = Vec::new();
         for (i, f) in files.iter().enumerate() {
             by_key.entry(name_key(&note_name(f))).or_default().push(i);
             by_rel.entry(rels[i].clone()).or_insert(i);
             pos.insert(f.clone(), i);
+            // Same directory entry under two Unicode spellings: an identifier collision.
+            let full: String = f.to_string_lossy().nfc().collect();
+            if let Some(&first) = by_full.get(&full) {
+                duplicates.push((files[first].clone(), f.clone()));
+            } else {
+                by_full.insert(full, i);
+            }
         }
-        Index { files, by_key, by_rel, pos, contents: RefCell::default(), outgoing: RefCell::default(), reverse: RefCell::default() }
+        Index { files, by_key, by_rel, pos, duplicates, contents: RefCell::default(), outgoing: RefCell::default(), reverse: RefCell::default() }
+    }
+
+    /// Distinct on-disk paths whose names are canonically equivalent (see the field).
+    pub fn duplicates(&self) -> &[(PathBuf, PathBuf)] {
+        &self.duplicates
     }
 
     pub fn files(&self) -> &[PathBuf] {
@@ -391,7 +438,7 @@ impl Index {
     pub fn resolve_all(&self, name: &str) -> Vec<usize> {
         let n = name.trim();
         if n.contains('/') {
-            let key = name_key(n).replace('\\', "/");
+            let key = rel_key(&name_key(n));
             if let Some(&i) = self.by_rel.get(&key) {
                 return vec![i];
             }
@@ -453,10 +500,10 @@ impl Index {
     }
 
     /// Sorted, distinct names of the notes whose outgoing links resolve to `target` (never the target itself).
-    /// Rendered NFC, so a macOS host (NFD file names) and a Linux host (NFC) write identical bytes.
+    /// NFC (via `note_name`), so a macOS host (NFD file names) and a Linux host (NFC) write identical bytes.
     pub fn backlink_names(&self, target: usize) -> Vec<String> {
         let map = self.reverse_map();
-        let mut names: Vec<String> = map.get(&target).map(|v| v.iter().filter(|&&i| i != target).map(|&i| note_name(&self.files[i]).nfc().collect()).collect()).unwrap_or_default();
+        let mut names: Vec<String> = map.get(&target).map(|v| v.iter().filter(|&&i| i != target).map(|&i| note_name(&self.files[i])).collect()).unwrap_or_default();
         sort_names(&mut names);
         names
     }
@@ -497,6 +544,26 @@ mod tests {
         assert_ne!(nfd, nfc);
         assert_eq!(name_key(nfd), name_key(nfc));
         assert_eq!(name_key("Mate\u{0301}Neufeld.md"), "maténeufeld");
+    }
+
+    #[test]
+    fn note_name_and_rel_key_are_nfc_at_the_boundary() {
+        let nfd = "Zoe\u{0308} Harcombe";
+        let nfc = "Zoë Harcombe";
+        assert_eq!(note_name(Path::new(&format!("/x/{nfd}.md"))), nfc, "stem is NFC whatever the OS listed");
+        assert_eq!(rel_key(&format!("Zoe\u{0308}\\{nfd}")), "zoë/zoë harcombe", "separator, case-fold, then NFC");
+        assert_eq!(rel_key(&name_key("Zoë/Zoë Harcombe.md")), "zoë/zoë harcombe", "lookup side matches insertion side");
+    }
+
+    #[test]
+    fn name_pattern_matches_both_spellings_in_text() {
+        let re = regex::Regex::new(&format!(r"\[\[{}\]\]", name_pattern("Zoe\u{0308} Harcombe"))).unwrap();
+        assert!(re.is_match("[[Zoë Harcombe]]"), "NFD name, NFC text");
+        assert!(re.is_match("[[Zoe\u{0308} Harcombe]]"), "NFD name, NFD text");
+        let re = regex::Regex::new(&format!(r"\[\[{}\]\]", name_pattern("Zoë Harcombe"))).unwrap();
+        assert!(re.is_match("[[Zoe\u{0308} Harcombe]]"), "NFC name, NFD text");
+        assert!(!re.is_match("[[Zoe Harcombe]]"), "a different name still does not match");
+        assert_eq!(name_pattern("Foo (bar)"), regex::escape("Foo (bar)"), "ASCII collapses to one escaped alternative");
     }
 
     #[test]
@@ -599,6 +666,48 @@ mod tests {
         assert_eq!(ix.resolve_all("nowhere/Note").len(), 2, "unknown dir falls back to the stem");
         let copy = ix.position(&forge.join("archive/2024/Note.md")).unwrap();
         assert_eq!(ix.backlink_names(copy), names(&["Deep"]), "the archived copy gets the same backlink");
+    }
+
+    /// The 0.2.4 miss: `name_key` was NFC but `by_rel` was not, so a
+    /// path-qualified link to an NFD-named note fell through to the stem on
+    /// macOS (several notes, or the wrong one) and hit on Linux (exactly one).
+    #[test]
+    fn path_qualified_link_resolves_nfd_file_and_directory_from_nfc_text() {
+        let d = tempfile::tempdir().unwrap();
+        let forge = d.path().join("Forge");
+        let dir = forge.join("Zoe\u{0308}"); // NFD directory component, as macOS lists it
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::create_dir_all(forge.join("archive")).unwrap();
+        let target = dir.join("Zoe\u{0308} Harcombe.md");
+        std::fs::write(&target, "").unwrap();
+        std::fs::write(forge.join("archive/Zoe\u{0308} Harcombe.md"), "an archived copy with the same stem").unwrap();
+        let ix = Index::build(std::slice::from_ref(&forge));
+        assert_eq!(ix.resolve_all("Zoë Harcombe").len(), 2, "bare stem still names every copy");
+        assert_eq!(ix.resolve_all("Zoë/Zoë Harcombe"), vec![ix.position(&target).unwrap()], "NFC path-qualified link → exactly the one note");
+        assert_eq!(ix.resolve_all("Zoe\u{0308}/Zoe\u{0308} Harcombe"), vec![ix.position(&target).unwrap()], "and typed NFD too");
+        assert!(ix.duplicates().is_empty());
+        assert_eq!(ix.backlink_names(ix.position(&target).unwrap()), Vec::<String>::new());
+    }
+
+    /// Linux keeps an NFC and an NFD spelling of one name as two files; macOS
+    /// folds them into one. Either way the index must not pick by traversal
+    /// order silently: on Linux the pair is reported, on macOS there is no pair.
+    #[test]
+    fn canonically_equivalent_duplicate_names_are_reported() {
+        let d = tempfile::tempdir().unwrap();
+        let forge = d.path().join("Forge");
+        std::fs::create_dir_all(&forge).unwrap();
+        std::fs::write(forge.join("Zoë Harcombe.md"), "nfc").unwrap();
+        std::fs::write(forge.join("Zoe\u{0308} Harcombe.md"), "nfd").unwrap();
+        let ix = Index::build(std::slice::from_ref(&forge));
+        match ix.files().len() {
+            2 => {
+                assert_eq!(ix.duplicates().len(), 1, "two directory entries, one identifier");
+                assert_eq!(ix.resolve_all("Zoë Harcombe").len(), 2, "both remain targets; nothing is dropped");
+            }
+            1 => assert!(ix.duplicates().is_empty(), "the filesystem folded the pair"),
+            n => panic!("unexpected file count {n}"),
+        }
     }
 
     #[test]

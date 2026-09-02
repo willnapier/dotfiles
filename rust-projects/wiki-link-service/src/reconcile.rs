@@ -5,8 +5,12 @@
 //! tree the report describes), narrowed to what the watchers themselves would
 //! write: only notes under the first root — the watched one — are touched,
 //! because the service scans every root but only ever writes in response to
-//! events under `roots[0]`. Notes the resolve-mark watcher skips never have
-//! markers applied (see `audit::watcher_skips_markers`). Planning completes
+//! events under `roots[0]`. That root is resolved ONCE ([`watched_root`]) and
+//! the same value feeds planning, the report and the watcher's contract: if
+//! `roots[0]` does not exist there is no fixed point to preserve, so reconcile
+//! errors rather than silently promoting `roots[1]`. Later roots may be
+//! absent and are skipped, as the watchers skip them. Notes the resolve-mark
+//! watcher skips never have markers applied (see `audit::watcher_skips_markers`). Planning completes
 //! before the first write; every replacement is a same-directory temporary
 //! file followed by an atomic rename. Dry-run is the default at the CLI
 //! boundary and never calls the writer.
@@ -58,6 +62,19 @@ impl ReconcileReport {
     }
 }
 
+/// The one root the watchers write under — `roots[0]`, canonicalised. An
+/// error, not a fallback, when it is missing: `watch.rs` refuses to start on
+/// a missing first root, and reconcile must agree with it about which root
+/// is watched (thread `wls-nfc-boundary-vs-site-patches`, finding 3).
+fn watched_root(roots: &[PathBuf]) -> Result<PathBuf> {
+    let first = roots.first().context("reconcile needs at least one root")?;
+    if !first.exists() {
+        bail!("watched root does not exist: {}", first.display());
+    }
+    fs::canonicalize(first).with_context(|| format!("canonicalising watched root {}", first.display()))
+}
+
+/// Every existing root, canonicalised (the watched one first).
 fn canonical_roots(roots: &[PathBuf]) -> Result<Vec<PathBuf>> {
     roots
         .iter()
@@ -67,13 +84,12 @@ fn canonical_roots(roots: &[PathBuf]) -> Result<Vec<PathBuf>> {
 }
 
 /// (writes under the watched root, count of reported changes outside it)
-fn plan(index: &Index, roots: &[PathBuf], report: &AuditReport) -> Result<(Vec<PlannedWrite>, usize)> {
+fn plan(index: &Index, roots: &[PathBuf], watched: &Path, report: &AuditReport) -> Result<(Vec<PlannedWrite>, usize)> {
     let section_paths: BTreeSet<&Path> = report.sections.iter().map(|change| change.path.as_path()).collect();
     let marker_paths: BTreeSet<&Path> =
         report.markers_added.iter().chain(&report.markers_removed).map(|change| change.path.as_path()).collect();
     let paths: BTreeSet<&Path> = section_paths.iter().chain(&marker_paths).copied().collect();
     let allowed_roots = canonical_roots(roots)?;
-    let watched = allowed_roots.first().context("no existing root to reconcile")?;
     let mut writes = Vec::with_capacity(paths.len());
     let mut outside_watched = 0;
 
@@ -140,10 +156,10 @@ fn atomic_write(path: &Path, content: &str) -> Result<()> {
 /// The caller is responsible for making sure no watcher is running against
 /// the same tree while applying (`main.rs` checks the PID locks).
 pub fn reconcile(roots: &[PathBuf], apply: bool) -> Result<ReconcileReport> {
-    let watched = roots.first().context("reconcile needs at least one root")?.clone();
+    let watched = watched_root(roots)?;
     let index = Index::build(roots);
     let audit = audit::audit_index(&index, roots);
-    let (writes, outside_watched) = plan(&index, roots, &audit)?;
+    let (writes, outside_watched) = plan(&index, roots, &watched, &audit)?;
     let planned = writes.len();
     let mut written = 0;
     if apply {
@@ -153,4 +169,28 @@ pub fn reconcile(roots: &[PathBuf], apply: bool) -> Result<ReconcileReport> {
         }
     }
     Ok(ReconcileReport { audit, watched, planned, written, outside_watched, apply })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A missing first root is an error, never a silent promotion of the second:
+    /// `plan()` used to take the first *existing* root while the report and the
+    /// watcher used the raw first one.
+    #[test]
+    fn missing_first_root_is_an_error_not_a_fallback() {
+        let d = tempfile::tempdir().unwrap();
+        let existing = d.path().join("Admin");
+        std::fs::create_dir_all(&existing).unwrap();
+        std::fs::write(existing.join("Note.md"), "[[Nope]]\n").unwrap();
+        let err = reconcile(&[d.path().join("Missing"), existing.clone()], false).unwrap_err();
+        assert!(err.to_string().contains("watched root does not exist"), "{err}");
+        assert_eq!(std::fs::read_to_string(existing.join("Note.md")).unwrap(), "[[Nope]]\n", "nothing written");
+        assert!(reconcile(&[], false).is_err());
+        // A missing *later* root is still just skipped.
+        let ok = reconcile(&[existing.clone(), d.path().join("Missing")], false).unwrap();
+        assert_eq!(ok.watched, fs::canonicalize(&existing).unwrap());
+        assert_eq!(ok.planned, 1);
+    }
 }

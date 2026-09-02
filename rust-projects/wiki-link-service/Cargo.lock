@@ -827,7 +827,7 @@ dependencies = [
 
 [[package]]
 name = "wiki-link-service"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "anyhow",
  "chrono",
