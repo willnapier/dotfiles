@@ -209,6 +209,12 @@ pub fn check_launchagents(c: &Ctx) -> Vec<String> {
                     c.say(&format!("  ❌ {label}: not loaded"));
                 }
             }
+            // A live PID means the agent is running now; launchd's "last exit"
+            // then describes the PREVIOUS instance (e.g. -15 after a
+            // `kickstart -k`), not this one. Check running before errored.
+            Some(e) if e.pid.is_some() => {
+                c.say(&format!("  ✅ {label}: running (pid {})", e.pid.unwrap_or(0)));
+            }
             Some(e) if e.last_exit.is_some_and(|x| x != 0) => {
                 let code = e.last_exit.unwrap_or(0);
                 if c.fix {
@@ -711,6 +717,17 @@ mod tests {
             assert!(!intentionally_unloaded("com.williamnapier.forum-worker"));
         }
         assert!(!intentionally_unloaded("com.williamnapier.gmpull"));
+    }
+
+    #[test]
+    fn running_agent_with_signal_last_exit_is_not_errored() {
+        // launchctl shows the previous instance's exit (-15 from kickstart -k)
+        // next to the live PID; the live PID wins.
+        let e = parse_launchctl_list("18682\t-15\tcom.williamnapier.forge-md-revs\n");
+        assert_eq!(e[0].pid, Some(18682));
+        assert_eq!(e[0].last_exit, Some(-15));
+        // (the arm order in check_launchagents is what enforces this; the
+        // parse test pins the inputs it relies on)
     }
 
     #[test]
