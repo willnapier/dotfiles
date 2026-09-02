@@ -4,6 +4,7 @@ mod clean;
 mod continuum;
 mod load;
 mod output;
+mod recall;
 mod types;
 
 use anyhow::Result;
@@ -50,6 +51,11 @@ enum Command {
     Clean(CleanArgs),
     /// Backfill skills into existing session.json files
     Backfill(BackfillArgs),
+    /// Build or query the task-gated associative recall index
+    Recall {
+        #[command(subcommand)]
+        command: recall::RecallCommand,
+    },
 }
 
 #[derive(clap::Args)]
@@ -110,6 +116,7 @@ fn main() -> Result<()> {
             args.skill.as_deref(),
             args.all,
         ),
+        Some(Command::Recall { command }) => recall::run(command),
         None => run_report(cli.report),
     }
 }
