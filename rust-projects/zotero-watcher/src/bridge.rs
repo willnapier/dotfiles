@@ -8,6 +8,7 @@
 //! - present with a different size → move as `<stem>_<YYYYmmdd_HHMMSS>.pdf`;
 //! - move refused ("Operation not permitted" etc.) → copy, verify size,
 //!   remove source; on a size mismatch keep both.
+//!
 //! `--once` is the oracle's `main sync-now`: one pass, no batch cap.
 //!
 //! The oracle's `log_transfer_event` was a no-op (its save line was commented
