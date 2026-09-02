@@ -5,7 +5,7 @@
 # those tables change on their own and are committed by the auto-push watcher —
 # the same accepted pattern as Claude's settings.json.
 model = "gpt-5.6-sol"
-model_reasoning_effort = "high"
+model_reasoning_effort = "max"
 
 # Continuum owns the off-PATH CLI; update it with `continuum codex update`.
 check_for_update_on_startup = false
