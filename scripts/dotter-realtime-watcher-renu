@@ -1,7 +1,7 @@
 #!/usr/bin/env nu
 
 # dotter-realtime-watcher-renu - Native Nushell Re-nu Version
-# Event-driven config onboarding using Nushell's native watch
+# Event-driven config recognition using Nushell's native watch (log + notify; onboarding is manual via dotter-add)
 # Major improvement: No external dependencies, structured data handling
 
 def main [] {
@@ -97,21 +97,17 @@ def handle_config_event [operation: string, path: string, new_path: string, log_
                 sleep 1sec
                 
                 if (is_new_unmanaged_config $path) {
-                    log_message $log_file $"🤖 Auto-onboarding new config: ($path)"
-                    
-                    let result = (do { ^dotter-add $path } | complete)
-                    if $result.exit_code == 0 {
-                        log_message $log_file $"✅ Successfully onboarded: ($path)"
-                        
-                        # macOS notification (if available)
-                        if (which osascript | length) > 0 {
-                            let filename = ($path | path basename)
-                            try {
-                                ^osascript -e $"display notification \"Auto-onboarded: ($filename)\" with title \"Dotter Real-time Re-nu\" sound name \"Glass\""
-                            }
+                    # Recognition only — never write into ~/dotfiles unattended.
+                    # (2026-09-02: the auto-onboard call was removed; an unattended
+                    # dotter-add rewrites global.toml under whoever is editing it.)
+                    log_message $log_file $"🆕 Unmanaged config candidate: ($path) — run: dotter-add ($path)"
+
+                    # macOS notification (if available)
+                    if (which osascript | length) > 0 {
+                        let filename = ($path | path basename)
+                        try {
+                            ^osascript -e $"display notification \"Unmanaged config: ($filename) — dotter-add to onboard\" with title \"Dotter watcher\""
                         }
-                    } else {
-                        log_message $log_file $"❌ Failed to onboard: ($path) - ($result.stderr)"
                     }
                 } else {
                     log_message $log_file "ℹ️  File already managed or not suitable for onboarding"
