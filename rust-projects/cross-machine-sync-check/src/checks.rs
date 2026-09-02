@@ -511,6 +511,72 @@ pub fn skill_parity(remote: &str) -> Result<Vec<CheckResult>> {
 
 // --- 4. Messageboard staleness ---
 
+/// Walk the board's `### YYYY-MM-DD — device` sections. Returns
+/// (stale descriptions, fresh-message count, forum-pointer count). A section
+/// whose first content line starts with `FORUM OPEN` / `FORUM COMPLETE` is a
+/// forum pointer and never counts as stale.
+pub fn messageboard_sections(content: &str, today: chrono::NaiveDate) -> (Vec<String>, usize, usize) {
+    let mut stale = Vec::new();
+    let mut fresh = 0usize;
+    let mut pointers = 0usize;
+
+    let mut lines = content.lines().peekable();
+    while let Some(line) = lines.next() {
+        if !line.starts_with("### ") {
+            continue;
+        }
+        // first non-empty line of the body, without consuming the next header
+        let mut body_first = "";
+        while let Some(next) = lines.peek() {
+            if next.starts_with("### ") {
+                break;
+            }
+            let next = lines.next().unwrap_or("");
+            if !next.trim().is_empty() {
+                body_first = next.trim();
+                break;
+            }
+        }
+        if body_first.starts_with("FORUM OPEN") || body_first.starts_with("FORUM COMPLETE") {
+            pointers += 1;
+            continue;
+        }
+        let date_part: Vec<&str> = line
+            .trim_start_matches("### ")
+            .split(|c: char| c == ' ' || c == '\u{2014}' || c == '-')
+            .take(3)
+            .collect();
+        let Some(date) = (date_part.len() >= 3)
+            .then(|| format!("{}-{}-{}", date_part[0], date_part[1], date_part[2]))
+            .and_then(|s| chrono::NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok())
+        else {
+            continue;
+        };
+        let age = (today - date).num_days();
+        if age > 7 {
+            stale.push(format!("{} ({} days old)", line.trim(), age));
+        } else {
+            fresh += 1;
+        }
+    }
+    (stale, fresh, pointers)
+}
+
+#[cfg(test)]
+mod messageboard_tests {
+    use super::messageboard_sections;
+
+    #[test]
+    fn fresh_pointer_and_stale_are_told_apart() {
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 9, 2).unwrap();
+        let board = "# Messageboard\n\n## Messages\n\n### 2026-09-01 — Mac\n\nfresh work order\n\n---\n\n### 2026-08-23 — nimbini\n\nFORUM OPEN — `meta-x` (architecture): pointer\n\n---\n\n### 2026-08-02 — nimbini\n\nold task\n";
+        let (stale, fresh, pointers) = messageboard_sections(board, today);
+        assert_eq!(fresh, 1);
+        assert_eq!(pointers, 1);
+        assert_eq!(stale, vec!["### 2026-08-02 — nimbini (31 days old)"]);
+    }
+}
+
 pub fn messageboard_staleness() -> Result<CheckResult> {
     let messageboard = home_dir().join("Assistants/shared/MESSAGEBOARD.md");
 
@@ -523,53 +589,31 @@ pub fn messageboard_staleness() -> Result<CheckResult> {
     }
 
     let content = std::fs::read_to_string(&messageboard)?;
-
-    // Check if there are any dated message headers
     let today = chrono::Local::now().date_naive();
-    let mut stale_messages = Vec::new();
+    let (stale_messages, fresh, pointers) = messageboard_sections(&content, today);
 
-    for line in content.lines() {
-        if line.starts_with("### ") {
-            // Try to parse date from "### YYYY-MM-DD — device"
-            let date_part = line
-                .trim_start_matches("### ")
-                .split(|c: char| c == ' ' || c == '\u{2014}' || c == '-')
-                .take(3)
-                .collect::<Vec<&str>>();
-
-            if date_part.len() >= 3 {
-                let date_str = format!("{}-{}-{}", date_part[0], date_part[1], date_part[2]);
-                if let Ok(date) = chrono::NaiveDate::parse_from_str(&date_str, "%Y-%m-%d") {
-                    let age = today - date;
-                    if age.num_days() > 7 {
-                        stale_messages
-                            .push(format!("{} ({} days old)", line.trim(), age.num_days()));
-                    }
-                }
-            }
-        }
-    }
-
-    // Also check if there are any messages at all (non-empty)
-    let has_messages = content.contains("### ") && !content.contains("*(No messages)*");
-
-    if !has_messages {
+    // Fresh pending messages are the board doing its job, not drift. The old
+    // rule reported Drift whenever ANY message existed, so this check could
+    // never pass while the board was in use (review 2.2a class). Forum
+    // pointers are exempt from the age rule: the board header says they are
+    // attention gateways retired only when the thread closes.
+    if stale_messages.is_empty() {
         Ok(CheckResult {
             name: "messageboard".to_string(),
             status: Status::Clean,
-            details: vec![],
-        })
-    } else if !stale_messages.is_empty() {
-        Ok(CheckResult {
-            name: "messageboard".to_string(),
-            status: Status::Drift,
-            details: stale_messages,
+            details: if fresh + pointers == 0 {
+                vec![]
+            } else {
+                vec![format!(
+                    "{fresh} pending message(s) within 7 days, {pointers} forum pointer(s) (exempt)"
+                )]
+            },
         })
     } else {
         Ok(CheckResult {
             name: "messageboard".to_string(),
             status: Status::Drift,
-            details: vec!["has pending messages".to_string()],
+            details: stale_messages,
         })
     }
 }
