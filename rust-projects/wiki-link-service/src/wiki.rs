@@ -559,7 +559,7 @@ mod tests {
         assert_eq!(*ix.outgoing(note), names(&["deep", "C++", "Foo (bar)"]));
         assert_eq!(ix.backlink_names(note), names(&["Deep", "Note"])); // Admin/Note links [[note]] → Forge/Note; self excluded
         assert_eq!(ix.backlink_names(ix.position(&forge.join("sub/Deep.md")).unwrap()), names(&["Note"]));
-        assert_eq!(ix.backlink_names(ix.position(&admin.join("Note.md")).unwrap()), Vec::<String>::new());
+        assert_eq!(ix.backlink_names(ix.position(&admin.join("Note.md")).unwrap()), names(&["Deep"]), "a duplicate stem in another root is a target too");
 
         // duplicate stems: every copy is a target; path-qualified links pick the exact note
         std::fs::create_dir_all(forge.join("archive/2024")).unwrap();
