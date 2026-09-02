@@ -345,7 +345,11 @@ pub fn run_watch(store: &Store, logger: &Logger, hb: &mut Heartbeat, stop: &Atom
     )
     .context("creating watcher")?;
     watcher.watch(&store.forge, RecursiveMode::Recursive).with_context(|| format!("watching {}", store.forge.display()))?;
-    hb.write().ok();
+    // startup heartbeat: last_cycle = now, no action yet
+    hb.cycle();
+    if let Err(e) = hb.write() {
+        logger.log(&format!("❌ heartbeat write failed: {e:#}"));
+    }
 
     let mut pending: HashMap<PathBuf, Instant> = HashMap::new();
     while !stop.load(Ordering::Relaxed) {
@@ -416,7 +420,7 @@ impl Heartbeat {
     pub fn to_json(&self) -> String {
         let t = |o: &Option<chrono::DateTime<chrono::Local>>| o.map(|d| format!("\"{}\"", d.to_rfc3339())).unwrap_or_else(|| "null".into());
         format!(
-            "{{\"watcher\":{},\"version\":{},\"started_at\":\"{}\",\"last_cycle\":{},\"last_action\":{},\"actions\":{},\"last_error\":{},\"host\":{}}}\n",
+            "{{\"watcher\":{},\"version\":{},\"interval_secs\":0,\"started_at\":\"{}\",\"last_cycle\":{},\"last_action\":{},\"actions\":{},\"last_error\":{},\"host\":{}}}\n",
             json_str(self.name),
             json_str(env!("CARGO_PKG_VERSION")),
             self.started_at.to_rfc3339(),
@@ -628,6 +632,7 @@ mod tests {
         hb.write().unwrap();
         let j = std::fs::read_to_string(hb.path()).unwrap();
         assert!(j.starts_with("{\"watcher\":\"forge-md-revs\",\"version\":\""), "{j}");
+        assert!(j.contains("\"interval_secs\":0,\"started_at\":\""), "{j}");
         assert!(j.contains("\"last_action\":null,\"actions\":0,\"last_error\":\"bad \\\"thing\\\"\",\"host\":\""), "{j}");
         hb.action();
         hb.write().unwrap();

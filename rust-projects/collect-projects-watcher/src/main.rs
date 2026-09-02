@@ -150,7 +150,11 @@ pub fn run(cfg: &Config, logger: &Logger, hb: &mut Heartbeat, stop: &AtomicBool)
     )
     .context("creating watcher")?;
     watcher.watch(&cfg.watch_dir, RecursiveMode::Recursive).with_context(|| format!("watching {}", cfg.watch_dir.display()))?;
-    hb.write().ok();
+    // startup heartbeat: last_cycle = now, no action yet
+    hb.cycle();
+    if let Err(e) = hb.write() {
+        logger.log(&format!("heartbeat write failed: {e:#}"));
+    }
 
     let mut pending: BTreeSet<PathBuf> = BTreeSet::new();
     let mut last_event: Option<Instant> = None;
@@ -248,7 +252,7 @@ impl Heartbeat {
     pub fn to_json(&self) -> String {
         let t = |o: &Option<chrono::DateTime<chrono::Local>>| o.map(|d| format!("\"{}\"", d.to_rfc3339())).unwrap_or_else(|| "null".into());
         format!(
-            "{{\"watcher\":{},\"version\":{},\"started_at\":\"{}\",\"last_cycle\":{},\"last_action\":{},\"actions\":{},\"last_error\":{},\"host\":{}}}\n",
+            "{{\"watcher\":{},\"version\":{},\"interval_secs\":0,\"started_at\":\"{}\",\"last_cycle\":{},\"last_action\":{},\"actions\":{},\"last_error\":{},\"host\":{}}}\n",
             json_str(self.name),
             json_str(env!("CARGO_PKG_VERSION")),
             self.started_at.to_rfc3339(),
@@ -437,6 +441,7 @@ mod tests {
         let j = std::fs::read_to_string(hb.path()).unwrap();
         assert!(j.contains("\"last_error\":\"a \\\"b\\\"\\n\""), "{j}");
         assert!(j.contains("\"last_cycle\":null,\"last_action\":null,\"actions\":0"), "{j}");
+        assert!(j.contains("\"watcher\":\"collect-projects-watcher\",\"version\":\"") && j.contains("\"interval_secs\":0,\"started_at\":\""), "{j}");
         assert_eq!(std::fs::read_dir(d.path().join("state")).unwrap().count(), 1);
     }
 }
