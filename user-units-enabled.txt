@@ -12,6 +12,7 @@ continuum-dream.timer
 continuum-sync-claude.timer
 cross-machine-sync-check.timer
 dotter-drift-monitor.timer
+dotter-realtime-watcher.service
 dropbox.service
 forge-link-manager.service
 forge-md-revs.service
