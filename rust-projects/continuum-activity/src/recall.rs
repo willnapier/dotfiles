@@ -694,7 +694,9 @@ fn dated_markdown_name(filename: &str) -> bool {
 }
 
 fn is_iso_date(value: &str) -> bool {
-    NaiveDate::parse_from_str(value, "%Y-%m-%d").is_ok()
+    static REGEX: OnceLock<Regex> = OnceLock::new();
+    let regex = REGEX.get_or_init(|| Regex::new(r"^\d{4}-\d{2}-\d{2}$").expect("valid date regex"));
+    regex.is_match(value) && NaiveDate::parse_from_str(value, "%Y-%m-%d").is_ok()
 }
 
 fn date_from_path(path: &Path) -> Option<String> {
@@ -846,8 +848,8 @@ fn date_from_text(text: &str) -> Option<String> {
 
 fn sensitive_markers() -> &'static [&'static str] {
     &[
-        "/clinical/clients",
-        "\\clinical\\clients",
+        "/clinical/",
+        "\\clinical\\",
         "clinical client",
         "patient name",
         "nhs number",
@@ -871,6 +873,28 @@ fn path_regex() -> &'static Regex {
         Regex::new(r"(?:~|/|\./|\.\./)[A-Za-z0-9_@.+~/-]+(?:\.[A-Za-z0-9_-]+)?")
             .expect("valid path regex")
     })
+}
+
+fn valid_path_candidate(line: &str, start: usize, candidate: &str) -> bool {
+    let has_valid_boundary = start == 0
+        || line[..start].chars().next_back().is_some_and(|character| {
+            character.is_whitespace() || matches!(character, '\'' | '"' | '`')
+        });
+    if !has_valid_boundary
+        || !candidate
+            .chars()
+            .any(|character| character.is_ascii_alphabetic())
+    {
+        return false;
+    }
+
+    let segments: Vec<&str> = candidate
+        .split('/')
+        .filter(|segment| {
+            !segment.is_empty() && *segment != "." && *segment != ".." && *segment != "~"
+        })
+        .collect();
+    segments.len() >= 2 || segments.first().is_some_and(|segment| segment.len() >= 3)
 }
 
 fn file_regex() -> &'static Regex {
@@ -952,7 +976,10 @@ fn extract_entities(text: &str) -> BTreeMap<String, EntityEvidence> {
     let mut entities = BTreeMap::new();
     for (offset, line) in text.lines().enumerate() {
         let line_number = offset + 1;
-        for found in path_regex().find_iter(line) {
+        for found in path_regex()
+            .find_iter(line)
+            .filter(|found| valid_path_candidate(line, found.start(), found.as_str()))
+        {
             let path = normalize_path(found.as_str());
             if path.is_empty() || is_sensitive_entity(&path) {
                 continue;
@@ -1003,7 +1030,7 @@ fn extract_entities(text: &str) -> BTreeMap<String, EntityEvidence> {
             .find_iter(line)
             .map(|found| found.as_str().to_lowercase())
             .collect();
-        for (index, word) in words.iter().enumerate() {
+        for word in &words {
             if word == "nimbini" || word == "williams-macbook-air" {
                 add_entity(&mut entities, word.clone(), EntityKind::Host, line_number);
             }
@@ -1016,16 +1043,6 @@ fn extract_entities(text: &str) -> BTreeMap<String, EntityEvidence> {
                 EntityKind::Command,
                 line_number,
             );
-            if let Some(next) = words.get(index + 1) {
-                if valid_subcommand(next) {
-                    add_entity(
-                        &mut entities,
-                        format!("{word}:{next}"),
-                        EntityKind::Command,
-                        line_number,
-                    );
-                }
-            }
         }
     }
     entities
@@ -1037,7 +1054,10 @@ fn extract_code_span(span: &str, line: usize, entities: &mut BTreeMap<String, En
         return;
     }
     if path_regex().is_match(trimmed) {
-        for found in path_regex().find_iter(trimmed) {
+        for found in path_regex()
+            .find_iter(trimmed)
+            .filter(|found| valid_path_candidate(trimmed, found.start(), found.as_str()))
+        {
             let path = normalize_path(found.as_str());
             if !path.is_empty() && !is_sensitive_entity(&path) {
                 add_entity(entities, path, EntityKind::Path, line);
@@ -1676,11 +1696,11 @@ fn evaluate_fixtures(fixtures: FixtureFile) -> Result<BacktestReport> {
             .iter()
             .all(|expected| sources.contains(expected.as_str()));
         let silent_ok = !case.expect_silent || outcome.hits.is_empty();
-        let baseline_sources = exact_prompt_baseline(&baseline_corpus, &case.query);
+        let baseline_sources = strongest_cue_baseline(&baseline_corpus, &case.query);
         let baseline_missed = case
             .expected_sources
             .iter()
-            .all(|expected| !baseline_sources.contains(expected));
+            .any(|expected| !baseline_sources.contains(expected));
         if case.baseline_must_miss && baseline_missed && expected_present {
             red_control_detected = true;
         }
@@ -1692,7 +1712,7 @@ fn evaluate_fixtures(fixtures: FixtureFile) -> Result<BacktestReport> {
                 format!("{} hit(s); expected silence", outcome.hits.len())
             } else {
                 format!(
-                    "{} hit(s); expected {:?}; exact-prompt baseline {:?}",
+                    "{} hit(s); expected {:?}; strongest-cue baseline {:?}",
                     outcome.hits.len(),
                     case.expected_sources,
                     baseline_sources
@@ -1727,16 +1747,35 @@ fn evaluate_fixtures(fixtures: FixtureFile) -> Result<BacktestReport> {
     })
 }
 
-fn exact_prompt_baseline(corpus: &[(String, String)], query: &str) -> BTreeSet<String> {
-    let query = query.trim().to_lowercase();
-    if query.is_empty() {
-        return BTreeSet::new();
+fn strongest_cue_baseline(corpus: &[(String, String)], query: &str) -> BTreeSet<String> {
+    let query_entities = extract_entities(query);
+    let mut candidates: Vec<(&String, &EntityEvidence)> = query_entities.iter().collect();
+    candidates.sort_by(
+        |(left_entity, left_evidence), (right_entity, right_evidence)| {
+            kind_weight(right_evidence.kind, right_entity)
+                .partial_cmp(&kind_weight(left_evidence.kind, left_entity))
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| right_entity.len().cmp(&left_entity.len()))
+                .then_with(|| left_entity.cmp(right_entity))
+        },
+    );
+
+    for (entity, evidence) in candidates {
+        let cue = if evidence.kind == EntityKind::Command && entity.contains(':') {
+            entity.replace(':', " ")
+        } else {
+            entity.clone()
+        };
+        let matches: BTreeSet<String> = corpus
+            .iter()
+            .filter(|(_, content)| content.to_lowercase().contains(&cue))
+            .map(|(source, _)| source.clone())
+            .collect();
+        if !matches.is_empty() {
+            return matches;
+        }
     }
-    corpus
-        .iter()
-        .filter(|(_, content)| content.to_lowercase().contains(&query))
-        .map(|(source, _)| source.clone())
-        .collect()
+    BTreeSet::new()
 }
 
 fn run_builtin_backtest() -> Result<BacktestReport> {
@@ -2045,5 +2084,67 @@ mod tests {
     fn web_urls_are_not_misclassified_as_filesystem_paths() {
         let entities = extract_entities("See https://example.com/project/status for details.");
         assert!(entities.is_empty());
+    }
+
+    #[test]
+    fn prose_fragments_are_not_misclassified_as_filesystem_paths() {
+        for prose in [
+            "this will take ~1 hour, maybe ~80% of the afternoon",
+            "should I do this and/or that with the ui",
+            "the counter is 23/126 today",
+        ] {
+            let entities = extract_entities(prose);
+            assert!(
+                entities.is_empty(),
+                "unexpected entities for {prose:?}: {entities:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn structural_filesystem_paths_remain_technical_cues() {
+        for path in ["/tmp/example", "~/dotfiles/scripts", "./src"] {
+            let entities = extract_entities(path);
+            assert!(
+                entities
+                    .values()
+                    .any(|evidence| evidence.kind == EntityKind::Path),
+                "missing path cue for {path:?}: {entities:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn iso_dates_require_exact_zero_padded_syntax() {
+        assert!(is_iso_date("2026-06-01"));
+        for invalid in [
+            " 2026-06-01",
+            "2026-6-01",
+            "2026-06-1",
+            "2026-06-01 ",
+            "2026-02-30",
+        ] {
+            assert!(!is_iso_date(invalid), "accepted invalid date {invalid:?}");
+        }
+    }
+
+    #[test]
+    fn strongest_cue_baseline_finds_direct_document_but_not_associative_analogue() {
+        let corpus = vec![
+            (
+                "fixture://bridge".to_string(),
+                "`cross-machine-sync-check` reported drift after `dotter deploy`.".to_string(),
+            ),
+            (
+                "fixture://analogue".to_string(),
+                "`dotter deploy` succeeded but an unregistered source was absent.".to_string(),
+            ),
+        ];
+        let sources = strongest_cue_baseline(
+            &corpus,
+            "`cross-machine-sync-check` says clean, but the deployed target is absent",
+        );
+        assert!(sources.contains("fixture://bridge"));
+        assert!(!sources.contains("fixture://analogue"));
     }
 }
