@@ -23,7 +23,6 @@ gmail-push-tags.timer
 gmpull.timer
 gnome-keyring-daemon.socket
 handy.service
-helix-undo-cleanup.timer
 link-service.service
 mailcurator-drift.timer
 mailforge.service
@@ -51,5 +50,4 @@ syncthing.service
 system-health-check.timer
 tm3-diary-capture.timer
 usagewatch-monitor.timer
-voice-pod-maintain.timer
 wireplumber.service

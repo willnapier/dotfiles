@@ -5,8 +5,10 @@ After=network.target
 [Service]
 Type=oneshot
 ExecStart=%h/.local/bin/continuum-sync-claude
-StandardOutput=append:%h/.local/share/continuum/systemd.log
-StandardError=append:%h/.local/share/continuum/systemd.log
+# The script keeps its own sync.log; anything it prints or panics lands there too
+# (systemd.log stayed 0 bytes for ten months — review F10, 2026-09-02).
+StandardOutput=append:%h/.local/share/continuum/sync.log
+StandardError=append:%h/.local/share/continuum/sync.log
 
 [Install]
 WantedBy=default.target

@@ -1,5 +1,5 @@
 [Unit]
-Description=Gracefully restart Firefox to prevent memory leaks
+Description=Terminate Firefox nightly (SIGTERM; nothing relaunches it — renamed from firefox-nightly-restart 2026-09-02, review F10)
 After=graphical-session.target
 
 [Service]

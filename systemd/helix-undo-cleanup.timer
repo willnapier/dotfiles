@@ -1,9 +1,0 @@
-[Unit]
-Description=Weekly cleanup of old Helix undo files
-
-[Timer]
-OnCalendar=weekly
-Persistent=true
-
-[Install]
-WantedBy=timers.target

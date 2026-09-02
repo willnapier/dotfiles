@@ -557,8 +557,6 @@ depends = ["shared"]
 "systemd/frecency-daemon.service" = "~/.config/systemd/user/frecency-daemon.service"
 "systemd/frecency-daemon.timer" = "~/.config/systemd/user/frecency-daemon.timer"
 # Helix persistent undo cleanup - purges files older than 30 days
-"systemd/helix-undo-cleanup.service" = "~/.config/systemd/user/helix-undo-cleanup.service"
-"systemd/helix-undo-cleanup.timer" = "~/.config/systemd/user/helix-undo-cleanup.timer"
 "systemd/cross-machine-sync-check.service" = "~/.config/systemd/user/cross-machine-sync-check.service"
 "systemd/forum-worker.service" = "~/.config/systemd/user/forum-worker.service"
 "systemd/cross-machine-sync-check.timer" = "~/.config/systemd/user/cross-machine-sync-check.timer"
@@ -569,8 +567,8 @@ depends = ["shared"]
 # Web clip watcher - auto-move SingleFile saves
 "systemd/forge-md-revs.service" = "~/.config/systemd/user/forge-md-revs.service"
 # Firefox nightly restart - prevents memory leak accumulation
-"systemd/firefox-nightly-restart.service" = "~/.config/systemd/user/firefox-nightly-restart.service"
-"systemd/firefox-nightly-restart.timer" = "~/.config/systemd/user/firefox-nightly-restart.timer"
+"systemd/firefox-nightly-kill.service" = "~/.config/systemd/user/firefox-nightly-kill.service"
+"systemd/firefox-nightly-kill.timer" = "~/.config/systemd/user/firefox-nightly-kill.timer"
 # Claude Code nightly cleanup - kills stale processes at 3am
 "systemd/claude-code-nightly-cleanup.service" = "~/.config/systemd/user/claude-code-nightly-cleanup.service"
 "systemd/claude-code-nightly-cleanup.timer" = "~/.config/systemd/user/claude-code-nightly-cleanup.timer"
@@ -587,8 +585,6 @@ depends = ["shared"]
 "systemd/bequest-heartbeat.service" = "~/.config/systemd/user/bequest-heartbeat.service"
 "systemd/bequest-heartbeat.timer" = "~/.config/systemd/user/bequest-heartbeat.timer"
 # Voice pod idle sweep - stop RunPod pod if idle > 15 min
-"systemd/voice-pod-maintain.service" = "~/.config/systemd/user/voice-pod-maintain.service"
-"systemd/voice-pod-maintain.timer" = "~/.config/systemd/user/voice-pod-maintain.timer"
 # State capture - daily snapshot of packages, services, crates, groups
 "systemd/state-capture.service" = "~/.config/systemd/user/state-capture.service"
 "systemd/state-capture.timer" = "~/.config/systemd/user/state-capture.timer"

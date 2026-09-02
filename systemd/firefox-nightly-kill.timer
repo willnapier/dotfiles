@@ -1,5 +1,5 @@
 [Unit]
-Description=Restart Firefox nightly at 3am to prevent memory leaks
+Description=Terminate Firefox nightly at 03:00 to bound memory growth
 
 [Timer]
 OnCalendar=*-*-* 03:00:00

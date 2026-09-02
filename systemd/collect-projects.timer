@@ -1,9 +1,9 @@
 [Unit]
-Description=Daily project collection timer
+Description=Nightly DayPage collection (collect-entries via collect-projects-cron)
 Documentation=file:///home/will/Forge/Projects/project-architecture.setup.md
 
 [Timer]
-OnCalendar=daily
+# Was also `OnCalendar=daily` (additive → fired twice a day; review D1-7, 2026-09-02).
 OnCalendar=*-*-* 23:30:00
 Persistent=true
 

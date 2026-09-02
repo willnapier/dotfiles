@@ -1,5 +1,5 @@
 [Unit]
-Description=Collect P. notation project entries from journal
+Description=Collect DayPage entries into project/activity/social files (runs collect-entries; historic unit name)
 Documentation=file:///home/will/Forge/Projects/project-architecture.setup.md
 
 [Service]
