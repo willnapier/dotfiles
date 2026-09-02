@@ -288,7 +288,6 @@ depends = []
 # Mail sync (lieer/gmi) — RETIRED 2026-05-04, replaced by gmpull (Rust
 # Gmail-API puller). Source files preserved in ~/dotfiles/legacy/.
 # Re-nu conversion scripts - Native Nushell watchers with no external dependencies
-"scripts/dotter-realtime-watcher-renu" = "~/.local/bin/dotter-realtime-watcher-renu"
 "scripts/helix-activity-watcher-renu" = "~/.local/bin/helix-activity-watcher-renu"
 "scripts/zellij-zombie-watcher-renu" = "~/.local/bin/zellij-zombie-watcher-renu"
 "scripts/citation-watcher-renu" = "~/.local/bin/citation-watcher-renu"
@@ -296,7 +295,6 @@ depends = []
 "scripts/yazi-search-with-preview" = "~/.local/bin/yazi-search-with-preview"
 # Zotero automation - Native Nushell versions (no fswatch dependency)
 # Syncthing connection monitoring system
-"scripts/syncthing-connection-monitor" = "~/.local/bin/syncthing-connection-monitor"
 # System-wide theme management
 "scripts/theme-dark" = "~/.local/bin/theme-dark"
 "scripts/theme-light" = "~/.local/bin/theme-light"
