@@ -21,11 +21,8 @@ com.user.readwise-sync
 com.user.remind-notify
 com.user.syncthing-sync-watchdog
 com.user.theme-monitor.plist.disabled
-com.user.web-clip-watcher
-com.user.zotero-bridge
 com.user.zotero-watcher
 com.williamnapier.ai-export-watcher
-com.williamnapier.assistants-auto-pull
 com.williamnapier.assistants-auto-push
 com.williamnapier.bequest-heartbeat
 com.williamnapier.cohs-trash-mover
@@ -60,7 +57,5 @@ com.williamnapier.syncthing-monitor
 com.williamnapier.system-health-check
 com.williamnapier.tm3-diary-live
 com.williamnapier.tm3-session-broker
-com.williamnapier.tm3-watcher
 com.williamnapier.usagewatch-monitor
-com.williamnapier.wiki-link-manager
 homebrew.mxcl.syncthing
