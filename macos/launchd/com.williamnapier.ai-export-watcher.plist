@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.user.chatgpt-watcher</string>
+    <string>com.williamnapier.ai-export-watcher</string>
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/williamnapier/.local/bin/chatgpt-watcher</string>
+        <string>/Users/williamnapier/.local/bin/ai-export-watcher</string>
     </array>
 
     <key>EnvironmentVariables</key>
@@ -26,10 +26,10 @@
     </dict>
 
     <key>StandardOutPath</key>
-    <string>/Users/williamnapier/.local/share/chatgpt-watcher.stdout</string>
+    <string>/Users/williamnapier/.local/share/ai-export-watcher.stdout</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/williamnapier/.local/share/chatgpt-watcher.stderr</string>
+    <string>/Users/williamnapier/.local/share/ai-export-watcher.stderr</string>
 
     <key>ProcessType</key>
     <string>Background</string>
@@ -38,9 +38,6 @@
     <true/>
 
     <key>Nice</key>
-    <integer>15</integer>
-
-    <key>ThrottleInterval</key>
-    <integer>5</integer>
+    <integer>10</integer>
 </dict>
 </plist>
