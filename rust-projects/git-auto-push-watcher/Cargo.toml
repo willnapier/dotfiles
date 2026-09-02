@@ -1,0 +1,13 @@
+[package]
+name = "git-auto-push-watcher"
+version = "0.3.0"
+edition = "2021"
+description = "Sweeps ~/dotfiles to origin/main once the tree has been quiet, with Rust and Nushell parse gates and commit subjects that name the paths. One binary for macOS (launchd) and Linux (systemd)."
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+chrono = "0.4"
+
+[dev-dependencies]
+tempfile = "3"

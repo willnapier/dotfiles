@@ -7,7 +7,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/williamnapier/.local/bin/git-auto-push-watcher-macos</string>
+        <string>/Users/williamnapier/.local/bin/git-auto-push-watcher</string>
     </array>
 
     <key>RunAtLoad</key>
@@ -17,7 +17,7 @@
     <true/>
 
     <key>StandardOutPath</key>
-    <string>/Users/williamnapier/.local/share/git-auto-push-watcher-macos.log</string>
+    <string>/Users/williamnapier/.local/share/git-auto-push-watcher-macos.stdout</string>
 
     <key>StandardErrorPath</key>
     <string>/Users/williamnapier/.local/share/git-auto-push-watcher-macos-error.log</string>
