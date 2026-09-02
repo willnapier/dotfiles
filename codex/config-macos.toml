@@ -7,6 +7,9 @@
 model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
 
+# Continuum owns the off-PATH CLI; update it with `continuum codex update`.
+check_for_update_on_startup = false
+
 # Prompts only when something looks risky / fails
 approval_policy = "on-failure"
 
