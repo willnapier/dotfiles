@@ -14,7 +14,6 @@ cross-machine-sync-check.timer
 dotter-drift-monitor.timer
 dotter-realtime-watcher.service
 dropbox.service
-forge-link-manager.service
 forge-md-revs.service
 forum-worker.service
 git-auto-pull-watcher.service
@@ -53,5 +52,4 @@ system-health-check.timer
 tm3-diary-capture.timer
 usagewatch-monitor.timer
 voice-pod-maintain.timer
-web-clip-watcher.service
 wireplumber.service
