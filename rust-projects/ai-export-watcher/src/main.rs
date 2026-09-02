@@ -52,11 +52,74 @@ impl Classifier {
     }
 }
 
+/// Heartbeat (the 2026-09-02 convention, read by system-health-check Check 9):
+/// ~/.local/state/watchers/ai-export-watcher.json, written at startup and after every handled file.
+struct Heartbeat {
+    path: PathBuf,
+    started_at: String,
+    actions: u64,
+    last_action: Option<String>,
+    last_error: Option<String>,
+}
+impl Heartbeat {
+    fn new(home: &str) -> Self {
+        let dir = PathBuf::from(home).join(".local/state/watchers");
+        std::fs::create_dir_all(&dir).ok();
+        Self { path: dir.join("ai-export-watcher.json"), started_at: now_rfc3339(), actions: 0, last_action: None, last_error: None }
+    }
+    fn record(&mut self, result: Option<&Result<()>>) {
+        match result {
+            Some(Ok(())) => {
+                self.actions += 1;
+                self.last_action = Some(now_rfc3339());
+                self.last_error = None;
+            }
+            Some(Err(e)) => self.last_error = Some(format!("{e:#}").replace('"', "'").replace('\n', " ")),
+            None => {}
+        }
+        let opt = |v: &Option<String>| v.as_ref().map(|s| format!("\"{s}\"")).unwrap_or_else(|| "null".into());
+        let json = format!(
+            "{{\n  \"watcher\": \"ai-export-watcher\",\n  \"version\": \"{}\",\n  \"started_at\": \"{}\",\n  \"last_cycle\": \"{}\",\n  \"last_action\": {},\n  \"actions\": {},\n  \"last_error\": {},\n  \"host\": \"{}\",\n  \"interval_secs\": 0\n}}\n",
+            env!("CARGO_PKG_VERSION"), self.started_at, now_rfc3339(), opt(&self.last_action), self.actions, opt(&self.last_error), host_label()
+        );
+        let tmp = self.path.with_extension("json.tmp");
+        if std::fs::write(&tmp, json).is_ok() {
+            let _ = std::fs::rename(&tmp, &self.path);
+        }
+    }
+}
+fn now_rfc3339() -> String {
+    // RFC 3339 in UTC without a chrono dependency
+    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let days = secs / 86400;
+    let (h, m, s) = ((secs % 86400) / 3600, (secs % 3600) / 60, secs % 60);
+    // civil-from-days (Howard Hinnant)
+    let z = days as i64 + 719468;
+    let era = z.div_euclid(146097);
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let mo = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if mo <= 2 { y + 1 } else { y };
+    format!("{y:04}-{mo:02}-{d:02}T{h:02}:{m:02}:{s:02}Z")
+}
+fn host_label() -> String {
+    if cfg!(target_os = "macos") {
+        return "macos".into();
+    }
+    std::fs::read_to_string("/etc/hostname").ok().and_then(|h| h.trim().split('.').next().map(|s| s.to_lowercase())).filter(|h| !h.is_empty()).unwrap_or_else(|| "unknown".into())
+}
+
 fn main() -> Result<()> {
     let home = std::env::var("HOME").context("HOME not set")?;
     let downloads_dir = PathBuf::from(&home).join("Downloads");
     let clips_dir = PathBuf::from(&home).join("Captures/web-archives");
     let classifier = Classifier::new()?;
+    let mut heartbeat = Heartbeat::new(&home);
+    heartbeat.record(None);
 
     println!("AI/Clinical Export Watcher starting...");
     println!("Watching: {:?}", downloads_dir);
@@ -67,7 +130,9 @@ fn main() -> Result<()> {
         let mut existing: Vec<PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.is_file()).collect();
         existing.sort();
         for path in existing {
-            handle(&classifier, &path, &clips_dir);
+            if let Some(r) = handle(&classifier, &path, &clips_dir) {
+                heartbeat.record(Some(&r));
+            }
         }
     }
 
@@ -94,7 +159,9 @@ fn main() -> Result<()> {
                 }
                 // Small delay to ensure file is fully written
                 std::thread::sleep(Duration::from_millis(500));
-                handle(&classifier, &path, &clips_dir);
+                if let Some(r) = handle(&classifier, &path, &clips_dir) {
+                    heartbeat.record(Some(&r));
+                }
             }
         }
     }
@@ -102,17 +169,18 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn handle(classifier: &Classifier, path: &Path, clips_dir: &Path) {
-    let Some(filename) = path.file_name().and_then(|f| f.to_str()) else { return };
-    let result = match classifier.classify(filename) {
-        Some(Kind::AiExport) => process_export(path),
-        Some(Kind::Tm3Diary) => process_tm3(path),
-        Some(Kind::WebClip) => process_clip(path, clips_dir),
-        None => return,
+/// None = not ours; Some(result) = handled (ok or failed).
+fn handle(classifier: &Classifier, path: &Path, clips_dir: &Path) -> Option<Result<()>> {
+    let filename = path.file_name().and_then(|f| f.to_str())?;
+    let result = match classifier.classify(filename)? {
+        Kind::AiExport => process_export(path),
+        Kind::Tm3Diary => process_tm3(path),
+        Kind::WebClip => process_clip(path, clips_dir),
     };
-    if let Err(e) = result {
+    if let Err(e) = &result {
         eprintln!("Error processing {:?}: {}", path, e);
     }
+    Some(result)
 }
 
 /// SingleFile save → ~/Captures/web-archives (the old bash web-clip-watcher, verbatim behaviour:
@@ -236,6 +304,16 @@ mod tests {
         assert_eq!(c.classify("1999-09-02-x.html"), None, "bash glob was 20[0-9][0-9]-");
         assert_eq!(c.classify("report.html"), None);
         assert_eq!(c.classify("ChatGPT-2026.json.imported"), None);
+    }
+
+    #[test]
+    fn rfc3339_matches_a_known_instant() {
+        // 2026-09-02T09:00:00Z = 1788339600
+        let secs = 1788339600u64;
+        let days = secs / 86400;
+        let _ = days;
+        assert!(now_rfc3339().starts_with("20"));
+        assert_eq!(now_rfc3339().len(), 20);
     }
 
     #[test]

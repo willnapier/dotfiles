@@ -1,6 +1,6 @@
 [package]
 name = "ai-export-watcher"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 description = "Watches ~/Downloads: AI conversation exports → continuum, TM3 diary HTML → tm3-diary-capture, SingleFile saves → ~/Captures/web-archives"
 

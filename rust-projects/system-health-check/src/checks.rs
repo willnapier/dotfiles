@@ -797,6 +797,7 @@ pub fn derived_doc_problems(home: &Path, pairs: &[(&str, &str)]) -> Vec<String> 
 
 #[cfg(target_os = "macos")]
 pub const EXPECTED_WATCHERS: &[&str] = &[
+    "ai-export-watcher",
     "git-auto-push-watcher-dotfiles",
     "git-auto-push-watcher-Assistants",
     "git-auto-pull-watcher",
@@ -810,6 +811,7 @@ pub const EXPECTED_WATCHERS: &[&str] = &[
 ];
 #[cfg(not(target_os = "macos"))]
 pub const EXPECTED_WATCHERS: &[&str] = &[
+    "ai-export-watcher",
     "git-auto-push-watcher-dotfiles",
     "git-auto-push-watcher-Assistants",
     "git-auto-pull-watcher",
