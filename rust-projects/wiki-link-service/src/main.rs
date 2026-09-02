@@ -1,6 +1,6 @@
 //! wiki-link-service — `backlinks` / `resolve-mark` watchers, the
 //! `start`/`status`/`stop` supervisor that replaces `link-service`, and the
-//! read-only `audit`.
+//! read-only `audit` and explicitly applied `reconcile`.
 //!
 //! `start` runs both watchers in ONE foreground process (two threads) so a
 //! supervisor (launchd / systemd) owns exactly one PID. The PID lock lives
@@ -51,6 +51,12 @@ enum Cmd {
     Stop,
     /// Read-only: report which ## Backlinks sections and ?[[ markers the current rules would change under --root (never writes)
     Audit,
+    /// Plan the same changes as audit; pass --apply to write them atomically
+    Reconcile {
+        /// Apply the plan. Without this flag reconcile is a read-only dry run.
+        #[arg(long)]
+        apply: bool,
+    },
 }
 
 fn default_log_dir() -> PathBuf {
@@ -65,6 +71,12 @@ fn main() -> Result<()> {
             print!("{}", wiki_link_service::audit::audit(&roots).render());
             return Ok(());
         }
+        Cmd::Reconcile { apply } => {
+            let roots = resolve_roots(&cli)?;
+            let report = wiki_link_service::reconcile::reconcile(&roots, apply)?;
+            print!("{}", report.render());
+            return Ok(());
+        }
         Cmd::Status => return status(&cli),
         Cmd::Stop => return stop(&cli),
         _ => {}
@@ -74,7 +86,7 @@ fn main() -> Result<()> {
         Cmd::Backlinks => run_one(&cli, Which::Backlinks),
         Cmd::ResolveMark => run_one(&cli, Which::ResolveMark),
         Cmd::Start => start(&cli),
-        Cmd::Status | Cmd::Stop | Cmd::Audit => unreachable!(),
+        Cmd::Status | Cmd::Stop | Cmd::Audit | Cmd::Reconcile { .. } => unreachable!(),
     }
 }
 

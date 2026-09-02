@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use wiki_link_service::audit;
+use wiki_link_service::{audit, reconcile};
 use wiki_link_service::logger::Logger;
 use wiki_link_service::watch::Which;
 use wiki_link_service::wiki::{Ctx, Outcome};
@@ -545,4 +545,36 @@ fn audit_reports_blast_radius_without_writing() {
     assert!(text.contains("?[[ markers that would be removed: 1 (in 1 notes)"), "{text}");
     assert!(text.contains("(missing)"), "absent Archives root flagged: {text}");
     assert_eq!(snapshot(&h), before);
+}
+
+#[test]
+fn reconcile_dry_run_then_apply_matches_expected_tree_and_clears_audit() {
+    let tmp = tempfile::tempdir().unwrap();
+    let actual = tmp.path().join("actual");
+    let expected = tmp.path().join("expected");
+    for home in [&actual, &expected] {
+        fs::create_dir_all(home.join("Forge")).unwrap();
+    }
+    write(&actual, "Forge/A.md", "# A\n\n[[B]] [[Missing]]\n\n## Backlinks\n\n- [[Stale]]\n");
+    write(&actual, "Forge/B.md", "# B\n\n?[[A]]\n");
+    write(&actual, "Forge/Untouched.md", "# Untouched\n\nNo links.\n");
+    write(&expected, "Forge/A.md", "# A\n\n[[B]] ?[[Missing]]\n\n## Backlinks\n\n- [[B]]\n");
+    write(&expected, "Forge/B.md", "# B\n\n[[A]]\n\n## Backlinks\n\n- [[A]]\n");
+    write(&expected, "Forge/Untouched.md", "# Untouched\n\nNo links.\n");
+
+    let before = snapshot(&actual);
+    let dry = reconcile::reconcile(&[actual.join("Forge")], false).unwrap();
+    assert_eq!(dry.planned, 2);
+    assert_eq!(dry.written, 0);
+    assert_eq!(snapshot(&actual), before, "dry-run must never write");
+
+    let applied = reconcile::reconcile(&[actual.join("Forge")], true).unwrap();
+    assert_eq!(applied.planned, 2);
+    assert_eq!(applied.written, 2);
+    assert_eq!(snapshot(&actual), snapshot(&expected), "applied tree must equal the expected fixture byte-for-byte");
+
+    let after = audit::audit(&[actual.join("Forge")]);
+    assert!(after.sections.is_empty(), "sections remain: {after:?}");
+    assert_eq!(after.markers_added_total, 0, "markers still need adding: {after:?}");
+    assert_eq!(after.markers_removed_total, 0, "markers still need removing: {after:?}");
 }
