@@ -168,7 +168,7 @@ def is_new_unmanaged_config [file_path: string] {
     let dotter_config = $"($env.HOME)/dotfiles/.dotter/global.toml"
     if ($dotter_config | path exists) {
         let relative_path = ($file_path | str replace $env.HOME "~")
-        let config_content = (open $dotter_config)
+        let config_content = (open --raw $dotter_config)
         if ($config_content | str contains $relative_path) {
             return false  # Already managed
         }

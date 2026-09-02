@@ -28,6 +28,8 @@ __pycache__/
 .stfolder/                 # Syncthing folder marker — should not be tracked at all
 
 # --- run in place from the repo, never deployed into $HOME ---
+/scripts/zellij-auto-cleanup     # git symlink; com.user.zellij-cleanup LaunchAgent runs it by repo path (9dec18b)
+/scripts/zellij-zombie-watcher   # git symlink; com.williamnapier.zellij-zombie-watcher LaunchAgent runs it by repo path (9dec18b)
 semantic-search/           # Python indexer invoked by scripts/semantic-indexer and scripts/semantic-query
 /semantic-search-backup-indexer.py
 
