@@ -734,8 +734,79 @@ pub fn check_nu_watch_flag(c: &Ctx, local_nu: Option<&str>, own_host: &str) -> V
 }
 
 // ---------------------------------------------------------------------------
+// ── Check 8: derived documents ───────────────────────────────────────
+/// Documents rendered from a Markdown source for a human audience (e.g. the
+/// household photo guide). The Markdown is canonical and doc-gated; the render
+/// is mechanical. A rendered file older than its source is a stale page that
+/// someone may be reading, so it is a problem, not a note. A missing render is
+/// also a problem: the page has never been produced on this machine's copy.
+const DERIVED_DOCS: &[(&str, &str)] = &[(
+    "Assistants/shared/PHOTO-SYSTEM-GUIDE.md",
+    "Assistants/shared/PHOTO-SYSTEM-GUIDE.html",
+)];
+
+pub fn check_derived_docs(c: &Ctx) -> Vec<String> {
+    c.section("Derived Documents");
+    let problems = derived_doc_problems(&c.home, DERIVED_DOCS);
+    for p in &problems {
+        c.say(&format!("  ❌ {p}"));
+    }
+    if problems.is_empty() {
+        for (src, _) in DERIVED_DOCS {
+            c.say(&format!("  ✅ {src} render is current"));
+        }
+    }
+    c.end_section();
+    problems
+}
+
+pub fn derived_doc_problems(home: &Path, pairs: &[(&str, &str)]) -> Vec<String> {
+    let mut problems = vec![];
+    for (src, out) in pairs {
+        let (sp, op) = (home.join(src), home.join(out));
+        let name = Path::new(src).file_name().unwrap_or_default().to_string_lossy().into_owned();
+        let out_name = Path::new(out).file_name().unwrap_or_default().to_string_lossy().into_owned();
+        let Ok(sm) = fs::metadata(&sp).and_then(|m| m.modified()) else {
+            problems.push(format!("Derived doc source missing or unreadable: {name}"));
+            continue;
+        };
+        match fs::metadata(&op).and_then(|m| m.modified()) {
+            Ok(om) if om >= sm => {}
+            Ok(_) => problems.push(format!("Derived doc stale: {out_name} is older than {name} — re-render and republish")),
+            Err(_) => problems.push(format!("Derived doc missing: {out_name} has never been rendered from {name}")),
+        }
+    }
+    problems
+}
+
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn derived_doc_stale_missing_and_current_are_told_apart() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        fs::create_dir_all(home.join("d")).unwrap();
+        let pairs: &[(&str, &str)] = &[("d/a.md", "d/a.html")];
+        // missing render
+        fs::write(home.join("d/a.md"), "x").unwrap();
+        let p = derived_doc_problems(home, pairs);
+        assert_eq!(p.len(), 1);
+        assert!(p[0].contains("never been rendered"), "{p:?}");
+        // stale render: html older than md
+        fs::write(home.join("d/a.html"), "y").unwrap();
+        let old = SystemTime::now() - Duration::from_secs(600);
+        let f = fs::File::options().write(true).open(home.join("d/a.html")).unwrap();
+        f.set_modified(old).unwrap();
+        let p = derived_doc_problems(home, pairs);
+        assert_eq!(p.len(), 1);
+        assert!(p[0].contains("stale"), "{p:?}");
+        // current render
+        f.set_modified(SystemTime::now() + Duration::from_secs(1)).unwrap();
+        assert!(derived_doc_problems(home, pairs).is_empty());
+        // missing source
+        assert!(derived_doc_problems(home, &[("d/none.md", "d/none.html")])[0].contains("source missing"));
+    }
     use super::*;
     use crate::exec::{CmdResult, Fake};
 
