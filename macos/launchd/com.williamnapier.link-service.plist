@@ -11,6 +11,11 @@
     </array>
     <key>RunAtLoad</key>
     <true/>
+    <!-- link-service spawns wiki-backlinks and wiki-resolve-mark with nohup and exits.
+         Without this, launchd kills the job's process group on exit and both watchers
+         die silently with empty logs (found 2026-09-02). -->
+    <key>AbandonProcessGroup</key>
+    <true/>
     <key>KeepAlive</key>
     <false/>
     <key>StandardOutPath</key>
