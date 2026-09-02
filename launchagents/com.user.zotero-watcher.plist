@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.zotero-watcher</string>
+    <!-- zotero-watcher pdf (Rust, 2026-09-02): ~/Documents/ZoteroImport → ~/Documents/ProcessedPDFs.
+         The former zotero-bridge agent is retired: its source and destination were the same
+         directory via ~/Dropbox and ~/Documents/ZoteroImport symlinks. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/williamnapier/.local/bin/zotero-watcher</string>
+        <string>pdf</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/williamnapier/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/williamnapier/Library/Logs/ZoteroPDFWatcher-output.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/williamnapier/Library/Logs/ZoteroPDFWatcher-error.log</string>
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

@@ -296,8 +296,6 @@ depends = []
 "scripts/activity-watcher-renu" = "~/.local/bin/activity-watcher-renu"
 "scripts/yazi-search-with-preview" = "~/.local/bin/yazi-search-with-preview"
 # Zotero automation - Native Nushell versions (no fswatch dependency)
-"scripts/zotero-pdf-watcher-renu" = "~/.local/bin/zotero-pdf-watcher-renu"
-"scripts/zotero-bridge-renu" = "~/.local/bin/zotero-bridge-renu"
 # Syncthing connection monitoring system
 "scripts/syncthing-connection-monitor" = "~/.local/bin/syncthing-connection-monitor"
 # System-wide theme management
@@ -409,6 +407,7 @@ depends = ["shared"]
 "meli/config.toml" = "~/.config/meli/config.toml"
 "meli/meli-mine.1" = "~/.local/share/man/man1/meli-mine.1"
 "launchagents/com.user.syncthing-sync-watchdog.plist" = "~/Library/LaunchAgents/com.user.syncthing-sync-watchdog.plist"
+"launchagents/com.user.zotero-watcher.plist" = "~/Library/LaunchAgents/com.user.zotero-watcher.plist"  # zotero-watcher pdf (Rust)
 "macos/launchd/com.williamnapier.ai-export-watcher.plist" = "~/Library/LaunchAgents/com.williamnapier.ai-export-watcher.plist"  # Linux twin: systemd/ai-export-watcher.service
 "launchagents/com.user.dotter-realtime-watcher.plist" = "~/Library/LaunchAgents/com.user.dotter-realtime-watcher.plist"
 "scripts/syncthing-sync-watchdog" = "~/.local/bin/syncthing-sync-watchdog"
@@ -558,7 +557,6 @@ depends = ["shared"]
 "systemd/git-auto-push-watcher.service" = "~/.config/systemd/user/git-auto-push-watcher.service"
 "systemd/mailforge.service" = "~/.config/systemd/user/mailforge.service"
 "systemd/zotero-pdf-watcher.service" = "~/.config/systemd/user/zotero-pdf-watcher.service"
-"systemd/zotero-bridge.service" = "~/.config/systemd/user/zotero-bridge.service"
 "systemd/ai-export-watcher.service" = "~/.config/systemd/user/ai-export-watcher.service"
 # "systemd/wiki-link-manager.service" = "~/.config/systemd/user/wiki-link-manager.service"  # Missing file - temporarily disabled
 "systemd/forge-link-manager.service" = "~/.config/systemd/user/forge-link-manager.service"

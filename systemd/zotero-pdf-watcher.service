@@ -1,10 +1,10 @@
 [Unit]
-Description=Zotero PDF Watcher - Native Nushell Re-nu Version
+Description=Zotero PDF Watcher (zotero-watcher pdf, Rust)
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/zotero-pdf-watcher-renu
+ExecStart=%h/.local/bin/zotero-watcher pdf
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
