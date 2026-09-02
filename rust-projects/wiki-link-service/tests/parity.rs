@@ -7,7 +7,8 @@
 //! (`<tmp>/oracle/{Forge,Admin}` and `<tmp>/rust/{Forge,Admin}`), applies the
 //! same user edit to both, then feeds the same event to
 //! * the oracle: `nu -n -c "source '<patched script>'; handle_change '<op>' '<path>' '<new>' ['<roots>']"`
-//!   with `HOME=<tmp>/oracle` — the script is a copy of `scripts/wiki-*` with
+//!   with `HOME=<tmp>/oracle` — the script is a copy of `tests/oracle/wiki-*`
+//!   (the retired Nushell scripts, frozen verbatim) with
 //!   its `MARKER_FILE` const pointed inside the tempdir (so the real
 //!   `/tmp/wiki-watcher-writing` is never touched) and `RIPGREP_CONFIG_PATH`
 //!   set to a file containing `--sort=path` (the oracle's `rg -l` order is
@@ -118,7 +119,9 @@ fn oracle_script(home: &Path, w: Which) -> PathBuf {
         Which::Backlinks => "wiki-backlinks",
         Which::ResolveMark => "wiki-resolve-mark",
     };
-    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts").join(name);
+    // The Nushell scripts were retired from scripts/ when 0.1.0 replaced them;
+    // tests/oracle/ holds their final versions (dotfiles 9d4a217^) verbatim.
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/oracle").join(name);
     let s = fs::read_to_string(&src).unwrap_or_else(|e| panic!("reading oracle {}: {e}", src.display()));
     let needle = "const MARKER_FILE = \"/tmp/wiki-watcher-writing\"";
     assert_eq!(s.matches(needle).count(), 1, "MARKER_FILE const not found exactly once in {}", src.display());
@@ -506,7 +509,7 @@ fn audit_reports_blast_radius_without_writing() {
     let h = tmp.path().join("home");
     fixture(&h);
     write(&h, "Forge/Mix.md", "# Mix\n\n[[Gone]] [[Gone|al]] [[Gone#h]] ?[[Gone]] [[Alpha]] [[beta]] ![[img.png]] >[[Inbox]] [[https://x.y]] [[a]] [[Foo (bar)]] [[Note: x]] [[deadbeefdeadbeefdeadbeefdeadbeef]] [[Alpha|a]] ![[Alpha]] [[delta]]\n");
-    write(&h, "Forge/Foo (bar).md", "# Foo\n");
+    write(&h, "Forge/Foo (bar).md", "# Foo\n\nbody\n");
     let before = snapshot(&h);
 
     let r = audit::audit(&roots(&h));

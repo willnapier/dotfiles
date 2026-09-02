@@ -48,8 +48,23 @@ pub struct Ctx {
     self_writes: Mutex<HashMap<PathBuf, u64>>,
 }
 
+/// The path as the OS reports it in events (macOS FSEvents gives
+/// `/private/var/…` for a `/var/…` tempdir): canonicalised as far as it
+/// exists, so a deleted file keeps its (canonical) parent plus name.
+pub fn canon(path: &Path) -> PathBuf {
+    if let Ok(p) = path.canonicalize() {
+        return p;
+    }
+    match (path.parent(), path.file_name()) {
+        (Some(parent), Some(name)) => canon(parent).join(name),
+        _ => path.to_path_buf(),
+    }
+}
+
 impl Ctx {
+    /// Roots are canonicalised so index paths compare equal to event paths.
     pub fn new(roots: Vec<PathBuf>, logger: Logger) -> Self {
+        let roots = roots.iter().map(|r| if r.exists() { canon(r) } else { r.clone() }).collect();
         Ctx { roots, logger, self_writes: Mutex::new(HashMap::new()) }
     }
     pub fn log(&self, msg: &str) {

@@ -20,6 +20,9 @@ use std::path::Path;
 
 pub fn handle_change(ctx: &Ctx, operation: &str, file_path: &Path, new_path: Option<&Path>) -> Outcome {
     let mut out = Outcome::default();
+    let file_path = &wiki::canon(file_path);
+    let new_path = new_path.map(wiki::canon);
+    let new_path = new_path.as_deref();
     match operation {
         "Write" | "Create" => {
             if ctx.is_own_write(file_path) {
