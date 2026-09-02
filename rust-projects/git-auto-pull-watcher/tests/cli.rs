@@ -28,7 +28,7 @@ fn fixture(root: &Path, pushed: usize) -> PathBuf {
     sh(&seed, &["push", "-q", "origin", "main"]);
     let a = root.join("a");
     sh(root, &["clone", "-q", remote.to_str().unwrap(), a.to_str().unwrap()]);
-    for i in 0..pushed {
+    for i in 1..=pushed {
         std::fs::write(seed.join("file"), format!("{i}\n")).unwrap();
         sh(&seed, &["commit", "-q", "-am", &format!("push {i}")]);
         sh(&seed, &["push", "-q", "origin", "main"]);
@@ -85,7 +85,7 @@ fn once_pulls_and_runs_dotter_for_a_deploy_repo() {
     let bin = fake_dotter(d.path(), 0);
     let (code, log, hb) = run_once(d.path(), &a, &["--deploy", a.to_str().unwrap()], Some(&bin));
     assert_eq!(code, 0, "{log}");
-    assert_eq!(std::fs::read_to_string(a.join("file")).unwrap(), "2\n");
+    assert_eq!(std::fs::read_to_string(a.join("file")).unwrap(), "3\n");
     assert!(log.contains("📥 [a] Remote changes detected: 3 commits behind"), "{log}");
     assert!(log.contains("✅ [a] Successfully pulled changes"), "{log}");
     assert_eq!(log.matches("✅ [a] Dotter deploy successful - configs updated").count(), 1, "{log}");
