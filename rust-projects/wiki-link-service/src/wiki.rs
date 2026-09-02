@@ -327,7 +327,12 @@ pub fn with_section(content: &str, names: &[String]) -> String {
 /// name resolution and per-event content/link caches. Built once per event.
 pub struct Index {
     files: Vec<PathBuf>,
-    by_key: HashMap<String, usize>,
+    /// stem key → every note with that stem, in root/sorted order. Forge has ~1,000 stems
+    /// duplicated across directories (a scenario and its year-archived copy); a plain
+    /// `[[Name]]` refers to all of them, as the Nushell tools' rg/fd lookups always did.
+    by_key: HashMap<String, Vec<usize>>,
+    /// root-relative path without `.md`, lowercased → note, for path-qualified `[[Dir/Name]]` links.
+    by_rel: HashMap<String, usize>,
     pos: HashMap<PathBuf, usize>,
     contents: RefCell<HashMap<usize, Option<Rc<str>>>>,
     outgoing: RefCell<HashMap<usize, Rc<Vec<String>>>>,
@@ -340,22 +345,27 @@ type ReverseMap = HashMap<usize, Vec<usize>>;
 impl Index {
     pub fn build(roots: &[PathBuf]) -> Index {
         let mut files = Vec::new();
+        let mut rels: Vec<String> = Vec::new();
         for root in roots.iter().filter(|r| r.exists()) {
             let mut b = WalkBuilder::new(root);
             b.sort_by_file_path(|a, b| a.cmp(b));
             for e in b.build().filter_map(Result::ok) {
                 if e.file_type().is_some_and(|t| t.is_file()) && e.path().extension().is_some_and(|x| x == "md") {
+                    let rel = e.path().strip_prefix(root).unwrap_or(e.path()).with_extension("");
+                    rels.push(rel.to_string_lossy().replace('\\', "/").to_lowercase());
                     files.push(e.into_path());
                 }
             }
         }
-        let mut by_key = HashMap::new();
+        let mut by_key: HashMap<String, Vec<usize>> = HashMap::new();
+        let mut by_rel = HashMap::new();
         let mut pos = HashMap::new();
         for (i, f) in files.iter().enumerate() {
-            by_key.entry(name_key(&note_name(f))).or_insert(i);
+            by_key.entry(name_key(&note_name(f))).or_default().push(i);
+            by_rel.entry(rels[i].clone()).or_insert(i);
             pos.insert(f.clone(), i);
         }
-        Index { files, by_key, pos, contents: RefCell::default(), outgoing: RefCell::default(), reverse: RefCell::default() }
+        Index { files, by_key, by_rel, pos, contents: RefCell::default(), outgoing: RefCell::default(), reverse: RefCell::default() }
     }
 
     pub fn files(&self) -> &[PathBuf] {
@@ -364,9 +374,24 @@ impl Index {
     pub fn position(&self, path: &Path) -> Option<usize> {
         self.pos.get(path).copied()
     }
-    /// The note a link name refers to: first note (root order, sorted) whose stem matches case-insensitively.
+    /// Every note a link name refers to. A name with a `/` is tried first as a root-relative
+    /// path (`[[NapierianLogs/Scenarios/Deep]]`), then by its last segment; a plain name matches
+    /// every note with that stem, case-insensitively.
+    pub fn resolve_all(&self, name: &str) -> Vec<usize> {
+        let n = name.trim();
+        if n.contains('/') {
+            let key = name_key(n).replace('\\', "/");
+            if let Some(&i) = self.by_rel.get(&key) {
+                return vec![i];
+            }
+            let last = n.rsplit('/').next().unwrap_or(n);
+            return self.by_key.get(&name_key(last)).cloned().unwrap_or_default();
+        }
+        self.by_key.get(&name_key(n)).cloned().unwrap_or_default()
+    }
+    /// First match (root order, sorted); use `resolve_all` when every duplicate matters.
     pub fn resolve_idx(&self, name: &str) -> Option<usize> {
-        self.by_key.get(&name_key(name)).copied()
+        self.resolve_all(name).first().copied()
     }
     pub fn resolve(&self, name: &str) -> Option<&Path> {
         self.resolve_idx(name).map(|i| self.files[i].as_path())
@@ -403,7 +428,7 @@ impl Index {
         let mut map: ReverseMap = HashMap::new();
         for i in 0..self.files.len() {
             for name in self.outgoing(i).iter() {
-                if let Some(t) = self.resolve_idx(name) {
+                for t in self.resolve_all(name) {
                     let v = map.entry(t).or_default();
                     if !v.contains(&i) {
                         v.push(i);
@@ -535,6 +560,17 @@ mod tests {
         assert_eq!(ix.backlink_names(note), names(&["Deep", "Note"])); // Admin/Note links [[note]] → Forge/Note; self excluded
         assert_eq!(ix.backlink_names(ix.position(&forge.join("sub/Deep.md")).unwrap()), names(&["Note"]));
         assert_eq!(ix.backlink_names(ix.position(&admin.join("Note.md")).unwrap()), Vec::<String>::new());
+
+        // duplicate stems: every copy is a target; path-qualified links pick the exact note
+        std::fs::create_dir_all(forge.join("archive/2024")).unwrap();
+        std::fs::write(forge.join("archive/2024/Note.md"), "copy").unwrap();
+        let ix = Index::build(std::slice::from_ref(&forge));
+        assert_eq!(ix.resolve_all("note").len(), 2);
+        assert_eq!(ix.resolve_all("archive/2024/Note"), vec![ix.position(&forge.join("archive/2024/Note.md")).unwrap()]);
+        assert_eq!(ix.resolve_all("sub/deep"), vec![ix.position(&forge.join("sub/Deep.md")).unwrap()]);
+        assert_eq!(ix.resolve_all("nowhere/Note").len(), 2, "unknown dir falls back to the stem");
+        let copy = ix.position(&forge.join("archive/2024/Note.md")).unwrap();
+        assert_eq!(ix.backlink_names(copy), names(&["Deep"]), "the archived copy gets the same backlink");
     }
 
     #[test]

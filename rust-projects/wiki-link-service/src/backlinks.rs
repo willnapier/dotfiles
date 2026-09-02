@@ -79,7 +79,7 @@ fn handle_write(ctx: &Ctx, file_path: &Path, created: bool, out: &mut Outcome) {
     // Targets of the current links, then (bug 4) every note still listing this one.
     let mut targets: Vec<usize> = Vec::new();
     for n in &names {
-        if let Some(t) = index.resolve_idx(n) {
+        for t in index.resolve_all(n) {
             if !targets.contains(&t) {
                 targets.push(t);
             }
