@@ -779,6 +779,126 @@ pub fn derived_doc_problems(home: &Path, pairs: &[(&str, &str)]) -> Vec<String> 
     problems
 }
 
+
+// ── Check 9: watcher heartbeats ──────────────────────────────────────
+// Since 2026-09-02 every long-running watcher (the Rust ports) writes
+// ~/.local/state/watchers/<name>.json at startup and after every
+// cycle/event: {watcher, version, started_at, last_cycle, last_action,
+// actions, last_error, host, interval_secs}. This is the answer to the audit
+// question "what artifact proves it is alive?" — a watcher that is running but
+// has silently stopped doing its job (the Domain 7 class) shows up here as a
+// stale cycle or a recorded error, without anyone reading its logs.
+//
+// Rules: a heartbeat with last_error → problem. interval_secs > 0 and
+// last_cycle older than max(3×interval, 15 min) → dead or hung. An expected
+// heartbeat that does not exist → never checked in (deployed but not running,
+// or never deployed). Event-driven watchers (interval_secs 0) are exempt from
+// the staleness rule: a quiet Forge is not a dead watcher.
+
+#[cfg(target_os = "macos")]
+pub const EXPECTED_WATCHERS: &[&str] = &[
+    "git-auto-push-watcher-dotfiles",
+    "git-auto-push-watcher-Assistants",
+    "git-auto-pull-watcher",
+    "syncthing-connection-monitor",
+    "dotter-realtime-watcher",
+    "forge-md-revs",
+    "collect-projects-watcher",
+    "zotero-watcher-pdf",
+    "zotero-watcher-bridge",
+    "wiki-link-service-backlinks",
+    "wiki-link-service-resolve-mark",
+];
+#[cfg(not(target_os = "macos"))]
+pub const EXPECTED_WATCHERS: &[&str] = &[
+    "git-auto-push-watcher-dotfiles",
+    "git-auto-push-watcher-Assistants",
+    "git-auto-pull-watcher",
+    "dotter-realtime-watcher",
+    "forge-md-revs",
+    "wiki-link-service-backlinks",
+    "wiki-link-service-resolve-mark",
+];
+
+pub struct HeartbeatFile {
+    pub name: String,
+    pub value: serde_json::Value,
+}
+
+pub fn read_heartbeats(dir: &Path) -> Vec<HeartbeatFile> {
+    let mut out = vec![];
+    let Ok(rd) = fs::read_dir(dir) else { return out };
+    for e in rd.flatten() {
+        let p = e.path();
+        if p.extension().and_then(|x| x.to_str()) != Some("json") {
+            continue;
+        }
+        let Some(name) = p.file_stem().and_then(|n| n.to_str()).map(String::from) else { continue };
+        match fs::read_to_string(&p).ok().and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()) {
+            Some(value) => out.push(HeartbeatFile { name, value }),
+            None => out.push(HeartbeatFile { name, value: serde_json::Value::Null }),
+        }
+    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
+}
+
+/// Pure verdict. `last_cycle` is parsed as RFC 3339.
+pub fn heartbeat_verdict(now: chrono::DateTime<chrono::Local>, files: &[HeartbeatFile], expected: &[&str]) -> Vec<String> {
+    let mut problems = vec![];
+    for f in files {
+        if f.value.is_null() {
+            problems.push(format!("Watcher {}: heartbeat file is not valid JSON", f.name));
+            continue;
+        }
+        if let Some(err) = f.value.get("last_error").and_then(|v| v.as_str()) {
+            problems.push(format!("Watcher {}: last error: {err}", f.name));
+        }
+        let interval = f.value.get("interval_secs").and_then(|v| v.as_u64()).unwrap_or(0);
+        if interval > 0 {
+            let last = f.value.get("last_cycle").and_then(|v| v.as_str()).and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok());
+            match last {
+                Some(t) => {
+                    let age = now.signed_duration_since(t.with_timezone(&chrono::Local));
+                    let allowed = std::cmp::max(3 * interval as i64, 900);
+                    if age.num_seconds() > allowed {
+                        problems.push(format!("Watcher {}: last cycle {} min ago (interval {interval}s) — dead or hung", f.name, age.num_minutes()));
+                    }
+                }
+                None => problems.push(format!("Watcher {}: heartbeat has no parseable last_cycle", f.name)),
+            }
+        }
+    }
+    for name in expected {
+        if !files.iter().any(|f| &f.name == name) {
+            problems.push(format!("Watcher {name}: no heartbeat — never checked in on this machine"));
+        }
+    }
+    problems
+}
+
+pub fn check_watcher_heartbeats(c: &Ctx) -> Vec<String> {
+    c.section("Watcher Heartbeats");
+    let dir = c.home.join(".local/state/watchers");
+    let files = read_heartbeats(&dir);
+    let problems = heartbeat_verdict(chrono::Local::now(), &files, EXPECTED_WATCHERS);
+    c.say(&format!("  {} heartbeat files in {}", files.len(), dir.display()));
+    for f in &files {
+        let cycle = f.value.get("last_cycle").and_then(|v| v.as_str()).unwrap_or("?");
+        let actions = f.value.get("actions").and_then(|v| v.as_u64()).unwrap_or(0);
+        c.say(&format!("  {} — last cycle {cycle}, {actions} actions", f.name));
+    }
+    if problems.is_empty() {
+        c.say("  ✅ every expected watcher has checked in, none stale, no errors");
+    } else {
+        for p in &problems {
+            c.say(&format!("  ❌ {p}"));
+        }
+    }
+    c.end_section();
+    problems
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -983,5 +1103,39 @@ mod tests {
         let p = watch_flag_verdict(None, &[], &offending());
         assert_eq!(p.len(), 1);
         assert!(p[0].contains("could not read the local nu version"), "{}", p[0]);
+    }
+
+    fn hb(name: &str, json: &str) -> HeartbeatFile {
+        HeartbeatFile { name: name.into(), value: serde_json::from_str(json).unwrap() }
+    }
+
+    #[test]
+    fn heartbeat_error_stale_and_missing_are_problems_event_driven_is_exempt() {
+        let now = chrono::Local::now();
+        let fresh = now.to_rfc3339();
+        let old = (now - chrono::Duration::minutes(40)).to_rfc3339();
+        let files = vec![
+            hb("git-auto-pull-watcher", &format!(r#"{{"last_cycle":"{fresh}","interval_secs":120,"last_error":null}}"#)),
+            hb("git-auto-push-watcher-dotfiles", &format!(r#"{{"last_cycle":"{old}","interval_secs":120,"last_error":null}}"#)),
+            hb("forge-md-revs", &format!(r#"{{"last_cycle":"{old}","interval_secs":0,"last_error":null}}"#)),
+            hb("zotero-watcher-pdf", &format!(r#"{{"last_cycle":"{fresh}","interval_secs":0,"last_error":"import failed: x"}}"#)),
+            HeartbeatFile { name: "broken".into(), value: serde_json::Value::Null },
+        ];
+        let p = heartbeat_verdict(now, &files, &["git-auto-pull-watcher", "forge-md-revs", "wiki-link-service-backlinks"]);
+        assert!(p.iter().any(|m| m.starts_with("Watcher git-auto-push-watcher-dotfiles: last cycle 40 min ago")), "{p:?}");
+        assert!(p.iter().any(|m| m == "Watcher zotero-watcher-pdf: last error: import failed: x"), "{p:?}");
+        assert!(p.iter().any(|m| m == "Watcher broken: heartbeat file is not valid JSON"), "{p:?}");
+        assert!(p.iter().any(|m| m == "Watcher wiki-link-service-backlinks: no heartbeat — never checked in on this machine"), "{p:?}");
+        assert!(!p.iter().any(|m| m.contains("forge-md-revs")), "event-driven must not be stale: {p:?}");
+        assert!(!p.iter().any(|m| m.contains("git-auto-pull-watcher:")), "{p:?}");
+        assert_eq!(p.len(), 4, "{p:?}");
+    }
+
+    #[test]
+    fn heartbeat_staleness_floor_is_fifteen_minutes() {
+        let now = chrono::Local::now();
+        let ten_min = (now - chrono::Duration::minutes(10)).to_rfc3339();
+        let files = vec![hb("git-auto-pull-watcher", &format!(r#"{{"last_cycle":"{ten_min}","interval_secs":120}}"#))];
+        assert!(heartbeat_verdict(now, &files, &[]).is_empty());
     }
 }

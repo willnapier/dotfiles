@@ -77,6 +77,7 @@ fn main() -> ExitCode {
     problems.extend(checks::check_dotter_drift(&ctx));
     problems.extend(checks::check_nu_watch_flag(&ctx, nu_version.as_deref(), &host));
     problems.extend(checks::check_derived_docs(&ctx));
+    problems.extend(checks::check_watcher_heartbeats(&ctx));
 
     // Status file for the session-start kernel (ai-brief "Host health"):
     // one writer per file, namespaced by machine, under the Syncthing-carried

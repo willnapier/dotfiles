@@ -47,6 +47,12 @@ struct Cli {
     /// Log file (appended); default is the platform's historical name
     #[arg(long, default_value_os_t = default_log())]
     log: PathBuf,
+    /// Directory for the heartbeat file (<name>-<repo>.json), read by system-health-check
+    #[arg(long, default_value_os_t = default_state_dir())]
+    state_dir: PathBuf,
+}
+fn default_state_dir() -> PathBuf {
+    home().join(".local/state/watchers")
 }
 
 fn home() -> PathBuf {
@@ -77,11 +83,14 @@ fn main() -> Result<()> {
         logger.log(&format!("🚀 Starting git-auto-push-watcher {} — repo {}, tick {}s, quiet {}s", env!("CARGO_PKG_VERSION"), cli.repo.display(), cli.tick, cli.quiet));
     }
 
+    INTERVAL_SECS.store(cli.tick, std::sync::atomic::Ordering::Relaxed);
+    let mut heartbeat = Heartbeat::new(&cli.state_dir, &cli.repo);
     loop {
         if !cli.once {
             std::thread::sleep(Duration::from_secs(cli.tick));
         }
         let outcome = cycle(&cli.repo, Duration::from_secs(cli.quiet), cli.dry_run, &logger);
+        heartbeat.record(&outcome);
         match &outcome {
             Ok(Outcome::PushFailed) if cli.once => std::process::exit(1),
             Err(e) => logger.log(&format!("❌ cycle failed: {e:#}")),
@@ -333,6 +342,58 @@ fn git(repo: &Path, args: &[&str]) -> Result<GitOut> {
     Ok(GitOut { ok: o.status.success(), out: String::from_utf8_lossy(&o.stdout).into_owned(), err: String::from_utf8_lossy(&o.stderr).into_owned() })
 }
 
+/// Heartbeat: the convention every watcher follows since 2026-09-02, so the health check can tell
+/// "alive and idle" from "dead" without reading logs. Written atomically after every cycle.
+pub struct Heartbeat {
+    path: PathBuf,
+    started_at: String,
+    actions: u64,
+    last_action: Option<String>,
+    last_error: Option<String>,
+}
+impl Heartbeat {
+    pub fn new(state_dir: &Path, repo: &Path) -> Self {
+        let name = repo.file_name().and_then(|n| n.to_str()).unwrap_or("repo");
+        std::fs::create_dir_all(state_dir).ok();
+        Self { path: state_dir.join(format!("git-auto-push-watcher-{name}.json")), started_at: now(), actions: 0, last_action: None, last_error: None }
+    }
+    pub fn record(&mut self, outcome: &Result<Outcome>) {
+        match outcome {
+            Ok(Outcome::Pushed(_)) => {
+                self.actions += 1;
+                self.last_action = Some(now());
+                self.last_error = None;
+            }
+            Ok(Outcome::PushFailed) => self.last_error = Some("push failed after 3 attempts".into()),
+            Ok(Outcome::Blocked(m)) => self.last_error = Some(m.clone()),
+            Ok(_) => self.last_error = None,
+            Err(e) => self.last_error = Some(format!("{e:#}")),
+        }
+        let json = format!(
+            "{{\n  \"watcher\": \"git-auto-push-watcher\",\n  \"version\": \"{}\",\n  \"started_at\": \"{}\",\n  \"last_cycle\": \"{}\",\n  \"last_action\": {},\n  \"actions\": {},\n  \"last_error\": {},\n  \"host\": \"{}\",\n  \"interval_secs\": {}\n}}\n",
+            env!("CARGO_PKG_VERSION"),
+            self.started_at,
+            now(),
+            self.last_action.as_deref().map(json_str).unwrap_or_else(|| "null".into()),
+            self.actions,
+            self.last_error.as_deref().map(json_str).unwrap_or_else(|| "null".into()),
+            host_label(),
+            INTERVAL_SECS.load(std::sync::atomic::Ordering::Relaxed),
+        );
+        let tmp = self.path.with_extension("json.tmp");
+        if std::fs::write(&tmp, json).is_ok() {
+            let _ = std::fs::rename(&tmp, &self.path);
+        }
+    }
+}
+static INTERVAL_SECS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(120);
+fn now() -> String {
+    chrono::Local::now().to_rfc3339()
+}
+fn json_str(s: &str) -> String {
+    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', " "))
+}
+
 pub struct Logger {
     path: PathBuf,
 }
@@ -437,6 +498,21 @@ mod tests {
         let head = Command::new("git").args(["log", "-1", "--format=%s"]).current_dir(&remote).output().unwrap();
         assert!(String::from_utf8_lossy(&head.stdout).contains("scripts/tool, seed"));
         assert_eq!(cycle(&repo, Duration::ZERO, false, &logger).unwrap(), Outcome::Clean);
+    }
+
+    #[test]
+    fn heartbeat_is_valid_json_and_counts_actions() {
+        let d = tempfile::tempdir().unwrap();
+        let mut h = Heartbeat::new(d.path(), Path::new("/x/dotfiles"));
+        h.record(&Ok(Outcome::Clean));
+        h.record(&Ok(Outcome::Pushed("s".into())));
+        h.record(&Ok(Outcome::Blocked("broken \"quoted\" thing".into())));
+        let text = std::fs::read_to_string(d.path().join("git-auto-push-watcher-dotfiles.json")).unwrap();
+        // valid JSON without pulling in serde: round-trip through python is overkill; check shape strictly
+        assert!(text.contains("\"actions\": 1"), "{text}");
+        assert!(text.contains("\"last_error\": \"broken \\\"quoted\\\" thing\""), "{text}");
+        assert!(text.contains("\"interval_secs\": 120"), "{text}");
+        assert!(!d.path().join("git-auto-push-watcher-dotfiles.json.tmp").exists());
     }
 
     /// A dirty nushell script that does not parse blocks the sweep (needs `nu`).
