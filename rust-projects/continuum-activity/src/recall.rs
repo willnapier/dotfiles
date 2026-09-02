@@ -848,8 +848,8 @@ fn date_from_text(text: &str) -> Option<String> {
 
 fn sensitive_markers() -> &'static [&'static str] {
     &[
-        "/clinical/",
-        "\\clinical\\",
+        "/clinical",
+        "\\clinical",
         "clinical client",
         "patient name",
         "nhs number",
@@ -884,6 +884,10 @@ fn valid_path_candidate(line: &str, start: usize, candidate: &str) -> bool {
         || !candidate
             .chars()
             .any(|character| character.is_ascii_alphabetic())
+        || candidate
+            .strip_prefix('~')
+            .and_then(|suffix| suffix.chars().next())
+            .is_some_and(|character| character.is_ascii_digit())
     {
         return false;
     }
@@ -1104,8 +1108,14 @@ fn normalize_path(value: &str) -> String {
     }
     let normalized = trimmed
         .replace("/Users/williamnapier", "~")
-        .replace("/home/will", "~");
-    normalized.trim_end_matches('.').to_lowercase()
+        .replace("/home/will", "~")
+        .trim_end_matches('.')
+        .to_lowercase();
+    if matches!(normalized.as_str(), "~" | "~/" | "/" | "./" | "../") {
+        String::new()
+    } else {
+        normalized
+    }
 }
 
 fn looks_like_technical_file(value: &str) -> bool {
@@ -2090,6 +2100,7 @@ mod tests {
     fn prose_fragments_are_not_misclassified_as_filesystem_paths() {
         for prose in [
             "this will take ~1 hour, maybe ~80% of the afternoon",
+            "this ran ~1hr, began ~10am, and repeated ~5x",
             "should I do this and/or that with the ui",
             "the counter is 23/126 today",
         ] {
@@ -2126,6 +2137,12 @@ mod tests {
         ] {
             assert!(!is_iso_date(invalid), "accepted invalid date {invalid:?}");
         }
+    }
+
+    #[test]
+    fn clinical_root_without_a_trailing_slash_is_sensitive() {
+        assert!(is_sensitive_text("Never inspect ~/Clinical"));
+        assert!(is_sensitive_entity("~/clinical"));
     }
 
     #[test]
