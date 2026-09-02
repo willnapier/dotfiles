@@ -604,6 +604,135 @@ pub fn check_dotter_drift(c: &Ctx) -> Vec<String> {
     problems
 }
 
+
+// ── Check 7: Nushell `watch` debounce flag ───────────────────────────
+// nu 0.107 deprecated `watch --debounce-ms <int>` in favour of `--debounce
+// <duration>`, and 0.109 removes it. But 0.106 has no `--debounce`, and a
+// script is parsed whole, so the scripts cannot switch until EVERY host is
+// ≥ 0.107 — a condition no single machine can see. Each host publishes its
+// nu version in its health status file (~/Assistants/health/<host>.json,
+// Syncthing-carried); this check reads the peers' files and fires the
+// go-ahead the day the last host crosses the floor, and an alarm if this
+// host reaches the removal version first. Added 2026-09-02 at Will's request.
+
+pub const NU_WATCH_FLAG_FLOOR: (u32, u32) = (0, 107);
+pub const NU_WATCH_FLAG_REMOVED: (u32, u32) = (0, 109);
+const OLD_WATCH_FLAG: &str = "--debounce-ms";
+
+/// "0.107.0" → (0, 107). Anything unparseable → None.
+pub fn nu_version_pair(v: &str) -> Option<(u32, u32)> {
+    let mut it = v.trim().split('.');
+    let major = it.next()?.parse().ok()?;
+    let minor = it.next()?.parse().ok()?;
+    Some((major, minor))
+}
+
+/// (host, nu_version) for every ~/Assistants/health/*.json except our own.
+/// A peer file without `nu_version` (older tool) is (host, None): unknown,
+/// which the verdict treats as "not ready".
+pub fn peer_nu_versions(health_dir: &Path, own_host: &str) -> Vec<(String, Option<String>)> {
+    let mut out = vec![];
+    let Ok(rd) = fs::read_dir(health_dir) else { return out };
+    for e in rd.flatten() {
+        let p = e.path();
+        if p.extension().and_then(|x| x.to_str()) != Some("json") {
+            continue;
+        }
+        let Ok(text) = fs::read_to_string(&p) else { continue };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
+        let host = v.get("host").and_then(|h| h.as_str()).unwrap_or("").to_string();
+        if host.is_empty() || host == own_host {
+            continue;
+        }
+        let nu = v.get("nu_version").and_then(|h| h.as_str()).map(|s| s.trim().to_string());
+        out.push((host, nu));
+    }
+    out.sort();
+    out
+}
+
+/// Script files (one level, regular files) under `dir` still passing the old
+/// flag. None when the directory cannot be read — that is a problem, not a
+/// clean result.
+pub fn scripts_using_old_flag(dir: &Path) -> Option<Vec<String>> {
+    let rd = fs::read_dir(dir).ok()?;
+    let mut out = vec![];
+    for e in rd.flatten() {
+        let p = e.path();
+        if !p.is_file() {
+            continue;
+        }
+        if let Ok(text) = fs::read_to_string(&p) {
+            if text.contains(OLD_WATCH_FLAG) {
+                if let Some(n) = p.file_name().and_then(|n| n.to_str()) {
+                    out.push(n.to_string());
+                }
+            }
+        }
+    }
+    out.sort();
+    Some(out)
+}
+
+/// The decision, pure so it can be tested.
+pub fn watch_flag_verdict(local: Option<&str>, peers: &[(String, Option<String>)], offending: &[String]) -> Vec<String> {
+    if offending.is_empty() {
+        return vec![];
+    }
+    let n = offending.len();
+    let list = offending.join(", ");
+    let Some(local_v) = local.and_then(nu_version_pair) else {
+        return vec![format!("Nushell: could not read the local nu version (watch-flag check skipped; {n} scripts use `{OLD_WATCH_FLAG}`)")];
+    };
+    let local_s = local.unwrap().trim().to_string();
+    if local_v >= NU_WATCH_FLAG_REMOVED {
+        return vec![format!("Nushell {local_s}: `watch {OLD_WATCH_FLAG}` was removed in 0.109 — {n} scripts will fail: {list}")];
+    }
+    // One host cannot speak for the fleet: no peer file means not ready.
+    let mut ready = local_v >= NU_WATCH_FLAG_FLOOR && !peers.is_empty();
+    let mut hosts = vec![format!("this host {local_s}")];
+    for (host, v) in peers {
+        match v.as_deref().and_then(nu_version_pair) {
+            Some(pv) if pv >= NU_WATCH_FLAG_FLOOR => hosts.push(format!("{host} {}", v.as_deref().unwrap())),
+            _ => ready = false,
+        }
+    }
+    if ready {
+        vec![format!(
+            "Nushell ≥ 0.107 on every host ({}) — switch `watch {OLD_WATCH_FLAG}` to `--debounce` in {n} scripts: {list}",
+            hosts.join(", ")
+        )]
+    } else {
+        vec![]
+    }
+}
+
+pub fn check_nu_watch_flag(c: &Ctx, local_nu: Option<&str>, own_host: &str) -> Vec<String> {
+    c.section("Nushell watch flag");
+    let scripts_dir = c.home.join("dotfiles/scripts");
+    let Some(offending) = scripts_using_old_flag(&scripts_dir) else {
+        c.say(&format!("  ❌ could not read {}", scripts_dir.display()));
+        c.end_section();
+        return vec![format!("Nushell: could not read {} (watch-flag check skipped)", scripts_dir.display())];
+    };
+    let peers = peer_nu_versions(&c.home.join("Assistants/health"), own_host);
+    c.say(&format!("  local nu: {}", local_nu.map(str::trim).unwrap_or("unknown")));
+    for (h, v) in &peers {
+        c.say(&format!("  peer {h}: {}", v.as_deref().unwrap_or("unknown")));
+    }
+    c.say(&format!("  scripts using `{OLD_WATCH_FLAG}`: {}", offending.len()));
+    let problems = watch_flag_verdict(local_nu, &peers, &offending);
+    if problems.is_empty() {
+        c.say("  ✅ nothing to do yet");
+    } else {
+        for p in &problems {
+            c.say(&format!("  ❌ {p}"));
+        }
+    }
+    c.end_section();
+    problems
+}
+
 // ---------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
@@ -733,5 +862,55 @@ mod tests {
     #[test]
     fn porcelain_paths() {
         assert_eq!(parse_porcelain(" M a/b.txt\n?? new dir/\n"), vec!["a/b.txt", "new dir/"]);
+    }
+
+    fn peers(v: &[(&str, Option<&str>)]) -> Vec<(String, Option<String>)> {
+        v.iter().map(|(h, n)| (h.to_string(), n.map(String::from))).collect()
+    }
+    fn offending() -> Vec<String> {
+        vec!["a-watcher".into(), "b-watcher".into()]
+    }
+
+    #[test]
+    fn nu_version_pair_parses_and_rejects() {
+        assert_eq!(nu_version_pair("0.107.0\n"), Some((0, 107)));
+        assert_eq!(nu_version_pair("1.2"), Some((1, 2)));
+        assert_eq!(nu_version_pair("nu 0.1"), None);
+        assert_eq!(nu_version_pair(""), None);
+    }
+
+    #[test]
+    fn watch_flag_silent_while_any_host_is_below_the_floor() {
+        assert!(watch_flag_verdict(Some("0.106.1"), &peers(&[("nimbini", Some("0.107.0"))]), &offending()).is_empty());
+        assert!(watch_flag_verdict(Some("0.107.1"), &peers(&[("nimbini", Some("0.106.1"))]), &offending()).is_empty());
+    }
+
+    #[test]
+    fn watch_flag_fires_when_every_host_is_at_the_floor() {
+        let p = watch_flag_verdict(Some("0.107.1\n"), &peers(&[("nimbini", Some("0.107.0"))]), &offending());
+        assert_eq!(p.len(), 1);
+        assert!(p[0].contains("this host 0.107.1") && p[0].contains("nimbini 0.107.0"), "{}", p[0]);
+        assert!(p[0].contains("2 scripts: a-watcher, b-watcher"), "{}", p[0]);
+    }
+
+    #[test]
+    fn watch_flag_unknown_or_missing_peer_is_not_ready() {
+        assert!(watch_flag_verdict(Some("0.107.0"), &peers(&[("nimbini", None)]), &offending()).is_empty());
+        assert!(watch_flag_verdict(Some("0.107.0"), &[], &offending()).is_empty());
+    }
+
+    #[test]
+    fn watch_flag_removal_alarm_does_not_wait_for_peers() {
+        let p = watch_flag_verdict(Some("0.109.0"), &peers(&[("nimbini", Some("0.106.1"))]), &offending());
+        assert_eq!(p.len(), 1);
+        assert!(p[0].contains("removed in 0.109") && p[0].contains("2 scripts will fail"), "{}", p[0]);
+    }
+
+    #[test]
+    fn watch_flag_nothing_offending_is_clean_and_unknown_local_is_a_problem() {
+        assert!(watch_flag_verdict(Some("0.109.0"), &peers(&[("nimbini", Some("0.109.0"))]), &[]).is_empty());
+        let p = watch_flag_verdict(None, &[], &offending());
+        assert_eq!(p.len(), 1);
+        assert!(p[0].contains("could not read the local nu version"), "{}", p[0]);
     }
 }

@@ -55,6 +55,13 @@ fn main() -> ExitCode {
 
     let real = exec::Real;
     let ctx = checks::Ctx { exec: &real, verbose: cli.verbose, fix: cli.fix, home: home.clone(), log: &log };
+    let hostname = short_hostname();
+    let host = if is_macos { "macos".to_string() } else { hostname.clone() };
+    let nu_version = {
+        use exec::Exec;
+        let r = real.run("nu", &["--version"]);
+        r.ok().then(|| r.out()).filter(|v| !v.is_empty())
+    };
 
     let mut problems: Vec<String> = vec![];
     if is_macos {
@@ -68,13 +75,14 @@ fn main() -> ExitCode {
     problems.extend(checks::check_rust_tools(&ctx));
     problems.extend(checks::check_dna_drift(&ctx, is_macos));
     problems.extend(checks::check_dotter_drift(&ctx));
+    problems.extend(checks::check_nu_watch_flag(&ctx, nu_version.as_deref(), &host));
 
     // Status file for the session-start kernel (ai-brief "Host health"):
     // one writer per file, namespaced by machine, under the Syncthing-carried
     // ~/Assistants tree so every session on either machine sees both hosts and
     // the AGE of each result. A stale file is itself the signal that this
     // check has died — the failure mode the Mac lived in for six weeks.
-    if let Err(e) = write_status(&home, is_macos, &problems) {
+    if let Err(e) = write_status(&home, &host, &hostname, nu_version.as_deref(), &problems) {
         eprintln!("system-health-check: could not write status file: {e}");
     }
 
@@ -114,6 +122,8 @@ struct Status<'a> {
     count: usize,
     problems: &'a [String],
     tool_version: &'static str,
+    /// `nu --version` on this host; read by peers' watch-flag check (Check 7).
+    nu_version: Option<&'a str>,
 }
 
 /// /etc/hostname first (Arch ships no `hostname` binary by default), then the
@@ -133,19 +143,18 @@ fn short_hostname() -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
-fn write_status(home: &std::path::Path, is_macos: bool, problems: &[String]) -> std::io::Result<()> {
-    let hostname = short_hostname();
-    let host = if is_macos { "macos".to_string() } else { hostname.clone() };
+fn write_status(home: &std::path::Path, host: &str, hostname: &str, nu_version: Option<&str>, problems: &[String]) -> std::io::Result<()> {
     let dir = home.join("Assistants/health");
     std::fs::create_dir_all(&dir)?;
     let status = Status {
         schema: 1,
-        host: host.clone(),
-        hostname,
+        host: host.to_string(),
+        hostname: hostname.to_string(),
         checked_at: chrono::Local::now().to_rfc3339(),
         count: problems.len(),
         problems,
         tool_version: env!("CARGO_PKG_VERSION"),
+        nu_version,
     };
     let json = serde_json::to_string_pretty(&status).map_err(std::io::Error::other)?;
     // atomic replace so a reader (or Syncthing) never sees a half-written file
