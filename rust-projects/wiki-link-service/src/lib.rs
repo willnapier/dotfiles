@@ -16,7 +16,12 @@
 //! 0.2.4: one graph on every host — Syncthing conflict copies are not notes
 //! (each host keeps its own, unsynced), and link names resolve NFC-normalised
 //! (macOS hands back NFD file names, Linux NFC); 0.2.5 renders section entries
-//! NFC so both hosts write identical bytes.
+//! NFC so both hosts write identical bytes. 0.2.6 moves that normalisation to
+//! the boundary where a path becomes a name (`wiki::note_name`, `wiki::rel_key`)
+//! so every derived key is NFC by construction, matches link *text* in either
+//! spelling (`wiki::name_pattern`), resolves the watched root once and fails
+//! when it is missing (`reconcile::watched_root`), and reports canonically
+//! equivalent duplicate file names in `audit`.
 
 pub mod audit;
 pub mod backlinks;

@@ -143,9 +143,9 @@ fn handle_rename(ctx: &Ctx, old_path: &Path, new_path: &Path, out: &mut Outcome)
 }
 
 /// Every `[[old]]`, `[[old|alias]]`, `[[old#h]]` (any `!`/`>`/`?` prefix,
-/// case-insensitive) → the same with `new`. `None` if nothing matched.
+/// case-insensitive, NFC or NFD spelling) → the same with `new`. `None` if nothing matched.
 pub fn rewrite_links(content: &str, old: &str, new: &str) -> Option<String> {
-    let re = Regex::new(&format!(r"(?i)([!>]?\?*\[\[)\s*{}\s*([|#][^\]\n]*)?(\]\])", regex::escape(old))).ok()?;
+    let re = Regex::new(&format!(r"(?i)([!>]?\?*\[\[)\s*{}\s*([|#][^\]\n]*)?(\]\])", wiki::name_pattern(old))).ok()?;
     if !re.is_match(content) {
         return None;
     }
@@ -188,5 +188,18 @@ mod tests {
         assert_eq!(rewrite_links("[[Foo bar]]", "Foo (bar)", "X"), None);
         assert_eq!(rewrite_links("[[Foo (bar)|a]]", "Foo (bar)", "C++").unwrap(), "[[C++|a]]");
         assert_eq!(rewrite_links("[[C++]]", "C++", "Cpp").unwrap(), "[[Cpp]]");
+    }
+
+    /// The old name comes from the filesystem (NFD on macOS); the link text is
+    /// whatever was typed or pasted. Both spellings must be rewritten, and the
+    /// replacement is the NFC new name, so both hosts write identical bytes.
+    #[test]
+    fn rename_matches_nfc_and_nfd_link_text() {
+        let nfd = "Zoe\u{0308} Harcombe";
+        let nfc = "Zoë Harcombe";
+        let c = format!("[[{nfc}]] ?[[{nfd}|z]] [[{nfd}#h]] [[Zoe Harcombe]]\n");
+        assert_eq!(rewrite_links(&c, nfd, "Zoë H").unwrap(), "[[Zoë H]] ?[[Zoë H|z]] [[Zoë H#h]] [[Zoe Harcombe]]\n", "NFD old name");
+        assert_eq!(rewrite_links(&c, nfc, "Zoë H").unwrap(), "[[Zoë H]] ?[[Zoë H|z]] [[Zoë H#h]] [[Zoe Harcombe]]\n", "NFC old name");
+        assert_eq!(rewrite_links("[[Zoe Harcombe]]", nfd, "X"), None, "no diaeresis is a different name");
     }
 }

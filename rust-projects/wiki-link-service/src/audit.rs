@@ -43,6 +43,10 @@ pub struct AuditReport {
     /// Notes the resolve-mark watcher would skip (size / link-count rule), so
     /// their markers are neither counted nor ever written by `reconcile`.
     pub markers_skipped: Vec<PathBuf>,
+    /// Distinct on-disk paths whose names are canonically equivalent (NFC and
+    /// NFD spellings side by side). A warning: the index keeps both as targets
+    /// and never picks one by traversal order; the fix is on disk.
+    pub duplicates: Vec<(PathBuf, PathBuf)>,
 }
 
 /// Examples per category; `WLS_AUDIT_EXAMPLES=all` (or a number) overrides for a full listing.
@@ -67,7 +71,7 @@ pub fn audit(roots: &[PathBuf]) -> AuditReport {
 /// The audit over an already-built index, so a caller that goes on to act
 /// (`reconcile`) plans from the same view of the tree it reported on.
 pub fn audit_index(index: &Index, roots: &[PathBuf]) -> AuditReport {
-    let mut r = AuditReport { roots: roots.to_vec(), notes: index.files().len(), ..Default::default() };
+    let mut r = AuditReport { roots: roots.to_vec(), notes: index.files().len(), duplicates: index.duplicates().to_vec(), ..Default::default() };
     for i in 0..index.files().len() {
         let Some(content) = index.content(i) else { continue };
         let path = index.files()[i].clone();
@@ -150,6 +154,16 @@ impl AuditReport {
         }
         if self.markers_skipped.len() > examples() {
             s.push_str(&format!("   … and {} more\n", self.markers_skipped.len() - examples()));
+        }
+
+        if !self.duplicates.is_empty() {
+            s.push_str(&format!("\n⚠️  canonically equivalent file names (NFC and NFD spellings of one name; both stay targets — merge them on disk): {}\n", self.duplicates.len()));
+            for (a, b) in self.duplicates.iter().take(examples()) {
+                s.push_str(&format!("   {}\n   ≡ {}\n", a.display(), b.display()));
+            }
+            if self.duplicates.len() > examples() {
+                s.push_str(&format!("   … and {} more\n", self.duplicates.len() - examples()));
+            }
         }
         s
     }

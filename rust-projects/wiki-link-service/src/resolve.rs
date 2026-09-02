@@ -202,9 +202,9 @@ fn apply(ctx: &Ctx, index: &Index, path: &Path, content: &str, out: &mut Outcome
     }
 }
 
-/// Re-apply the rule to every note that links `name` (any form, case-insensitive).
+/// Re-apply the rule to every note that links `name` (any form, case-insensitive, NFC or NFD spelling).
 fn reevaluate_mentions(ctx: &Ctx, index: &Index, name: &str, out: &mut Outcome) {
-    let Ok(re) = Regex::new(&format!(r"(?i)\[\[\s*{}\s*(?:[|#\]])", regex::escape(name))) else { return };
+    let Ok(re) = Regex::new(&format!(r"(?i)\[\[\s*{}\s*(?:[|#\]])", wiki::name_pattern(name))) else { return };
     let mut changed = 0;
     for i in 0..index.files().len() {
         let Some(content) = index.content(i) else { continue };
@@ -253,5 +253,30 @@ mod tests {
         assert_eq!(same.content, t.content);
         assert_eq!((same.added, same.removed), (0, 0));
         assert_eq!(transform("x [[Gone]]", &ix).content, "x ?[[Gone]]");
+    }
+
+    /// Create/Remove of an NFD-named note (as macOS reports it) must find the
+    /// NFC `[[…]]` mentions in other notes and re-evaluate their markers; before
+    /// the boundary fix the pattern was built from the raw stem and matched
+    /// nothing, leaving `?[[` in place until the next full reconcile.
+    #[test]
+    fn create_and_remove_of_nfd_named_note_reevaluate_nfc_mentions() {
+        let d = tempfile::tempdir().unwrap();
+        let forge = d.path().join("Forge");
+        std::fs::create_dir_all(&forge).unwrap();
+        let mention = forge.join("Mention.md");
+        std::fs::write(&mention, "see ?[[Zoë Harcombe]] and ?[[Zoe\u{0308} Harcombe|z]]\n").unwrap();
+        let ctx = Ctx::new(vec![forge.clone()], crate::logger::Logger::silent());
+        let target = forge.join("Zoe\u{0308} Harcombe.md");
+        std::fs::write(&target, "").unwrap();
+
+        let out = handle_change(&ctx, "Create", &target, None);
+        assert_eq!(out.error, None);
+        assert_eq!(std::fs::read_to_string(&mention).unwrap(), "see [[Zoë Harcombe]] and [[Zoe\u{0308} Harcombe|z]]\n", "both spellings unmarked, bytes otherwise untouched");
+
+        std::fs::remove_file(&target).unwrap();
+        let out = handle_change(&ctx, "Remove", &target, None);
+        assert_eq!(out.error, None);
+        assert_eq!(std::fs::read_to_string(&mention).unwrap(), "see ?[[Zoë Harcombe]] and ?[[Zoe\u{0308} Harcombe|z]]\n", "both spellings re-marked");
     }
 }
