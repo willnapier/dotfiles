@@ -87,7 +87,7 @@ def cleanup [lock_file: string, log_file: string] {
 }
 
 # Handle file system events with native Nushell structured data
-def handle_config_event [operation: string, path: string, new_path: string, log_file: string] {
+def handle_config_event [operation: string, path: string, new_path: any, log_file: string] {
     # Filter events - only care about Creates and Modifies
     match $operation {
         "Create" | "Modify" => {
