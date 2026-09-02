@@ -38,6 +38,41 @@ pub fn save(state: &DreamState) -> Result<()> {
 }
 
 /// Record a completed dream run
+/// How far back dream looks. Sessions dated before this are neither
+/// counted, gathered nor remembered as processed — they are simply outside
+/// the horizon. Until 2026-09-02 only the *processed* list honoured it, so
+/// 4,800 archive imports dated 2023 → 2026-05 stood as "new" forever while
+/// anything that was processed fell off the list after 90 days.
+pub const TRACKING_DAYS: i64 = 90;
+
+pub fn tracking_cutoff() -> NaiveDate {
+    Utc::now().date_naive() - chrono::Duration::days(TRACKING_DAYS)
+}
+
+/// True when a `YYYY-MM-DD` date directory is inside the horizon. An
+/// unparseable name is kept (visible, not silently dropped).
+pub fn within_horizon(date_str: &str, cutoff: NaiveDate) -> bool {
+    match NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+        Ok(d) => d >= cutoff,
+        Err(_) => true,
+    }
+}
+
+#[cfg(test)]
+mod horizon_tests {
+    use super::*;
+
+    #[test]
+    fn horizon_keeps_recent_drops_old_and_keeps_unparseable() {
+        let cutoff = NaiveDate::from_ymd_opt(2026, 6, 4).unwrap();
+        assert!(within_horizon("2026-06-04", cutoff));
+        assert!(within_horizon("2026-09-02", cutoff));
+        assert!(!within_horizon("2026-06-03", cutoff));
+        assert!(!within_horizon("2023-04-01", cutoff));
+        assert!(within_horizon("not-a-date", cutoff));
+    }
+}
+
 pub fn record_dream(
     state: &mut DreamState,
     new_sessions: &[String],
@@ -50,8 +85,9 @@ pub fn record_dream(
     // Append new session paths
     state.sessions_processed.extend(new_sessions.iter().cloned());
 
-    // Prune entries older than 90 days
-    let cutoff = Utc::now().date_naive() - chrono::Duration::days(90);
+    // Prune entries older than the tracking horizon (the same horizon the
+    // gatherer applies, so a pruned session can never come back as "new").
+    let cutoff = tracking_cutoff();
     state.sessions_processed.retain(|path| {
         // Extract date from path: "vendor/YYYY-MM-DD/session-id"
         let parts: Vec<&str> = path.split('/').collect();

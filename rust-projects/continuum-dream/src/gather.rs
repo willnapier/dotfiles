@@ -22,6 +22,7 @@ pub fn collect_sessions(
 
     // Parse --since into a cutoff date
     let cutoff_date = since.and_then(|s| parse_since(s));
+    let horizon = crate::state::tracking_cutoff();
 
     let mut sessions = Vec::new();
 
@@ -40,6 +41,11 @@ pub fn collect_sessions(
                 continue;
             }
             let date_str = date_entry.file_name().to_string_lossy().to_string();
+
+            // Outside the tracking horizon: never gathered (see state::TRACKING_DAYS)
+            if !crate::state::within_horizon(&date_str, horizon) {
+                continue;
+            }
 
             // Apply date cutoff
             if let Some(cutoff) = &cutoff_date {
@@ -88,6 +94,7 @@ pub fn count_new_sessions(state: &DreamState) -> Result<usize> {
     }
 
     let processed: HashSet<&str> = state.sessions_processed.iter().map(|s| s.as_str()).collect();
+    let horizon = crate::state::tracking_cutoff();
     let mut count = 0;
 
     for vendor_entry in fs::read_dir(&base_dir)?.flatten() {
@@ -103,6 +110,9 @@ pub fn count_new_sessions(state: &DreamState) -> Result<usize> {
                 continue;
             }
             let date_str = date_entry.file_name().to_string_lossy().to_string();
+            if !crate::state::within_horizon(&date_str, horizon) {
+                continue;
+            }
 
             for session_entry in fs::read_dir(&date_dir)?.flatten() {
                 if !session_entry.path().is_dir() {

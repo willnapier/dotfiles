@@ -80,6 +80,11 @@ fn run_status() -> Result<()> {
     }
     println!("Total dreams:    {}", dream_state.total_dreams);
     println!("Sessions tracked: {}", dream_state.sessions_processed.len());
+    println!(
+        "Horizon:         sessions dated {} or later ({} days)",
+        state::tracking_cutoff(),
+        state::TRACKING_DAYS
+    );
 
     // Gates
     println!("\nGates:");
