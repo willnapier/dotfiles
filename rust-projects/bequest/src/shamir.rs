@@ -168,7 +168,7 @@ mod tests {
         let shares = split(secret, 1, 3).unwrap();
         // Each single share should reconstruct
         for share in &shares {
-            let recovered = reconstruct(&[share.clone()]).unwrap();
+            let recovered = reconstruct(std::slice::from_ref(share)).unwrap();
             assert_eq!(recovered, secret);
         }
     }

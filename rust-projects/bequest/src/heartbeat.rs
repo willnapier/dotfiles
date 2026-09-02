@@ -1,26 +1,22 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result};
 
-fn bequest_dir() -> PathBuf {
-    dirs::home_dir()
-        .expect("could not find home directory")
-        .join(".bequest")
+fn heartbeat_file() -> PathBuf {
+    heartbeat_file_in(&dirs::home_dir().expect("could not find home directory"))
 }
 
-fn heartbeat_file() -> PathBuf {
+fn heartbeat_file_in(home: &Path) -> PathBuf {
     // Syncthing-shared location — visible to all machines
-    let shared = dirs::home_dir()
-        .expect("could not find home directory")
-        .join("Assistants/shared/bequest-heartbeat");
+    let shared = home.join("Assistants/shared/bequest-heartbeat");
     if shared.parent().is_some_and(|p| p.exists()) {
         return shared;
     }
     // Fallback to local if shared dir doesn't exist
-    bequest_dir().join("last-heartbeat")
+    home.join(".bequest").join("last-heartbeat")
 }
 
 /// Record a heartbeat (touch the heartbeat file).
@@ -38,34 +34,32 @@ pub fn record() -> Result<()> {
 
 /// Scan multiple activity signals and return the most recent timestamp.
 fn latest_activity() -> Result<(SystemTime, Vec<Signal>)> {
+    latest_activity_in(&dirs::home_dir().expect("could not find home directory"), true)
+}
+
+/// The rule every signal must satisfy: **nothing this check does itself may
+/// count as activity.** Until 2026-09-02 the scan ran `git fetch` on
+/// `~/dotfiles` and then read `.git/FETCH_HEAD`'s mtime — a file the fetch
+/// always rewrites — so every check reported "0 minutes ago" and the switch
+/// could never fire (system review D2-7). The fetch and that signal are gone.
+///
+/// `system_signals` = false skips the host-wide probes (`last`, the Sent
+/// maildir) so a test can drive the scan from a fixture home.
+fn latest_activity_in(home: &Path, system_signals: bool) -> Result<(SystemTime, Vec<Signal>)> {
     let mut signals = Vec::new();
 
     // Signal 1: explicit heartbeat file
-    if let Some(t) = file_mtime(&heartbeat_file()) {
+    if let Some(t) = file_mtime(&heartbeat_file_in(home)) {
         signals.push(Signal {
             name: "heartbeat file".into(),
             time: t,
         });
     }
 
-    // Signal 2: git index (any dotfiles activity)
-    // Fetch first so we see pushes from other machines
-    let home = dirs::home_dir().unwrap();
+    // Signal 2: dotfiles git index. Local commits and checkouts move it —
+    // including the auto-commit watchers and state-capture's nightly commit,
+    // so it is presence-of-the-machines as much as presence-of-Will.
     let dotfiles_dir = home.join("dotfiles");
-    if dotfiles_dir.join(".git").exists() {
-        let _ = Command::new("git")
-            .args(["-C", &dotfiles_dir.to_string_lossy(), "fetch", "--quiet"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status();
-    }
-    if let Some(t) = file_mtime(&dotfiles_dir.join(".git/FETCH_HEAD")) {
-        signals.push(Signal {
-            name: "dotfiles git activity".into(),
-            time: t,
-        });
-    }
-    // Also check local index (local commits that haven't been pushed)
     if let Some(t) = file_mtime(&dotfiles_dir.join(".git/index")) {
         signals.push(Signal {
             name: "dotfiles local git".into(),
@@ -73,7 +67,8 @@ fn latest_activity() -> Result<(SystemTime, Vec<Signal>)> {
         });
     }
 
-    // Signal 3: most recent DayPage modification
+    // Signal 3: most recent DayPage modification (collect-entries also
+    // writes these on a schedule — same caveat as the git index)
     let daypage_dir = home.join("Forge/NapierianLogs/DayPages");
     if daypage_dir.exists() {
         if let Some(t) = most_recent_file_in(&daypage_dir, "md") {
@@ -93,20 +88,22 @@ fn latest_activity() -> Result<(SystemTime, Vec<Signal>)> {
         });
     }
 
-    // Signal 5: SSH auth log (last login)
-    if let Some(t) = last_login() {
-        signals.push(Signal {
-            name: "system login".into(),
-            time: t,
-        });
-    }
+    if system_signals {
+        // Signal 5: SSH auth log (last login)
+        if let Some(t) = last_login() {
+            signals.push(Signal {
+                name: "system login".into(),
+                time: t,
+            });
+        }
 
-    // Signal 6: Sent email (proves human action, not just incoming spam)
-    if let Some(t) = last_sent_email() {
-        signals.push(Signal {
-            name: "sent email".into(),
-            time: t,
-        });
+        // Signal 6: Sent email (proves human action, not just incoming spam)
+        if let Some(t) = last_sent_email() {
+            signals.push(Signal {
+                name: "sent email".into(),
+                time: t,
+            });
+        }
     }
 
     // Signal 7: explicit heartbeat via SSH from iPhone
@@ -296,5 +293,42 @@ fn state_label(state: &State) -> &'static str {
         State::Normal => "NORMAL",
         State::Warning => "WARNING — inside grace period",
         State::Triggered => "TRIGGERED — disclosure threshold exceeded",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+
+    fn touch_at(path: &Path, t: SystemTime) {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let f = File::create(path).unwrap();
+        f.set_modified(t).unwrap();
+    }
+
+    /// D2-7 regression: the check's own side effects never count as activity,
+    /// and repeated checks do not advance the latest-activity timestamp.
+    #[test]
+    fn a_fresh_fetch_head_is_not_activity_and_checks_do_not_advance_time() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let now = SystemTime::now();
+        let ten_days_ago = now - Duration::from_secs(10 * 86400);
+        let twenty_days_ago = now - Duration::from_secs(20 * 86400);
+
+        touch_at(&home.join(".bequest/last-heartbeat"), ten_days_ago);
+        touch_at(&home.join("dotfiles/.git/index"), twenty_days_ago);
+        touch_at(&home.join("dotfiles/.git/FETCH_HEAD"), now); // what a fetch leaves behind
+
+        let (latest, signals) = latest_activity_in(home, false).unwrap();
+        assert!(!signals.iter().any(|s| s.name.contains("git activity")), "FETCH_HEAD must not be a signal: {:?}", signals.iter().map(|s| &s.name).collect::<Vec<_>>());
+        let drift = latest.duration_since(ten_days_ago).unwrap_or(Duration::ZERO);
+        assert!(drift < Duration::from_secs(2), "latest must be the 10-day-old heartbeat, not now");
+        assert_eq!(classify(now.duration_since(latest).unwrap(), 7, 7), State::Warning);
+
+        let (again, _) = latest_activity_in(home, false).unwrap();
+        assert_eq!(again, latest, "a second check must not move the timestamp");
+        assert!(!home.join("dotfiles/.git/FETCH_HEAD").exists() || file_mtime(&home.join("dotfiles/.git/FETCH_HEAD")).unwrap() >= now, "fixture untouched");
     }
 }
