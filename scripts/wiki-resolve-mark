@@ -9,7 +9,7 @@
 # - Cross-directory support (Forge, Admin, Archives)
 # - Event-driven (zero CPU when idle)
 #
-# Usage: wiki-resolve-mark [--debounce 2000]
+# Usage: wiki-resolve-mark [--debounce 2000]   (passed to `watch --debounce-ms`: the only spelling nu 0.106 and 0.107 both accept)
 
 # Smart filter configuration (ported from Python config.yaml)
 def create_filter_config [] {
@@ -127,7 +127,7 @@ def mark_writing [] {
     "resolve-mark" | save -f $MARKER_FILE
 }
 
-def main [--debounce: duration = 2sec] {
+def main [--debounce: int = 2000] {  # milliseconds
     # Verify required directories exist
     let forge = $"($env.HOME)/Forge"
     let admin = $"($env.HOME)/Admin"
@@ -164,7 +164,7 @@ def main [--debounce: duration = 2sec] {
 
     # Watch Forge directory (primary)
     print $"🔍 Monitoring Forge for file events..."
-    watch $forge --glob "**/*.md" --debounce $debounce {|operation, file_path, new_path|
+    watch $forge --glob "**/*.md" --debounce-ms $debounce {|operation, file_path, new_path|
         handle_change $operation $file_path $new_path $watch_paths
     }
 }

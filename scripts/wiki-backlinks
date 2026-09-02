@@ -10,7 +10,7 @@
 #
 # Note: ~/Assistants is excluded - it contains Claude documentation, not knowledge base files
 #
-# Usage: wiki-backlinks [--debounce 2000]
+# Usage: wiki-backlinks [--debounce 2000]   (passed to `watch --debounce-ms`: the only spelling nu 0.106 and 0.107 both accept)
 
 const MARKER_FILE = "/tmp/wiki-watcher-writing"
 const MARKER_MAX_AGE_SECS = 5
@@ -31,7 +31,7 @@ def mark_writing [] {
     "backlinks" | save -f $MARKER_FILE
 }
 
-def main [--debounce: duration = 2sec] {
+def main [--debounce: int = 2000] {  # milliseconds
     # Verify required directories exist
     let forge = $"($env.HOME)/Forge"
     let admin = $"($env.HOME)/Admin"
@@ -60,7 +60,7 @@ def main [--debounce: duration = 2sec] {
 
     # Watch Forge directory (primary)
     print $"🔍 Monitoring Forge for file events..."
-    watch $forge --glob "**/*.md" --debounce $debounce {|operation, file_path, new_path|
+    watch $forge --glob "**/*.md" --debounce-ms $debounce {|operation, file_path, new_path|
         handle_change $operation $file_path $new_path $watch_paths
     }
 }
