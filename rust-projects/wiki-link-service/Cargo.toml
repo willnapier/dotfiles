@@ -1,0 +1,17 @@
+[package]
+name = "wiki-link-service"
+version = "0.1.0"
+edition = "2021"
+description = "Rust port of the wiki-backlinks and wiki-resolve-mark Nushell watchers (and the link-service supervisor), with byte-for-byte parity tests against the Nushell oracles."
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+chrono = "0.4"
+notify = "6"
+notify-debouncer-full = { version = "0.3", default-features = false }
+regex = "1"
+ignore = "0.4"
+
+[dev-dependencies]
+tempfile = "3"
