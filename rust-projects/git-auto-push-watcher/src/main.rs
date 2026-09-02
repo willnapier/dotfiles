@@ -59,7 +59,11 @@ fn default_log() -> PathBuf {
     let name = if cfg!(target_os = "macos") { "git-auto-push-watcher-macos.log" } else { "git-auto-push-watcher.log" };
     home().join(".local/share").join(name)
 }
-const LOCK: &str = "/tmp/git-auto-push-watcher.lock";
+/// One lock per repo, so a second instance (e.g. ~/Assistants) does not collide with the dotfiles one.
+fn lock_path(repo: &Path) -> PathBuf {
+    let name = repo.file_name().and_then(|n| n.to_str()).unwrap_or("repo");
+    PathBuf::from(format!("/tmp/git-auto-push-watcher-{name}.lock"))
+}
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -69,7 +73,7 @@ fn main() -> Result<()> {
     }
 
     if !cli.once {
-        take_lock(&logger)?;
+        take_lock(&lock_path(&cli.repo), &logger)?;
         logger.log(&format!("🚀 Starting git-auto-push-watcher {} — repo {}, tick {}s, quiet {}s", env!("CARGO_PKG_VERSION"), cli.repo.display(), cli.tick, cli.quiet));
     }
 
@@ -91,8 +95,8 @@ fn main() -> Result<()> {
 
 // ── lock ────────────────────────────────────────────────────────────
 /// PID lock; stale iff the recorded PID is dead (a SIGKILL never runs cleanup).
-fn take_lock(logger: &Logger) -> Result<()> {
-    if let Ok(s) = std::fs::read_to_string(LOCK) {
+fn take_lock(lock: &Path, logger: &Logger) -> Result<()> {
+    if let Ok(s) = std::fs::read_to_string(lock) {
         if let Ok(pid) = s.trim().parse::<u32>() {
             if pid != std::process::id() && pid_alive(pid) {
                 logger.log(&format!("❌ already running — pid {pid}"));
@@ -101,7 +105,7 @@ fn take_lock(logger: &Logger) -> Result<()> {
             logger.log(&format!("Removing stale lock file — pid {pid} not running"));
         }
     }
-    std::fs::write(LOCK, std::process::id().to_string()).with_context(|| format!("writing {LOCK}"))
+    std::fs::write(lock, std::process::id().to_string()).with_context(|| format!("writing {}", lock.display()))
 }
 fn pid_alive(pid: u32) -> bool {
     Command::new("kill").args(["-0", &pid.to_string()]).output().map(|o| o.status.success()).unwrap_or(false)
@@ -193,7 +197,8 @@ pub fn cycle(repo: &Path, quiet: Duration, dry_run: bool, logger: &Logger) -> Re
         logger.log(&format!("❌ Push failed (attempt {attempt}): {}", push.err.trim()));
     }
     if on_path("messageboard-edit") {
-        let _ = Command::new("messageboard-edit").args(["insert", &format!("PUSH FAILED on {host} - commits stuck locally")]).output();
+        let name = repo.file_name().and_then(|n| n.to_str()).unwrap_or("repo");
+        let _ = Command::new("messageboard-edit").args(["insert", &format!("PUSH FAILED on {host} ({name}) - commits stuck locally")]).output();
     }
     Ok(Outcome::PushFailed)
 }

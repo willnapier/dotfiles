@@ -7,7 +7,11 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/williamnapier/dotfiles/scripts/assistants-auto-push-macos</string>
+        <string>/Users/williamnapier/.local/bin/git-auto-push-watcher</string>
+        <string>--repo</string>
+        <string>/Users/williamnapier/Assistants</string>
+        <string>--log</string>
+        <string>/Users/williamnapier/.local/share/assistants-auto-push-macos.log</string>
     </array>
 
     <key>RunAtLoad</key>
@@ -17,7 +21,7 @@
     <true/>
 
     <key>StandardOutPath</key>
-    <string>/Users/williamnapier/.local/share/assistants-auto-push-macos.log</string>
+    <string>/Users/williamnapier/.local/share/assistants-auto-push-macos.stdout</string>
 
     <key>StandardErrorPath</key>
     <string>/Users/williamnapier/.local/share/assistants-auto-push-macos-error.log</string>

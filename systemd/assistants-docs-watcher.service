@@ -6,7 +6,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=%h/dotfiles/scripts/assistants-docs-auto-push
+ExecStart=%h/.local/bin/git-auto-push-watcher --repo %h/Assistants --log %h/.local/share/assistants-docs-auto-push.log
 Restart=always
 RestartSec=10
 Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin

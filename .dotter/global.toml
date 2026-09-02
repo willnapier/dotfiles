@@ -28,10 +28,8 @@ depends = []
 "scripts/flickr-zips-check" = "~/.local/bin/flickr-zips-check"
 "scripts/flickr-dl-supervise" = "~/.local/bin/flickr-dl-supervise"
 "scripts/render-doc" = "~/.local/bin/render-doc"
-"scripts/assistants-docs-auto-push" = "~/.local/bin/assistants-docs-auto-push"
 "scripts/skill-mirror" = "~/.local/bin/skill-mirror"
 "scripts/pizauth-show-retry" = "~/.local/bin/pizauth-show-retry"
-"scripts/tm3-watcher" = "~/.local/bin/tm3-watcher"
 "scripts/bulk-dedupe-backlinks" = "~/.local/bin/bulk-dedupe-backlinks"
 "scripts/claude-voice" = "~/.local/bin/claude-voice"
 "scripts/email-attachments" = "~/.local/bin/email-attachments"
@@ -336,7 +334,6 @@ depends = []
 "scripts/audit-linked-media" = "~/.local/bin/audit-linked-media"
 
 # Web capture system (added 2026-01-24)
-"scripts/web-clip-watcher" = "~/.local/bin/web-clip-watcher"
 "scripts/web-clip-move" = "~/.local/bin/web-clip-move"
 "scripts/hx-web-clip" = "~/.local/bin/hx-web-clip"
 "scripts/hx-web-link" = "~/.local/bin/hx-web-link"
@@ -429,7 +426,6 @@ depends = ["shared"]
 "macos/mailforge-mailto-handler/install.sh" = "~/.config/macos/mailforge-mailto-handler/install.sh"
 "macos/mailforge-mailto-handler/mailforge-mailto.sh" = "~/.config/macos/mailforge-mailto-handler/mailforge-mailto.sh"
 "scripts/assistants-auto-pull-macos" = "~/.local/bin/assistants-auto-pull-macos"
-"scripts/assistants-auto-push-macos" = "~/.local/bin/assistants-auto-push-macos"
 "scripts/email" = "~/.local/bin/email"
 "launchagents/com.user.collect-projects.plist" = "~/Library/LaunchAgents/com.user.collect-projects.plist"
 "launchagents/com.user.collect-projects-watcher.plist" = "~/Library/LaunchAgents/com.user.collect-projects-watcher.plist"
@@ -444,7 +440,6 @@ depends = ["shared"]
 # have survived a rebuild. macOS-only scheduling is what [macos.files] is for; it is not a
 # reason to leave the plist unmanaged.
 "launchagents/com.user.frecency-daemon.plist" = "~/Library/LaunchAgents/com.user.frecency-daemon.plist"
-"launchd/com.user.web-clip-watcher.plist" = "~/Library/LaunchAgents/com.user.web-clip-watcher.plist"
 "launchd/com.user.readwise-sync.plist" = "~/Library/LaunchAgents/com.user.readwise-sync.plist"
 "launchd/com.user.claude-code-nightly-cleanup.plist" = "~/Library/LaunchAgents/com.user.claude-code-nightly-cleanup.plist"
 "launchd/com.user.remind-notify.plist" = "~/Library/LaunchAgents/com.user.remind-notify.plist"
@@ -457,7 +452,6 @@ depends = ["shared"]
 "macos/launchd/com.williamnapier.link-service.plist" = "~/Library/LaunchAgents/com.williamnapier.link-service.plist"
 "macos/launchd/com.williamnapier.system-health-check.plist" = "~/Library/LaunchAgents/com.williamnapier.system-health-check.plist"
 "macos/launchd/com.williamnapier.state-capture.plist" = "~/Library/LaunchAgents/com.williamnapier.state-capture.plist"
-"macos/launchd/com.williamnapier.tm3-watcher.plist" = "~/Library/LaunchAgents/com.williamnapier.tm3-watcher.plist"
 "macos/launchd/com.williamnapier.tm3-session-broker.plist" = "~/Library/LaunchAgents/com.williamnapier.tm3-session-broker.plist"
 "macos/launchd/com.williamnapier.cross-machine-sync-check.plist" = "~/Library/LaunchAgents/com.williamnapier.cross-machine-sync-check.plist"
 "macos/launchd/com.williamnapier.dev-catchup.plist" = "~/Library/LaunchAgents/com.williamnapier.dev-catchup.plist"
@@ -588,7 +582,6 @@ depends = ["shared"]
 "systemd/readwise-sync.service" = "~/.config/systemd/user/readwise-sync.service"
 "systemd/readwise-sync.timer" = "~/.config/systemd/user/readwise-sync.timer"
 # Web clip watcher - auto-move SingleFile saves
-"systemd/web-clip-watcher.service" = "~/.config/systemd/user/web-clip-watcher.service"
 "systemd/forge-md-revs.service" = "~/.config/systemd/user/forge-md-revs.service"
 # Firefox nightly restart - prevents memory leak accumulation
 "systemd/firefox-nightly-restart.service" = "~/.config/systemd/user/firefox-nightly-restart.service"

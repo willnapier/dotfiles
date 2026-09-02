@@ -1,3 +1,13 @@
+//! ai-export-watcher — watches ~/Downloads and routes what lands there.
+//!
+//! - AI conversation exports (ChatGPT/Grok/Gemini/Claude JSON) → chatgpt-to-continuum
+//! - TM3 diary HTML (SingleFile capture) → tm3-diary-capture --latest
+//! - Any other SingleFile save (`YYYY-MM-DD-<title>.html`) → moved to ~/Captures/web-archives
+//!   (absorbed from the bash `web-clip-watcher` on 2026-09-02; the bash `tm3-watcher` was
+//!   retired the same day — it duplicated the TM3 route and both fired on every file)
+//!
+//! Existing matches are processed once at startup, as both bash watchers did.
+
 use anyhow::{Context, Result};
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher, Event, EventKind};
 use regex::Regex;
@@ -6,13 +16,60 @@ use std::process::Command;
 use std::sync::mpsc::channel;
 use std::time::Duration;
 
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum Kind {
+    AiExport,
+    Tm3Diary,
+    WebClip,
+}
+
+pub struct Classifier {
+    export: Regex,
+    tm3: Regex,
+    clip: Regex,
+}
+
+impl Classifier {
+    pub fn new() -> Result<Self> {
+        Ok(Self {
+            export: Regex::new(r"(?i)^(ChatGPT|Grok|Gemini|Claude)-.*\.json$")?,
+            tm3: Regex::new(r"(?i)TM3.*Diary.*\.html?$")?,
+            // SingleFile default filename: 2026-09-02-Some Page Title.html (bash: 20[0-9][0-9]-MM-DD-*.html)
+            clip: Regex::new(r"^20[0-9]{2}-[0-9]{2}-[0-9]{2}-.*\.html?$")?,
+        })
+    }
+    /// TM3 wins over the generic clip pattern: a TM3 export is also a SingleFile save.
+    pub fn classify(&self, filename: &str) -> Option<Kind> {
+        if self.export.is_match(filename) {
+            Some(Kind::AiExport)
+        } else if self.tm3.is_match(filename) {
+            Some(Kind::Tm3Diary)
+        } else if self.clip.is_match(filename) {
+            Some(Kind::WebClip)
+        } else {
+            None
+        }
+    }
+}
+
 fn main() -> Result<()> {
     let home = std::env::var("HOME").context("HOME not set")?;
     let downloads_dir = PathBuf::from(&home).join("Downloads");
+    let clips_dir = PathBuf::from(&home).join("Captures/web-archives");
+    let classifier = Classifier::new()?;
 
     println!("AI/Clinical Export Watcher starting...");
     println!("Watching: {:?}", downloads_dir);
-    println!("Patterns: ChatGPT-*.json, Grok-*.json, Gemini-*.json, Claude-*.json, *TM3*Diary*.html");
+    println!("Patterns: ChatGPT-*.json, Grok-*.json, Gemini-*.json, Claude-*.json, *TM3*Diary*.html, 20YY-MM-DD-*.html → {:?}", clips_dir);
+
+    // Startup pass over whatever is already there (both bash watchers did this).
+    if let Ok(rd) = std::fs::read_dir(&downloads_dir) {
+        let mut existing: Vec<PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.is_file()).collect();
+        existing.sort();
+        for path in existing {
+            handle(&classifier, &path, &clips_dir);
+        }
+    }
 
     let (tx, rx) = channel();
 
@@ -27,39 +84,67 @@ fn main() -> Result<()> {
 
     watcher.watch(&downloads_dir, RecursiveMode::NonRecursive)?;
 
-    // Regex to match AI assistant export files (case-insensitive)
-    let export_pattern = Regex::new(r"(?i)^(ChatGPT|Grok|Gemini|Claude)-.*\.json$")?;
-    // TM3 diary HTML exports (SingleFile captures)
-    let tm3_pattern = Regex::new(r"(?i)TM3.*Diary.*\.html$")?;
-
     println!("Watching for new exports...\n");
 
     for event in rx {
         if let EventKind::Create(_) | EventKind::Modify(_) = event.kind {
             for path in event.paths {
-                if let Some(filename) = path.file_name().and_then(|f| f.to_str()) {
-                    if !path.exists() {
-                        continue;
-                    }
-
-                    // Small delay to ensure file is fully written
-                    std::thread::sleep(Duration::from_millis(500));
-
-                    if export_pattern.is_match(filename) {
-                        if let Err(e) = process_export(&path) {
-                            eprintln!("Error processing {:?}: {}", path, e);
-                        }
-                    } else if tm3_pattern.is_match(filename) {
-                        if let Err(e) = process_tm3(&path) {
-                            eprintln!("Error processing {:?}: {}", path, e);
-                        }
-                    }
+                if !path.exists() {
+                    continue;
                 }
+                // Small delay to ensure file is fully written
+                std::thread::sleep(Duration::from_millis(500));
+                handle(&classifier, &path, &clips_dir);
             }
         }
     }
 
     Ok(())
+}
+
+fn handle(classifier: &Classifier, path: &Path, clips_dir: &Path) {
+    let Some(filename) = path.file_name().and_then(|f| f.to_str()) else { return };
+    let result = match classifier.classify(filename) {
+        Some(Kind::AiExport) => process_export(path),
+        Some(Kind::Tm3Diary) => process_tm3(path),
+        Some(Kind::WebClip) => process_clip(path, clips_dir),
+        None => return,
+    };
+    if let Err(e) = result {
+        eprintln!("Error processing {:?}: {}", path, e);
+    }
+}
+
+/// SingleFile save → ~/Captures/web-archives (the old bash web-clip-watcher, verbatim behaviour:
+/// mkdir -p, mv, "Moved: <name>", best-effort notification).
+pub fn process_clip(path: &Path, clips_dir: &Path) -> Result<()> {
+    std::fs::create_dir_all(clips_dir).with_context(|| format!("creating {}", clips_dir.display()))?;
+    let name = path.file_name().context("no file name")?;
+    let dest = clips_dir.join(name);
+    if std::fs::rename(path, &dest).is_err() {
+        // cross-device (Dropbox/iCloud) — copy then remove
+        std::fs::copy(path, &dest).with_context(|| format!("copying to {}", dest.display()))?;
+        std::fs::remove_file(path)?;
+    }
+    let shown = name.to_string_lossy();
+    println!("{} Moved: {}", chrono_free_timestamp(), shown);
+    notify("Web Clip Saved", &shown);
+    Ok(())
+}
+
+fn chrono_free_timestamp() -> String {
+    // avoid a chrono dependency for one log line: seconds since epoch is enough for grep
+    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    format!("[{secs}]")
+}
+
+fn notify(title: &str, body: &str) {
+    let on_path = |bin: &str| std::env::var_os("PATH").map(|p| std::env::split_paths(&p).any(|d| d.join(bin).is_file())).unwrap_or(false);
+    if on_path("notify-send") {
+        let _ = Command::new("notify-send").args([title, body]).output();
+    } else if on_path("terminal-notifier") {
+        let _ = Command::new("terminal-notifier").args(["-title", title, "-message", body, "-sound", "default"]).output();
+    }
 }
 
 fn process_export(path: &Path) -> Result<()> {
@@ -133,4 +218,34 @@ fn process_tm3(path: &Path) -> Result<()> {
 
     println!();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classification_order_and_patterns() {
+        let c = Classifier::new().unwrap();
+        assert_eq!(c.classify("ChatGPT-2026-09-02.json"), Some(Kind::AiExport));
+        assert_eq!(c.classify("grok-abc.json"), Some(Kind::AiExport));
+        assert_eq!(c.classify("2026-09-02-TM3 Diary - Will.html"), Some(Kind::Tm3Diary), "TM3 beats the clip pattern");
+        assert_eq!(c.classify("TM3_Diary_export.htm"), Some(Kind::Tm3Diary));
+        assert_eq!(c.classify("2026-09-02-Some Article Title.html"), Some(Kind::WebClip));
+        assert_eq!(c.classify("2026-09-02-x.htm"), Some(Kind::WebClip));
+        assert_eq!(c.classify("1999-09-02-x.html"), None, "bash glob was 20[0-9][0-9]-");
+        assert_eq!(c.classify("report.html"), None);
+        assert_eq!(c.classify("ChatGPT-2026.json.imported"), None);
+    }
+
+    #[test]
+    fn clip_is_moved_into_archives() {
+        let d = tempfile::tempdir().unwrap();
+        let src = d.path().join("2026-09-02-Page.html");
+        std::fs::write(&src, "<html>").unwrap();
+        let dest_dir = d.path().join("web-archives");
+        process_clip(&src, &dest_dir).unwrap();
+        assert!(!src.exists());
+        assert_eq!(std::fs::read_to_string(dest_dir.join("2026-09-02-Page.html")).unwrap(), "<html>");
+    }
 }

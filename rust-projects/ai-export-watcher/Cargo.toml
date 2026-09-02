@@ -1,10 +1,13 @@
 [package]
 name = "ai-export-watcher"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-description = "Watches ~/Downloads for AI conversation exports (ChatGPT, Grok, Gemini)"
+description = "Watches ~/Downloads: AI conversation exports → continuum, TM3 diary HTML → tm3-diary-capture, SingleFile saves → ~/Captures/web-archives"
 
 [dependencies]
 notify = "6"
 anyhow = "1"
 regex = "1"
+
+[dev-dependencies]
+tempfile = "3"

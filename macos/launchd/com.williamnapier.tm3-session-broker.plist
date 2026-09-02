@@ -11,7 +11,7 @@
     <!-- Hourly poll. Silent unless TM3 session state needs the user's
          attention (expired, or approaching expiry). State persisted at
          ~/.local/share/tm3-session-broker/state.json so notifications
-         dedupe across runs. Companion to com.williamnapier.tm3-watcher. -->
+         dedupe across runs. Companion to com.williamnapier.ai-export-watcher (which took over the TM3 route from tm3-watcher on 2026-09-02). -->
     <key>StartInterval</key>
     <integer>3600</integer>
     <key>RunAtLoad</key>
