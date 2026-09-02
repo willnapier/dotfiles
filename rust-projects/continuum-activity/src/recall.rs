@@ -977,6 +977,17 @@ fn subcommand_stopwords() -> &'static [&'static str] {
 }
 
 fn extract_entities(text: &str) -> BTreeMap<String, EntityEvidence> {
+    extract_entities_with_mode(text, false)
+}
+
+fn extract_query_entities(text: &str) -> BTreeMap<String, EntityEvidence> {
+    extract_entities_with_mode(text, true)
+}
+
+fn extract_entities_with_mode(
+    text: &str,
+    include_plain_subcommands: bool,
+) -> BTreeMap<String, EntityEvidence> {
     let mut entities = BTreeMap::new();
     for (offset, line) in text.lines().enumerate() {
         let line_number = offset + 1;
@@ -1034,7 +1045,7 @@ fn extract_entities(text: &str) -> BTreeMap<String, EntityEvidence> {
             .find_iter(line)
             .map(|found| found.as_str().to_lowercase())
             .collect();
-        for word in &words {
+        for (index, word) in words.iter().enumerate() {
             if word == "nimbini" || word == "williams-macbook-air" {
                 add_entity(&mut entities, word.clone(), EntityKind::Host, line_number);
             }
@@ -1047,6 +1058,16 @@ fn extract_entities(text: &str) -> BTreeMap<String, EntityEvidence> {
                 EntityKind::Command,
                 line_number,
             );
+            if include_plain_subcommands {
+                if let Some(next) = words.get(index + 1).filter(|next| valid_subcommand(next)) {
+                    add_entity(
+                        &mut entities,
+                        format!("{word}:{next}"),
+                        EntityKind::Command,
+                        line_number,
+                    );
+                }
+            }
         }
     }
     entities
@@ -1300,7 +1321,7 @@ fn query_index(
             hits: Vec::new(),
         });
     }
-    let query_entities = extract_entities(task);
+    let query_entities = extract_query_entities(task);
     if query_entities.is_empty() {
         return Ok(QueryOutcome {
             state: QueryState::NoTechnicalCue,
@@ -1758,7 +1779,7 @@ fn evaluate_fixtures(fixtures: FixtureFile) -> Result<BacktestReport> {
 }
 
 fn strongest_cue_baseline(corpus: &[(String, String)], query: &str) -> BTreeSet<String> {
-    let query_entities = extract_entities(query);
+    let query_entities = extract_query_entities(query);
     let mut candidates: Vec<(&String, &EntityEvidence)> = query_entities.iter().collect();
     candidates.sort_by(
         |(left_entity, left_evidence), (right_entity, right_evidence)| {
@@ -2163,5 +2184,18 @@ mod tests {
         );
         assert!(sources.contains("fixture://bridge"));
         assert!(!sources.contains("fixture://analogue"));
+    }
+
+    #[test]
+    fn prose_subcommands_are_loose_in_queries_but_strict_in_index_documents() {
+        let prose_document = extract_entities("The operator ran dotter deploy yesterday.");
+        assert!(prose_document.contains_key("dotter"));
+        assert!(!prose_document.contains_key("dotter:deploy"));
+
+        let explicit_document = extract_entities("The operator ran `dotter deploy` yesterday.");
+        assert!(explicit_document.contains_key("dotter:deploy"));
+
+        let prose_query = extract_query_entities("Why did dotter deploy fail?");
+        assert!(prose_query.contains_key("dotter:deploy"));
     }
 }
