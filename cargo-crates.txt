@@ -1,3 +1,4 @@
+ai-brief	0.2.0	/home/will/dotfiles/rust-projects/ai-brief
 ai-export-watcher	0.1.0	/home/will/dotfiles/rust-projects/ai-export-watcher
 bat	0.25.0	crates.io
 bequest	0.1.0	/home/will/dotfiles/rust-projects/bequest
@@ -18,6 +19,7 @@ continuum-usage	0.1.0	/home/will/projects/continuum/continuum-usage
 cross-machine-sync-check	0.1.0	/home/will/dotfiles/rust-projects/cross-machine-sync-check
 dev-catchup	0.1.0	/home/will/dotfiles/rust-projects/dev-catchup
 dotter	0.13.4	crates.io
+dotter-drift-monitor	0.2.0	/home/will/dotfiles/rust-projects/dotter-drift-monitor
 dprint	0.50.2	crates.io
 easel	0.1.0	/home/will/dotfiles/rust-projects/easel
 email-extract	0.1.0	/home/will/dotfiles/rust-projects/email-extract
@@ -48,6 +50,7 @@ skim	0.20.5	crates.io
 sr	0.1.0	/home/will/dotfiles/rust-projects/sr
 starship	1.23.0	crates.io
 stylance-cli	0.8.2	crates.io
+system-health-check	0.2.0	/home/will/dotfiles/rust-projects/system-health-check
 tm3-diary-capture	0.1.0	/home/will/Code/tm3-diary-capture
 trashy	2.0.0	crates.io
 usage-probe-anthropic-api	0.1.0	/home/will/projects/continuum/usage-probe-anthropic-api
