@@ -1,0 +1,14 @@
+[package]
+name = "collect-projects-watcher"
+version = "0.1.0"
+edition = "2021"
+description = "Watches ~/Forge/NapierianLogs/DayPages/*.md and runs collect-entries on each settled change. Rust port of scripts/collect-projects-watcher (fswatch/inotifywait). One binary for macOS (launchd) and Linux (systemd)."
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+chrono = "0.4"
+notify = "6"
+
+[dev-dependencies]
+tempfile = "3"
