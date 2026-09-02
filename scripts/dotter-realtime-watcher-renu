@@ -19,22 +19,23 @@ def main [] {
     # Ensure log directory exists
     mkdir ($log_file | path dirname)
     
-    # Smart lock file handling with stale lock detection
+    # Lock file holds the owner PID. A lock whose PID is dead is stale — a
+    # SIGKILL (launchctl kickstart -k) never runs cleanup, and the old
+    # age-based rule left the watcher down for up to 10 minutes after one.
     if ($lock_file | path exists) {
-        let lock_age = ((date now) - (ls $lock_file | get 0.modified))
-        let age_minutes = ($lock_age / 1min)
-
-        if $age_minutes > 10 {
-            log_message $log_file $"⚠️  Cleaning up stale lock file (age: ($age_minutes | math round)min)"
-            rm -f $lock_file
-        } else {
-            log_message $log_file "🔒 Real-time watcher already running (recent lock file)"
+        let owner = (try { open --raw $lock_file | str trim | into int } catch { 0 })
+        let alive = ($owner > 0 and (ps | where pid == $owner | length) > 0)
+        if $alive {
+            log_message $log_file $"🔒 Real-time watcher already running (pid ($owner))"
             exit 1
+        } else {
+            log_message $log_file $"⚠️  Removing stale lock file (pid ($owner) not running)"
+            rm -f $lock_file
         }
     }
     
-    # Create lock file with timestamp (simpler than getting PID)
-    (date now | format date "%s") | save $lock_file
+    # Create lock file with our PID
+    $nu.pid | into string | save $lock_file
     
     log_message $log_file "🚀 Starting real-time config watcher (Re-nu native Nushell version)"
     log_message $log_file $"👀 Watching: ($watch_paths | str join ', ')"
