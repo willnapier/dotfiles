@@ -142,7 +142,7 @@ def run-watch [] {
     # nu 0.106: the flag is --debounce-ms <int>, not --debounce <duration>
     watch $forge --glob "**/*.md" --debounce-ms 100 --recursive true --quiet {|operation, path, _new_path|
         if $operation in ["Write", "Modify", "Create"] {
-            snapshot $path
+            snapshot $path | ignore
         }
     }
 }
