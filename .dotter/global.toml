@@ -290,7 +290,6 @@ depends = []
 # Re-nu conversion scripts - Native Nushell watchers with no external dependencies
 "scripts/dotter-realtime-watcher-renu" = "~/.local/bin/dotter-realtime-watcher-renu"
 "scripts/helix-activity-watcher-renu" = "~/.local/bin/helix-activity-watcher-renu"
-"scripts/forge-md-revs" = "~/.local/bin/forge-md-revs"
 "scripts/zellij-zombie-watcher-renu" = "~/.local/bin/zellij-zombie-watcher-renu"
 "scripts/citation-watcher-renu" = "~/.local/bin/citation-watcher-renu"
 "scripts/activity-watcher-renu" = "~/.local/bin/activity-watcher-renu"
@@ -320,9 +319,7 @@ depends = []
 "scripts/collect-entries" = "~/.local/bin/collect-entries"
 "scripts/generate-subactivity-lists" = "~/.local/bin/generate-subactivity-lists"
 "scripts/collect-projects" = "~/.local/bin/collect-projects"  # Legacy, will be removed
-"scripts/collect-projects-auto" = "~/.local/bin/collect-projects-auto"
 "scripts/collect-projects-cron" = "~/.local/bin/collect-projects-cron"
-"scripts/collect-projects-watcher" = "~/.local/bin/collect-projects-watcher"
 "scripts/para-projects" = "~/.local/bin/para-projects"
 "scripts/para-areas" = "~/.local/bin/para-areas"
 "scripts/para-connect" = "~/.local/bin/para-connect"

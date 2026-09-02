@@ -805,7 +805,6 @@ pub const EXPECTED_WATCHERS: &[&str] = &[
     "forge-md-revs",
     "collect-projects-watcher",
     "zotero-watcher-pdf",
-    "zotero-watcher-bridge",
     "wiki-link-service-backlinks",
     "wiki-link-service-resolve-mark",
 ];
