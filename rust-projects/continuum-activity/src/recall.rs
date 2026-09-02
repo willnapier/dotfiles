@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Result};
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Duration, NaiveDate, Utc};
 use clap::Subcommand;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -739,11 +739,16 @@ enum SourceIndexResult {
 fn index_source(
     source: &SourceSpec,
     home: &Path,
-    modified_ns: u128,
+    expected_modified_ns: u128,
     size: u64,
 ) -> Result<SourceIndexResult> {
     let bytes =
         fs::read(&source.path).with_context(|| format!("cannot read {}", source.path.display()))?;
+    let after_read = fs::metadata(&source.path)
+        .with_context(|| format!("cannot restat {}", source.path.display()))?;
+    if after_read.len() != size || modified_ns(&after_read) != expected_modified_ns {
+        bail!("source changed while it was being indexed");
+    }
     let content_hash = sha256(&bytes);
     let raw_text = String::from_utf8_lossy(&bytes);
     let text = if source.kind == SourceKind::Continuum {
@@ -778,7 +783,7 @@ fn index_source(
             line,
             date,
             content_hash: content_hash.clone(),
-            modified_ns,
+            modified_ns: expected_modified_ns,
             size,
             entities,
         });
@@ -1074,6 +1079,9 @@ fn normalize_path(value: &str) -> String {
             '`' | '\'' | '"' | '(' | ')' | '[' | ']' | '{' | '}' | ',' | ';' | ':'
         )
     });
+    if trimmed.starts_with("//") {
+        return String::new();
+    }
     let normalized = trimmed
         .replace("/Users/williamnapier", "~")
         .replace("/home/will", "~");
@@ -1216,12 +1224,8 @@ fn load_index(path: &Path) -> Result<RecallIndex> {
 
 fn index_is_fresh(index: &RecallIndex) -> bool {
     DateTime::parse_from_rfc3339(&index.built_at)
-        .map(|built| {
-            Utc::now()
-                .signed_duration_since(built.with_timezone(&Utc))
-                .num_hours()
-        })
-        .is_ok_and(|hours| (0..=MAX_INDEX_AGE_HOURS).contains(&hours))
+        .map(|built| Utc::now().signed_duration_since(built.with_timezone(&Utc)))
+        .is_ok_and(|age| age >= Duration::zero() && age <= Duration::hours(MAX_INDEX_AGE_HOURS))
 }
 
 fn is_non_task_prompt(task: &str) -> bool {
@@ -1361,15 +1365,26 @@ fn query_index(
         });
     }
 
-    if let Some(connection) = associative_connection(
-        index,
-        &query_entities,
-        &candidates,
-        &document_frequency,
-        &selected,
-        verify_sources,
-        &mut verified,
-    ) {
+    let connection = selected.first().and_then(|selected_primary| {
+        candidates
+            .iter()
+            .find(|candidate| {
+                let document = &index.documents[candidate.document_index];
+                document.source == selected_primary.source && document.line == selected_primary.line
+            })
+            .and_then(|primary| {
+                associative_connection(
+                    index,
+                    &query_entities,
+                    primary,
+                    &document_frequency,
+                    &selected,
+                    verify_sources,
+                    &mut verified,
+                )
+            })
+    });
+    if let Some(connection) = connection {
         selected.push(connection);
     }
     Ok(QueryOutcome {
@@ -1411,13 +1426,12 @@ fn verify_document(document: &IndexDocument, cache: &mut HashMap<String, bool>) 
 fn associative_connection(
     index: &RecallIndex,
     query_entities: &BTreeMap<String, EntityEvidence>,
-    candidates: &[RankedCandidate],
+    primary: &RankedCandidate,
     document_frequency: &HashMap<&str, usize>,
     selected: &[RecallHit],
     verify_sources: bool,
     verified: &mut HashMap<String, bool>,
 ) -> Option<RecallHit> {
-    let primary = candidates.first()?;
     let primary_document = &index.documents[primary.document_index];
     let document_count = index.documents.len().max(1);
     let max_bridge_frequency = (document_count / 4).max(2);
@@ -1919,7 +1933,7 @@ mod tests {
     fn stale_index_fails_open_without_hits() {
         let index = RecallIndex {
             schema_version: SCHEMA_VERSION,
-            built_at: "2026-01-01T00:00:00Z".to_string(),
+            built_at: (Utc::now() - Duration::hours(24) - Duration::minutes(1)).to_rfc3339(),
             corpus_fingerprint: "test".to_string(),
             documents: vec![IndexDocument {
                 source: "fixture://old".to_string(),
@@ -1936,6 +1950,53 @@ mod tests {
             query_index(&index, "`dotter deploy` failed", false, true).expect("query runs");
         assert_eq!(outcome.state, QueryState::StaleIndex);
         assert!(outcome.hits.is_empty());
+    }
+
+    #[test]
+    fn stale_primary_cannot_seed_an_associative_hit() {
+        let root = temporary_directory("stale-primary");
+        let associated_source = root.join("associated.md");
+        let associated_text = "`dotter deploy` exposed an old configuration incident.";
+        fs::write(&associated_source, associated_text).expect("write associated source");
+        let associated_metadata = fs::metadata(&associated_source).expect("associated metadata");
+        let index = RecallIndex {
+            schema_version: SCHEMA_VERSION,
+            built_at: Utc::now().to_rfc3339(),
+            corpus_fingerprint: "test".to_string(),
+            documents: vec![
+                IndexDocument {
+                    source: "/definitely/missing/direct.md".to_string(),
+                    source_kind: SourceKind::Fixture,
+                    line: 1,
+                    date: "2026-09-02".to_string(),
+                    content_hash: "missing".to_string(),
+                    modified_ns: 0,
+                    size: 0,
+                    entities: extract_entities(
+                        "`cross-machine-sync-check` failed on nimbini after `dotter deploy`.",
+                    ),
+                },
+                IndexDocument {
+                    source: associated_source.display().to_string(),
+                    source_kind: SourceKind::Fixture,
+                    line: 1,
+                    date: "2026-01-01".to_string(),
+                    content_hash: sha256(associated_text.as_bytes()),
+                    modified_ns: modified_ns(&associated_metadata),
+                    size: associated_metadata.len(),
+                    entities: extract_entities(associated_text),
+                },
+            ],
+        };
+        let outcome = query_index(
+            &index,
+            "`cross-machine-sync-check` says clean on nimbini",
+            true,
+            true,
+        )
+        .expect("query runs");
+        assert!(outcome.hits.is_empty());
+        fs::remove_dir_all(root).expect("remove isolated temp directory");
     }
 
     #[test]
@@ -1978,5 +2039,11 @@ mod tests {
         assert!(!entities
             .keys()
             .any(|entity| entity.starts_with("sk-") || entity.starts_with("ghp_")));
+    }
+
+    #[test]
+    fn web_urls_are_not_misclassified_as_filesystem_paths() {
+        let entities = extract_entities("See https://example.com/project/status for details.");
+        assert!(entities.is_empty());
     }
 }
