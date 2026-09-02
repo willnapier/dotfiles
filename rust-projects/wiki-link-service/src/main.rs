@@ -1,11 +1,12 @@
-//! wiki-link-service — `backlinks` / `resolve-mark` watchers and the
-//! `start`/`status`/`stop` supervisor that replaces `link-service`.
+//! wiki-link-service — `backlinks` / `resolve-mark` watchers, the
+//! `start`/`status`/`stop` supervisor that replaces `link-service`, and the
+//! read-only `audit`.
 //!
 //! `start` runs both watchers in ONE foreground process (two threads) so a
-//! supervisor (launchd / systemd) owns exactly one PID: no nohup, no
-//! comma-separated PID file. The PID lock lives where `link-service` kept its
-//! PID file (`~/scripts/wiki-link-management/logs/link-service.pid`) and is
-//! stale iff the recorded PID is dead (modelled on `git-auto-push-watcher`).
+//! supervisor (launchd / systemd) owns exactly one PID. The PID lock lives
+//! where `link-service` kept its PID file
+//! (`~/scripts/wiki-link-management/logs/link-service.pid`) and is stale iff
+//! the recorded PID is dead (modelled on `git-auto-push-watcher`).
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
@@ -32,9 +33,6 @@ struct Cli {
     /// Debounce window for file events, in milliseconds
     #[arg(long, value_name = "INT", global = true, default_value_t = 2000)]
     debounce_ms: u64,
-    /// Feedback-loop marker written before every save; events within 5 s of it are skipped
-    #[arg(long, value_name = "FILE", global = true, default_value = wiki::DEFAULT_MARKER_FILE)]
-    marker_file: PathBuf,
     #[command(subcommand)]
     cmd: Cmd,
 }
@@ -43,7 +41,7 @@ struct Cli {
 enum Cmd {
     /// Run the wiki-backlinks watcher (maintains ## Backlinks sections)
     Backlinks,
-    /// Run the wiki-resolve-mark watcher (marks ?[[target]] when the target is missing)
+    /// Run the wiki-resolve-mark watcher (marks ?[[target]] when the target is missing, unmarks when it exists)
     ResolveMark,
     /// Run both watchers in this one foreground process (for launchd / systemd)
     Start,
@@ -51,6 +49,8 @@ enum Cmd {
     Status,
     /// Send SIGTERM to the process holding the PID lock and remove the lock
     Stop,
+    /// Read-only: report which ## Backlinks sections and ?[[ markers the current rules would change under --root (never writes)
+    Audit,
 }
 
 fn default_log_dir() -> PathBuf {
@@ -59,13 +59,22 @@ fn default_log_dir() -> PathBuf {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    match cli.cmd {
+        Cmd::Audit => {
+            let roots = resolve_roots(&cli)?;
+            print!("{}", wiki_link_service::audit::audit(&roots).render());
+            return Ok(());
+        }
+        Cmd::Status => return status(&cli),
+        Cmd::Stop => return stop(&cli),
+        _ => {}
+    }
     std::fs::create_dir_all(&cli.log_dir).with_context(|| format!("creating {}", cli.log_dir.display()))?;
     match cli.cmd {
         Cmd::Backlinks => run_one(&cli, Which::Backlinks),
         Cmd::ResolveMark => run_one(&cli, Which::ResolveMark),
         Cmd::Start => start(&cli),
-        Cmd::Status => status(&cli),
-        Cmd::Stop => stop(&cli),
+        Cmd::Status | Cmd::Stop | Cmd::Audit => unreachable!(),
     }
 }
 
@@ -83,11 +92,7 @@ fn resolve_roots(cli: &Cli) -> Result<Vec<PathBuf>> {
 }
 
 fn ctx_for(cli: &Cli, which: Which, tag: bool) -> Result<Ctx> {
-    Ok(Ctx {
-        roots: resolve_roots(cli)?,
-        marker: cli.marker_file.clone(),
-        logger: Logger { file: Some(cli.log_dir.join(which.log_file())), tag: tag.then(|| which.sub().to_string()), quiet: false },
-    })
+    Ok(Ctx::new(resolve_roots(cli)?, Logger { file: Some(cli.log_dir.join(which.log_file())), tag: tag.then(|| which.sub().to_string()), quiet: false }))
 }
 
 // ── lock ────────────────────────────────────────────────────────────

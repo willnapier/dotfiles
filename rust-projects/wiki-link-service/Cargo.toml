@@ -1,6 +1,6 @@
 [package]
 name = "wiki-link-service"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Rust port of the wiki-backlinks and wiki-resolve-mark Nushell watchers (and the link-service supervisor), with byte-for-byte parity tests against the Nushell oracles."
 

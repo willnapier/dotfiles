@@ -1,35 +1,25 @@
-//! Port of `scripts/wiki-resolve-mark` — `handle_change` and everything it calls.
+//! `?[[…]]` marking — port of `scripts/wiki-resolve-mark`, corrected.
 //!
-//! ORACLE BUG (replicated, the big one): the Create / Remove / Rename paths
-//! build their `rg -l` pattern with `$'\\[\\[…\\]\\]'`. Nushell `$'…'`
-//! strings do not process backslash escapes, so rg receives the literal
-//! `\\[\\[name\\]\\]` — a regex for "a backslash followed by one of
-//! `\ n a m e`" — which never matches a wiki link. Consequently, in the oracle:
-//! creating a target does NOT unmark `?[[target]]`, deleting a target does NOT
-//! mark `[[target]]`, and renaming does NOT rewrite links — except in files
-//! that happen to contain a backslash sequence such as `\n` in a code span.
-//! Only the Write path (marking links whose target is missing) works.
-//! `wiki-resolve-batch` (Rust) is what actually cleans `?[[` markers.
+//! SPEC (0.2.0): one rule, [`transform`], applied to a note's text outside its
+//! `## Backlinks` section, occurrence by occurrence:
+//! * target exists (case-insensitive, escaped — bug 7) → unmarked `[[…]]`;
+//! * embed `![[…]]` or inbox `>[[…]]` → never marked, stale marks removed (bug 8);
+//! * target missing and the name passes the smart filter → `?[[…]]` (one `?`);
+//! * otherwise left as it is.
 //!
-//! `wiki-resolve-batch`'s marker regex was not reused: it strips `.md` from
-//! link names and normalises `??[[`, neither of which the watcher does.
+//! Write applies it to the written note. Create / Remove re-apply it to
+//! every note mentioning the name (bug 1); Rename = Remove(old) + Create(new).
+//! Nothing here ever strips a newline (bug 2). Own writes are recognised by
+//! (path, content), not a global marker (bug 9).
+//!
+//! Kept from the oracle: the smart filter and the >500 KB / >100-link skips.
 
-use crate::wiki::{self, basename, note_name, Ctx, Outcome};
-use regex::bytes::Regex as BytesRegex;
-use regex::Regex;
+use crate::wiki::{self, basename, note_name, Ctx, Index, Outcome};
+use regex::{Captures, Regex};
 use std::path::Path;
 use std::sync::OnceLock;
 
-/// The oracle also accepts `>[[inbox]]` here (but see `mark_unresolved_in_file`).
-pub const LINK_RE: &str = r"[!?>]?\[\[([^\]\n]+)\]\]";
-const PLACEHOLDER: &str = "QMARK_DBRACKET_PLACEHOLDER";
-
-fn link_re() -> &'static BytesRegex {
-    static RE: OnceLock<BytesRegex> = OnceLock::new();
-    RE.get_or_init(|| BytesRegex::new(LINK_RE).expect("static regex"))
-}
-
-// ── smart filter (ported from the oracle's create_filter_config) ────
+// ── smart filter (unchanged from the oracle's create_filter_config) ─
 const ACTION_PREFIXES: &[&str] = &["tel:", "mailto:", "http:", "https:", "ftp:", "file:", "obsidian:"];
 const SYSTEM_PATHS: &[&str] = &["C:", "/usr/", "/var/", "/etc/", "~/", "\\\\"];
 const AUTO_GENERATED: &[&str] = &["unknown_filename_.*", "temp_.*", "IMG_.*", "Screenshot.*", "Pasted image .*", "image-.*"];
@@ -50,8 +40,8 @@ fn filter_regexes() -> &'static Vec<Regex> {
     RES.get_or_init(|| AUTO_GENERATED.iter().chain(RESERVED_NAMES).chain(UUID_PATTERNS).map(|p| Regex::new(p).expect("static regex")).collect())
 }
 
-/// `should_exclude_link` — lengths are bytes (nu `str length`), regexes are
-/// unanchored searches (`echo $name | rg $pattern`), case-sensitive.
+/// Link names that are never marked: lengths in bytes, unanchored
+/// case-sensitive regexes, literal prefixes/substrings.
 pub fn should_exclude_link(link_name: &str) -> bool {
     let len = link_name.len();
     if !(MIN_LENGTH..=MAX_LENGTH).contains(&len) {
@@ -69,34 +59,92 @@ pub fn should_exclude_link(link_name: &str) -> bool {
     link_name.contains(INVALID_CHARS)
 }
 
+// ── the rule ────────────────────────────────────────────────────────
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Transformed {
+    pub content: String,
+    /// `?` markers added.
+    pub added: usize,
+    /// `?` markers removed.
+    pub removed: usize,
+}
+
+fn fix_text(text: &str, index: &Index, added: &mut usize, removed: &mut usize) -> String {
+    wiki::link_re()
+        .replace_all(text, |c: &Captures| {
+            let (flag, marks, inner) = (&c[1], &c[2], &c[3]);
+            let (name, _) = wiki::split_inner(inner);
+            if !flag.is_empty() {
+                if !marks.is_empty() {
+                    *removed += 1;
+                }
+                return format!("{flag}[[{inner}]]");
+            }
+            if index.resolve(name).is_some() {
+                if !marks.is_empty() {
+                    *removed += 1;
+                }
+                return format!("[[{inner}]]");
+            }
+            if should_exclude_link(name.trim()) {
+                return c[0].to_string();
+            }
+            if marks.is_empty() {
+                *added += 1;
+            }
+            format!("?[[{inner}]]")
+        })
+        .into_owned()
+}
+
+/// Apply the marking rule to everything outside the note's `## Backlinks` section.
+pub fn transform(content: &str, index: &Index) -> Transformed {
+    let (mut added, mut removed) = (0, 0);
+    let (before, after) = wiki::outside_section(content);
+    let b = fix_text(before, index, &mut added, &mut removed);
+    let content = match wiki::find_section(content) {
+        Some(s) => format!("{b}{}{}", &content[s.start..s.end], fix_text(after, index, &mut added, &mut removed)),
+        None => b,
+    };
+    Transformed { content, added, removed }
+}
+
 // ── handlers ────────────────────────────────────────────────────────
 pub fn handle_change(ctx: &Ctx, operation: &str, file_path: &Path, new_path: Option<&Path>) -> Outcome {
     let mut out = Outcome::default();
-    if wiki::should_skip_event(&ctx.marker) {
-        return out;
-    }
     match operation {
-        "Write" => handle_write(ctx, file_path, &mut out),
-        "Create" => handle_create(ctx, file_path, &mut out),
+        "Write" | "Create" => {
+            if ctx.is_own_write(file_path) {
+                return out;
+            }
+            handle_write(ctx, file_path, operation == "Create", &mut out);
+        }
         "Rename" => {
             if let Some(np) = new_path.filter(|p| !p.as_os_str().is_empty()) {
-                handle_rename(ctx, file_path, np, &mut out);
+                let (old_name, new_name) = (note_name(file_path), note_name(np));
+                ctx.log(&format!("📛 Renamed: {old_name} → {new_name}"));
+                let index = Index::build(&ctx.existing_roots());
+                reevaluate_mentions(ctx, &index, &old_name, &mut out);
+                reevaluate_mentions(ctx, &index, &new_name, &mut out);
             }
         }
-        "Remove" => handle_remove(ctx, file_path, &mut out),
+        "Remove" => {
+            let name = note_name(file_path);
+            ctx.log(&format!("🗑️  Deleted: {name}"));
+            let index = Index::build(&ctx.existing_roots());
+            reevaluate_mentions(ctx, &index, &name, &mut out);
+        }
         _ => ctx.log(&format!("❓ Unknown operation: {operation} on {}", file_path.display())),
     }
     out
 }
 
-fn handle_create(ctx: &Ctx, file_path: &Path, out: &mut Outcome) {
-    let file_name = note_name(file_path);
-    ctx.log(&format!("✨ Created: {file_name}"));
-    clean_resolved_links(ctx, &file_name, out);
-}
-
-fn handle_write(ctx: &Ctx, file_path: &Path, out: &mut Outcome) {
-    ctx.log(&format!("📝 Modified: {}", basename(file_path)));
+fn handle_write(ctx: &Ctx, file_path: &Path, created: bool, out: &mut Outcome) {
+    if created {
+        ctx.log(&format!("✨ Created: {}", note_name(file_path)));
+    } else {
+        ctx.log(&format!("📝 Modified: {}", basename(file_path)));
+    }
 
     let size = wiki::file_size(file_path);
     if size > wiki::LARGE_FILE_BYTES {
@@ -104,175 +152,65 @@ fn handle_write(ctx: &Ctx, file_path: &Path, out: &mut Outcome) {
         return;
     }
 
-    let links = std::fs::read(file_path).map(|b| wiki::extract_links(&b, link_re())).unwrap_or_default();
-    if links.is_empty() {
+    let index = Index::build(&ctx.existing_roots());
+    let Some(content) = index.content_of(file_path) else { return };
+    let names = wiki::outgoing_names(&content);
+    if names.len() > wiki::MAX_LINKS {
+        ctx.log(&format!("   ⚠️  Skipping file with {} links - likely garbage", names.len()));
+        return;
+    }
+    if names.is_empty() {
         ctx.log("   No wiki links in file, skipping");
-        return;
+    } else {
+        ctx.log(&format!("   Found {} links", names.len()));
+        apply(ctx, &index, file_path, &content, out);
     }
-    if links.len() > wiki::MAX_LINKS {
-        ctx.log(&format!("   ⚠️  Skipping file with {} links - likely garbage", links.len()));
-        return;
+    if created {
+        reevaluate_mentions(ctx, &index, &note_name(file_path), out);
     }
-    ctx.log(&format!("   Found {} links", links.len()));
-    mark_unresolved_in_file(ctx, file_path, &links, out);
 }
 
-fn handle_rename(ctx: &Ctx, old_path: &Path, new_path: &Path, out: &mut Outcome) {
-    let old_name = note_name(old_path);
-    let new_name = note_name(new_path);
-    ctx.log(&format!("📛 Renamed: {old_name} → {new_name}"));
-
-    // ORACLE BUG: double-escaped pattern (see module docs).
-    let mut affected = Vec::new();
-    for dir in ctx.existing_roots() {
-        affected.extend(wiki::rg_files(&format!(r"\\[\\[{old_name}\\]\\]"), &dir));
+/// Transform one note and save it if anything changed.
+fn apply(ctx: &Ctx, index: &Index, path: &Path, content: &str, out: &mut Outcome) -> bool {
+    let t = transform(content, index);
+    if t.content == content {
+        return false;
     }
-    if affected.is_empty() {
-        ctx.log("   No files link to this note");
-        return;
-    }
-    ctx.log(&format!("   Updating {} files with new link name", affected.len()));
-
-    for file in &affected {
-        let saved = wiki::read_text(file).and_then(|content| {
-            let updated = content
-                .replace(&format!("[[{old_name}]]"), &format!("[[{new_name}]]"))
-                .replace(&format!("?[[{old_name}]]"), &format!("?[[{new_name}]]"));
-            wiki::mark_writing(&ctx.marker, "resolve-mark");
-            wiki::save(file, &updated).ok()
-        });
-        match saved {
-            Some(()) => {
-                out.wrote();
-                ctx.log(&format!("   ✅ Updated: {}", basename(file)));
+    match index.write(ctx, path, &t.content) {
+        Ok(()) => {
+            out.wrote();
+            if t.added > 0 {
+                ctx.log(&format!("   ⚠️ Marked {} new unresolved links in {}", t.added, basename(path)));
             }
-            None => {
-                out.fail(format!("rename: failed to update {}", file.display()));
-                ctx.log(&format!("   ❌ Failed to update: {}", basename(file)));
+            if t.removed > 0 {
+                ctx.log(&format!("   ✅ Unmarked {} resolved links in {}", t.removed, basename(path)));
             }
+            true
+        }
+        Err(e) => {
+            out.fail(format!("save {}: {e}", path.display()));
+            ctx.log(&format!("   ❌ Failed to update: {}", basename(path)));
+            false
         }
     }
 }
 
-fn handle_remove(ctx: &Ctx, file_path: &Path, out: &mut Outcome) {
-    let file_name = note_name(file_path);
-    ctx.log(&format!("🗑️  Deleted: {file_name}"));
-
-    // ORACLE BUG: double-escaped pattern (see module docs).
-    let mut affected = Vec::new();
-    for dir in ctx.existing_roots() {
-        affected.extend(wiki::rg_files(&format!(r"\\[\\[{file_name}\\]\\]"), &dir));
-    }
-    if affected.is_empty() {
-        ctx.log("   No files link to this note");
-        return;
-    }
-    ctx.log(&format!("   Marking {} references as unresolved", affected.len()));
-
-    for file in &affected {
-        let saved = wiki::read_text(file).and_then(|content| {
-            let protected = content.replace("?[[", PLACEHOLDER);
-            let marked = protected.replace(&format!("[[{file_name}]]"), &format!("?[[{file_name}]]"));
-            let updated = marked.replace(PLACEHOLDER, "?[[");
-            wiki::mark_writing(&ctx.marker, "resolve-mark");
-            wiki::save(file, &updated).ok()
-        });
-        match saved {
-            Some(()) => {
-                out.wrote();
-                ctx.log(&format!("   ⚠️ Marked unresolved: {}", basename(file)));
-            }
-            None => {
-                out.fail(format!("remove: failed to update {}", file.display()));
-                ctx.log(&format!("   ❌ Failed to update: {}", basename(file)));
-            }
-        }
-    }
-}
-
-/// `mark_unresolved_in_file`: `[[link]]` → `?[[link]]` for every link whose
-/// target does not exist, using the placeholder dance so `?[[x]]` is never
-/// double-marked. The file is saved whenever any link was judged missing —
-/// even if the bytes did not change (e.g. the only occurrence was already
-/// marked), as the oracle does.
-pub fn mark_unresolved_in_file(ctx: &Ctx, file_path: &Path, links: &[String], out: &mut Outcome) {
-    let Some(mut content) = wiki::read_text(file_path) else { return };
-    let mut marked_count = 0;
-
-    for link in links {
-        let clean = wiki::clean_link(link);
-        // Dead code in the oracle too: `link` is capture group 1, which never
-        // carries the prefix. Kept for fidelity. ORACLE BUG: as a result
-        // `>[[inbox]]` becomes `>?[[inbox]]` and `![[img.png]]` becomes `!?[[img.png]]`.
-        if link.starts_with('?') || link.starts_with('>') {
+/// Re-apply the rule to every note that links `name` (any form, case-insensitive).
+fn reevaluate_mentions(ctx: &Ctx, index: &Index, name: &str, out: &mut Outcome) {
+    let Ok(re) = Regex::new(&format!(r"(?i)\[\[\s*{}\s*(?:[|#\]])", regex::escape(name))) else { return };
+    let mut changed = 0;
+    for i in 0..index.files().len() {
+        let Some(content) = index.content(i) else { continue };
+        if !re.is_match(&content) {
             continue;
         }
-        if should_exclude_link(clean) {
-            continue;
-        }
-        if wiki::find_target_file(clean, &ctx.roots).is_none() {
-            let protected = content.replace("?[[", PLACEHOLDER);
-            let marked = protected.replace(&format!("[[{link}]]"), &format!("?[[{link}]]"));
-            content = marked.replace(PLACEHOLDER, "?[[");
-            marked_count += 1;
+        if apply(ctx, index, &index.files()[i].clone(), &content, out) {
+            changed += 1;
         }
     }
-
-    if marked_count > 0 {
-        wiki::mark_writing(&ctx.marker, "resolve-mark");
-        match wiki::save(file_path, &content) {
-            Ok(()) => {
-                out.wrote();
-                ctx.log(&format!("   ⚠️ Marked {marked_count} new unresolved links"));
-            }
-            Err(e) => out.fail(format!("save {}: {e}", file_path.display())),
-        }
+    if changed > 0 {
+        ctx.log(&format!("   🧹 Re-evaluated ?[[ markers in {changed} files"));
     }
-}
-
-/// `clean_resolved_links`: strip `?` from `?[[name]]` in files found by the
-/// (broken, see module docs) rg pattern; the replacement itself is `sd`'s
-/// correctly-escaped regex `\?\[\[name\]\]` → `[[name]]`.
-///
-/// ORACLE BUG (replicated): `let updated = ($content | sd …)` collects an
-/// external command's output, and Nushell strips exactly one trailing line
-/// ending (`\n` or `\r\n`) when it does so — every file this path saves
-/// loses its final newline. (Verified on nu 0.106.1; the other handlers use
-/// nu-native `str replace` and are unaffected.)
-pub fn clean_resolved_links(ctx: &Ctx, file_name: &str, out: &mut Outcome) {
-    let mut affected = Vec::new();
-    for dir in ctx.existing_roots() {
-        affected.extend(wiki::rg_files(&format!(r"\\?\\[\\[{file_name}\\]\\]"), &dir));
-    }
-    if affected.is_empty() {
-        return;
-    }
-    ctx.log(&format!("   🧹 Cleaning ?[[ markers in {} files", affected.len()));
-
-    for file in &affected {
-        let saved = wiki::read_text(file).and_then(|content| {
-            let re = Regex::new(&format!(r"\?\[\[{file_name}\]\]")).ok()?;
-            let replaced = re.replace_all(&content, format!("[[{file_name}]]").as_str());
-            let updated = strip_one_trailing_newline(&replaced);
-            wiki::mark_writing(&ctx.marker, "resolve-mark");
-            wiki::save(file, updated).ok()
-        });
-        match saved {
-            Some(()) => {
-                out.wrote();
-                ctx.log(&format!("   ✅ Cleaned: {}", basename(file)));
-            }
-            None => {
-                out.fail(format!("clean: failed to update {}", file.display()));
-                ctx.log(&format!("   ❌ Failed to clean: {}", basename(file)));
-            }
-        }
-    }
-}
-
-/// What nu does to captured external output: drop one trailing `\r\n` or `\n`.
-fn strip_one_trailing_newline(s: &str) -> &str {
-    s.strip_suffix("\r\n").or_else(|| s.strip_suffix('\n')).unwrap_or(s)
 }
 
 #[cfg(test)]
@@ -280,23 +218,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn nu_captured_output_loses_one_line_ending() {
-        assert_eq!(strip_one_trailing_newline("abc\n"), "abc");
-        assert_eq!(strip_one_trailing_newline("abc\n\n"), "abc\n");
-        assert_eq!(strip_one_trailing_newline("abc\r\n"), "abc");
-        assert_eq!(strip_one_trailing_newline("abc"), "abc");
-        assert_eq!(strip_one_trailing_newline("abc\r"), "abc\r");
-    }
-
-    #[test]
     fn smart_filter() {
         for s in ["a", "https://x", "mailto:me", "C:\\x", "~/y", "IMG_0001", "my_temp_file", "Screenshot 2026", "con", "lpt1", "0123456789abcdef0123456789abcdef", "attachments/x", "a:b", "what?", "a|b", &"x".repeat(101)] {
             assert!(should_exclude_link(s), "{s} should be excluded");
         }
-        for s in ["ab", "Real Note", "Foo (bar)", "2026-09-02", "CON", "é1", &"x".repeat(100)] {
+        for s in ["ab", "Real Note", "Foo (bar)", "2026-09-02", "CON", "é", &"x".repeat(100)] {
             assert!(!should_exclude_link(s), "{s} should NOT be excluded");
         }
-        // nu `str length` counts bytes: "é" is 2 bytes so it passes min_length 2.
-        assert!(!should_exclude_link("é"));
+    }
+
+    #[test]
+    fn transform_rules() {
+        let d = tempfile::tempdir().unwrap();
+        let f = d.path().join("Forge");
+        std::fs::create_dir_all(&f).unwrap();
+        for n in ["Alpha.md", "Foo (bar).md", "C++.md"] {
+            std::fs::write(f.join(n), "").unwrap();
+        }
+        let ix = Index::build(&[f]);
+        let t = transform(
+            "[[Gone]] [[Gone|al]] [[Gone#h]] ?[[Gone]] ??[[Gone]] [[alpha]] ?[[Alpha|x]] ![[img.png]] !?[[img.png]] >[[In]] >?[[In]] [[https://x]] [[a]] ?[[a]] [[foo (bar)]] [[c++]] [[Note: x]]\n\n## Backlinks\n\n- [[Gone]]\n",
+            &ix,
+        );
+        assert_eq!(t.content, "?[[Gone]] ?[[Gone|al]] ?[[Gone#h]] ?[[Gone]] ?[[Gone]] [[alpha]] [[Alpha|x]] ![[img.png]] ![[img.png]] >[[In]] >[[In]] [[https://x]] [[a]] ?[[a]] [[foo (bar)]] [[c++]] [[Note: x]]\n\n## Backlinks\n\n- [[Gone]]\n");
+        assert_eq!((t.added, t.removed), (3, 3));
+        let same = transform(&t.content, &ix);
+        assert_eq!(same.content, t.content);
+        assert_eq!((same.added, same.removed), (0, 0));
+        assert_eq!(transform("x [[Gone]]", &ix).content, "x ?[[Gone]]");
     }
 }

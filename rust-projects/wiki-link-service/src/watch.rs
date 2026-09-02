@@ -1,11 +1,10 @@
-//! The event loop — a port of what nu's `watch $forge --glob "**/*.md"
-//! --debounce-ms N {|op, path, new_path| handle_change …}` does around the
-//! handlers. Same debouncer crate and family as nu 0.106 (`notify-debouncer-full`
-//! 0.3), same EventKind → operation mapping, same glob check (on the event's
-//! path; for a rename, on the OLD path), same last-path (`paths.pop()`) choice.
+//! The event loop — what nu's `watch $forge --glob "**/*.md" --debounce-ms N
+//! {|op, path, new_path| handle_change …}` did around the handlers: same
+//! debouncer family as nu 0.106 (`notify-debouncer-full` 0.3), same
+//! EventKind → operation mapping, same glob check (on the event's path; for a
+//! rename, on the OLD path), same last-path (`paths.pop()`) choice.
 //!
-//! Only the FIRST root (`~/Forge`) is watched, as in the oracle; every root
-//! is scanned by the handlers.
+//! Only the FIRST root (`~/Forge`) is watched; every root is scanned.
 
 use crate::heartbeat::Heartbeat;
 use crate::wiki::{Ctx, Outcome};
@@ -36,7 +35,6 @@ impl Which {
             Which::ResolveMark => "resolve.out.log",
         }
     }
-    /// The oracle's `handle_change` for this watcher.
     pub fn handle(self, ctx: &Ctx, op: &str, path: &Path, new_path: Option<&Path>) -> Outcome {
         match self {
             Which::Backlinks => crate::backlinks::handle_change(ctx, op, path, new_path),
@@ -85,9 +83,8 @@ fn banner(which: Which, ctx: &Ctx, debounce_ms: u64) {
             ctx.log("   Mode: Event-driven - zero CPU when idle");
         }
         Which::ResolveMark => {
-            ctx.log("   Feature: Clean ?[[ markers when files created/renamed/removed");
-            ctx.log("   Mode: Event-driven (Create/Rename/Remove only)");
-            ctx.log("   Note: Marking unresolved links happens via batch scan");
+            ctx.log("   Feature: Mark ?[[ for missing targets; clean when files are created/renamed/removed");
+            ctx.log("   Mode: Event-driven (Write/Create/Rename/Remove)");
         }
     }
     ctx.log(&format!("📂 Watching {} directories for markdown files", ctx.existing_roots().len()));

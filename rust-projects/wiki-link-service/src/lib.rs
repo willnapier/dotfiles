@@ -1,19 +1,17 @@
-//! wiki-link-service — Rust port (2026-09-02) of the two Nushell wiki-link
-//! watchers and their `link-service` supervisor:
+//! wiki-link-service — Rust port of the two Nushell wiki-link watchers and
+//! their `link-service` supervisor:
 //!
 //! * `scripts/wiki-backlinks`    → [`backlinks`]  (maintains `## Backlinks` sections)
 //! * `scripts/wiki-resolve-mark` → [`resolve`]    (marks `?[[target]]` for missing targets)
-//! * `scripts/link-service`      → `start`/`status`/`stop` in `main.rs`
+//! * `scripts/link-service`      → `start`/`status`/`stop`/`audit` in `main.rs`
 //!
-//! The handlers are ports of the oracles' `handle_change` functions and are
-//! held to byte-for-byte parity with them by `tests/parity.rs`. Where the
-//! oracle's behaviour is a bug it is replicated on purpose and documented at
-//! the point of replication (search for `ORACLE BUG`).
-//!
-//! The Nushell scripts shell out to `rg`, `fd` and `sd`; [`wiki`] emulates the
-//! exact semantics of those calls (regex crate, `ignore`-crate walk with
-//! hidden/gitignore handling, fd smart-case) instead of spawning them.
+//! 0.1.0 was a byte-for-byte replica of the oracles including nine of their
+//! bugs. 0.2.0 (2026-09-02) fixes those nine per Will's spec — see the
+//! `SPEC` notes in each module — and keeps byte-identical parity with the
+//! oracles for everything else (`tests/parity.rs`). [`audit`] reports what
+//! the corrected rules would change without writing.
 
+pub mod audit;
 pub mod backlinks;
 pub mod heartbeat;
 pub mod logger;
