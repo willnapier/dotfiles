@@ -11,7 +11,7 @@ RestartSec=10
 
 # Security settings
 ProtectSystem=strict
-ReadWritePaths=%h/Forge
+ReadWritePaths=%h/Forge %h/.local/share %h/.local/state /tmp
 NoNewPrivileges=true
 
 [Install]

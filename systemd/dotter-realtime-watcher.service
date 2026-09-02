@@ -25,7 +25,8 @@ IOSchedulingPriority=7
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=%h/.local/share %h/dotfiles /tmp
+# recognition-only since 2026-09-02: it never writes into ~/dotfiles; .local/state holds the heartbeat
+ReadWritePaths=%h/.local/share %h/.local/state /tmp
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
