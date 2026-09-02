@@ -26,10 +26,10 @@ def main [] {
         let owner = (try { open --raw $lock_file | str trim | into int } catch { 0 })
         let alive = ($owner > 0 and (ps | where pid == $owner | length) > 0)
         if $alive {
-            log_message $log_file $"🔒 Real-time watcher already running (pid ($owner))"
+            log_message $log_file $"🔒 Real-time watcher already running — pid ($owner)"
             exit 1
         } else {
-            log_message $log_file $"⚠️  Removing stale lock file (pid ($owner) not running)"
+            log_message $log_file $"⚠️  Removing stale lock file — pid ($owner) not running"
             rm -f $lock_file
         }
     }
