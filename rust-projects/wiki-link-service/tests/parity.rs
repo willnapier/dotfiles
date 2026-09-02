@@ -578,3 +578,78 @@ fn reconcile_dry_run_then_apply_matches_expected_tree_and_clears_audit() {
     assert_eq!(after.markers_added_total, 0, "markers still need adding: {after:?}");
     assert_eq!(after.markers_removed_total, 0, "markers still need removing: {after:?}");
 }
+
+/// The watchers' fixed point, not the rules applied blindly: a >100-link note
+/// keeps its unmarked links (resolve-mark would never process it), and a note
+/// under a scanned-but-unwatched root is counted in the plan but never
+/// written, even though it contributes backlinks to the watched root.
+#[test]
+fn reconcile_skips_heavy_notes_and_writes_only_the_watched_root() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    let heavy_links: String = (1..=101).map(|n| format!("[[M{n}]] ")).collect();
+    let heavy = format!("# Heavy\n\n{heavy_links}\n");
+    write(home, "Forge/A.md", "# A\n\n[[B]] [[Missing]]\n");
+    write(home, "Forge/B.md", "# B\n\n[[A]] [[Note]]\n");
+    write(home, "Forge/Heavy.md", &heavy);
+    write(home, "Admin/Note.md", "# Note\n\n[[A]]\n");
+    let roots = vec![home.join("Forge"), home.join("Admin")];
+
+    let before = snapshot(home);
+    let dry = reconcile::reconcile(&roots, false).unwrap();
+    assert_eq!(dry.planned, 2, "A and B: {dry:?}");
+    assert_eq!(dry.outside_watched, 1, "Admin/Note would gain a section but is not watched: {dry:?}");
+    assert_eq!(dry.audit.markers_skipped, vec![home.join("Forge/Heavy.md")]);
+    assert_eq!(dry.audit.markers_added_total, 1, "only A's [[Missing]]; Heavy's 101 are skipped: {dry:?}");
+    assert_eq!(snapshot(home), before, "dry-run must never write");
+
+    let applied = reconcile::reconcile(&roots, true).unwrap();
+    assert_eq!((applied.planned, applied.written, applied.outside_watched), (2, 2, 1));
+    let after = snapshot(home);
+    assert_eq!(read(&after, "Forge/A.md"), "# A\n\n[[B]] ?[[Missing]]\n\n## Backlinks\n\n- [[B]]\n- [[Note]]\n");
+    assert_eq!(read(&after, "Forge/B.md"), "# B\n\n[[A]] [[Note]]\n\n## Backlinks\n\n- [[A]]\n");
+    assert_eq!(read(&after, "Forge/Heavy.md"), heavy, "heavy note must be byte-identical");
+    assert_eq!(read(&after, "Admin/Note.md"), "# Note\n\n[[A]]\n", "unwatched root must not be written");
+    assert!(after.keys().all(|k| !k.contains("wiki-reconcile")), "temp file left behind: {:?}", after.keys());
+
+    // Idempotent for everything the watchers would touch; the Admin section stays reported.
+    let again = reconcile::reconcile(&roots, false).unwrap();
+    assert_eq!(again.planned, 0, "{again:?}");
+    assert_eq!(again.outside_watched, 1, "{again:?}");
+    assert_eq!(again.audit.markers_skipped.len(), 1);
+}
+
+/// `--apply` refuses while a live PID holds the service lock; a dry run does not care.
+#[test]
+fn reconcile_apply_refuses_while_the_service_lock_is_held() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    write(home, "Forge/A.md", "# A\n\n[[Missing]]\n");
+    let log_dir = home.join("log");
+    fs::create_dir_all(&log_dir).unwrap();
+    fs::write(log_dir.join("link-service.pid"), std::process::id().to_string()).unwrap();
+    let before = snapshot(home);
+
+    let run = |apply: bool| {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_wiki-link-service"));
+        cmd.arg("--root").arg(home.join("Forge")).arg("--log-dir").arg(&log_dir).arg("reconcile");
+        if apply {
+            cmd.arg("--apply");
+        }
+        cmd.output().unwrap()
+    };
+    let refused = run(true);
+    assert!(!refused.status.success(), "apply must fail while the lock is live");
+    let out = String::from_utf8_lossy(&refused.stdout);
+    assert!(out.contains("is running"), "{out}");
+    assert_eq!(snapshot(home), before, "refused apply must not write");
+
+    let dry = run(false);
+    assert!(dry.status.success(), "dry-run is read-only and allowed: {}", String::from_utf8_lossy(&dry.stderr));
+    assert_eq!(snapshot(home), before);
+
+    fs::remove_file(log_dir.join("link-service.pid")).unwrap();
+    let applied = run(true);
+    assert!(applied.status.success(), "{}", String::from_utf8_lossy(&applied.stderr));
+    assert_eq!(read(&snapshot(home), "Forge/A.md"), "# A\n\n?[[Missing]]\n");
+}

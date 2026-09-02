@@ -9,8 +9,10 @@
 //! bugs. 0.2.0 (2026-09-02) fixes those nine per Will's spec — see the
 //! `SPEC` notes in each module — and keeps byte-identical parity with the
 //! oracles for everything else (`tests/parity.rs`). [`audit`] reports what
-//! the corrected rules would change without writing; [`reconcile`] applies
-//! exactly that write set with same-directory atomic replacements.
+//! the corrected rules would change without writing, as the watchers would
+//! leave it (their size/link-count skips honoured); [`reconcile`] (0.2.3)
+//! applies that set under the watched root only, with same-directory atomic
+//! replacements, and refuses `--apply` while the service lock is live.
 
 pub mod audit;
 pub mod backlinks;

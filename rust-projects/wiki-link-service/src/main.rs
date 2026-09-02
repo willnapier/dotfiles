@@ -51,7 +51,7 @@ enum Cmd {
     Stop,
     /// Read-only: report which ## Backlinks sections and ?[[ markers the current rules would change under --root (never writes)
     Audit,
-    /// Plan the same changes as audit; pass --apply to write them atomically
+    /// Plan the watchers' fixed point (audit narrowed to the first, watched root); pass --apply to write it atomically. Refuses --apply while the service holds its PID lock
     Reconcile {
         /// Apply the plan. Without this flag reconcile is a read-only dry run.
         #[arg(long)]
@@ -73,6 +73,12 @@ fn main() -> Result<()> {
         }
         Cmd::Reconcile { apply } => {
             let roots = resolve_roots(&cli)?;
+            if apply {
+                if let Some((label, pid)) = running_lock(&cli) {
+                    println!("❌ {label} is running (pid {pid}) — stop it before --apply (wiki-link-service stop, or the launchd/systemd unit), then restart it afterwards");
+                    std::process::exit(1);
+                }
+            }
             let report = wiki_link_service::reconcile::reconcile(&roots, apply)?;
             print!("{}", report.render());
             return Ok(());
@@ -182,6 +188,11 @@ fn start(cli: &Cli) -> Result<()> {
 
 fn locks(cli: &Cli) -> [(&'static str, PathBuf); 3] {
     [("link-service (start)", service_lock(cli)), ("backlinks", single_lock(cli, Which::Backlinks)), ("resolve-mark", single_lock(cli, Which::ResolveMark))]
+}
+
+/// The first lock held by a live process, if any.
+fn running_lock(cli: &Cli) -> Option<(&'static str, u32)> {
+    locks(cli).into_iter().find_map(|(label, lock)| read_pid(&lock).filter(|&pid| pid_alive(pid)).map(|pid| (label, pid)))
 }
 
 fn status(cli: &Cli) -> Result<()> {
