@@ -4,20 +4,18 @@
 <dict>
     <key>Label</key>
     <string>com.williamnapier.link-service</string>
+    <!-- wiki-link-service (Rust, 2026-09-02): runs the backlinks and resolve-mark watchers as two
+         threads of one foreground process, so launchd supervises it directly. Replaces the Nushell
+         link-service + wiki-backlinks + wiki-resolve-mark trio and the legacy wiki-link-manager agent. -->
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/williamnapier/.local/bin/link-service</string>
+        <string>/Users/williamnapier/.local/bin/wiki-link-service</string>
         <string>start</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
-    <!-- link-service spawns wiki-backlinks and wiki-resolve-mark with nohup and exits.
-         Without this, launchd kills the job's process group on exit and both watchers
-         die silently with empty logs (found 2026-09-02). -->
-    <key>AbandonProcessGroup</key>
-    <true/>
     <key>KeepAlive</key>
-    <false/>
+    <true/>
     <key>StandardOutPath</key>
     <string>/Users/williamnapier/.local/share/link-service/launchd-stdout.log</string>
     <key>StandardErrorPath</key>
@@ -25,7 +23,9 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <string>/Users/williamnapier/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>
+    <key>ProcessType</key>
+    <string>Background</string>
 </dict>
 </plist>

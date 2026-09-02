@@ -185,7 +185,6 @@ depends = []
 "scripts/new-script" = "~/.local/bin/new-script"
 "scripts/forge-content-search-interactive.sh" = "~/.local/bin/forge-content-search-interactive"
 "scripts/forge-semantic-search.sh" = "~/.local/bin/forge-semantic-search"
-"scripts/link-service" = "~/.local/bin/link-service"
 "scripts/nosave" = "~/.local/bin/nosave"
 "scripts/continuum-sync-claude" = "~/.local/bin/continuum-sync-claude"
 "scripts/quantified-sum" = "~/.local/bin/quantified-sum"
@@ -247,8 +246,6 @@ depends = []
 # Zotero integration
 "scripts/zotero-get-pdf-key" = "~/.local/bin/zotero-get-pdf-key"
 # Wiki link management - Split architecture following Unix "do one thing well" philosophy
-"scripts/wiki-backlinks" = "~/.local/bin/wiki-backlinks"
-"scripts/wiki-resolve-mark" = "~/.local/bin/wiki-resolve-mark"
 "scripts/wiki-link-manager" = "~/.local/bin/wiki-link-manager"  # Deprecated - kept for reference
 # "rust-projects/backlinks-init/target/release/backlinks-init" = { target = "~/.local/bin/backlinks-init", type = "symbolic" }  # Rust binary - not built on nimbini
 "scripts/forge-linker.sh" = "~/.local/bin/forge-linker"
@@ -384,7 +381,6 @@ depends = ["shared"]
 # Replaced the unmanaged com.user.dotter-drift-monitor KeepAlive daemon on 2026-09-01.
 "macos/launchd/com.williamnapier.dotter-drift-monitor.plist" = "~/Library/LaunchAgents/com.williamnapier.dotter-drift-monitor.plist"
 "macos/launchd/com.williamnapier.forge-md-revs.plist" = "~/Library/LaunchAgents/com.williamnapier.forge-md-revs.plist"
-"macos/launchd/com.williamnapier.wiki-link-manager.plist" = "~/Library/LaunchAgents/com.williamnapier.wiki-link-manager.plist"
 "macos/launchd/com.williamnapier.syncthing-monitor.plist" = "~/Library/LaunchAgents/com.williamnapier.syncthing-monitor.plist"
 "macos/launchd/com.williamnapier.mbsync-cohs.plist" = "~/Library/LaunchAgents/com.williamnapier.mbsync-cohs.plist"
 "macos/launchd/com.williamnapier.gmpull.plist" = "~/Library/LaunchAgents/com.williamnapier.gmpull.plist"
@@ -554,7 +550,6 @@ depends = ["shared"]
 "systemd/zotero-pdf-watcher.service" = "~/.config/systemd/user/zotero-pdf-watcher.service"
 "systemd/ai-export-watcher.service" = "~/.config/systemd/user/ai-export-watcher.service"
 # "systemd/wiki-link-manager.service" = "~/.config/systemd/user/wiki-link-manager.service"  # Missing file - temporarily disabled
-"systemd/forge-link-manager.service" = "~/.config/systemd/user/forge-link-manager.service"
 "systemd/collect-projects.service" = "~/.config/systemd/user/collect-projects.service"
 "systemd/collect-projects.timer" = "~/.config/systemd/user/collect-projects.timer"
 "systemd/collect-projects-watcher.service" = "~/.config/systemd/user/collect-projects-watcher.service"
