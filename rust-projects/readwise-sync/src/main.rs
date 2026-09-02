@@ -151,7 +151,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let base_dir = get_base_dir();
     let highlights_dir = base_dir.join("highlights");
     let reader_dir = base_dir.join("reader");
-    let state_path = base_dir.join("sync-state.json");
+    // Per-host state (review D5-2, 2026-09-02): ~/Captures is Syncthing-shared
+    // and both machines ran this at 03:00, each rewriting the same
+    // sync-state.json — one conflict copy per night. Each host now keeps
+    // its own file and seeds it from the shared one on first run.
+    let state_path = per_host_state_path(&base_dir);
 
     // Ensure directories exist
     fs::create_dir_all(&highlights_dir)?;
@@ -204,6 +208,28 @@ fn get_api_token() -> Result<String, Box<dyn std::error::Error>> {
     }
 
     Err("No Readwise API token found. Set READWISE_TOKEN env var or create ~/.config/readwise/token".into())
+}
+
+/// `sync-state.<hostname>.json`, migrated from the legacy shared
+/// `sync-state.json` when the per-host file does not exist yet.
+fn per_host_state_path(base_dir: &std::path::Path) -> PathBuf {
+    let host = std::process::Command::new("hostname")
+        .arg("-s")
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .filter(|h| !h.is_empty())
+        .unwrap_or_else(|| "unknown-host".to_string());
+    let path = base_dir.join(format!("sync-state.{host}.json"));
+    let legacy = base_dir.join("sync-state.json");
+    if !path.exists() && legacy.exists() {
+        if let Err(e) = fs::copy(&legacy, &path) {
+            eprintln!("warning: could not seed {} from {}: {e}", path.display(), legacy.display());
+        } else {
+            println!("Seeded per-host sync state {} from shared sync-state.json", path.display());
+        }
+    }
+    path
 }
 
 fn get_base_dir() -> PathBuf {
@@ -622,4 +648,27 @@ where
 {
     Option::<HashMap<String, serde_json::Value>>::deserialize(deserializer)
         .map(|opt| opt.unwrap_or_default())
+}
+
+#[cfg(test)]
+mod state_tests {
+    use super::*;
+
+    #[test]
+    fn per_host_state_is_seeded_from_legacy_then_independent() {
+        let tmp = std::env::temp_dir().join(format!("readwise-state-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+        fs::write(tmp.join("sync-state.json"), r#"{"last_highlights_sync":"2026-01-01T00:00:00Z","last_reader_sync":null}"#).unwrap();
+        let p = per_host_state_path(&tmp);
+        assert_ne!(p, tmp.join("sync-state.json"));
+        assert!(p.file_name().unwrap().to_string_lossy().starts_with("sync-state."));
+        let seeded = SyncState::load(&p);
+        assert_eq!(seeded.last_highlights_sync.as_deref(), Some("2026-01-01T00:00:00Z"));
+        // Writing the per-host file leaves the legacy shared file untouched.
+        SyncState { last_highlights_sync: Some("2026-09-02T00:00:00Z".into()), last_reader_sync: None }.save(&p).unwrap();
+        assert!(fs::read_to_string(tmp.join("sync-state.json")).unwrap().contains("2026-01-01"));
+        assert_eq!(SyncState::load(&per_host_state_path(&tmp)).last_highlights_sync.as_deref(), Some("2026-09-02T00:00:00Z"));
+        let _ = fs::remove_dir_all(&tmp);
+    }
 }
