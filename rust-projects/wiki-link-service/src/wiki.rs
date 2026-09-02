@@ -453,9 +453,10 @@ impl Index {
     }
 
     /// Sorted, distinct names of the notes whose outgoing links resolve to `target` (never the target itself).
+    /// Rendered NFC, so a macOS host (NFD file names) and a Linux host (NFC) write identical bytes.
     pub fn backlink_names(&self, target: usize) -> Vec<String> {
         let map = self.reverse_map();
-        let mut names: Vec<String> = map.get(&target).map(|v| v.iter().filter(|&&i| i != target).map(|&i| note_name(&self.files[i])).collect()).unwrap_or_default();
+        let mut names: Vec<String> = map.get(&target).map(|v| v.iter().filter(|&&i| i != target).map(|&i| note_name(&self.files[i]).nfc().collect()).collect()).unwrap_or_default();
         sort_names(&mut names);
         names
     }

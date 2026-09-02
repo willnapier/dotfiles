@@ -15,7 +15,8 @@
 //! replacements, and refuses `--apply` while the service lock is live.
 //! 0.2.4: one graph on every host — Syncthing conflict copies are not notes
 //! (each host keeps its own, unsynced), and link names resolve NFC-normalised
-//! (macOS hands back NFD file names, Linux NFC).
+//! (macOS hands back NFD file names, Linux NFC); 0.2.5 renders section entries
+//! NFC so both hosts write identical bytes.
 
 pub mod audit;
 pub mod backlinks;

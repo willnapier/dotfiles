@@ -662,7 +662,7 @@ fn conflict_copies_are_ignored_and_names_resolve_across_unicode_forms() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path();
     write(home, "Forge/A.md", "# A\n\n[[Zoë Harcombe]] [[Ghost]]\n");
-    write(home, "Forge/Zoe\u{0308} Harcombe.md", "# Z\n\nbody\n");
+    write(home, "Forge/Zoe\u{0308} Harcombe.md", "# Z\n\n[[A]]\n");
     write(home, "Forge/A.sync-conflict-20260111-122630-ALGYNMQ.md", "# A copy\n\n[[Zoë Harcombe]] [[Ghost]] [[A]]\n");
     write(home, "Forge/Ghost.sync-conflict-20260111-122630-ALGYNMQ.md", "# Ghost copy\n");
     let roots = vec![home.join("Forge")];
@@ -670,8 +670,8 @@ fn conflict_copies_are_ignored_and_names_resolve_across_unicode_forms() {
     let report = reconcile::reconcile(&roots, true).unwrap();
     assert_eq!(report.audit.notes, 2, "conflict copies are not indexed: {report:?}");
     let after = snapshot(home);
-    assert_eq!(read(&after, "Forge/A.md"), "# A\n\n[[Zoë Harcombe]] ?[[Ghost]]\n", "NFC link resolves the NFD file; a conflict copy does not make Ghost exist; A gains no backlink from its own conflict copy");
-    assert_eq!(read(&after, "Forge/Zoe\u{0308} Harcombe.md"), "# Z\n\nbody\n\n## Backlinks\n\n- [[A]]\n");
+    assert_eq!(read(&after, "Forge/A.md"), "# A\n\n[[Zoë Harcombe]] ?[[Ghost]]\n\n## Backlinks\n\n- [[Zoë Harcombe]]\n", "NFC link resolves the NFD file; the entry is rendered NFC whatever the filesystem's form; a conflict copy does not make Ghost exist nor give A a backlink");
+    assert_eq!(read(&after, "Forge/Zoe\u{0308} Harcombe.md"), "# Z\n\n[[A]]\n\n## Backlinks\n\n- [[A]]\n");
     assert_eq!(read(&after, "Forge/A.sync-conflict-20260111-122630-ALGYNMQ.md"), "# A copy\n\n[[Zoë Harcombe]] [[Ghost]] [[A]]\n", "conflict copy untouched");
     assert_eq!(read(&after, "Forge/Ghost.sync-conflict-20260111-122630-ALGYNMQ.md"), "# Ghost copy\n");
     assert_eq!(reconcile::reconcile(&roots, false).unwrap().planned, 0);
