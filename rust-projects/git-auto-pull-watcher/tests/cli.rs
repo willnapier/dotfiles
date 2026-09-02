@@ -73,6 +73,7 @@ fn once_with_nothing_behind_is_clean() {
     assert_eq!(code, 0);
     assert!(log.is_empty(), "nothing to say when up to date: {log}");
     assert!(hb.contains("\"watcher\":\"git-auto-pull-watcher\""), "{hb}");
+    assert!(hb.contains("\"interval_secs\":120,"), "{hb}");
     assert!(hb.contains("\"actions\":0,\"last_error\":null"), "{hb}");
     assert!(hb.contains("\"last_action\":null"), "{hb}");
     assert!(!hb.contains("\"last_cycle\":null"), "{hb}");

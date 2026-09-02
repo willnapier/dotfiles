@@ -82,13 +82,15 @@ fn main() -> Result<()> {
     if repos.is_empty() {
         anyhow::bail!("no repositories to watch (none of the defaults exist; pass --repo)");
     }
-    let mut watcher = Watcher::new(repos, cli.dry_run, cli.state_dir.clone(), logger);
+    let mut watcher = Watcher::new(repos, cli.dry_run, cli.tick, cli.state_dir.clone(), logger);
 
     if !cli.once {
         take_lock(&watcher.logger)?;
         let list: Vec<String> = watcher.repos.iter().map(|r| if r.deploy { format!("{} (deploy)", r.label) } else { r.label.clone() }).collect();
         watcher.logger.log(&format!("🚀 Starting {NAME} {} — repos {}; tick {}s", env!("CARGO_PKG_VERSION"), list.join(", "), cli.tick));
     }
+    // Heartbeat exists from startup, not only after the first tick.
+    watcher.write_heartbeat();
 
     loop {
         if !cli.once {
@@ -194,8 +196,16 @@ pub struct Watcher {
 }
 
 impl Watcher {
-    pub fn new(repos: Vec<Repo>, dry_run: bool, state_dir: PathBuf, logger: Logger) -> Self {
-        Watcher { repos, dry_run, state_dir, logger, dirty: HashSet::new(), heartbeat: Heartbeat::new() }
+    pub fn new(repos: Vec<Repo>, dry_run: bool, tick_secs: u64, state_dir: PathBuf, logger: Logger) -> Self {
+        Watcher { repos, dry_run, state_dir, logger, dirty: HashSet::new(), heartbeat: Heartbeat::new(tick_secs) }
+    }
+
+    /// Stamp `last_cycle = now` and rewrite the heartbeat file; a failure is logged, never fatal.
+    pub fn write_heartbeat(&mut self) {
+        self.heartbeat.last_cycle = Some(now_rfc3339());
+        if let Err(e) = self.heartbeat.write(&self.state_dir) {
+            self.logger.log(&format!("❌ heartbeat write failed: {e:#}"));
+        }
     }
 
     /// One pass over every repo, then the heartbeat. Never fails: a repo whose
@@ -222,11 +232,8 @@ impl Watcher {
             }
             outcomes.push(outcome);
         }
-        self.heartbeat.last_cycle = Some(now_rfc3339());
         self.heartbeat.last_error = last_error;
-        if let Err(e) = self.heartbeat.write(&self.state_dir) {
-            self.logger.log(&format!("❌ heartbeat write failed: {e:#}"));
-        }
+        self.write_heartbeat();
         outcomes
     }
 
@@ -325,6 +332,8 @@ fn git(repo: &Path, args: &[&str]) -> Result<GitOut> {
 // ── heartbeat ───────────────────────────────────────────────────────
 /// `<state-dir>/git-auto-pull-watcher.json`, rewritten atomically after every cycle.
 struct Heartbeat {
+    /// the tick; a health check judges staleness against it (0 would mean event-driven)
+    interval_secs: u64,
     started_at: String,
     last_cycle: Option<String>,
     last_action: Option<String>,
@@ -334,15 +343,16 @@ struct Heartbeat {
     host: String,
 }
 impl Heartbeat {
-    fn new() -> Self {
-        Heartbeat { started_at: now_rfc3339(), last_cycle: None, last_action: None, actions: 0, last_error: None, host: hostname() }
+    fn new(interval_secs: u64) -> Self {
+        Heartbeat { interval_secs, started_at: now_rfc3339(), last_cycle: None, last_action: None, actions: 0, last_error: None, host: hostname() }
     }
     fn to_json(&self) -> String {
         let opt = |v: &Option<String>| v.as_deref().map(json_str).unwrap_or_else(|| "null".into());
         format!(
-            "{{\"watcher\":{},\"version\":{},\"started_at\":{},\"last_cycle\":{},\"last_action\":{},\"actions\":{},\"last_error\":{},\"host\":{}}}\n",
+            "{{\"watcher\":{},\"version\":{},\"interval_secs\":{},\"started_at\":{},\"last_cycle\":{},\"last_action\":{},\"actions\":{},\"last_error\":{},\"host\":{}}}\n",
             json_str(NAME),
             json_str(env!("CARGO_PKG_VERSION")),
+            self.interval_secs,
             json_str(&self.started_at),
             opt(&self.last_cycle),
             opt(&self.last_action),
@@ -426,8 +436,20 @@ mod tests {
     fn json_strings_are_escaped() {
         assert_eq!(json_str("plain"), "\"plain\"");
         assert_eq!(json_str("a \"q\" \\ b\nc"), "\"a \\\"q\\\" \\\\ b\\nc\"");
-        let hb = Heartbeat { started_at: "t0".into(), last_cycle: None, last_action: None, actions: 0, last_error: None, host: "h".into() };
-        assert_eq!(hb.to_json(), format!("{{\"watcher\":\"git-auto-pull-watcher\",\"version\":\"{}\",\"started_at\":\"t0\",\"last_cycle\":null,\"last_action\":null,\"actions\":0,\"last_error\":null,\"host\":\"h\"}}\n", env!("CARGO_PKG_VERSION")));
+        let hb = Heartbeat { interval_secs: 120, started_at: "t0".into(), last_cycle: None, last_action: None, actions: 0, last_error: None, host: "h".into() };
+        assert_eq!(hb.to_json(), format!("{{\"watcher\":\"git-auto-pull-watcher\",\"version\":\"{}\",\"interval_secs\":120,\"started_at\":\"t0\",\"last_cycle\":null,\"last_action\":null,\"actions\":0,\"last_error\":null,\"host\":\"h\"}}\n", env!("CARGO_PKG_VERSION")));
+    }
+
+    /// The file exists from startup, before any cycle, with last_cycle stamped.
+    #[test]
+    fn heartbeat_is_written_at_startup() {
+        let d = tempfile::tempdir().unwrap();
+        let mut w = Watcher::new(vec![], false, 120, d.path().join("state"), Logger { path: d.path().join("log") });
+        w.write_heartbeat();
+        let hb = std::fs::read_to_string(d.path().join("state/git-auto-pull-watcher.json")).unwrap();
+        assert!(hb.contains("\"interval_secs\":120,"), "{hb}");
+        assert!(!hb.contains("\"last_cycle\":null"), "{hb}");
+        assert!(hb.contains("\"last_action\":null,\"actions\":0,\"last_error\":null"), "{hb}");
     }
 
     fn sh(dir: &Path, args: &[&str]) {
@@ -469,7 +491,7 @@ mod tests {
         sh(dir, &["push", "-q", "origin", "main"]);
     }
     fn watcher(root: &Path, repo: &Path) -> Watcher {
-        Watcher::new(vec![Repo::new(repo, false)], false, root.join("state"), Logger { path: root.join("log") })
+        Watcher::new(vec![Repo::new(repo, false)], false, 120, root.join("state"), Logger { path: root.join("log") })
     }
 
     /// Real git: B pushes, A's cycle fast-forwards; log and heartbeat record it.
