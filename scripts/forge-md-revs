@@ -139,7 +139,8 @@ def run-watch [] {
     mkdir (store-root)
     print $"forge-md-revs watching ($forge)/**/*.md -> (store-root)"
     # 100ms: collapse duplicate inotify events from one write, but not a later autosave.
-    watch $forge --glob "**/*.md" --debounce 100ms --recursive true --quiet {|operation, path, _new_path|
+    # nu 0.106: the flag is --debounce-ms <int>, not --debounce <duration>
+    watch $forge --glob "**/*.md" --debounce-ms 100 --recursive true --quiet {|operation, path, _new_path|
         if $operation in ["Write", "Modify", "Create"] {
             snapshot $path
         }
