@@ -127,9 +127,15 @@ pub fn note_name(path: &Path) -> String {
     path.file_stem().unwrap_or_default().to_string_lossy().into_owned()
 }
 
-/// Case-insensitive, whitespace-trimmed key a link name resolves by.
+/// Case-insensitive, whitespace-trimmed key a link name resolves by. A trailing
+/// `.md` is dropped: 787 Forge notes (Readwise/Obsidian era) link as
+/// `[[Note.md|Note]]`, and the index is keyed by file stem.
 pub fn name_key(name: &str) -> String {
-    name.trim().to_lowercase()
+    let n = name.trim();
+    // ".md" is ASCII, so when the ASCII-lowercased copy ends with it the last three BYTES of `n`
+    // are exactly that suffix and the slice is on a char boundary.
+    let n = if n.len() > 3 && n.to_ascii_lowercase().ends_with(".md") { &n[..n.len() - 3] } else { n };
+    n.trim_end().to_lowercase()
 }
 
 pub fn file_size(path: &Path) -> u64 {
@@ -437,6 +443,15 @@ impl Index {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn name_key_strips_md_suffix_and_case() {
+        assert_eq!(name_key("ASD and Initiative.md"), "asd and initiative");
+        assert_eq!(name_key("Note.MD"), "note");
+        assert_eq!(name_key(" Foo (bar) "), "foo (bar)");
+        assert_eq!(name_key(".md"), ".md");
+        assert_eq!(name_key("Is ‘relating’ in RFT swappable with ‘comparing’_.md"), "is ‘relating’ in rft swappable with ‘comparing’_");
+    }
 
     fn names(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()

@@ -35,7 +35,14 @@ pub struct AuditReport {
     pub markers_removed_total: usize,
 }
 
-pub const EXAMPLES: usize = 20;
+/// Examples per category; `WLS_AUDIT_EXAMPLES=all` (or a number) overrides for a full listing.
+pub fn examples() -> usize {
+    match std::env::var("WLS_AUDIT_EXAMPLES").ok().as_deref() {
+        Some("all") => usize::MAX,
+        Some(n) => n.parse().unwrap_or(20),
+        None => 20,
+    }
+}
 
 pub fn audit(roots: &[PathBuf]) -> AuditReport {
     let index = Index::build(roots);
@@ -90,20 +97,20 @@ impl AuditReport {
             self.entries_added,
             self.entries_removed
         ));
-        for c in self.sections.iter().take(EXAMPLES) {
+        for c in self.sections.iter().take(examples()) {
             s.push_str(&format!("   {} (+{} -{}, {})\n", c.path.display(), c.added, c.removed, c.kind));
         }
-        if self.sections.len() > EXAMPLES {
-            s.push_str(&format!("   … and {} more\n", self.sections.len() - EXAMPLES));
+        if self.sections.len() > examples() {
+            s.push_str(&format!("   … and {} more\n", self.sections.len() - examples()));
         }
 
         for (title, total, list) in [("?[[ markers that would be added", self.markers_added_total, &self.markers_added), ("?[[ markers that would be removed", self.markers_removed_total, &self.markers_removed)] {
             s.push_str(&format!("\n{title}: {total} (in {} notes)\n", list.len()));
-            for m in list.iter().take(EXAMPLES) {
+            for m in list.iter().take(examples()) {
                 s.push_str(&format!("   {} ({})\n", m.path.display(), m.count));
             }
-            if list.len() > EXAMPLES {
-                s.push_str(&format!("   … and {} more\n", list.len() - EXAMPLES));
+            if list.len() > examples() {
+                s.push_str(&format!("   … and {} more\n", list.len() - examples()));
             }
         }
         s
