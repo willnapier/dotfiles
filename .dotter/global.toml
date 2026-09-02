@@ -291,8 +291,6 @@ depends = []
 # Mail sync (lieer/gmi) — RETIRED 2026-05-04, replaced by gmpull (Rust
 # Gmail-API puller). Source files preserved in ~/dotfiles/legacy/.
 # Re-nu conversion scripts - Native Nushell watchers with no external dependencies
-"scripts/claude-docs-watcher-renu" = "~/.local/bin/claude-docs-watcher-renu"
-"scripts/claude-docs-watcher" = "~/.local/bin/claude-docs-watcher"
 "scripts/dotter-realtime-watcher-renu" = "~/.local/bin/dotter-realtime-watcher-renu"
 "scripts/helix-activity-watcher-renu" = "~/.local/bin/helix-activity-watcher-renu"
 "scripts/forge-md-revs" = "~/.local/bin/forge-md-revs"
