@@ -19,8 +19,17 @@ pub fn run_scenario(cli_name: &str, skill: &str, scenario: &Scenario) -> Result<
 
     // Stash any pre-existing uncommitted work before the scenario runs.
     // This prevents the post-scenario revert from destroying legitimate work.
+    // If the tree cannot be secured, nothing runs: the revert below ends in
+    // `git clean -fd`, which must never execute over unconfirmed state (D2-11).
     let had_stash = if has_dotfiles {
-        stash_dotfiles(&dotfiles_dir)
+        match stash_dotfiles(&dotfiles_dir) {
+            Stash::Clean => false,
+            Stash::Stashed => true,
+            Stash::Failed(why) => anyhow::bail!(
+                "refusing to run scenario {}: could not secure ~/dotfiles ({why}); nothing was run and nothing will be reverted",
+                scenario.id
+            ),
+        }
     } else {
         false
     };
@@ -175,41 +184,51 @@ fn parse_stream_json(output: &str) -> Result<Vec<LogEntry>> {
     Ok(entries)
 }
 
+/// Outcome of securing `~/dotfiles` before a scenario. Only `Clean` (status
+/// ran and reported nothing) and `Stashed` (stash push exited 0) permit the
+/// post-scenario `git clean -fd`; anything else is `Failed` and the scenario
+/// must not run at all.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Stash {
+    Clean,
+    Stashed,
+    Failed(String),
+}
+
 /// Stash any pre-existing uncommitted work in ~/dotfiles before a scenario runs.
-/// Returns true if a stash was created (i.e., there was uncommitted work to save).
-fn stash_dotfiles(dotfiles_dir: &Path) -> bool {
-    // Check if there's anything to stash (staged or unstaged changes)
-    let status = Command::new("git")
+pub fn stash_dotfiles(dotfiles_dir: &Path) -> Stash {
+    // Check if there's anything to stash (staged, unstaged or untracked)
+    let status = match Command::new("git")
         .arg("-C")
         .arg(dotfiles_dir)
         .arg("status")
         .arg("--porcelain")
-        .output();
-
-    let has_changes = match &status {
-        Ok(output) => !output.stdout.is_empty(),
-        Err(_) => false,
+        .output()
+    {
+        Ok(o) if o.status.success() => o,
+        Ok(o) => return Stash::Failed(format!("git status exited {}: {}", o.status, String::from_utf8_lossy(&o.stderr).trim())),
+        Err(e) => return Stash::Failed(format!("could not run git status: {e}")),
     };
+    if status.stdout.is_empty() {
+        return Stash::Clean;
+    }
 
-    if has_changes {
-        let stash = Command::new("git")
-            .arg("-C")
-            .arg(dotfiles_dir)
-            .arg("stash")
-            .arg("push")
-            .arg("-m")
-            .arg("skill-eval: pre-scenario stash")
-            .arg("--include-untracked")
-            .output();
-
-        if let Err(e) = &stash {
-            eprintln!("  Warning: git stash failed: {}", e);
-            return false;
+    match Command::new("git")
+        .arg("-C")
+        .arg(dotfiles_dir)
+        .arg("stash")
+        .arg("push")
+        .arg("-m")
+        .arg("skill-eval: pre-scenario stash")
+        .arg("--include-untracked")
+        .output()
+    {
+        Ok(o) if o.status.success() => {
+            eprintln!("  Stashed pre-existing uncommitted work in ~/dotfiles");
+            Stash::Stashed
         }
-        eprintln!("  Stashed pre-existing uncommitted work in ~/dotfiles");
-        true
-    } else {
-        false
+        Ok(o) => Stash::Failed(format!("git stash push exited {}: {}", o.status, String::from_utf8_lossy(&o.stderr).trim())),
+        Err(e) => Stash::Failed(format!("could not run git stash: {e}")),
     }
 }
 
@@ -393,5 +412,80 @@ impl Drop for Worktree {
     fn drop(&mut self) {
         // Best-effort cleanup on panic/early return
         let _ = self.cleanup();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn git(dir: &Path, args: &[&str]) -> std::process::Output {
+        Command::new("git").arg("-C").arg(dir).args(args).output().unwrap()
+    }
+
+    fn repo_with_commit() -> tempfile::TempDir {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = tmp.path();
+        assert!(git(d, &["init", "-q"]).status.success());
+        git(d, &["config", "user.email", "t@example.invalid"]);
+        git(d, &["config", "user.name", "t"]);
+        fs::write(d.join("tracked.txt"), "v1\n").unwrap();
+        git(d, &["add", "."]);
+        assert!(git(d, &["commit", "-q", "-m", "base"]).status.success());
+        tmp
+    }
+
+    /// D2-11: a directory git cannot report on is never "clean" — the scenario must not run.
+    #[test]
+    fn unreadable_status_is_failed_not_clean() {
+        let tmp = tempfile::tempdir().unwrap();
+        let not_a_repo = tmp.path().join("plain");
+        fs::create_dir(&not_a_repo).unwrap();
+        match stash_dotfiles(&not_a_repo) {
+            Stash::Failed(why) => assert!(why.contains("git status"), "{why}"),
+            other => panic!("expected Failed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn clean_repo_is_clean_and_dirty_repo_is_stashed_only_when_push_succeeds() {
+        let tmp = repo_with_commit();
+        let d = tmp.path();
+        assert_eq!(stash_dotfiles(d), Stash::Clean);
+
+        fs::write(d.join("untracked.txt"), "wip\n").unwrap();
+        fs::write(d.join("tracked.txt"), "v2\n").unwrap();
+        assert_eq!(stash_dotfiles(d), Stash::Stashed);
+        assert!(!d.join("untracked.txt").exists(), "untracked work moved into the stash");
+        assert_eq!(fs::read_to_string(d.join("tracked.txt")).unwrap(), "v1\n");
+        let list = String::from_utf8(git(d, &["stash", "list"]).stdout).unwrap();
+        assert!(list.contains("skill-eval: pre-scenario stash"), "{list}");
+
+        // Restore and confirm nothing was lost.
+        assert!(git(d, &["stash", "pop"]).status.success());
+        assert_eq!(fs::read_to_string(d.join("untracked.txt")).unwrap(), "wip\n");
+        assert_eq!(fs::read_to_string(d.join("tracked.txt")).unwrap(), "v2\n");
+    }
+
+    /// A stash push that exits non-zero must not be reported as Stashed.
+    #[test]
+    fn failed_stash_push_is_failed() {
+        let tmp = repo_with_commit();
+        let d = tmp.path();
+        fs::write(d.join("untracked.txt"), "wip\n").unwrap();
+        // Make the stash ref unwritable so `git stash push` fails after status succeeded.
+        let refs = d.join(".git/refs");
+        let mut perms = fs::metadata(&refs).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(&refs, perms.clone()).unwrap();
+        let result = stash_dotfiles(d);
+        perms.set_readonly(false);
+        fs::set_permissions(&refs, perms).unwrap();
+        match result {
+            Stash::Failed(why) => assert!(why.contains("stash"), "{why}"),
+            other => panic!("expected Failed, got {other:?}"),
+        }
+        assert!(d.join("untracked.txt").exists(), "work untouched on failure");
     }
 }
