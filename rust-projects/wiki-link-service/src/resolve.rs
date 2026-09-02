@@ -233,6 +233,12 @@ pub fn mark_unresolved_in_file(ctx: &Ctx, file_path: &Path, links: &[String], ou
 /// `clean_resolved_links`: strip `?` from `?[[name]]` in files found by the
 /// (broken, see module docs) rg pattern; the replacement itself is `sd`'s
 /// correctly-escaped regex `\?\[\[name\]\]` → `[[name]]`.
+///
+/// ORACLE BUG (replicated): `let updated = ($content | sd …)` collects an
+/// external command's output, and Nushell strips exactly one trailing line
+/// ending (`\n` or `\r\n`) when it does so — every file this path saves
+/// loses its final newline. (Verified on nu 0.106.1; the other handlers use
+/// nu-native `str replace` and are unaffected.)
 pub fn clean_resolved_links(ctx: &Ctx, file_name: &str, out: &mut Outcome) {
     let mut affected = Vec::new();
     for dir in ctx.existing_roots() {
@@ -246,9 +252,10 @@ pub fn clean_resolved_links(ctx: &Ctx, file_name: &str, out: &mut Outcome) {
     for file in &affected {
         let saved = wiki::read_text(file).and_then(|content| {
             let re = Regex::new(&format!(r"\?\[\[{file_name}\]\]")).ok()?;
-            let updated = re.replace_all(&content, format!("[[{file_name}]]").as_str()).into_owned();
+            let replaced = re.replace_all(&content, format!("[[{file_name}]]").as_str());
+            let updated = strip_one_trailing_newline(&replaced);
             wiki::mark_writing(&ctx.marker, "resolve-mark");
-            wiki::save(file, &updated).ok()
+            wiki::save(file, updated).ok()
         });
         match saved {
             Some(()) => {
@@ -263,9 +270,23 @@ pub fn clean_resolved_links(ctx: &Ctx, file_name: &str, out: &mut Outcome) {
     }
 }
 
+/// What nu does to captured external output: drop one trailing `\r\n` or `\n`.
+fn strip_one_trailing_newline(s: &str) -> &str {
+    s.strip_suffix("\r\n").or_else(|| s.strip_suffix('\n')).unwrap_or(s)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nu_captured_output_loses_one_line_ending() {
+        assert_eq!(strip_one_trailing_newline("abc\n"), "abc");
+        assert_eq!(strip_one_trailing_newline("abc\n\n"), "abc\n");
+        assert_eq!(strip_one_trailing_newline("abc\r\n"), "abc");
+        assert_eq!(strip_one_trailing_newline("abc"), "abc");
+        assert_eq!(strip_one_trailing_newline("abc\r"), "abc\r");
+    }
 
     #[test]
     fn smart_filter() {

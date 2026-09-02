@@ -234,12 +234,17 @@ fn backlinks_remove_link_is_stale_until_target_is_refreshed() {
     ) else {
         return;
     };
-    // step 1: only Gamma (target of [[Gamma|alias]]) is refreshed; Beta keeps the stale entry
+    // step 1: Alpha's remaining links are [[Gamma|alias]], ?[[Missing]] and — because the
+    // oracle also reads links out of the ## Backlinks section — [[Delta]]. Gamma and Delta
+    // are refreshed; Beta keeps the stale "- [[Alpha]]".
     assert_eq!(read(&run.after[0], "Forge/Beta.md"), read(&run.before, "Forge/Beta.md"));
     assert_eq!(read(&run.after[0], "Forge/Gamma.md"), "# Gamma\n\nPlain body without links.\n\n\n## Backlinks\n\n- [[Beta]]\n");
-    assert_eq!(changed(&run.before, &run.after[0]), vec!["Forge/Gamma.md"]);
-    // step 2: Delta links Alpha and ?[[Beta]] → both rebuilt; cross-dir + subdir ordering
-    assert_eq!(read(&run.after[1], "Forge/Beta.md"), "# Beta\n\nSee [[Alpha]] and [[Delta]] and [[Gamma]].\n\n## Backlinks\n\n- [[Delta]]\n");
+    assert_eq!(changed(&run.before, &run.after[0]), vec!["Forge/Gamma.md", "Forge/sub/Delta.md"]);
+    // step 2: Delta links Alpha and ?[[Beta]] → both rebuilt; cross-dir + subdir ordering.
+    // ORACLE BUG (cascade): Alpha is refreshed first and its new section contains
+    // "- [[Beta]]", and Gamma's section from step 1 contains "- [[Beta]]", so Beta's
+    // backlinks become Alpha, Gamma, Delta — the removed body link never drops out.
+    assert_eq!(read(&run.after[1], "Forge/Beta.md"), "# Beta\n\nSee [[Alpha]] and [[Delta]] and [[Gamma]].\n\n## Backlinks\n\n- [[Alpha]]\n- [[Gamma]]\n- [[Delta]]\n");
     assert_eq!(
         read(&run.after[1], "Forge/Alpha.md"),
         "# Alpha\n\nLinks to Beta and [[Gamma|alias]] and ?[[Missing]].\n\n## Backlinks\n\n- [[Beta]]\n- [[Code]]\n- [[Later]]\n- [[Delta]]\n- [[Notes]]\n"
@@ -255,10 +260,18 @@ fn backlinks_file_without_links_is_untouched() {
 }
 
 #[test]
-fn backlinks_idempotent() {
-    let Some(run) = parity(Which::Backlinks, &|_| {}, &[("Write", "Forge/Alpha.md", None), ("Write", "Forge/Alpha.md", None)], true) else { return };
-    assert_eq!(run.after[0], run.after[1]);
-    assert_ne!(run.before, run.after[0], "first run should have rebuilt Beta/Gamma sections");
+fn backlinks_idempotent_after_cascade_settles() {
+    // ORACLE BUG: links inside ## Backlinks sections are extracted like any
+    // other, so a section written in round 1 becomes a backlink in round 2
+    // (backlinks-init explicitly excludes the section to prevent this). The
+    // same event is therefore NOT idempotent until the cascade settles; it
+    // does settle, and from then on repeats change nothing.
+    let step = ("Write", "Forge/Alpha.md", None);
+    let Some(run) = parity(Which::Backlinks, &|_| {}, &[step, step, step], true) else { return };
+    assert_ne!(run.before, run.after[0], "first run should have rebuilt Beta/Gamma/Delta sections");
+    assert_ne!(run.after[0], run.after[1], "cascade: Gamma's new section adds Gamma to Beta's backlinks");
+    assert_eq!(read(&run.after[1], "Forge/Beta.md"), "# Beta\n\nSee [[Alpha]] and [[Delta]] and [[Gamma]].\n\n## Backlinks\n\n- [[Alpha]]\n- [[Gamma]]\n- [[Delta]]\n");
+    assert_eq!(run.after[1], run.after[2], "settled: third run is a no-op");
 }
 
 #[test]
@@ -405,9 +418,11 @@ fn resolve_idempotent() {
 
 #[test]
 fn resolve_create_target_does_not_unmark() {
-    // ORACLE BUG: the rg pattern is double-escaped, so creating Missing.md
+    // ORACLE BUGS: the rg pattern is double-escaped, so creating Missing.md
     // leaves ?[[Missing]] in Alpha. The pattern DOES match a file containing
-    // a literal `\\`, so creating Target.md cleans Code.md via sd.
+    // a literal `\\` (for ANY name), so both creates "clean" Code.md — the
+    // first changes nothing but the sd round-trip drops its final newline;
+    // the second turns ?[[Target]] into [[Target]].
     let Some(run) = parity(
         Which::ResolveMark,
         &|h| {
@@ -419,10 +434,13 @@ fn resolve_create_target_does_not_unmark() {
     ) else {
         return;
     };
-    assert_eq!(run.after[0], run.before);
+    assert_eq!(read(&run.after[0], "Forge/Code.md"), CODE_MD.strip_suffix('\n').unwrap());
+    assert_eq!(changed(&run.before, &run.after[0]), vec!["Forge/Code.md"]);
     assert_eq!(read(&run.after[1], "Forge/Alpha.md"), read(&run.before, "Forge/Alpha.md"));
-    assert_eq!(read(&run.after[1], "Forge/Code.md"), "# Code\n\nEscapes: `\\\\` and [[Alpha]] and [[Target]] and [[Target]].\n");
+    assert!(read(&run.after[1], "Forge/Alpha.md").contains("?[[Missing]]"));
+    assert_eq!(read(&run.after[1], "Forge/Code.md"), "# Code\n\nEscapes: `\\\\` and [[Alpha]] and [[Target]] and [[Target]].");
     assert_eq!(changed(&run.before, &run.after[1]), vec!["Forge/Code.md"]);
+    assert!(run.oracle_out[0].contains("Cleaning ?[[ markers in 1 files"));
     assert!(run.oracle_out[1].contains("Cleaning ?[[ markers in 1 files"));
 }
 
