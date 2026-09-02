@@ -22,6 +22,7 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Mutex, OnceLock};
+use unicode_normalization::UnicodeNormalization;
 
 /// nu `500kb` = 500,000 bytes.
 pub const LARGE_FILE_BYTES: u64 = 500_000;
@@ -135,7 +136,17 @@ pub fn name_key(name: &str) -> String {
     // ".md" is ASCII, so when the ASCII-lowercased copy ends with it the last three BYTES of `n`
     // are exactly that suffix and the slice is on a char boundary.
     let n = if n.len() > 3 && n.to_ascii_lowercase().ends_with(".md") { &n[..n.len() - 3] } else { n };
-    n.trim_end().to_lowercase()
+    // NFC so that a link typed as `ë` resolves a file whose name the filesystem
+    // hands back as `e` + combining diaeresis (macOS NFD names synced to a
+    // Linux host as NFC, and vice versa).
+    n.trim_end().to_lowercase().nfc().collect()
+}
+
+/// A Syncthing conflict copy (`Name.sync-conflict-YYYYMMDD-HHMMSS-DEVICE.md`).
+/// Never a note: it takes no section, contributes no backlinks and resolves
+/// no link, so hosts whose conflict debris differs still share one graph.
+pub fn is_conflict_copy(path: &Path) -> bool {
+    basename(path).contains(".sync-conflict-")
 }
 
 pub fn file_size(path: &Path) -> u64 {
@@ -350,7 +361,7 @@ impl Index {
             let mut b = WalkBuilder::new(root);
             b.sort_by_file_path(|a, b| a.cmp(b));
             for e in b.build().filter_map(Result::ok) {
-                if e.file_type().is_some_and(|t| t.is_file()) && e.path().extension().is_some_and(|x| x == "md") {
+                if e.file_type().is_some_and(|t| t.is_file()) && e.path().extension().is_some_and(|x| x == "md") && !is_conflict_copy(e.path()) {
                     let rel = e.path().strip_prefix(root).unwrap_or(e.path()).with_extension("");
                     rels.push(rel.to_string_lossy().replace('\\', "/").to_lowercase());
                     files.push(e.into_path());
@@ -442,9 +453,10 @@ impl Index {
     }
 
     /// Sorted, distinct names of the notes whose outgoing links resolve to `target` (never the target itself).
+    /// Rendered NFC, so a macOS host (NFD file names) and a Linux host (NFC) write identical bytes.
     pub fn backlink_names(&self, target: usize) -> Vec<String> {
         let map = self.reverse_map();
-        let mut names: Vec<String> = map.get(&target).map(|v| v.iter().filter(|&&i| i != target).map(|&i| note_name(&self.files[i])).collect()).unwrap_or_default();
+        let mut names: Vec<String> = map.get(&target).map(|v| v.iter().filter(|&&i| i != target).map(|&i| note_name(&self.files[i]).nfc().collect()).collect()).unwrap_or_default();
         sort_names(&mut names);
         names
     }
@@ -476,6 +488,22 @@ mod tests {
         assert_eq!(name_key(" Foo (bar) "), "foo (bar)");
         assert_eq!(name_key(".md"), ".md");
         assert_eq!(name_key("Is ‘relating’ in RFT swappable with ‘comparing’_.md"), "is ‘relating’ in rft swappable with ‘comparing’_");
+    }
+
+    #[test]
+    fn name_key_unifies_nfc_and_nfd() {
+        let nfd = "Zoe\u{0308} Harcombe"; // e + combining diaeresis, as macOS lists the file
+        let nfc = "Zoë Harcombe"; // as a link is typed
+        assert_ne!(nfd, nfc);
+        assert_eq!(name_key(nfd), name_key(nfc));
+        assert_eq!(name_key("Mate\u{0301}Neufeld.md"), "maténeufeld");
+    }
+
+    #[test]
+    fn conflict_copies_are_not_notes() {
+        assert!(is_conflict_copy(Path::new("/x/Note.sync-conflict-20260111-122630-ALGYNMQ.md")));
+        assert!(!is_conflict_copy(Path::new("/x/Note.md")));
+        assert!(!is_conflict_copy(Path::new("/x/sync-conflict notes.md")));
     }
 
     fn names(v: &[&str]) -> Vec<String> {

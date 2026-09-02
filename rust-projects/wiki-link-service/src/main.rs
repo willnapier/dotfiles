@@ -1,6 +1,6 @@
 //! wiki-link-service — `backlinks` / `resolve-mark` watchers, the
 //! `start`/`status`/`stop` supervisor that replaces `link-service`, and the
-//! read-only `audit`.
+//! read-only `audit` and explicitly applied `reconcile`.
 //!
 //! `start` runs both watchers in ONE foreground process (two threads) so a
 //! supervisor (launchd / systemd) owns exactly one PID. The PID lock lives
@@ -51,6 +51,12 @@ enum Cmd {
     Stop,
     /// Read-only: report which ## Backlinks sections and ?[[ markers the current rules would change under --root (never writes)
     Audit,
+    /// Plan the watchers' fixed point (audit narrowed to the first, watched root); pass --apply to write it atomically. Refuses --apply while the service holds its PID lock
+    Reconcile {
+        /// Apply the plan. Without this flag reconcile is a read-only dry run.
+        #[arg(long)]
+        apply: bool,
+    },
 }
 
 fn default_log_dir() -> PathBuf {
@@ -65,6 +71,18 @@ fn main() -> Result<()> {
             print!("{}", wiki_link_service::audit::audit(&roots).render());
             return Ok(());
         }
+        Cmd::Reconcile { apply } => {
+            let roots = resolve_roots(&cli)?;
+            if apply {
+                if let Some((label, pid)) = running_lock(&cli) {
+                    println!("❌ {label} is running (pid {pid}) — stop it before --apply (wiki-link-service stop, or the launchd/systemd unit), then restart it afterwards");
+                    std::process::exit(1);
+                }
+            }
+            let report = wiki_link_service::reconcile::reconcile(&roots, apply)?;
+            print!("{}", report.render());
+            return Ok(());
+        }
         Cmd::Status => return status(&cli),
         Cmd::Stop => return stop(&cli),
         _ => {}
@@ -74,7 +92,7 @@ fn main() -> Result<()> {
         Cmd::Backlinks => run_one(&cli, Which::Backlinks),
         Cmd::ResolveMark => run_one(&cli, Which::ResolveMark),
         Cmd::Start => start(&cli),
-        Cmd::Status | Cmd::Stop | Cmd::Audit => unreachable!(),
+        Cmd::Status | Cmd::Stop | Cmd::Audit | Cmd::Reconcile { .. } => unreachable!(),
     }
 }
 
@@ -170,6 +188,11 @@ fn start(cli: &Cli) -> Result<()> {
 
 fn locks(cli: &Cli) -> [(&'static str, PathBuf); 3] {
     [("link-service (start)", service_lock(cli)), ("backlinks", single_lock(cli, Which::Backlinks)), ("resolve-mark", single_lock(cli, Which::ResolveMark))]
+}
+
+/// The first lock held by a live process, if any.
+fn running_lock(cli: &Cli) -> Option<(&'static str, u32)> {
+    locks(cli).into_iter().find_map(|(label, lock)| read_pid(&lock).filter(|&pid| pid_alive(pid)).map(|pid| (label, pid)))
 }
 
 fn status(cli: &Cli) -> Result<()> {

@@ -1,6 +1,13 @@
 //! `audit` — read-only report of what the corrected rules would change.
 //! Uses only `Index::content` / `Index::backlink_names` / `resolve::transform`;
 //! there is no write path in this module.
+//!
+//! The report is the watcher's fixed point, not the rules applied blindly:
+//! a note the resolve-mark watcher would never process (over
+//! [`wiki::LARGE_FILE_BYTES`] or with more than [`wiki::MAX_LINKS`] outgoing
+//! links — "likely garbage web clip") is listed under `markers_skipped`
+//! rather than having its markers counted, and a note under 10 bytes never
+//! gets a section, exactly as `backlinks::update_backlinks` behaves.
 
 use crate::resolve;
 use crate::wiki::{self, Index};
@@ -33,6 +40,9 @@ pub struct AuditReport {
     pub markers_added_total: usize,
     pub markers_removed: Vec<MarkerChange>,
     pub markers_removed_total: usize,
+    /// Notes the resolve-mark watcher would skip (size / link-count rule), so
+    /// their markers are neither counted nor ever written by `reconcile`.
+    pub markers_skipped: Vec<PathBuf>,
 }
 
 /// Examples per category; `WLS_AUDIT_EXAMPLES=all` (or a number) overrides for a full listing.
@@ -44,8 +54,19 @@ pub fn examples() -> usize {
     }
 }
 
+/// True when the resolve-mark watcher would refuse to process this note
+/// (`resolve::handle_write`'s two guards).
+pub fn watcher_skips_markers(index: &Index, i: usize, content: &str) -> bool {
+    wiki::file_size(&index.files()[i]) > wiki::LARGE_FILE_BYTES || wiki::outgoing_names(content).len() > wiki::MAX_LINKS
+}
+
 pub fn audit(roots: &[PathBuf]) -> AuditReport {
-    let index = Index::build(roots);
+    audit_index(&Index::build(roots), roots)
+}
+
+/// The audit over an already-built index, so a caller that goes on to act
+/// (`reconcile`) plans from the same view of the tree it reported on.
+pub fn audit_index(index: &Index, roots: &[PathBuf]) -> AuditReport {
     let mut r = AuditReport { roots: roots.to_vec(), notes: index.files().len(), ..Default::default() };
     for i in 0..index.files().len() {
         let Some(content) = index.content(i) else { continue };
@@ -68,7 +89,11 @@ pub fn audit(roots: &[PathBuf]) -> AuditReport {
             r.sections.push(SectionChange { path: path.clone(), added, removed, kind });
         }
 
-        let t = resolve::transform(&content, &index);
+        if watcher_skips_markers(index, i, &content) {
+            r.markers_skipped.push(path);
+            continue;
+        }
+        let t = resolve::transform(&content, index);
         if t.added > 0 {
             r.markers_added_total += t.added;
             r.markers_added.push(MarkerChange { path: path.clone(), count: t.added });
@@ -112,6 +137,19 @@ impl AuditReport {
             if list.len() > examples() {
                 s.push_str(&format!("   … and {} more\n", list.len() - examples()));
             }
+        }
+
+        s.push_str(&format!(
+            "\nnotes the resolve-mark watcher skips (>{} B or >{} links; markers left as they are): {}\n",
+            wiki::LARGE_FILE_BYTES,
+            wiki::MAX_LINKS,
+            self.markers_skipped.len()
+        ));
+        for p in self.markers_skipped.iter().take(examples()) {
+            s.push_str(&format!("   {}\n", p.display()));
+        }
+        if self.markers_skipped.len() > examples() {
+            s.push_str(&format!("   … and {} more\n", self.markers_skipped.len() - examples()));
         }
         s
     }
