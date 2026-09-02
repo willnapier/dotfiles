@@ -1,0 +1,15 @@
+[package]
+name = "dotter-realtime-watcher"
+version = "0.1.0"
+edition = "2021"
+description = "Recognition-only watcher for unmanaged config files: watches ~/.config, ~/.local/bin, ~/.zshrc and ~/.bashrc, and logs + notifies when a config-looking file is not yet referenced in ~/dotfiles/.dotter/global.toml. Never runs dotter-add. One binary for macOS (launchd) and Linux (systemd)."
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+chrono = "0.4"
+notify = "6"
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
