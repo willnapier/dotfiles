@@ -6,7 +6,6 @@ com.google.GoogleUpdater.wake
 com.google.keystone.agent
 com.google.keystone.xpcservice
 com.napier.forge-metadata-backup.plist.retired-2026-08-01
-com.user.chatgpt-watcher
 com.user.claude-code-nightly-cleanup
 com.user.claude-docs-watcher
 com.user.claude-worktree-cleaner
@@ -24,9 +23,9 @@ com.user.remind-notify
 com.user.syncthing-sync-watchdog
 com.user.theme-monitor.plist.disabled
 com.user.web-clip-watcher
-com.user.zellij-cleanup
 com.user.zotero-bridge
 com.user.zotero-watcher
+com.williamnapier.ai-export-watcher
 com.williamnapier.assistants-auto-pull
 com.williamnapier.assistants-auto-push
 com.williamnapier.bequest-heartbeat
@@ -65,5 +64,4 @@ com.williamnapier.tm3-session-broker
 com.williamnapier.tm3-watcher
 com.williamnapier.usagewatch-monitor
 com.williamnapier.wiki-link-manager
-com.williamnapier.zellij-zombie-watcher
 homebrew.mxcl.syncthing
