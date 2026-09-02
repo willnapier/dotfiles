@@ -19,6 +19,7 @@
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
@@ -34,6 +35,70 @@ pub struct State {
     /// Reserved for Phase 3 (`users.history.list`-based incremental).
     #[serde(default)]
     pub last_history_id: Option<String>,
+    /// Message ids whose `messages.get` failed after the retry loop
+    /// gave up (429 / 5xx / quota / transport), keyed to the number of
+    /// ticks that have tried them. Queued *before* the history
+    /// checkpoint advances, so a failed fetch is deferred, never lost
+    /// (system review F5: 781 ids had been skipped for good). Retried
+    /// at the start of every tick; dropped after
+    /// [`MAX_PENDING_ATTEMPTS`] with a warning.
+    #[serde(default)]
+    pub pending: BTreeMap<String, u32>,
+}
+
+/// Ticks a queued id is retried before it is abandoned (logged).
+pub const MAX_PENDING_ATTEMPTS: u32 = 8;
+
+/// A fetch error that will never succeed on retry: the message is gone
+/// (deleted between listing and fetch) or the request is malformed.
+/// Everything else — rate limits, 5xx, quota, transport — is transient.
+pub fn is_permanent_fetch_error(message: &str) -> bool {
+    message.contains("HTTP 404 on messages.get") || message.contains("HTTP 400 on messages.get")
+}
+
+/// What a retry of a pending id produced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetryOutcome {
+    /// Written, deduped or filtered — the id is settled.
+    Settled,
+    /// Permanent error — the id is settled (gone), logged by the caller.
+    Gone,
+    /// Transient error — try again next tick.
+    Failed,
+}
+
+impl State {
+    /// Queue a failed fetch. Returns `true` if queued, `false` if the
+    /// error is permanent and the id was dropped instead.
+    pub fn queue_failure(&mut self, id: &str, error: &str) -> bool {
+        if is_permanent_fetch_error(error) {
+            self.pending.remove(id);
+            return false;
+        }
+        self.pending.entry(id.to_string()).or_insert(0);
+        true
+    }
+
+    /// Record the result of retrying a pending id. Returns `true` when
+    /// the id has been given up on (attempt cap reached).
+    pub fn note_retry(&mut self, id: &str, outcome: RetryOutcome) -> bool {
+        match outcome {
+            RetryOutcome::Settled | RetryOutcome::Gone => {
+                self.pending.remove(id);
+                false
+            }
+            RetryOutcome::Failed => {
+                let attempts = self.pending.entry(id.to_string()).or_insert(0);
+                *attempts += 1;
+                if *attempts >= MAX_PENDING_ATTEMPTS {
+                    self.pending.remove(id);
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+    }
 }
 
 /// Resolve the state file path. Always under `gmpull/` inside the
@@ -120,6 +185,7 @@ mod tests {
             last_page_token: Some("ABC".to_string()),
             messages_pulled: 12345,
             last_history_id: Some("999".to_string()),
+            pending: BTreeMap::new(),
         };
         let body = serde_json::to_string(&s).unwrap();
         let back: State = serde_json::from_str(&body).unwrap();
@@ -133,5 +199,52 @@ mod tests {
         let s: State = serde_json::from_str("{}").unwrap();
         assert!(s.last_page_token.is_none());
         assert_eq!(s.messages_pulled, 0);
+    }
+}
+
+#[cfg(test)]
+mod pending_tests {
+    use super::*;
+
+    #[test]
+    fn pending_round_trips_and_defaults_empty() {
+        let mut s = State::default();
+        s.pending.insert("abc".into(), 2);
+        let back: State = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert_eq!(back.pending.get("abc"), Some(&2));
+        let old: State = serde_json::from_str(r#"{"last_history_id":"1"}"#).unwrap();
+        assert!(old.pending.is_empty(), "pre-F5 state files load with an empty queue");
+    }
+
+    #[test]
+    fn transient_failures_queue_and_permanent_ones_do_not() {
+        let mut s = State::default();
+        assert!(s.queue_failure("t1", "messages.get id=t1: 503 server error on messages.get (attempt 15/15): backend"));
+        assert!(s.queue_failure("t2", "messages.get id=t2: 429 rate-limited on messages.get (attempt 15/15): quota"));
+        assert!(s.queue_failure("t3", "messages.get id=t3: HTTP GET messages.get: connection reset"));
+        assert!(!s.queue_failure("gone", "messages.get id=gone: HTTP 404 on messages.get: Requested entity was not found."));
+        assert_eq!(s.pending.len(), 3);
+        assert!(!s.pending.contains_key("gone"));
+        // Re-queueing an id keeps its attempt count.
+        s.pending.insert("t1".into(), 3);
+        s.queue_failure("t1", "503 server error on messages.get");
+        assert_eq!(s.pending["t1"], 3);
+    }
+
+    #[test]
+    fn retries_settle_or_are_abandoned_after_the_cap() {
+        let mut s = State::default();
+        s.queue_failure("a", "503 server error on messages.get");
+        s.queue_failure("b", "503 server error on messages.get");
+        s.queue_failure("c", "503 server error on messages.get");
+        assert!(!s.note_retry("a", RetryOutcome::Settled));
+        assert!(!s.note_retry("b", RetryOutcome::Gone));
+        assert_eq!(s.pending.keys().collect::<Vec<_>>(), vec!["c"]);
+        for attempt in 1..MAX_PENDING_ATTEMPTS {
+            assert!(!s.note_retry("c", RetryOutcome::Failed), "attempt {attempt} keeps it queued");
+            assert_eq!(s.pending["c"], attempt);
+        }
+        assert!(s.note_retry("c", RetryOutcome::Failed), "cap reached → abandoned");
+        assert!(s.pending.is_empty());
     }
 }

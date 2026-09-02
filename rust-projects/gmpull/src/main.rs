@@ -73,6 +73,11 @@ enum Cmd {
         /// Concurrent in-flight `messages.get` cap (default 3).
         #[arg(long, default_value_t = DEFAULT_FETCH_CONCURRENCY)]
         concurrency: usize,
+        /// Ignore the history checkpoint for this tick and re-enumerate
+        /// the whole mailbox (dedup against disk makes this cheap).
+        /// Recovers anything an earlier version skipped for good.
+        #[arg(long)]
+        full: bool,
     },
 }
 
@@ -94,6 +99,7 @@ fn main() -> Result<()> {
                 rate_limit,
                 rate_burst,
                 concurrency,
+                full,
             } => {
                 pull(
                     maildir,
@@ -102,6 +108,7 @@ fn main() -> Result<()> {
                     rate_limit,
                     rate_burst,
                     concurrency,
+                    full,
                 )
                 .await
             }
@@ -130,6 +137,7 @@ async fn pull(
     rate_limit: u32,
     rate_burst: u32,
     concurrency: usize,
+    full: bool,
 ) -> Result<()> {
     let maildir_root = maildir_arg
         .map(Ok)
@@ -193,7 +201,30 @@ async fn pull(
     let session_deduped = AtomicU64::new(0);
     let session_filtered = AtomicU64::new(0);
     let session_errored = AtomicU64::new(0);
+    let failed: Failed = std::sync::Mutex::new(Vec::new());
     let started = Instant::now();
+
+    if full {
+        tracing::info!("--full: ignoring the history checkpoint for this tick; full enumeration will reseed it");
+        state.last_history_id = None;
+    }
+
+    // Deferred work first: ids whose fetch failed on an earlier tick.
+    retry_pending(
+        &mut state,
+        &http,
+        &token_arc,
+        &maildir_root,
+        &labels_arc,
+        &limiter,
+        &fetch_sem,
+        &existing_ids_arc,
+        &session_written,
+        &session_deduped,
+        &session_filtered,
+        &session_errored,
+    )
+    .await;
 
     // ── Branch: incremental vs full enumeration ───────────────────
     //
@@ -229,11 +260,15 @@ async fn pull(
             &session_deduped,
             &session_filtered,
             &session_errored,
+            &failed,
             max_messages,
         )
         .await
         {
             Ok(latest_history_id) => {
+                // Queue this tick's failures BEFORE the checkpoint moves
+                // past them (F5): a failed fetch is deferred, never lost.
+                queue_failures(&mut state, &failed);
                 if let Some(id) = latest_history_id {
                     tracing::info!(
                         new_history_id = %id,
@@ -326,14 +361,17 @@ async fn pull(
             let sem_c = fetch_sem.clone();
             let existing_c = existing_ids_arc.clone();
             in_flight.push(tokio::spawn(async move {
-                let _permit = sem_c
-                    .acquire_owned()
-                    .await
-                    .context("acquiring fetch semaphore")?;
-                fetch_and_write_one(
-                    http_c, token_c, &id_c, &root_c, &labels_c, &limiter_c, &existing_c,
-                )
-                .await
+                let permit = sem_c.acquire_owned().await.context("acquiring fetch semaphore");
+                let r = match permit {
+                    Ok(_p) => {
+                        fetch_and_write_one(
+                            http_c, token_c, &id_c, &root_c, &labels_c, &limiter_c, &existing_c,
+                        )
+                        .await
+                    }
+                    Err(e) => Err(e),
+                };
+                (id_c, r)
             }));
 
             // Allow up to `concurrency * 4` queued tasks before we
@@ -348,6 +386,7 @@ async fn pull(
                         &session_deduped,
                         &session_filtered,
                         &session_errored,
+                        &failed,
                     );
                 }
             }
@@ -360,6 +399,7 @@ async fn pull(
                 &session_deduped,
                 &session_filtered,
                 &session_errored,
+                &failed,
             );
         }
 
@@ -417,6 +457,7 @@ async fn pull(
     // Final flush — always preserve cumulative `messages_pulled`.
     state.messages_pulled =
         prior_pulled.saturating_add(session_written.load(Ordering::Relaxed));
+    queue_failures(&mut state, &failed);
 
     // Seed historyId for the next tick if and only if the full
     // enumeration ran to completion (last_page_token cleared) and
@@ -474,6 +515,7 @@ async fn incremental_pull(
     session_deduped: &AtomicU64,
     session_filtered: &AtomicU64,
     session_errored: &AtomicU64,
+    failed: &Failed,
     max_messages: Option<u64>,
 ) -> Result<Option<String>> {
     use futures::stream::{FuturesUnordered, StreamExt};
@@ -553,8 +595,16 @@ async fn incremental_pull(
         let queue_cap = concurrency.saturating_mul(4).max(8);
         let cap_reached = |w: u64| max_messages.is_some_and(|cap| w >= cap);
 
-        for id in to_fetch.into_iter() {
+        let mut to_fetch = to_fetch.into_iter();
+        for id in to_fetch.by_ref() {
             if cap_reached(session_written.load(Ordering::Relaxed)) {
+                // Everything not fetched under the cap is deferred, not
+                // dropped: the checkpoint will advance past it.
+                let mut f = failed.lock().expect("failed-list mutex");
+                f.push((id, "deferred: --max-messages cap reached".to_string()));
+                for rest in to_fetch.by_ref() {
+                    f.push((rest, "deferred: --max-messages cap reached".to_string()));
+                }
                 break;
             }
             total_added = total_added.saturating_add(1);
@@ -566,14 +616,17 @@ async fn incremental_pull(
             let sem_c = fetch_sem.clone();
             let existing_c = existing_ids_arc.clone();
             in_flight.push(tokio::spawn(async move {
-                let _permit = sem_c
-                    .acquire_owned()
-                    .await
-                    .context("acquiring fetch semaphore")?;
-                fetch_and_write_one(
-                    http_c, token_c, &id, &root_c, &labels_c, &limiter_c, &existing_c,
-                )
-                .await
+                let permit = sem_c.acquire_owned().await.context("acquiring fetch semaphore");
+                let r = match permit {
+                    Ok(_p) => {
+                        fetch_and_write_one(
+                            http_c, token_c, &id, &root_c, &labels_c, &limiter_c, &existing_c,
+                        )
+                        .await
+                    }
+                    Err(e) => Err(e),
+                };
+                (id, r)
             }));
             while in_flight.len() >= queue_cap {
                 if let Some(joined) = in_flight.next().await {
@@ -583,6 +636,7 @@ async fn incremental_pull(
                         session_deduped,
                         session_filtered,
                         session_errored,
+                        failed,
                     );
                 }
             }
@@ -594,6 +648,7 @@ async fn incremental_pull(
                 session_deduped,
                 session_filtered,
                 session_errored,
+                failed,
             );
         }
 
@@ -740,32 +795,140 @@ async fn refresh_token(slot: &Arc<tokio::sync::RwLock<String>>) -> Result<()> {
     Ok(())
 }
 
+/// One fetch task's result, tagged with the id it was for so a failure
+/// can be queued for retry.
+type Joined = Result<(String, Result<FetchOutcome>), tokio::task::JoinError>;
+
+/// Ids whose fetch failed this session, with the full error chain.
+type Failed = std::sync::Mutex<Vec<(String, String)>>;
+
 fn handle_one(
-    joined: Result<Result<FetchOutcome>, tokio::task::JoinError>,
+    joined: Joined,
     written: &AtomicU64,
     deduped: &AtomicU64,
     filtered: &AtomicU64,
     errored: &AtomicU64,
+    failed: &Failed,
 ) {
     match joined {
-        Ok(Ok(FetchOutcome::Written)) => {
+        Ok((_, Ok(FetchOutcome::Written))) => {
             written.fetch_add(1, Ordering::Relaxed);
         }
-        Ok(Ok(FetchOutcome::Deduped)) => {
+        Ok((_, Ok(FetchOutcome::Deduped))) => {
             deduped.fetch_add(1, Ordering::Relaxed);
         }
-        Ok(Ok(FetchOutcome::Filtered)) => {
+        Ok((_, Ok(FetchOutcome::Filtered))) => {
             filtered.fetch_add(1, Ordering::Relaxed);
         }
-        Ok(Err(e)) => {
+        Ok((id, Err(e))) => {
             errored.fetch_add(1, Ordering::Relaxed);
-            tracing::warn!(error = %e, "fetch_and_write_one failed");
+            let chain = format!("{e:#}");
+            tracing::warn!(id = %id, error = %chain, "fetch_and_write_one failed; queued for retry unless permanent");
+            failed.lock().expect("failed-list mutex").push((id, chain));
         }
         Err(e) => {
             errored.fetch_add(1, Ordering::Relaxed);
             tracing::warn!(error = %e, "task join failed");
         }
     }
+}
+
+/// Move this session's failed fetches into the durable queue. Must run
+/// before the checkpoint advances so nothing is dropped. Permanent
+/// errors (404: the message is gone) are logged and not queued.
+fn queue_failures(state: &mut state::State, failed: &Failed) {
+    let mut list = failed.lock().expect("failed-list mutex");
+    let (mut queued, mut gone) = (0u64, 0u64);
+    for (id, error) in list.drain(..) {
+        if state.queue_failure(&id, &error) {
+            queued += 1;
+        } else {
+            gone += 1;
+            tracing::info!(id = %id, error = %error, "message gone; not queued");
+        }
+    }
+    if queued > 0 || gone > 0 {
+        tracing::info!(queued, gone, pending_total = state.pending.len(), "failed fetches queued for retry");
+    }
+}
+
+/// Retry every id in the durable queue using the normal fetch path.
+/// Settled ids leave the queue; transient failures count an attempt
+/// and are abandoned (with a warning) after `MAX_PENDING_ATTEMPTS`.
+#[allow(clippy::too_many_arguments)]
+async fn retry_pending(
+    state: &mut state::State,
+    http: &reqwest::Client,
+    token_arc: &Arc<tokio::sync::RwLock<String>>,
+    maildir_root: &std::path::Path,
+    labels_arc: &Arc<std::collections::HashMap<String, String>>,
+    limiter: &SharedRateLimiter,
+    fetch_sem: &Arc<tokio::sync::Semaphore>,
+    existing_ids_arc: &Arc<tokio::sync::RwLock<HashSet<String>>>,
+    session_written: &AtomicU64,
+    session_deduped: &AtomicU64,
+    session_filtered: &AtomicU64,
+    session_errored: &AtomicU64,
+) {
+    if state.pending.is_empty() {
+        return;
+    }
+    let ids: Vec<String> = state.pending.keys().cloned().collect();
+    tracing::info!(pending = ids.len(), "retrying queued message ids");
+    use futures::stream::{FuturesUnordered, StreamExt};
+    let mut in_flight = FuturesUnordered::new();
+    for id in ids {
+        let http_c = http.clone();
+        let token_c = token_arc.clone();
+        let labels_c = labels_arc.clone();
+        let root_c = maildir_root.to_path_buf();
+        let limiter_c = limiter.clone();
+        let sem_c = fetch_sem.clone();
+        let existing_c = existing_ids_arc.clone();
+        in_flight.push(tokio::spawn(async move {
+            let _permit = sem_c.acquire_owned().await.context("acquiring fetch semaphore");
+            let r = match _permit {
+                Ok(_p) => fetch_and_write_one(http_c, token_c, &id, &root_c, &labels_c, &limiter_c, &existing_c).await,
+                Err(e) => Err(e),
+            };
+            (id, r)
+        }));
+    }
+    let (mut settled, mut gone, mut still, mut abandoned) = (0u64, 0u64, 0u64, 0u64);
+    while let Some(joined) = in_flight.next().await {
+        match joined {
+            Ok((id, Ok(outcome))) => {
+                match outcome {
+                    FetchOutcome::Written => session_written.fetch_add(1, Ordering::Relaxed),
+                    FetchOutcome::Deduped => session_deduped.fetch_add(1, Ordering::Relaxed),
+                    FetchOutcome::Filtered => session_filtered.fetch_add(1, Ordering::Relaxed),
+                };
+                state.note_retry(&id, state::RetryOutcome::Settled);
+                settled += 1;
+            }
+            Ok((id, Err(e))) => {
+                let chain = format!("{e:#}");
+                if state::is_permanent_fetch_error(&chain) {
+                    tracing::info!(id = %id, error = %chain, "queued message gone; dropped");
+                    state.note_retry(&id, state::RetryOutcome::Gone);
+                    gone += 1;
+                } else {
+                    session_errored.fetch_add(1, Ordering::Relaxed);
+                    if state.note_retry(&id, state::RetryOutcome::Failed) {
+                        tracing::warn!(id = %id, error = %chain, attempts = state::MAX_PENDING_ATTEMPTS, "giving up on queued message");
+                        abandoned += 1;
+                    } else {
+                        still += 1;
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "retry task join failed");
+            }
+        }
+    }
+    tracing::info!(settled, gone, still_pending = still, abandoned, "retry queue processed");
+    state::save_lossy(state).await;
 }
 
 fn log_progress(
