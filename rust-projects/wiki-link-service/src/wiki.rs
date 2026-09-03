@@ -473,6 +473,14 @@ impl Index {
         r
     }
 
+    /// Indices of the notes whose outgoing links resolve to `target` (never the target itself), in index order.
+    pub fn backlink_sources(&self, target: usize) -> Vec<usize> {
+        let map = self.reverse_map();
+        let mut v: Vec<usize> = map.get(&target).map(|v| v.iter().copied().filter(|&i| i != target).collect()).unwrap_or_default();
+        v.sort_unstable();
+        v
+    }
+
     /// Sorted, distinct names of the notes whose outgoing links resolve to `target` (never the target itself).
     /// NFC (via `note_name`), so a macOS host (NFD file names) and a Linux host (NFC) write identical bytes.
     pub fn backlink_names(&self, target: usize) -> Vec<String> {

@@ -75,25 +75,9 @@ def zed-daily [] {
 # Promote Reception inbox note to permanent Zettelkasten
 # Usage: promote note-name (without .md extension)
 def promote [note_name: string] {
-    let reception_path = $"($env.HOME)/Forge/Reception/($note_name).md"
-    let permanent_path = $"($env.HOME)/Forge/($note_name).md"
-
-    if not ($reception_path | path exists) {
-        print $"❌ Note not found: ($note_name)"
-        print "   Looking in ~/Forge/Reception/"
-        return
-    }
-
-    if ($permanent_path | path exists) {
-        print $"⚠️  Permanent note already exists: ($note_name)"
-        print $"   Use a different name or manually resolve conflict"
-        return
-    }
-
-    mv $reception_path $permanent_path
-    print $"✓ Promoted: ($note_name)"
-    print $"  From: Reception/($note_name).md"
-    print $"  To:   ($note_name).md"
+    # Reception → Forge root via wiki-link-service (finds the Reception note in
+    # either Unicode spelling; refuses if the destination exists). 0.2.8.
+    ^wiki-link-service promote $note_name
 }
 
 # Review Reception inbox
@@ -702,37 +686,22 @@ def note-new [name?: string] {
     } else {
         $name
     }
-    
-    # Add .md extension if not present
-    let filename = if ($note_name | str ends-with ".md") {
-        $note_name
-    } else {
-        $"($note_name).md"
-    }
-    
-    let note_path = $"($env.FORGE)/($filename)"
-    
-    # Check if file already exists
-    if ($note_path | path exists) {
-        print $"Note already exists: ($note_path)"
-        hx $note_path
+    # wiki-link-service new: creates <FORGE>/<name>.md with the standard
+    # frontmatter, or — if a note of that name already exists anywhere under the
+    # roots, in either Unicode spelling — prints that note's path and exits 2.
+    # Either way we open what it printed. (0.2.8; replaces a byte-exact
+    # `path exists` that could create an NFC twin beside an NFD-named file.)
+    let r = (do { ^wiki-link-service new $note_name } | complete)
+    let note_path = ($r.stdout | str trim)
+    if ($note_path | is-empty) {
+        print $"❌ ($r.stderr | str trim)"
         return
     }
-    
-    # Create note with basic frontmatter
-    let current_date = (date now | format date "%Y-%m-%d")
-    let current_time = (date now | format date "%H:%M")
-    
-    let template = $"---
-date created: ($current_date) ($current_time)
-date modified: ($current_date) ($current_time)
----
-# ($note_name | str replace ".md" "")
-
-"
-    
-    $template | save $note_path
-    print $"Created: ($note_path)"
+    if $r.exit_code == 2 {
+        print $"Note already exists: ($note_path)"
+    } else {
+        print $"Created: ($note_path)"
+    }
     hx $note_path
 }
 
@@ -993,25 +962,19 @@ def note-week-find [] {
 
 # Show backlinks - all notes that link to the current file
 def note-backlinks [file?: path] {
-    let target = if ($file | is-empty) {
-        # Try to get current file from Helix (would need integration)
-        print "Please provide a file path"
+    if ($file | is-empty) {
+        print "Please provide a note name or path"
         return
-    } else {
-        # NFC name via wiki-link-service (the stem off the disk is NFD on macOS)
-        ^wiki-link-service link-for $file | str trim | str replace -r '^\[\[(.*)\]\]$' '$1'
     }
-    
-    print $"Finding backlinks to: ($target)"
-    
-    # Search for [[target]] links
-    rg $"\\[\\[($target)\\]\\]" $env.FORGE --type md -l
-    | lines
-    | each { |f| 
-        let content = (rg $"\\[\\[($target)\\]\\]" $f -C 1 | str join "\n")
-        {file: ($f | path relative-to $env.FORGE), context: $content}
+    # wiki-link-service links-to: the service's own link graph (links inside
+    # `## Backlinks` sections do not count; either Unicode spelling of the
+    # name resolves). 0.2.8; replaces an rg over one spelling of the stem.
+    let r = (do { ^wiki-link-service links-to $file } | complete)
+    if $r.exit_code != 0 {
+        print $"❌ ($r.stderr | str trim)"
+        return
     }
-    | to md
+    $r.stdout | lines | where ($it | is-not-empty) | each { |f| {file: ($f | path relative-to $env.FORGE)} } | to md
 }
 
 # Yank (copy) wiki link for current note
@@ -1031,36 +994,13 @@ def note-yank [file?: path] {
 
 # Rename note and update all references
 def note-rename [old_name: string, new_name: string] {
-    let vault = $env.FORGE
-    let old_file = $"($vault)/($old_name).md"
-    let new_file = $"($vault)/($new_name).md"
-    
-    if not ($old_file | path exists) {
-        print $"File not found: ($old_file)"
-        return
-    }
-    
-    if ($new_file | path exists) {
-        print $"File already exists: ($new_file)"
-        return
-    }
-    
-    # Find all files that reference the old note
-    let refs = (rg $"\\[\\[($old_name)\\]\\]" $vault --type md -l | lines)
-    
-    print $"Found (($refs | length)) references to update"
-    
-    # Update all references
-    for file in $refs {
-        let content = (open $file)
-        let updated = ($content | str replace --all $"[[($old_name)]]" $"[[($new_name)]]")
-        $updated | save -f $file
-        print $"Updated: ($file | path relative-to $vault)"
-    }
-    
-    # Rename the file
-    mv $old_file $new_file
-    print $"Renamed: ($old_name) -> ($new_name)"
+    # wiki-link-service rename: renames the note (found in either Unicode
+    # spelling), rewrites every [[old]] / [[old|alias]] / [[old#h]] in either
+    # spelling, rebuilds sections and re-evaluates ?[[ markers — the same
+    # fan-out the watchers run on a rename event. Refuses if a note of the new
+    # name exists anywhere. 0.2.8; the old version grepped one spelling, found
+    # nothing for a diacritic note, and renamed the file anyway.
+    ^wiki-link-service rename $old_name $new_name
 }
 
 # ---- Reading Queue Functions ----

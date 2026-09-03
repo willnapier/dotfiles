@@ -70,6 +70,28 @@ enum Cmd {
         /// Path to a note (any spelling the OS gave you)
         path: PathBuf,
     },
+    /// Print the paths of the notes that link to a note (name, Dir/Name, or path; either spelling)
+    LinksTo {
+        name: String,
+    },
+    /// Rename a note and rewrite every [[link]] to it in either spelling, rebuild sections, re-evaluate ?[[ markers — what the watchers do on a rename. Refuses if a note of the new name exists anywhere
+    Rename {
+        /// Existing note: name, Dir/Name, or path
+        old: String,
+        /// New bare note name (NFC is applied)
+        new: String,
+    },
+    /// Create <dir>/<name>.md with the standard frontmatter — unless a note of that name exists anywhere under the roots, in which case print its path and exit 2 (no twin)
+    New {
+        name: String,
+        /// Directory to create in (default: the first root)
+        #[arg(long, value_name = "DIR")]
+        dir: Option<PathBuf>,
+    },
+    /// Move <root>/Reception/<name>.md (either spelling) to <root>/<name>.md; refuses if the destination exists
+    Promote {
+        name: String,
+    },
 }
 
 fn default_log_dir() -> PathBuf {
@@ -92,6 +114,31 @@ fn main() -> Result<()> {
         }
         Cmd::LinkFor { path } => {
             println!("[[{}]]", forge_names::note_name(&path));
+            return Ok(());
+        }
+        Cmd::LinksTo { name } => {
+            for p in wiki_link_service::ops::backlinks(&resolve_roots(&cli)?, &name)? {
+                println!("{}", p.display());
+            }
+            return Ok(());
+        }
+        Cmd::Rename { old, new } => {
+            let ctx = Ctx::new(resolve_roots(&cli)?, Logger { file: None, tag: None, quiet: false });
+            let (from, to) = wiki_link_service::ops::rename(&ctx, &old, &new)?;
+            println!("✓ Renamed: {} → {}", from.display(), to.display());
+            return Ok(());
+        }
+        Cmd::New { name, dir } => {
+            let n = wiki_link_service::ops::new_note(&resolve_roots(&cli)?, &name, dir.as_deref())?;
+            println!("{}", n.path.display());
+            if !n.created {
+                std::process::exit(2);
+            }
+            return Ok(());
+        }
+        Cmd::Promote { name } => {
+            let (from, to) = wiki_link_service::ops::promote(&resolve_roots(&cli)?, &name)?;
+            println!("✓ Promoted: {} → {}", from.display(), to.display());
             return Ok(());
         }
         Cmd::Audit => {
@@ -120,7 +167,7 @@ fn main() -> Result<()> {
         Cmd::Backlinks => run_one(&cli, Which::Backlinks),
         Cmd::ResolveMark => run_one(&cli, Which::ResolveMark),
         Cmd::Start => start(&cli),
-        Cmd::Status | Cmd::Stop | Cmd::Audit | Cmd::Reconcile { .. } | Cmd::Resolve { .. } | Cmd::LinkFor { .. } => unreachable!(),
+        Cmd::Status | Cmd::Stop | Cmd::Audit | Cmd::Reconcile { .. } | Cmd::Resolve { .. } | Cmd::LinkFor { .. } | Cmd::LinksTo { .. } | Cmd::Rename { .. } | Cmd::New { .. } | Cmd::Promote { .. } => unreachable!(),
     }
 }
 

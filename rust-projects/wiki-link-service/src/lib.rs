@@ -24,12 +24,15 @@
 //! equivalent duplicate file names in `audit`. 0.2.7 moves those helpers to
 //! the shared `forge-names` crate (the roll-out map `meta-nfc-boundary-rollout`)
 //! and adds `resolve <name>` / `link-for <path>` so scripts stop resolving
-//! names by byte-matching `fd` output.
+//! names by byte-matching `fd` output. 0.2.8 adds `backlinks`, `rename`, `new`
+//! and `promote` ([`ops`]) so the last Nushell note commands that byte-matched
+//! file names become thin wrappers over the service.
 
 pub mod audit;
 pub mod backlinks;
 pub mod heartbeat;
 pub mod logger;
+pub mod ops;
 pub mod reconcile;
 pub mod resolve;
 pub mod watch;
