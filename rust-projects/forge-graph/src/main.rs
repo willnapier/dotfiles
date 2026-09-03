@@ -6,6 +6,7 @@ use walkdir::WalkDir;
 use regex::Regex;
 use petgraph::graph::{Graph, NodeIndex};
 use anyhow::{Context, Result};
+use forge_names::{nfc, note_name};
 
 #[derive(Parser)]
 #[command(name = "forge-graph")]
@@ -105,11 +106,9 @@ impl VaultGraph {
                 continue;
             }
 
-            let name = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("")
-                .to_string();
+            // Path→name boundary: the stem is NFC here and nowhere else
+            // (macOS lists NFD; typed link text is NFC). `path` stays as walked.
+            let name = note_name(path);
 
             // Read file content
             let content = fs::read_to_string(path)
@@ -136,7 +135,8 @@ impl VaultGraph {
 
                     link_str = link_str.trim().to_string();
                     if !link_str.is_empty() {
-                        links_set.insert(link_str);
+                        // Link text is compared to NFC note names, so key it NFC.
+                        links_set.insert(nfc(&link_str));
                     }
                 }
             }
@@ -165,12 +165,7 @@ impl VaultGraph {
             let source_idx = vault.node_indices.get(&note.name);
 
             for link in &note.links {
-                // Try to find target note (with or without .md extension)
-                let target_name = if vault.notes.contains_key(link) {
-                    link.clone()
-                } else if vault.notes.contains_key(&format!("{}.md", link)) {
-                    format!("{}.md", link)
-                } else {
+                let Some(target_name) = vault.resolve_link(link) else {
                     // Link target doesn't exist as a note
                     continue;
                 };
@@ -186,14 +181,20 @@ impl VaultGraph {
         Ok(vault)
     }
 
+    /// The index key a link's text names, if such a note exists. Links are
+    /// NFC (see `parse_vault`) and the index is keyed by NFC stem, so this is
+    /// a plain lookup; a trailing `.md` in the link text is tolerated.
+    fn resolve_link(&self, link: &str) -> Option<String> {
+        link_candidates(link).into_iter().find(|k| self.notes.contains_key(k))
+    }
+
     fn find_orphans(&self) -> Vec<String> {
         let mut incoming_links: HashSet<String> = HashSet::new();
 
-        // Collect all link targets
+        // Collect all link targets (same keys as edge resolution)
         for note in self.notes.values() {
             for link in &note.links {
-                incoming_links.insert(link.clone());
-                incoming_links.insert(format!("{}.md", link));
+                incoming_links.extend(link_candidates(link));
             }
         }
 
@@ -515,6 +516,16 @@ impl VaultGraph {
     }
 }
 
+/// The index keys a link text may name: as written, and without a trailing
+/// `.md` (the index is keyed by stem).
+fn link_candidates(link: &str) -> Vec<String> {
+    let mut out = vec![link.to_string()];
+    if let Some(stem) = link.strip_suffix(".md") {
+        out.push(stem.to_string());
+    }
+    out
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -614,4 +625,41 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const NFD: &str = "Zoe\u{0308} Example";
+    const NFC: &str = "Zo\u{eb} Example";
+
+    #[test]
+    fn nfd_named_note_is_linked_by_nfc_text_and_not_an_orphan() {
+        let d = tempfile::tempdir().unwrap();
+        let v = d.path();
+        fs::write(v.join(format!("{NFD}.md")), "# Zoë\n").unwrap();
+        fs::write(
+            v.join("Linker.md"),
+            format!("See [[{NFC}]], [[{NFC}.md]] and [[{NFD}|alias]].\n"),
+        )
+        .unwrap();
+        fs::write(v.join("Lonely.md"), "Nothing links here.\n").unwrap();
+
+        let vault = VaultGraph::parse_vault(v).unwrap();
+
+        // The NFD file name yields an NFC key; the walked path is kept as-is.
+        assert!(vault.notes.contains_key(NFC));
+        assert!(!vault.notes.contains_key(NFD));
+        assert_eq!(vault.notes[NFC].path, v.join(format!("{NFD}.md")));
+
+        let src = vault.node_indices["Linker"];
+        let tgt = vault.node_indices[NFC];
+        assert!(vault.graph.find_edge(src, tgt).is_some(), "edge Linker -> {NFC}");
+        assert_eq!(vault.graph.edge_count(), 2, "[[NFC]] and [[NFD|alias]] dedupe; [[NFC.md]] is a second link");
+
+        let orphans = vault.find_orphans();
+        assert!(!orphans.iter().any(|n| n == NFC), "{NFC} has incoming links");
+        assert!(orphans.iter().any(|n| n == "Lonely"));
+    }
 }
