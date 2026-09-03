@@ -267,6 +267,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d45db016d36b838f563236e9193d0ee6ce38f3f68b6c94e914b4929c96bbb890"
 
 [[package]]
+name = "forge-names"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "unicode-normalization",
+]
+
+[[package]]
 name = "fsevent-sys"
 version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -827,11 +835,12 @@ dependencies = [
 
 [[package]]
 name = "wiki-link-service"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "forge-names",
  "ignore",
  "notify",
  "notify-debouncer-full",

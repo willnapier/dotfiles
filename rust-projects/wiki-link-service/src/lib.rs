@@ -21,7 +21,10 @@
 //! so every derived key is NFC by construction, matches link *text* in either
 //! spelling (`wiki::name_pattern`), resolves the watched root once and fails
 //! when it is missing (`reconcile::watched_root`), and reports canonically
-//! equivalent duplicate file names in `audit`.
+//! equivalent duplicate file names in `audit`. 0.2.7 moves those helpers to
+//! the shared `forge-names` crate (the roll-out map `meta-nfc-boundary-rollout`)
+//! and adds `resolve <name>` / `link-for <path>` so scripts stop resolving
+//! names by byte-matching `fd` output.
 
 pub mod audit;
 pub mod backlinks;

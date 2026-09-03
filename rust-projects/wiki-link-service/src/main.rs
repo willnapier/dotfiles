@@ -37,7 +37,7 @@ struct Cli {
     cmd: Cmd,
 }
 
-#[derive(Subcommand, Debug, Clone, Copy)]
+#[derive(Subcommand, Debug, Clone)]
 enum Cmd {
     /// Run the wiki-backlinks watcher (maintains ## Backlinks sections)
     Backlinks,
@@ -57,6 +57,19 @@ enum Cmd {
         #[arg(long)]
         apply: bool,
     },
+    /// Print the path of the note a link name refers to (NFC-insensitive, case-insensitive, `Dir/Name` and a trailing `.md` accepted); exit 1 when no note exists. Scripts must call this before creating a note, so a typed NFC name never gets a twin beside an NFD-named file
+    Resolve {
+        /// The link name as typed, e.g. `Zoë Harcombe` or `NapierianLogs/Scenarios/Deep`
+        name: String,
+        /// Print every match (root order, then path) instead of the first
+        #[arg(long)]
+        all: bool,
+    },
+    /// Print the `[[link]]` text for a note path — the stem, NFC — for pickers that paste links into notes
+    LinkFor {
+        /// Path to a note (any spelling the OS gave you)
+        path: PathBuf,
+    },
 }
 
 fn default_log_dir() -> PathBuf {
@@ -65,7 +78,22 @@ fn default_log_dir() -> PathBuf {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    match cli.cmd {
+    match cli.cmd.clone() {
+        Cmd::Resolve { name, all } => {
+            let roots = resolve_roots(&cli)?;
+            let found = forge_names::find_note(&roots, &name);
+            if found.is_empty() {
+                std::process::exit(1);
+            }
+            for p in if all { &found[..] } else { &found[..1] } {
+                println!("{}", p.display());
+            }
+            return Ok(());
+        }
+        Cmd::LinkFor { path } => {
+            println!("[[{}]]", forge_names::note_name(&path));
+            return Ok(());
+        }
         Cmd::Audit => {
             let roots = resolve_roots(&cli)?;
             print!("{}", wiki_link_service::audit::audit(&roots).render());
@@ -92,7 +120,7 @@ fn main() -> Result<()> {
         Cmd::Backlinks => run_one(&cli, Which::Backlinks),
         Cmd::ResolveMark => run_one(&cli, Which::ResolveMark),
         Cmd::Start => start(&cli),
-        Cmd::Status | Cmd::Stop | Cmd::Audit | Cmd::Reconcile { .. } => unreachable!(),
+        Cmd::Status | Cmd::Stop | Cmd::Audit | Cmd::Reconcile { .. } | Cmd::Resolve { .. } | Cmd::LinkFor { .. } => unreachable!(),
     }
 }
 
