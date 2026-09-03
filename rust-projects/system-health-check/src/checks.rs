@@ -427,7 +427,6 @@ pub const RUST_TOOLS: &[(&str, &str)] = &[
     ("readwise-sync", "readwise-sync"),
     ("state-capture", "state-capture"),
     ("system-health-check", "system-health-check"),
-    ("wiki-resolve-batch", "wiki-resolve-batch"),
     ("yt-transcript", "yt-transcript"),
 ];
 

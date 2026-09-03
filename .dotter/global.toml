@@ -241,7 +241,6 @@ depends = []
 # Zotero integration
 "scripts/zotero-get-pdf-key" = "~/.local/bin/zotero-get-pdf-key"
 # Wiki link management - Split architecture following Unix "do one thing well" philosophy
-# "rust-projects/backlinks-init/target/release/backlinks-init" = { target = "~/.local/bin/backlinks-init", type = "symbolic" }  # Rust binary - not built on nimbini
 "scripts/forge-linker.nu" = "~/.local/bin/forge-linker.nu"
 "scripts/semantic-indexer" = "~/.local/bin/semantic-indexer"
 "scripts/semantic-query" = "~/.local/bin/semantic-query"
