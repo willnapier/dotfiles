@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use regex::Regex;
 use std::collections::HashSet;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::types::{MemoryFile, MemoryFrontmatter, MemoryState};
 
@@ -15,9 +15,35 @@ pub fn memory_dir() -> Result<PathBuf> {
     Ok(home.join(format!(".claude/projects/{}/memory", slug)))
 }
 
+/// The path→name boundary for memory files: the file name as NFC text.
+/// Every `MemoryFile.filename`, and every name compared against one, comes
+/// through here; `MemoryFile.path` stays as the OS listed it and is the only
+/// thing opened, copied or removed.
+pub fn memory_name(path: &Path) -> String {
+    forge_names::file_name(path)
+}
+
+/// Look a typed (or LLM-emitted) file name up among the loaded memory files,
+/// NFC to NFC, and return that entry's own path. Never build a path from the
+/// name: on Linux an NFC name joined onto the directory would miss an NFD
+/// file and create a twin.
+pub fn resolve_name<'a>(state: &'a MemoryState, name: &str) -> Option<&'a Path> {
+    let want = forge_names::nfc(name);
+    state
+        .files
+        .iter()
+        .find(|f| f.filename == want)
+        .map(|f| f.path.as_path())
+}
+
 /// Scan the memory directory and return the full state
 pub fn scan_memory() -> Result<MemoryState> {
-    let dir = memory_dir()?;
+    scan_memory_at(&memory_dir()?)
+}
+
+/// Scan `dir` as a memory directory and return the full state
+pub fn scan_memory_at(dir: &Path) -> Result<MemoryState> {
+    let dir = dir.to_path_buf();
     let index_path = dir.join("MEMORY.md");
 
     // Read MEMORY.md
@@ -42,7 +68,7 @@ pub fn scan_memory() -> Result<MemoryState> {
             if !path.is_file() {
                 continue;
             }
-            let filename = entry.file_name().to_string_lossy().to_string();
+            let filename = memory_name(&path);
             if filename == "MEMORY.md" || !filename.ends_with(".md") {
                 continue;
             }
@@ -85,11 +111,13 @@ pub fn scan_memory() -> Result<MemoryState> {
     })
 }
 
-/// Extract filenames referenced in MEMORY.md as markdown links: [Title](filename.md)
+/// Extract filenames referenced in MEMORY.md as markdown links: [Title](filename.md).
+/// Link text may be in either Unicode form (pasted, or written by an older
+/// run); it is NFC'd here so it compares with `memory_name` output.
 fn extract_index_refs(content: &str) -> Vec<String> {
     let re = Regex::new(r"\[[^\]]+\]\(([^)]+\.md)\)").unwrap();
     re.captures_iter(content)
-        .map(|c| c[1].to_string())
+        .map(|c| forge_names::nfc(&c[1]))
         .collect()
 }
 
@@ -97,11 +125,7 @@ fn extract_index_refs(content: &str) -> Vec<String> {
 fn parse_memory_file(path: &PathBuf) -> Result<MemoryFile> {
     let content = fs::read_to_string(path)
         .with_context(|| format!("Failed to read {}", path.display()))?;
-    let filename = path
-        .file_name()
-        .context("No filename")?
-        .to_string_lossy()
-        .to_string();
+    let filename = memory_name(path);
 
     let (frontmatter, body) = parse_frontmatter(&content)
         .with_context(|| format!("Failed to parse frontmatter in {}", filename))?;
@@ -229,4 +253,40 @@ pub fn format_memory_state(state: &MemoryState) -> String {
     }
 
     out
+}
+
+#[cfg(test)]
+pub(crate) mod nfc_tests {
+    use super::*;
+
+    pub const NFD: &str = "feedback_zoe\u{0308}.md";
+    pub const NFC: &str = "feedback_zoë.md";
+    const BODY: &str = "---\nname: Zoë\ndescription: d\ntype: feedback\n---\n\nbody\n";
+
+    /// A memory dir holding one NFD-named file that MEMORY.md links in NFC.
+    pub fn nfd_memory_dir() -> tempfile::TempDir {
+        let d = tempfile::tempdir().unwrap();
+        fs::write(d.path().join(NFD), BODY).unwrap();
+        fs::write(
+            d.path().join("MEMORY.md"),
+            format!("# Memory\n- [Zoë]({NFC}) — hook\n"),
+        )
+        .unwrap();
+        d
+    }
+
+    #[test]
+    fn names_are_nfc_paths_are_as_listed_and_index_matches() {
+        let d = nfd_memory_dir();
+        let state = scan_memory_at(d.path()).unwrap();
+        assert_eq!(state.files.len(), 1);
+        let file = &state.files[0];
+        assert_eq!(file.filename, NFC);
+        assert_eq!(file.path.file_name().unwrap(), std::ffi::OsStr::new(NFD));
+        assert!(state.orphaned_index_refs.is_empty(), "{:?}", state.orphaned_index_refs);
+        assert!(state.unindexed_files.is_empty(), "{:?}", state.unindexed_files);
+        assert_eq!(resolve_name(&state, NFC), Some(file.path.as_path()));
+        assert_eq!(resolve_name(&state, NFD), Some(file.path.as_path()));
+        assert_eq!(resolve_name(&state, "feedback_other.md"), None);
+    }
 }
