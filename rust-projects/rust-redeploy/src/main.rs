@@ -341,8 +341,14 @@ fn redeploy_one(name: &str, cli: &Cli) -> Outcome {
 
     // --- build ---
 
+    // `--locked`: build exactly the committed Cargo.lock. Without it `cargo install`
+    // re-resolves dependencies and takes the newest release of each crate, so a
+    // dependency publishing with a raised MSRV breaks the rebuild on whichever host
+    // has the older toolchain — found 2026-09-03 when tinyvec 1.13.0 (lock says
+    // 1.12.0) failed to compile on nimbini's rustc 1.90. Every project tracks its
+    // Cargo.lock, so this is a tightening, not a new requirement.
     let build = Command::new("cargo")
-        .args(["install", "--path", "."])
+        .args(["install", "--locked", "--path", "."])
         .current_dir(&project_dir)
         .env("CARGO_BUILD_JOBS", cli.jobs.to_string())
         .status();
