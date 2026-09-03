@@ -998,7 +998,8 @@ def note-backlinks [file?: path] {
         print "Please provide a file path"
         return
     } else {
-        $file | path basename | str replace ".md" ""
+        # NFC name via wiki-link-service (the stem off the disk is NFD on macOS)
+        ^wiki-link-service link-for $file | str trim | str replace -r '^\[\[(.*)\]\]$' '$1'
     }
     
     print $"Finding backlinks to: ($target)"
@@ -1022,7 +1023,8 @@ def note-yank [file?: path] {
         $file
     }
     
-    let link_text = $"[[($note_path | path basename | str replace '.md' '')]]"
+    # NFC link via wiki-link-service — never the raw file name (NFD on macOS)
+    let link_text = (^wiki-link-service link-for $note_path | str trim)
     $link_text | pbcopy
     print $"Copied: ($link_text)"
 }
@@ -1732,8 +1734,8 @@ def fsl [] {
     if not ($env.FORGE? | is-empty) and ($env.FORGE | path exists) {
         let file = (fd . $env.FORGE --type f --extension md -L --exclude .stversions --exclude '*/Reminders/*' | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'mdcat --columns 80 {}' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📝 Wiki Link: " | str trim)
         if not ($file | is-empty) {
-            let filename = ($file | path basename | str replace ".md" "")
-            let wikilink = $"[[($filename)]]"
+            # NFC link via wiki-link-service — never the raw file name (NFD on macOS)
+            let wikilink = (^wiki-link-service link-for $file | str trim)
             $wikilink | pbcopy
             print $"📋 Copied to clipboard: ($wikilink)"
             print "💡 Paste anywhere with Cmd+V"
@@ -1950,7 +1952,15 @@ def fsml [] {
         # Strip both list numbers and scores
         let filename = ($lines | get 0 | sd '^\d+\.\s+' '' | sd '^[0-9.]+\s+' '' | str trim)
 
-        let wikilink = $"[[($filename)]]"
+        # The semantic index hands back a raw stem (NFD on macOS). Resolve it to
+        # the note on disk and let wiki-link-service emit the NFC link; only if
+        # the index is stale (no such note) fall back to the stem as given.
+        let resolved = (do { ^wiki-link-service resolve $filename } | complete)
+        let wikilink = if $resolved.exit_code == 0 {
+            ^wiki-link-service link-for ($resolved.stdout | lines | first) | str trim
+        } else {
+            $"[[($filename)]]"
+        }
         $wikilink | pbcopy
         print $"📋 Copied to clipboard: ($wikilink)"
         print "💡 Paste anywhere with Cmd+V"
@@ -2458,8 +2468,8 @@ def fcl [] {
 
         let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview $"rg --color=always -i -C 3 '($query)' {}" --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "📄 Content: " | str trim)
         if not ($selected | is-empty) {
-            let filename = ($selected | path basename | str replace ".md" "")
-            let wikilink = $"[[($filename)]]"
+            # NFC link via wiki-link-service — never the raw file name (NFD on macOS)
+            let wikilink = (^wiki-link-service link-for $selected | str trim)
             $wikilink | pbcopy
             print $"📋 Copied to clipboard: ($wikilink)"
             print "💡 Paste anywhere with Cmd+V"
