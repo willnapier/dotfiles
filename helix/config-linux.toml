@@ -167,7 +167,7 @@ c = ":insert-output hx-insert-date"        # Insert current date (YYYY-MM-DD)
 # Mark file as revisited - using 'v' for 'visited'
 v = ":sh hx-mark-revisit %{buffer_name}"   # Add today to revisited dates
 
-# Removed: Space+. export (wiki-nav now auto-detects most recent file)
+# Removed: Space+. export (the bindings above export %{buffer_name} themselves)
 
 # Buffer navigation - Space+b for back (intuitive)
 b = [":write-all", "goto_previous_buffer", ":sh sleep 0.5", ":reload-all"]  # Save all, go back, wait for backlinks, reload all
