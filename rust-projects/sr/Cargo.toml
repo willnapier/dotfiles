@@ -1,6 +1,6 @@
 [package]
 name = "sr"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Spaced retrieval CLI — FSRS-4 scheduler with plain-text markdown cards"
 
@@ -12,6 +12,7 @@ serde_yaml = "0.9"
 chrono = { version = "0.4", features = ["serde"] }
 crossterm = "0.27"
 dirs = "6"
+forge-names = { path = "../forge-names" }
 
 [dev-dependencies]
 tempfile = "3"

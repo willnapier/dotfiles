@@ -97,13 +97,15 @@ enum Commands {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // A deck name is NFC from the point it enters (config::deck_key); nothing
+    // downstream normalises again.
     match cli.command {
         Commands::Add {
             deck,
             question,
             answer,
         } => {
-            commands::add::run(&deck, question.as_deref(), answer.as_deref())?;
+            commands::add::run(&config::deck_key(&deck), question.as_deref(), answer.as_deref())?;
         }
 
         Commands::Due {
@@ -112,10 +114,12 @@ fn main() -> Result<()> {
             format,
         } => {
             let fmt = parse_due_format(&format)?;
+            let deck = deck.as_deref().map(config::deck_key);
             commands::due::run(deck.as_deref(), limit, fmt)?;
         }
 
         Commands::Review { deck, limit } => {
+            let deck = deck.as_deref().map(config::deck_key);
             commands::review::run(deck.as_deref(), limit)?;
         }
 
@@ -137,10 +141,11 @@ fn main() -> Result<()> {
 
         Commands::Import { deck, format } => {
             let fmt = parse_import_format(&format)?;
-            commands::import::run(&deck, fmt)?;
+            commands::import::run(&config::deck_key(&deck), fmt)?;
         }
 
         Commands::Stats { deck } => {
+            let deck = deck.as_deref().map(config::deck_key);
             commands::stats::run(deck.as_deref())?;
         }
     }

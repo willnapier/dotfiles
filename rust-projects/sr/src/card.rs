@@ -74,7 +74,8 @@ impl Card {
 
         Ok(Card {
             id: fm.id,
-            deck: fm.deck,
+            // frontmatter is the second place a deck name enters (see config::deck_key)
+            deck: config::deck_key(&fm.deck),
             due,
             stability: fm.stability,
             difficulty: fm.difficulty,
@@ -298,17 +299,20 @@ fn parse_date_field(s: &str) -> Result<DateTime<Utc>> {
     bail!("cannot parse date: {:?}", s)
 }
 
-/// Generate a stable card ID from deck name and question text.
+/// Generate a stable card ID from deck name and question text. Both are
+/// NFC-normalised first, so the same question typed on the Mac (NFD from a
+/// Finder paste) and on Linux yields one ID and one file, and a combining
+/// mark never reaches the slug filter below.
 fn generate_id(deck: &str, question: &str) -> String {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
     let mut hasher = DefaultHasher::new();
-    question.hash(&mut hasher);
+    forge_names::nfc(question).hash(&mut hasher);
     let hash = hasher.finish();
 
     // Sanitise deck name for use in ID
-    let deck_slug: String = deck
+    let deck_slug: String = config::deck_key(deck)
         .chars()
         .map(|c| {
             if c.is_alphanumeric() || c == '-' {
@@ -417,5 +421,20 @@ mod tests {
         let id1 = generate_id("german", "Question A");
         let id2 = generate_id("german", "Question B");
         assert_ne!(id1, id2);
+    }
+
+    #[test]
+    fn generate_id_is_the_same_for_nfc_and_nfd_spellings() {
+        let nfd = generate_id("Zoe\u{0308}", "Who is Zoe\u{0308} Harcombe?");
+        let nfc = generate_id("Zoë", "Who is Zoë Harcombe?");
+        assert_eq!(nfd, nfc);
+        assert!(nfc.starts_with("Zoë-"), "{nfc}: slug keeps the precomposed letter");
+    }
+
+    #[test]
+    fn frontmatter_deck_is_nfc_whichever_spelling_was_written() {
+        let content = "---\nid: x\ndeck: Zoe\u{0308}\ndue: 2026-04-06\nstability: 0.0\ndifficulty: 0.0\nreps: 0\nlast_review: \n---\n\nQ: q\nA: a\n";
+        let card = Card::parse(content, Path::new("x.md")).unwrap();
+        assert_eq!(card.deck, "Zoë");
     }
 }

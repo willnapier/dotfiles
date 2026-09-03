@@ -1,5 +1,6 @@
 use anyhow::{bail, Context, Result};
 use chrono::Utc;
+use std::path::{Path, PathBuf};
 
 use crate::card::Card;
 use crate::config;
@@ -53,30 +54,54 @@ pub fn run(card_id: &str, pass: Option<bool>, rating: Option<u8>) -> Result<()> 
 }
 
 /// Search all deck directories for a card by ID.
-fn find_card(card_id: &str) -> Result<std::path::PathBuf> {
-    let root = config::sr_dir();
+fn find_card(card_id: &str) -> Result<PathBuf> {
+    find_card_in(&config::sr_dir(), card_id)
+}
 
+/// The typed ID is never joined into a path: each deck listing is searched by
+/// NFC comparison (forge-names) and the entry's own path is returned, so an
+/// NFD-named card file written on the Mac is found from an NFC ID.
+fn find_card_in(root: &Path, card_id: &str) -> Result<PathBuf> {
     if !root.exists() {
         bail!("sr directory does not exist: {}", root.display());
     }
+    let file = format!("{}.md", card_id);
 
     // Try {deck}/{id}.md for all subdirectories
-    for entry in std::fs::read_dir(&root).with_context(|| format!("reading {}", root.display()))? {
-        let entry = entry?;
-        let deck_path = entry.path();
+    for entry in std::fs::read_dir(root).with_context(|| format!("reading {}", root.display()))? {
+        let deck_path = entry?.path();
         if deck_path.is_dir() {
-            let candidate = deck_path.join(format!("{}.md", card_id));
-            if candidate.exists() {
-                return Ok(candidate);
+            if let Some(found) = forge_names::find_in_dir(&deck_path, &file) {
+                return Ok(found);
             }
         }
     }
 
     // Also try direct: {root}/{card_id}.md
-    let direct = root.join(format!("{}.md", card_id));
-    if direct.exists() {
-        return Ok(direct);
+    if let Some(found) = forge_names::find_in_dir(root, &file) {
+        return Ok(found);
     }
 
     bail!("card not found: {}", card_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mark_finds_an_nfd_named_card_file_from_an_nfc_id() {
+        let root = tempfile::tempdir().unwrap();
+        let deck = root.path().join("names");
+        std::fs::create_dir(&deck).unwrap();
+        let on_disk = deck.join("Zoe\u{0308}-0000abcd.md");
+        std::fs::write(&on_disk, "").unwrap();
+        std::fs::write(deck.join("other-00000000.md"), "").unwrap();
+
+        let found = find_card_in(root.path(), "Zoë-0000abcd").unwrap();
+        assert_eq!(found.parent().unwrap(), deck);
+        assert_eq!(forge_names::file_name(&found), "Zoë-0000abcd.md");
+        assert!(found.exists());
+        assert!(find_card_in(root.path(), "Zoë-ffffffff").is_err());
+    }
 }
