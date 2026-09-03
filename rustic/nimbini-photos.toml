@@ -10,12 +10,11 @@
 # is here, deleting from the working library is reversible, so photographs can
 # be culled hard without risk. See PHOTO-ARCHIVE-STRATEGY.md 11.5.
 #
-# SCOPE: this is the FIRST TRANCHE ONLY — Corpus B, the Dropbox photo tree that
-# is already materialised on nimbini's disk. Flickr (~189 G, export pending) and
-# iCloud (~68 G, needs materialising on the Mac) are added as further snapshot
-# stanzas to THIS repository as they arrive. One repository, not several, so
-# that rustic can deduplicate byte-identical material ACROSS corpora; it cannot
-# do that between repositories. See PHOTO-ARCHIVE-STRATEGY.md 11.6.
+# SCOPE: Corpus B (Dropbox photo tree), Corpus D (Flickr export), and Corpus C
+# (Google Takeout, unpacked). Corpus A (iCloud export) lives in THIS same
+# repository via the mac-photos profile, so rustic can deduplicate
+# byte-identical material across corpora; it cannot do that between
+# repositories. See PHOTO-ARCHIVE-STRATEGY.md 11.6.
 #
 # NOT HERE: /home/will/Dropbox/Clinical (59 G) is PHI and belongs in
 # nimbini-clinical behind its own DPA/DPIA and key-custody gates. That is the
@@ -37,7 +36,8 @@ connections = "4"
 exclude-if-present = ["CACHEDIR.TAG"]
 
 # --- Corpus B: the Dropbox photo tree -------------------------------------
-# 45,260-item Flickr manifest and the iCloud library are NOT here yet.
+# Flickr is the flickr-export stanza below. iCloud is the mac-photos profile
+# against this same repository.
 
 [[backup.snapshots]]
 name = "camera-uploads"
@@ -88,3 +88,17 @@ sources = [
 [[backup.snapshots]]
 name = "flickr-export"
 sources = ["/home/will/FlickrExport"]
+
+# --- Corpus C: Google Photos via Takeout ---------------------------------
+# Unpacked from Drive takeout-20260902T235002Z (42 zip parts + one oversized
+# MOV that exceeded the 2 GiB split). Uniquely holds 2017, which exists in
+# no other corpus. Album folders may duplicate items — hash pass later.
+#
+# The UNPACKED tree is the backup source, not ~/GoogleTakeoutArchives.
+# Pre-upload 2026-09-03: 39,667 files / 93,619,351,314 bytes (87.19 GiB);
+# 22,505 media; Photos from 2017 = 2,481 media / 9,173,639,545 bytes.
+# Integrity: unzip -t 43/43; IMG_5033.MOV placed next to its 2024 sidecar.
+# See PHOTO-ARCHIVE-STRATEGY.md 15.3.
+[[backup.snapshots]]
+name = "google-takeout"
+sources = ["/home/will/GoogleTakeout"]
