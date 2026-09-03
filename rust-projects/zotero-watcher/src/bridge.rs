@@ -14,7 +14,7 @@
 //! The oracle's `log_transfer_event` was a no-op (its save line was commented
 //! out); this port has no analytics log either. Difference: `.PDF` matches.
 
-use crate::common::{file_name, is_pdf, move_file, notify, Heartbeat, Logger, MoveError, Moved};
+use crate::common::{display_name, is_pdf, move_file, notify, Heartbeat, Logger, MoveError, Moved};
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -130,7 +130,7 @@ pub fn sweep(cfg: &BridgeCfg, cap: Option<usize>, logger: &Logger, hb: &mut Hear
         if o.is_action() {
             hb.action();
         }
-        out.push((file_name(&p), o));
+        out.push((display_name(&p), o));
         hb.write();
     }
     if out.is_empty() {
@@ -140,8 +140,13 @@ pub fn sweep(cfg: &BridgeCfg, cap: Option<usize>, logger: &Logger, hb: &mut Hear
 }
 
 pub fn process_pdf_transfer(source_file: &Path, dest_dir: &Path, do_notify: bool, logger: &Logger) -> Outcome {
-    let filename = file_name(source_file);
-    let dest_file = dest_dir.join(&filename);
+    // `raw_name` is the OsStr the OS gave us and is the only thing joined into
+    // a destination path; `filename` is its NFC spelling, for logs only.
+    let Some(raw_name) = source_file.file_name() else {
+        return Outcome::Failed("no file name".into());
+    };
+    let dest_file = dest_dir.join(raw_name);
+    let filename = display_name(source_file);
     logger.log(&format!("🔄 Processing: {filename}"));
 
     if dest_file.exists() {
@@ -157,10 +162,13 @@ pub fn process_pdf_transfer(source_file: &Path, dest_dir: &Path, do_notify: bool
                 }
             };
         }
-        let new_name = timestamped_name(&filename, &chrono::Local::now().format("%Y%m%d_%H%M%S").to_string());
+        // Derived from the raw (un-normalised) name so the renamed copy keeps
+        // the source's bytes; the NFC form is taken from the new path for the log.
+        let new_name = timestamped_name(&raw_name.to_string_lossy(), &chrono::Local::now().format("%Y%m%d_%H%M%S").to_string());
         let new_dest = dest_dir.join(&new_name);
         return match move_file(source_file, &new_dest) {
             Ok(_) => {
+                let new_name = display_name(&new_dest);
                 logger.log(&format!("✅ Transferred with new name: {new_name}"));
                 Outcome::RenamedTransfer(new_name)
             }
@@ -275,6 +283,45 @@ mod tests {
         assert_eq!(names, ["c.pdf", "a.pdf"]);
         assert!(cfg.source.join("b.pdf").exists());
         assert_eq!(sweep(&cfg, None, &logger, &mut hb).unwrap().len(), 1);
+    }
+
+    /// The destination is joined from the OsStr the OS gave us, so an NFD name
+    /// lands under exactly those bytes (no NFC twin); the reported name is NFC.
+    #[test]
+    fn nfd_named_pdf_moves_under_its_own_bytes_and_is_reported_nfc() {
+        use std::os::unix::ffi::OsStrExt;
+        let (d, cfg, logger, mut hb) = fixture();
+        let nfd = "Zoe\u{0308} Harcombe.pdf";
+        let nfc = "Zoë Harcombe.pdf";
+        assert_ne!(nfd, nfc);
+        std::fs::write(cfg.source.join(nfd), b"fresh").unwrap();
+        // a clash too, so the timestamped rename path is exercised as well
+        std::fs::write(cfg.source.join(format!("clash {nfd}")), b"longer content").unwrap();
+        std::fs::write(cfg.destination.join(format!("clash {nfd}")), b"short").unwrap();
+
+        let out = sweep(&cfg, None, &logger, &mut hb).unwrap();
+        assert_eq!(out.len(), 2, "{out:?}");
+        assert!(out.iter().any(|(n, o)| n == nfc && *o == Outcome::Transferred(nfc.into())), "{out:?}");
+        let renamed = out.iter().find_map(|(n, o)| match o {
+            Outcome::RenamedTransfer(r) => Some((n, r)),
+            _ => None,
+        });
+        let (clash_shown, renamed) = renamed.expect("clash renamed");
+        assert_eq!(clash_shown, &format!("clash {nfc}"));
+        assert!(renamed.starts_with("clash Zoë Harcombe_") && renamed.ends_with(".pdf"), "{renamed}");
+
+        // Listed bytes are the NFD bytes we wrote — no NFC twin was created.
+        let listed: Vec<Vec<u8>> = std::fs::read_dir(&cfg.destination).unwrap().map(|e| e.unwrap().file_name().as_bytes().to_vec()).collect();
+        assert!(listed.contains(&nfd.as_bytes().to_vec()), "{listed:?}");
+        assert!(!listed.contains(&nfc.as_bytes().to_vec()), "{listed:?}");
+        assert!(listed.iter().any(|b| b.starts_with("clash Zoe\u{0308} Harcombe_".as_bytes())), "{listed:?}");
+        assert!(!listed.iter().any(|b| b.starts_with("clash Zoë Harcombe_".as_bytes())), "{listed:?}");
+        assert_eq!(listed.len(), 3, "{listed:?}");
+        assert!(std::fs::read_dir(&cfg.source).unwrap().next().is_none(), "source emptied");
+
+        let log = std::fs::read_to_string(d.path().join("log")).unwrap();
+        assert!(log.contains(&format!("✅ Transferred: {nfc}")), "{log}");
+        assert!(!log.contains(nfd), "log lines are NFC: {log}");
     }
 
     #[test]
