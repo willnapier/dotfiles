@@ -1,6 +1,6 @@
 # Codex CLI — macOS variant (dotter [macos.files] → ~/.codex/config.toml).
-# The Linux variant is codex/config.toml. They differ in absolute paths and in
-# sandbox/approval policy; keep model and reasoning effort in step by hand.
+# The Linux variant is codex/config.toml. They differ in absolute paths; keep
+# model, reasoning effort, and permission defaults in step by hand.
 # Codex writes runtime state into this file (the [notice] and [tui.*] tables), so
 # those tables change on their own and are committed by the auto-push watcher —
 # the same accepted pattern as Claude's settings.json.
@@ -10,22 +10,19 @@ model_reasoning_effort = "max"
 # Continuum owns the off-PATH CLI; update it with `continuum codex update`.
 check_for_update_on_startup = false
 
-# Prompts only when something looks risky / fails
-approval_policy = "on-failure"
-
-# Can write in the repo/workspace, but not roam your whole disk
-sandbox_mode = "workspace-write"
+# William explicitly authorises autonomous engineering work by default.
+# Task scope and destructive-action safeguards still come from AGENTS.md.
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
 
 # Search is available; keep it cached by default, switch to live only when needed
 web_search = "cached"
-
-[sandbox_workspace_write]
-network_access = true
 
 [projects."/Users/williamnapier"]
 trust_level = "trusted"
 
 [notice]
+"hide_full_access_warning" = true
 "hide_gpt-5.3-codex_migration_prompt" = true
 
 [mcp_servers.continuum]
