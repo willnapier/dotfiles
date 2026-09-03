@@ -3,9 +3,11 @@ name = "forge-names"
 version = "0.1.0"
 edition = "2021"
 description = "The path→name boundary for tools over synced trees: names derived from paths are NFC by construction; paths stay as the OS supplied them; note text is matched in both spellings."
+publish = false
+include = ["src/**", "tests/**", "README.md"]
 
 [dependencies]
-unicode-normalization = "0.1"
+unicode-normalization = "=0.1.25"
 regex = "1"
 
 [dev-dependencies]
