@@ -1,6 +1,6 @@
 [package]
 name = "forge-md-revs"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Rolling local snapshots of ~/Forge markdown writes (Helix autosave recovery). Rust port of scripts/forge-md-revs; store layout unchanged. One binary for macOS (launchd) and Linux (systemd)."
 
@@ -9,6 +9,7 @@ clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 chrono = "0.4"
 notify = "6"
+forge-names = { path = "../forge-names" }
 
 [dev-dependencies]
 tempfile = "3"

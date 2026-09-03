@@ -12,6 +12,15 @@
 //! (with `-<nanos>` appended when that second is already taken), so
 //! existing snapshots stay listable and restorable.
 //!
+//! The store is keyed by the NFC spelling of that relative path (forge-names
+//! rule): the watcher hands over OS-spelled paths (NFD on the Mac) and the
+//! CLI is typed NFC, and both must land in one directory. A store directory
+//! left under the raw spelling by an earlier version is renamed to NFC the
+//! first time that note is touched. `restore` never joins the typed path
+//! back: it is resolved against the Forge tree and the existing file is
+//! written. Case is kept as-is — the store is host-local and the script's
+//! layout was case-preserving.
+//!
 //! Differences from the script: dedup compares the file's bytes with the
 //! newest snapshot's bytes instead of comparing sha256 digests (same
 //! decision, no hash dependency); `restore` takes the index as a positional
@@ -163,10 +172,41 @@ fn is_md(path: &Path) -> bool {
 }
 
 impl Store {
-    /// `<store>/<path relative to forge>` — the note's own name (with `.md`)
-    /// becomes a directory holding its snapshots.
+    /// `<store>/<NFC path relative to forge>` — the note's own name (with
+    /// `.md`) becomes a directory holding its snapshots. The key is the NFC
+    /// name, whatever spelling the watcher or the CLI supplied. A directory
+    /// still under the raw (NFD) spelling is migrated by rename on first
+    /// touch, so it is never twinned or lost.
     pub fn rev_dir_for(&self, path: &Path) -> Result<PathBuf> {
-        Ok(self.root.join(self.relative_to_forge(path)?))
+        let raw = self.relative_to_forge(path)?;
+        let key = PathBuf::from(forge_names::nfc(&raw.to_string_lossy()));
+        let dir = self.root.join(&key);
+        if key != raw && !dir.exists() {
+            let legacy = self.root.join(&raw);
+            if legacy.is_dir() {
+                if let Some(parent) = dir.parent() {
+                    std::fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+                }
+                std::fs::rename(&legacy, &dir).with_context(|| format!("migrating {} to NFC {}", legacy.display(), dir.display()))?;
+            }
+        }
+        Ok(dir)
+    }
+
+    /// The on-disk file for a CLI-typed Forge path: each component is looked
+    /// up in its directory by NFC comparison (forge-names `find_in_dir`) and
+    /// the entry's own path is used, so a note spelled NFD on disk is
+    /// overwritten, not twinned. A component with no entry (a note deleted
+    /// since its snapshot, or a new directory) is joined as typed — there is
+    /// nothing existing to collide with.
+    fn resolve_in_forge(&self, path: &Path) -> Result<PathBuf> {
+        let rel = self.relative_to_forge(path)?;
+        let mut cur = self.forge.clone();
+        for comp in rel.components() {
+            let name = comp.as_os_str().to_string_lossy();
+            cur = forge_names::find_in_dir(&cur, &name).unwrap_or_else(|| cur.join(comp));
+        }
+        Ok(cur)
     }
 
     /// Relative path under Forge. Tries the configured root, then its
@@ -309,9 +349,10 @@ impl Store {
             return Ok(vec![format!("No snapshot at index {index}. Newest is index 0.")]);
         };
         let content = std::fs::read(&pick.file).with_context(|| format!("reading {}", pick.file.display()))?;
-        std::fs::write(path, content).with_context(|| format!("writing {}", path.display()))?;
+        let target = self.resolve_in_forge(path)?;
+        std::fs::write(&target, content).with_context(|| format!("writing {}", target.display()))?;
         Ok(vec![
-            format!("Restored {} -> {}", pick.file.display(), path.display()),
+            format!("Restored {} -> {}", pick.file.display(), target.display()),
             "If Helix has this buffer open, run :reload (gR) — do not keep typing on the stale buffer.".to_string(),
         ])
     }
@@ -621,6 +662,74 @@ mod tests {
         assert_eq!(s.list_one(&note).unwrap().len(), KEEP_COUNT);
         let young = s.list_one(&note).unwrap().iter().filter(|r| r.file.to_string_lossy().contains("2027")).count();
         assert_eq!(young, 5);
+    }
+
+    const NFD: &str = "Zoe\u{0308} Harcombe";
+    const NFC: &str = "Zoë Harcombe";
+
+    /// The watcher records the OS spelling (NFD on the Mac); the CLI is typed
+    /// NFC. One store directory, keyed NFC, serves both.
+    #[test]
+    fn watcher_nfd_path_and_cli_nfc_path_share_one_store_dir() {
+        let (_d, s) = setup();
+        let subdir = s.forge.join("Zoe\u{0308}");
+        std::fs::create_dir_all(&subdir).unwrap();
+        let watched = subdir.join(format!("{NFD}.md"));
+        std::fs::write(&watched, "one").unwrap();
+        let dest = s.snapshot(&watched).unwrap().unwrap();
+        assert_eq!(dest.parent().unwrap(), s.root.join("Zoë").join(format!("{NFC}.md")), "store dir is NFC bytes");
+
+        let typed = s.forge.join("Zoë").join(format!("{NFC}.md"));
+        assert_eq!(s.list_one(&typed).unwrap().len(), 1);
+        assert_eq!(s.list_one(&typed).unwrap(), s.list_one(&watched).unwrap());
+        let all = s.list_all().unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].0, PathBuf::from("Zoë").join(format!("{NFC}.md")));
+        assert_eq!(std::fs::read_dir(&s.root).unwrap().count(), 1, "one entry under the store, not twins");
+    }
+
+    /// A store directory written under the raw NFD spelling by an earlier
+    /// version is found and renamed to NFC on first touch.
+    #[test]
+    fn legacy_nfd_store_dir_is_migrated_on_first_touch() {
+        let (_d, s) = setup();
+        let legacy = s.root.join(format!("{NFD}.md"));
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("20260101T000000.md"), "old").unwrap();
+        let typed = s.forge.join(format!("{NFC}.md"));
+        let revs = s.list_one(&typed).unwrap();
+        assert_eq!(revs.len(), 1);
+        assert_eq!(std::fs::read_to_string(&revs[0].file).unwrap(), "old");
+        assert_eq!(std::fs::read_dir(&s.root).unwrap().count(), 1);
+        let entry = std::fs::read_dir(&s.root).unwrap().next().unwrap().unwrap().path();
+        assert_eq!(forge_names::file_name(&entry), format!("{NFC}.md"));
+        // the watcher's spelling reaches the same, migrated directory
+        assert_eq!(s.list_one(&s.forge.join(format!("{NFD}.md"))).unwrap().len(), 1);
+    }
+
+    /// `restore` with an NFC-typed path writes over the NFD-named file that
+    /// exists, and recreates a deleted note as typed.
+    #[test]
+    fn restore_writes_to_the_existing_file_whatever_its_spelling() {
+        let (_d, s) = setup();
+        let subdir = s.forge.join("Zoe\u{0308}");
+        std::fs::create_dir_all(&subdir).unwrap();
+        let on_disk = subdir.join(format!("{NFD}.md"));
+        std::fs::write(&on_disk, "first").unwrap();
+        s.snapshot(&on_disk).unwrap().unwrap();
+        std::fs::write(&on_disk, "second, to be discarded").unwrap();
+
+        let typed = s.forge.join("Zoë").join(format!("{NFC}.md"));
+        let lines = s.restore_one(&typed, 0).unwrap();
+        assert!(lines[0].ends_with(&format!(" -> {}", on_disk.display())), "{}", lines[0]);
+        assert_eq!(std::fs::read_to_string(&on_disk).unwrap(), "first");
+        assert_eq!(std::fs::read_dir(&subdir).unwrap().count(), 1, "no NFC twin beside the NFD file");
+
+        std::fs::remove_file(&on_disk).unwrap();
+        s.restore_one(&typed, 0).unwrap();
+        assert_eq!(std::fs::read_dir(&subdir).unwrap().count(), 1);
+        let back = std::fs::read_dir(&subdir).unwrap().next().unwrap().unwrap().path();
+        assert_eq!(std::fs::read_to_string(&back).unwrap(), "first");
     }
 
     #[test]
