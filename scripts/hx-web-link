@@ -14,5 +14,9 @@ selected=$(fd -e html . "$CAPTURES" --type f 2>/dev/null | \
 if [ -n "$selected" ]; then
     # Generate wikilink relative to ~/Captures → captures/
     relpath="${selected#$CAPTURES/}"
-    echo "[[captures/$relpath]]"
+    # The path comes from fd (NFD on macOS); link text must be NFC. This is an
+    # HTML capture, not a note, so `wiki-link-service link-for` does not apply —
+    # normalise with python3 (present on both hosts).
+    nfc_relpath=$(python3 -c 'import sys,unicodedata;print(unicodedata.normalize("NFC",sys.argv[1]))' "$relpath")
+    echo "[[captures/$nfc_relpath]]"
 fi

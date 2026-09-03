@@ -6,7 +6,7 @@
 # Usage: Called by Space+w in Helix (see helix/config.toml)
 # Features:
 # - Prioritizes image embeds (![[...]]) over text links ([[...]])
-# - Auto-search across ~/Forge, ~/Admin, and ~/Assistants directories
+# - Auto-search across ~/Forge, ~/Admin, and ~/Assistants via `wiki-link-service resolve` (NFC/NFD-safe)
 # - Explicit path support: [[~/Admin/Budget]] or [[~/Archives/File]]
 # - Smart file type handling: text in Helix, media in system viewer
 # - Daily note template with metrics and navigation
@@ -252,6 +252,14 @@ def main [] {
             return
         }
 
+        # Not found by bytes: ask wiki-link-service before creating, so an NFC
+        # link never gets a twin beside an NFD-named note in that tree
+        let existing = (resolve_note ($expanded_path | path basename) [($expanded_path | path dirname)])
+        if not ($existing | is-empty) {
+            handle_existing_file $existing $target_file
+            return
+        }
+
         # Path doesn't exist - create it
         create_new_file $md_path $clean_link $target_file
         return
@@ -267,6 +275,13 @@ def main [] {
         let md_path = $"($clean_link).md"
         if ($md_path | path exists) {
             handle_existing_file $md_path $target_file
+            return
+        }
+
+        # Not found by bytes: ask wiki-link-service before creating (see above)
+        let existing = (resolve_note ($clean_link | path basename) [($clean_link | path dirname)])
+        if not ($existing | is-empty) {
+            handle_existing_file $existing $target_file
             return
         }
 
@@ -294,21 +309,16 @@ def main [] {
         }
     }
 
-    # Search for existing file across Forge and Admin
-    # Strip .md if present to avoid double-extension search (^file.md.md$)
-    let search_name = if ($clean_link | str ends-with ".md") {
-        $clean_link
-    } else {
-        $"($clean_link).md"
-    }
-    let existing_file = try {
-        fd -t f $"^($search_name)$" $vault $admin_dir $assistants_dir | lines | first
-    } catch {
-        ""
-    }
+    # Search for an existing note across Forge, Admin and Assistants by its
+    # typed name. Delegated to `wiki-link-service resolve` so an NFC link finds
+    # an NFD-named file (macOS lists NFD; typed links are NFC — byte-matching
+    # `fd` output here used to miss and then create a twin). Assistants is not
+    # one of the service's default roots, so all three roots are passed
+    # explicitly. Only when the service says no such note exists (exit 1) do
+    # we fall through to the media check and creation below.
+    let existing_file = (resolve_note $clean_link [$vault, $admin_dir, $assistants_dir])
 
     if not ($existing_file | is-empty) {
-        # Found exact match
         ln -sf $existing_file $target_file | ignore
         return
     }
@@ -407,7 +417,9 @@ def main [] {
         }
     }
 
-    # Handle existing or create new file
+    # Handle existing or create new file. resolve_note above has already said
+    # no note with this name exists under Forge/Admin/Assistants (in either
+    # Unicode spelling), so creating here cannot produce an NFC/NFD twin.
     if ($file | path exists) {
         handle_existing_file $file $target_file
     } else if ($clean_link =~ '^\d{4}-\d{2}-\d{2}$') {
@@ -416,6 +428,21 @@ def main [] {
     } else {
         # Create regular note or handle media
         create_new_file $file $clean_link $target_file
+    }
+}
+
+# Resolve a typed link name to the path of an existing note via wiki-link-service
+# (NFC/NFD-insensitive, case-insensitive; `Dir/Name` and a trailing `.md` are
+# accepted; roots are searched recursively). Returns "" when no note exists.
+# Rule (meta-nfc-boundary-rollout): never resolve a typed link by byte-matching
+# fd/ls output, and never create a note before this has said it does not exist.
+def resolve_note [name: string, roots: list<string>]: nothing -> string {
+    let root_args = ($roots | each {|r| ["--root", $r]} | flatten)
+    let result = (do { ^wiki-link-service resolve $name ...$root_args } | complete)
+    if $result.exit_code == 0 {
+        $result.stdout | lines | first | default ""
+    } else {
+        ""
     }
 }
 

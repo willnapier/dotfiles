@@ -7,6 +7,21 @@
 # Usage: audit-linked-media [--auto-only]
 #   --auto-only: Only run automated classification, skip manual review
 
+# A regex fragment matching a file name in either its NFC or NFD spelling, for
+# scanning note text (never file names): macOS lists names in NFD, links are
+# typed in NFC. Nushell has no normaliser and wiki-link-service link-for is for
+# notes, so python3 (present on both hosts) produces the two forms; regex
+# metacharacters are escaped and identical forms collapse to one literal.
+def name-pattern [name: string]: nothing -> string {
+    let forms = (python3 -c 'import sys,unicodedata as u; n=sys.argv[1]; print(u.normalize("NFC",n)); print(u.normalize("NFD",n))' $name | lines | uniq)
+    let escaped = ($forms | each {|f| $f | str replace -r -a '([\.\*\+\?\^\$\{\}\(\)\|\[\]\\])' '\$1' })
+    if ($escaped | length) == 1 {
+        $escaped | first
+    } else {
+        $"\(?:($escaped | str join '|')\)"
+    }
+}
+
 def main [--auto-only] {
     # Verify FORGE is set
     if ($env.FORGE? | is-empty) {
@@ -95,7 +110,7 @@ def main [--auto-only] {
             # Show references
             let filename = ($file.file | path basename)
             let refs = try {
-                rg -n $filename $env.FORGE --type md -m 3 | lines
+                rg -n -e (name-pattern $filename) $env.FORGE --type md -m 3 | lines
             } catch {
                 []
             }
@@ -215,18 +230,23 @@ def classify-file [filepath: string] {
 
 # Check how file is referenced in notes (strongest signal)
 def classify-by-reference [filepath: string] {
-    let filename = ($filepath | path basename)
+    # Match the name in either Unicode spelling: the basename off the disk is
+    # NFD on macOS while links in notes are NFC (or NFD, if pasted from Finder).
+    # Scoring a diacritic file as an orphan used to yield a false delete advice.
+    let name_re = (name-pattern ($filepath | path basename))
 
     # Check for embedded image references ![[path]] (Obsidian syntax)
     let embedded_refs = try {
-        rg -c $"!\\[\\[.*($filename).*\\]\\]" $env.FORGE --type md | lines | length
+        rg -c $"!\\[\\[.*($name_re).*\\]\\]" $env.FORGE --type md | lines | length
     } catch {
         0
     }
 
-    # Check for wiki link references [[path]] (without !)
+    # Check for wiki link references [[path]] (without !). rg's default engine
+    # has no look-behind, so the old `(?<!!)` pattern always errored and this
+    # count was silently 0; `(^|[^!])` is the supported equivalent.
     let link_refs = try {
-        rg -c $"(?<!!)\\[\\[.*($filename).*\\]\\]" $env.FORGE --type md | lines | length
+        rg -c $"\(^|[^!]\)\\[\\[.*($name_re).*\\]\\]" $env.FORGE --type md | lines | length
     } catch {
         0
     }
