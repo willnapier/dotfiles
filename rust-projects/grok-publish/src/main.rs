@@ -172,16 +172,19 @@ fn generate_slug(messages: &[Message], date: &str) -> String {
         .take(6)
         .collect();
 
-    let slug: String = words
-        .join("-")
+    // NFC once, before any per-char decision: a decomposed "é" (e + U+0301)
+    // would otherwise keep the "e" and drop the combining mark, so the two
+    // spellings of one title would produce two filenames.
+    let slug: String = forge_names::nfc(&words.join("-"))
         .to_lowercase()
         .chars()
         .filter(|c| c.is_alphanumeric() || *c == '-')
         .collect();
 
-    // Truncate to reasonable length
-    let slug = if slug.len() > 50 {
-        slug[..50].trim_end_matches('-').to_string()
+    // Truncate to reasonable length — by chars, not bytes: a byte slice
+    // panics when offset 50 falls inside a multi-byte char.
+    let slug = if slug.chars().count() > 50 {
+        slug.chars().take(50).collect::<String>().trim_end_matches('-').to_string()
     } else {
         slug
     };
@@ -388,4 +391,42 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn user(content: &str) -> Vec<Message> {
+        vec![Message { role: "user".into(), content: content.into() }]
+    }
+
+    #[test]
+    fn nfc_and_nfd_titles_give_one_slug() {
+        let nfc = "Café talk";
+        let nfd = "Cafe\u{0301} talk";
+        assert_ne!(nfc, nfd);
+        assert_eq!(generate_slug(&user(nfc), "2026-09-03"), "2026-09-03-café-talk");
+        assert_eq!(generate_slug(&user(nfd), "2026-09-03"), generate_slug(&user(nfc), "2026-09-03"));
+    }
+
+    #[test]
+    fn truncation_is_by_chars_and_never_panics_mid_char() {
+        // 49 ASCII chars then a 2-byte char: byte offset 50 is inside "é".
+        let title = format!("{}é{}", "a".repeat(49), "b".repeat(20));
+        let slug = generate_slug(&user(&title), "2026-09-03");
+        let tail = slug.strip_prefix("2026-09-03-").unwrap();
+        assert_eq!(tail.chars().count(), 50, "{tail}");
+        assert!(tail.ends_with('é'), "{tail}");
+
+        // long ASCII title: capped at 50 chars, trailing hyphen trimmed
+        let title = format!("{} {}", "x".repeat(49), "y".repeat(10));
+        let slug = generate_slug(&user(&title), "2026-09-03");
+        let tail = slug.strip_prefix("2026-09-03-").unwrap();
+        assert_eq!(tail, "x".repeat(49), "{tail}");
+
+        // short titles are untouched
+        assert_eq!(generate_slug(&user("Hello world"), "2026-09-03"), "2026-09-03-hello-world");
+        assert_eq!(generate_slug(&[], "2026-09-03"), "2026-09-03-conversation");
+    }
 }
