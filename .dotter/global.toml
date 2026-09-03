@@ -437,6 +437,11 @@ depends = ["shared"]
 # continuum-dream nightly dreamer (04:00). Brought under dotter 2026-09-03 after its ad-hoc
 # redeploy tripped launchd's managed LWCR; the binary is in rust-redeploy's signed set.
 "macos/launchd/com.williamnapier.continuum-dream.plist" = "~/Library/LaunchAgents/com.williamnapier.continuum-dream.plist"
+# Forge+Admin → Dropbox one-way rsync every 30 min (1Writer on iOS). Mac-only (Dropbox path).
+# Brought under dotter 2026-09-03; it had been failing since 2026-07-27 with "Operation not
+# permitted" on the Dropbox folder under launchd (macOS file-access permission, not the script).
+"macos/launchd/com.user.forge-dropbox-sync.plist" = "~/Library/LaunchAgents/com.user.forge-dropbox-sync.plist"
+"scripts/sync-forge-to-dropbox" = "~/.local/bin/sync-forge-to-dropbox"
 "macos/launchd/com.williamnapier.forum-worker.plist" = "~/Library/LaunchAgents/com.williamnapier.forum-worker.plist"
 "macos/launchd/com.williamnapier.morning-briefing.plist" = "~/Library/LaunchAgents/com.williamnapier.morning-briefing.plist"
 "scripts/morning-briefing" = "~/.local/bin/morning-briefing"

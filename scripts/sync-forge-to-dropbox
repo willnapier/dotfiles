@@ -1,0 +1,61 @@
+#!/bin/bash
+# One-way sync of Forge and Admin to Dropbox for 1Writer mobile access
+# Uses --inplace and relaxed perms to work with Dropbox file provider on macOS
+# Usage: sync-forge-to-dropbox
+
+set -e
+
+DROPBOX="$HOME/Library/CloudStorage/Dropbox"
+LOG="$HOME/.local/logs/forge-dropbox-sync.log"
+
+mkdir -p "$(dirname "$LOG")"
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG"
+}
+
+# Rotate log if over 1MB
+if [ -f "$LOG" ] && [ $(stat -f%z "$LOG" 2>/dev/null || echo 0) -gt 1048576 ]; then
+    mv "$LOG" "$LOG.old"
+fi
+
+RSYNC_OPTS="--inplace --no-perms --no-owner --no-group --omit-dir-times -a --delete"
+
+log "Starting Forge+Admin sync to Dropbox..."
+
+# Forge sync
+if rsync $RSYNC_OPTS \
+    --exclude='.stversions/' \
+    --exclude='.stignore' \
+    --exclude='.stfolder/' \
+    --exclude='.syncthing-*' \
+    --exclude='.frecency-cache/' \
+    --exclude='.obsidian/' \
+    --exclude='.corruption-quarantine-*/' \
+    --exclude='.html/' \
+    --exclude='.DS_Store' \
+    --exclude='*.tmp' \
+    --exclude='*.temp' \
+    --exclude='*.mp4' \
+    --exclude='*.mov' \
+    "$HOME/Forge/" "$DROPBOX/Forge/" >> "$LOG" 2>&1; then
+    log "Forge sync OK"
+else
+    log "Forge sync FAILED (exit $?)"
+fi
+
+# Admin sync
+if rsync $RSYNC_OPTS \
+    --exclude='.stversions/' \
+    --exclude='.stignore' \
+    --exclude='.stfolder/' \
+    --exclude='.syncthing-*' \
+    --exclude='.DS_Store' \
+    --exclude='*.tmp' \
+    "$HOME/Admin/" "$DROPBOX/Admin/" >> "$LOG" 2>&1; then
+    log "Admin sync OK"
+else
+    log "Admin sync FAILED (exit $?)"
+fi
+
+log "Sync complete."
