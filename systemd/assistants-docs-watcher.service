@@ -1,12 +1,12 @@
 [Unit]
-Description=Assistants Documentation Auto-Sync Watcher
-Documentation=Automatically commits and pushes ~/Assistants changes
+Description=Assistants Git historian (nimbini only)
+Documentation=file://%h/Assistants/shared/ASSISTANTS-DOCS-AUTO-PUSH.md
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/git-auto-push-watcher --repo %h/Assistants --log %h/.local/share/assistants-docs-auto-push.log
+ExecStart=%h/.local/bin/assistants-git-sync --role historian --expected-host nimbini --repo %h/Assistants --log %h/.local/share/assistants-git-sync-historian.log
 Restart=always
 RestartSec=10
 Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin

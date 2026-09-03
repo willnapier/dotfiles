@@ -18,7 +18,7 @@
 //! Log phrases the monitors grep for are unchanged: "Local changes detected",
 //! "✅ Successfully pushed", "❌ … failed", "Push attempt".
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use clap::Parser;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -65,7 +65,7 @@ fn default_log() -> PathBuf {
     let name = if cfg!(target_os = "macos") { "git-auto-push-watcher-macos.log" } else { "git-auto-push-watcher.log" };
     home().join(".local/share").join(name)
 }
-/// One lock per repo, so a second instance (e.g. ~/Assistants) does not collide with the dotfiles one.
+/// One lock per supported repo.
 fn lock_path(repo: &Path) -> PathBuf {
     let name = repo.file_name().and_then(|n| n.to_str()).unwrap_or("repo");
     PathBuf::from(format!("/tmp/git-auto-push-watcher-{name}.lock"))
@@ -73,6 +73,7 @@ fn lock_path(repo: &Path) -> PathBuf {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    refuse_syncthing_assistants(&cli.repo)?;
     let logger = Logger { path: cli.log.clone() };
     if let Some(dir) = cli.log.parent() {
         std::fs::create_dir_all(dir).ok();
@@ -100,6 +101,24 @@ fn main() -> Result<()> {
             return Ok(());
         }
     }
+}
+
+/// `~/Assistants` has a single-historian protocol. Keeping this refusal in the
+/// generic binary means a stale service file cannot silently recreate a second
+/// autonomous commit clock after the 2026-09-03 repair.
+fn refuse_syncthing_assistants(repo: &Path) -> Result<()> {
+    let resolved = std::fs::canonicalize(repo).unwrap_or_else(|_| repo.to_path_buf());
+    if resolved
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("Assistants"))
+    {
+        bail!(
+            "refusing to auto-push {}: use assistants-git-sync; only the elected nimbini historian may create Assistants history",
+            repo.display()
+        );
+    }
+    Ok(())
 }
 
 // ── lock ────────────────────────────────────────────────────────────
@@ -411,6 +430,12 @@ impl Logger {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generic_pusher_refuses_the_syncthing_assistants_tree() {
+        assert!(refuse_syncthing_assistants(Path::new("/tmp/Assistants")).is_err());
+        assert!(refuse_syncthing_assistants(Path::new("/tmp/dotfiles")).is_ok());
+    }
 
     #[test]
     fn porcelain_paths_including_renames_and_untracked() {

@@ -799,7 +799,7 @@ pub fn derived_doc_problems(home: &Path, pairs: &[(&str, &str)]) -> Vec<String> 
 pub const EXPECTED_WATCHERS: &[&str] = &[
     "ai-export-watcher",
     "git-auto-push-watcher-dotfiles",
-    "git-auto-push-watcher-Assistants",
+    "assistants-git-sync-follower",
     "git-auto-pull-watcher",
     "syncthing-connection-monitor",
     "dotter-realtime-watcher",
@@ -813,7 +813,7 @@ pub const EXPECTED_WATCHERS: &[&str] = &[
 pub const EXPECTED_WATCHERS: &[&str] = &[
     "ai-export-watcher",
     "git-auto-push-watcher-dotfiles",
-    "git-auto-push-watcher-Assistants",
+    "assistants-git-sync-historian",
     "git-auto-pull-watcher",
     "dotter-realtime-watcher",
     "forge-md-revs",

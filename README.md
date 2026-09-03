@@ -9,7 +9,7 @@ Personal dotfiles and automation tools managed with [Dotter](https://github.com/
 | `nushell/` | Shell configuration, universal knowledge functions, file watchers |
 | `helix/` | Modal editor config (Colemak-DH), language servers, keybindings |
 | `scripts/` | Standalone shell scripts deployed to `~/.local/bin/` |
-| `rust-projects/` | 17 Rust CLI tools (see table below) |
+| `rust-projects/` | Rust CLI tools (see table below) |
 | `docs/` | Architecture documentation for key systems |
 | `wezterm/` | GPU-accelerated terminal emulator config |
 | `yazi/` | Terminal file manager config and keybindings |
@@ -27,6 +27,7 @@ All projects live in `rust-projects/` and build with `cargo build --release`. Bi
 | Project | Purpose |
 |---------|---------|
 | [ai-export-watcher](rust-projects/ai-export-watcher/) | Watches ~/Downloads for AI conversation exports, triggers converters |
+| [assistants-git-sync](rust-projects/assistants-git-sync/) | Coordinates one nimbini Git historian and a no-worktree-write Mac follower for the Syncthing-carried Assistants tree |
 | [backlinks-init](rust-projects/backlinks-init/) | One-time bulk backlink population for markdown knowledge base |
 | [chatgpt-to-continuum](rust-projects/chatgpt-to-continuum/) | Converts ChatGPT/Grok/Gemini JSON exports to continuum JSONL |
 | [claude-to-continuum](rust-projects/claude-to-continuum/) | Converts Claude.ai conversation exports to continuum JSONL |

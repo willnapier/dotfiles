@@ -162,7 +162,7 @@ def known_lock_files [] {
         { name: "git-auto-pull-watcher", path: "/tmp/git-auto-pull-watcher.lock" }
         { name: "git-auto-push-watcher", path: "/tmp/git-auto-push-watcher.lock" }
         { name: "git-auto-push-watcher-macos", path: "/tmp/git-auto-push-watcher-macos.lock" }
-        { name: "assistants-auto-push", path: "/tmp/assistants-auto-push.lock" }
+        { name: "assistants-git-sync", path: "/tmp/assistants-git-sync.lock" }
         { name: "dotter-sync-watcher", path: "/tmp/dotter-sync-watcher.lock" }
         { name: "dotter-realtime-watcher", path: "/tmp/dotter-realtime-watcher.lock" }
         { name: "dotter-drift-watcher", path: "/tmp/dotter-drift-watcher.lock" }

@@ -1,10 +1,9 @@
 //! git-auto-pull-watcher — fast-forward local clones from origin/main.
 //!
-//! Rust port 2026-09-02 of three Nushell scripts: `git-auto-pull-watcher`
-//! (Linux: ~/dotfiles with `dotter deploy`, plus ~/Assistants),
-//! `git-auto-pull-watcher-macos` (Mac: ~/dotfiles) and
-//! `assistants-auto-pull-macos` (Mac: ~/Assistants). One binary, one log,
-//! one lock on both platforms. Behaviour changes from the oracles:
+//! Rust port 2026-09-02 of the old generic pull scripts. Since 2026-09-03
+//! its safe default is only ~/dotfiles; the Syncthing-transported Assistants
+//! tree has a dedicated exact-tree follower which never writes working files.
+//! One binary, one log, one lock runs on both platforms:
 //!
 //! 1. **`--ff-only`.** The oracles ran a plain `git pull`, which would merge
 //!    (or on Mac, `--no-rebase` merge) a diverged branch unattended. A
@@ -23,7 +22,7 @@
 //! changes", "✅ Dotter deploy successful - configs updated",
 //! "❌ Git pull failed:", "❌ Dotter deploy failed:", "❌ Git fetch failed:".
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use chrono::SecondsFormat;
 use clap::Parser;
 use std::collections::HashSet;
@@ -36,7 +35,7 @@ use std::time::Duration;
 #[derive(Parser, Debug)]
 #[command(name = "git-auto-pull-watcher", version, about)]
 struct Cli {
-    /// Repository to keep fast-forwarded (repeatable). Default: ~/dotfiles and ~/Assistants, whichever exist
+    /// Repository to keep fast-forwarded (repeatable). Default: ~/dotfiles when it exists
     #[arg(long)]
     repo: Vec<PathBuf>,
     /// Repository that gets `dotter deploy` after a successful pull (repeatable). ~/dotfiles always does
@@ -82,6 +81,9 @@ fn main() -> Result<()> {
     if repos.is_empty() {
         anyhow::bail!("no repositories to watch (none of the defaults exist; pass --repo)");
     }
+    for repo in &repos {
+        refuse_syncthing_assistants(&repo.path)?;
+    }
     let mut watcher = Watcher::new(repos, cli.dry_run, cli.tick, cli.state_dir.clone(), logger);
 
     if !cli.once {
@@ -104,6 +106,25 @@ fn main() -> Result<()> {
             return Ok(());
         }
     }
+}
+
+/// Assistants uses Syncthing for working bytes and exact-tree ref/index
+/// adoption. A generic `git pull` would violate that contract even with
+/// `--ff-only`, so refuse an explicit stale configuration as well as removing
+/// Assistants from the default set.
+fn refuse_syncthing_assistants(repo: &Path) -> Result<()> {
+    let resolved = std::fs::canonicalize(repo).unwrap_or_else(|_| repo.to_path_buf());
+    if resolved
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("Assistants"))
+    {
+        bail!(
+            "refusing to pull into {}: use assistants-git-sync follower; unattended Git must not write Assistants working files",
+            repo.display()
+        );
+    }
+    Ok(())
 }
 
 // ── repos ───────────────────────────────────────────────────────────
@@ -131,10 +152,14 @@ fn resolve_repos(repos: &[PathBuf], deploy: &[PathBuf]) -> Vec<Repo> {
         c == dotfiles || deploy.contains(&c)
     };
     if repos.is_empty() {
-        return [home().join("dotfiles"), home().join("Assistants")].into_iter().filter(|p| p.is_dir()).map(|p| {
-            let d = wants_deploy(&p);
-            Repo::new(p, d)
-        }).collect();
+        return [home().join("dotfiles")]
+            .into_iter()
+            .filter(|path| path.is_dir())
+            .map(|path| {
+                let should_deploy = wants_deploy(&path);
+                Repo::new(path, should_deploy)
+            })
+            .collect();
     }
     repos.iter().map(|p| Repo::new(p.clone(), wants_deploy(p))).collect()
 }
@@ -419,6 +444,12 @@ impl Logger {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generic_puller_refuses_the_syncthing_assistants_tree() {
+        assert!(refuse_syncthing_assistants(Path::new("/tmp/Assistants")).is_err());
+        assert!(refuse_syncthing_assistants(Path::new("/tmp/dotfiles")).is_ok());
+    }
 
     #[test]
     fn rev_list_count_and_porcelain_parsing() {

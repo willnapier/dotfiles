@@ -8,6 +8,8 @@
     <key>ProgramArguments</key>
     <array>
         <string>/Users/williamnapier/.local/bin/git-auto-pull-watcher</string>
+        <string>--repo</string>
+        <string>/Users/williamnapier/dotfiles</string>
     </array>
 
     <key>RunAtLoad</key>

@@ -514,7 +514,8 @@ depends = ["shared"]
 "systemd/rustic-photos-check.timer" = "~/.config/systemd/user/rustic-photos-check.timer"
 "systemd/dotter-realtime-watcher.service" = "~/.config/systemd/user/dotter-realtime-watcher.service"
 "systemd/dotter-sync-watcher.service" = "~/.config/systemd/user/dotter-sync-watcher.service"
-# git-auto-pull-watcher is a Rust binary (rust-projects/git-auto-pull-watcher); pulls ~/dotfiles (+dotter deploy) and ~/Assistants
+# git-auto-pull-watcher is a Rust binary (rust-projects/git-auto-pull-watcher);
+# it pulls only ~/dotfiles. Assistants has an exact-tree, no-worktree-write follower.
 "systemd/git-auto-pull-watcher.service" = "~/.config/systemd/user/git-auto-pull-watcher.service"
 "systemd/syncthing-monitor.service" = "~/.config/systemd/user/syncthing-monitor.service"
 "systemd/remind-notify.service" = "~/.config/systemd/user/remind-notify.service"
@@ -544,7 +545,8 @@ depends = ["shared"]
 "scripts/clinical-attendance" = "~/.local/bin/clinical-attendance"
 "scripts/clinic-auth" = "~/.local/bin/clinic-auth"
 "scripts/rebuild-nimbini" = "~/.local/bin/rebuild-nimbini"
-# git-auto-push-watcher is a Rust binary (rust-projects/git-auto-push-watcher), copied to ~/.local/bin on both machines
+# git-auto-push-watcher is a Rust binary (rust-projects/git-auto-push-watcher),
+# copied to ~/.local/bin for dotfiles only. Assistants uses assistants-git-sync.
 "systemd/git-auto-push-watcher.service" = "~/.config/systemd/user/git-auto-push-watcher.service"
 "systemd/mailforge.service" = "~/.config/systemd/user/mailforge.service"
 "systemd/zotero-pdf-watcher.service" = "~/.config/systemd/user/zotero-pdf-watcher.service"

@@ -2,226 +2,164 @@
 
 ## Overview
 
-This document describes the synchronization architecture between a macOS primary workstation and a linux-desktop system for configuration files, knowledge base content, and assistant coordination state.
+The Mac and nimbini use different transports according to what is being
+carried. The important boundary is that `~/Assistants` is a
+Syncthing-transported working tree whose Git repository records history; Git
+is not allowed to become a second working-file transport.
 
-The architecture has three layers:
-1. **Git-based sync** for dotfiles and documentation (explicit commits, 2-minute polling)
-2. **Syncthing** for knowledge base, references, and large file sets (continuous, peer-to-peer)
-3. **Messageboard** for async coordination between AI assistant instances on different machines
+| Scope | Working-file transport | History / recovery |
+|---|---|---|
+| `~/dotfiles` | Git | GitHub; Dotter deploys the checked-out source |
+| `~/Assistants` | Syncthing | One nimbini Git historian, GitHub, Syncthing versioning, backups |
+| `~/Forge`, `~/Books` | Syncthing | Syncthing staggered versioning and backups |
+| Assistant coordination | Messageboard + design forum, carried by Syncthing | Git history where applicable |
 
----
+## Dotfiles: Git is the transport
 
-## Layer 1: Git-Based Sync (Dotfiles and Documentation)
+Both hosts may commit and push dotfiles. `git-auto-pull-watcher` polls only
+`~/dotfiles`, fast-forwards with `--ff-only`, and runs `dotter deploy` after a
+successful pull. It does not target `~/Assistants`.
 
-### What Syncs
+Always edit `~/dotfiles`, never the deployed paths under `~/.config`. After a
+configuration change, run `dotter deploy` and `dotter-orphan-detector-v2`.
 
-Two directories sync via GitHub with full automation:
+Services:
 
-| Directory | Contents | Polling Interval |
-|-----------|----------|-----------------|
-| `~/dotfiles` | Configuration files | Every 2 minutes |
-| `~/Assistants` | Documentation and knowledge base | Every 2 minutes |
+- Mac: `com.williamnapier.git-auto-push-watcher` and
+  `com.williamnapier.git-auto-pull-watcher`
+- nimbini: `git-auto-push-watcher.service` and
+  `git-auto-pull-watcher.service`
 
-Both directories sync bidirectionally: changes on either machine are automatically committed, pushed to GitHub, and pulled on the other machine.
+## Assistants: Syncthing carries bytes; one Git historian records them
 
-### How It Works
+The 2026-09-03 reconciliation replaced two autonomous Git commit clocks with
+the dedicated `assistants-git-sync` service:
 
-**Automatic commit/push flow:**
-1. Service polls every 2 minutes
-2. Detects uncommitted changes via `git status --porcelain`
-3. Runs `git add .` and creates commit with standardized message
-4. Pushes to `origin/main` on GitHub
+- **nimbini is the historian.** It is the only unattended process allowed to
+  create commits or push `~/Assistants` `main`.
+- **The Mac is a follower.** It fetches, proves both fast-forward ancestry and
+  exact equality between the already-synchronised disk tree and
+  `origin/main`, then moves only its ref and index with `update-ref` and
+  `read-tree` (without `-u`).
+- **Unattended Git never writes a working file in `~/Assistants`.** No service
+  may run `checkout`, `pull`, `merge`, `rebase`, or a worktree-writing reset
+  there.
+- `continuum-usage/`, `continuum-logs/`, and `health/` are mutable operational
+  state carried by Syncthing and backup, not Git.
 
-**Automatic pull flow:**
-1. Runs `git fetch origin main` every 2 minutes
-2. Checks if local is behind remote via `git rev-list --count HEAD..origin/main`
-3. If behind, runs `git pull origin main`
-4. For dotfiles: also runs `dotter deploy` to update symlinked configs
+The historian waits until the exact dirty content tree has remained unchanged
+for 90 seconds and the Syncthing REST API reports the local folder idle and
+all connected folder peers complete. It fetches again, validates changed Rust
+and Nushell sources, proves that neither refs nor content moved during the
+gates, creates one commit from a temporary index, and pushes. A failed push is
+retried; a later non-fast-forward is a refusal, never an automatic merge.
 
-Changes appear on the other machine within 2-4 minutes with zero manual intervention.
+The role is fenced by hostname and by a single per-host PID lock. A tree
+mismatch, divergence, conflict copy, failed validation, or publication failure
+is written to a role-specific heartbeat under
+`~/.local/state/watchers/` and surfaced by `system-health-check`.
 
-### Services
+Supervisor names were retained to make the migration explicit and reversible:
 
-**macOS (primary workstation):**
-- Dotfiles pull watcher (LaunchAgent, every 2 min)
-- Assistants auto-pull (LaunchAgent, every 2 min)
-- Assistants auto-push (LaunchAgent, every 2 min)
+| Host | Supervisor | Effective role |
+|---|---|---|
+| Mac | `com.williamnapier.assistants-auto-push` | follower (despite legacy label) |
+| nimbini | `assistants-docs-watcher.service` | historian |
 
-**linux-desktop:**
-- Dotfiles push watcher (systemd user service, every 2 min)
-- Dotfiles pull watcher (systemd user service, every 2 min)
-- Assistants push watcher (systemd user service, every 2 min)
+Detailed invariants and recovery commands are in
+`~/Assistants/shared/ASSISTANTS-DOCS-AUTO-PUSH.md`.
 
-### Critical Rule
+## Syncthing
 
-Always edit in `~/dotfiles`, never in `~/.config`. Dotter creates symlinks from `~/.config` to `~/dotfiles`, so direct edits to `~/.config` will be overwritten on next deployment.
+`~/Forge`, `~/Assistants`, and `~/Books` use continuous peer-to-peer delivery
+with staggered versioning. Overwritten files can be recovered from
+`.stversions/`.
 
----
-
-## Layer 2: Knowledge and State (Syncthing)
-
-### What Syncs
-
-| Folder | Purpose | Versioning |
-|--------|---------|------------|
-| `~/Forge` | Knowledge base (6,400+ files) | Staggered, 30 days |
-| `~/Assistants` | Shared docs, continuum logs, skills | Staggered, 30 days |
-| `~/Books` | Reference library | Staggered, 30 days |
-
-### Versioning Configuration
-
-All Syncthing folders use 30-day staggered versioning, providing recovery from accidental deletions or sync conflicts:
+Useful read-only checks:
 
 ```bash
-syncthing cli config folders <FOLDER> versioning type set staggered
-syncthing cli config folders <FOLDER> versioning params set maxAge 2592000
+syncthing cli show system
+syncthing cli show folder Assistants
 ```
 
-Overwritten files can be recovered from `.stversions/`.
-
-### Common Operations
-
-**Check status:**
-```bash
-syncthing cli show system         # Overall status
-syncthing cli show folder <NAME>  # Specific folder
-```
-
-**Force immediate scan** (useful after messageboard posts):
-```bash
-curl -s -X POST "http://127.0.0.1:8384/rest/db/scan?folder=<FOLDER>" \
-  -H "X-API-Key: $(syncthing cli config gui apikey get)"
-```
-
----
-
-## Layer 3: Messageboard (Assistant Coordination)
-
-### Purpose
-
-Async communication between Claude Code instances running on different machines.
-
-**Location:** `~/Assistants/shared/MESSAGEBOARD.md`
-
-### Protocol
-
-- Format: `### YYYY-MM-DD -- device`
-- Newest messages at top
-- Receiving assistant clears messages once actioned
-- 30-day fallback for stale items
-
-### Trigger Instant Sync
-
-After posting to the messageboard, trigger an immediate Syncthing scan:
+To request an immediate scan after a coordination edit:
 
 ```bash
 curl -s -X POST "http://127.0.0.1:8384/rest/db/scan?folder=Assistants" \
   -H "X-API-Key: $(syncthing cli config gui apikey get)"
 ```
 
----
+Do not sync `.git` directories. Each host keeps its own Git object database;
+the follower protocol aligns bookkeeping only after proving the bytes.
 
-## Failure Modes and Recovery
+## Messageboard and forum
 
-### Git Conflicts (Dotfiles/Assistants)
+`~/Assistants/shared/MESSAGEBOARD.md` is the compact operational signal
+surface. The design forum owns discussion, decisions, and lifecycle state.
+Use `messageboard-edit` for board changes and the `forum` CLI for forum state;
+do not treat participation as permission to clear a forum pointer.
 
-If `git pull` fails with conflicts:
-1. `git stash` local changes
-2. `git pull`
-3. `git stash pop`
-4. Resolve conflicts manually
+## Failure handling
 
-Or commit local first, then `git pull --rebase`.
+For `~/dotfiles`, investigate dirty work before an ordinary fast-forward. Do
+not automate a merge or rebase.
 
-### Syncthing Conflicts
-
-Syncthing creates `.sync-conflict-*` files when both machines modify the same file simultaneously:
-1. Compare versions
-2. Keep the correct one
-3. Delete the conflict file
-
-Staggered versioning allows recovery of overwritten files from `.stversions/`.
-
-### Service Recovery
-
-**macOS:**
-```bash
-# Services auto-restart, but manual restart if needed:
-launchctl kickstart -kp gui/$(id -u)/com.user.assistants-auto-pull
-launchctl kickstart -kp gui/$(id -u)/com.user.assistants-auto-push
-```
-
-**linux-desktop:**
-```bash
-systemctl --user restart assistants-docs-watcher
-systemctl --user restart git-auto-push-watcher
-```
-
-### Lock File Issues
-
-If services fail with "already running" errors, remove stale lock files:
+For `~/Assistants`, do **not** repair a refusal with `git pull`, stash/reapply,
+checkout, rebase, or reset. Leave both refs and files untouched, then inspect:
 
 ```bash
-# macOS
-rm -f /tmp/assistants-auto-pull.lock /tmp/assistants-auto-push.lock
-
-# linux-desktop
-rm -f /tmp/assistants-auto-push.lock
+cd ~/Assistants
+git fetch origin main
+git status --short --branch
+git merge-base --is-ancestor HEAD origin/main
+fd --hidden --no-ignore 'sync-conflict' .
 ```
 
-Then restart the affected service.
+Check the role heartbeat and service log:
 
-### Messageboard Out of Sync
+```bash
+# Mac
+bat ~/.local/state/watchers/assistants-git-sync-follower.json
+bat ~/.local/share/assistants-git-sync-follower.log
 
-Re-read the file -- Syncthing may not have propagated yet. Use the manual scan trigger if urgent.
-
----
-
-## Troubleshooting
-
-### Changes Not Syncing
-
-1. **Check service status** using `launchctl list` (macOS) or `systemctl --user status` (Linux)
-2. **Check logs** for errors:
-   - macOS: `~/.local/share/assistants-auto-*.log`
-   - Linux: `~/.local/share/assistants-auto-push.log`
-3. **Verify network**: `git fetch origin main` should succeed
-4. **Check for conflicts**: `cd ~/Assistants && git status`
-
-### Services Not Starting
-
-1. Check for stale lock files (see above)
-2. Verify script permissions: scripts should be executable
-3. Check for syntax errors by running scripts manually
-
----
-
-## Design Principles
-
-1. **Dotfiles are authoritative** -- `~/dotfiles` is the source of truth; `~/.config` is derived via symlinks
-2. **Syncthing for state, Git for config** -- Knowledge syncs continuously; configuration requires explicit commits
-3. **Async coordination via messageboard** -- No real-time requirement between assistant instances
-4. **30-day safety net** -- Staggered versioning on all Syncthing folders provides recovery from accidental changes
-
----
-
-## Architecture Summary
-
+# nimbini
+bat ~/.local/state/watchers/assistants-git-sync-historian.json
+journalctl --user -u assistants-docs-watcher.service -n 100 --no-pager
 ```
-                    GitHub (remote)
-                    /            \
-               git push       git pull
-              /                    \
-   primary workstation          linux-desktop
-   (macOS)                      (Linux)
-   - LaunchAgent services       - systemd user services
-   - 2-min polling              - 2-min polling
-   - dotter deploy              - dotter deploy
-              \                    /
-               \                  /
-                Syncthing (P2P)
-                - ~/Forge (knowledge base)
-                - ~/Assistants (shared docs)
-                - ~/Books (references)
-                - 30-day staggered versioning
+
+A follower may be adopted manually only when `HEAD` is an ancestor of
+`origin/main` **and** an independently built temporary-index tree exactly
+equals `origin/main^{tree}`. Otherwise stop and preserve both states for a
+supervised reconciliation.
+
+Service restart commands:
+
+```bash
+# Mac (legacy label, follower behaviour)
+launchctl kickstart -k gui/$(id -u)/com.williamnapier.assistants-auto-push
+
+# nimbini
+systemctl --user restart assistants-docs-watcher.service
 ```
+
+PID locks are stale only when their recorded process is dead. Do not delete a
+lock held by a live PID. The Assistants service lock is
+`/tmp/assistants-git-sync.lock`.
+
+## Architecture summary
+
+```text
+                    GitHub origin/main
+                      ^             |
+            commit + push           | fetch + proved ref/index adoption
+                      |             v
+        nimbini historian       Mac follower
+                  \                /
+                   \              /
+                 Syncthing working bytes
+                  ~/Assistants (no .git)
+```
+
+The asymmetry is deliberate: availability may delay history, but no outage or
+race is allowed to create a second autonomous history or overwrite a working
+file.

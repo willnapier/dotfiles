@@ -1,8 +1,8 @@
 [package]
 name = "git-auto-pull-watcher"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-description = "Fast-forwards ~/dotfiles (then `dotter deploy`) and ~/Assistants from origin/main every tick, never merging or rebasing, with a heartbeat JSON for monitors. One binary for macOS (launchd) and Linux (systemd); replaces three Nushell scripts."
+description = "Fast-forwards Git-transported repositories (by default ~/dotfiles, then `dotter deploy`) every tick, never merging or rebasing, with a heartbeat JSON for monitors."
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
