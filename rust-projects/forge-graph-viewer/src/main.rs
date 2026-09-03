@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 use regex::Regex;
 use anyhow::{Context, Result};
+use forge_names::{nfc, note_name};
 
 #[derive(Debug, Clone)]
 struct Note {
@@ -508,11 +509,9 @@ fn parse_vault(vault_path: &Path, filter_orphans: bool) -> Result<GraphData> {
             continue;
         }
 
-        let name = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("")
-            .to_string();
+        // Path→name boundary: the stem is NFC here and nowhere else
+        // (macOS lists NFD; typed link text is NFC). `path` stays as walked.
+        let name = note_name(path);
 
         let content = fs::read_to_string(path)
             .context(format!("Failed to read: {:?}", path))?;
@@ -535,7 +534,8 @@ fn parse_vault(vault_path: &Path, filter_orphans: bool) -> Result<GraphData> {
 
                 link_str = link_str.trim().to_string();
                 if !link_str.is_empty() {
-                    links_set.insert(link_str);
+                    // Link text is compared to NFC note names, so key it NFC.
+                    links_set.insert(nfc(&link_str));
                 }
             }
         }
@@ -546,12 +546,11 @@ fn parse_vault(vault_path: &Path, filter_orphans: bool) -> Result<GraphData> {
         });
     }
 
-    // Find orphans
+    // Find orphans (same keys as edge resolution below)
     let mut incoming_links: HashSet<String> = HashSet::new();
     for note in notes.values() {
         for link in &note.links {
-            incoming_links.insert(link.clone());
-            incoming_links.insert(format!("{}.md", link));
+            incoming_links.extend(link_candidates(link));
         }
     }
 
@@ -596,11 +595,10 @@ fn parse_vault(vault_path: &Path, filter_orphans: bool) -> Result<GraphData> {
     for note in notes.values() {
         if let Some(&from_idx) = node_map.get(&note.name) {
             for link in &note.links {
-                let target_name = if notes.contains_key(link) {
-                    link.clone()
-                } else if notes.contains_key(&format!("{}.md", link)) {
-                    format!("{}.md", link)
-                } else {
+                // Links are NFC and the index is keyed by NFC stem: plain lookup.
+                let Some(target_name) =
+                    link_candidates(link).into_iter().find(|k| notes.contains_key(k))
+                else {
                     continue;
                 };
 
@@ -619,6 +617,16 @@ fn parse_vault(vault_path: &Path, filter_orphans: bool) -> Result<GraphData> {
         edges,
         node_map,
     })
+}
+
+/// The index keys a link text may name: as written, and without a trailing
+/// `.md` (the index is keyed by stem).
+fn link_candidates(link: &str) -> Vec<String> {
+    let mut out = vec![link.to_string()];
+    if let Some(stem) = link.strip_suffix(".md") {
+        out.push(stem.to_string());
+    }
+    out
 }
 
 fn main() -> eframe::Result {
@@ -651,4 +659,40 @@ fn main() -> eframe::Result {
             }
         }),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const NFD: &str = "Zoe\u{0308} Example";
+    const NFC: &str = "Zo\u{eb} Example";
+
+    #[test]
+    fn nfd_named_note_is_linked_by_nfc_text_and_not_an_orphan() {
+        let d = tempfile::tempdir().unwrap();
+        let v = d.path();
+        fs::write(v.join(format!("{NFD}.md")), "# Zoë\n").unwrap();
+        fs::write(
+            v.join("Linker.md"),
+            format!("See [[{NFC}]], [[{NFC}.md]] and [[{NFD}|alias]].\n"),
+        )
+        .unwrap();
+        fs::write(v.join("Lonely.md"), "Nothing links here.\n").unwrap();
+
+        let g = parse_vault(v, false).unwrap();
+        // The NFD file name yields an NFC node name.
+        assert!(!g.node_map.contains_key(NFD));
+        let zoe = g.node_map[NFC];
+        let linker = g.node_map["Linker"];
+        let lonely = g.node_map["Lonely"];
+        assert!(g.edges.iter().any(|e| e.from == linker && e.to == zoe), "edge Linker -> {NFC}");
+        assert!(!g.nodes[zoe].is_orphan, "{NFC} has incoming links");
+        assert!(g.nodes[lonely].is_orphan);
+
+        // --filter-orphans keeps the NFD-named note and drops the unlinked one.
+        let f = parse_vault(v, true).unwrap();
+        assert!(f.node_map.contains_key(NFC));
+        assert!(!f.node_map.contains_key("Lonely"));
+    }
 }
