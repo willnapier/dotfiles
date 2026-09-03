@@ -342,11 +342,8 @@ fn build_entry(date: NaiveDate, project: String, bucket: Bucket, no_ai: bool) ->
     let basenames: Vec<String> = bucket
         .files
         .keys()
-        .filter_map(|f| {
-            std::path::Path::new(f)
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-        })
+        .map(|f| forge_names::file_name(std::path::Path::new(f)))
+        .filter(|n| !n.is_empty())
         .collect();
     let mut prose_input = format!("Project: {}\nFiles: {}\n", project, basenames.join(", "));
     if subjects.is_empty() {
