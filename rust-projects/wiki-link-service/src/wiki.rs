@@ -123,39 +123,13 @@ pub fn basename(path: &Path) -> String {
     path.file_name().unwrap_or_default().to_string_lossy().into_owned()
 }
 
-/// The note's name: its file stem, NFC-normalised. This is the boundary where a
-/// filesystem path becomes a wiki identifier (`wls-nfc-boundary-vs-site-patches`,
-/// decided 2026-09-02): every name derived from a path — stem, relative key,
-/// match pattern — is NFC by construction here, so no comparison site downstream
-/// has to remember. `Path`/`PathBuf` values used for I/O stay exactly as the OS
-/// supplied them (macOS lists NFD); an NFC name is never turned back into a path.
-pub fn note_name(path: &Path) -> String {
-    path.file_stem().unwrap_or_default().to_string_lossy().nfc().collect()
-}
-
-/// The key a root-relative path (without `.md`) is indexed and looked up by:
-/// `\` → `/`, case-folded, then NFC — in that order, so the *final* key carries
-/// the invariant. Used for both `by_rel` insertion and `[[Dir/Name]]` lookup;
-/// directory components carry diacritics too.
-pub fn rel_key(rel: &str) -> String {
-    rel.replace('\\', "/").to_lowercase().nfc().collect()
-}
-
-/// A regex fragment matching `name` as either its NFC or NFD spelling, for
-/// scanning note *text* (never file names). Link text is whatever an editor
-/// or a paste left behind — 0.2.5 renders NFC, but older notes and Finder
-/// paste can be NFD — so a pattern built from one form silently misses the
-/// other; this is a superset match and the replacement stays NFC. Collapses
-/// to a single alternative when the two forms are identical (ASCII).
-pub fn name_pattern(name: &str) -> String {
-    let nfc: String = name.nfc().collect();
-    let nfd: String = name.nfd().collect();
-    if nfc == nfd {
-        regex::escape(&nfc)
-    } else {
-        format!("(?:{}|{})", regex::escape(&nfc), regex::escape(&nfd))
-    }
-}
+/// The path→name boundary (`wls-nfc-boundary-vs-site-patches`, decided
+/// 2026-09-02) now lives in the shared `forge-names` crate so every tool over
+/// the synced trees uses one implementation. Re-exported here so this crate's
+/// call sites and tests read as before: `note_name` (NFC stem), `rel_key`
+/// (separator, case-fold, then NFC — insertion AND lookup side) and
+/// `name_pattern` (NFC|NFD alternation for scanning note *text*).
+pub use forge_names::{name_pattern, note_name, rel_key};
 
 /// Case-insensitive, whitespace-trimmed key a link name resolves by. A trailing
 /// `.md` is dropped: 787 Forge notes (Readwise/Obsidian era) link as

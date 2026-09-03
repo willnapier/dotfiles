@@ -17,6 +17,7 @@ sandbox_mode = "danger-full-access"
 
 # Search is available; keep it cached by default, switch to live only when needed
 web_search = "cached"
+approvals_reviewer = "user"
 
 [projects."/Users/williamnapier"]
 trust_level = "trusted"

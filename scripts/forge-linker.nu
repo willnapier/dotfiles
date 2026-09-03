@@ -156,8 +156,8 @@ def process-selections [selections: string, files_data: table, forge_path: strin
         )
         
         if $existing_file != null {
-            # Existing file - use filename without extension
-            $wiki_links = ($wiki_links | append $"[[($existing_file.filename)]]")
+            # Existing file - NFC link via wiki-link-service (the stem off the disk is NFD on macOS)
+            $wiki_links = ($wiki_links | append (^wiki-link-service link-for $existing_file.absolute_path | str trim))
         } else {
             # New file (from Ctrl+N) - add unresolved prefix
             let clean_name = ($selection | str replace ".md" "")

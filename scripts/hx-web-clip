@@ -16,5 +16,9 @@ fi
 filename=$(basename "$latest")
 mv "$latest" "$DEST/"
 
-# Output wikilink (Helix will insert this)
-echo "[[captures/web-archives/$filename]]"
+# Output wikilink (Helix will insert this). The name comes off the filesystem,
+# which macOS lists in NFD; link text must be NFC (meta-nfc-boundary-rollout).
+# This is an HTML capture, not a note, so `wiki-link-service link-for` does not
+# apply — normalise with python3 (present on both hosts).
+nfc_name=$(python3 -c 'import sys,unicodedata;print(unicodedata.normalize("NFC",sys.argv[1]))' "$filename")
+echo "[[captures/web-archives/$nfc_name]]"

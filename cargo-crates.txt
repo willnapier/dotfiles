@@ -58,6 +58,7 @@ usage-probe-anthropic-api	0.1.0	/home/will/projects/continuum/usage-probe-anthro
 usage-probe-claude	0.1.0	/home/will/projects/continuum/usage-probe-claude
 usage-probe-codex	0.1.0	/home/will/projects/continuum/usage-probe-codex
 usage-probe-grok	0.1.0	/home/will/projects/continuum/usage-probe-grok
+wiki-link-service	0.2.7	/home/will/.cache/wls-build/rust-projects/wiki-link-service
 yazi-cli	25.5.31	crates.io
 yazi-fm	25.5.31	crates.io
 yt-transcript	0.1.0	/home/will/dotfiles/rust-projects/yt-transcript

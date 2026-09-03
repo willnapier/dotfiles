@@ -30,7 +30,6 @@ depends = []
 "scripts/render-doc" = "~/.local/bin/render-doc"
 "scripts/skill-mirror" = "~/.local/bin/skill-mirror"
 "scripts/pizauth-show-retry" = "~/.local/bin/pizauth-show-retry"
-"scripts/bulk-dedupe-backlinks" = "~/.local/bin/bulk-dedupe-backlinks"
 "scripts/claude-voice" = "~/.local/bin/claude-voice"
 "scripts/email-attachments" = "~/.local/bin/email-attachments"
 "scripts/mailforge-html" = "~/.local/bin/mailforge-html"
@@ -183,8 +182,6 @@ depends = []
 "scripts/remove-comments" = "~/.local/bin/remove-comments"
 "scripts/todo-scanner" = "~/.local/bin/todo-scanner"
 "scripts/new-script" = "~/.local/bin/new-script"
-"scripts/forge-content-search-interactive.sh" = "~/.local/bin/forge-content-search-interactive"
-"scripts/forge-semantic-search.sh" = "~/.local/bin/forge-semantic-search"
 "scripts/nosave" = "~/.local/bin/nosave"
 "scripts/continuum-sync-claude" = "~/.local/bin/continuum-sync-claude"
 "scripts/quantified-sum" = "~/.local/bin/quantified-sum"
@@ -196,7 +193,6 @@ depends = []
 "nushell/scripts/quantified-tracking-v2.nu" = "~/.config/nushell/scripts/quantified-tracking-v2.nu"
 "nushell/scripts/project-root-detection.nu" = "~/.config/nushell/scripts/project-root-detection.nu"
 "nushell/scripts/serpl.nu" = "~/.config/nushell/scripts/serpl.nu"
-"nushell/scripts/hx-smart-gf.nu" = "~/.config/nushell/scripts/hx-smart-gf.nu"
 "nushell/completions/serpl-completions.nu" = "~/.config/nushell/completions/serpl-completions.nu"
 "nushell/zotero-commands.nu" = "~/.config/nushell/zotero-commands.nu"
 "nushell/budget-commands.nu" = "~/.config/nushell/budget-commands.nu"
@@ -210,7 +206,6 @@ depends = []
 "scripts/cross-platform-open" = "~/.local/bin/cross-platform-open"
 "scripts/hx-clipboard-copy" = "~/.local/bin/hx-clipboard-copy"
 "scripts/hx-clipboard-paste" = "~/.local/bin/hx-clipboard-paste"
-"scripts/forge-linker-cross-platform.sh" = "~/.local/bin/forge-linker-cross-platform"
 "scripts/citation-picker-cross-platform.sh" = "~/.local/bin/citation-picker-cross-platform.sh"
 # Zellij zombie prevention system (cross-platform)
 "scripts/zellij-zombie-killer" = "~/.local/bin/zellij-zombie-killer" 
@@ -246,9 +241,7 @@ depends = []
 # Zotero integration
 "scripts/zotero-get-pdf-key" = "~/.local/bin/zotero-get-pdf-key"
 # Wiki link management - Split architecture following Unix "do one thing well" philosophy
-"scripts/wiki-link-manager" = "~/.local/bin/wiki-link-manager"  # Deprecated - kept for reference
 # "rust-projects/backlinks-init/target/release/backlinks-init" = { target = "~/.local/bin/backlinks-init", type = "symbolic" }  # Rust binary - not built on nimbini
-"scripts/forge-linker.sh" = "~/.local/bin/forge-linker"
 "scripts/forge-linker.nu" = "~/.local/bin/forge-linker.nu"
 "scripts/semantic-indexer" = "~/.local/bin/semantic-indexer"
 "scripts/semantic-query" = "~/.local/bin/semantic-query"
