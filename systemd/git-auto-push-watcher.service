@@ -1,6 +1,6 @@
 [Unit]
 Description=Git Auto-Push Watcher for Seamless Cross-Platform Syncing
-Documentation=Automatically pushes local dotfiles changes to GitHub
+Documentation=file://%h/dotfiles/docs/CROSS-PLATFORM-SYNC.md
 After=network-online.target
 Wants=network-online.target
 
