@@ -14,7 +14,7 @@
 //!   from the last write. The oracle slept per event and re-processed.
 //! - `.PDF` matches too.
 
-use crate::common::{file_name, is_pdf, move_file, notify, Heartbeat, Logger, Moved};
+use crate::common::{display_name, is_pdf, move_file, notify, Heartbeat, Logger, Moved};
 use anyhow::{Context, Result};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
@@ -78,7 +78,7 @@ pub fn run_events(rx: Receiver<Event>, cfg: &PdfCfg, logger: &Logger, hb: &mut H
                             continue;
                         }
                         if !pending.contains_key(&p) {
-                            logger.log(&format!("📄 New PDF detected: {}", file_name(&p)));
+                            logger.log(&format!("📄 New PDF detected: {}", display_name(&p)));
                         }
                         pending.insert(p, Instant::now() + cfg.debounce);
                     }
@@ -106,7 +106,7 @@ pub fn run_events(rx: Receiver<Event>, cfg: &PdfCfg, logger: &Logger, hb: &mut H
             match process_pdf(&p, cfg, logger) {
                 Ok(()) => hb.action(),
                 Err(e) => {
-                    let msg = format!("❌ Error processing {}: {e:#}", file_name(&p));
+                    let msg = format!("❌ Error processing {}: {e:#}", display_name(&p));
                     logger.log(&msg);
                     hb.error(&msg);
                 }
@@ -118,8 +118,10 @@ pub fn run_events(rx: Receiver<Event>, cfg: &PdfCfg, logger: &Logger, hb: &mut H
 
 /// Move one PDF into the output directory, run the import hook, notify.
 pub fn process_pdf(path: &Path, cfg: &PdfCfg, logger: &Logger) -> Result<()> {
-    let filename = file_name(path);
-    let output_path = cfg.output_dir.join(&filename);
+    // Join the OsStr the OS gave us, not the NFC display name: the file must
+    // land under the same bytes it arrived with.
+    let output_path = cfg.output_dir.join(path.file_name().context("no file name")?);
+    let filename = display_name(path);
     logger.log(&format!("🔄 Processing: {filename}"));
     match move_file(path, &output_path)? {
         Moved::Renamed => {}
@@ -203,6 +205,35 @@ mod tests {
         for phrase in ["📄 New PDF detected: paper.pdf", "🔄 Processing: paper.pdf", "✅ Moved to processed: paper.pdf", "📚 Ready for Zotero import: "] {
             assert!(log.contains(phrase), "missing {phrase:?} in {log}");
         }
+    }
+
+    /// The output path is joined from the OsStr the OS gave us: an NFD name
+    /// lands under the same bytes it arrived with, while the log is NFC.
+    #[test]
+    fn nfd_named_pdf_lands_under_its_own_bytes() {
+        use std::os::unix::ffi::OsStrExt;
+        let mut f = fixture(Duration::from_millis(20));
+        let nfd = "Hanwell Cafe\u{0301}.pdf";
+        let nfc = "Hanwell Café.pdf";
+        assert_ne!(nfd, nfc);
+        let pdf = f.cfg.watch_dir.join(nfd);
+        std::fs::write(&pdf, b"%PDF").unwrap();
+        let (tx, rx) = channel();
+        tx.send(create(&pdf)).unwrap();
+        drop(tx);
+        run_events(rx, &f.cfg, &f.logger, &mut f.hb).unwrap();
+
+        let listed: Vec<Vec<u8>> = std::fs::read_dir(&f.cfg.output_dir).unwrap().map(|e| e.unwrap().file_name().as_bytes().to_vec()).collect();
+        assert_eq!(listed, vec![nfd.as_bytes().to_vec()], "moved under the original bytes, no NFC twin");
+        assert!(std::fs::read_dir(&f.cfg.watch_dir).unwrap().next().is_none());
+        assert_eq!(f.hb.actions, 1);
+        let log = std::fs::read_to_string(f._d.path().join("log")).unwrap();
+        for prefix in ["📄 New PDF detected: ", "🔄 Processing: ", "✅ Moved to processed: "] {
+            assert!(log.contains(&format!("{prefix}{nfc}")), "missing NFC line {prefix:?} in {log}");
+            assert!(!log.contains(&format!("{prefix}{nfd}")), "NFD leaked into a name line {prefix:?}: {log}");
+        }
+        // the path line is an I/O identity and keeps the OS's bytes
+        assert!(log.contains(&format!("📚 Ready for Zotero import: {}", f.cfg.output_dir.join(nfd).display())), "{log}");
     }
 
     #[test]

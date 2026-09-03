@@ -216,8 +216,12 @@ pub fn move_file(src: &Path, dst: &Path) -> std::result::Result<Moved, MoveError
     Ok(Moved::Copied(rename_err))
 }
 
-pub fn file_name(p: &Path) -> String {
-    p.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
+/// The file name for log lines, notifications and outcomes — NFC, so both
+/// hosts print the same bytes for the same file (`forge-names` boundary).
+/// Never join this back into a path: a move must land under the bytes the OS
+/// gave us, which on macOS may be NFD. Join sites use `Path::file_name()`.
+pub fn display_name(p: &Path) -> String {
+    forge_names::file_name(p)
 }
 
 pub fn is_pdf(p: &Path) -> bool {
