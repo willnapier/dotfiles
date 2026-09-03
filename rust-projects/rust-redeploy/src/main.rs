@@ -29,6 +29,14 @@ use std::process::Command;
 /// Tools that must carry a Developer ID signature on macOS or the kernel SIGKILLs them
 /// on launch (`cs_invalid_page`). Source of truth is the deploy runbook in
 /// `senior-dev/TECHNICAL-ENVIRONMENT.md`; keep the two in step.
+///
+/// Second reason a tool belongs here (found 2026-09-03 on `continuum-dream`): launchd on
+/// macOS 26 pins a "managed LWCR" (lightweight code requirement) to some calendar jobs at
+/// registration. An ad-hoc rebuild changes the binary's identity, the pin no longer
+/// matches, and the next scheduled run is killed at launch with
+/// `last exit reason = OS_REASON_CODESIGNING` — silently, before it writes a line.
+/// A Developer ID signature gives a stable identity (team id), so the pin keeps matching
+/// across rebuilds. Any tool launched by a `StartCalendarInterval` job should be here.
 const MACOS_SIGNED_TOOLS: &[&str] = &[
     "practiceforge",
     "pizauth",
@@ -37,6 +45,7 @@ const MACOS_SIGNED_TOOLS: &[&str] = &[
     "continuum-claude",
     "continuum-grok",
     "dev-catchup",
+    "continuum-dream",
 ];
 
 const MACOS_SIGNING_IDENTITY: &str = "Developer ID Application: William Napier (LU3TB2NLTD)";
