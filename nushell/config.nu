@@ -1942,7 +1942,7 @@ def fsml [] {
         return
     }
     
-    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'title=$(echo {} | sd "^[0-9.]+[[:space:]]+" ""); file=$(fd -t f --full-path "$title.md" "$FORGE" | head -1); if [ -f "$file" ]; then mdcat --columns 80 "$file"; else echo "Title extracted: [$title]"; echo "Searching for: $title.md"; echo "In vault: $FORGE"; fd -t f "$title.md" "$FORGE"; fi' --preview-window 'right:60%' --prompt "🧠 Semantic: " | str trim)
+    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'title=$(echo {} | sd "^[0-9.]+[[:space:]]+" ""); file=$(wiki-link-service resolve "$title" 2>/dev/null); if [ -n "$file" ] && [ -f "$file" ]; then mdcat --columns 80 "$file"; else echo "Title extracted: [$title]"; echo "No note resolves to that name (either spelling) under the service roots"; fi' --preview-window 'right:60%' --prompt "🧠 Semantic: " | str trim)
     if not ($selected | is-empty) {
         # Extract filename from semantic search result
         # The selection is just the first line: "0.45  Title"
@@ -2099,7 +2099,7 @@ def fsme [] {
         return
     }
 
-    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'title=$(echo {} | sd "^[0-9.]+[[:space:]]+" ""); file=$(fd -t f --full-path "$title.md" "$FORGE" | head -1); if [ -f "$file" ]; then mdcat --columns 80 "$file"; else echo "Title extracted: [$title]"; echo "Searching for: $title.md"; echo "In vault: $FORGE"; fd -t f "$title.md" "$FORGE"; fi' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "🧠 Semantic: " | str trim)
+    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'title=$(echo {} | sd "^[0-9.]+[[:space:]]+" ""); file=$(wiki-link-service resolve "$title" 2>/dev/null); if [ -n "$file" ] && [ -f "$file" ]; then mdcat --columns 80 "$file"; else echo "Title extracted: [$title]"; echo "No note resolves to that name (either spelling) under the service roots"; fi' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "🧠 Semantic: " | str trim)
     if not ($selected | is-empty) {
         # Extract filename from semantic search result
         # The selection is just the first line: "0.45  Title" or "1. 0.45  Title"
@@ -2107,8 +2107,10 @@ def fsme [] {
         let lines = ($selected | lines)
         let filename = ($lines | get 0 | sd '^\d+\.\s+' '' | sd '^[0-9.]+\s+' '' | str trim)
 
-        # Find the full path and open in editor
-        let filepath = (fd -t f --full-path $"($filename).md" $env.FORGE | head -1)
+        # Resolve the NFC stem to the note on disk through wiki-link-service
+        # (either Unicode spelling, case-insensitive); never rebuild the path.
+        let resolved = (do { ^wiki-link-service resolve $filename } | complete)
+        let filepath = if $resolved.exit_code == 0 { $resolved.stdout | lines | first } else { "" }
         if not ($filepath | is-empty) {
             let editor = (if ($env.EDITOR? | is-empty) { "vi" } else { $env.EDITOR })
             print $"🚀 Opening ($filename) in editor..."
@@ -2152,14 +2154,16 @@ def fsmv [] {
         return
     }
 
-    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'title=$(echo {} | sd "^[0-9.]+[[:space:]]+" ""); file=$(fd -t f --full-path "$title.md" "$FORGE" | head -1); if [ -f "$file" ]; then mdcat --columns 80 "$file"; else echo "Title extracted: [$title]"; echo "Searching for: $title.md"; echo "In vault: $FORGE"; fd -t f "$title.md" "$FORGE"; fi' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "🧠 Semantic (View): " | str trim)
+    let selected = ($results | str join "\n" | ^env TERM=xterm-256color TERMINFO="" TERMINFO_DIRS="" sk --preview 'title=$(echo {} | sd "^[0-9.]+[[:space:]]+" ""); file=$(wiki-link-service resolve "$title" 2>/dev/null); if [ -n "$file" ] && [ -f "$file" ]; then mdcat --columns 80 "$file"; else echo "Title extracted: [$title]"; echo "No note resolves to that name (either spelling) under the service roots"; fi' --preview-window 'right:60%' --bind 'up:up,down:down,ctrl-j:down,ctrl-k:up' --prompt "🧠 Semantic (View): " | str trim)
     if not ($selected | is-empty) {
         # Extract filename from semantic search result
         let lines = ($selected | lines)
         let filename = ($lines | get 0 | sd '^\d+\.\s+' '' | sd '^[0-9.]+\s+' '' | str trim)
 
-        # Find the full path and view
-        let filepath = (fd -t f --full-path $"($filename).md" $env.FORGE | head -1)
+        # Resolve the NFC stem to the note on disk through wiki-link-service
+        # (either Unicode spelling, case-insensitive); never rebuild the path.
+        let resolved = (do { ^wiki-link-service resolve $filename } | complete)
+        let filepath = if $resolved.exit_code == 0 { $resolved.stdout | lines | first } else { "" }
         if not ($filepath | is-empty) {
             print $"👁️  Viewing ($filename)..."
             ^mdcat --columns 100 $filepath | ^less -R

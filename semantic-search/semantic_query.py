@@ -12,6 +12,7 @@ Usage:
 
 import os
 import json
+import unicodedata
 import yaml
 import argparse
 import logging
@@ -33,7 +34,12 @@ class SearchResult:
     
     @property
     def filename(self) -> str:
-        return Path(self.file_path).stem
+        # The path→name boundary (design forum meta-nfc-boundary-rollout): the
+        # stem is what the Nushell wrappers print and hand back to
+        # `wiki-link-service resolve`, so it must be NFC whatever the
+        # filesystem listed (macOS lists NFD). `file_path` itself stays as
+        # indexed — never rebuild a path from this name.
+        return unicodedata.normalize('NFC', Path(self.file_path).stem)
         
     @property
     def relative_path(self) -> str:
@@ -145,13 +151,13 @@ class SemanticQuery:
             for line in lines[:10]:  # Check first 10 lines
                 line = line.strip()
                 if line.startswith('#'):
-                    return line.lstrip('#').strip()
+                    return unicodedata.normalize('NFC', line.lstrip('#').strip())
                     
             # Fallback to filename
-            return Path(file_path).stem
+            return unicodedata.normalize('NFC', Path(file_path).stem)
             
         except:
-            return Path(file_path).stem
+            return unicodedata.normalize('NFC', Path(file_path).stem)
             
     def _get_file_snippet(self, file_path: str, query_text: str = "") -> str:
         """Extract a relevant snippet from the file."""
