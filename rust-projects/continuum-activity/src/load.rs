@@ -575,9 +575,11 @@ fn collect_sessions(
             continue;
         }
 
-        let assistant_name = assistant_entry.file_name().to_string_lossy().to_string();
+        // Directory name (NFD on macOS listings) vs a typed filter (NFC):
+        // NFC at the boundary, compared as keys. `assistant_dir` stays the I/O path.
+        let assistant_name = forge_names::file_name(&assistant_dir);
         if let Some(filter) = assistant_filter {
-            if assistant_name != filter {
+            if forge_names::nfc_key(&assistant_name) != forge_names::nfc_key(filter) {
                 continue;
             }
         }
@@ -738,5 +740,27 @@ fn format_time_range(start: &Option<String>, end: &Option<String>) -> String {
         (Some(s), Some(e)) => format!("{}–{}", s, e),
         (Some(s), None) => s,
         _ => "unknown time".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod nfc_tests {
+    use super::*;
+
+    #[test]
+    fn assistant_filter_matches_an_nfd_directory_name_typed_in_nfc() {
+        let base = tempfile::tempdir().unwrap();
+        let session_dir = base.path().join("claude-co\u{0308}de").join("2026-01-01").join("s1");
+        std::fs::create_dir_all(&session_dir).unwrap();
+        std::fs::write(
+            session_dir.join("session.json"),
+            r#"{"id":"s1","assistant":"claude-code"}"#,
+        )
+        .unwrap();
+
+        let hits = collect_sessions(base.path(), Some("claude-cöde"), None).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].path, session_dir, "the listed path is kept for I/O");
+        assert!(collect_sessions(base.path(), Some("codex"), None).unwrap().is_empty());
     }
 }

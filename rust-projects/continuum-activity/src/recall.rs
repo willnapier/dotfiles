@@ -1209,12 +1209,25 @@ fn add_entity(
         });
 }
 
+/// Render a source path as a `~/`-relative pointer for the recall index.
+///
+/// Invariant (NFC boundary roll-out, 2026-09-03): this is NOT normalised, and
+/// neither is [`expand_pointer`]. The pointer is a host-local cache key that
+/// must round-trip byte-for-byte to the path read_dir gave us on this host;
+/// the round-trip is correct precisely because neither side normalises. If
+/// the recall index ever becomes shared between hosts, `expand_pointer` must
+/// become a lookup against a fresh listing (NFC-keyed), not a normalisation.
 fn source_pointer(path: &Path, home: &Path) -> String {
     path.strip_prefix(home)
         .map(|relative| format!("~/{}", relative.display()))
         .unwrap_or_else(|_| path.display().to_string())
 }
 
+/// Inverse of [`source_pointer`]: rebuild the host-local path from a pointer.
+///
+/// Deliberately byte-preserving — see the invariant on `source_pointer`. Do
+/// not add `.nfc()` here: it would turn a valid NFD pointer into a path that
+/// does not exist on this host. A shared index needs a lookup instead.
 fn expand_pointer(pointer: &str) -> Option<PathBuf> {
     if let Some(relative) = pointer.strip_prefix("~/") {
         return dirs::home_dir().map(|home| home.join(relative));
