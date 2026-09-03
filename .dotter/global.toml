@@ -434,6 +434,9 @@ depends = ["shared"]
 "macos/launchd/com.williamnapier.tm3-session-broker.plist" = "~/Library/LaunchAgents/com.williamnapier.tm3-session-broker.plist"
 "macos/launchd/com.williamnapier.cross-machine-sync-check.plist" = "~/Library/LaunchAgents/com.williamnapier.cross-machine-sync-check.plist"
 "macos/launchd/com.williamnapier.dev-catchup.plist" = "~/Library/LaunchAgents/com.williamnapier.dev-catchup.plist"
+# continuum-dream nightly dreamer (04:00). Brought under dotter 2026-09-03 after its ad-hoc
+# redeploy tripped launchd's managed LWCR; the binary is in rust-redeploy's signed set.
+"macos/launchd/com.williamnapier.continuum-dream.plist" = "~/Library/LaunchAgents/com.williamnapier.continuum-dream.plist"
 "macos/launchd/com.williamnapier.forum-worker.plist" = "~/Library/LaunchAgents/com.williamnapier.forum-worker.plist"
 "macos/launchd/com.williamnapier.morning-briefing.plist" = "~/Library/LaunchAgents/com.williamnapier.morning-briefing.plist"
 "scripts/morning-briefing" = "~/.local/bin/morning-briefing"

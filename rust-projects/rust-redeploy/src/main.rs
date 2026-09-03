@@ -27,8 +27,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Tools that must carry a Developer ID signature on macOS or the kernel SIGKILLs them
-/// on launch (`cs_invalid_page`). Source of truth is the deploy runbook in
-/// `senior-dev/TECHNICAL-ENVIRONMENT.md`; keep the two in step.
+/// on launch (`cs_invalid_page`). This list is the source of truth; the runbook
+/// `~/Assistants/shared/RUST-REDEPLOY.md` § "macOS signing" mirrors it — keep the two in step
+/// (the senior-dev role pack's TECHNICAL-ENVIRONMENT.md that used to hold it is retired).
 ///
 /// Second reason a tool belongs here (found 2026-09-03 on `continuum-dream`): launchd on
 /// macOS 26 pins a "managed LWCR" (lightweight code requirement) to some calendar jobs at
