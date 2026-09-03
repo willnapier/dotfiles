@@ -8,6 +8,7 @@ description = "Watches ~/Downloads: AI conversation exports → continuum, TM3 d
 notify = "6"
 anyhow = "1"
 regex = "1"
+forge-names = { path = "../forge-names" }
 
 [dev-dependencies]
 tempfile = "3"

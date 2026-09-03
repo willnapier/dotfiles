@@ -215,6 +215,13 @@ fn notify(title: &str, body: &str) {
     }
 }
 
+/// The messageboard line written on failure. The messageboard is a synced
+/// file, so the file name goes in NFC (the `forge-names` boundary) — a Mac
+/// NFD name and the same name on nimbini then write identical bytes.
+fn failure_notice(what: &str, path: &Path) -> String {
+    format!("{what}: {}", forge_names::file_name(path))
+}
+
 fn process_export(path: &Path) -> Result<()> {
     println!("📥 Detected: {:?}", path.file_name().unwrap_or_default());
 
@@ -245,9 +252,8 @@ fn process_export(path: &Path) -> Result<()> {
         let stderr = String::from_utf8_lossy(&output.stderr);
 
         // Notify failure via messageboard
-        let filename = path.file_name().unwrap_or_default().to_string_lossy();
         let _ = Command::new("messageboard-edit")
-            .args(["insert", &format!("AI import FAILED: {}", filename)])
+            .args(["insert", &failure_notice("AI import FAILED", path)])
             .output();
 
         anyhow::bail!("chatgpt-to-continuum failed: {}", stderr);
@@ -276,9 +282,8 @@ fn process_tm3(path: &Path) -> Result<()> {
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
 
-        let filename = path.file_name().unwrap_or_default().to_string_lossy();
         let _ = Command::new("messageboard-edit")
-            .args(["insert", &format!("TM3 import FAILED: {}", filename)])
+            .args(["insert", &failure_notice("TM3 import FAILED", path)])
             .output();
 
         anyhow::bail!("tm3-diary-capture failed: {}", stderr);
@@ -314,6 +319,15 @@ mod tests {
         let _ = days;
         assert!(now_rfc3339().starts_with("20"));
         assert_eq!(now_rfc3339().len(), 20);
+    }
+
+    #[test]
+    fn failure_notice_names_the_file_in_nfc() {
+        let nfd = Path::new("/x/Downloads/ChatGPT-Cafe\u{0301}.json");
+        let nfc = Path::new("/x/Downloads/ChatGPT-Café.json");
+        assert_ne!(nfd.as_os_str(), nfc.as_os_str());
+        assert_eq!(failure_notice("AI import FAILED", nfd), "AI import FAILED: ChatGPT-Café.json");
+        assert_eq!(failure_notice("AI import FAILED", nfd), failure_notice("AI import FAILED", nfc));
     }
 
     #[test]
