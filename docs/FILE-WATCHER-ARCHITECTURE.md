@@ -51,7 +51,7 @@ watch $path --glob "**/*.md" --debounce-ms 2000 {|operation, path, new_path|
 
 **citation-watcher** -- Monitors `library.bib` for changes with cross-platform path detection (6 search paths). Provides citation database health analytics and research productivity tracking.
 
-**forge-linker** -- Real-time wiki link resolution and backlink management. Detects new files and updates link targets across the knowledge base.
+**wiki-link-service** (unit `link-service`) -- Real-time wiki link resolution and `## Backlinks` management, Rust, one process with two watcher threads (`WIKI-LINK-SPLIT-ARCHITECTURE-2025-10-27.md`). The old `forge-linker` / `forge-link-watcher` are gone; the `forge-linker.nu` that remains is an interactive link picker, not a watcher.
 
 **forge-md-revs** -- Rolling local snapshots of `~/Forge/**/*.md` writes (Helix autosave / Escape-write). 100ms debounce so a later deletion save does not collapse the previous good write. Keep last 20 snapshots per file plus anything newer than 10 minutes. Store: `~/.local/share/forge-md-revs/`. Recover: `forge-md-revs list <path>` / `restore`.
 
