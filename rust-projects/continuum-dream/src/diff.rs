@@ -1,6 +1,7 @@
 use similar::{ChangeTag, TextDiff};
 use std::fs;
 
+use crate::orient::resolve_name;
 use crate::types::{DreamResponse, MemoryState, ProposedChange};
 
 /// Build a list of proposed changes from the AI response
@@ -12,13 +13,8 @@ pub fn build_changes(
 
     // File updates
     for update in &response.files_to_update {
-        let old_content = memory_state
-            .files
-            .iter()
-            .find(|f| f.filename == update.filename)
-            .map(|f| {
-                fs::read_to_string(&f.path).unwrap_or_default()
-            })
+        let old_content = resolve_name(memory_state, &update.filename)
+            .map(|path| fs::read_to_string(path).unwrap_or_default())
             .unwrap_or_default();
 
         changes.push(ProposedChange::UpdateFile {
@@ -40,11 +36,8 @@ pub fn build_changes(
 
     // File deletes
     for delete in &response.files_to_delete {
-        let old_content = memory_state
-            .files
-            .iter()
-            .find(|f| f.filename == delete.filename)
-            .map(|f| fs::read_to_string(&f.path).unwrap_or_default())
+        let old_content = resolve_name(memory_state, &delete.filename)
+            .map(|path| fs::read_to_string(path).unwrap_or_default())
             .unwrap_or_default();
 
         changes.push(ProposedChange::DeleteFile {

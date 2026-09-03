@@ -249,6 +249,11 @@ fn unindexed_jsonl_files(
         Ok(e) => e,
         Err(_) => return extra,
     };
+    // The index is written by Claude Code and may spell a path in a different
+    // Unicode form from what read_dir lists; compare as NFC strings and keep
+    // `path` (the listed one) for I/O.
+    let indexed: std::collections::HashSet<String> =
+        indexed_paths.iter().map(|p| forge_names::nfc(p)).collect();
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -256,8 +261,7 @@ fn unindexed_jsonl_files(
         if !name.ends_with(".jsonl") {
             continue;
         }
-        let path_str = path.to_string_lossy().to_string();
-        if indexed_paths.contains(&path_str) {
+        if indexed.contains(&forge_names::nfc(&path.to_string_lossy())) {
             continue;
         }
         // Check if file was modified on or after target_date
@@ -406,4 +410,24 @@ pub fn extract_cc_sessions(target_date: NaiveDate, verbose: bool) -> Result<Vec<
     }
 
     Ok(merged)
+}
+
+#[cfg(test)]
+mod nfc_tests {
+    use super::*;
+
+    #[test]
+    fn an_nfd_listed_jsonl_indexed_under_its_nfc_spelling_is_not_unindexed() {
+        let dir = tempfile::tempdir().unwrap();
+        let on_disk = dir.path().join("sessio\u{0308}n.jsonl");
+        std::fs::write(&on_disk, "").unwrap();
+        let long_ago = NaiveDate::from_ymd_opt(2000, 1, 1).unwrap();
+
+        let indexed_nfc = forge_names::nfc(&on_disk.to_string_lossy());
+        assert_ne!(indexed_nfc, on_disk.to_string_lossy());
+        assert!(unindexed_jsonl_files(dir.path(), &[indexed_nfc], long_ago).is_empty());
+
+        let found = unindexed_jsonl_files(dir.path(), &[], long_ago);
+        assert_eq!(found, vec![on_disk], "unindexed files come back as listed");
+    }
 }

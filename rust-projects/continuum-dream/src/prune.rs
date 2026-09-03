@@ -16,10 +16,13 @@ pub fn validate(response: &mut DreamResponse, memory_state: &MemoryState) -> Vec
         .iter()
         .map(|f| f.filename.clone())
         .collect();
+    // `MemoryFile.filename` is NFC (orient::memory_name); LLM-emitted names are text
+    // in whichever form the model produced, so compare via the NFC key.
+    let exists = |name: &str| existing_files.contains(&forge_names::nfc(name));
 
     // Validate files_to_update: each must exist
     response.files_to_update.retain(|f| {
-        if !existing_files.contains(&f.filename) {
+        if !exists(&f.filename) {
             warnings.push(format!(
                 "REJECTED update: '{}' does not exist in memory dir",
                 f.filename
@@ -35,7 +38,7 @@ pub fn validate(response: &mut DreamResponse, memory_state: &MemoryState) -> Vec
 
     // Validate files_to_create: must NOT exist, must follow naming convention
     response.files_to_create.retain(|f| {
-        if existing_files.contains(&f.filename) {
+        if exists(&f.filename) {
             warnings.push(format!(
                 "REJECTED create: '{}' already exists (use update instead)",
                 f.filename
@@ -59,7 +62,7 @@ pub fn validate(response: &mut DreamResponse, memory_state: &MemoryState) -> Vec
 
     // Validate files_to_delete: must exist
     response.files_to_delete.retain(|f| {
-        if !existing_files.contains(&f.filename) {
+        if !exists(&f.filename) {
             warnings.push(format!(
                 "REJECTED delete: '{}' does not exist",
                 f.filename

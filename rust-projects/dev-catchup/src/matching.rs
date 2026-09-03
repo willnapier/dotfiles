@@ -5,9 +5,12 @@ use crate::types::*;
 
 const MATCH_THRESHOLD: f64 = 0.15;
 
-/// Basic normalization: strip trailing 's' for plural matching.
+/// Basic normalization: lowercase + NFC (so a term taken from an NFD file
+/// path matches the same word typed in NFC), then strip trailing 's' for
+/// plural matching. The one canonicalisation for both path-derived and
+/// message-derived terms.
 pub fn normalize_term(term: &str) -> String {
-    let t = term.to_lowercase();
+    let t = forge_names::nfc_key(term);
     // Strip trailing 's' if word is long enough (avoid "bus" -> "bu")
     if t.len() > 4 && t.ends_with('s') && !t.ends_with("ss") {
         t[..t.len() - 1].to_string()
@@ -76,7 +79,8 @@ pub fn unify_cc_session(session: &CcSession) -> UnifiedSession {
         session
             .files_modified
             .keys()
-            .filter_map(|p| Path::new(p).file_name().map(|f| f.to_string_lossy().to_string()))
+            .map(|p| forge_names::file_name(Path::new(p)))
+            .filter(|n| !n.is_empty())
             .collect::<Vec<_>>()
             .join(", ")
     };
@@ -251,4 +255,33 @@ pub fn match_session(session: &UnifiedSession, entries: &[DevEntry]) -> MatchRes
     }
 
     MatchResult::Unmatched
+}
+
+#[cfg(test)]
+mod nfc_tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn an_nfd_file_stem_term_matches_an_nfc_typed_word() {
+        assert_eq!(normalize_term("Zoe\u{0308}s"), normalize_term("Zoës"));
+        assert_eq!(normalize_term("Zoe\u{0308}"), "zoë");
+
+        let mut files_modified = BTreeMap::new();
+        files_modified.insert("/x/Zoe\u{0308}.md".to_string(), 1);
+        let session = CcSession {
+            session_id: "abcdef1234".to_string(),
+            slug: String::new(),
+            start_time: None,
+            end_time: None,
+            skills: vec![],
+            files_modified,
+            tool_usage: BTreeMap::new(),
+            user_messages: vec![(chrono::Utc::now(), "notes on Zoë".to_string())],
+        };
+        let unified = unify_cc_session(&session);
+        assert!(unified.terms.contains("zoë"), "{:?}", unified.terms);
+        assert_eq!(unified.terms.iter().filter(|t| t.starts_with("zo")).count(), 1);
+        assert_eq!(unified.files_summary, "Zoë.md");
+    }
 }
