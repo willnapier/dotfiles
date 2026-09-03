@@ -822,6 +822,18 @@ fn verify_host(expected: &str) -> Result<()> {
 }
 
 fn host_label() -> String {
+    if let Ok(value) = std::fs::read_to_string("/etc/hostname") {
+        let value = value.trim().to_string();
+        if !value.is_empty() {
+            return value;
+        }
+    }
+    if let Ok(value) = std::env::var("HOSTNAME") {
+        let value = value.trim().to_string();
+        if !value.is_empty() {
+            return value;
+        }
+    }
     for binary in ["/bin/hostname", "/usr/bin/hostname", "hostname"] {
         if let Ok(output) = Command::new(binary).output() {
             if output.status.success() {
