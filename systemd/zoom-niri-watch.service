@@ -1,0 +1,17 @@
+[Unit]
+Description=Niri Zoom meeting layout and per-client isolation watcher
+Documentation=file://%h/Assistants/shared/ZOOM-NIRI.md
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/zoom-niri watch
+Restart=always
+RestartSec=2
+Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=%h
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+
+[Install]
+WantedBy=graphical-session.target

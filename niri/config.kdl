@@ -77,13 +77,8 @@ window-rule {
     open-floating true;
 }
 
-window-rule {
-    match app-id="zoom" title="Meeting";
-    open-floating true;
-    default-column-width { fixed 813; }
-    default-window-height { fixed 629; }
-    default-floating-position x=1114 y=3 relative-to="top-left";
-}
+// Zoom Meeting windows: title is set AFTER map, so open-floating rules miss.
+// Layout + per-client kill-on-hangup: zoom-niri (see ZOOM-NIRI.md).
 
 // ---- Screenshots ----
 screenshot-path "~/Pictures/Screenshots/%Y-%m-%d_%H-%M-%S.png"

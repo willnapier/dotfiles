@@ -628,6 +628,11 @@ depends = ["shared"]
 "systemd/cohs-trash-mover.timer" = "~/.config/systemd/user/cohs-trash-mover.timer"
 # Wayland compositor configuration - Niri + Waybar + WezTerm
 "niri/config.kdl" = "~/.config/niri/config.kdl"
+# Zoom on Niri: fuzzel/xdg-open wrapper + hang-up isolation watcher.
+# Local PMI lives in ~/.config/zoom-niri/config (not git). See ZOOM-NIRI.md.
+"scripts/zoom-niri" = { target = "~/.local/bin/zoom-niri", type = "symbolic" }
+"systemd/zoom-niri-watch.service" = "~/.config/systemd/user/zoom-niri-watch.service"
+"linux/applications/Zoom.desktop" = "~/.local/share/applications/Zoom.desktop"
 # Sway is NOT the desktop — this exists only so an accidental Sway session (ly
 # saves the session by list index, so an upgrade can select it) is usable rather
 # than a keyboard-dead lockout. See the header comment in sway/config.

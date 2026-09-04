@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=Zoom Workplace
+Comment=Start a fresh Zoom meeting (kills any leftover Zoom first)
+Exec=/home/will/.local/bin/zoom-niri %U
+TryExec=/home/will/.local/bin/zoom-niri
+Icon=Zoom
+Terminal=false
+Type=Application
+Categories=Network;VideoConference;
+StartupWMClass=zoom
+MimeType=x-scheme-handler/zoommtg;x-scheme-handler/zoomus;x-scheme-handler/tel;x-scheme-handler/callto;x-scheme-handler/zoomphonecall;x-scheme-handler/zoomphonesms;x-scheme-handler/zoomcontactcentercall;application/x-zoom
+Keywords=zoom;meeting;pmi;
+Name[en_US]=Zoom Workplace

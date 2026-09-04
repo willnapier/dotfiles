@@ -1,0 +1,369 @@
+#!/usr/bin/env bash
+# zoom-niri — per-client Zoom isolation on Niri (nimbini).
+#
+# Invariant: one Zoom process per client session. A new launch never attaches
+# to a leftover instance; hang-up kills the whole Zoom tree so the next client
+# cannot see the previous gallery, chat, recents, or share.
+#
+# Created: 2026-09-04
+set -euo pipefail
+
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/zoom-niri"
+CONFIG_FILE="$CONFIG_DIR/config"
+GRACE_FILE="${XDG_RUNTIME_DIR:-/tmp}/zoom-niri-launching"
+DEFAULT_WIDTH=720
+DEFAULT_HEIGHT=480
+LAUNCH_GRACE_SECS=20
+ZOOM_BIN="/usr/bin/zoom"
+
+usage() {
+  cat <<'EOF'
+zoom-niri — start Zoom as a fresh per-client session on Niri
+
+Usage:
+  zoom-niri [URL]          Kill leftover Zoom, then start a meeting
+  zoom-niri launch [URL]   Same as above
+  zoom-niri workplace      Kill leftover Zoom, open the app (no meeting)
+  zoom-niri layout         Float, size, and centre current Meeting window(s)
+  zoom-niri kill           Kill the Zoom process tree and single-instance sockets
+  zoom-niri watch          Niri event watcher (systemd: zoom-niri-watch.service)
+  zoom-niri --help         This help
+
+No URL starts your Personal Meeting ID from ~/.config/zoom-niri/config
+(key: pmi=). A zoommtg:// or Zoom https URL is passed through (browser joins).
+
+Fuzzel "Zoom Workplace" and zoommtg:// handlers both run this wrapper.
+EOF
+}
+
+notify() {
+  local msg=$1
+  echo "zoom-niri: $msg" >&2
+  if command -v notify-send >/dev/null 2>&1; then
+    notify-send -u normal "Zoom" "$msg" || true
+  fi
+}
+
+seed_config_if_missing() {
+  [[ -f "$CONFIG_FILE" ]] && return 0
+  mkdir -p "$CONFIG_DIR"
+  chmod 700 "$CONFIG_DIR"
+  local guess=""
+  if [[ -f "$HOME/.config/zoomus.conf" ]]; then
+    guess=$(awk -F= '/^currentMeetingId=/{print $2; exit}' "$HOME/.config/zoomus.conf" || true)
+    guess="${guess//[$'\t\r\n ']}"
+  fi
+  {
+    echo "# zoom-niri local config — not in git"
+    echo "# pmi: Personal Meeting ID used when launching with no URL"
+    if [[ -n "$guess" ]]; then
+      echo "pmi=$guess"
+    else
+      echo "# pmi="
+    fi
+    echo "width=$DEFAULT_WIDTH"
+    echo "height=$DEFAULT_HEIGHT"
+  } >"$CONFIG_FILE"
+  chmod 600 "$CONFIG_FILE"
+}
+
+read_config() {
+  seed_config_if_missing
+  WIDTH=$DEFAULT_WIDTH
+  HEIGHT=$DEFAULT_HEIGHT
+  PMI=""
+  if [[ -f "$CONFIG_FILE" ]]; then
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      line="${line%%#*}"
+      line="${line#"${line%%[![:space:]]*}"}"
+      line="${line%"${line##*[![:space:]]}"}"
+      [[ -z "$line" ]] && continue
+      case "$line" in
+        pmi=*) PMI="${line#pmi=}" ;;
+        width=*) WIDTH="${line#width=}" ;;
+        height=*) HEIGHT="${line#height=}" ;;
+      esac
+    done <"$CONFIG_FILE"
+  fi
+  PMI="${PMI//[$'\t\r\n ']}"
+  WIDTH="${WIDTH//[$'\t\r\n ']}"
+  HEIGHT="${HEIGHT//[$'\t\r\n ']}"
+  [[ "$WIDTH" =~ ^[0-9]+$ ]] || WIDTH=$DEFAULT_WIDTH
+  [[ "$HEIGHT" =~ ^[0-9]+$ ]] || HEIGHT=$DEFAULT_HEIGHT
+}
+
+mark_launching() {
+  mkdir -p "$(dirname "$GRACE_FILE")"
+  date +%s >"$GRACE_FILE"
+}
+
+is_launching() {
+  [[ -f "$GRACE_FILE" ]] || return 1
+  local then now
+  then=$(cat "$GRACE_FILE" 2>/dev/null || echo 0)
+  now=$(date +%s)
+  [[ "$then" =~ ^[0-9]+$ ]] || return 1
+  (( now - then < LAUNCH_GRACE_SECS ))
+}
+
+zoom_pids() {
+  {
+    pgrep -f '^/usr/bin/zoom' || true
+    pgrep -f '^/opt/zoom/' || true
+  } | awk 'NF && !seen[$1]++ { print $1 }'
+}
+
+kill_zoom() {
+  local pids
+  pids=$(zoom_pids || true)
+  if [[ -n "$pids" ]]; then
+    # shellcheck disable=SC2086
+    kill -TERM $pids 2>/dev/null || true
+    local i=0
+    while (( i < 25 )); do
+      pids=$(zoom_pids || true)
+      [[ -z "$pids" ]] && break
+      sleep 0.1
+      i=$((i + 1))
+    done
+    pids=$(zoom_pids || true)
+    if [[ -n "$pids" ]]; then
+      # shellcheck disable=SC2086
+      kill -KILL $pids 2>/dev/null || true
+      sleep 0.2
+    fi
+  fi
+  rm -f "$HOME/.config/zoom/qtsingleapp-zoom-"* 2>/dev/null || true
+}
+
+niri_windows_json() {
+  niri msg --json windows 2>/dev/null || echo '[]'
+}
+
+meeting_ids() {
+  niri_windows_json | jq -r '
+    .[]
+    | select(.app_id == "zoom")
+    | select(.title == "Meeting" or (.title | startswith("Meeting")))
+    | .id
+  ' 2>/dev/null || true
+}
+
+workplace_ids() {
+  niri_windows_json | jq -r '
+    .[]
+    | select(.app_id == "zoom")
+    | select(.title | startswith("Zoom Workplace"))
+    | .id
+  ' 2>/dev/null || true
+}
+
+layout_window() {
+  local id=$1
+  [[ -n "$id" ]] || return 0
+  niri msg action move-window-to-floating --id "$id" >/dev/null 2>&1 || true
+  niri msg action set-window-width --id "$id" "$WIDTH" >/dev/null 2>&1 || true
+  niri msg action set-window-height --id "$id" "$HEIGHT" >/dev/null 2>&1 || true
+  niri msg action center-window --id "$id" >/dev/null 2>&1 || true
+  niri msg action focus-window --id "$id" >/dev/null 2>&1 || true
+}
+
+close_workplace() {
+  local id
+  while IFS= read -r id; do
+    [[ -z "$id" ]] && continue
+    niri msg action close-window --id "$id" >/dev/null 2>&1 || true
+  done < <(workplace_ids)
+}
+
+layout_meetings() {
+  read_config
+  local id found=0
+  while IFS= read -r id; do
+    [[ -z "$id" ]] && continue
+    layout_window "$id"
+    found=1
+  done < <(meeting_ids)
+  if (( found == 1 )); then
+    close_workplace
+  fi
+  (( found == 1 ))
+}
+
+is_zoom_url() {
+  local u=$1
+  case "$u" in
+    zoommtg://*|zoomus://*|https://*zoom.us/*|http://*zoom.us/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+wait_for_niri() {
+  local i=0
+  while ! niri msg version >/dev/null 2>&1; do
+    i=$((i + 1))
+    if (( i % 15 == 0 )); then
+      echo "zoom-niri watch: waiting for niri" >&2
+    fi
+    sleep 1
+  done
+}
+
+cmd_kill() {
+  kill_zoom
+}
+
+cmd_layout() {
+  if layout_meetings; then
+    echo "zoom-niri: laid out Meeting window" >&2
+  else
+    echo "zoom-niri: no Meeting window" >&2
+    return 1
+  fi
+}
+
+start_zoom() {
+  local arg=${1:-}
+  if [[ ! -x "$ZOOM_BIN" ]]; then
+    notify "Zoom is not installed ($ZOOM_BIN)"
+    exit 1
+  fi
+  if [[ -n "$arg" ]]; then
+    "$ZOOM_BIN" "$arg" >/dev/null 2>&1 &
+  else
+    "$ZOOM_BIN" >/dev/null 2>&1 &
+  fi
+  disown || true
+}
+
+wait_for_meeting_layout() {
+  local i=0
+  while (( i < 50 )); do
+    if layout_meetings; then
+      return 0
+    fi
+    sleep 0.5
+    i=$((i + 1))
+  done
+  return 1
+}
+
+cmd_launch() {
+  local url=${1:-}
+  [[ "$url" == "%U" || "$url" == "%u" ]] && url=""
+  read_config
+  mark_launching
+  kill_zoom
+  sleep 0.2
+
+  if [[ -n "$url" ]]; then
+    if ! is_zoom_url "$url"; then
+      notify "Refusing to pass a non-Zoom URL to Zoom"
+      exit 1
+    fi
+    echo "zoom-niri: starting from URL" >&2
+    start_zoom "$url"
+  else
+    if [[ -z "$PMI" ]]; then
+      notify "Set pmi= in $CONFIG_FILE (Personal Meeting ID), then launch again"
+      exit 1
+    fi
+    echo "zoom-niri: starting personal meeting" >&2
+    start_zoom "zoommtg://zoom.us/start?action=start&confno=${PMI}"
+  fi
+
+  wait_for_meeting_layout || echo "zoom-niri: Meeting window not seen yet; watcher will layout it" >&2
+}
+
+cmd_workplace() {
+  read_config
+  mark_launching
+  kill_zoom
+  sleep 0.2
+  echo "zoom-niri: opening Zoom Workplace" >&2
+  start_zoom
+}
+
+cmd_watch() {
+  read_config
+  wait_for_niri
+  echo "zoom-niri watch: connected" >&2
+
+  declare -A laid_out=()
+  local had_meeting=0
+
+  handle_windows() {
+    read_config
+    local id
+    local -a ids=()
+    while IFS= read -r id; do
+      [[ -z "$id" ]] && continue
+      ids+=("$id")
+    done < <(meeting_ids)
+
+    if (( ${#ids[@]} > 0 )); then
+      had_meeting=1
+      for id in "${ids[@]}"; do
+        if [[ -z "${laid_out[$id]:-}" ]]; then
+          layout_window "$id"
+          laid_out[$id]=1
+          close_workplace
+        fi
+      done
+      return 0
+    fi
+
+    if (( had_meeting == 1 )) && ! is_launching; then
+      echo "zoom-niri watch: meeting ended, killing Zoom" >&2
+      kill_zoom
+      had_meeting=0
+      laid_out=()
+    fi
+  }
+
+  # Process substitution keeps laid_out/had_meeting in this shell.
+  handle_windows
+  while IFS= read -r _; do
+    handle_windows
+  done < <(niri msg --json event-stream)
+  echo "zoom-niri watch: event stream ended" >&2
+  exit 1
+}
+
+main() {
+  local cmd=${1:-launch}
+  case "$cmd" in
+    -h|--help|help)
+      usage
+      ;;
+    launch)
+      shift || true
+      cmd_launch "${1:-}"
+      ;;
+    workplace)
+      cmd_workplace
+      ;;
+    kill)
+      cmd_kill
+      ;;
+    layout)
+      cmd_layout
+      ;;
+    watch)
+      cmd_watch
+      ;;
+    zoommtg://*|zoomus://*|https://*|http://*|%U|%u)
+      cmd_launch "$cmd"
+      ;;
+    "")
+      cmd_launch
+      ;;
+    *)
+      echo "zoom-niri: unknown command: $cmd" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+}
+
+main "$@"
