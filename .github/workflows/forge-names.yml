@@ -1,0 +1,35 @@
+name: forge-names
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'rust-projects/forge-names/**'
+      - '.github/workflows/forge-names.yml'
+  pull_request:
+    paths:
+      - 'rust-projects/forge-names/**'
+      - '.github/workflows/forge-names.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    name: Package and frozen vectors
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Check formatting
+        run: cargo fmt --manifest-path rust-projects/forge-names/Cargo.toml -- --check
+      - name: Test frozen contract
+        run: cargo test --manifest-path rust-projects/forge-names/Cargo.toml --locked
+      - name: Lint
+        run: cargo clippy --manifest-path rust-projects/forge-names/Cargo.toml --all-targets --locked -- -D warnings
+      - name: Test verifier failure modes
+        run: python3 -B rust-projects/forge-names/tools/test_verify_forge_names.py
+      - name: Verify clean offline package extraction
+        run: rust-projects/forge-names/tools/vendor_forge_names.py --check-only

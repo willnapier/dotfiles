@@ -69,14 +69,22 @@ pub fn name_pattern(name: &str) -> String {
 /// comparing NFC to NFC, non-recursively. Returns the entry's own path.
 pub fn find_in_dir(dir: &Path, name: &str) -> Option<PathBuf> {
     let want = nfc(name);
-    std::fs::read_dir(dir).ok()?.filter_map(Result::ok).map(|e| e.path()).find(|p| file_name(p) == want)
+    std::fs::read_dir(dir)
+        .ok()?
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .find(|p| file_name(p) == want)
 }
 
 /// Resolve a typed name to an existing directory entry of `dir`, comparing
 /// case-insensitively (NFC-lowercased both sides). Returns the entry's own path.
 pub fn find_in_dir_ci(dir: &Path, name: &str) -> Option<PathBuf> {
     let want = nfc_key(name);
-    std::fs::read_dir(dir).ok()?.filter_map(Result::ok).map(|e| e.path()).find(|p| nfc_key(&file_name(p)) == want)
+    std::fs::read_dir(dir)
+        .ok()?
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .find(|p| nfc_key(&file_name(p)) == want)
 }
 
 /// Every `.md` note under `roots` whose stem (or root-relative path without
@@ -86,7 +94,10 @@ pub fn find_in_dir_ci(dir: &Path, name: &str) -> Option<PathBuf> {
 /// Returns the walked paths, never reconstructed ones.
 pub fn find_note(roots: &[PathBuf], name: &str) -> Vec<PathBuf> {
     let n = name.trim();
-    let n = n.strip_suffix(".md").or_else(|| n.strip_suffix(".MD")).unwrap_or(n);
+    let n = n
+        .strip_suffix(".md")
+        .or_else(|| n.strip_suffix(".MD"))
+        .unwrap_or(n);
     let want_rel = n.contains('/').then(|| rel_key(n));
     let want_stem = nfc_key(n.rsplit('/').next().unwrap_or(n));
     let mut out = Vec::new();
@@ -114,7 +125,9 @@ pub fn find_note(roots: &[PathBuf], name: &str) -> Vec<PathBuf> {
 }
 
 fn walk_md(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
     for e in rd.filter_map(Result::ok) {
         let p = e.path();
         let name = p.file_name().unwrap_or_default().to_string_lossy();
@@ -156,7 +169,10 @@ mod tests {
     fn names_are_nfc_at_the_boundary() {
         assert_ne!(NFD, NFC);
         assert_eq!(note_name(Path::new(&format!("/x/{NFD}.md"))), NFC);
-        assert_eq!(file_name(Path::new(&format!("/x/{NFD}.md"))), format!("{NFC}.md"));
+        assert_eq!(
+            file_name(Path::new(&format!("/x/{NFD}.md"))),
+            format!("{NFC}.md")
+        );
         assert_eq!(nfc_key(NFD), "zoë harcombe");
         assert_eq!(rel_key(&format!("Zoe\u{0308}\\{NFD}")), "zoë/zoë harcombe");
     }
@@ -182,17 +198,38 @@ mod tests {
         std::fs::write(forge.join("Other.md"), "").unwrap();
         std::fs::create_dir_all(forge.join(".hidden")).unwrap();
         std::fs::write(forge.join(".hidden").join(format!("{NFC}.md")), "").unwrap();
-        std::fs::write(forge.join(format!("{NFC}.sync-conflict-20260101-000000-ABC.md")), "").unwrap();
+        std::fs::write(
+            forge.join(format!("{NFC}.sync-conflict-20260101-000000-ABC.md")),
+            "",
+        )
+        .unwrap();
 
-        assert_eq!(find_in_dir(&forge.join("Zoe\u{0308}"), &format!("{NFC}.md")), Some(on_disk.clone()));
-        assert_eq!(find_in_dir_ci(&forge.join("Zoe\u{0308}"), "zoë harcombe.MD"), Some(on_disk.clone()));
+        assert_eq!(
+            find_in_dir(&forge.join("Zoe\u{0308}"), &format!("{NFC}.md")),
+            Some(on_disk.clone())
+        );
+        assert_eq!(
+            find_in_dir_ci(&forge.join("Zoe\u{0308}"), "zoë harcombe.MD"),
+            Some(on_disk.clone())
+        );
         assert_eq!(find_in_dir(&forge, "nope.md"), None);
         let roots = vec![forge.clone()];
         assert_eq!(find_note(&roots, NFC), vec![on_disk.clone()]);
-        assert_eq!(find_note(&roots, &format!("{NFC}.md")), vec![on_disk.clone()]);
+        assert_eq!(
+            find_note(&roots, &format!("{NFC}.md")),
+            vec![on_disk.clone()]
+        );
         assert_eq!(find_note(&roots, "zoë harcombe"), vec![on_disk.clone()]);
-        assert_eq!(find_note(&roots, &format!("Zoë/{NFC}")), vec![on_disk.clone()], "path-qualified, NFC dir vs NFD dir");
-        assert_eq!(find_note(&roots, &format!("Nowhere/{NFC}")), vec![on_disk.clone()], "unknown dir falls back to the stem");
+        assert_eq!(
+            find_note(&roots, &format!("Zoë/{NFC}")),
+            vec![on_disk.clone()],
+            "path-qualified, NFC dir vs NFD dir"
+        );
+        assert_eq!(
+            find_note(&roots, &format!("Nowhere/{NFC}")),
+            vec![on_disk.clone()],
+            "unknown dir falls back to the stem"
+        );
         assert_eq!(find_note(&roots, "missing"), Vec::<PathBuf>::new());
         assert!(find_note(&roots, "Other").len() == 1);
     }
@@ -202,6 +239,9 @@ mod tests {
         let a = PathBuf::from(format!("/x/{NFC}.md"));
         let b = PathBuf::from(format!("/x/{NFD}.md"));
         let c = PathBuf::from("/x/Other.md");
-        assert_eq!(equivalent_duplicates(&[a.clone(), c, b.clone()]), vec![(a, b)]);
+        assert_eq!(
+            equivalent_duplicates(&[a.clone(), c, b.clone()]),
+            vec![(a, b)]
+        );
     }
 }
