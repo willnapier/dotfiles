@@ -102,3 +102,16 @@ sources = ["/home/will/FlickrExport"]
 [[backup.snapshots]]
 name = "google-takeout"
 sources = ["/home/will/GoogleTakeout"]
+
+# --- Canonical PhotoForge archive and its transition evidence -------------
+# Keep both survey generations and the operator dry-run beside the published
+# archive so the decoder/inventory transition can be re-audited after loss of
+# the working source trees. The dry-run remains outside sealed archive identity.
+[[backup.snapshots]]
+name = "photoforge-canonical-archive-20260904"
+sources = [
+    "/home/will/PhotoArchive",
+    "/home/will/PhotoSurveys/four-corpus-signature-v2-20260904",
+    "/home/will/PhotoSurveys/four-corpus-prefix-v3-20260904",
+    "/home/will/.local/state/photoforge/four-corpus-prefix-inventory-dry-run-20260904.json",
+]
