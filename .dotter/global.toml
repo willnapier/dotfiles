@@ -635,6 +635,7 @@ depends = ["shared"]
 "scripts/zoom-niri" = { target = "~/.local/bin/zoom-niri", type = "symbolic" }
 "systemd/zoom-niri-watch.service" = "~/.config/systemd/user/zoom-niri-watch.service"
 "linux/applications/Zoom.desktop" = "~/.local/share/applications/Zoom.desktop"
+"linux/applications/Zoom-app.desktop" = "~/.local/share/applications/Zoom-app.desktop"
 # Sway is NOT the desktop — this exists only so an accidental Sway session (ly
 # saves the session by list index, so an upgrade can select it) is usable rather
 # than a keyboard-dead lockout. See the header comment in sway/config.

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Zoom app
+Comment=Open Zoom without starting a meeting
+Exec=/home/will/.local/bin/zoom-niri workplace
+TryExec=/home/will/.local/bin/zoom-niri
+Icon=Zoom
+Terminal=false
+Type=Application
+Categories=Network;VideoConference;
+StartupWMClass=zoom
+Keywords=zoom;workplace;settings;join;
+Name[en_US]=Zoom app
