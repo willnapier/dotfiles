@@ -6,6 +6,8 @@ depends = []
 
 [shared.files]
 "codex/AGENTS.md" = { target = "~/.codex/AGENTS.md", type = "symbolic" }
+# Cheap-tier Codex subagent definition (see ~/Assistants/shared/CODEX-TIER-ROUTING.md)
+"codex/agents/luna-implement.toml" = { target = "~/.codex/agents/luna-implement.toml", type = "symbolic" }
 # continuum's metered-key probe config: a pointer to the owning app's secrets file plus labels, no key
 "continuum/anthropic-api.toml" = "~/.config/continuum/anthropic-api.toml"
 # codex/config.toml is per-platform (absolute paths + sandbox policy differ): see
