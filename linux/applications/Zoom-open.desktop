@@ -1,5 +1,5 @@
 [Desktop Entry]
-Name=Open Zoom Workplace
+Name=Zoom Workplace
 Comment=Open Zoom Workplace without starting a meeting
 Exec=/home/will/.local/bin/zoom-niri workplace
 TryExec=/home/will/.local/bin/zoom-niri
@@ -9,4 +9,4 @@ Type=Application
 Categories=Network;VideoConference;
 StartupWMClass=zoom
 Keywords=zoom;workplace;settings;join;
-Name[en_US]=Open Zoom Workplace
+Name[en_US]=Zoom Workplace
