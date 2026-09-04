@@ -77,8 +77,7 @@ window-rule {
     open-floating true;
 }
 
-// Zoom Meeting windows: title is set AFTER map, so open-floating rules miss.
-// Layout + per-client kill-on-hangup: zoom-niri (see ZOOM-NIRI.md).
+// Zoom Meeting layout + per-client kill-on-hangup: zoom-niri (see ZOOM-NIRI.md).
 
 // ---- Screenshots ----
 screenshot-path "~/Pictures/Screenshots/%Y-%m-%d_%H-%M-%S.png"

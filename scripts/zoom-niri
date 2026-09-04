@@ -24,7 +24,7 @@ Usage:
   zoom-niri [URL]          Kill leftover Zoom, then start a meeting
   zoom-niri launch [URL]   Same as above
   zoom-niri workplace      Kill leftover Zoom, open the app (no meeting)
-  zoom-niri layout         Float, size, and place Meeting window(s) top-centre
+  zoom-niri layout         Tile and size current Meeting window(s)
   zoom-niri kill           Kill the Zoom process tree and single-instance sockets
   zoom-niri watch          Niri event watcher (systemd: zoom-niri-watch.service)
   zoom-niri --help         This help
@@ -158,33 +158,12 @@ workplace_ids() {
   ' 2>/dev/null || true
 }
 
-output_width_for_window() {
-  local id=$1 ws oname
-  ws=$(niri_windows_json | jq -r --argjson id "$id" '.[] | select(.id == $id) | .workspace_id' 2>/dev/null || true)
-  [[ "$ws" =~ ^[0-9]+$ ]] || return 0
-  oname=$(niri msg --json workspaces 2>/dev/null | jq -r --argjson ws "$ws" '.[] | select(.id == $ws) | .output' || true)
-  [[ -n "$oname" && "$oname" != "null" ]] || return 0
-  niri msg --json outputs 2>/dev/null | jq -r --arg oname "$oname" '.[] | select(.name == $oname) | .logical.width' || true
-}
-
-# Top-centre: horizontally centred, y=0. Niri clamps that to the top of the
-# working area (just below waybar's exclusive zone).
-place_top_center() {
-  local id=$1 ow target_x
-  ow=$(output_width_for_window "$id")
-  [[ "$ow" =~ ^[0-9]+$ ]] || return 0
-  target_x=$(( (ow - WIDTH) / 2 ))
-  (( target_x < 0 )) && target_x=0
-  niri msg action move-floating-window --id "$id" -x "$target_x" -y 0 >/dev/null 2>&1 || true
-}
-
 layout_window() {
   local id=$1
   [[ -n "$id" ]] || return 0
-  niri msg action move-window-to-floating --id "$id" >/dev/null 2>&1 || true
+  niri msg action move-window-to-tiling --id "$id" >/dev/null 2>&1 || true
   niri msg action set-window-width --id "$id" "$WIDTH" >/dev/null 2>&1 || true
   niri msg action set-window-height --id "$id" "$HEIGHT" >/dev/null 2>&1 || true
-  place_top_center "$id"
   niri msg action focus-window --id "$id" >/dev/null 2>&1 || true
 }
 
