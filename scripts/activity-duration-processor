@@ -16,6 +16,7 @@
 # Trigger is the word "key" plus a phrase in spoken-key-table, plus
 # hyphen/dot stems from Social/*.md (person and couple keys).
 # Lines without \bkey\s skip the spoken-key table (keeps Space+P catch-up cheap).
+# Spoken dots: "key x dot strength" → ex.strength::  ("x" as parent → ex).
 # Spoken clocks: "o one twenty to o seven ten" → 0120-0710, then duration.
 # Spoken quantities: "seven thousand steps" → 7000-steps; "forty-five minutes" → 45min.
 # Lint: glue units; default-quantity-rules (walk → steps, sauna → min).
@@ -56,6 +57,7 @@ def spoken-key-table [] {
         {spoken: "dev skill", key: "dev.skill"}
         {spoken: "exercise resistance", key: "ex.res"}
         {spoken: "resistance training", key: "ex.res"}
+        {spoken: "exercise strength", key: "ex.strength"}
         {spoken: "exercise aerobic", key: "ex.aer"}
         {spoken: "exercise cardio", key: "ex.aer"}
         {spoken: "exercise hiit", key: "ex.hiit"}
@@ -108,6 +110,7 @@ def spoken-key-table [] {
         {spoken: "tv", key: "tv"}
         {spoken: "t v", key: "tv"}
         {spoken: "ex", key: "ex"}
+        {spoken: "x", key: "ex"}
         {spoken: "conv", key: "conv"}
         {spoken: "walk", key: "walk"}
         {spoken: "nap", key: "nap"}
@@ -191,6 +194,125 @@ def expand-spoken-keys [content: string] {
         }
     })
 
+    let needs_nl = ($content | str ends-with "\n")
+    if $needs_nl {
+        ($out | str join "\n") + "\n"
+    } else {
+        $out | str join "\n"
+    }
+}
+
+# Spoken "dot" builds hierarchical keys after table expansion.
+# "key piano jazz" stays piano.jz:: (table). "key piano dot jazz" → piano.jazz::.
+# "x" as a parent segment aliases to "ex". Unknown `key foobar` is left as-is
+# unless at least one `dot <segment>` follows.
+
+def is-dot-segment [tok: string] {
+    let t = (norm-tok ($tok | str replace --regex '::$' ''))
+    if ($t | is-empty) {
+        return false
+    }
+    if not ($t =~ '^[A-Za-z][A-Za-z0-9-]*$') {
+        return false
+    }
+    if $t in ["dot", "key"] {
+        return false
+    }
+    let map = (spoken-num-map)
+    if $t in $map {
+        return false
+    }
+    if $t in [
+        "hour", "hours", "minute", "minutes", "min", "mins", "hr", "hrs",
+        "second", "seconds", "sec", "step", "steps",
+        "to", "from", "until", "till", "til", "through",
+        "a", "an", "the", "and", "or", "of"
+    ] {
+        return false
+    }
+    true
+}
+
+def alias-parent-segment [tok: string] {
+    let t = (norm-tok ($tok | str replace --regex '::$' ''))
+    if $t == "x" {
+        "ex"
+    } else {
+        $t
+    }
+}
+
+def consume-dot-segments [key: string, tokens: list<string>, start: int] {
+    let n = ($tokens | length)
+    mut key_out = $key
+    mut j = $start
+    mut changed = false
+    while ($j + 1) < $n and (norm-tok ($tokens | get $j)) == "dot" and (is-dot-segment ($tokens | get ($j + 1))) {
+        let seg = (norm-tok (($tokens | get ($j + 1)) | str replace --regex '::$' ''))
+        $key_out = $"($key_out).($seg)"
+        $j = $j + 2
+        $changed = true
+    }
+    {key: $key_out, next: $j, changed: $changed}
+}
+
+def expand-spoken-dots-line [line: string] {
+    let tokens = ($line | split row --regex '\s+' | where {|t| not ($t | is-empty)})
+    if ($tokens | is-empty) {
+        return $line
+    }
+    let n = ($tokens | length)
+    mut i = 0
+    mut out = []
+    mut changed = false
+    while $i < $n {
+        let tok = ($tokens | get $i)
+        let key_hit = ($tok | parse --regex '^([A-Za-z][A-Za-z0-9.-]*)::$')
+        if not ($key_hit | is-empty) {
+            let raw_parent = ($key_hit | first | get capture0)
+            let parent = (alias-parent-segment $raw_parent)
+            let folded = (consume-dot-segments $parent $tokens ($i + 1))
+            $out = ($out | append $"($folded.key)::")
+            if $folded.changed or $parent != ($raw_parent | str downcase) {
+                $changed = true
+            }
+            $i = $folded.next
+            continue
+        }
+        if (norm-tok $tok) == "key" and ($i + 1) < $n and (is-dot-segment ($tokens | get ($i + 1))) {
+            let has_dot = (
+                ($i + 3) < $n
+                and (norm-tok ($tokens | get ($i + 2))) == "dot"
+                and (is-dot-segment ($tokens | get ($i + 3)))
+            )
+            if $has_dot {
+                let parent = (alias-parent-segment ($tokens | get ($i + 1)))
+                let folded = (consume-dot-segments $parent $tokens ($i + 2))
+                $out = ($out | append $"($folded.key)::")
+                $changed = true
+                $i = $folded.next
+                continue
+            }
+        }
+        $out = ($out | append $tok)
+        $i = $i + 1
+    }
+    if $changed {
+        $out | str join " "
+    } else {
+        $line
+    }
+}
+
+def expand-spoken-dots [content: string] {
+    let lines = ($content | lines)
+    let out = ($lines | each {|line|
+        if not ($line =~ '(?i)\bdot\b') {
+            $line
+        } else {
+            expand-spoken-dots-line $line
+        }
+    })
     let needs_nl = ($content | str ends-with "\n")
     if $needs_nl {
         ($out | str join "\n") + "\n"
@@ -911,7 +1033,7 @@ def process-content [content: string] {
             expand-state-ratings (
                 expand-spoken-quantities (
                     expand-spoken-clocks (
-                        expand-glued-clocks (expand-spoken-keys $content)
+                        expand-glued-clocks (expand-spoken-dots (expand-spoken-keys $content))
                     )
                 )
             )
