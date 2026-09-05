@@ -51,3 +51,4 @@ system-health-check.timer
 tm3-diary-capture.timer
 usagewatch-monitor.timer
 wireplumber.service
+zoom-niri-watch.service
