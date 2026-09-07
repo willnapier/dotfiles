@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=Zoom Personal Meeting
-Comment=Start your personal Zoom meeting (kills leftover Zoom first)
+Comment=Join your personal Zoom meeting (kills leftover Zoom first)
 Keywords=zoom;meeting;pmi;personal;
 Exec=/home/will/.local/bin/zoom-niri %U
 TryExec=/home/will/.local/bin/zoom-niri

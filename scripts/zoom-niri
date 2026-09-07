@@ -21,7 +21,7 @@ usage() {
 zoom-niri — start Zoom as a fresh per-client session on Niri
 
 Usage:
-  zoom-niri [URL]          Kill leftover Zoom, then start a meeting
+  zoom-niri [URL]          Kill leftover Zoom, then join a meeting
   zoom-niri launch [URL]   Same as above
   zoom-niri workplace      Kill leftover Zoom, open the app (no meeting)
   zoom-niri layout         Tile and size current Meeting window(s)
@@ -29,7 +29,7 @@ Usage:
   zoom-niri watch          Niri event watcher (systemd: zoom-niri-watch.service)
   zoom-niri --help         This help
 
-No URL starts your Personal Meeting ID from ~/.config/zoom-niri/config
+No URL joins your Personal Meeting ID from ~/.config/zoom-niri/config
 (key: pmi=). A zoommtg:// or Zoom https URL is passed through (browser joins).
 
 Fuzzel "Zoom Workplace" and zoommtg:// handlers both run this wrapper.
@@ -267,8 +267,11 @@ cmd_launch() {
       notify "Set pmi= in $CONFIG_FILE (Personal Meeting ID), then launch again"
       exit 1
     fi
-    echo "zoom-niri: starting personal meeting" >&2
-    start_zoom "zoommtg://zoom.us/start?action=start&confno=${PMI}"
+    echo "zoom-niri: joining personal meeting" >&2
+    # Join, not start: action=start mints a new instant meeting even when
+    # confno is the PMI. The Personal Meeting Room already exists; joining
+    # it as the signed-in owner makes you host (same as Cmd-J on the Mac).
+    start_zoom "zoommtg://zoom.us/join?action=join&confno=${PMI}"
   fi
 
   wait_for_meeting_layout || echo "zoom-niri: Meeting window not seen yet; watcher will layout it" >&2
