@@ -2,8 +2,10 @@
 # Browse all HTML archives under ~/Captures and output wikilink for Helix insertion
 CAPTURES=~/Captures
 
-# Find all HTML files (fd handles this fast even with 2000+ files)
-selected=$(fd -e html . "$CAPTURES" --type f 2>/dev/null | \
+# Find all HTML files (fd handles this fast even with 2000+ files).
+# readwise/reader/feed/ holds untouched RSS arrivals relocated 2026-09-08; they are
+# not captures and would outnumber real saves twenty to one in this list.
+selected=$(fd -e html . "$CAPTURES" --type f -E "readwise/reader/feed" 2>/dev/null | \
     TERM=xterm-256color sk \
         --prompt "📎 Web archive: " \
         --preview 'bat --color=always --wrap=never --line-range :50 {}' \

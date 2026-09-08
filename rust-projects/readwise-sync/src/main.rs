@@ -219,6 +219,15 @@ fn per_host_state_path(base_dir: &std::path::Path) -> PathBuf {
         .ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .filter(|h| !h.is_empty())
+        // nimbini's minimal image has no `hostname` binary; fall back to
+        // /etc/hostname, then $HOSTNAME, before giving up.
+        .or_else(|| {
+            fs::read_to_string("/etc/hostname")
+                .ok()
+                .map(|s| s.trim().split('.').next().unwrap_or("").to_string())
+                .filter(|h| !h.is_empty())
+        })
+        .or_else(|| env::var("HOSTNAME").ok().filter(|h| !h.is_empty()))
         .unwrap_or_else(|| "unknown-host".to_string());
     let path = base_dir.join(format!("sync-state.{host}.json"));
     let legacy = base_dir.join("sync-state.json");
@@ -385,6 +394,7 @@ fn sync_reader(
 ) -> Result<u32, Box<dyn std::error::Error>> {
     let mut total_docs = 0;
     let mut html_count = 0;
+    let mut skipped_feed = 0;
     let mut cursor: Option<String> = None;
 
     // Create html subdirectory for full snapshots
@@ -408,6 +418,15 @@ fn sync_reader(
         let response: ReaderListResponse = client.get(url).send()?.json()?;
 
         for doc in response.results {
+            // Feed items (RSS/newsletter arrivals Will has not touched) are
+            // Reader-side reading material, not captures. Skip them so the
+            // local archive only holds documents he chose to keep. Moving a
+            // feed item to Later/Archive/Shortlist changes its location and
+            // updated_at, so it is picked up by the next incremental sync.
+            if doc.location == "feed" {
+                skipped_feed += 1;
+                continue;
+            }
             let has_html = doc.html_content.is_some();
             write_document_markdown(&doc, output_dir, &html_dir)?;
             total_docs += 1;
@@ -423,6 +442,7 @@ fn sync_reader(
     }
 
     println!("    ({} with full HTML snapshots)", html_count);
+    println!("    ({} feed items skipped)", skipped_feed);
     Ok(total_docs)
 }
 
@@ -441,6 +461,13 @@ fn write_document_markdown(
     let md_filename = format!("{}.md", base_filename);
     let html_filename = format!("{}.html", base_filename);
     let path = output_dir.join(&md_filename);
+
+    // A document promoted out of the feed may have a stale copy under
+    // reader/feed/ (where pre-2026-09-08 feed items were relocated); drop it
+    // so the archive never holds two versions of one document.
+    let feed_dir = output_dir.join("feed");
+    let _ = fs::remove_file(feed_dir.join(&md_filename));
+    let _ = fs::remove_file(feed_dir.join("html").join(&html_filename));
 
     // Save HTML snapshot if available
     let html_saved = if let Some(ref html_content) = doc.html_content {
