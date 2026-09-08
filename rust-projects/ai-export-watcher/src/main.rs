@@ -32,7 +32,8 @@ pub struct Classifier {
 impl Classifier {
     pub fn new() -> Result<Self> {
         Ok(Self {
-            export: Regex::new(r"(?i)^(ChatGPT|Grok|Gemini|Claude)-.*\.json$")?,
+            // claude.ai's per-chat download names files "Claude 20260908 <title>.json" (space, no hyphen)
+            export: Regex::new(r"(?i)^(ChatGPT|Grok|Gemini|Claude)[- ].*\.json$")?,
             tm3: Regex::new(r"(?i)TM3.*Diary.*\.html?$")?,
             // SingleFile default filename: 2026-09-02-Some Page Title.html (bash: 20[0-9][0-9]-MM-DD-*.html)
             clip: Regex::new(r"^20[0-9]{2}-[0-9]{2}-[0-9]{2}-.*\.html?$")?,
@@ -309,6 +310,7 @@ mod tests {
         assert_eq!(c.classify("1999-09-02-x.html"), None, "bash glob was 20[0-9][0-9]-");
         assert_eq!(c.classify("report.html"), None);
         assert_eq!(c.classify("ChatGPT-2026.json.imported"), None);
+        assert_eq!(c.classify("Claude 20260908 Multi-AI consensus on design dec....json"), Some(Kind::AiExport), "claude.ai per-chat download uses a space");
     }
 
     #[test]

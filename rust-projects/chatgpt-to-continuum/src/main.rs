@@ -191,6 +191,40 @@ struct BrowserExtensionScores {
 }
 
 // ============================================================================
+// Claude.ai single-conversation export (claude.ai "download" of one chat)
+//
+// Shape observed 2026-09-08: a single JSON object, not an array —
+//   {"id","orgId","serviceId":"claude","title","created":<ms>,"updated":<ms>,
+//    "currentMessage","messages":[{"id","parent","role","content","timestamp":<ms>}]}
+// Distinct from the official multi-conversation export handled by
+// claude-to-continuum (an array with `chat_messages`).
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClaudeSingleExport {
+    id: String,
+    service_id: String,
+    #[serde(default)]
+    title: Option<String>,
+    /// Unix milliseconds
+    created: i64,
+    /// Unix milliseconds
+    #[serde(default)]
+    updated: Option<i64>,
+    messages: Vec<ClaudeSingleMessage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClaudeSingleMessage {
+    role: String,
+    content: String,
+    /// Unix milliseconds
+    #[serde(default)]
+    timestamp: Option<i64>,
+}
+
+// ============================================================================
 // Official OpenAI export format
 // ============================================================================
 
@@ -351,8 +385,28 @@ fn main() -> Result<()> {
         println!("  Success: {}", success_count);
         println!("  Errors:  {}", error_count);
         println!("  Output:  {:?}", output_dir);
+    } else if let Ok(claude) = serde_json::from_str::<ClaudeSingleExport>(&json_content) {
+        let assistant = cli.assistant.clone().unwrap_or_else(|| claude.service_id.to_lowercase());
+
+        let output_dir = cli.output.unwrap_or_else(|| {
+            let home = std::env::var("HOME").expect("HOME not set");
+            PathBuf::from(home)
+                .join("Assistants")
+                .join("continuum-logs")
+                .join(&assistant)
+        });
+
+        println!("Detected: Claude.ai single-conversation export ({})", claude.service_id);
+        println!("Output:  {:?}", output_dir);
+
+        let count = process_claude_single_export(&claude, &output_dir, &assistant)?;
+        println!("\nImport complete!");
+        println!("  Assistant:     {}", assistant);
+        println!("  Conversations: 1");
+        println!("  Messages:      {}", count);
+        println!("  Output:        {:?}", output_dir);
     } else {
-        anyhow::bail!("Unrecognized JSON format. Expected ChatGPT/Grok Exporter or official OpenAI export.");
+        anyhow::bail!("Unrecognized JSON format. Expected ChatGPT/Grok Exporter, Claude.ai single-conversation export, or official OpenAI export.");
     }
 
     Ok(())
@@ -592,6 +646,85 @@ fn clean_message_content(content: &str) -> String {
     result = multi_newline_re.replace_all(&result, "\n\n").to_string();
 
     result.trim().to_string()
+}
+
+// ============================================================================
+// Process Claude.ai single-conversation export
+// ============================================================================
+
+fn millis_to_utc(ms: i64) -> Option<DateTime<Utc>> {
+    DateTime::<Utc>::from_timestamp_millis(ms)
+}
+
+/// claude.ai renders artifacts / tool-use blocks the downloader cannot export as
+/// a literal fenced placeholder. Drop those placeholders; keep everything else.
+fn strip_claude_unsupported_blocks(content: &str) -> String {
+    let re = regex::Regex::new(r"```\s*\nThis block is not supported on your current device yet\.\s*\n```").unwrap();
+    re.replace_all(content, "").to_string()
+}
+
+fn process_claude_single_export(conv: &ClaudeSingleExport, output_dir: &PathBuf, assistant: &str) -> Result<usize> {
+    let created = millis_to_utc(conv.created).unwrap_or_else(Utc::now);
+    let updated = conv.updated.and_then(millis_to_utc);
+
+    let date_str = created.format("%Y-%m-%d").to_string();
+    let title = conv
+        .title
+        .clone()
+        .filter(|t| !t.trim().is_empty())
+        .unwrap_or_else(|| format!("claude-{}", conv.id));
+    let id = sanitize_id(&title);
+
+    let session_dir = output_dir.join(&date_str).join(&id);
+    fs::create_dir_all(&session_dir)
+        .with_context(|| format!("Failed to create {:?}", session_dir))?;
+
+    let mut messages: Vec<ContinuumMessage> = Vec::new();
+    for msg in &conv.messages {
+        let role = match msg.role.to_lowercase().as_str() {
+            "human" | "user" => "user".to_string(),
+            "assistant" | "claude" => "assistant".to_string(),
+            other => other.to_string(),
+        };
+        let content = clean_message_content(&strip_claude_unsupported_blocks(&msg.content));
+        if content.trim().is_empty() {
+            continue;
+        }
+        let timestamp = msg
+            .timestamp
+            .and_then(millis_to_utc)
+            .unwrap_or(created)
+            .to_rfc3339();
+        messages.push(ContinuumMessage { id: (messages.len() + 1) as u32, role, content, timestamp });
+    }
+
+    if messages.is_empty() {
+        anyhow::bail!("Claude export contained no non-empty messages");
+    }
+
+    let mut jsonl_content = String::new();
+    for msg in &messages {
+        jsonl_content.push_str(&serde_json::to_string(msg)?);
+        jsonl_content.push('\n');
+    }
+    fs::write(session_dir.join("messages.jsonl"), jsonl_content)?;
+
+    let session = ContinuumSession {
+        id: id.clone(),
+        assistant: assistant.to_string(),
+        start_time: Some(created.to_rfc3339()),
+        end_time: updated.map(|dt| dt.to_rfc3339()),
+        status: Some("imported".to_string()),
+        message_count: Some(messages.len() as u32),
+        created_at: Some(created.to_rfc3339()),
+        title: Some(title.clone()),
+        source_url: Some(format!("https://claude.ai/chat/{}", conv.id)),
+        skills: match_skills(Some(&title), None),
+    };
+    fs::write(session_dir.join("session.json"), serde_json::to_string_pretty(&session)?)?;
+
+    println!("  Created: {}/{}", date_str, id);
+    Ok(messages.len())
 }
 
 // ============================================================================
