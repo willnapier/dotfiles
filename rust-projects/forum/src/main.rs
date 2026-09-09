@@ -158,7 +158,7 @@ struct ConveneArgs {
     /// Reply rounds: harness that performs the falsification pass, or "auto" to rotate by thread
     #[arg(long)]
     critic: Option<String>,
-    /// Shadow baseline "<harness>:<n>": n independent samples of one harness against the same snapshot, written beside the thread and never into it
+    /// Shadow baseline "<harness>:<n>": n independent samples of one harness against the same snapshot, written to <area>/.shadow/<thread-id>/ and never into the thread. Use the strongest single model available (currently claude-code:5; see PROTOCOL.md)
     #[arg(long)]
     shadow: Option<String>,
 }
@@ -802,7 +802,7 @@ fn describe_plan(id: &str, plan: &RoundPlan, staged: Option<&StagedPosition>) {
             "shadow baseline: {} x{} → {}/ (never written into the thread)",
             harness.id,
             count,
-            shadow_dir(&plan.path).display()
+            shadow_dir(&plan.path).join(id).display()
         );
     }
 }
@@ -814,13 +814,19 @@ fn run_convene(
     staged: Option<StagedPosition>,
 ) -> Result<()> {
     let plan = plan_round(root, config, &args, staged.as_ref())?;
-    if plan.pending.is_empty() && staged.is_none() && plan.shadow.is_none() {
+    // A retry after a completed reveal (worker crashed between the thread write and the
+    // queue acknowledgement) must recognise the revealed round and only finish bookkeeping:
+    // nothing is re-invoked and no adapted Position can be appended.
+    let already_revealed = staged.is_some() && has_contribution_heading(&plan.snapshot, &args.caller);
+    if plan.pending.is_empty() && (staged.is_none() || already_revealed) && plan.shadow.is_none() {
         println!(
-            "Round {} already contains every requested harness; nothing to do.",
-            plan.round
+            "Round {} already contains every requested harness{}; nothing to do.",
+            plan.round,
+            if already_revealed { " and the staged Position is revealed" } else { "" }
         );
         return Ok(());
     }
+    let staged = if already_revealed { None } else { staged };
     describe_plan(&args.id, &plan, staged.as_ref());
     if args.dry_run {
         for harness in &plan.pending {
@@ -837,6 +843,22 @@ fn run_convene(
         }
         return Ok(());
     }
+
+    // Pre-flight: the staged Position must verify and its hash must be committed in the
+    // thread before any model is invoked. The panel's snapshot is taken after that
+    // commitment, so it carries the hash but never the text.
+    let snapshot = if let Some(staged) = &staged {
+        staged.verify()?;
+        let _lock = ForumLock::acquire(root)?;
+        let mut current = fs::read_to_string(&plan.path)?;
+        ensure_open(&current)?;
+        commit_staged_hash(&mut current, plan.round, &args.caller, &staged.sha256)?;
+        atomic_write(&plan.path, &current)?;
+        current
+    } else {
+        plan.snapshot.clone()
+    };
+    let plan = RoundPlan { snapshot, ..plan };
 
     let job_dir = create_job_dir(root, &args.id, plan.round)?;
     atomic_write(&job_dir.join("snapshot.md"), &plan.snapshot)?;
@@ -896,7 +918,7 @@ fn run_convene(
     let mut shadow_failures = Vec::new();
     if let Some((harness, _)) = &plan.shadow {
         let snapshot_hash = sha256_hex(&plan.snapshot);
-        let dir = shadow_dir(&plan.path);
+        let dir = shadow_dir(&plan.path).join(&args.id);
         fs::create_dir_all(&dir)?;
         for (index, handle) in shadow_handles.into_iter().enumerate() {
             let result = handle
@@ -915,7 +937,7 @@ fn run_convene(
                         Local::now().to_rfc3339()
                     );
                     atomic_write(
-                        &dir.join(format!("{}-r{}-{}-{}.md", args.id, plan.round, harness.id, k)),
+                        &dir.join(format!("r{}-{}-{}.md", plan.round, harness.id, k)),
                         &format!("{header}{body}\n"),
                     )?;
                     shadow_written += 1;
@@ -931,29 +953,43 @@ fn run_convene(
 
     // Reveal: the staged Position and every successful panel contribution are written
     // in one serialised edit, so no participant's text reaches the thread before the rest.
+    // Fail closed: if the staged Position no longer verifies, or no longer matches the
+    // hash committed in the thread, nothing is written (panel outputs stay in the job dir).
     let successes: Vec<&InvocationResult> = results.iter().filter(|r| r.body.is_some()).collect();
-    let mut staged_error: Option<anyhow::Error> = None;
     if !successes.is_empty() || staged.is_some() {
         let _lock = ForumLock::acquire(root)?;
         let mut current = fs::read_to_string(&plan.path)?;
         ensure_open(&current)?;
         if let Some(staged) = &staged {
-            match staged.verify() {
-                Ok(()) => {
-                    if !has_contribution_heading(&current, &args.caller) {
-                        append_contribution_marked(
-                            &mut current,
-                            &args.caller,
-                            &display_name_for(&args.caller),
-                            ContributionKind::Position,
-                            None,
-                            &staged.content,
-                            Some(plan.round),
-                            "",
-                        )?;
-                    }
-                }
-                Err(error) => staged_error = Some(error),
+            staged
+                .verify()
+                .with_context(|| format!("nothing written; panel outputs are in {}", job_dir.display()))?;
+            match committed_staged_hash(&current, plan.round, &args.caller) {
+                Some(committed) if committed == staged.sha256 => {}
+                Some(committed) => bail!(
+                    "staged position does not match the commitment recorded in the thread ({}… committed, {}… offered); nothing written; panel outputs are in {}",
+                    &committed[..12.min(committed.len())],
+                    &staged.sha256[..12],
+                    job_dir.display()
+                ),
+                None => bail!(
+                    "thread carries no staged commitment for round {} by {}; nothing written; panel outputs are in {}",
+                    plan.round,
+                    args.caller,
+                    job_dir.display()
+                ),
+            }
+            if !has_contribution_heading(&current, &args.caller) {
+                append_contribution_marked(
+                    &mut current,
+                    &args.caller,
+                    &display_name_for(&args.caller),
+                    ContributionKind::Position,
+                    None,
+                    &staged.content,
+                    Some(plan.round),
+                    "",
+                )?;
             }
         }
         let extra_mode = if plan.sequential { " mode:sequential" } else { "" };
@@ -988,9 +1024,6 @@ fn run_convene(
     println!("Appended {} contribution(s)", results.len() - failures.len());
     if plan.shadow.is_some() {
         println!("Shadow samples written: {shadow_written}");
-    }
-    if let Some(error) = staged_error {
-        bail!("{error:#}\npanel contributions were written; the caller's Position was not");
     }
     if !failures.is_empty() || !shadow_failures.is_empty() {
         let mut lines = failures;
@@ -1041,6 +1074,11 @@ fn enqueue_convene(root: &Path, config: &Config, args: ConveneArgs) -> Result<()
         critic: plan.critic.clone(),
         shadow: args.shadow.clone(),
     };
+    if let Some(staged) = &staged {
+        let mut current = fs::read_to_string(&plan.path)?;
+        commit_staged_hash(&mut current, plan.round, &args.caller, &staged.sha256)?;
+        atomic_write(&plan.path, &current)?;
+    }
     let raw = toml::to_string_pretty(&job)?;
     atomic_write(&queue_dir(root).join(format!("{job_id}.toml")), &raw)?;
     println!("Queued forum job: {job_id}");
@@ -1504,9 +1542,14 @@ fn cmd_status(root: &Path, id: &str) -> Result<()> {
             );
         }
     }
+    for line in raw.lines() {
+        if let Some(rest) = line.trim().strip_prefix("<!-- forum-staged:") {
+            println!("staged commitment: {}", rest.trim_end_matches("-->").trim());
+        }
+    }
     let shadows = shadow_sample_count(&path, id)?;
     if shadows > 0 {
-        println!("shadow samples: {shadows} in {}", shadow_dir(&path).display());
+        println!("shadow samples: {shadows} in {}", shadow_dir(&path).join(id).display());
     }
     println!(
         "residual dissent: {}",
@@ -1823,12 +1866,16 @@ fn doctor_lints(root: &Path) -> Result<Vec<String>> {
                 "LINT architecture decided without William's ratification in the Decision: {id} ({relative})"
             ));
         }
-        if residual_dissent_section(&decision).is_none() {
+        let opened = frontmatter_value(&raw, "opened").unwrap_or_default();
+        if opened.as_str() >= "2026-09-09" && residual_dissent_section(&decision).is_none() {
             without_dissent += 1;
+            lines.push(format!(
+                "LINT decided without a Residual dissent section (required for threads opened since 2026-09-09): {id} ({relative})"
+            ));
         }
     }
     lines.push(format!(
-        "lint summary: {decided} decided thread(s); {unratified} architecture close(s) lack William's ratification; {without_dissent} Decision(s) lack a Residual dissent section (required since 2026-09-09)"
+        "lint summary: {decided} decided thread(s); {unratified} architecture close(s) lack William's ratification; {without_dissent} Decision(s) opened since 2026-09-09 lack a Residual dissent section (earlier threads exempt)"
     ));
     Ok(lines)
 }
@@ -1866,16 +1913,15 @@ fn shadow_dir(thread_path: &Path) -> PathBuf {
 }
 
 fn shadow_sample_count(thread_path: &Path, id: &str) -> Result<usize> {
-    let dir = shadow_dir(thread_path);
+    let dir = shadow_dir(thread_path).join(id);
     if !dir.is_dir() {
         return Ok(0);
     }
-    let prefix = format!("{id}-r");
     let mut count = 0;
     for entry in fs::read_dir(&dir)? {
         let path = entry?.path();
         let name = path.file_name().and_then(|s| s.to_str()).unwrap_or_default();
-        if name.starts_with(&prefix) && name.ends_with(".md") {
+        if name.starts_with('r') && name.ends_with(".md") {
             count += 1;
         }
     }
@@ -1941,39 +1987,57 @@ fn residual_dissent_section(text: &str) -> Option<String> {
 /// William's ratification, as distinct from his delegation. "under William's
 /// delegation" does not count; "William ratified", "accepted by Will", etc. do.
 fn has_william_ratification(text: &str) -> bool {
-    let lower = text.to_lowercase();
-    const VERBS: [&str; 7] = [
-        "ratified",
-        "accepted",
-        "approved",
-        "authorised",
-        "authorized",
-        "decided",
-        "confirmed",
+    text.lines().any(line_records_william_ratification)
+}
+
+/// One line is an attestation only if it carries a positive speech act by or about
+/// William and nothing on the same line negates, defers, quotes, or delegates it.
+fn line_records_william_ratification(line: &str) -> bool {
+    let lower = line.to_lowercase().replace('*', "");
+    const NEGATORS: [&str; 12] = [
+        "not ", "n't", "awaiting", "outstanding", "pending", "should", "would", "unless",
+        "will ratify", "delegat", "remains", "if ",
     ];
+    if NEGATORS.iter().any(|n| lower.contains(n)) {
+        return false;
+    }
+    const VERBS: [&str; 9] = [
+        "ratified", "ratifies", "accepted", "approved", "authorised", "authorized", "decided",
+        "confirmed", "accepts",
+    ];
+    let unquoted = |index: usize| {
+        !matches!(
+            lower[..index].chars().next_back(),
+            Some('"') | Some('\u{201c}') | Some('\u{2018}') | Some('\'') | Some('`')
+        )
+    };
     for name in ["william", "will"] {
         for verb in VERBS {
-            if lower.contains(&format!("{name} {verb}"))
-                || lower.contains(&format!("{verb} by {name}"))
-                || lower.contains(&format!("{name} has {verb}"))
-            {
-                return true;
+            for phrase in [
+                format!("{name} {verb}"),
+                format!("{verb} by {name}"),
+                format!("{name} has {verb}"),
+                format!("{verb}: {name}"),
+                format!("ratifier: {name}"),
+            ] {
+                if let Some(index) = lower.find(&phrase) {
+                    if unquoted(index) {
+                        return true;
+                    }
+                }
             }
         }
     }
-    // Heading form: "### Decision — William, <date>" or "**DECIDED <date> — William, after
-    // three rounds.**". A dash-attributed decision line that mentions delegation is not
-    // ratification ("DECIDED — William delegated; consensus after 2 rounds").
-    lower.lines().any(|line| {
-        let line = line.trim().trim_start_matches('*').trim_start_matches('#').trim();
-        // "**Will, 2026-08-21.** …": William wrote the ruling himself.
-        if line.starts_with("will, ") || line.starts_with("william, ") {
-            return true;
-        }
-        (line.contains("decided") || line.contains("decision"))
-            && !line.contains("delegat")
-            && (line.contains("— william") || line.contains("— will,") || line.contains("— will "))
-    })
+    // Heading forms: "### Decision — William, <date>", "**DECIDED <date> — William, after
+    // three rounds.**", "**Will, 2026-08-21.** …" (William wrote the ruling himself).
+    let stripped = lower.trim().trim_start_matches('*').trim_start_matches('#').trim();
+    if stripped.starts_with("will, ") || stripped.starts_with("william, ") {
+        return true;
+    }
+    (stripped.starts_with("decision") || stripped.starts_with("decided"))
+        && ["— william", "– william", "- william", "— will,", "– will,", "- will,", "— will "]
+            .iter()
+            .any(|dash| stripped.contains(dash))
 }
 
 fn has_contribution_heading(thread: &str, harness: &str) -> bool {
@@ -1981,6 +2045,42 @@ fn has_contribution_heading(thread: &str, harness: &str) -> bool {
     thread.lines().any(|line| {
         (line.starts_with("### Position — ") || line.starts_with("### Reply — ")) && line.contains(&needle)
     })
+}
+
+/// Blind-round commitment: the staged Position's hash is written into the thread itself,
+/// before any panel invocation, so the queued job (mutable plain text) is not the only
+/// record of what the caller committed to. The reveal refuses a job whose content does
+/// not hash to the committed value.
+fn staged_marker(round: u32, caller: &str, sha256: &str) -> String {
+    format!("<!-- forum-staged:{round} harness:{caller} sha256:{sha256} -->")
+}
+
+fn committed_staged_hash(thread: &str, round: u32, caller: &str) -> Option<String> {
+    let prefix = format!("<!-- forum-staged:{round} harness:{caller} sha256:");
+    thread.lines().find_map(|line| {
+        line.trim()
+            .strip_prefix(&prefix)
+            .map(|rest| rest.trim_end_matches("-->").trim().to_string())
+    })
+}
+
+/// Record the commitment in the thread (idempotent for an identical hash; refuses a
+/// second, different commitment for the same round and caller).
+fn commit_staged_hash(thread: &mut String, round: u32, caller: &str, sha256: &str) -> Result<()> {
+    match committed_staged_hash(thread, round, caller) {
+        Some(existing) if existing == sha256 => return Ok(()),
+        Some(existing) => bail!(
+            "round {round} already carries a different staged commitment for {caller} ({}… vs {}…); refusing",
+            &existing[..12.min(existing.len())],
+            &sha256[..12]
+        ),
+        None => {}
+    }
+    let insertion = thread
+        .find("\n## Open questions")
+        .ok_or_else(|| anyhow!("thread lacks an '## Open questions' section"))?;
+    thread.insert_str(insertion, &format!("\n{}\n", staged_marker(round, caller, sha256)));
+    Ok(())
 }
 
 fn invoke_harness(harness: Harness, root: &Path, prompt: &str) -> InvocationResult {
@@ -2419,12 +2519,13 @@ fn validate_single_line(label: &str, value: &str) -> Result<()> {
 }
 
 fn validate_contribution(body: &str) -> Result<()> {
-    const RESERVED: [&str; 5] = [
+    const RESERVED: [&str; 6] = [
         "## Positions",
         "## Open questions",
         "## Decision",
         "## Consequences / follow-ups",
         "<!-- forum-round:",
+        "<!-- forum-staged:",
     ];
     for line in body.lines().map(str::trim) {
         if RESERVED.iter().any(|reserved| line.starts_with(reserved)) {
@@ -2581,10 +2682,12 @@ mod tests {
             )
     }
 
-    /// Decided under delegation only, no ratification, no dissent section.
+    /// Decided under delegation only, no ratification, no dissent section; opened after
+    /// the dissent rule so the doctor lint counts it.
     fn delegated_thread() -> String {
         sample_thread()
             .replace("status: open", "status: decided")
+            .replace("opened: 2026-07-17", "opened: 2026-09-09")
             .replace(
                 "decision: null",
                 "decision: \"Adopt the bounded implementation.\"",
@@ -2967,6 +3070,9 @@ mod tests {
         assert!(!snapshot.contains("blind position"));
         assert!(!prompt.contains("blind position"));
         assert!(prompt.contains("omission is a form of framing"));
+        let hash = sha256_hex("**Claim:** the caller's blind position.\n");
+        assert!(snapshot.contains(&staged_marker(1, "codex", &hash)), "commitment precedes the panel");
+        assert_eq!(committed_staged_hash(&thread, 1, "codex").as_deref(), Some(hash.as_str()));
         assert_eq!(
             fs::read_to_string(job.join("staged-position.sha256")).unwrap(),
             sha256_hex("**Claim:** the caller's blind position.\n")
@@ -2989,11 +3095,15 @@ mod tests {
         let mut args = convene_args("test-thread", "codex", "fake");
         args.with_position = Some(staged);
         let error = cmd_convene(temp.path(), &config, args).unwrap_err();
-        assert!(error.to_string().contains("edited after the round started"), "{error:#}");
+        assert!(format!("{error:#}").contains("edited after the round started"), "{error:#}");
+        assert!(format!("{error:#}").contains("nothing written"), "{error:#}");
+        // Fail closed: neither the panel's text nor the caller's reaches the thread; the
+        // commitment marker written before invocation remains as the record.
         let thread = fs::read_to_string(temp.path().join("meta/thread.md")).unwrap();
-        assert!(thread.contains("panel ran"));
+        assert!(!thread.contains("panel ran"));
         assert!(!thread.contains("original."));
         assert!(!has_contribution_heading(&thread, "codex"));
+        assert!(committed_staged_hash(&thread, 1, "codex").is_some());
     }
 
     #[test]
@@ -3012,16 +3122,110 @@ mod tests {
         assert_eq!(job.staged_position.as_deref(), Some("**Claim:** queued blind position.\n"));
         assert_eq!(job.staged_position_sha256.as_deref(), Some(sha256_hex("**Claim:** queued blind position.\n").as_str()));
 
-        // Substitute the content after enqueue: the worker must refuse it.
-        job.staged_position = Some("**Claim:** substituted after enqueue.\n".into());
+        // The commitment is in the thread, not only in the mutable job.
+        let thread = fs::read_to_string(temp.path().join("meta/thread.md")).unwrap();
+        assert_eq!(committed_staged_hash(&thread, 1, "codex"), job.staged_position_sha256);
+
+        // Substitute BOTH content and hash after enqueue (an internally consistent pair):
+        // the worker must still refuse, because the thread's commitment disagrees.
+        let substituted = "**Claim:** substituted after enqueue.\n";
+        job.staged_position = Some(substituted.into());
+        job.staged_position_sha256 = Some(sha256_hex(substituted));
         fs::write(&job_path, toml::to_string_pretty(&job).unwrap()).unwrap();
         assert!(process_next_job(temp.path(), &config).unwrap());
         assert_eq!(job_files(&failed_dir(temp.path())).unwrap().len(), 1);
         let failed: QueueJob =
             toml::from_str(&fs::read_to_string(&job_files(&failed_dir(temp.path())).unwrap()[0]).unwrap()).unwrap();
-        assert!(failed.last_error.as_deref().unwrap_or("").contains("hash mismatch"));
+        // Refused at pre-flight (before any model call) because the thread already carries
+        // a different commitment for this round and caller.
+        assert!(failed.last_error.as_deref().unwrap_or("").contains("commitment"), "{:?}", failed.last_error);
         let thread = fs::read_to_string(temp.path().join("meta/thread.md")).unwrap();
         assert!(!thread.contains("substituted after enqueue"));
+        assert!(!thread.contains("worker ran"), "fail closed: the panel's text is not published either");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn retry_after_a_completed_reveal_cannot_append_an_adapted_position() {
+        // Crash window: the worker wrote the revealed round, then died before archiving the
+        // job. The caller, who can now read the panel, rewrites the queued content and hash.
+        let temp = TempDir::new().unwrap();
+        write_temp_forum(&temp);
+        let staged = temp.path().join("staged.md");
+        fs::write(&staged, "**Claim:** committed before the panel.\n").unwrap();
+        let config = fake_config("printf '**Claim:** panel text\\n'");
+        let mut args = convene_args("test-thread", "codex", "fake");
+        args.background = true;
+        args.with_position = Some(staged);
+        enqueue_convene(temp.path(), &config, args).unwrap();
+        let queued = job_files(&queue_dir(temp.path())).unwrap().remove(0);
+        let original_job = fs::read_to_string(&queued).unwrap();
+        assert!(process_next_job(temp.path(), &config).unwrap());
+        let revealed = fs::read_to_string(temp.path().join("meta/thread.md")).unwrap();
+        assert!(revealed.contains("committed before the panel"));
+
+        // Simulate the crash: the same job is back in the queue, adapted by the caller.
+        let mut job: QueueJob = toml::from_str(&original_job).unwrap();
+        let adapted = "**Claim:** adapted after reading the panel.\n";
+        job.staged_position = Some(adapted.into());
+        job.staged_position_sha256 = Some(sha256_hex(adapted));
+        fs::write(&queued, toml::to_string_pretty(&job).unwrap()).unwrap();
+        assert!(process_next_job(temp.path(), &config).unwrap());
+
+        let after = fs::read_to_string(temp.path().join("meta/thread.md")).unwrap();
+        assert_eq!(after, revealed, "retry changes nothing in the thread");
+        assert_eq!(after.matches("### Position — Codex").count(), 1);
+        assert_eq!(after.matches("harness:fake").count(), 1);
+        assert!(!after.contains("adapted after reading"));
+        assert!(job_files(&queue_dir(temp.path())).unwrap().is_empty());
+    }
+
+    #[test]
+    fn completion_receipt_quotes_residual_dissent_when_present() {
+        let temp = TempDir::new().unwrap();
+        write_temp_forum(&temp);
+        let path = temp.path().join("meta/thread.md");
+        let thread = sample_thread().replace(
+            "## Decision\n\n_(none)_\n",
+            "## Proposed decision (awaiting Will)\n\nRuling.\n\n### Residual dissent\n\n- Codex holds that a ledger is needed.\n\n## Decision\n\n_(none)_\n",
+        );
+        fs::write(&path, thread).unwrap();
+        ensure_queue_dirs(temp.path()).unwrap();
+        let job = QueueJob {
+            version: 1,
+            job_id: "test-thread-r2-1-1".into(),
+            thread_id: "test-thread".into(),
+            caller: "will".into(),
+            panel: "fake".into(),
+            round: 2,
+            kind: ContributionKind::Reply,
+            attempts: 1,
+            max_attempts: 1,
+            created_at: "2026-09-09T00:00:00+01:00".into(),
+            next_attempt_at: 0,
+            completed_at: Some("2026-09-09T00:01:00+01:00".into()),
+            last_error: None,
+            staged_position: None,
+            staged_position_sha256: None,
+            critic: None,
+            shadow: None,
+        };
+        publish_completion(temp.path(), &job).unwrap();
+        let receipts = read_receipts(&unread_inbox_dir(temp.path()), false).unwrap();
+        assert_eq!(
+            receipts[0].1.residual_dissent.as_deref(),
+            Some("- Codex holds that a ledger is needed.")
+        );
+    }
+
+    #[test]
+    fn a_second_different_commitment_for_the_same_round_is_refused() {
+        let mut thread = sample_thread();
+        commit_staged_hash(&mut thread, 1, "codex", &sha256_hex("a")).unwrap();
+        commit_staged_hash(&mut thread, 1, "codex", &sha256_hex("a")).unwrap();
+        assert_eq!(thread.matches("forum-staged:1").count(), 1);
+        assert!(commit_staged_hash(&mut thread, 1, "codex", &sha256_hex("b")).is_err());
+        assert!(validate_contribution("<!-- forum-staged:1 harness:codex sha256:x -->").is_err());
     }
 
     #[cfg(unix)]
@@ -3065,7 +3269,7 @@ mod tests {
         assert_eq!(thread.matches("SHADOW-OR-PANEL").count(), 1, "only the panel contribution enters the thread");
         assert!(!thread.contains("forum-shadow"));
         assert_eq!(shadow_sample_count(&path, "test-thread").unwrap(), 2);
-        let sample = fs::read_to_string(shadow_dir(&path).join("test-thread-r1-fake-1.md")).unwrap();
+        let sample = fs::read_to_string(shadow_dir(&path).join("test-thread/r1-fake-1.md")).unwrap();
         assert!(sample.starts_with("<!-- forum-shadow thread:test-thread round:1 harness:fake sample:1"));
         // The .shadow directory is invisible to thread resolution and to the round-2 snapshot.
         assert!(resolve_thread(temp.path(), "test-thread").unwrap().unwrap().ends_with("meta/thread.md"));
@@ -3130,6 +3334,33 @@ mod tests {
         assert!(!has_william_ratification("**DECIDED 2026-09-08 — William delegated; consensus after 2 rounds.**"));
         assert!(has_william_ratification("**Will, 2026-08-21.** Parent logs are hubs."));
         assert!(!has_william_ratification("Will's standing instruction applies."));
+        // Adversarial cases from the implementation review (Codex, Grok Build, 2026-09-09).
+        for negative in [
+            "This decision is not ratified by William.",
+            "Ratification by William remains outstanding.",
+            "The dissent argued that \u{201c}ratified by William\u{201d} should be required.",
+            "The dissent argued that \"ratified by William\" should be required.",
+            "awaiting William's ratification",
+            "William will ratify later.",
+            "William's explicit delegation to close.",
+            "see William's Decision in the parent",
+            "Ratified by William if the tests pass.",
+            "William hasn't accepted this yet.",
+        ] {
+            assert!(!has_william_ratification(negative), "false positive: {negative}");
+        }
+        for positive in [
+            "William approved this decision.",
+            "Ratifier: Will",
+            "**Ratified:** William, 2026-09-09",
+            "Ratified by William 2026-09-09.",
+            "## Decision - William, 2026-09-09",
+            "## Decision \u{2013} William, 2026-09-09",
+            "William ratifies the panel's proposal.",
+            "**DECIDED 2026-09-09 12:27 \u{2014} William ratified in conversation with claude-code:** \"yes I'll go with your recommendations\"",
+        ] {
+            assert!(has_william_ratification(positive), "false negative: {positive}");
+        }
         assert!(!has_william_ratification(""));
 
         // A ratified `## Decision` wins over an earlier `## Proposed decision`.
@@ -3206,7 +3437,12 @@ mod tests {
         fs::write(&path, delegated_thread()).unwrap();
         let lints = doctor_lints(temp.path()).unwrap();
         assert!(lints.iter().any(|l| l.starts_with("LINT architecture decided without William's ratification") && l.contains("test-thread")), "{lints:?}");
-        assert!(lints.last().unwrap().contains("1 decided thread(s); 1 architecture close(s) lack William's ratification; 1 Decision(s) lack a Residual dissent section"));
+        assert!(lints.last().unwrap().contains("1 decided thread(s); 1 architecture close(s) lack William's ratification; 1 Decision(s) opened since 2026-09-09 lack a Residual dissent section"), "{lints:?}");
+        assert!(lints.iter().any(|l| l.starts_with("LINT decided without a Residual dissent section")));
+        // A thread opened before the rule is exempt from the dissent count.
+        fs::write(&path, delegated_thread().replace("opened: 2026-09-09", "opened: 2026-08-01")).unwrap();
+        let lints = doctor_lints(temp.path()).unwrap();
+        assert!(lints.last().unwrap().contains("0 Decision(s) opened since"), "{lints:?}");
 
         fs::write(&path, decided_thread()).unwrap();
         let lints = doctor_lints(temp.path()).unwrap();
