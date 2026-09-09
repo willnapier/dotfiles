@@ -1987,11 +1987,17 @@ fn residual_dissent_section(text: &str) -> Option<String> {
 /// William's ratification, as distinct from his delegation. "under William's
 /// delegation" does not count; "William ratified", "accepted by Will", etc. do.
 fn has_william_ratification(text: &str) -> bool {
-    text.lines().any(line_records_william_ratification)
+    // Evaluate clause by clause: a long Decision paragraph may ratify in its first
+    // sentence and say "not" or "if" three sentences later.
+    let cleaned = text.replace('*', "");
+    cleaned
+        .lines()
+        .flat_map(|line| line.split(". ").flat_map(|s| s.split("; ")).flat_map(|s| s.split(": ")))
+        .any(line_records_william_ratification)
 }
 
-/// One line is an attestation only if it carries a positive speech act by or about
-/// William and nothing on the same line negates, defers, quotes, or delegates it.
+/// One clause is an attestation only if it carries a positive speech act by or about
+/// William and nothing in the same clause negates, defers, quotes, or delegates it.
 fn line_records_william_ratification(line: &str) -> bool {
     let lower = line.to_lowercase().replace('*', "");
     const NEGATORS: [&str; 12] = [
@@ -3358,6 +3364,8 @@ mod tests {
             "## Decision \u{2013} William, 2026-09-09",
             "William ratifies the panel's proposal.",
             "**DECIDED 2026-09-09 12:27 \u{2014} William ratified in conversation with claude-code:** \"yes I'll go with your recommendations\"",
+            "**DECIDED 2026-09-09 12:27 \u{2014} William ratified in conversation with claude-code:** \"yes\". Rulings: (a) both a gate and a lint, not lint alone; (b) prose now, a ledger only if the metric shows prose loses contentions.",
+            "**Will, 2026-08-21.** Parent logs are **hubs**, not rolled-up family timelines.",
         ] {
             assert!(has_william_ratification(positive), "false negative: {positive}");
         }
