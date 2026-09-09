@@ -1992,8 +1992,38 @@ fn has_william_ratification(text: &str) -> bool {
     let cleaned = text.replace('*', "");
     cleaned
         .lines()
-        .flat_map(|line| line.split(". ").flat_map(|s| s.split("; ")))
-        .any(line_records_william_ratification)
+        .flat_map(split_clauses)
+        .any(|clause| line_records_william_ratification(&clause))
+}
+
+/// Split at `.` or `;` followed by optional closing quotes/brackets and whitespace, so
+/// `iterating." Rulings…` is a boundary as much as `iterating. Rulings…` is.
+fn split_clauses(line: &str) -> Vec<String> {
+    let chars: Vec<char> = line.chars().collect();
+    let mut clauses = Vec::new();
+    let mut current = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        current.push(c);
+        if c == '.' || c == ';' {
+            let mut j = i + 1;
+            while j < chars.len() && matches!(chars[j], '"' | '\u{201d}' | '\'' | '\u{2019}' | ')' | ']') {
+                current.push(chars[j]);
+                j += 1;
+            }
+            if j >= chars.len() || chars[j].is_whitespace() {
+                clauses.push(std::mem::take(&mut current));
+                i = j;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    if !current.trim().is_empty() {
+        clauses.push(current);
+    }
+    clauses
 }
 
 /// One clause is an attestation only if it carries a positive speech act by or about
@@ -3366,6 +3396,7 @@ mod tests {
             "**DECIDED 2026-09-09 12:27 \u{2014} William ratified in conversation with claude-code:** \"yes I'll go with your recommendations\"",
             "**DECIDED 2026-09-09 12:27 \u{2014} William ratified in conversation with claude-code:** \"yes\". Rulings: (a) both a gate and a lint, not lint alone; (b) prose now, a ledger only if the metric shows prose loses contentions.",
             "**Will, 2026-08-21.** Parent logs are **hubs**, not rolled-up family timelines.",
+            "**DECIDED 2026-09-09 12:27 \u{2014} William ratified in conversation with claude-code:** \"yes I'll go with your recommendations as long as we are monitoring and iterating.\" Rulings on the two contested points: (a) both a gate and a lint \u{2014} dispatch refuses any thread whose Decision does not record William's ratification, so a delegated architecture close can be written but never becomes a work order; (b) prose now.",
         ] {
             assert!(has_william_ratification(positive), "false negative: {positive}");
         }
