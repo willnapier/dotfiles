@@ -11,6 +11,7 @@ clap = { version = "4", features = ["derive", "env"] }
 dirs = "6"
 fs2 = "0.4"
 serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
 toml = "0.8"
 
 [dev-dependencies]

@@ -3,6 +3,7 @@ use chrono::Local;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{IsTerminal, Read, Write};
@@ -151,6 +152,15 @@ struct ConveneArgs {
     /// Total attempts before a background job is archived as failed
     #[arg(long, default_value_t = 3)]
     max_attempts: u32,
+    /// Round 1 only: the caller's own Position, staged in a file, hash-locked, and revealed together with the panel's (blind round)
+    #[arg(long)]
+    with_position: Option<PathBuf>,
+    /// Reply rounds: harness that performs the falsification pass, or "auto" to rotate by thread
+    #[arg(long)]
+    critic: Option<String>,
+    /// Shadow baseline "<harness>:<n>": n independent samples of one harness against the same snapshot, written beside the thread and never into it
+    #[arg(long)]
+    shadow: Option<String>,
 }
 
 #[derive(Args)]
@@ -278,6 +288,17 @@ struct QueueJob {
     next_attempt_at: i64,
     completed_at: Option<String>,
     last_error: Option<String>,
+    /// Blind round 1: the caller's staged Position travels with the job and is hash-locked
+    #[serde(default)]
+    staged_position: Option<String>,
+    #[serde(default)]
+    staged_position_sha256: Option<String>,
+    /// Resolved critic harness for a reply round
+    #[serde(default)]
+    critic: Option<String>,
+    /// Shadow baseline spec "<harness>:<n>"
+    #[serde(default)]
+    shadow: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -288,6 +309,118 @@ struct InboxReceipt {
     round: u32,
     completed_at: String,
     participants: Vec<String>,
+    /// The thread's `### Residual dissent` section, quoted verbatim, when one exists
+    #[serde(default)]
+    residual_dissent: Option<String>,
+}
+
+/// A caller's round-1 Position staged before the panel is convened.
+#[derive(Clone, Debug)]
+struct StagedPosition {
+    content: String,
+    sha256: String,
+    /// Foreground only: the file it was read from, re-read at write time to refuse substitution
+    source: Option<PathBuf>,
+}
+
+impl StagedPosition {
+    fn from_file(path: &Path) -> Result<Self> {
+        let content = fs::read_to_string(path)
+            .with_context(|| format!("failed to read staged position {}", path.display()))?;
+        if content.trim().is_empty() {
+            bail!("staged position {} is empty", path.display());
+        }
+        validate_contribution(&content)?;
+        Ok(Self {
+            sha256: sha256_hex(&content),
+            content,
+            source: Some(path.to_path_buf()),
+        })
+    }
+
+    fn from_job(content: &str, sha256: &str) -> Self {
+        Self {
+            content: content.to_string(),
+            sha256: sha256.to_string(),
+            source: None,
+        }
+    }
+
+    /// Refuse substitution: the content must still hash to what was recorded when the
+    /// round started, and a foreground source file must not have been edited meanwhile.
+    fn verify(&self) -> Result<()> {
+        if sha256_hex(&self.content) != self.sha256 {
+            bail!("staged position hash mismatch: content no longer matches the hash recorded at convene time");
+        }
+        if let Some(source) = &self.source {
+            let now = fs::read_to_string(source)
+                .with_context(|| format!("staged position {} disappeared during the round", source.display()))?;
+            if sha256_hex(&now) != self.sha256 {
+                bail!(
+                    "staged position {} was edited after the round started (hash {} != {}); refusing to write it",
+                    source.display(),
+                    &sha256_hex(&now)[..12],
+                    &self.sha256[..12]
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
+fn sha256_hex(text: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(text.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+fn fnv1a(text: &str) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in text.bytes() {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
+/// "<harness>:<n>" → (harness, n), n in 1..=10.
+fn parse_shadow_spec(spec: &str, config: &Config) -> Result<(Harness, u32)> {
+    let (id, count) = spec
+        .split_once(':')
+        .ok_or_else(|| anyhow!("shadow spec must be <harness>:<n>, got {spec:?}"))?;
+    validate_id(id)?;
+    let count: u32 = count
+        .trim()
+        .parse()
+        .map_err(|_| anyhow!("shadow sample count must be a number, got {count:?}"))?;
+    if !(1..=10).contains(&count) {
+        bail!("shadow sample count must be between 1 and 10");
+    }
+    let harness = config
+        .harnesses
+        .get(id)
+        .ok_or_else(|| anyhow!("unknown shadow harness: {id}"))?;
+    if !harness.enabled {
+        bail!("shadow harness {id} is disabled");
+    }
+    Ok((harness.clone(), count))
+}
+
+/// None → no critic; "auto" → rotate by thread id over the resolved panel; otherwise a panel member.
+fn choose_critic(spec: Option<&str>, thread_id: &str, panel: &[Harness]) -> Result<Option<String>> {
+    let Some(spec) = spec else { return Ok(None) };
+    if panel.is_empty() {
+        bail!("cannot assign a critic to an empty panel");
+    }
+    if spec == "auto" {
+        let index = (fnv1a(thread_id) % panel.len() as u64) as usize;
+        return Ok(Some(panel[index].id.clone()));
+    }
+    validate_id(spec)?;
+    if !panel.iter().any(|h| h.id == spec) {
+        bail!("critic {spec} is not on the resolved panel");
+    }
+    Ok(Some(spec.to_string()))
 }
 
 fn main() {
@@ -553,6 +686,32 @@ fn cmd_convene(root: &Path, config: &Config, args: ConveneArgs) -> Result<()> {
     if args.background {
         return enqueue_convene(root, config, args);
     }
+    let staged = args
+        .with_position
+        .as_deref()
+        .map(StagedPosition::from_file)
+        .transpose()?;
+    run_convene(root, config, args, staged)
+}
+
+/// One round's plan, resolved identically for foreground, queued, and worker paths.
+struct RoundPlan {
+    path: PathBuf,
+    snapshot: String,
+    round: u32,
+    kind: ContributionKind,
+    pending: Vec<Harness>,
+    sequential: bool,
+    critic: Option<String>,
+    shadow: Option<(Harness, u32)>,
+}
+
+fn plan_round(
+    root: &Path,
+    config: &Config,
+    args: &ConveneArgs,
+    staged: Option<&StagedPosition>,
+) -> Result<RoundPlan> {
     let path = require_thread(root, &args.id)?;
     let snapshot = fs::read_to_string(&path)?;
     ensure_open(&snapshot)?;
@@ -564,41 +723,153 @@ fn cmd_convene(root: &Path, config: &Config, args: ConveneArgs) -> Result<()> {
     });
     let requested = resolve_panel(config, &args.panel, &args.caller)?;
     let pending: Vec<Harness> = requested
-        .into_iter()
+        .iter()
         .filter(|h| !has_round_contribution(&snapshot, round, &h.id))
+        .cloned()
         .collect();
 
-    if pending.is_empty() {
-        println!("Round {round} already contains every requested harness; nothing to do.");
+    let caller_posted = has_contribution_heading(&snapshot, &args.caller);
+    if staged.is_some() {
+        if round != 1 || !matches!(kind, ContributionKind::Position) {
+            bail!("--with-position applies to round 1 Positions only");
+        }
+        if caller_posted {
+            bail!(
+                "caller {} has already posted to {}; the round is sequential and --with-position cannot make it blind",
+                args.caller,
+                args.id
+            );
+        }
+    }
+    // A round-1 Position round whose caller already posted was not blind: the
+    // panel reads the caller's framing. Record that on every marker of the round.
+    let sequential = round == 1 && matches!(kind, ContributionKind::Position) && caller_posted;
+
+    let critic = match kind {
+        ContributionKind::Reply => choose_critic(args.critic.as_deref(), &args.id, &requested)?,
+        ContributionKind::Position => {
+            if args.critic.is_some() {
+                bail!("--critic applies to reply rounds; round {round} is a Position round");
+            }
+            None
+        }
+    };
+    let shadow = args
+        .shadow
+        .as_deref()
+        .map(|spec| parse_shadow_spec(spec, config))
+        .transpose()?;
+
+    Ok(RoundPlan {
+        path,
+        snapshot,
+        round,
+        kind,
+        pending,
+        sequential,
+        critic,
+        shadow,
+    })
+}
+
+fn describe_plan(id: &str, plan: &RoundPlan, staged: Option<&StagedPosition>) {
+    println!(
+        "Thread {} round {}{}: {}",
+        id,
+        plan.round,
+        if plan.sequential { " (sequential: caller posted before convening)" } else { "" },
+        if plan.pending.is_empty() {
+            "no panel invocations".to_string()
+        } else {
+            plan.pending
+                .iter()
+                .map(|h| h.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        }
+    );
+    if let Some(staged) = staged {
+        println!(
+            "blind round: caller Position staged (sha256 {}), revealed together with the panel",
+            &staged.sha256[..12]
+        );
+    }
+    if let Some(critic) = &plan.critic {
+        println!("critic (falsification pass): {critic}");
+    }
+    if let Some((harness, count)) = &plan.shadow {
+        println!(
+            "shadow baseline: {} x{} → {}/ (never written into the thread)",
+            harness.id,
+            count,
+            shadow_dir(&plan.path).display()
+        );
+    }
+}
+
+fn run_convene(
+    root: &Path,
+    config: &Config,
+    args: ConveneArgs,
+    staged: Option<StagedPosition>,
+) -> Result<()> {
+    let plan = plan_round(root, config, &args, staged.as_ref())?;
+    if plan.pending.is_empty() && staged.is_none() && plan.shadow.is_none() {
+        println!(
+            "Round {} already contains every requested harness; nothing to do.",
+            plan.round
+        );
         return Ok(());
     }
-    println!(
-        "Thread {} round {}: {}",
-        args.id,
-        round,
-        pending
-            .iter()
-            .map(|h| h.id.as_str())
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
+    describe_plan(&args.id, &plan, staged.as_ref());
     if args.dry_run {
-        for harness in pending {
+        for harness in &plan.pending {
             println!("dry-run: {} {}", harness.command, harness.args.join(" "));
+        }
+        if let Some((harness, count)) = &plan.shadow {
+            for k in 1..=*count {
+                println!(
+                    "dry-run shadow {k}/{count}: {} {}",
+                    harness.command,
+                    harness.args.join(" ")
+                );
+            }
         }
         return Ok(());
     }
 
-    let job_dir = create_job_dir(root, &args.id, round)?;
-    atomic_write(&job_dir.join("snapshot.md"), &snapshot)?;
+    let job_dir = create_job_dir(root, &args.id, plan.round)?;
+    atomic_write(&job_dir.join("snapshot.md"), &plan.snapshot)?;
+    if let Some(staged) = &staged {
+        atomic_write(&job_dir.join("staged-position.md"), &staged.content)?;
+        atomic_write(&job_dir.join("staged-position.sha256"), &staged.sha256)?;
+    }
+
     let mut handles = Vec::new();
-    for harness in pending {
-        let prompt = build_prompt(&args.id, round, kind, &harness, &snapshot);
+    for harness in plan.pending.clone() {
+        let is_critic = plan.critic.as_deref() == Some(harness.id.as_str());
+        let prompt = build_prompt(&args.id, plan.round, plan.kind, &harness, &plan.snapshot, is_critic);
         atomic_write(&job_dir.join(format!("{}-prompt.md", harness.id)), &prompt)?;
         let root = root.to_path_buf();
-        handles.push(thread::spawn(move || {
-            invoke_harness(harness, &root, &prompt)
-        }));
+        handles.push(thread::spawn(move || invoke_harness(harness, &root, &prompt)));
+    }
+    let mut shadow_handles = Vec::new();
+    if let Some((harness, count)) = &plan.shadow {
+        let prompt = build_prompt(
+            &args.id,
+            plan.round,
+            ContributionKind::Position,
+            harness,
+            &plan.snapshot,
+            false,
+        );
+        atomic_write(&job_dir.join(format!("shadow-{}-prompt.md", harness.id)), &prompt)?;
+        for _ in 0..*count {
+            let harness = harness.clone();
+            let root = root.to_path_buf();
+            let prompt = prompt.clone();
+            shadow_handles.push(thread::spawn(move || invoke_harness(harness, &root, &prompt)));
+        }
     }
 
     let mut results = Vec::new();
@@ -610,42 +881,103 @@ fn cmd_convene(root: &Path, config: &Config, args: ConveneArgs) -> Result<()> {
         );
     }
     for result in &results {
-        let suffix = if result.error.is_some() {
-            "error.txt"
-        } else {
-            "output.md"
-        };
+        let suffix = if result.error.is_some() { "error.txt" } else { "output.md" };
         let content = result
             .body
             .as_deref()
             .or(result.error.as_deref())
             .unwrap_or("");
-        atomic_write(
-            &job_dir.join(format!("{}-{suffix}", result.harness.id)),
-            content,
-        )?;
+        atomic_write(&job_dir.join(format!("{}-{suffix}", result.harness.id)), content)?;
     }
 
+    // Shadow samples land beside the thread, never in it. `.shadow/` is dot-prefixed so
+    // thread resolution skips it, and snapshots are built from the thread file alone.
+    let mut shadow_written = 0u32;
+    let mut shadow_failures = Vec::new();
+    if let Some((harness, _)) = &plan.shadow {
+        let snapshot_hash = sha256_hex(&plan.snapshot);
+        let dir = shadow_dir(&plan.path);
+        fs::create_dir_all(&dir)?;
+        for (index, handle) in shadow_handles.into_iter().enumerate() {
+            let result = handle
+                .join()
+                .map_err(|_| anyhow!("shadow worker panicked"))?;
+            let k = index as u32 + 1;
+            match result.body {
+                Some(body) => {
+                    let header = format!(
+                        "<!-- forum-shadow thread:{} round:{} harness:{} sample:{} snapshot-sha256:{} written:{} -->\n\n",
+                        args.id,
+                        plan.round,
+                        harness.id,
+                        k,
+                        snapshot_hash,
+                        Local::now().to_rfc3339()
+                    );
+                    atomic_write(
+                        &dir.join(format!("{}-r{}-{}-{}.md", args.id, plan.round, harness.id, k)),
+                        &format!("{header}{body}\n"),
+                    )?;
+                    shadow_written += 1;
+                }
+                None => shadow_failures.push(format!(
+                    "shadow {}#{k}: {}",
+                    harness.id,
+                    result.error.unwrap_or_default()
+                )),
+            }
+        }
+    }
+
+    // Reveal: the staged Position and every successful panel contribution are written
+    // in one serialised edit, so no participant's text reaches the thread before the rest.
     let successes: Vec<&InvocationResult> = results.iter().filter(|r| r.body.is_some()).collect();
-    if !successes.is_empty() {
+    let mut staged_error: Option<anyhow::Error> = None;
+    if !successes.is_empty() || staged.is_some() {
         let _lock = ForumLock::acquire(root)?;
-        let mut current = fs::read_to_string(&path)?;
+        let mut current = fs::read_to_string(&plan.path)?;
         ensure_open(&current)?;
+        if let Some(staged) = &staged {
+            match staged.verify() {
+                Ok(()) => {
+                    if !has_contribution_heading(&current, &args.caller) {
+                        append_contribution_marked(
+                            &mut current,
+                            &args.caller,
+                            &display_name_for(&args.caller),
+                            ContributionKind::Position,
+                            None,
+                            &staged.content,
+                            Some(plan.round),
+                            "",
+                        )?;
+                    }
+                }
+                Err(error) => staged_error = Some(error),
+            }
+        }
+        let extra_mode = if plan.sequential { " mode:sequential" } else { "" };
         for result in successes {
-            if has_round_contribution(&current, round, &result.harness.id) {
+            if has_round_contribution(&current, plan.round, &result.harness.id) {
                 continue;
             }
-            append_contribution(
+            let role = if plan.critic.as_deref() == Some(result.harness.id.as_str()) {
+                " role:critic"
+            } else {
+                ""
+            };
+            append_contribution_marked(
                 &mut current,
                 &result.harness.id,
                 &result.harness.display_name,
-                kind,
+                plan.kind,
                 None,
                 result.body.as_deref().unwrap_or(""),
-                Some(round),
+                Some(plan.round),
+                &format!("{extra_mode}{role}"),
             )?;
         }
-        atomic_write(&path, &current)?;
+        atomic_write(&plan.path, &current)?;
     }
 
     let failures: Vec<String> = results
@@ -653,36 +985,34 @@ fn cmd_convene(root: &Path, config: &Config, args: ConveneArgs) -> Result<()> {
         .filter_map(|r| r.error.as_ref().map(|e| format!("{}: {e}", r.harness.id)))
         .collect();
     println!("Job record: {}", job_dir.display());
-    println!(
-        "Appended {} contribution(s)",
-        results.len() - failures.len()
-    );
-    if !failures.is_empty() {
-        bail!(
-            "round partially failed; retry is safe:\n{}",
-            failures.join("\n")
-        );
+    println!("Appended {} contribution(s)", results.len() - failures.len());
+    if plan.shadow.is_some() {
+        println!("Shadow samples written: {shadow_written}");
+    }
+    if let Some(error) = staged_error {
+        bail!("{error:#}\npanel contributions were written; the caller's Position was not");
+    }
+    if !failures.is_empty() || !shadow_failures.is_empty() {
+        let mut lines = failures;
+        lines.extend(shadow_failures);
+        bail!("round partially failed; retry is safe:\n{}", lines.join("\n"));
     }
     Ok(())
 }
 
 fn enqueue_convene(root: &Path, config: &Config, args: ConveneArgs) -> Result<()> {
     let _lock = ForumLock::acquire(root)?;
-    let path = require_thread(root, &args.id)?;
-    let snapshot = fs::read_to_string(&path)?;
-    ensure_open(&snapshot)?;
-    let round = choose_round(&snapshot, args.round, args.new_round);
-    let kind = args.kind.unwrap_or(if round == 1 {
-        ContributionKind::Position
-    } else {
-        ContributionKind::Reply
-    });
-    let pending: Vec<Harness> = resolve_panel(config, &args.panel, &args.caller)?
-        .into_iter()
-        .filter(|h| !has_round_contribution(&snapshot, round, &h.id))
-        .collect();
-    if pending.is_empty() {
-        println!("Round {round} already contains every requested harness; nothing queued.");
+    let staged = args
+        .with_position
+        .as_deref()
+        .map(StagedPosition::from_file)
+        .transpose()?;
+    let plan = plan_round(root, config, &args, staged.as_ref())?;
+    if plan.pending.is_empty() && staged.is_none() && plan.shadow.is_none() {
+        println!(
+            "Round {} already contains every requested harness; nothing queued.",
+            plan.round
+        );
         return Ok(());
     }
 
@@ -691,35 +1021,30 @@ fn enqueue_convene(root: &Path, config: &Config, args: ConveneArgs) -> Result<()
     let nonce = now
         .timestamp_nanos_opt()
         .unwrap_or_else(|| now.timestamp_micros() * 1_000);
-    let job_id = format!("{}-r{}-{}-{}", args.id, round, nonce, std::process::id());
+    let job_id = format!("{}-r{}-{}-{}", args.id, plan.round, nonce, std::process::id());
     let job = QueueJob {
         version: 1,
         job_id: job_id.clone(),
-        thread_id: args.id,
-        caller: args.caller,
-        panel: args.panel,
-        round,
-        kind,
+        thread_id: args.id.clone(),
+        caller: args.caller.clone(),
+        panel: args.panel.clone(),
+        round: plan.round,
+        kind: plan.kind,
         attempts: 0,
         max_attempts: args.max_attempts,
         created_at: now.to_rfc3339(),
         next_attempt_at: now.timestamp(),
         completed_at: None,
         last_error: None,
+        staged_position: staged.as_ref().map(|s| s.content.clone()),
+        staged_position_sha256: staged.as_ref().map(|s| s.sha256.clone()),
+        critic: plan.critic.clone(),
+        shadow: args.shadow.clone(),
     };
     let raw = toml::to_string_pretty(&job)?;
     atomic_write(&queue_dir(root).join(format!("{job_id}.toml")), &raw)?;
     println!("Queued forum job: {job_id}");
-    println!(
-        "Thread {} round {}: {}",
-        job.thread_id,
-        round,
-        pending
-            .iter()
-            .map(|h| h.id.as_str())
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
+    describe_plan(&args.id, &plan, staged.as_ref());
     Ok(())
 }
 
@@ -765,7 +1090,18 @@ fn process_next_job(root: &Path, config: &Config) -> Result<bool> {
     }
     println!("processing forum job {}", job.job_id);
 
-    let result = cmd_convene(
+    let staged = match (&job.staged_position, &job.staged_position_sha256) {
+        (Some(content), Some(sha256)) => Some(StagedPosition::from_job(content, sha256)),
+        (Some(_), None) => {
+            job.attempts = job.max_attempts;
+            job.completed_at = Some(Local::now().to_rfc3339());
+            job.last_error = Some("staged position has no recorded hash; refusing".into());
+            archive_job(&running_path, &failed_dir(root), &job)?;
+            return Ok(true);
+        }
+        _ => None,
+    };
+    let result = run_convene(
         root,
         config,
         ConveneArgs {
@@ -778,7 +1114,11 @@ fn process_next_job(root: &Path, config: &Config) -> Result<bool> {
             dry_run: false,
             background: false,
             max_attempts: job.max_attempts,
+            with_position: None,
+            critic: job.critic.clone(),
+            shadow: job.shadow.clone(),
         },
+        staged,
     );
 
     match result {
@@ -886,6 +1226,7 @@ fn publish_completion(root: &Path, job: &QueueJob) -> Result<()> {
             .clone()
             .unwrap_or_else(|| Local::now().to_rfc3339()),
         participants: participants(&thread),
+        residual_dissent: residual_dissent_section(&thread),
     };
     let receipt_path = unread_inbox_dir(root).join(format!("{}.toml", job.job_id));
     if !receipt_path.exists()
@@ -905,9 +1246,14 @@ fn publish_completion(root: &Path, job: &QueueJob) -> Result<()> {
         let already_notified =
             messageboard.is_file() && fs::read_to_string(&messageboard)?.contains(&marker);
         if !already_notified {
+            let dissent = receipt
+                .residual_dissent
+                .as_deref()
+                .map(|text| format!("\n\n**Residual dissent (quoted from the thread):**\n{}", blockquote(text)))
+                .unwrap_or_default();
             let message = format!(
-                "FORUM COMPLETE — `{}` round {}\n\nThe background panel has finished. Durable results are in the forum thread. Review with `forum inbox` or `forum status {}`; acknowledge after reading with `forum acknowledge {}`.\n\n{}",
-                job.thread_id, job.round, job.thread_id, job.thread_id, marker
+                "FORUM COMPLETE — `{}` round {}\n\nThe background panel has finished. Durable results are in the forum thread. Review with `forum inbox` or `forum status {}`; acknowledge after reading with `forum acknowledge {}`.{}\n\n{}",
+                job.thread_id, job.round, job.thread_id, job.thread_id, dissent, marker
             );
             if let Err(error) = post_messageboard_message(&message) {
                 eprintln!(
@@ -963,6 +1309,9 @@ fn cmd_inbox(root: &Path, all: bool, format: InboxFormat) -> Result<()> {
                     receipt.participants.join(","),
                     receipt.job_id
                 );
+                if let Some(text) = &receipt.residual_dissent {
+                    println!("\tresidual dissent:\n{}", blockquote(text));
+                }
             }
         }
         InboxFormat::Brief => {
@@ -979,6 +1328,9 @@ fn cmd_inbox(root: &Path, all: bool, format: InboxFormat) -> Result<()> {
                     receipt.completed_at,
                     receipt.participants.join(", ")
                 );
+                if let Some(text) = &receipt.residual_dissent {
+                    println!("{}", blockquote(text));
+                }
             }
         }
     }
@@ -1133,13 +1485,33 @@ fn cmd_status(root: &Path, id: &str) -> Result<()> {
     if markers.is_empty() {
         println!("orchestrated rounds: none");
     } else {
+        let attrs = round_marker_attrs(&raw);
         for (round, harnesses) in markers {
+            let sequential = round_is_sequential(&raw, round);
+            let names = harnesses
+                .into_iter()
+                .map(|h| {
+                    let is_critic = attrs
+                        .iter()
+                        .any(|(r, id, tokens)| *r == round && *id == h && tokens.iter().any(|t| t == "role:critic"));
+                    if is_critic { format!("{h} (critic)") } else { h }
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
             println!(
-                "round {round}: {}",
-                harnesses.into_iter().collect::<Vec<_>>().join(", ")
+                "round {round}{}: {names}",
+                if sequential { " (sequential)" } else { "" }
             );
         }
     }
+    let shadows = shadow_sample_count(&path, id)?;
+    if shadows > 0 {
+        println!("shadow samples: {shadows} in {}", shadow_dir(&path).display());
+    }
+    println!(
+        "residual dissent: {}",
+        if residual_dissent_section(&raw).is_some() { "recorded" } else { "none recorded" }
+    );
     Ok(())
 }
 
@@ -1177,6 +1549,27 @@ fn cmd_dispatch(root: &Path, args: DispatchArgs) -> Result<()> {
     if thread.contains(&dispatch_marker) {
         bail!("thread {} has already been dispatched", args.id);
     }
+    let decision_text = decision_section(&thread)
+        .ok_or_else(|| anyhow!("decided thread lacks a '## Decision' section"))?;
+    let residual_dissent = residual_dissent_section(&decision_text).ok_or_else(|| {
+        anyhow!(
+            "Decision lacks a '### Residual dissent' section (strongest rejected alternative and holder; live dissent with holder and disposition; unresolved assumptions; revisit trigger); refusing to dispatch"
+        )
+    })?;
+    let level = frontmatter_value(&thread, "level").unwrap_or_default();
+    let ratified = has_william_ratification(&decision_text);
+    if level == "architecture" && !ratified {
+        bail!(
+            "level: architecture thread {} is decided without William's ratification recorded in the Decision; a delegated architecture close ends at '## Proposed decision (awaiting Will)' and cannot become a work order",
+            args.id
+        );
+    }
+    if round_is_sequential(&thread, 1) && !ratified {
+        bail!(
+            "thread {} was convened sequentially (caller posted before round 1) and its Decision does not record William's ratification; sequential threads cannot close under delegation",
+            args.id
+        );
+    }
 
     let relative = path.strip_prefix(root).unwrap_or(&path);
     let work_order = build_work_order(
@@ -1188,6 +1581,7 @@ fn cmd_dispatch(root: &Path, args: DispatchArgs) -> Result<()> {
         &args.acceptance,
         &args.reviewers,
         relative,
+        &residual_dissent,
     );
     if args.dry_run {
         println!("{work_order}");
@@ -1252,6 +1646,7 @@ fn unquote_frontmatter(value: &str) -> String {
         .to_string()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_work_order(
     id: &str,
     decision: &str,
@@ -1261,6 +1656,7 @@ fn build_work_order(
     acceptance: &[String],
     reviewers: &[String],
     relative_thread: &Path,
+    residual_dissent: &str,
 ) -> String {
     let scope = markdown_list(scope);
     let acceptance = markdown_list(acceptance);
@@ -1277,11 +1673,21 @@ fn build_work_order(
 **Bounded scope:**\n{scope}\n\n\
 **Acceptance criteria:**\n{acceptance}\n\n\
 **Independent reviewers:** {reviewers}\n\n\
+**Residual dissent (quoted from the Decision):**\n{dissent}\n\n\
 **Decision record:** `design-forum/{}`\n\n\
 Implement only the accepted decision and bounded scope above. Debate does not reopen during implementation; material ambiguity or scope expansion returns to the forum or William. Record shipped work in ASSISTANT-HANDOFF and obtain independent review before treating the work order as complete.\n\n\
 <!-- forum-work-order:{id} -->",
-        relative_thread.display()
+        relative_thread.display(),
+        dissent = blockquote(residual_dissent)
     )
+}
+
+fn blockquote(text: &str) -> String {
+    text.trim()
+        .lines()
+        .map(|line| if line.is_empty() { ">".to_string() } else { format!("> {line}") })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn build_dispatch_receipt(
@@ -1384,10 +1790,197 @@ fn cmd_doctor(root: &Path, config: &Config) -> Result<()> {
         );
         failed |= !found;
     }
+    for line in doctor_lints(root)? {
+        println!("{line}");
+    }
     if failed {
         bail!("doctor found missing requirements");
     }
     Ok(())
+}
+
+/// Lints, not gates: architecture threads decided without William's ratification in
+/// the Decision, and decided threads with no `### Residual dissent` section.
+fn doctor_lints(root: &Path) -> Result<Vec<String>> {
+    let mut lines = Vec::new();
+    let mut unratified = 0;
+    let mut without_dissent = 0;
+    let mut decided = 0;
+    for path in thread_files(root)? {
+        let raw = fs::read_to_string(&path)?;
+        if frontmatter_value(&raw, "status").as_deref() != Some("decided") {
+            continue;
+        }
+        decided += 1;
+        let id = frontmatter_value(&raw, "id").unwrap_or_else(|| path.display().to_string());
+        let relative = path.strip_prefix(root).unwrap_or(&path).display().to_string();
+        let decision = decision_section(&raw).unwrap_or_default();
+        if frontmatter_value(&raw, "level").as_deref() == Some("architecture")
+            && !has_william_ratification(&decision)
+        {
+            unratified += 1;
+            lines.push(format!(
+                "LINT architecture decided without William's ratification in the Decision: {id} ({relative})"
+            ));
+        }
+        if residual_dissent_section(&decision).is_none() {
+            without_dissent += 1;
+        }
+    }
+    lines.push(format!(
+        "lint summary: {decided} decided thread(s); {unratified} architecture close(s) lack William's ratification; {without_dissent} Decision(s) lack a Residual dissent section (required since 2026-09-09)"
+    ));
+    Ok(lines)
+}
+
+fn thread_files(root: &Path) -> Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in fs::read_dir(&dir).with_context(|| format!("failed to scan {}", dir.display()))? {
+            let path = entry?.path();
+            let name = path.file_name().and_then(|s| s.to_str()).unwrap_or_default();
+            if name.starts_with('.') {
+                continue;
+            }
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().and_then(|s| s.to_str()) == Some("md")
+                && name != "INDEX.md"
+                && name != "PROTOCOL.md"
+                && frontmatter_value(&fs::read_to_string(&path)?, "id").is_some()
+            {
+                files.push(path);
+            }
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
+fn shadow_dir(thread_path: &Path) -> PathBuf {
+    thread_path
+        .parent()
+        .map(|p| p.join(".shadow"))
+        .unwrap_or_else(|| PathBuf::from(".shadow"))
+}
+
+fn shadow_sample_count(thread_path: &Path, id: &str) -> Result<usize> {
+    let dir = shadow_dir(thread_path);
+    if !dir.is_dir() {
+        return Ok(0);
+    }
+    let prefix = format!("{id}-r");
+    let mut count = 0;
+    for entry in fs::read_dir(&dir)? {
+        let path = entry?.path();
+        let name = path.file_name().and_then(|s| s.to_str()).unwrap_or_default();
+        if name.starts_with(&prefix) && name.ends_with(".md") {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+/// The body of `## Decision` when it holds more than the template placeholder;
+/// otherwise the body of `## Proposed decision …`. Each runs to the next `## ` heading.
+fn decision_section(thread: &str) -> Option<String> {
+    let section = |heading: &str| -> Option<String> {
+        let mut out = String::new();
+        let mut inside = false;
+        for line in thread.lines() {
+            if line.starts_with("## ") {
+                if inside {
+                    break;
+                }
+                inside = line.starts_with(heading);
+                continue;
+            }
+            if inside {
+                out.push_str(line);
+                out.push('\n');
+            }
+        }
+        let trimmed = out.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
+    };
+    let is_placeholder = |text: &str| {
+        text.lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .all(|l| l.starts_with("_(") && l.ends_with(")_"))
+    };
+    match section("## Decision") {
+        Some(text) if !is_placeholder(&text) => Some(text),
+        _ => section("## Proposed decision"),
+    }
+}
+
+/// `### Residual dissent` body up to the next heading of level three or shallower.
+fn residual_dissent_section(text: &str) -> Option<String> {
+    let mut out = String::new();
+    let mut inside = false;
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("### ") || trimmed.starts_with("## ") || trimmed.starts_with("# ") {
+            if inside {
+                break;
+            }
+            inside = trimmed.starts_with("### Residual dissent");
+            continue;
+        }
+        if inside {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    let body = out.trim();
+    (!body.is_empty()).then(|| body.to_string())
+}
+
+/// William's ratification, as distinct from his delegation. "under William's
+/// delegation" does not count; "William ratified", "accepted by Will", etc. do.
+fn has_william_ratification(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    const VERBS: [&str; 7] = [
+        "ratified",
+        "accepted",
+        "approved",
+        "authorised",
+        "authorized",
+        "decided",
+        "confirmed",
+    ];
+    for name in ["william", "will"] {
+        for verb in VERBS {
+            if lower.contains(&format!("{name} {verb}"))
+                || lower.contains(&format!("{verb} by {name}"))
+                || lower.contains(&format!("{name} has {verb}"))
+            {
+                return true;
+            }
+        }
+    }
+    // Heading form: "### Decision — William, <date>" or "**DECIDED <date> — William, after
+    // three rounds.**". A dash-attributed decision line that mentions delegation is not
+    // ratification ("DECIDED — William delegated; consensus after 2 rounds").
+    lower.lines().any(|line| {
+        let line = line.trim().trim_start_matches('*').trim_start_matches('#').trim();
+        // "**Will, 2026-08-21.** …": William wrote the ruling himself.
+        if line.starts_with("will, ") || line.starts_with("william, ") {
+            return true;
+        }
+        (line.contains("decided") || line.contains("decision"))
+            && !line.contains("delegat")
+            && (line.contains("— william") || line.contains("— will,") || line.contains("— will "))
+    })
+}
+
+fn has_contribution_heading(thread: &str, harness: &str) -> bool {
+    let needle = format!("({harness}, ");
+    thread.lines().any(|line| {
+        (line.starts_with("### Position — ") || line.starts_with("### Reply — ")) && line.contains(&needle)
+    })
 }
 
 fn invoke_harness(harness: Harness, root: &Path, prompt: &str) -> InvocationResult {
@@ -1461,17 +2054,36 @@ fn build_prompt(
     kind: ContributionKind,
     harness: &Harness,
     snapshot: &str,
+    critic: bool,
 ) -> String {
+    let round_duties = match kind {
+        ContributionKind::Position => {
+            "If the Context omits a premise you dispute or a material option it should have named, say so explicitly: omission is a form of framing.".to_string()
+        }
+        ContributionKind::Reply => {
+            let mut text = String::from(
+                "End with a line beginning **Dispositions:** that states, for each central claim you made in earlier rounds, whether you retain, revise, or withdraw it; if you made none, write **Dispositions:** no earlier claims.",
+            );
+            if critic {
+                text.push_str(
+                    "\n\nYou are this round's designated critic. Before your dispositions, include a section headed **Falsification pass** stating: the strongest assumption the existing Positions share; one concrete way it fails, with the evidence or path that would show it; and what evidence would change the recommendation. Be evidence-bound, not contrarian: if the shared assumption survives your best attempt, say so.",
+                );
+            }
+            text
+        }
+    };
     format!(
         "You are {name} participating in William's vendor-neutral Design Forum.\n\n\
 Thread: {id}\nRound: {round}\nContribution type: {kind}\n\n\
 Read the complete snapshot below. Produce an independent, substantive contribution. State a clear claim, use evidence from the snapshot or named paths, identify risks and alternatives, and say what would change if accepted. For a reply round, engage the strongest existing claims rather than merely agreeing. Stay PHI-free. Debate only: do not implement, invoke tools, edit files, or start other assistants.\n\n\
+{duties}\n\n\
 Return only the Markdown body of your contribution. Do not emit YAML frontmatter, a Position/Reply heading, code fences around the whole response, or commentary about the task.\n\n\
 --- THREAD SNAPSHOT ---\n{snapshot}\n--- END SNAPSHOT ---\n",
         name = harness.display_name,
         id = id,
         round = round,
         kind = kind.heading(),
+        duties = round_duties,
         snapshot = snapshot
     )
 }
@@ -1544,6 +2156,20 @@ fn append_contribution(
     body: &str,
     round: Option<u32>,
 ) -> Result<()> {
+    append_contribution_marked(thread, author, display_name, kind, reply_to, body, round, "")
+}
+
+#[allow(clippy::too_many_arguments)]
+fn append_contribution_marked(
+    thread: &mut String,
+    author: &str,
+    display_name: &str,
+    kind: ContributionKind,
+    reply_to: Option<&str>,
+    body: &str,
+    round: Option<u32>,
+    marker_extra: &str,
+) -> Result<()> {
     update_participants(thread, author)?;
     let placeholder = "_(awaiting positions)_";
     if thread.contains(placeholder) {
@@ -1554,7 +2180,7 @@ fn append_contribution(
         .map(|name| format!(" → {name}"))
         .unwrap_or_default();
     let marker = round
-        .map(|round| format!("\n\n<!-- forum-round:{round} harness:{author} -->"))
+        .map(|round| format!("\n\n<!-- forum-round:{round} harness:{author}{marker_extra} -->"))
         .unwrap_or_default();
     let block = format!(
         "\n### {} — {} ({}, {}){}\n\n{}{}\n",
@@ -1616,7 +2242,38 @@ fn frontmatter_value(thread: &str, key: &str) -> Option<String> {
 }
 
 fn has_round_marker(thread: &str, round: u32, harness: &str) -> bool {
-    thread.contains(&format!("<!-- forum-round:{round} harness:{harness} -->"))
+    let prefix = format!("<!-- forum-round:{round} harness:{harness}");
+    thread.lines().any(|line| {
+        let line = line.trim();
+        line.strip_prefix(&prefix)
+            .is_some_and(|rest| rest == " -->" || rest.starts_with(' '))
+    })
+}
+
+/// Every marker as (round, harness, extra tokens such as `mode:sequential`, `role:critic`).
+fn round_marker_attrs(thread: &str) -> Vec<(u32, String, Vec<String>)> {
+    let mut out = Vec::new();
+    for line in thread.lines() {
+        let Some(rest) = line.trim().strip_prefix("<!-- forum-round:") else {
+            continue;
+        };
+        let Some((round, rest)) = rest.split_once(" harness:") else {
+            continue;
+        };
+        let Ok(round) = round.parse::<u32>() else {
+            continue;
+        };
+        let mut tokens = rest.trim_end_matches("-->").split_whitespace();
+        let Some(harness) = tokens.next() else { continue };
+        out.push((round, harness.to_string(), tokens.map(str::to_string).collect()));
+    }
+    out
+}
+
+fn round_is_sequential(thread: &str, round: u32) -> bool {
+    round_marker_attrs(thread)
+        .iter()
+        .any(|(r, _, tokens)| *r == round && tokens.iter().any(|t| t == "mode:sequential"))
 }
 
 fn has_round_contribution(thread: &str, round: u32, harness: &str) -> bool {
@@ -1639,20 +2296,8 @@ fn participants(thread: &str) -> Vec<String> {
 
 fn round_markers(thread: &str) -> BTreeMap<u32, BTreeSet<String>> {
     let mut result: BTreeMap<u32, BTreeSet<String>> = BTreeMap::new();
-    for line in thread.lines() {
-        let Some(rest) = line.trim().strip_prefix("<!-- forum-round:") else {
-            continue;
-        };
-        let Some((round, rest)) = rest.split_once(" harness:") else {
-            continue;
-        };
-        let Ok(round) = round.parse::<u32>() else {
-            continue;
-        };
-        let harness = rest.trim_end_matches(" -->").trim();
-        if !harness.is_empty() {
-            result.entry(round).or_default().insert(harness.to_string());
-        }
+    for (round, harness, _) in round_marker_attrs(thread) {
+        result.entry(round).or_default().insert(harness);
     }
     result
 }
@@ -1922,12 +2567,31 @@ mod tests {
         "---\nid: test-thread\nsystem: meta\nlevel: architecture\nstatus: open\nopened: 2026-07-17\nopened_by: will\nparticipants: [will]\ndecision: null\n---\n\n# Test\n\n## Context\n\nContext.\n\n## Positions\n\n_(awaiting positions)_\n\n## Open questions\n\n- Question?\n\n## Decision\n\n_(none)_\n".into()
     }
 
+    /// Decided, ratified by William, with a Residual dissent section: passes every gate.
     fn decided_thread() -> String {
         sample_thread()
             .replace("status: open", "status: decided")
             .replace(
                 "decision: null",
                 "decision: \"Adopt the bounded implementation.\"",
+            )
+            .replace(
+                "## Decision\n\n_(none)_\n",
+                "## Decision\n\nWilliam ratified the bounded implementation on 2026-09-09.\n\n### Residual dissent\n\n- Strongest rejected alternative: do nothing (held by grok-build, withdrawn after round 2).\n- Revisit trigger: a second incident.\n",
+            )
+    }
+
+    /// Decided under delegation only, no ratification, no dissent section.
+    fn delegated_thread() -> String {
+        sample_thread()
+            .replace("status: open", "status: decided")
+            .replace(
+                "decision: null",
+                "decision: \"Adopt the bounded implementation.\"",
+            )
+            .replace(
+                "## Decision\n\n_(none)_\n",
+                "## Decision\n\nDecided under William's explicit delegation after two rounds.\n",
             )
     }
 
@@ -2030,6 +2694,9 @@ mod tests {
             dry_run: false,
             background: true,
             max_attempts: 3,
+            with_position: None,
+            critic: None,
+            shadow: None,
         };
         enqueue_convene(temp.path(), &default_config(), args).unwrap();
         let files = job_files(&queue_dir(temp.path())).unwrap();
@@ -2077,6 +2744,9 @@ mod tests {
                 dry_run: false,
                 background: true,
                 max_attempts: 2,
+                with_position: None,
+                critic: None,
+                shadow: None,
             },
         )
         .unwrap();
@@ -2167,8 +2837,10 @@ mod tests {
             &["all forum tests pass".into()],
             &["claude-code".into(), "grok-build".into()],
             Path::new("meta/thread.md"),
+            "- Strongest rejected alternative: none\n- Revisit trigger: none",
         );
         assert!(work_order.contains("**Implementation owner:** `codex`"));
+        assert!(work_order.contains("**Residual dissent (quoted from the Decision):**\n> - Strongest rejected alternative: none\n> - Revisit trigger: none"));
         assert!(work_order.contains("- forum dispatch command only"));
         assert!(work_order.contains("- all forum tests pass"));
         assert!(work_order.contains("`claude-code`, `grok-build`"));
@@ -2234,5 +2906,318 @@ mod tests {
         assert!(reviewer_error
             .to_string()
             .contains("review must be independent"));
+    }
+
+    fn fake_config(script: &str) -> Config {
+        let fake = Harness {
+            id: "fake".into(),
+            display_name: "Fake Harness".into(),
+            command: "/bin/sh".into(),
+            args: vec!["-c".into(), script.into()],
+            prompt_mode: PromptMode::Argument,
+            enabled: true,
+        };
+        let mut harnesses = BTreeMap::new();
+        harnesses.insert("fake".into(), fake);
+        Config { harnesses, panels: BTreeMap::new() }
+    }
+
+    fn convene_args(id: &str, caller: &str, panel: &str) -> ConveneArgs {
+        ConveneArgs {
+            id: id.into(),
+            caller: caller.into(),
+            panel: panel.into(),
+            round: None,
+            new_round: false,
+            kind: None,
+            dry_run: false,
+            background: false,
+            max_attempts: 1,
+            with_position: None,
+            critic: None,
+            shadow: None,
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn blind_round_reveals_staged_position_together_with_the_panel() {
+        let temp = TempDir::new().unwrap();
+        write_temp_forum(&temp);
+        let staged = temp.path().join("staged.md");
+        fs::write(&staged, "**Claim:** the caller's blind position.\n").unwrap();
+        let config = fake_config("printf '**Claim:** panel saw context only\\n'");
+        let mut args = convene_args("test-thread", "codex", "fake");
+        args.with_position = Some(staged.clone());
+        cmd_convene(temp.path(), &config, args).unwrap();
+
+        let thread = fs::read_to_string(temp.path().join("meta/thread.md")).unwrap();
+        assert!(thread.contains("### Position — Codex (codex,"));
+        assert!(thread.contains("the caller's blind position"));
+        assert!(thread.contains("<!-- forum-round:1 harness:codex -->"));
+        assert!(thread.contains("<!-- forum-round:1 harness:fake -->"));
+        assert!(!thread.contains("mode:sequential"));
+        assert!(thread.find("harness:codex").unwrap() < thread.find("harness:fake").unwrap());
+
+        // The panel's snapshot and prompt were built before the reveal: Context only.
+        let jobs = orchestrator_dir(temp.path()).join("local-state/jobs");
+        let job = fs::read_dir(&jobs).unwrap().next().unwrap().unwrap().path();
+        let snapshot = fs::read_to_string(job.join("snapshot.md")).unwrap();
+        let prompt = fs::read_to_string(job.join("fake-prompt.md")).unwrap();
+        assert!(!snapshot.contains("blind position"));
+        assert!(!prompt.contains("blind position"));
+        assert!(prompt.contains("omission is a form of framing"));
+        assert_eq!(
+            fs::read_to_string(job.join("staged-position.sha256")).unwrap(),
+            sha256_hex("**Claim:** the caller's blind position.\n")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn staged_position_edited_during_the_round_is_refused() {
+        let temp = TempDir::new().unwrap();
+        write_temp_forum(&temp);
+        let staged = temp.path().join("staged.md");
+        fs::write(&staged, "**Claim:** original.\n").unwrap();
+        // The fake harness tampers with the staged file while the round runs.
+        let script = format!(
+            "printf '**Claim:** panel ran\\n'; printf 'sneaky edit\\n' >> '{}'",
+            staged.display()
+        );
+        let config = fake_config(&script);
+        let mut args = convene_args("test-thread", "codex", "fake");
+        args.with_position = Some(staged);
+        let error = cmd_convene(temp.path(), &config, args).unwrap_err();
+        assert!(error.to_string().contains("edited after the round started"), "{error:#}");
+        let thread = fs::read_to_string(temp.path().join("meta/thread.md")).unwrap();
+        assert!(thread.contains("panel ran"));
+        assert!(!thread.contains("original."));
+        assert!(!has_contribution_heading(&thread, "codex"));
+    }
+
+    #[test]
+    fn queued_blind_round_is_hash_locked() {
+        let temp = TempDir::new().unwrap();
+        write_temp_forum(&temp);
+        let staged = temp.path().join("staged.md");
+        fs::write(&staged, "**Claim:** queued blind position.\n").unwrap();
+        let config = fake_config("printf '**Claim:** worker ran\\n'");
+        let mut args = convene_args("test-thread", "codex", "fake");
+        args.background = true;
+        args.with_position = Some(staged);
+        enqueue_convene(temp.path(), &config, args).unwrap();
+        let job_path = job_files(&queue_dir(temp.path())).unwrap().remove(0);
+        let mut job: QueueJob = toml::from_str(&fs::read_to_string(&job_path).unwrap()).unwrap();
+        assert_eq!(job.staged_position.as_deref(), Some("**Claim:** queued blind position.\n"));
+        assert_eq!(job.staged_position_sha256.as_deref(), Some(sha256_hex("**Claim:** queued blind position.\n").as_str()));
+
+        // Substitute the content after enqueue: the worker must refuse it.
+        job.staged_position = Some("**Claim:** substituted after enqueue.\n".into());
+        fs::write(&job_path, toml::to_string_pretty(&job).unwrap()).unwrap();
+        assert!(process_next_job(temp.path(), &config).unwrap());
+        assert_eq!(job_files(&failed_dir(temp.path())).unwrap().len(), 1);
+        let failed: QueueJob =
+            toml::from_str(&fs::read_to_string(&job_files(&failed_dir(temp.path())).unwrap()[0]).unwrap()).unwrap();
+        assert!(failed.last_error.as_deref().unwrap_or("").contains("hash mismatch"));
+        let thread = fs::read_to_string(temp.path().join("meta/thread.md")).unwrap();
+        assert!(!thread.contains("substituted after enqueue"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn caller_posting_before_convening_marks_the_round_sequential() {
+        let temp = TempDir::new().unwrap();
+        write_temp_forum(&temp);
+        let path = temp.path().join("meta/thread.md");
+        let mut thread = fs::read_to_string(&path).unwrap();
+        append_contribution(&mut thread, "codex", "Codex", ContributionKind::Position, None, "**Claim:** first, framing everyone.", None).unwrap();
+        fs::write(&path, &thread).unwrap();
+        let config = fake_config("printf '**Claim:** anchored\\n'");
+        cmd_convene(temp.path(), &config, convene_args("test-thread", "codex", "fake")).unwrap();
+        let thread = fs::read_to_string(&path).unwrap();
+        assert!(thread.contains("<!-- forum-round:1 harness:fake mode:sequential -->"));
+        assert!(round_is_sequential(&thread, 1));
+        assert!(has_round_marker(&thread, 1, "fake"));
+        assert_eq!(round_markers(&thread).get(&1).unwrap().len(), 1);
+
+        // And --with-position cannot pretend such a round was blind.
+        let staged = temp.path().join("staged.md");
+        fs::write(&staged, "**Claim:** too late.\n").unwrap();
+        let mut args = convene_args("test-thread", "codex", "fake");
+        args.round = Some(1);
+        args.with_position = Some(staged);
+        let error = cmd_convene(temp.path(), &config, args).unwrap_err();
+        assert!(error.to_string().contains("sequential"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn shadow_samples_stay_beside_the_thread_and_out_of_later_snapshots() {
+        let temp = TempDir::new().unwrap();
+        write_temp_forum(&temp);
+        let config = fake_config("printf '**Claim:** SHADOW-OR-PANEL\\n'");
+        let mut args = convene_args("test-thread", "will", "fake");
+        args.shadow = Some("fake:2".into());
+        cmd_convene(temp.path(), &config, args).unwrap();
+        let path = temp.path().join("meta/thread.md");
+        let thread = fs::read_to_string(&path).unwrap();
+        assert_eq!(thread.matches("SHADOW-OR-PANEL").count(), 1, "only the panel contribution enters the thread");
+        assert!(!thread.contains("forum-shadow"));
+        assert_eq!(shadow_sample_count(&path, "test-thread").unwrap(), 2);
+        let sample = fs::read_to_string(shadow_dir(&path).join("test-thread-r1-fake-1.md")).unwrap();
+        assert!(sample.starts_with("<!-- forum-shadow thread:test-thread round:1 harness:fake sample:1"));
+        // The .shadow directory is invisible to thread resolution and to the round-2 snapshot.
+        assert!(resolve_thread(temp.path(), "test-thread").unwrap().unwrap().ends_with("meta/thread.md"));
+        assert_eq!(choose_round(&thread, None, true), 2);
+        assert!(!fs::read_to_string(&path).unwrap().contains("forum-shadow"));
+        assert!(parse_shadow_spec("fake:0", &config).is_err());
+        assert!(parse_shadow_spec("fake:11", &config).is_err());
+        assert!(parse_shadow_spec("nobody:2", &config).is_err());
+    }
+
+    #[test]
+    fn critic_rotates_deterministically_and_gets_the_falsification_duty() {
+        let config = default_config();
+        let panel = resolve_panel(&config, "core", "will").unwrap();
+        let first = choose_critic(Some("auto"), "some-thread", &panel).unwrap().unwrap();
+        let again = choose_critic(Some("auto"), "some-thread", &panel).unwrap().unwrap();
+        assert_eq!(first, again);
+        assert!(panel.iter().any(|h| h.id == first));
+        assert!(choose_critic(Some("nobody"), "some-thread", &panel).is_err());
+        assert!(choose_critic(None, "some-thread", &panel).unwrap().is_none());
+        // Different thread ids spread the duty across the panel.
+        let spread: BTreeSet<String> = (0..50)
+            .map(|i| choose_critic(Some("auto"), &format!("thread-{i}"), &panel).unwrap().unwrap())
+            .collect();
+        assert_eq!(spread.len(), panel.len());
+
+        let harness = &panel[0];
+        let critic_prompt = build_prompt("t", 2, ContributionKind::Reply, harness, "snap", true);
+        let reply_prompt = build_prompt("t", 2, ContributionKind::Reply, harness, "snap", false);
+        let position_prompt = build_prompt("t", 1, ContributionKind::Position, harness, "snap", false);
+        assert!(critic_prompt.contains("Falsification pass"));
+        assert!(critic_prompt.contains("**Dispositions:**"));
+        assert!(reply_prompt.contains("**Dispositions:**"));
+        assert!(!reply_prompt.contains("Falsification pass"));
+        assert!(!position_prompt.contains("Dispositions"));
+    }
+
+    #[test]
+    fn markers_with_extra_tokens_still_parse() {
+        let thread = "<!-- forum-round:1 harness:codex -->\n<!-- forum-round:1 harness:grok-build mode:sequential -->\n<!-- forum-round:2 harness:claude-code role:critic -->\n";
+        assert!(has_round_marker(thread, 1, "codex"));
+        assert!(has_round_marker(thread, 1, "grok-build"));
+        assert!(!has_round_marker(thread, 1, "grok"));
+        assert!(has_round_marker(thread, 2, "claude-code"));
+        assert!(!has_round_marker(thread, 2, "codex"));
+        assert_eq!(round_markers(thread).get(&1).unwrap().len(), 2);
+        assert!(round_is_sequential(thread, 1));
+        assert!(!round_is_sequential(thread, 2));
+        let attrs = round_marker_attrs(thread);
+        assert_eq!(attrs[2], (2, "claude-code".to_string(), vec!["role:critic".to_string()]));
+    }
+
+    #[test]
+    fn ratification_is_distinct_from_delegation() {
+        assert!(has_william_ratification("**DECIDED — William ratified in conversation.**"));
+        assert!(has_william_ratification("Accepted by Will on 2026-09-09."));
+        assert!(has_william_ratification("William has approved the ruling."));
+        assert!(!has_william_ratification("Decided under William's explicit delegation after two rounds."));
+        assert!(!has_william_ratification("Consensus after two rounds; William delegated."));
+        assert!(has_william_ratification("### Decision — William, 2026-07-18\n\nAccepted by consensus."));
+        assert!(has_william_ratification("**DECIDED 2026-09-04 — William, after three rounds.**"));
+        assert!(!has_william_ratification("**DECIDED 2026-09-08 — William delegated; consensus after 2 rounds.**"));
+        assert!(has_william_ratification("**Will, 2026-08-21.** Parent logs are hubs."));
+        assert!(!has_william_ratification("Will's standing instruction applies."));
+        assert!(!has_william_ratification(""));
+
+        // A ratified `## Decision` wins over an earlier `## Proposed decision`.
+        let both = "## Proposed decision (awaiting Will)\n\nPanel draft.\n\n## Decision\n\n**Decided by William, 2026-08-05**, ratifying the proposal.\n\n### Residual dissent\n\n- none live\n";
+        assert!(decision_section(both).unwrap().starts_with("**Decided by William"));
+        let placeholder = "## Proposed decision (awaiting Will)\n\nPanel draft.\n\n## Decision\n\n_(none yet — awaiting positions/replies and William)_\n";
+        assert_eq!(decision_section(placeholder).unwrap(), "Panel draft.");
+
+        let thread = decided_thread();
+        let decision = decision_section(&thread).unwrap();
+        assert!(decision.starts_with("William ratified"));
+        let dissent = residual_dissent_section(&decision).unwrap();
+        assert!(dissent.starts_with("- Strongest rejected alternative"));
+        assert!(dissent.contains("Revisit trigger"));
+        assert!(residual_dissent_section(&delegated_thread()).is_none());
+
+        let proposed = "## Context\n\nx\n\n## Proposed decision (awaiting Will)\n\nRuling.\n\n### Residual dissent\n\n- Codex holds X.\n\n## Decision\n\n_(none)_\n";
+        assert_eq!(decision_section(proposed).unwrap(), "Ruling.\n\n### Residual dissent\n\n- Codex holds X.");
+    }
+
+    #[test]
+    fn dispatch_gates_on_dissent_ratification_and_sequential_rounds() {
+        let temp = TempDir::new().unwrap();
+        write_temp_forum(&temp);
+        let path = temp.path().join("meta/thread.md");
+        let args = || DispatchArgs {
+            id: "test-thread".into(),
+            assignee: "codex".into(),
+            scope: vec!["bounded scope".into()],
+            acceptance: vec!["observable result".into()],
+            reviewers: vec!["claude-code".into()],
+            requested_by: "will".into(),
+            dry_run: true,
+        };
+
+        // 1. Decided under delegation, no dissent section → refused on the section.
+        fs::write(&path, delegated_thread()).unwrap();
+        let error = cmd_dispatch(temp.path(), args()).unwrap_err();
+        assert!(error.to_string().contains("Residual dissent"), "{error:#}");
+
+        // 2. Dissent present but architecture without ratification → refused on ratification.
+        let with_dissent = delegated_thread().replace(
+            "Decided under William's explicit delegation after two rounds.\n",
+            "Decided under William's explicit delegation after two rounds.\n\n### Residual dissent\n\n- None held after round 2 (grok-build withdrew).\n",
+        );
+        fs::write(&path, &with_dissent).unwrap();
+        let error = cmd_dispatch(temp.path(), args()).unwrap_err();
+        assert!(error.to_string().contains("William's ratification"), "{error:#}");
+
+        // 3. Same Decision on a module-level thread passes the architecture gate...
+        let module = with_dissent.replace("level: architecture", "level: module");
+        fs::write(&path, &module).unwrap();
+        cmd_dispatch(temp.path(), args()).unwrap();
+
+        // 4. ...unless round 1 was sequential, which cannot close under delegation.
+        let sequential = module.replace(
+            "_(awaiting positions)_",
+            "### Position — Codex (codex, 2026-09-09)\n\nFraming.\n\n<!-- forum-round:1 harness:fake mode:sequential -->\n",
+        );
+        fs::write(&path, &sequential).unwrap();
+        let error = cmd_dispatch(temp.path(), args()).unwrap_err();
+        assert!(error.to_string().contains("sequential"), "{error:#}");
+
+        // 5. Ratified with dissent → dispatches (dry run) even at architecture level.
+        fs::write(&path, decided_thread()).unwrap();
+        cmd_dispatch(temp.path(), args()).unwrap();
+    }
+
+    #[test]
+    fn doctor_lints_flag_unratified_architecture_closes() {
+        let temp = TempDir::new().unwrap();
+        write_temp_forum(&temp);
+        let path = temp.path().join("meta/thread.md");
+        fs::write(&path, delegated_thread()).unwrap();
+        let lints = doctor_lints(temp.path()).unwrap();
+        assert!(lints.iter().any(|l| l.starts_with("LINT architecture decided without William's ratification") && l.contains("test-thread")), "{lints:?}");
+        assert!(lints.last().unwrap().contains("1 decided thread(s); 1 architecture close(s) lack William's ratification; 1 Decision(s) lack a Residual dissent section"));
+
+        fs::write(&path, decided_thread()).unwrap();
+        let lints = doctor_lints(temp.path()).unwrap();
+        assert!(!lints.iter().any(|l| l.starts_with("LINT")), "{lints:?}");
+        assert!(lints.last().unwrap().contains("0 architecture close(s) lack"));
+
+        // An open thread and a dot-directory sample are ignored.
+        fs::write(&path, sample_thread()).unwrap();
+        fs::create_dir_all(temp.path().join("meta/.shadow")).unwrap();
+        fs::write(temp.path().join("meta/.shadow/test-thread-r1-fake-1.md"), delegated_thread()).unwrap();
+        let lints = doctor_lints(temp.path()).unwrap();
+        assert!(lints.last().unwrap().contains("0 decided thread(s)"));
     }
 }
