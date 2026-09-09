@@ -1992,7 +1992,7 @@ fn has_william_ratification(text: &str) -> bool {
     let cleaned = text.replace('*', "");
     cleaned
         .lines()
-        .flat_map(|line| line.split(". ").flat_map(|s| s.split("; ")).flat_map(|s| s.split(": ")))
+        .flat_map(|line| line.split(". ").flat_map(|s| s.split("; ")))
         .any(line_records_william_ratification)
 }
 
