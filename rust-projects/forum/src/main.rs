@@ -956,6 +956,22 @@ fn run_convene(
     // Fail closed: if the staged Position no longer verifies, or no longer matches the
     // hash committed in the thread, nothing is written (panel outputs stay in the job dir).
     let successes: Vec<&InvocationResult> = results.iter().filter(|r| r.body.is_some()).collect();
+    let invocation_failures: Vec<String> = results
+        .iter()
+        .filter_map(|r| r.error.as_ref().map(|e| format!("{}: {e}", r.harness.id)))
+        .collect();
+    // A blind round is atomic over the planned round, not over whichever bodies happened
+    // to succeed: if any requested harness failed, nothing is revealed, so a retry can
+    // never extend an already-revealed round against post-reveal state.
+    if staged.is_some() && !invocation_failures.is_empty() {
+        bail!(
+            "blind round not revealed: {} of {} requested invocation(s) failed; nothing written; outputs are in {}; retry is safe:\n{}",
+            invocation_failures.len(),
+            results.len(),
+            job_dir.display(),
+            invocation_failures.join("\n")
+        );
+    }
     if !successes.is_empty() || staged.is_some() {
         let _lock = ForumLock::acquire(root)?;
         let mut current = fs::read_to_string(&plan.path)?;
@@ -979,7 +995,12 @@ fn run_convene(
                     job_dir.display()
                 ),
             }
-            if !has_contribution_heading(&current, &args.caller) {
+            // Round-scoped idempotency: `--with-position` is round 1 only and plan_round
+            // rejects a caller who already has any heading (that round is sequential), so
+            // an existing round-1 marker is the only legitimate "already revealed" state.
+            if !has_round_marker(&current, plan.round, &args.caller)
+                && !has_contribution_heading(&current, &args.caller)
+            {
                 append_contribution_marked(
                     &mut current,
                     &args.caller,
@@ -1016,10 +1037,7 @@ fn run_convene(
         atomic_write(&plan.path, &current)?;
     }
 
-    let failures: Vec<String> = results
-        .iter()
-        .filter_map(|r| r.error.as_ref().map(|e| format!("{}: {e}", r.harness.id)))
-        .collect();
+    let failures = invocation_failures;
     println!("Job record: {}", job_dir.display());
     println!("Appended {} contribution(s)", results.len() - failures.len());
     if plan.shadow.is_some() {
@@ -1367,7 +1385,16 @@ fn cmd_inbox(root: &Path, all: bool, format: InboxFormat) -> Result<()> {
                     receipt.participants.join(", ")
                 );
                 if let Some(text) = &receipt.residual_dissent {
-                    println!("{}", blockquote(text));
+                    // ai-brief renders this format under a fixed byte budget: keep the
+                    // receipt lines visible and quote only the head of the dissent here.
+                    const BRIEF_DISSENT_CHARS: usize = 400;
+                    let shown: String = text.chars().take(BRIEF_DISSENT_CHARS).collect();
+                    let suffix = if text.chars().count() > BRIEF_DISSENT_CHARS {
+                        "\n> … (full section: forum status / the thread)"
+                    } else {
+                        ""
+                    };
+                    println!("{}{}", blockquote(&shown), suffix);
                 }
             }
         }
@@ -1986,94 +2013,115 @@ fn residual_dissent_section(text: &str) -> Option<String> {
 
 /// William's ratification, as distinct from his delegation. "under William's
 /// delegation" does not count; "William ratified", "accepted by Will", etc. do.
+/// Authorisation boundary for `forum dispatch`: true only if the Decision (with its
+/// `### Residual dissent` subsection removed) contains a **line-anchored attestation**.
+/// PROTOCOL.md prescribes the forward forms; a short enumerated legacy set covers the
+/// Decisions William wrote before 2026-09-10. Anything else — including true sentences
+/// that merely mention William and a verb — is a false negative, which blocks dispatch
+/// safely, rather than a false positive, which would bypass the delegation ceiling.
 fn has_william_ratification(text: &str) -> bool {
-    // Evaluate clause by clause: a long Decision paragraph may ratify in its first
-    // sentence and say "not" or "if" three sentences later.
-    let cleaned = text.replace('*', "");
-    cleaned
+    without_residual_dissent(text)
         .lines()
-        .flat_map(split_clauses)
-        .any(|clause| line_records_william_ratification(&clause))
+        .any(line_records_william_ratification)
 }
 
-/// Split at `.` or `;` followed by optional closing quotes/brackets and whitespace, so
-/// `iterating." Rulings…` is a boundary as much as `iterating. Rulings…` is.
-fn split_clauses(line: &str) -> Vec<String> {
-    let chars: Vec<char> = line.chars().collect();
-    let mut clauses = Vec::new();
-    let mut current = String::new();
-    let mut i = 0;
-    while i < chars.len() {
-        let c = chars[i];
-        current.push(c);
-        if c == '.' || c == ';' {
-            let mut j = i + 1;
-            while j < chars.len() && matches!(chars[j], '"' | '\u{201d}' | '\'' | '\u{2019}' | ')' | ']') {
-                current.push(chars[j]);
-                j += 1;
-            }
-            if j >= chars.len() || chars[j].is_whitespace() {
-                clauses.push(std::mem::take(&mut current));
-                i = j;
+fn without_residual_dissent(text: &str) -> String {
+    let mut out = String::new();
+    let mut skipping = false;
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("### ") || trimmed.starts_with("## ") || trimmed.starts_with("# ") {
+            skipping = trimmed.starts_with("### Residual dissent");
+            if skipping {
                 continue;
             }
         }
-        i += 1;
+        if !skipping {
+            out.push_str(line);
+            out.push('\n');
+        }
     }
-    if !current.trim().is_empty() {
-        clauses.push(current);
-    }
-    clauses
+    out
 }
 
-/// One clause is an attestation only if it carries a positive speech act by or about
-/// William and nothing in the same clause negates, defers, quotes, or delegates it.
+/// One line attests only if, after stripping heading marks and emphasis, it *starts*
+/// with a prescribed form, and the rest of that sentence carries no deferral or reversal.
 fn line_records_william_ratification(line: &str) -> bool {
-    let lower = line.to_lowercase().replace('*', "");
-    const NEGATORS: [&str; 12] = [
-        "not ", "n't", "awaiting", "outstanding", "pending", "should", "would", "unless",
-        "will ratify", "delegat", "remains", "if ",
+    // Normalise emphasis and dash variants so "Decision - William" and "Decision – William"
+    // read as the em-dash form.
+    let cleaned = line
+        .to_lowercase()
+        .replace('*', "")
+        .replace(" – ", " — ")
+        .replace(" - ", " — ");
+    let stripped = cleaned
+        .trim()
+        .trim_start_matches(['#', '-', '>', ' '])
+        .trim();
+    // Forward forms (PROTOCOL.md, "Closing without unhelpful consensus").
+    const PRESCRIBED: [&str; 6] = [
+        "ratified by william",
+        "decided by william",
+        "william ratified",
+        "william ratifies",
+        "decided — william",
+        "decided - william",
     ];
-    if NEGATORS.iter().any(|n| lower.contains(n)) {
-        return false;
+    // Legacy forms, enumerated from the Decisions William wrote before 2026-09-10.
+    const LEGACY: [&str; 3] = [
+        "accepted by william on ",
+        "decision — william, ",
+        "decision — william ",
+    ];
+    let matched = PRESCRIBED
+        .iter()
+        .chain(LEGACY.iter())
+        .find(|form| stripped.starts_with(*form))
+        .map(|form| form.len())
+        .or_else(|| dated_signature_len(stripped));
+    let Some(prefix_len) = matched else { return false };
+    let remainder = &stripped[prefix_len..];
+    let sentence = remainder
+        .split(['.', ';'])
+        .next()
+        .unwrap_or("");
+    const REVERSALS: [&str; 16] = [
+        "not ", "n't", "against", "defer", "until", "once ", "will be", "to be", "unless",
+        "if ", "pending", "awaiting", "outstanding", "later", "should", "delegat",
+    ];
+    !REVERSALS.iter().any(|r| sentence.contains(r))
+}
+
+/// `will, 2026-08-21` / `william, 2026-08-21` (William signing his own ruling) and
+/// `decided 2026-09-04 — william` / `decided 2026-09-09 12:27 — william …` (dated close).
+fn dated_signature_len(stripped: &str) -> Option<usize> {
+    let is_date = |s: &str| s.len() >= 10 && s.as_bytes()[..10].iter().enumerate().all(|(i, b)| {
+        if i == 4 || i == 7 { *b == b'-' } else { b.is_ascii_digit() }
+    });
+    for name in ["william, ", "will, "] {
+        if let Some(rest) = stripped.strip_prefix(name) {
+            if is_date(rest) {
+                return Some(name.len() + 10);
+            }
+        }
     }
-    const VERBS: [&str; 9] = [
-        "ratified", "ratifies", "accepted", "approved", "authorised", "authorized", "decided",
-        "confirmed", "accepts",
-    ];
-    let unquoted = |index: usize| {
-        !matches!(
-            lower[..index].chars().next_back(),
-            Some('"') | Some('\u{201c}') | Some('\u{2018}') | Some('\'') | Some('`')
-        )
-    };
-    for name in ["william", "will"] {
-        for verb in VERBS {
-            for phrase in [
-                format!("{name} {verb}"),
-                format!("{verb} by {name}"),
-                format!("{name} has {verb}"),
-                format!("{verb}: {name}"),
-                format!("ratifier: {name}"),
-            ] {
-                if let Some(index) = lower.find(&phrase) {
-                    if unquoted(index) {
-                        return true;
-                    }
+    if let Some(rest) = stripped.strip_prefix("decided ") {
+        if is_date(rest) {
+            let after_date = &rest[10..];
+            let after_time = after_date
+                .strip_prefix(' ')
+                .filter(|s| s.len() >= 5 && s.as_bytes()[2] == b':')
+                .map(|s| &s[5..])
+                .unwrap_or(after_date);
+            for dash in [" — william"] {
+                if let Some(rest) = after_time.strip_prefix(dash) {
+                    let consumed = stripped.len() - rest.len();
+                    return Some(consumed);
                 }
             }
         }
     }
-    // Heading forms: "### Decision — William, <date>", "**DECIDED <date> — William, after
-    // three rounds.**", "**Will, 2026-08-21.** …" (William wrote the ruling himself).
-    let stripped = lower.trim().trim_start_matches('*').trim_start_matches('#').trim();
-    if stripped.starts_with("will, ") || stripped.starts_with("william, ") {
-        return true;
-    }
-    (stripped.starts_with("decision") || stripped.starts_with("decided"))
-        && ["— william", "– william", "- william", "— will,", "– will,", "- will,", "— will "]
-            .iter()
-            .any(|dash| stripped.contains(dash))
+    None
 }
 
 fn has_contribution_heading(thread: &str, harness: &str) -> bool {
@@ -3216,6 +3264,40 @@ mod tests {
         assert!(job_files(&queue_dir(temp.path())).unwrap().is_empty());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn blind_round_with_a_failed_invocation_reveals_nothing() {
+        let temp = TempDir::new().unwrap();
+        write_temp_forum(&temp);
+        let staged = temp.path().join("staged.md");
+        fs::write(&staged, "**Claim:** staged.\n").unwrap();
+        let mut config = fake_config("printf '**Claim:** good harness\\n'");
+        config.harnesses.insert(
+            "broken".into(),
+            Harness {
+                id: "broken".into(),
+                display_name: "Broken".into(),
+                command: "/bin/sh".into(),
+                args: vec!["-c".into(), "exit 1".into()],
+                prompt_mode: PromptMode::Argument,
+                enabled: true,
+            },
+        );
+        let mut args = convene_args("test-thread", "codex", "fake,broken");
+        args.background = true;
+        args.with_position = Some(staged);
+        enqueue_convene(temp.path(), &config, args).unwrap();
+        assert!(process_next_job(temp.path(), &config).unwrap());
+        let thread = fs::read_to_string(temp.path().join("meta/thread.md")).unwrap();
+        assert!(!thread.contains("good harness"), "partial reveal must not happen");
+        assert!(!thread.contains("**Claim:** staged."));
+        assert!(committed_staged_hash(&thread, 1, "codex").is_some());
+        assert!(round_markers(&thread).is_empty());
+        let failed: QueueJob =
+            toml::from_str(&fs::read_to_string(&job_files(&failed_dir(temp.path())).unwrap()[0]).unwrap()).unwrap();
+        assert!(failed.last_error.as_deref().unwrap_or("").contains("blind round not revealed"), "{:?}", failed.last_error);
+    }
+
     #[test]
     fn completion_receipt_quotes_residual_dissent_when_present() {
         let temp = TempDir::new().unwrap();
@@ -3360,53 +3442,53 @@ mod tests {
 
     #[test]
     fn ratification_is_distinct_from_delegation() {
-        assert!(has_william_ratification("**DECIDED — William ratified in conversation.**"));
-        assert!(has_william_ratification("Accepted by Will on 2026-09-09."));
-        assert!(has_william_ratification("William has approved the ruling."));
-        assert!(!has_william_ratification("Decided under William's explicit delegation after two rounds."));
-        assert!(!has_william_ratification("Consensus after two rounds; William delegated."));
-        assert!(has_william_ratification("### Decision — William, 2026-07-18\n\nAccepted by consensus."));
-        assert!(has_william_ratification("**DECIDED 2026-09-04 — William, after three rounds.**"));
-        assert!(!has_william_ratification("**DECIDED 2026-09-08 — William delegated; consensus after 2 rounds.**"));
-        assert!(has_william_ratification("**Will, 2026-08-21.** Parent logs are hubs."));
-        assert!(!has_william_ratification("Will's standing instruction applies."));
-        // Adversarial cases from the implementation review (Codex, Grok Build, 2026-09-09).
-        for negative in [
-            "This decision is not ratified by William.",
-            "Ratification by William remains outstanding.",
-            "The dissent argued that \u{201c}ratified by William\u{201d} should be required.",
-            "The dissent argued that \"ratified by William\" should be required.",
-            "awaiting William's ratification",
-            "William will ratify later.",
-            "William's explicit delegation to close.",
-            "see William's Decision in the parent",
-            "Ratified by William if the tests pass.",
-            "William hasn't accepted this yet.",
-        ] {
-            assert!(!has_william_ratification(negative), "false positive: {negative}");
-        }
+        // Prescribed and legacy attestations (line-anchored).
         for positive in [
-            "William approved this decision.",
-            "Ratifier: Will",
-            "**Ratified:** William, 2026-09-09",
+            "**DECIDED — William ratified in conversation.**",
             "Ratified by William 2026-09-09.",
-            "## Decision - William, 2026-09-09",
-            "## Decision \u{2013} William, 2026-09-09",
-            "William ratifies the panel's proposal.",
-            "**DECIDED 2026-09-09 12:27 \u{2014} William ratified in conversation with claude-code:** \"yes I'll go with your recommendations\"",
-            "**DECIDED 2026-09-09 12:27 \u{2014} William ratified in conversation with claude-code:** \"yes\". Rulings: (a) both a gate and a lint, not lint alone; (b) prose now, a ledger only if the metric shows prose loses contentions.",
+            "Ratified by William, ratifying the proposal above.",
+            "**Decided by William, 2026-08-05**, ratifying the proposed decision above in full.",
+            "Accepted by William on 2026-09-03 after two forum rounds.",
+            "### Decision — William, 2026-07-18",
+            "**DECIDED 2026-09-04 — William, after three rounds.**",
+            "**DECIDED 2026-09-09 12:27 \u{2014} William ratified in conversation with claude-code:** \"yes\". Rulings: (a) both a gate and a lint, not lint alone.",
             "**Will, 2026-08-21.** Parent logs are **hubs**, not rolled-up family timelines.",
-            "**DECIDED 2026-09-09 12:27 \u{2014} William ratified in conversation with claude-code:** \"yes I'll go with your recommendations as long as we are monitoring and iterating.\" Rulings on the two contested points: (a) both a gate and a lint \u{2014} dispatch refuses any thread whose Decision does not record William's ratification, so a delegated architecture close can be written but never becomes a work order; (b) prose now.",
+            "William ratifies the panel's proposal.",
+            "## Decision - William, 2026-09-09",
         ] {
             assert!(has_william_ratification(positive), "false negative: {positive}");
         }
-        assert!(!has_william_ratification(""));
-
-        // A ratified `## Decision` wins over an earlier `## Proposed decision`.
-        let both = "## Proposed decision (awaiting Will)\n\nPanel draft.\n\n## Decision\n\n**Decided by William, 2026-08-05**, ratifying the proposal.\n\n### Residual dissent\n\n- none live\n";
-        assert!(decision_section(both).unwrap().starts_with("**Decided by William"));
-        let placeholder = "## Proposed decision (awaiting Will)\n\nPanel draft.\n\n## Decision\n\n_(none yet — awaiting positions/replies and William)_\n";
-        assert_eq!(decision_section(placeholder).unwrap(), "Panel draft.");
+        // Delegation, deferral, reversal, quotation, mention — none attest.
+        for negative in [
+            "Decided under William's explicit delegation after two rounds.",
+            "**DECIDED 2026-09-08 — William delegated; consensus after 2 rounds.**",
+            "Consensus after two rounds; William delegated.",
+            "This decision is not ratified by William.",
+            "Ratification by William remains outstanding.",
+            "The dissent argued that \u{201c}ratified by William\u{201d} should be required.",
+            "Codex challenged the claim that \u{201c}this change was accepted by William\u{201d} and requested primary evidence.",
+            "awaiting William's ratification",
+            "William will ratify later.",
+            "William decided to defer ratification until monitoring completes.",
+            "This will be decided by William after the critic pass.",
+            "Once William has approved the wording, dispatch may proceed.",
+            "Until William has ratified, treat this as a draft.",
+            "William has decided against this approach.",
+            "William accepted the residual dissent as recorded.",
+            "Ratified by William if the tests pass.",
+            "Decided by William? Not yet.",
+            "see William's Decision in the parent",
+            "William approved this decision.",
+            "Ratifier: Will",
+            "",
+        ] {
+            assert!(!has_william_ratification(negative), "false positive: {negative}");
+        }
+        // Attestation-shaped text inside Residual dissent does not count.
+        let dissent_only = "Decided under delegation.\n\n### Residual dissent\n\n- Ratified by William was demanded by Codex.\n";
+        assert!(!has_william_ratification(dissent_only));
+        let with_both = "Ratified by William, 2026-09-10.\n\n### Residual dissent\n\n- none live\n";
+        assert!(has_william_ratification(with_both));
 
         let thread = decided_thread();
         let decision = decision_section(&thread).unwrap();
@@ -3418,6 +3500,26 @@ mod tests {
 
         let proposed = "## Context\n\nx\n\n## Proposed decision (awaiting Will)\n\nRuling.\n\n### Residual dissent\n\n- Codex holds X.\n\n## Decision\n\n_(none)_\n";
         assert_eq!(decision_section(proposed).unwrap(), "Ruling.\n\n### Residual dissent\n\n- Codex holds X.");
+    }
+
+    #[test]
+    fn decision_section_prefers_a_real_decision_over_a_proposal() {
+        // A ratified `## Decision` wins over an earlier `## Proposed decision`.
+        let both = "## Proposed decision (awaiting Will)\n\nPanel draft.\n\n## Decision\n\n**Decided by William, 2026-08-05**, ratifying the proposal.\n\n### Residual dissent\n\n- none live\n";
+        assert!(decision_section(both).unwrap().starts_with("**Decided by William"));
+        // The template placeholder (exact text `forum open` emits) yields to the proposal.
+        let placeholder = "## Proposed decision (awaiting Will)\n\nPanel draft.\n\n## Decision\n\n_(none yet \u{2014} awaiting positions/replies and William)_\n";
+        assert_eq!(decision_section(placeholder).unwrap(), "Panel draft.");
+        // An "almost placeholder" binds `## Decision`: no attestation there, so dispatch refuses (safe).
+        let almost = "## Proposed decision (awaiting Will)\n\nRatified by William.\n\n## Decision\n\n_(awaiting William)_ with extra words\n";
+        assert_eq!(decision_section(almost).unwrap(), "_(awaiting William)_ with extra words");
+        assert!(!has_william_ratification(&decision_section(almost).unwrap()));
+        // A `### Decision` heading inside another section is not a section start.
+        let nested = "## Context\n\n### Decision history\n\nold\n\n## Decision\n\nRatified by William.\n";
+        assert_eq!(decision_section(nested).unwrap(), "Ratified by William.");
+        // The two-tier close: proposal body with future-tense prose does not attest.
+        let awaiting = "## Proposed decision (awaiting Will)\n\nRuling. This will be decided by William after the critic pass.\n\n## Decision\n\n_(none yet \u{2014} awaiting positions/replies and William)_\n";
+        assert!(!has_william_ratification(&decision_section(awaiting).unwrap()));
     }
 
     #[test]
