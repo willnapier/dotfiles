@@ -2068,10 +2068,12 @@ fn line_records_william_ratification(line: &str) -> bool {
         "decided - william",
     ];
     // Legacy forms, enumerated from the Decisions William wrote before 2026-09-10.
-    const LEGACY: [&str; 3] = [
+    const LEGACY: [&str; 5] = [
         "accepted by william on ",
         "decision — william, ",
         "decision — william ",
+        "william decided on ",
+        "william accepted the panel",
     ];
     let matched = PRESCRIBED
         .iter()
@@ -3455,6 +3457,8 @@ mod tests {
             "**Will, 2026-08-21.** Parent logs are **hubs**, not rolled-up family timelines.",
             "William ratifies the panel's proposal.",
             "## Decision - William, 2026-09-09",
+            "William decided on 2026-08-25 that Continuum will own the record.",
+            "William accepted the panel's convergent design and asked Codex to implement it.",
         ] {
             assert!(has_william_ratification(positive), "false negative: {positive}");
         }
