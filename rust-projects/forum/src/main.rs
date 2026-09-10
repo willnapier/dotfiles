@@ -67,8 +67,8 @@ enum Commands {
         /// Include acknowledged completion receipts
         #[arg(long)]
         all: bool,
-        /// Human table or compact startup summary
-        #[arg(long, value_enum, default_value_t = InboxFormat::Table)]
+        /// Per-thread view (default), raw per-round table, or the compact startup summary
+        #[arg(long, value_enum, default_value_t = InboxFormat::Threads)]
         format: InboxFormat,
     },
     /// Mark unread completion receipts for a thread or job as seen
@@ -214,7 +214,11 @@ enum ContributionKind {
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum InboxFormat {
+    /// One line per thread: status, latest round, what it needs, verdict or decision gist
+    Threads,
+    /// One line per completed round (the raw receipts)
     Table,
+    /// Compact startup summary used by ai-brief
     Brief,
 }
 
@@ -1371,6 +1375,9 @@ fn cmd_inbox(root: &Path, all: bool, format: InboxFormat) -> Result<()> {
             }
         }
         InboxFormat::Brief => {
+            // Receipt lines first, dissent verbatim after: ai-brief caps this output at a
+            // fixed byte budget, so a long dissent section can only ever cost the tail.
+            let mut dissent = Vec::new();
             for (acknowledged, receipt) in receipts {
                 println!(
                     "{}: `{}` round {} completed {}; participants: {}",
@@ -1385,21 +1392,120 @@ fn cmd_inbox(root: &Path, all: bool, format: InboxFormat) -> Result<()> {
                     receipt.participants.join(", ")
                 );
                 if let Some(text) = &receipt.residual_dissent {
-                    // ai-brief renders this format under a fixed byte budget: keep the
-                    // receipt lines visible and quote only the head of the dissent here.
-                    const BRIEF_DISSENT_CHARS: usize = 400;
-                    let shown: String = text.chars().take(BRIEF_DISSENT_CHARS).collect();
-                    let suffix = if text.chars().count() > BRIEF_DISSENT_CHARS {
-                        "\n> … (full section: forum status / the thread)"
-                    } else {
-                        ""
-                    };
-                    println!("{}{}", blockquote(&shown), suffix);
+                    dissent.push((receipt.thread_id.clone(), receipt.round, text.clone()));
                 }
+            }
+            for (thread_id, round, text) in dissent {
+                println!("\nResidual dissent — `{thread_id}` round {round} (verbatim):\n{}", blockquote(&text));
+            }
+        }
+        InboxFormat::Threads => print_thread_inbox(root, receipts)?,
+    }
+    Ok(())
+}
+
+/// What a human needs from an inbox: not which rounds finished, but which threads are
+/// waiting on someone, and on whom.
+fn print_thread_inbox(root: &Path, receipts: Vec<(bool, InboxReceipt)>) -> Result<()> {
+    let mut by_thread: BTreeMap<String, Vec<InboxReceipt>> = BTreeMap::new();
+    for (_, receipt) in receipts {
+        by_thread.entry(receipt.thread_id.clone()).or_default().push(receipt);
+    }
+    let mut open = Vec::new();
+    let mut closed = Vec::new();
+    for (id, mut rs) in by_thread {
+        rs.sort_by(|a, b| b.round.cmp(&a.round));
+        let latest = &rs[0];
+        let raw = require_thread(root, &id)
+            .and_then(|p| fs::read_to_string(p).map_err(Into::into))
+            .unwrap_or_default();
+        let status = frontmatter_value(&raw, "status").unwrap_or_else(|| "?".into());
+        let when = latest.completed_at.get(..16).unwrap_or(&latest.completed_at).replace('T', " ");
+        let line = format!(
+            "  {:<44} r{} {}  {}",
+            id,
+            latest.round,
+            when,
+            thread_need(&raw, &status)
+        );
+        if status == "decided" || status == "rejected" || status == "parked" {
+            closed.push((line, rs.len()));
+        } else {
+            let dissent = residual_dissent_section(&raw);
+            open.push((line, dissent));
+        }
+    }
+    if open.is_empty() {
+        println!("Open threads with unread rounds: none.");
+    } else {
+        println!("OPEN — waiting on someone ({} thread(s))", open.len());
+        for (line, dissent) in open {
+            println!("{line}");
+            if let Some(text) = dissent {
+                println!("{}", blockquote(&text).lines().map(|l| format!("      {l}")).collect::<Vec<_>>().join("\n"));
             }
         }
     }
+    if !closed.is_empty() {
+        let receipts: usize = closed.iter().map(|(_, n)| n).sum();
+        println!(
+            "\nCLOSED — nothing owed ({} thread(s), {} unread receipt(s); `forum acknowledge <thread-id>` clears them)",
+            closed.len(),
+            receipts
+        );
+        for (line, _) in closed {
+            println!("{line}");
+        }
+    }
     Ok(())
+}
+
+/// One phrase saying whom the thread waits on, derived from the thread text.
+fn thread_need(raw: &str, status: &str) -> String {
+    if status == "decided" {
+        let dispatched = raw.contains("<!-- forum-dispatch:");
+        let receipt = raw.contains("### Implementation receipt");
+        return match (dispatched, receipt) {
+            (true, true) => "decided; implemented and receipted".into(),
+            (true, false) => "decided; work order dispatched, receipt pending".into(),
+            _ => "decided".into(),
+        };
+    }
+    if status != "open" {
+        return status.to_string();
+    }
+    // A heading line, not a mention of the heading inside Context or a quote.
+    if raw.lines().any(|l| l.starts_with("## Proposed decision")) {
+        return "NEEDS YOUR RATIFICATION (proposed decision drafted)".into();
+    }
+    if let Some((who, verdict)) = latest_verdict(raw) {
+        return format!("verdict {verdict} ({who}) — implementer to act or close");
+    }
+    "needs a decision or another round".into()
+}
+
+/// The last `**PASS…**` / `**FAIL…**` token in the thread, with the harness that wrote it.
+fn latest_verdict(raw: &str) -> Option<(String, String)> {
+    let mut author = String::new();
+    let mut found = None;
+    for line in raw.lines() {
+        if let Some(rest) = line.strip_prefix("### Position — ").or_else(|| line.strip_prefix("### Reply — ")) {
+            if let Some(start) = rest.find('(') {
+                author = rest[start + 1..].split(',').next().unwrap_or("").to_string();
+            }
+        }
+        let mut search = line;
+        while let Some(idx) = search.find("**") {
+            let after = &search[idx + 2..];
+            if after.starts_with("PASS") || after.starts_with("FAIL") {
+                if let Some(end) = after.find("**") {
+                    found = Some((author.clone(), after[..end].trim().to_string()));
+                }
+            }
+            search = after;
+        }
+    }
+    found
 }
 
 fn cmd_acknowledge(root: &Path, id: &str) -> Result<()> {
@@ -2054,10 +2160,9 @@ fn line_records_william_ratification(line: &str) -> bool {
         .replace('*', "")
         .replace(" – ", " — ")
         .replace(" - ", " — ");
-    let stripped = cleaned
-        .trim()
-        .trim_start_matches(['#', '-', '>', ' '])
-        .trim();
+    // Strip heading marks only. A blockquote (`>`) or list item (`-`) is somebody
+    // quoting or citing a ruling, not making one, and must not anchor.
+    let stripped = cleaned.trim().trim_start_matches(['#', ' ']).trim();
     // Forward forms (PROTOCOL.md, "Closing without unhelpful consensus").
     const PRESCRIBED: [&str; 6] = [
         "ratified by william",
@@ -2082,16 +2187,37 @@ fn line_records_william_ratification(line: &str) -> bool {
         .map(|form| form.len())
         .or_else(|| dated_signature_len(stripped));
     let Some(prefix_len) = matched else { return false };
-    let remainder = &stripped[prefix_len..];
-    let sentence = remainder
-        .split(['.', ';'])
-        .next()
-        .unwrap_or("");
+    // Reversals are tested on the rest of the *sentence*: a semicolon does not end it
+    // ("Decided by William; awaiting monitoring." must not attest), while a full stop
+    // followed by whitespace does, so a long Decision paragraph that ratifies in its
+    // first sentence and says "not" three sentences later still attests.
+    let sentence = first_sentence(&stripped[prefix_len..]);
     const REVERSALS: [&str; 16] = [
         "not ", "n't", "against", "defer", "until", "once ", "will be", "to be", "unless",
         "if ", "pending", "awaiting", "outstanding", "later", "should", "delegat",
     ];
     !REVERSALS.iter().any(|r| sentence.contains(r))
+}
+
+/// Text up to and including the first `.` that is followed (after any closing quotes or
+/// brackets) by whitespace or the end of the string. Semicolons do not end a sentence.
+fn first_sentence(text: &str) -> &str {
+    let chars: Vec<(usize, char)> = text.char_indices().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i].1 == '.' {
+            let mut j = i + 1;
+            while j < chars.len() && matches!(chars[j].1, '"' | '\u{201d}' | '\'' | '\u{2019}' | ')' | ']') {
+                j += 1;
+            }
+            if j >= chars.len() || chars[j].1.is_whitespace() {
+                let end = if j < chars.len() { chars[j].0 } else { text.len() };
+                return &text[..end];
+            }
+        }
+        i += 1;
+    }
+    text
 }
 
 /// `will, 2026-08-21` / `william, 2026-08-21` (William signing his own ruling) and
@@ -3459,6 +3585,7 @@ mod tests {
             "## Decision - William, 2026-09-09",
             "William decided on 2026-08-25 that Continuum will own the record.",
             "William accepted the panel's convergent design and asked Codex to implement it.",
+            "Decided by William, ratifying the wording above.",
         ] {
             assert!(has_william_ratification(positive), "false negative: {positive}");
         }
@@ -3481,6 +3608,10 @@ mod tests {
             "William accepted the residual dissent as recorded.",
             "Ratified by William if the tests pass.",
             "Decided by William? Not yet.",
+            "Decided by William; awaiting monitoring.",
+            "> Ratified by William 2026-09-09",
+            "> **DECIDED 2026-09-09 12:27 \u{2014} William ratified in conversation with claude-code:**",
+            "- Decided by William in the parent; this close is delegated.",
             "see William's Decision in the parent",
             "William approved this decision.",
             "Ratifier: Will",
@@ -3504,6 +3635,46 @@ mod tests {
 
         let proposed = "## Context\n\nx\n\n## Proposed decision (awaiting Will)\n\nRuling.\n\n### Residual dissent\n\n- Codex holds X.\n\n## Decision\n\n_(none)_\n";
         assert_eq!(decision_section(proposed).unwrap(), "Ruling.\n\n### Residual dissent\n\n- Codex holds X.");
+    }
+
+    #[test]
+    fn dated_signatures_anchor_only_at_line_start() {
+        assert_eq!(dated_signature_len("will, 2026-08-21. parent logs"), Some(16));
+        assert_eq!(dated_signature_len("william, 2026-08-21"), Some(19));
+        assert_eq!(
+            dated_signature_len("decided 2026-09-04 \u{2014} william, after three rounds."),
+            Some("decided 2026-09-04 \u{2014} william".len())
+        );
+        assert_eq!(
+            dated_signature_len("decided 2026-09-09 12:27 \u{2014} william ratified in conversation"),
+            Some("decided 2026-09-09 12:27 \u{2014} william".len())
+        );
+        assert_eq!(dated_signature_len("decided 2026-09-08 under william's delegation"), None);
+        assert_eq!(dated_signature_len("will, yesterday"), None);
+        assert_eq!(dated_signature_len("> decided 2026-09-04 \u{2014} william"), None);
+        // The parent heading, blockquoted into a child, does not attest for the child.
+        assert!(!has_william_ratification("> **DECIDED 2026-09-04 \u{2014} William, after three rounds.**"));
+        assert!(has_william_ratification("**DECIDED 2026-09-04 \u{2014} William, after three rounds.**"));
+    }
+
+    #[test]
+    fn thread_inbox_says_what_each_thread_needs() {
+        let awaiting = sample_thread().replace(
+            "## Decision\n\n_(none)_\n",
+            "## Proposed decision (awaiting Will)\n\nRuling.\n\n## Decision\n\n_(none)_\n",
+        );
+        assert!(thread_need(&awaiting, "open").starts_with("NEEDS YOUR RATIFICATION"));
+        let mentions = sample_thread().replace("Context.", "Ends at `## Proposed decision (awaiting Will)` under delegation.");
+        assert_eq!(thread_need(&mentions, "open"), "needs a decision or another round");
+        let reviewed = sample_thread().replace(
+            "_(awaiting positions)_",
+            "### Position \u{2014} Codex (codex, 2026-09-09)\n\n**FAIL.** x\n\n### Reply \u{2014} Grok Build (grok-build, 2026-09-10)\n\n**PASS with defects** against `a3b9b96`.\n",
+        );
+        assert_eq!(latest_verdict(&reviewed), Some(("grok-build".into(), "PASS with defects".into())));
+        assert!(thread_need(&reviewed, "open").starts_with("verdict PASS with defects (grok-build)"));
+        assert_eq!(thread_need(&sample_thread(), "open"), "needs a decision or another round");
+        let done = decided_thread() + "\n<!-- forum-dispatch:test-thread -->\n### Implementation receipt\n";
+        assert_eq!(thread_need(&done, "decided"), "decided; implemented and receipted");
     }
 
     #[test]
