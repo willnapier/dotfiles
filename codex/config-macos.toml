@@ -22,6 +22,9 @@ approvals_reviewer = "user"
 [projects."/Users/williamnapier"]
 trust_level = "trusted"
 
+[projects."/Users/williamnapier/Code/practiceforge"]
+trust_level = "trusted"
+
 [notice]
 "hide_full_access_warning" = true
 "hide_gpt-5.3-codex_migration_prompt" = true
