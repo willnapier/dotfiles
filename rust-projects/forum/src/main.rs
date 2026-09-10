@@ -62,6 +62,15 @@ enum Commands {
     Status { id: String },
     /// Turn an accepted decision into one bounded implementation work order
     Dispatch(DispatchArgs),
+    /// Record William's ratification: promote the proposed decision (or a supplied body) into
+    /// `## Decision` with the prescribed attestation line, set status decided, annotate INDEX
+    Ratify(RatifyArgs),
+    /// Set status parked with a reason (valuable, not now)
+    Park(CloseArgs),
+    /// Set status rejected with a reason (actively not pursued)
+    Reject(CloseArgs),
+    /// Print a thread's Decision (or Proposed decision) section and its residual dissent
+    Decision { id: String },
     /// List completed background rounds awaiting William's attention
     Inbox {
         /// Include acknowledged completion receipts
@@ -184,6 +193,32 @@ struct DispatchArgs {
     /// Print the exact work order without changing the thread or Messageboard
     #[arg(long)]
     dry_run: bool,
+}
+
+#[derive(Args)]
+struct RatifyArgs {
+    id: String,
+    /// One-line decision summary for the frontmatter and INDEX
+    #[arg(long)]
+    decision: String,
+    /// Ruling body to use when the thread has no `## Proposed decision`; must contain `### Residual dissent`
+    #[arg(long)]
+    body_file: Option<PathBuf>,
+    /// Short note appended to the attestation line (e.g. where William said so)
+    #[arg(long)]
+    note: Option<String>,
+    /// Print the resulting Decision section without writing
+    #[arg(long)]
+    dry_run: bool,
+}
+
+#[derive(Args)]
+struct CloseArgs {
+    id: String,
+    #[arg(long)]
+    reason: String,
+    #[arg(long, default_value = "will")]
+    by: String,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -448,6 +483,10 @@ fn run() -> Result<()> {
         Commands::Cancel { job_id } => cmd_cancel(&root, &job_id),
         Commands::Status { id } => cmd_status(&root, &id),
         Commands::Dispatch(args) => cmd_dispatch(&root, args),
+        Commands::Ratify(args) => cmd_ratify(&root, args),
+        Commands::Park(args) => cmd_close(&root, args, "parked"),
+        Commands::Reject(args) => cmd_close(&root, args, "rejected"),
+        Commands::Decision { id } => cmd_decision(&root, &id),
         Commands::Inbox { all, format } => cmd_inbox(&root, all, format),
         Commands::Acknowledge { id } => cmd_acknowledge(&root, &id),
         Commands::List => cmd_list(&root),
@@ -1689,6 +1728,252 @@ fn cmd_status(root: &Path, id: &str) -> Result<()> {
         if residual_dissent_section(&raw).is_some() { "recorded" } else { "none recorded" }
     );
     Ok(())
+}
+
+fn cmd_ratify(root: &Path, args: RatifyArgs) -> Result<()> {
+    validate_id(&args.id)?;
+    validate_single_line("decision", &args.decision)?;
+    if let Some(note) = &args.note {
+        validate_single_line("note", note)?;
+    }
+    let _lock = ForumLock::acquire(root)?;
+    let path = require_thread(root, &args.id)?;
+    let thread = fs::read_to_string(&path)?;
+    match frontmatter_value(&thread, "status").as_deref() {
+        Some("open") => {}
+        Some(other) => bail!("thread is {other}, not open; ratify applies to open threads"),
+        None => bail!("thread lacks status frontmatter"),
+    }
+    let proposed = section_body(&thread, "## Proposed decision");
+    let supplied = args
+        .body_file
+        .as_deref()
+        .map(|p| fs::read_to_string(p).with_context(|| format!("failed to read {}", p.display())))
+        .transpose()?;
+    let ruling = match (supplied, proposed) {
+        (Some(body), _) => body,
+        (None, Some(body)) => body,
+        (None, None) => bail!(
+            "thread has no '## Proposed decision' section; supply the ruling with --body-file (it must contain '### Residual dissent')"
+        ),
+    };
+    if residual_dissent_section(&ruling).is_none() {
+        bail!("the ruling lacks a '### Residual dissent' section (strongest rejected alternative and holder; live dissent and disposition; unresolved assumptions; revisit trigger); refusing to ratify");
+    }
+    let stamp = Local::now().format("%Y-%m-%d %H:%M");
+    let note = args.note.as_deref().map(|n| format!(" {n}")).unwrap_or_default();
+    let attestation = format!("**Ratified by William, {stamp}.**{note}");
+    let decision_body = format!("{attestation}\n\n{}", ruling.trim());
+    debug_assert!(has_william_ratification(&decision_body));
+
+    let mut updated = thread.clone();
+    updated = remove_section(&updated, "## Proposed decision");
+    updated = replace_section_body(&updated, "## Decision", &decision_body)?;
+    updated = set_frontmatter(&updated, "status", "decided")?;
+    let escaped = args.decision.replace('"', "\\\"");
+    updated = set_frontmatter(&updated, "decision", &format!("\"{escaped}\""))?;
+    if args.dry_run {
+        println!("{}", decision_section(&updated).unwrap_or_default());
+        return Ok(());
+    }
+    atomic_write(&path, &updated)?;
+    let index_path = root.join("INDEX.md");
+    if index_path.is_file() {
+        let index = fs::read_to_string(&index_path)?;
+        let date = Local::now().format("%Y-%m-%d");
+        if let Some(new_index) = annotate_index_row(&index, &args.id, &format!("**DECIDED {date} — William ratified.**")) {
+            atomic_write(&index_path, &new_index)?;
+        }
+    }
+    println!("Ratified {} — status decided; attestation: {attestation}", args.id);
+    println!("Next: forum dispatch {} --assignee <harness> --scope … --acceptance … --reviewer <other-harness>", args.id);
+    Ok(())
+}
+
+fn cmd_close(root: &Path, args: CloseArgs, new_status: &str) -> Result<()> {
+    validate_id(&args.id)?;
+    validate_id(&args.by)?;
+    validate_single_line("reason", &args.reason)?;
+    let _lock = ForumLock::acquire(root)?;
+    let path = require_thread(root, &args.id)?;
+    let thread = fs::read_to_string(&path)?;
+    match frontmatter_value(&thread, "status").as_deref() {
+        Some("open") => {}
+        Some(other) => bail!("thread is {other}, not open"),
+        None => bail!("thread lacks status frontmatter"),
+    }
+    let stamp = Local::now().format("%Y-%m-%d %H:%M");
+    let line = format!("_{} {stamp} by {}: {}_", capitalize(new_status), args.by, args.reason.trim());
+    let existing = section_body(&thread, "## Decision").unwrap_or_default();
+    let body = if existing.trim().is_empty() || existing.trim().starts_with("_(") {
+        line
+    } else {
+        format!("{}\n\n{line}", existing.trim())
+    };
+    let mut updated = replace_section_body(&thread, "## Decision", &body)?;
+    updated = set_frontmatter(&updated, "status", new_status)?;
+    atomic_write(&path, &updated)?;
+    let index_path = root.join("INDEX.md");
+    if index_path.is_file() {
+        let index = fs::read_to_string(&index_path)?;
+        let date = Local::now().format("%Y-%m-%d");
+        if let Some(new_index) = annotate_index_row(&index, &args.id, &format!("**{} {date}.**", new_status.to_uppercase())) {
+            atomic_write(&index_path, &new_index)?;
+        }
+    }
+    println!("{} {} — {}", capitalize(new_status), args.id, args.reason.trim());
+    Ok(())
+}
+
+fn cmd_decision(root: &Path, id: &str) -> Result<()> {
+    let path = require_thread(root, id)?;
+    let raw = fs::read_to_string(&path)?;
+    let status = frontmatter_value(&raw, "status").unwrap_or_else(|| "?".into());
+    let level = frontmatter_value(&raw, "level").unwrap_or_default();
+    println!("{id} — {status}, level {level}, {}", path.display());
+    let Some(section) = decision_section(&raw) else {
+        println!("(no decision or proposed decision recorded)");
+        return Ok(());
+    };
+    let heading = if raw.lines().any(|l| l.starts_with("## Decision")) && !section_body(&raw, "## Decision").map(|b| b.trim().starts_with("_(")).unwrap_or(true) {
+        "## Decision"
+    } else {
+        "## Proposed decision (awaiting Will)"
+    };
+    println!("\n{heading}\n\n{section}");
+    if residual_dissent_section(&section).is_none() {
+        println!("\n(no Residual dissent section — required for dispatch since 2026-09-09)");
+    }
+    Ok(())
+}
+
+/// Body of the first section whose `## ` heading starts with `heading`, up to the next `## `.
+fn section_body(thread: &str, heading: &str) -> Option<String> {
+    let mut out = String::new();
+    let mut inside = false;
+    let mut found = false;
+    for line in thread.lines() {
+        if line.starts_with("## ") {
+            if inside {
+                break;
+            }
+            inside = line.starts_with(heading);
+            found |= inside;
+            continue;
+        }
+        if inside {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    found.then(|| out.trim().to_string())
+}
+
+/// Replace the body of the first section whose heading starts with `heading`; the heading
+/// line itself is kept. Fails if the section is absent.
+fn replace_section_body(thread: &str, heading: &str, body: &str) -> Result<String> {
+    let mut out = String::new();
+    let mut inside = false;
+    let mut found = false;
+    for line in thread.lines() {
+        if line.starts_with("## ") {
+            if inside {
+                inside = false;
+            }
+            if !found && line.starts_with(heading) {
+                inside = true;
+                found = true;
+                out.push_str(line);
+                out.push_str("\n\n");
+                out.push_str(body.trim());
+                out.push_str("\n\n");
+                continue;
+            }
+        }
+        if !inside {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    if !found {
+        bail!("thread lacks a '{heading}' section");
+    }
+    Ok(out)
+}
+
+/// Drop the first section whose heading starts with `heading` (heading and body).
+fn remove_section(thread: &str, heading: &str) -> String {
+    let mut out = String::new();
+    let mut skipping = false;
+    let mut done = false;
+    for line in thread.lines() {
+        if line.starts_with("## ") {
+            if skipping {
+                skipping = false;
+            }
+            if !done && line.starts_with(heading) {
+                skipping = true;
+                done = true;
+                continue;
+            }
+        }
+        if !skipping {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+fn set_frontmatter(thread: &str, key: &str, value: &str) -> Result<String> {
+    let prefix = format!("{key}:");
+    let mut out = String::new();
+    let mut in_frontmatter = false;
+    let mut replaced = false;
+    for (index, line) in thread.lines().enumerate() {
+        if index == 0 && line == "---" {
+            in_frontmatter = true;
+            out.push_str(line);
+            out.push('\n');
+            continue;
+        }
+        if in_frontmatter && line == "---" {
+            in_frontmatter = false;
+        }
+        if in_frontmatter && !replaced && line.starts_with(&prefix) {
+            out.push_str(&format!("{key}: {value}\n"));
+            replaced = true;
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    if !replaced {
+        bail!("frontmatter lacks {key}");
+    }
+    Ok(out)
+}
+
+/// Append an annotation cell to the INDEX row for `id`, unless the row already carries one
+/// containing "DECIDED", "PARKED" or "REJECTED". Returns None when nothing changed.
+fn annotate_index_row(index: &str, id: &str, annotation: &str) -> Option<String> {
+    let needle = format!("| `{id}` |");
+    let mut changed = false;
+    let out: Vec<String> = index
+        .lines()
+        .map(|line| {
+            if !changed
+                && line.starts_with(&needle)
+                && !["DECIDED", "PARKED", "REJECTED"].iter().any(|k| line.contains(k))
+            {
+                changed = true;
+                format!("{} {annotation} |", line.trim_end())
+            } else {
+                line.to_string()
+            }
+        })
+        .collect();
+    changed.then(|| out.join("\n") + "\n")
 }
 
 fn cmd_dispatch(root: &Path, args: DispatchArgs) -> Result<()> {
@@ -3675,6 +3960,84 @@ mod tests {
         assert_eq!(thread_need(&sample_thread(), "open"), "needs a decision or another round");
         let done = decided_thread() + "\n<!-- forum-dispatch:test-thread -->\n### Implementation receipt\n";
         assert_eq!(thread_need(&done, "decided"), "decided; implemented and receipted");
+    }
+
+    #[test]
+    fn ratify_promotes_the_proposal_with_an_attestation_and_annotates_the_index() {
+        let temp = TempDir::new().unwrap();
+        write_temp_forum(&temp);
+        fs::write(
+            temp.path().join("INDEX.md"),
+            "# Index\n\n## Open\n\n| id | topic |\n|---|---|\n| `test-thread` | topic |\n\n---\n\n## Proposed\n",
+        )
+        .unwrap();
+        let path = temp.path().join("meta/thread.md");
+        let thread = sample_thread().replace(
+            "## Decision\n\n_(none)_\n",
+            "## Proposed decision (awaiting Will)\n\nRuling text.\n\n### Residual dissent\n\n- Codex held X; withdrawn round 2.\n\n## Decision\n\n_(none)_\n",
+        );
+        fs::write(&path, thread).unwrap();
+        // Refuses when the ruling has no dissent section.
+        let bare = sample_thread();
+        fs::write(&path, &bare).unwrap();
+        let err = cmd_ratify(temp.path(), RatifyArgs { id: "test-thread".into(), decision: "Adopt X.".into(), body_file: None, note: None, dry_run: false }).unwrap_err();
+        assert!(err.to_string().contains("Proposed decision"));
+        let body = temp.path().join("body.md");
+        fs::write(&body, "Ruling without dissent.\n").unwrap();
+        let err = cmd_ratify(temp.path(), RatifyArgs { id: "test-thread".into(), decision: "Adopt X.".into(), body_file: Some(body.clone()), note: None, dry_run: false }).unwrap_err();
+        assert!(err.to_string().contains("Residual dissent"));
+
+        // Promotes a proposal.
+        fs::write(&path, sample_thread().replace(
+            "## Decision\n\n_(none)_\n",
+            "## Proposed decision (awaiting Will)\n\nRuling text.\n\n### Residual dissent\n\n- Codex held X; withdrawn round 2.\n\n## Decision\n\n_(none)_\n",
+        )).unwrap();
+        cmd_ratify(temp.path(), RatifyArgs { id: "test-thread".into(), decision: "Adopt \"X\".".into(), body_file: None, note: Some("(in conversation)".into()), dry_run: false }).unwrap();
+        let after = fs::read_to_string(&path).unwrap();
+        assert!(after.contains("status: decided"));
+        assert!(after.contains("decision: \"Adopt \\\"X\\\".\""));
+        assert!(!after.contains("## Proposed decision"));
+        let decision = decision_section(&after).unwrap();
+        assert!(decision.starts_with("**Ratified by William, 20"));
+        assert!(decision.contains("(in conversation)"));
+        assert!(decision.contains("Ruling text."));
+        assert!(residual_dissent_section(&decision).is_some());
+        assert!(has_william_ratification(&decision));
+        let index = fs::read_to_string(temp.path().join("INDEX.md")).unwrap();
+        assert!(index.contains("| `test-thread` | topic | **DECIDED 20"));
+        // Now dispatchable even at architecture level.
+        cmd_dispatch(temp.path(), DispatchArgs { id: "test-thread".into(), assignee: "codex".into(), scope: vec!["s".into()], acceptance: vec!["a".into()], reviewers: vec!["grok-build".into()], requested_by: "will".into(), dry_run: true }).unwrap();
+        // Second ratify refuses.
+        assert!(cmd_ratify(temp.path(), RatifyArgs { id: "test-thread".into(), decision: "again".into(), body_file: None, note: None, dry_run: false }).is_err());
+    }
+
+    #[test]
+    fn park_and_reject_record_a_reason_and_status() {
+        let temp = TempDir::new().unwrap();
+        write_temp_forum(&temp);
+        cmd_close(temp.path(), CloseArgs { id: "test-thread".into(), reason: "shipped as 37f454f; superseded".into(), by: "will".into() }, "parked").unwrap();
+        let after = fs::read_to_string(temp.path().join("meta/thread.md")).unwrap();
+        assert!(after.contains("status: parked"));
+        assert!(decision_section(&after).unwrap().starts_with("_Parked 20"));
+        assert!(cmd_close(temp.path(), CloseArgs { id: "test-thread".into(), reason: "x".into(), by: "will".into() }, "rejected").is_err());
+    }
+
+    #[test]
+    fn section_helpers_round_trip() {
+        let t = sample_thread();
+        assert_eq!(section_body(&t, "## Context").as_deref(), Some("Context."));
+        let r = replace_section_body(&t, "## Decision", "New body.").unwrap();
+        assert_eq!(section_body(&r, "## Decision").as_deref(), Some("New body."));
+        assert_eq!(section_body(&r, "## Context").as_deref(), Some("Context."));
+        assert!(replace_section_body(&t, "## Nope", "x").is_err());
+        let removed = remove_section(&r, "## Decision");
+        assert!(section_body(&removed, "## Decision").is_none());
+        assert!(section_body(&removed, "## Open questions").is_some());
+        let fm = set_frontmatter(&t, "status", "parked").unwrap();
+        assert!(fm.contains("status: parked"));
+        assert!(set_frontmatter(&t, "nonexistent", "x").is_err());
+        assert!(annotate_index_row("| `a` | x |\n", "a", "**DECIDED**").unwrap().contains("| `a` | x | **DECIDED** |"));
+        assert!(annotate_index_row("| `a` | x | **DECIDED** |\n", "a", "**PARKED**").is_none());
     }
 
     #[test]
