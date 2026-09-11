@@ -1,8 +1,8 @@
 [package]
 name = "system-health-check"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2021"
-description = "Daily system health validator: dead timers/agents, failed services, stale dotfiles, missing Rust binaries, DNA drift, dotter drift. systemd on Linux, launchd on macOS."
+description = "Daily system health validator: dead timers/agents, failed services, stale dotfiles, missing Rust binaries, DNA drift, dotter drift, orphaned headless Chrome. systemd on Linux, launchd on macOS."
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

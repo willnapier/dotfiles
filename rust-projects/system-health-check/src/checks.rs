@@ -899,8 +899,183 @@ pub fn check_watcher_heartbeats(c: &Ctx) -> Vec<String> {
     problems
 }
 
+// ── Check 10: orphaned headless Chrome ───────────────────────────────
+// A headless Chrome *browser* process (not a --type= helper) whose parent is
+// PID 1 has been abandoned by whatever launched it — a live scraper or
+// screenshot job is still the parent of its own Chrome. Found 2026-09-11: a
+// hand-rolled `chrome --headless=new --screenshot` from an assistant session
+// never exited, survived a Chrome auto-update (which relaunched it with its
+// original argv), sat for two days as a second windowless "Google Chrome" in
+// the app switcher, and swallowed every URL sent via `open`. The standing
+// fix is `pageprobe reap`; this check makes the condition visible daily.
+const STRAY_CHROME_MIN_AGE_SECS: u64 = 600;
+
+const CHROME_BASENAMES: &[&str] = &[
+    "Google Chrome",
+    "Google Chrome Beta",
+    "Google Chrome Dev",
+    "Google Chrome Canary",
+    "Chromium",
+    "chrome",
+    "google-chrome",
+    "google-chrome-stable",
+    "google-chrome-beta",
+    "chromium",
+    "chromium-browser",
+];
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StrayChrome {
+    pub pid: u32,
+    pub age_secs: u64,
+    pub user_data_dir: Option<String>,
+}
+
+/// `ps` elapsed time `[[DD-]HH:]MM:SS` → seconds.
+pub fn parse_etime(s: &str) -> Option<u64> {
+    let (days, rest) = match s.split_once('-') {
+        Some((d, r)) => (d.parse::<u64>().ok()?, r),
+        None => (0, s),
+    };
+    let parts: Vec<u64> = rest.split(':').map(|p| p.parse::<u64>().ok()).collect::<Option<Vec<_>>>()?;
+    let secs = match parts.as_slice() {
+        [m, s] => m * 60 + s,
+        [h, m, s] => h * 3600 + m * 60 + s,
+        _ => return None,
+    };
+    Some(days * 86_400 + secs)
+}
+
+/// Rows of `ps -axo pid=,ppid=,etime=,command=` that are headless Chrome
+/// browser processes re-parented to PID 1 and at least `min_age_secs` old.
+pub fn stray_chromes(ps_output: &str, min_age_secs: u64) -> Vec<StrayChrome> {
+    let mut out = vec![];
+    for line in ps_output.lines() {
+        let mut it = line.split_whitespace();
+        let (Some(pid), Some(ppid), Some(etime)) = (it.next(), it.next(), it.next()) else { continue };
+        let (Ok(pid), Ok(ppid)) = (pid.parse::<u32>(), ppid.parse::<u32>()) else { continue };
+        let Some(age_secs) = parse_etime(etime) else { continue };
+        let command = it.collect::<Vec<_>>().join(" ");
+        // The executable path may contain spaces (macOS bundles); flags start at " --".
+        let (exe, args) = match command.find(" --") {
+            Some(i) => (&command[..i], &command[i..]),
+            None => (command.as_str(), ""),
+        };
+        let base = exe.rsplit('/').next().unwrap_or(exe);
+        if !CHROME_BASENAMES.contains(&base) {
+            continue;
+        }
+        let tokens: Vec<&str> = args.split_whitespace().collect();
+        if tokens.iter().any(|t| t.starts_with("--type=")) {
+            continue;
+        }
+        if !tokens.iter().any(|t| *t == "--headless" || t.starts_with("--headless=")) {
+            continue;
+        }
+        if ppid != 1 || age_secs < min_age_secs {
+            continue;
+        }
+        let user_data_dir = tokens.iter().find_map(|t| t.strip_prefix("--user-data-dir=")).map(str::to_string);
+        out.push(StrayChrome { pid, age_secs, user_data_dir });
+    }
+    out
+}
+
+fn human_age(secs: u64) -> String {
+    let (d, h, m) = (secs / 86_400, (secs % 86_400) / 3600, (secs % 3600) / 60);
+    if d > 0 {
+        format!("{d}d {h}h")
+    } else if h > 0 {
+        format!("{h}h {m}m")
+    } else {
+        format!("{m}m")
+    }
+}
+
+pub fn check_stray_chrome(c: &Ctx) -> Vec<String> {
+    c.section("Headless Chrome");
+    let r = c.exec.run("ps", &["-axo", "pid=,ppid=,etime=,command="]);
+    if !r.ok() {
+        c.say("  ❌ Could not list processes");
+        c.end_section();
+        return vec!["Headless Chrome: could not run ps (check skipped)".into()];
+    }
+    let strays = stray_chromes(&r.stdout, STRAY_CHROME_MIN_AGE_SECS);
+    if strays.is_empty() {
+        c.say("  ✅ no orphaned headless Chrome");
+        c.end_section();
+        return vec![];
+    }
+    if c.fix && c.exec.which("pageprobe") {
+        let reap = c.exec.run("pageprobe", &["reap"]);
+        if reap.ok() {
+            c.log_fix(&format!("pageprobe reap: {}", reap.out().replace('\n', "; ")));
+            for s in &strays {
+                c.say(&format!("  🔧 PID {} (age {}): reaped", s.pid, human_age(s.age_secs)));
+            }
+            c.end_section();
+            return vec![];
+        }
+        c.say("  ❌ pageprobe reap failed");
+    }
+    let mut problems = vec![];
+    for s in &strays {
+        let profile = s.user_data_dir.as_deref().map(|d| format!(", profile {d}")).unwrap_or_default();
+        problems.push(format!(
+            "Orphaned headless Chrome: PID {} (age {}{profile}) — run `pageprobe reap`",
+            s.pid,
+            human_age(s.age_secs)
+        ));
+        c.say(&format!("  ❌ PID {} (age {}{profile})", s.pid, human_age(s.age_secs)));
+    }
+    c.end_section();
+    problems
+}
+
 #[cfg(test)]
 mod tests {
+
+    const PS_ZOMBIE: &str = "79109     1 02-10:30:28 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --no-startup-window --headless=new --screenshot=/tmp/x.png --user-data-dir=/tmp/pf-doc-chrome.gy5FcR --window-size=1440,1000\n79123 79109 02-10:30:47 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/152.0.7977.83/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper --type=gpu-process --headless=new --user-data-dir=/tmp/pf-doc-chrome.gy5FcR\n33684     1       36:31 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --new-window http://127.0.0.1:8765/mail/personal/inbox\n5001  4990    01:12:00 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless --user-data-dir=/var/folders/ab/T/rust-headless-chrome-profileXYZ\n  777     1       03:00 /opt/google/chrome/chrome --headless=new --user-data-dir=/tmp/young\n";
+
+    #[test]
+    fn stray_chrome_selects_only_old_orphaned_headless_browsers() {
+        assert_eq!(parse_etime("02-10:30:28"), Some(2 * 86_400 + 10 * 3600 + 30 * 60 + 28));
+        assert_eq!(parse_etime("36:31"), Some(2191));
+        assert_eq!(parse_etime("x"), None);
+        let s = stray_chromes(PS_ZOMBIE, 600);
+        assert_eq!(s.len(), 1, "{s:?}");
+        assert_eq!(s[0].pid, 79109);
+        assert_eq!(s[0].user_data_dir.as_deref(), Some("/tmp/pf-doc-chrome.gy5FcR"));
+        // Age floor 0 admits the young Linux orphan too, never the helper, headful or live-parented ones.
+        let pids: Vec<u32> = stray_chromes(PS_ZOMBIE, 0).iter().map(|s| s.pid).collect();
+        assert_eq!(pids, vec![79109, 777]);
+    }
+
+    #[test]
+    fn stray_chrome_check_reports_fixes_and_skips() {
+        let mut fake = crate::exec::Fake::default();
+        fake.respond("ps", &["-axo", "pid=,ppid=,etime=,command="], crate::exec::CmdResult::success(PS_ZOMBIE));
+        fn log(_: &str, _: &str) {}
+        fn ctx<'a>(exec: &'a crate::exec::Fake, fix: bool) -> Ctx<'a> {
+            Ctx { exec, verbose: false, fix, home: PathBuf::from("/nonexistent"), log: &log }
+        }
+        // report
+        let p = check_stray_chrome(&ctx(&fake, false));
+        assert_eq!(p.len(), 1, "{p:?}");
+        assert!(p[0].starts_with("Orphaned headless Chrome: PID 79109 (age 2d 10h, profile /tmp/pf-doc-chrome.gy5FcR)"), "{p:?}");
+        assert!(p[0].contains("pageprobe reap"));
+        // --fix without pageprobe on PATH still reports
+        assert_eq!(check_stray_chrome(&ctx(&fake, true)).len(), 1);
+        // --fix with pageprobe: reaped, clean
+        fake.on_path.push("pageprobe".into());
+        fake.respond("pageprobe", &["reap"], crate::exec::CmdResult::success("killed PID 79109"));
+        assert!(check_stray_chrome(&ctx(&fake, true)).is_empty());
+        assert!(fake.calls.borrow().iter().any(|c| c == "pageprobe reap"));
+        // ps unavailable is a problem, not silence
+        let none = crate::exec::Fake::default();
+        let p = check_stray_chrome(&ctx(&none, false));
+        assert_eq!(p, vec!["Headless Chrome: could not run ps (check skipped)".to_string()]);
+    }
 
     #[test]
     fn derived_doc_stale_missing_and_current_are_told_apart() {

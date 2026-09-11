@@ -2,10 +2,12 @@
 //!
 //! See `~/Assistants/shared/pageprobe.md` for design notes. v0.1 shipped
 //! start, stop, status, tabs, attach, network, console. v0.2 adds eval,
-//! screenshot, perf, dom.
+//! screenshot, perf, dom. v0.3 adds shot (one-shot headless screenshot that
+//! cannot leak a Chrome) and reap (kill orphaned headless Chromes).
 mod cdp;
 mod chrome;
 mod commands;
+mod orphans;
 mod state;
 
 use anyhow::Result;
@@ -120,6 +122,51 @@ enum Cmd {
         #[arg(long)]
         all: bool,
     },
+    /// One-shot headless screenshot of a URL or local HTML file.
+    ///
+    /// Launches a throwaway headless Chrome as a child process, captures,
+    /// and always tears it down (close → wait → SIGKILL) under a hard
+    /// --timeout. Use this instead of hand-rolling
+    /// `chrome --headless --screenshot`, which can leave a zombie Chrome
+    /// that duplicates the app switcher entry and swallows `open` URLs.
+    Shot {
+        /// http(s):// or file:// URL, or a path to a local HTML file.
+        target: String,
+        /// Output path. Default: /tmp/pageprobe-<unix-ts>.png.
+        #[arg(short, long)]
+        out: Option<PathBuf>,
+        #[arg(long, default_value_t = 1440)]
+        width: u32,
+        #[arg(long, default_value_t = 1000)]
+        height: u32,
+        /// Capture the full scrollable page, not just the viewport.
+        #[arg(long)]
+        full: bool,
+        /// Settle time after load, for JS-rendered pages.
+        #[arg(long, default_value_t = 500)]
+        wait_ms: u64,
+        /// Hard ceiling on the whole run in seconds; Chrome is killed on expiry.
+        #[arg(long, default_value_t = 60)]
+        timeout: u64,
+        /// JPEG quality 0-100 (switches output extension to .jpg).
+        #[arg(long)]
+        quality: Option<i64>,
+    },
+    /// Kill orphaned headless Chrome processes and delete their temp profiles.
+    ///
+    /// A headless Chrome browser process whose parent is PID 1 has been
+    /// abandoned by whatever launched it. Live scrapers and screenshot jobs
+    /// are still the parent of their Chrome and are left alone.
+    Reap {
+        /// List what would be killed without killing anything.
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        json: bool,
+        /// Ignore orphans younger than this (guards against racing a launcher).
+        #[arg(long, default_value_t = 120)]
+        min_age_secs: u64,
+    },
 }
 
 #[tokio::main]
@@ -152,5 +199,20 @@ async fn main() -> Result<()> {
             attrs,
             all,
         } => commands::dom::run(selector, html, text, attrs, all).await,
+        Cmd::Shot {
+            target,
+            out,
+            width,
+            height,
+            full,
+            wait_ms,
+            timeout,
+            quality,
+        } => commands::shot::run(target, out, width, height, full, wait_ms, timeout, quality).await,
+        Cmd::Reap {
+            dry_run,
+            json,
+            min_age_secs,
+        } => commands::reap::run(dry_run, json, min_age_secs).await,
     }
 }

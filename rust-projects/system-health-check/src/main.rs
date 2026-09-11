@@ -1,8 +1,8 @@
 //! system-health-check — daily system health validator.
 //!
 //! Catches dead timers/agents, failed services, uncommitted dotfiles, missing
-//! Rust tool binaries, DNA drift (state-capture) and dotter drift
-//! (dotter-drift-monitor). systemd on Linux, launchd on macOS. Runs via
+//! Rust tool binaries, DNA drift (state-capture), dotter drift
+//! (dotter-drift-monitor) and orphaned headless Chrome processes. systemd on Linux, launchd on macOS. Runs via
 //! systemd timer (Linux) or launchd plist (macOS) daily at 08:00.
 //!
 //! Rust port 2026-09-01 of the Nushell script (which crashed on every Mac run
@@ -78,6 +78,7 @@ fn main() -> ExitCode {
     problems.extend(checks::check_nu_watch_flag(&ctx, nu_version.as_deref(), &host));
     problems.extend(checks::check_derived_docs(&ctx));
     problems.extend(checks::check_watcher_heartbeats(&ctx));
+    problems.extend(checks::check_stray_chrome(&ctx));
 
     // Status file for the session-start kernel (ai-brief "Host health"):
     // one writer per file, namespaced by machine, under the Syncthing-carried
