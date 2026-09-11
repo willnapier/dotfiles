@@ -38,6 +38,10 @@ enum Cmd {
         /// User-data-dir to use (default: ~/.config/pageprobe/chrome-profile).
         #[arg(long)]
         user_data_dir: Option<PathBuf>,
+        /// Run Chrome headless (no window) — for use over ssh or on a box
+        /// with no display. Every other subcommand works the same.
+        #[arg(long)]
+        headless: bool,
     },
     /// Stop the running debug-Chrome (gracefully, then SIGKILL after 3s).
     Stop,
@@ -173,7 +177,11 @@ enum Cmd {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
-        Cmd::Start { port, user_data_dir } => commands::start::run(port, user_data_dir).await,
+        Cmd::Start {
+            port,
+            user_data_dir,
+            headless,
+        } => commands::start::run(port, user_data_dir, headless).await,
         Cmd::Stop => commands::stop::run().await,
         Cmd::Status { json } => commands::status::run(json).await,
         Cmd::Tabs { json } => commands::tabs::run(json).await,

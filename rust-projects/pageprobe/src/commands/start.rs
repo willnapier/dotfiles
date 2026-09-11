@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use crate::{chrome, state};
 
-pub async fn run(port: u16, user_data_dir: Option<PathBuf>) -> Result<()> {
+pub async fn run(port: u16, user_data_dir: Option<PathBuf>, headless: bool) -> Result<()> {
     let mut s = state::load()?;
     if let Some(p) = s.chrome_pid
         && chrome::debug_chrome_alive(s.port_or_default()).await
@@ -30,7 +30,7 @@ pub async fn run(port: u16, user_data_dir: Option<PathBuf>) -> Result<()> {
         eprintln!("(killed {orphans} orphan Chrome process(es) from a prior session)");
     }
 
-    let pid = chrome::launch(port, &user_data_dir).await?;
+    let pid = chrome::launch(port, &user_data_dir, headless).await?;
 
     s.chrome_pid = if pid == 0 { None } else { Some(pid) };
     s.port = Some(port);
@@ -46,7 +46,8 @@ pub async fn run(port: u16, user_data_dir: Option<PathBuf>) -> Result<()> {
         );
     } else {
         println!(
-            "Chrome launched (PID {pid}, port {port}). user-data-dir: {}",
+            "Chrome launched{} (PID {pid}, port {port}). user-data-dir: {}",
+            if headless { " headless" } else { "" },
             user_data_dir.display()
         );
     }

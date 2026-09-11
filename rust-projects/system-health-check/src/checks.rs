@@ -424,6 +424,7 @@ pub const RUST_TOOLS: &[(&str, &str)] = &[
     ("continuum-activity", "continuum-activity"),
     ("dotter-drift-monitor", "dotter-drift-monitor"),
     ("forge-metadata-backup", "forge-metadata-backup"),
+    ("pageprobe", "pageprobe"),
     ("readwise-sync", "readwise-sync"),
     ("state-capture", "state-capture"),
     ("system-health-check", "system-health-check"),

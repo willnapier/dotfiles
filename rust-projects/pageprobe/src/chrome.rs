@@ -2,9 +2,11 @@
 //!
 //! On macOS we rely on `open -na "Google Chrome"` so that Chrome's normal
 //! singleton-bundle launching is bypassed and a fresh process is spawned
-//! against our dedicated user-data-dir. On Linux/other platforms we shell
-//! out to `google-chrome` (best-effort fallback — pageprobe is primarily a
-//! macOS tool today).
+//! against our dedicated user-data-dir. On Linux the executable is found the
+//! way `shot` finds it (`$CHROME`, then `chromium`, `google-chrome`, … on
+//! PATH — nimbini ships Arch's `chromium`) and spawned detached in its own
+//! process group so it outlives `pageprobe start`. Both platforms accept
+//! `headless` for use over ssh, where there is no display to draw on.
 use anyhow::{Context, Result, bail};
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -38,7 +40,7 @@ pub async fn fetch_version(port: u16) -> Result<serde_json::Value> {
 /// polls `/json/version` until Chrome is ready (or we time out).
 ///
 /// Returns the PID of the launched Chrome process.
-pub async fn launch(port: u16, user_data_dir: &Path) -> Result<u32> {
+pub async fn launch(port: u16, user_data_dir: &Path, headless: bool) -> Result<u32> {
     if debug_chrome_alive(port).await {
         bail!("a debug-Chrome is already responding on port {port}");
     }
@@ -47,7 +49,7 @@ pub async fn launch(port: u16, user_data_dir: &Path) -> Result<u32> {
         format!("creating user-data-dir {}", user_data_dir.display())
     })?;
 
-    let pid = launch_platform(port, user_data_dir).await?;
+    let pid = launch_platform(port, user_data_dir, headless).await?;
 
     // Poll /json/version until the debug endpoint is ready.
     let deadline = Instant::now() + Duration::from_secs(VERSION_TIMEOUT_SECS);
@@ -66,7 +68,7 @@ pub async fn launch(port: u16, user_data_dir: &Path) -> Result<u32> {
 }
 
 #[cfg(target_os = "macos")]
-async fn launch_platform(port: u16, user_data_dir: &Path) -> Result<u32> {
+async fn launch_platform(port: u16, user_data_dir: &Path, headless: bool) -> Result<u32> {
     // `open -na "Google Chrome" --args ...` returns immediately and the
     // child PID is *its* PID, not Chrome's. We spawn `open` so we can wait
     // briefly, then resolve the actual Chrome PID via pgrep on the
@@ -74,16 +76,20 @@ async fn launch_platform(port: u16, user_data_dir: &Path) -> Result<u32> {
     let user_data_arg = format!("--user-data-dir={}", user_data_dir.display());
     let port_arg = format!("--remote-debugging-port={port}");
 
+    let mut args: Vec<&str> = vec![
+        "-na",
+        "Google Chrome",
+        "--args",
+        &port_arg,
+        &user_data_arg,
+        "--no-first-run",
+        "--no-default-browser-check",
+    ];
+    if headless {
+        args.push("--headless=new");
+    }
     let status = Command::new("open")
-        .args([
-            "-na",
-            "Google Chrome",
-            "--args",
-            &port_arg,
-            &user_data_arg,
-            "--no-first-run",
-            "--no-default-browser-check",
-        ])
+        .args(&args)
         .status()
         .await
         .context("running `open -na 'Google Chrome'`")?;
@@ -114,18 +120,31 @@ async fn launch_platform(port: u16, user_data_dir: &Path) -> Result<u32> {
 }
 
 #[cfg(not(target_os = "macos"))]
-async fn launch_platform(port: u16, user_data_dir: &Path) -> Result<u32> {
+async fn launch_platform(port: u16, user_data_dir: &Path, headless: bool) -> Result<u32> {
+    use std::process::Stdio;
+    let exe = chromiumoxide::detection::default_executable(Default::default())
+        .map_err(|e| anyhow::anyhow!("no Chrome/Chromium found ({e}); set $CHROME or install chromium"))?;
     let user_data_arg = format!("--user-data-dir={}", user_data_dir.display());
     let port_arg = format!("--remote-debugging-port={port}");
-    let child = Command::new("google-chrome")
-        .args([
-            &port_arg,
-            &user_data_arg,
-            "--no-first-run",
-            "--no-default-browser-check",
-        ])
+    let mut args: Vec<&str> = vec![
+        &port_arg,
+        &user_data_arg,
+        "--no-first-run",
+        "--no-default-browser-check",
+    ];
+    if headless {
+        args.push("--headless=new");
+    }
+    // Detached: own process group, no inherited stdio, so the debug-Chrome
+    // survives this command exiting and never holds the ssh session open.
+    let child = Command::new(&exe)
+        .args(&args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .process_group(0)
         .spawn()
-        .context("spawning `google-chrome`")?;
+        .with_context(|| format!("spawning {}", exe.display()))?;
     Ok(child.id().unwrap_or(0))
 }
 
