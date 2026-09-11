@@ -20,6 +20,24 @@ Personal dotfiles and automation tools managed with [Dotter](https://github.com/
 | `hammerspoon/` | macOS automation (window management) |
 | `.dotter/` | Dotter deployment configuration |
 
+## Mail account isolation
+
+Personal mail uses `~/Mail/.notmuch-config` and `~/Mail/.notmuch`; ingestion
+excludes `cohs`. COHS uses `~/Mail/.notmuch-cohs-config` and
+`~/Mail/cohs/.notmuch`, with its own folder hook and optional
+`~/.config/mailcurator/policies-cohs.toml`. COHS sync, trash reconciliation,
+and Meli refresh must retain that configuration. Gmail label pushing runs the
+standalone `gmail-push-tags --push` binary built from PracticeForge's shared
+pusher module; COHS never uses it.
+
+Existing installations require the backed-up migration in Mailforge's
+`scripts/migrate-account-indexes.py` before activating these configurations.
+Stop mail/index/tag writers, run its plan and apply modes, deploy with Dotter,
+install the account-aware Mailforge and pusher binaries, then verify and restart.
+The migration retains mail files and suppresses Gmail pushes caused solely by
+detaching shared index copies. Operational evidence lives in
+`~/Assistants/shared/CLI-EMAIL-SYSTEM.md`.
+
 ## Rust Projects
 
 All projects live in `rust-projects/` and build with `cargo build --release`. Binaries are symlinked to `~/.local/bin/` via Dotter.

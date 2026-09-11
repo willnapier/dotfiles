@@ -28,7 +28,7 @@
         <key>HOME</key>
         <string>/Users/williamnapier</string>
         <key>NOTMUCH_CONFIG</key>
-        <string>/Users/williamnapier/Mail/.notmuch-config</string>
+        <string>/Users/williamnapier/Mail/.notmuch-cohs-config</string>
     </dict>
     <key>StartInterval</key>
     <!-- 120s (was 900/15min). Shortened 2026-07-06 so COHS/M365 mail

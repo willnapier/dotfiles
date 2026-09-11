@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# COHS-only index: never invoke Gmail or the personal mailcurator hook.
+set -eu
+export NOTMUCH_CONFIG="${NOTMUCH_CONFIG:-$HOME/Mail/.notmuch-cohs-config}"
+notmuch tag +cohs -- 'not tag:cohs'
+# Classify only new messages; local archive/trash choices survive reindexing.
+notmuch tag -inbox -- 'tag:new and not path:INBOX/**'
+notmuch tag +inbox -- 'tag:new and path:INBOX/**'
+notmuch tag +sent -- 'tag:new and path:"Sent Items/**"'
+notmuch tag +drafts -- 'tag:new and path:Drafts/**'
+notmuch tag +archive -- 'tag:new and path:Archive/**'
+notmuch tag +trash -- 'tag:new and path:"Deleted Items/**"'
+notmuch tag +spam -- 'tag:new and path:"Junk Email/**"'
+notmuch tag -new -- tag:new
+# COHS blacklist policies are independent of personal sender policies.
+cohs_policies="${XDG_CONFIG_HOME:-$HOME/.config}/mailcurator/policies-cohs.toml"
+if [ -f "$cohs_policies" ] && command -v mailcurator >/dev/null 2>&1 && [ -z "${MAILFORGE_FAST_REINDEX:-}" ]; then
+    mailcurator --config "$cohs_policies" run
+fi

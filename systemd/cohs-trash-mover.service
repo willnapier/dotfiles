@@ -9,7 +9,7 @@ Type=oneshot
 # DELETED Items path uses $HOME so works for the will user.
 Environment=PATH=/home/will/.local/bin:/usr/local/bin:/usr/bin:/bin
 Environment=HOME=/home/will
-Environment=NOTMUCH_CONFIG=/home/will/Mail/.notmuch-config
+Environment=NOTMUCH_CONFIG=/home/will/Mail/.notmuch-cohs-config
 ExecStart=/home/will/.local/bin/cohs-trash-mover
 StandardOutput=append:/home/will/.local/share/cohs-trash-mover.log
 StandardError=append:/home/will/.local/share/cohs-trash-mover.log

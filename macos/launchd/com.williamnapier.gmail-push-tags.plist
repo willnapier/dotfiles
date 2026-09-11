@@ -6,9 +6,7 @@
     <string>com.williamnapier.gmail-push-tags</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/williamnapier/.local/bin/practiceforge</string>
-        <string>email</string>
-        <string>gmail-push-tags</string>
+        <string>/Users/williamnapier/.local/bin/gmail-push-tags</string>
         <string>--push</string>
     </array>
     <!-- The push-tags half of the Gmail IMAP+notmuch stack: local

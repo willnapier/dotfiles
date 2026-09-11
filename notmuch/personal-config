@@ -1,0 +1,14 @@
+[database]
+path={{mail_home}}/Mail
+[user]
+name=William Napier
+primary_email=will@willnapier.com
+[new]
+tags=new;unread;inbox
+ignore=.json;.lock;.credentials.gmailieer.json;.state.gmailieer.json;cohs
+[search]
+exclude_tags=deleted;spam
+[maildir]
+synchronize_flags=true
+[crypto]
+gpg_path=gpg

@@ -23,7 +23,7 @@ attempts=3
 # Unknown channels skip the preflight and proceed straight to the retry loop.
 case "$channel" in
     gmail) preflight_host="imap.gmail.com" ;;
-    cohs)  preflight_host="outlook.office365.com" ;;
+    cohs)  preflight_host="outlook.office365.com"; export NOTMUCH_CONFIG="$HOME/Mail/.notmuch-cohs-config" ;;
     *)     preflight_host="" ;;
 esac
 

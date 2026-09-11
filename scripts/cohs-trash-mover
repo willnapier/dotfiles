@@ -21,21 +21,23 @@
 # Runs every 5 min via the respective platform's timer.
 
 set -eu
+export NOTMUCH_CONFIG="$HOME/Mail/.notmuch-cohs-config"
 
 DELETED="$HOME/Mail/cohs/Deleted Items/cur"
 mkdir -p "$DELETED"
 
 moved=0
 while IFS= read -r f; do
+    case "$f" in "$HOME"/Mail/cohs/INBOX/cur/*) ;; *) continue ;; esac
     [ -f "$f" ] || continue
     # Skip files already in Deleted Items (defensive — query should
-    # exclude them via folder:"cohs/INBOX", but belt-and-braces).
+    # exclude them via folder:"INBOX", but belt-and-braces).
     case "$f" in
         */cohs/Deleted\ Items/*) continue ;;
     esac
     mv "$f" "$DELETED/$(basename "$f")"
     moved=$((moved + 1))
-done < <(notmuch search --output=files 'tag:cohs and tag:trash and folder:"cohs/INBOX"' 2>/dev/null || true)
+done < <(notmuch search --output=files 'tag:cohs and tag:trash and folder:"INBOX"' 2>/dev/null || true)
 
 if [ "$moved" -gt 0 ]; then
     # Reindex so notmuch sees the new file paths. Quiet on success.

@@ -40,7 +40,7 @@ refresh_command = "/home/will/.local/bin/mail-sync"
 # Send: `practiceforge email graph-send` (tenant blocks SMTP AUTH).
 
 [accounts.cohs]
-root_mailbox = "/home/will/Mail"
+root_mailbox = "/home/will/Mail/cohs"
 format = "notmuch"
 library_file_path = "/usr/lib/libnotmuch.so.5"
 identity = "will.napier@changeofharleystreet.com"
@@ -48,7 +48,7 @@ display_name = "Will Napier"
 subscribed_mailboxes = ["inbox", "unread", "sent", "drafts", "archive", "trash", "spam"]
 default_mailbox = "inbox"
 send_mail = "practiceforge email graph-send"
-refresh_command = "sh -c '/usr/bin/mbsync cohs && /usr/bin/notmuch new'"
+refresh_command = "sh -c '/usr/bin/mbsync cohs && NOTMUCH_CONFIG=/home/will/Mail/.notmuch-cohs-config /usr/bin/notmuch new'"
 
   [accounts.cohs.mailboxes."inbox"]
   query = "tag:cohs and tag:inbox and not tag:archive and not tag:spam and not tag:trash"

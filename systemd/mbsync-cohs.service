@@ -5,6 +5,7 @@ Wants=network-online.target pizauth.service
 
 [Service]
 Type=oneshot
+Environment=NOTMUCH_CONFIG=/home/will/Mail/.notmuch-cohs-config
 # mbsync's PassCmd runs `pizauth show cohs`. The pizauth daemon holds the
 # OAuth tokens in memory and refreshes transparently — no keyring / D-Bus
 # involvement on the sync path. Absolute paths because systemd's default

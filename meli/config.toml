@@ -92,7 +92,7 @@ refresh_command = "/Users/williamnapier/.local/bin/mail-sync"
 #       `CommandTokenSource::new("pizauth show cohs")`.
 
 [accounts.cohs]
-root_mailbox = "/Users/williamnapier/Mail"
+root_mailbox = "/Users/williamnapier/Mail/cohs"
 format = "notmuch"
 library_file_path = "/opt/homebrew/opt/notmuch/lib/libnotmuch.5.dylib"
 identity = "will.napier@changeofharleystreet.com"
@@ -124,7 +124,7 @@ send_mail = "graph-send"
 # meli uses shell-exec or argv. Absolute paths mirror the launchd plist
 # so PATH-availability isn't a factor (meli inherits a richer interactive
 # PATH than launchd does, but explicit > implicit here).
-refresh_command = "sh -c '/Users/williamnapier/.local/bin/mbsync cohs && /opt/homebrew/bin/notmuch new'"
+refresh_command = "sh -c '/Users/williamnapier/.local/bin/mbsync cohs && NOTMUCH_CONFIG=/Users/williamnapier/Mail/.notmuch-cohs-config /opt/homebrew/bin/notmuch new'"
 
   # Hide the `cohs` tag chip in every mailbox view: every message under
   # this account has it by construction (the queries above all gate on

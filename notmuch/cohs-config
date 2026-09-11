@@ -1,0 +1,14 @@
+[database]
+path={{mail_home}}/Mail/cohs
+[user]
+name=William Napier
+primary_email=will.napier@changeofharleystreet.com
+[new]
+tags=new;unread;inbox
+ignore=.json;.lock;.credentials.gmailieer.json;.state.gmailieer.json
+[search]
+exclude_tags=deleted;spam
+[maildir]
+synchronize_flags=true
+[crypto]
+gpg_path=gpg

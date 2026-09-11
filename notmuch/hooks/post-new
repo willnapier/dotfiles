@@ -11,17 +11,7 @@
 
 set -eu
 
-# --- Rule 0: tag messages from the COHS Maildir source ---
-# Any message under ~/Mail/cohs/ (mbsync from Microsoft 365) gets tagged `cohs`.
-notmuch tag +cohs -- 'path:"cohs/**" and not tag:cohs'
-
-# Per-folder tagging so Meli's cohs account can show them as separate mailboxes:
-notmuch tag +inbox -- 'path:"cohs/INBOX/**" and tag:new'
-notmuch tag +sent -- 'path:"cohs/Sent Items/**" and not tag:sent'
-notmuch tag +drafts -- 'path:"cohs/Drafts/**" and not tag:drafts'
-notmuch tag +archive -- 'path:"cohs/Archive/**" and not tag:archive'
-notmuch tag +trash -- 'path:"cohs/Deleted Items/**" and not tag:trash'
-notmuch tag +spam -- 'path:"cohs/Junk Email/**" and not tag:spam'
+# Personal index excludes COHS at ingestion. No COHS rules run here.
 
 # --- Rule 1: age-based inbox pruning ---
 # Any message still tagged `inbox` but older than 6 months leaves inbox.

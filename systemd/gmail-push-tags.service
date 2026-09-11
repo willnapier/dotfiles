@@ -12,7 +12,7 @@ Type=oneshot
 Environment=PATH=/home/will/.local/bin:/usr/local/bin:/usr/bin:/bin
 Environment=HOME=/home/will
 Environment=NOTMUCH_CONFIG=/home/will/Mail/.notmuch-config
-ExecStart=/home/will/.local/bin/practiceforge email gmail-push-tags --push
+ExecStart=/home/will/.local/bin/gmail-push-tags --push
 # Bound the run to 15min — same as the timer cadence. Prevents the
 # 11-day-hang failure (2026-04-27 → 2026-05-09: PID stuck "activating",
 # CPU pinned at 99%, blocking timer re-arm forever). On hang, systemd
