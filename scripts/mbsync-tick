@@ -15,6 +15,7 @@
 #   4. On all-attempts-failed, exit 1 so launchctl + briefing surface it.
 
 set -u
+case "${1:-}" in -h|--help) printf '%s\n' 'Usage: mbsync-tick <gmail|cohs>'; exit 0 ;; esac
 
 channel="${1:?usage: mbsync-tick <channel>}"
 attempts=3

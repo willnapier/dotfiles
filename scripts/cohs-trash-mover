@@ -21,6 +21,7 @@
 # Runs every 5 min via the respective platform's timer.
 
 set -eu
+case "${1:-}" in -h|--help) printf '%s\n' 'Reconcile trash tags in the COHS-only index with its Maildir folders.'; exit 0 ;; esac
 export NOTMUCH_CONFIG="$HOME/Mail/.notmuch-cohs-config"
 
 DELETED="$HOME/Mail/cohs/Deleted Items/cur"
