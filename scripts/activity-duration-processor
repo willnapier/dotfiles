@@ -15,7 +15,8 @@
 # Spoken keys (Handy / STT): "key sleep" → sleep::  before durations run.
 # Trigger is the word "key" plus a phrase in spoken-key-table, plus
 # hyphen/dot stems from Social/*.md (person and couple keys).
-# Lines without \bkey\s skip the spoken-key table (keeps Space+P catch-up cheap).
+# Optional trailing [.,!?] after "key" (Parakeet list commas: "Key, sleep, …").
+# Lines without \bkey[.,!?]*\s skip the spoken-key table (keeps Space+P catch-up cheap).
 # Spoken dots: "key x dot strength" → ex.strength::  ("x" as parent → ex).
 # Spoken clocks: "o one twenty to o seven ten" → 0120-0710, then duration.
 # Spoken quantities: "seven thousand steps" → 7000-steps; "forty-five minutes" → 45min.
@@ -26,6 +27,12 @@
 
 def regex-escape-spoken [s: string] {
     $s | str replace --all --regex '([.\\+*?()|\[\]{}^$])' '\$1'
+}
+
+# Same punctuation class as norm-tok. Whitespace after the trigger is required
+# so "keyboard" is left alone; "key," / "key." match "key".
+def spoken-key-trigger [] {
+    '(?i)\bkey[.,!?]*\s'
 }
 
 # Longer phrases must win (jenny tv before jenny; walk pad before walk).
@@ -175,7 +182,7 @@ def expand-spoken-keys [content: string] {
     let lines = ($content | lines)
     let out = ($lines | each {|line|
         # Most journal lines never contain the spoken-key trigger; skip the table.
-        if not ($line =~ '(?i)\bkey\s') {
+        if not ($line =~ (spoken-key-trigger)) {
             $line
         } else {
             mut current = $line
@@ -187,7 +194,8 @@ def expand-spoken-keys [content: string] {
                     | str join '\s+'
                 )
                 # Concatenate: $'(?i)...' interpolates (expr), so (?i) would run as a command.
-                let pattern = '(?i)\bkey\s+' + $spoken_re + '\b(?:\s*::)?'
+                # Trailing [.,!?] after the phrase eats "sleep," in the same list.
+                let pattern = (spoken-key-trigger) + '+' + $spoken_re + '\b[.,!?]*(?:\s*::)?'
                 $current = ($current | str replace --all --regex $pattern ($row.key + "::"))
             }
             $current
