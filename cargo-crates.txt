@@ -40,6 +40,7 @@ mailforge	0.1.0	/home/will/Code/mailforge
 meliview	0.1.0	/home/will/dotfiles/rust-projects/meliview
 module	0.1.0	/home/will/dotfiles/rust-projects/module
 nu	0.107.0	crates.io
+pageprobe	0.3.1	/home/will/dotfiles/rust-projects/pageprobe
 pizauth	1.0.11	https://github.com/ltratt/pizauth?tag=pizauth-1.0.11#f58048fc
 practiceforge	0.1.0	/home/will/Code/practiceforge/practiceforge
 readwise-sync	0.1.0	/home/will/dotfiles/rust-projects/readwise-sync
@@ -53,7 +54,7 @@ skim	0.20.5	crates.io
 sr	0.1.1	/home/will/dotfiles/rust-projects/sr
 starship	1.23.0	crates.io
 stylance-cli	0.8.2	crates.io
-system-health-check	0.3.3	/home/will/dotfiles/rust-projects/system-health-check
+system-health-check	0.3.5	/home/will/dotfiles/rust-projects/system-health-check
 tm3-diary-capture	0.1.0	/home/will/Code/tm3-diary-capture
 trashy	2.0.0	crates.io
 usage-probe-anthropic-api	0.1.0	/home/will/projects/continuum/usage-probe-anthropic-api
