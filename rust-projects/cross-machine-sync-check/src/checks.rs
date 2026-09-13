@@ -393,6 +393,26 @@ pub fn rust_binary_freshness_remote(remote: &str) -> Result<Vec<CheckResult>> {
 
 // --- 3. Skill file parity ---
 
+/// SHA-256 hex digest of a file via `sha256sum` (Linux coreutils) or, failing
+/// that, `shasum -a 256` (macOS). `None` when neither tool yields a digest.
+fn sha256_of_file(path: &str) -> Option<String> {
+    let attempts: [(&str, &[&str]); 2] = [("sha256sum", &[]), ("shasum", &["-a", "256"])];
+    for (tool, args) in attempts {
+        let output = Command::new(tool).args(args).arg(path).output();
+        if let Ok(o) = output {
+            if o.status.success() {
+                let line = String::from_utf8_lossy(&o.stdout);
+                if let Some(hash) = line.split_whitespace().next() {
+                    if hash.len() == 64 {
+                        return Some(hash.to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 pub fn skill_parity(remote: &str) -> Result<Vec<CheckResult>> {
     let skills_dir = home_dir().join(".claude/skills");
     if !skills_dir.exists() {
@@ -423,26 +443,35 @@ pub fn skill_parity(remote: &str) -> Result<Vec<CheckResult>> {
         }]);
     }
 
-    // Build a map of relative path -> sha256 for local
+    // Build a map of relative path -> sha256 for local. This used to call `shasum`
+    // only and swallow the error: Arch has no `shasum` (it is a Perl script), so on
+    // nimbini the map came back empty and every skill file was reported "only on
+    // remote" — a false drift that failed the unit daily (found 2026-09-13). Hash
+    // with the same tool chain the remote side uses, and refuse to report parity
+    // at all if neither tool works, rather than reporting a phantom difference.
     let mut local_hashes = std::collections::HashMap::new();
     for file in &local_files {
         let rel = file
             .strip_prefix(skills_dir.to_str().unwrap())
             .unwrap_or(file)
             .trim_start_matches('/');
-        let output = Command::new("shasum")
-            .args(["-a", "256"])
-            .arg(file)
-            .output();
-        if let Ok(o) = output {
-            let line = String::from_utf8_lossy(&o.stdout);
-            if let Some(hash) = line.split_whitespace().next() {
-                local_hashes.insert(rel.to_string(), hash.to_string());
+        match sha256_of_file(file) {
+            Some(hash) => {
+                local_hashes.insert(rel.to_string(), hash);
+            }
+            None => {
+                return Ok(vec![CheckResult {
+                    name: "skill-parity".to_string(),
+                    status: Status::Skipped,
+                    details: vec![format!(
+                        "could not hash {rel} locally: neither sha256sum nor shasum produced a digest"
+                    )],
+                }]);
             }
         }
     }
 
-    // Get remote hashes (shasum works on both macOS and Linux)
+    // Get remote hashes (sha256sum on Linux, shasum on macOS)
     let remote_output = match ssh_cmd(
         remote,
         "fd -e md -t f . $HOME/.claude/skills -L | xargs sha256sum 2>/dev/null || fd -e md -t f . $HOME/.claude/skills -L | xargs shasum -a 256",
