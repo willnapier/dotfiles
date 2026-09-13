@@ -1,10 +1,10 @@
 [Unit]
-Description=Messageboard sweep: archive items finished by forum state, then the 30-day age ceiling
+Description=Messageboard sweep: archive items finished by forum state, then the 14-day age ceiling
 After=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=%h/.local/bin/forum sweep --older-than 30
+ExecStart=%h/.local/bin/forum sweep --older-than 14
 Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin
 Environment=HOME=%h
 

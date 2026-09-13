@@ -33,14 +33,14 @@ const LIVE_HEADER = "# Messageboard
 > (report-only — unclaimed is NOT the same as stale; most stranded items are
 > real work awaiting a machine that has not run a session). Verify, then
 > `archive-containing <unique text>`.
-> **Automatic sweep:** `forum sweep --older-than 30` runs daily on nimbini
+> **Automatic sweep:** `forum sweep --older-than 14` runs daily on nimbini
 > (`messageboard-sweep.timer`, 07:20). It archives what forum state proves
 > finished — acknowledged FORUM COMPLETE notices, FORUM OPEN pointers to
 > threads no longer open, work orders whose thread has an
-> `### Implementation receipt` — plus ordinary items older than 30 days.
+> `### Implementation receipt` — plus ordinary items older than 14 days.
 > FORUM OPEN pointers and unreceipted work orders are exempt from the age
 > ceiling. A live item must therefore be re-posted or moved to
-> `ASSISTANT-HANDOFF.md` before it turns 30 days old.
+> `ASSISTANT-HANDOFF.md` before it turns 14 days old. `cross-machine-sync-check` flags anything past that same ceiling as drift.
 > Older entries: [`MESSAGEBOARD-ARCHIVE.md`](MESSAGEBOARD-ARCHIVE.md).
 > Last archive: 2026-09-13. Newest at top. Format: `### YYYY-MM-DD — device`
 >

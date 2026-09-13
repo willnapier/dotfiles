@@ -511,10 +511,18 @@ pub fn skill_parity(remote: &str) -> Result<Vec<CheckResult>> {
 
 // --- 4. Messageboard staleness ---
 
+/// Age past which an ordinary board item is drift. This is the same number as the
+/// `forum sweep --older-than N` ceiling in `systemd/messageboard-sweep.service`
+/// (daily on nimbini): the sweep archives at the ceiling, so an item older than it
+/// means the sweep did not run or a machine has not synced — never a merely
+/// unclaimed item. Change the two together (2026-09-13, Will: "we can't have drift").
+pub const MESSAGEBOARD_STALE_DAYS: i64 = 14;
+
 /// Walk the board's `### YYYY-MM-DD — device` sections. Returns
 /// (stale descriptions, fresh-message count, forum-pointer count). A section
-/// whose first content line starts with `FORUM OPEN` / `FORUM COMPLETE` is a
-/// forum pointer and never counts as stale.
+/// whose first content line starts with `FORUM OPEN` / `FORUM COMPLETE` /
+/// `FORUM WORK ORDER` is forum-owned — retired by thread state via `forum sweep`,
+/// not by age — and never counts as stale.
 pub fn messageboard_sections(content: &str, today: chrono::NaiveDate) -> (Vec<String>, usize, usize) {
     let mut stale = Vec::new();
     let mut fresh = 0usize;
@@ -537,13 +545,16 @@ pub fn messageboard_sections(content: &str, today: chrono::NaiveDate) -> (Vec<St
                 break;
             }
         }
-        if body_first.starts_with("FORUM OPEN") || body_first.starts_with("FORUM COMPLETE") {
+        if body_first.starts_with("FORUM OPEN")
+            || body_first.starts_with("FORUM COMPLETE")
+            || body_first.starts_with("FORUM WORK ORDER")
+        {
             pointers += 1;
             continue;
         }
         let date_part: Vec<&str> = line
             .trim_start_matches("### ")
-            .split(|c: char| c == ' ' || c == '\u{2014}' || c == '-')
+            .split([' ', '\u{2014}', '-'])
             .take(3)
             .collect();
         let Some(date) = (date_part.len() >= 3)
@@ -553,7 +564,7 @@ pub fn messageboard_sections(content: &str, today: chrono::NaiveDate) -> (Vec<St
             continue;
         };
         let age = (today - date).num_days();
-        if age > 7 {
+        if age > MESSAGEBOARD_STALE_DAYS {
             stale.push(format!("{} ({} days old)", line.trim(), age));
         } else {
             fresh += 1;
@@ -564,16 +575,33 @@ pub fn messageboard_sections(content: &str, today: chrono::NaiveDate) -> (Vec<St
 
 #[cfg(test)]
 mod messageboard_tests {
-    use super::messageboard_sections;
+    use super::{messageboard_sections, MESSAGEBOARD_STALE_DAYS};
 
     #[test]
     fn fresh_pointer_and_stale_are_told_apart() {
         let today = chrono::NaiveDate::from_ymd_opt(2026, 9, 2).unwrap();
-        let board = "# Messageboard\n\n## Messages\n\n### 2026-09-01 — Mac\n\nfresh work order\n\n---\n\n### 2026-08-23 — nimbini\n\nFORUM OPEN — `meta-x` (architecture): pointer\n\n---\n\n### 2026-08-02 — nimbini\n\nold task\n";
+        let board = "# Messageboard\n\n## Messages\n\n### 2026-09-01 — Mac\n\nfresh work order\n\n---\n\n### 2026-08-23 — nimbini\n\nFORUM OPEN — `meta-x` (architecture): pointer\n\n---\n\n### 2026-08-10 — Mac\n\nFORUM WORK ORDER — `meta-y`\n\nbody\n\n---\n\n### 2026-08-02 — nimbini\n\nold task\n";
         let (stale, fresh, pointers) = messageboard_sections(board, today);
         assert_eq!(fresh, 1);
-        assert_eq!(pointers, 1);
+        assert_eq!(pointers, 2, "FORUM OPEN and FORUM WORK ORDER are forum-owned");
         assert_eq!(stale, vec!["### 2026-08-02 — nimbini (31 days old)"]);
+    }
+
+    #[test]
+    fn threshold_matches_the_sweep_ceiling() {
+        // An item exactly at the ceiling is fresh; one day past it is drift. The
+        // service file must carry the same number — read it so the two cannot drift apart.
+        assert_eq!(MESSAGEBOARD_STALE_DAYS, 14);
+        let unit = include_str!("../../../systemd/messageboard-sweep.service");
+        assert!(
+            unit.contains(&format!("forum sweep --older-than {MESSAGEBOARD_STALE_DAYS}")),
+            "messageboard-sweep.service ceiling must equal MESSAGEBOARD_STALE_DAYS"
+        );
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 9, 15).unwrap();
+        let board = "## Messages\n\n### 2026-09-01 — Mac\n\nat ceiling\n\n---\n\n### 2026-08-31 — Mac\n\npast ceiling\n";
+        let (stale, fresh, _) = messageboard_sections(board, today);
+        assert_eq!(fresh, 1);
+        assert_eq!(stale, vec!["### 2026-08-31 — Mac (15 days old)"]);
     }
 }
 
