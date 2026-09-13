@@ -1,4 +1,5 @@
 mod book;
+mod gen;
 mod house;
 mod live;
 
@@ -65,6 +66,9 @@ enum Cmd {
         /// Show formulas instead of values
         #[arg(long)]
         formulas: bool,
+        /// With --format json: numbers as JSON numbers instead of formatted strings
+        #[arg(long)]
+        raw: bool,
     },
     /// Recalculate every formula and compare with the values cached in the file (exit 1 on any difference or error)
     Check {
@@ -108,6 +112,15 @@ enum Cmd {
         keys: bool,
         #[arg(long)]
         json: bool,
+        /// Generate the workbook from the TOML spec instead of reading it (writes --out, default: the Forge file named from the spec date)
+        #[arg(long)]
+        gen: bool,
+        /// With --gen: the TOML spec (default ~/Assistants/shared/house-model/house-model.toml)
+        #[arg(long)]
+        spec: Option<String>,
+        /// With --gen: output .xlsx path
+        #[arg(long)]
+        out: Option<String>,
     },
 }
 
@@ -118,8 +131,10 @@ fn main() {
     }
 }
 
-fn print_dump(book: &Book, sheet: u32, format: Format, formulas: bool) -> Result<()> {
+fn print_dump(book: &Book, sheet: u32, format: Format, formulas: bool, raw: bool) -> Result<()> {
     let (header, rows) = book.dump(sheet, formulas)?;
+    let (min_row, _, min_col, _) = book.dimension(sheet)?;
+    let _ = min_row;
     match format {
         Format::Md => {
             let mut h = vec!["#".to_string()];
@@ -137,7 +152,12 @@ fn print_dump(book: &Book, sheet: u32, format: Format, formulas: bool) -> Result
             let out: Vec<serde_json::Value> = rows.into_iter().map(|(n, c)| {
                 let mut m = serde_json::Map::new();
                 m.insert("row".into(), serde_json::json!(n));
-                for (h, v) in header.iter().zip(c) { m.insert(h.clone(), serde_json::Value::String(v)); }
+                for (j, (h, v)) in header.iter().zip(c).enumerate() {
+                    let val = if raw && !formulas {
+                        match book.number(book::Pos { sheet, row: n, col: min_col + j as i32 }) { Some(x) => serde_json::json!(x), None => serde_json::Value::String(v) }
+                    } else { serde_json::Value::String(v) };
+                    m.insert(h.clone(), val);
+                }
                 serde_json::Value::Object(m)
             }).collect();
             println!("{}", serde_json::to_string_pretty(&out)?);
@@ -200,11 +220,11 @@ fn run() -> Result<()> {
                 }
             }
         }
-        Cmd::Dump { file, sheet, sets, format, formulas } => {
+        Cmd::Dump { file, sheet, sets, format, formulas, raw } => {
             let mut b = Book::open(&file)?;
             b.apply_overrides(&sets)?;
             let s = b.sheet_index(&sheet)?;
-            print_dump(&b, s, format, formulas)?;
+            print_dump(&b, s, format, formulas, raw)?;
         }
         Cmd::Check { file, json } => {
             let rep = Book::check(&file)?;
@@ -233,19 +253,26 @@ fn run() -> Result<()> {
             }
             println!("wrote {out}");
         }
-        Cmd::House { file, sets, live, apply_live, live_from, spend_since, sheet, keys, json } => {
+        Cmd::House { file, sets, live, apply_live, live_from, spend_since, sheet, keys, json, gen, spec, out } => {
             if keys {
                 for (a, l) in house::ALIASES { println!("{a:18} Assumptions@{l}"); }
                 return Ok(());
             }
+            if gen {
+                let spec = match spec { Some(s) => s, None => house::default_spec()?.to_string_lossy().to_string() };
+                let out = match out { Some(o) => o, None => house::default_out(&spec)?.to_string_lossy().to_string() };
+                let n = gen::generate(&spec, &out)?;
+                println!("wrote {out} ({n} formula cells, no errors)");
+                return Ok(());
+            }
             let path = match file { Some(f) => f, None => house::default_file()?.to_string_lossy().to_string() };
             let mut b = Book::open(&path)?;
-            let expanded: Vec<String> = sets.iter().map(|s| house::expand_alias(s)).collect();
+            let expanded: Vec<String> = sets.iter().map(|s| house::expand_alias_for(&b, s)).collect();
             let overrides = b.apply_overrides(&expanded)?;
             if let Some(s) = sheet {
                 let name = match s.to_lowercase().as_str() { "rate" => "Rate sensitivity".to_string(), other => other.to_string() };
                 let idx = b.sheet_index(&name)?;
-                print_dump(&b, idx, if json { Format::Json } else { Format::Md }, false)?;
+                print_dump(&b, idx, if json { Format::Json } else { Format::Md }, false, false)?;
                 return Ok(());
             }
             let h = house::read_house(&b, overrides)?;
@@ -255,7 +282,7 @@ fn run() -> Result<()> {
                     let lo = house::live_overrides(d)?;
                     let mut b2 = Book::open(&path)?;
                     let mut all = expanded.clone();
-                    all.extend(lo.iter().map(|s| house::expand_alias(s)));
+                    all.extend(lo.iter().map(|s| house::expand_alias_for(&b2, s)));
                     let ov = b2.apply_overrides(&all)?;
                     Some(house::read_house(&b2, ov)?)
                 }

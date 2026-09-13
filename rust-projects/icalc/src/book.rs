@@ -177,8 +177,13 @@ impl Book {
         self.model.evaluate();
     }
 
+    /// Write the workbook. IronCalc refuses to overwrite, so write a sibling
+    /// temp file and rename it into place (atomic on the same filesystem).
     pub fn save_as(&self, path: &str) -> Result<()> {
-        save_to_xlsx(&self.model, path).map_err(|e| anyhow!("{e:?}")).with_context(|| format!("saving {path}"))
+        let tmp = format!("{path}.icalc-{}.tmp.xlsx", std::process::id());
+        let _ = std::fs::remove_file(&tmp);
+        save_to_xlsx(&self.model, &tmp).map_err(|e| anyhow!("{e:?}")).with_context(|| format!("saving {tmp}"))?;
+        std::fs::rename(&tmp, path).with_context(|| format!("moving {tmp} into place as {path}"))
     }
 
     pub fn sheet_names(&self) -> Vec<String> {
@@ -667,6 +672,21 @@ mod tests {
         assert_eq!(rep.mismatches.len(), 1);
         assert_eq!(rep.mismatches[0].cached, Some(42.0));
         assert_eq!(rep.mismatches[0].recalculated, Some(63.0));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn save_as_overwrites_an_existing_file_atomically() {
+        let dir = std::env::temp_dir().join(format!("icalc-save-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("twice.xlsx");
+        let b = fixture();
+        b.save_as(path.to_str().unwrap()).unwrap();
+        let first = std::fs::metadata(&path).unwrap().len();
+        b.save_as(path.to_str().unwrap()).unwrap();
+        assert!(first > 0);
+        assert!(Book::open(path.to_str().unwrap()).is_ok());
+        assert!(std::fs::read_dir(&dir).unwrap().flatten().all(|e| !e.file_name().to_string_lossy().contains(".tmp.")), "temp file left behind");
         std::fs::remove_dir_all(&dir).ok();
     }
 

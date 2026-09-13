@@ -3,7 +3,7 @@
 //! Only aggregates cross this boundary (pseudonymised billing report, aggregate
 //! cashflow model, fd-budget summary lines).
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{bail, Context, Result};
 use chrono::{Duration, NaiveDate};
 use serde::{Deserialize, Serialize};
 use std::process::Command;
@@ -73,27 +73,32 @@ impl Cashflow {
     }
 }
 
-/// fd-budget `stats` summary.
+/// fd-budget `stats --json` summary (the subset icalc uses).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SpendFloor {
-    pub from: NaiveDate,
-    pub to: NaiveDate,
+    pub date_from: NaiveDate,
+    pub date_to: NaiveDate,
+    /// Recurring personal living cost (the Spend floor) over the window
     pub spend: f64,
+    #[serde(default)]
     pub income: f64,
+    #[serde(default)]
     pub business: f64,
+    #[serde(default)]
     pub one_off: f64,
+    #[serde(default)]
     pub untagged_debits: u32,
 }
 
 impl SpendFloor {
     pub fn days(&self) -> i64 {
-        (self.to - self.from).num_days().max(1)
+        (self.date_to - self.date_from).num_days().max(1)
     }
     pub fn spend_annualised(&self) -> f64 {
         self.spend * 365.25 / self.days() as f64
     }
     pub fn stale_days(&self, today: NaiveDate) -> i64 {
-        (today - self.to).num_days()
+        (today - self.date_to).num_days()
     }
 }
 
@@ -105,50 +110,8 @@ pub fn parse_cashflow(json: &str) -> Result<Cashflow> {
     serde_json::from_str(json).context("parsing practiceforge cashflow JSON")
 }
 
-fn money_after(line: &str) -> Option<f64> {
-    let i = line.find('£')?;
-    let rest = &line[i + '£'.len_utf8()..];
-    let num: String = rest.chars().take_while(|c| c.is_ascii_digit() || *c == '.' || *c == '-' || *c == ',').collect();
-    num.replace(',', "").parse().ok()
-}
-
-pub fn parse_fd_budget_stats(text: &str) -> Result<SpendFloor> {
-    let mut from = None;
-    let mut to = None;
-    let mut spend = None;
-    let mut income = None;
-    let mut business = None;
-    let mut one_off = None;
-    let mut untagged_debits = 0u32;
-    for line in text.lines() {
-        let l = line.trim();
-        if let Some(r) = l.strip_prefix("Date range:") {
-            let parts: Vec<&str> = r.split(" to ").map(|s| s.trim()).collect();
-            if parts.len() == 2 {
-                from = NaiveDate::parse_from_str(parts[0], "%Y-%m-%d").ok();
-                to = NaiveDate::parse_from_str(parts[1], "%Y-%m-%d").ok();
-            }
-        } else if l.starts_with("Spend (") {
-            spend = money_after(l);
-        } else if l.starts_with("Income (") {
-            income = money_after(l);
-        } else if l.starts_with("Business (") {
-            business = money_after(l);
-        } else if l.starts_with("One-off (") {
-            one_off = money_after(l);
-        } else if l.starts_with("note:") {
-            untagged_debits = l.split_whitespace().nth(1).and_then(|n| n.parse().ok()).unwrap_or(0);
-        }
-    }
-    Ok(SpendFloor {
-        from: from.ok_or_else(|| anyhow!("fd-budget stats: no 'Date range:' line"))?,
-        to: to.ok_or_else(|| anyhow!("fd-budget stats: bad 'Date range:' line"))?,
-        spend: spend.ok_or_else(|| anyhow!("fd-budget stats: no 'Spend (' line"))?,
-        income: income.unwrap_or(0.0),
-        business: business.unwrap_or(0.0),
-        one_off: one_off.unwrap_or(0.0),
-        untagged_debits,
-    })
+pub fn parse_fd_budget_stats(json: &str) -> Result<SpendFloor> {
+    serde_json::from_str(json).context("parsing fd-budget stats --json (fd-budget older than 2026-09-13 has no --json)")
 }
 
 fn run(cmd: &str, args: &[String]) -> Result<String> {
@@ -170,7 +133,7 @@ pub fn fetch_cashflow() -> Result<Cashflow> {
 }
 
 pub fn fetch_spend_floor(since: NaiveDate) -> Result<SpendFloor> {
-    let args = ["stats", "--since", &since.to_string()].map(String::from);
+    let args = ["stats", "--since", &since.to_string(), "--json"].map(String::from);
     parse_fd_budget_stats(&run("fd-budget", &args)?)
 }
 
@@ -187,24 +150,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_fd_budget_summary() {
-        let text = "Transactions: 1358\n  Current: 1249\nTagged: 1189 (87.6%)\nUntagged: 169\nDate range: 2025-09-01 to 2026-06-17\n\nSpend (recurring personal living cost):                £69941.64\nIncome (all credits):                                  £153535.97\nBusiness (professional — excluded from floor):         £14310.88\nOne-off (lumpy — excluded from floor):                 £12296.08  (≈£12296/yr amortised)\nExcluded (transfer/income/tax):                        £57931.85\n  note: 152 untagged debit(s) still counted as spend — tag any\n";
-        let f = parse_fd_budget_stats(text).unwrap();
-        assert_eq!(f.from, NaiveDate::from_ymd_opt(2025, 9, 1).unwrap());
-        assert_eq!(f.to, NaiveDate::from_ymd_opt(2026, 6, 17).unwrap());
-        assert!((f.spend - 69941.64).abs() < 1e-9);
-        assert!((f.business - 14310.88).abs() < 1e-9);
+    fn parses_fd_budget_json_and_annualises() {
+        let j = r#"{"transactions":1305,"current":1196,"visa":109,"tagged":1136,"untagged":169,"date_from":"2025-09-15","date_to":"2026-06-17","spend":67142.81,"income":143535.97,"business":13584.9,"one_off":12296.08,"one_off_annualised":12296.08,"excluded":57931.85,"untagged_debits":152}"#;
+        let f = parse_fd_budget_stats(j).unwrap();
+        assert_eq!(f.date_from, NaiveDate::from_ymd_opt(2025, 9, 15).unwrap());
+        assert_eq!(f.days(), 275);
+        assert!((f.spend_annualised() - 67142.81 * 365.25 / 275.0).abs() < 1e-6);
         assert_eq!(f.untagged_debits, 152);
-        assert_eq!(f.days(), 289);
-        let ann = f.spend_annualised();
-        assert!((ann - 69941.64 * 365.25 / 289.0).abs() < 1e-6);
         assert_eq!(f.stale_days(NaiveDate::from_ymd_opt(2026, 9, 13).unwrap()), 88);
     }
 
     #[test]
-    fn fd_budget_parse_fails_closed_without_spend_line() {
-        assert!(parse_fd_budget_stats("Date range: 2025-01-01 to 2025-02-01\n").is_err());
-        assert!(parse_fd_budget_stats("Spend (x): £1.00\n").is_err());
+    fn fd_budget_parse_fails_closed_on_text_output() {
+        let e = parse_fd_budget_stats("Transactions: 3\nSpend (x): £1.00\n").unwrap_err().to_string();
+        assert!(e.contains("--json"), "{e}");
+        assert!(parse_fd_budget_stats(r#"{"date_from":"2025-01-01"}"#).is_err());
     }
 
     #[test]

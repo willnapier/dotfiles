@@ -22,6 +22,7 @@ pub const ALIASES: &[(&str, &str)] = &[
     ("roof", "Planning roof"),
     ("salary", "Director's salary"),
     ("rent3", "Rooms: rent"),
+    ("rent_3days", "Rooms: rent"),
     ("leigh", "Leigh's fee"),
     ("motor", "Motor vehicle"),
     ("other_costs", "Other recurring"),
@@ -87,6 +88,32 @@ pub fn expand_alias(s: &str) -> String {
         }
     }
     s.to_string()
+}
+
+/// Prefer a workbook defined name (generated workbooks carry one per key); fall
+/// back to the alias table for workbooks converted from the old .fods.
+pub fn expand_alias_for(book: &Book, s: &str) -> String {
+    if let Some(eq) = s.find('=') {
+        let key = s[..eq].trim();
+        if book.defined_names().iter().any(|(n, _, _)| n.eq_ignore_ascii_case(key)) {
+            return s.to_string();
+        }
+    }
+    expand_alias(s)
+}
+
+pub fn default_spec() -> Result<PathBuf> {
+    let p = dirs::home_dir().context("no home dir")?.join("Assistants/shared/house-model/house-model.toml");
+    if !p.exists() {
+        bail!("no spec at {}", p.display());
+    }
+    Ok(p)
+}
+
+/// `~/Forge/Scenario - The House Model (<spec date>).xlsx`
+pub fn default_out(spec_path: &str) -> Result<PathBuf> {
+    let spec = crate::gen::load_spec(spec_path)?;
+    Ok(dirs::home_dir().context("no home dir")?.join("Forge").join(format!("{FILE_PREFIX} ({}).xlsx", spec.meta.date)))
 }
 
 /// Newest `~/Forge/Scenario - The House Model*.xlsx`.
@@ -241,10 +268,10 @@ pub fn drift(book: &Book, report_from: Option<NaiveDate>, spend_since: Option<Na
     };
     if let Some(s) = &spend {
         let living = book.sheet_index("Lives").ok().and_then(|l| book.find_label_row(l, "Will's living, net").ok().map(|r| Pos { sheet: l, row: r, col: 2 })).and_then(|p| book.number(p));
-        rows.push(DriftRow { item: "Personal living, annualised (£/yr) vs model keep-flat".into(), model: living, live: Some(s.spend_annualised()), source: format!("fd-budget spend floor {} to {}; model row is Will's living, net incl. mortgage share", s.from, s.to) });
+        rows.push(DriftRow { item: "Personal living, annualised (£/yr) vs model keep-flat".into(), model: living, live: Some(s.spend_annualised()), source: format!("fd-budget spend floor {} to {}; model row is Will's living, net incl. mortgage share", s.date_from, s.date_to) });
         let stale = s.stale_days(today);
         if stale > 30 {
-            notes.push(format!("fd-budget data ends {} ({stale} days ago) — import fresh midata before trusting the living figure", s.to));
+            notes.push(format!("fd-budget data ends {} ({stale} days ago) — import fresh midata before trusting the living figure", s.date_to));
         }
         if s.untagged_debits > 0 {
             notes.push(format!("fd-budget: {} untagged debits still counted as spend", s.untagged_debits));

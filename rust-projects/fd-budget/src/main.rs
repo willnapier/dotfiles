@@ -94,6 +94,11 @@ enum Commands {
         /// Maximum rows to print (default 30)
         #[arg(long, default_value_t = 30)]
         limit: usize,
+        /// Emit the summary as JSON (machine-readable; amounts as numbers in
+        /// pounds). Summary mode only — not combined with --by-counterparty or
+        /// --by-category.
+        #[arg(long, conflicts_with_all = ["by_counterparty", "by_category"])]
+        json: bool,
     },
     /// Drill into individual bank rows.
     ///
@@ -490,6 +495,7 @@ fn main() -> anyhow::Result<()> {
             month,
             since,
             limit,
+            json,
         } => {
             if by_counterparty {
                 cmd_stats_by_counterparty(year, month.as_deref(), since, limit)?;
@@ -507,7 +513,7 @@ fn main() -> anyhow::Result<()> {
             } else {
                 // --detail / --only have no effect without --by-category (like
                 // --rollup); they are simply not consulted on this path.
-                cmd_stats(year, month.as_deref(), since)?;
+                cmd_stats(year, month.as_deref(), since, json)?;
             }
         }
         Commands::Tx { action } => {
@@ -1900,10 +1906,106 @@ fn cmd_untagged(limit: Option<usize>, include_credits: bool) -> anyhow::Result<(
     Ok(())
 }
 
+/// The `stats` summary: the Spend floor and its exclusion lines. Amounts are
+/// pounds as f64 (2dp Decimals in the store; the conversion is exact for the
+/// magnitudes involved). Serialised by `stats --json` for other tools
+/// (`icalc house --live` reads `spend`, `date_from`/`date_to`, `untagged_debits`).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct StatsSummary {
+    pub transactions: usize,
+    pub current: usize,
+    pub visa: usize,
+    pub tagged: usize,
+    pub untagged: usize,
+    pub date_from: NaiveDate,
+    pub date_to: NaiveDate,
+    /// Recurring personal living cost (the Spend floor)
+    pub spend: f64,
+    /// All credits
+    pub income: f64,
+    /// Professional costs, excluded from the floor (not already one-off)
+    pub business: f64,
+    /// Lumpy spend, excluded from the floor
+    pub one_off: f64,
+    /// One-off amortised per year over the data span (clamped to >= 1 year)
+    pub one_off_annualised: f64,
+    /// Transfer / income-side / tax debits
+    pub excluded: f64,
+    /// Untagged debits still counted in `spend`
+    pub untagged_debits: usize,
+}
+
+fn decimal_to_f64(d: Decimal) -> f64 {
+    use rust_decimal::prelude::ToPrimitive;
+    d.to_f64().unwrap_or(f64::NAN)
+}
+
+/// Pure summary over an already-filtered row set. `None` when empty.
+pub fn stats_summary(rows: &[&fd_budget::Transaction]) -> Option<StatsSummary> {
+    if rows.is_empty() {
+        return None;
+    }
+    let total = rows.len();
+    let tagged = rows.iter().filter(|t| !t.tags.is_empty()).count();
+    let untagged = total - tagged;
+    let current = rows.iter().filter(|t| t.account == Account::Current).count();
+    let visa = rows.iter().filter(|t| t.account == Account::Visa).count();
+    let min_date = rows.iter().map(|t| t.date).min()?;
+    let max_date = rows.iter().map(|t| t.date).max()?;
+
+    // Spend floor: debits that are NOT transfers/income/tax/one-off. Income is
+    // every credit (separable by sign). Excluded = non-spend-tagged debits.
+    // Spend + Excluded == all debits; Income == all credits.
+    let spend: Decimal = rows.iter().filter(|t| t.counts_as_spend()).map(|t| t.amount.abs()).sum();
+    let income: Decimal = rows.iter().filter(|t| t.is_credit()).map(|t| t.amount).sum();
+    // The exclusion lines (One-off / Business / Excluded) form a PRECEDENCE
+    // CHAIN so each non-spend debit is counted on exactly one line. A row
+    // carrying BOTH `one-off` and `business` must not appear in full on two
+    // lines — that would double-count it and break the identity below.
+    // Precedence: one-off FIRST (lumpy spend is the most report-salient bucket
+    // and is amortised), then business-but-not-one-off, then the generic
+    // Excluded remainder (transfer/income/tax). With this chain the printed
+    // lines satisfy exactly:  Spend + Business + One-off + Excluded == all debits.
+    let one_off: Decimal = rows.iter().filter(|t| t.is_debit() && t.is_one_off()).map(|t| t.amount.abs()).sum();
+    let business: Decimal = rows
+        .iter()
+        .filter(|t| t.is_debit() && t.is_business() && !t.is_one_off())
+        .map(|t| t.amount.abs())
+        .sum();
+    // Annualise the one-off pile over the actual data span (clamped to ≥1yr so
+    // a short window can't over-annualise).
+    let span_days = (max_date - min_date).num_days().max(365);
+    let one_off_annual = one_off * Decimal::from(365) / Decimal::from(span_days);
+    let excluded: Decimal = rows
+        .iter()
+        .filter(|t| t.is_debit() && t.is_nonspend() && !t.is_business() && !t.is_one_off())
+        .map(|t| t.amount.abs())
+        .sum();
+    let untagged_debits = rows.iter().filter(|t| t.is_debit() && t.tags.is_empty()).count();
+
+    Some(StatsSummary {
+        transactions: total,
+        current,
+        visa,
+        tagged,
+        untagged,
+        date_from: min_date,
+        date_to: max_date,
+        spend: decimal_to_f64(spend),
+        income: decimal_to_f64(income),
+        business: decimal_to_f64(business),
+        one_off: decimal_to_f64(one_off),
+        one_off_annualised: decimal_to_f64(one_off_annual),
+        excluded: decimal_to_f64(excluded),
+        untagged_debits,
+    })
+}
+
 fn cmd_stats(
     year: Option<i32>,
     month: Option<&str>,
     since: Option<NaiveDate>,
+    json: bool,
 ) -> anyhow::Result<()> {
     let store = CsvStore::new(get_store_path());
     let transactions = store.load_all()?;
@@ -1918,112 +2020,51 @@ fn cmd_stats(
         .iter()
         .filter(|t| filter.matches(t.date))
         .collect();
-    if rows.is_empty() {
+    let Some(s) = stats_summary(&rows) else {
+        if json {
+            anyhow::bail!("No transactions in the selected period");
+        }
         eprintln!("No transactions in the selected period");
+        return Ok(());
+    };
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&s)?);
         return Ok(());
     }
 
-    let total = rows.len();
-    let tagged = rows.iter().filter(|t| !t.tags.is_empty()).count();
-    let untagged = total - tagged;
-
-    let current = rows
-        .iter()
-        .filter(|t| t.account == Account::Current)
-        .count();
-    let visa = rows.iter().filter(|t| t.account == Account::Visa).count();
-
-    let dates: Vec<_> = rows.iter().map(|t| t.date).collect();
-    let min_date = dates.iter().min().unwrap();
-    let max_date = dates.iter().max().unwrap();
-
-    // Spend floor: debits that are NOT transfers/income/tax/one-off. Income is
-    // every credit (separable by sign). Excluded = non-spend-tagged debits.
-    // Spend + Excluded == all debits; Income == all credits.
-    let spend: Decimal = rows
-        .iter()
-        .filter(|t| t.counts_as_spend())
-        .map(|t| t.amount.abs())
-        .sum();
-    let income: Decimal = rows
-        .iter()
-        .filter(|t| t.is_credit())
-        .map(|t| t.amount)
-        .sum();
-    // The exclusion lines (One-off / Business / Excluded) form a PRECEDENCE
-    // CHAIN so each non-spend debit is counted on exactly one line. A row
-    // carrying BOTH `one-off` and `business` must not appear in full on two
-    // lines — that would double-count it and break the identity below.
-    // Precedence: one-off FIRST (lumpy spend is the most report-salient bucket
-    // and is amortised), then business-but-not-one-off, then the generic
-    // Excluded remainder (transfer/income/tax). With this chain the printed
-    // lines satisfy exactly:  Spend + Business + One-off + Excluded == all debits.
-    //
-    // One-off / lumpy costs (a subset of nonspend) shown on their own line +
-    // amortised over the data span, so the recurring floor is read cleanly and
-    // the lumpy spend isn't simply lost in the generic Excluded bucket.
-    let one_off: Decimal = rows
-        .iter()
-        .filter(|t| t.is_debit() && t.is_one_off())
-        .map(|t| t.amount.abs())
-        .sum();
-    // Business / professional costs (a subset of nonspend) shown on their own
-    // line — but only those NOT already claimed by the one-off line above, so a
-    // dual-tagged row lands in One-off only. The generic Excluded line then
-    // carries only transfer/income/tax.
-    let business: Decimal = rows
-        .iter()
-        .filter(|t| t.is_debit() && t.is_business() && !t.is_one_off())
-        .map(|t| t.amount.abs())
-        .sum();
-    // Annualise the one-off pile over the actual data span (clamped to ≥1yr so
-    // a short window can't over-annualise). The sinking-fund-style figure: what
-    // the lumpy spend costs per year on average. `smooth` sizes the buffer; this
-    // is just the headline annual amortisation alongside the floor.
-    let span_days = (*max_date - *min_date).num_days().max(365);
-    let one_off_annual = one_off * Decimal::from(365) / Decimal::from(span_days);
-    let excluded: Decimal = rows
-        .iter()
-        .filter(|t| t.is_debit() && t.is_nonspend() && !t.is_business() && !t.is_one_off())
-        .map(|t| t.amount.abs())
-        .sum();
-    let untagged_debits = rows
-        .iter()
-        .filter(|t| t.is_debit() && t.tags.is_empty())
-        .count();
-
-    println!("Transactions: {}", total);
-    println!("  Current: {}", current);
-    println!("  Visa: {}", visa);
+    println!("Transactions: {}", s.transactions);
+    println!("  Current: {}", s.current);
+    println!("  Visa: {}", s.visa);
     println!(
         "Tagged: {} ({:.1}%)",
-        tagged,
-        (tagged as f64 / total as f64) * 100.0
+        s.tagged,
+        (s.tagged as f64 / s.transactions as f64) * 100.0
     );
-    println!("Untagged: {}", untagged);
-    println!("Date range: {} to {}", min_date, max_date);
+    println!("Untagged: {}", s.untagged);
+    println!("Date range: {} to {}", s.date_from, s.date_to);
     println!();
     println!(
         "{:<54} £{:.2}",
-        "Spend (recurring personal living cost):", spend
+        "Spend (recurring personal living cost):", s.spend
     );
-    println!("{:<54} £{:.2}", "Income (all credits):", income);
+    println!("{:<54} £{:.2}", "Income (all credits):", s.income);
     println!(
         "{:<54} £{:.2}",
-        "Business (professional — excluded from floor):", business
+        "Business (professional — excluded from floor):", s.business
     );
     println!(
         "{:<54} £{:.2}  (≈£{:.0}/yr amortised)",
-        "One-off (lumpy — excluded from floor):", one_off, one_off_annual
+        "One-off (lumpy — excluded from floor):", s.one_off, s.one_off_annualised
     );
     println!(
         "{:<54} £{:.2}",
-        "Excluded (transfer/income/tax):", excluded
+        "Excluded (transfer/income/tax):", s.excluded
     );
-    if untagged_debits > 0 {
+    if s.untagged_debits > 0 {
         println!(
             "  note: {} untagged debit(s) still counted as spend — tag any one-off lumps (tax, gym, etc.) so the Spend floor settles",
-            untagged_debits
+            s.untagged_debits
         );
     }
 
@@ -2683,5 +2724,62 @@ mod tests {
         assert!(validate_tags(&s(&["housing|flat"])).is_err());
         assert!(validate_tags(&s(&["  "])).is_err());
         assert_eq!(validate_tags(&s(&["  housing  "])).unwrap(), s(&["housing"]));
+    }
+}
+
+#[cfg(test)]
+mod stats_summary_tests {
+    use super::*;
+    use fd_budget::{Transaction, TxType};
+    use std::str::FromStr;
+
+    fn tx(date: &str, amount: &str, tags: &[&str]) -> Transaction {
+        Transaction {
+            date: NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap(),
+            account: Account::Current,
+            tx_type: TxType::Contactless,
+            amount: Decimal::from_str(amount).unwrap(),
+            description: "x".into(),
+            raw_description: "x".into(),
+            balance: None,
+            tags: tags.iter().map(|s| s.to_string()).collect(),
+            import_id: "id".into(),
+        }
+    }
+
+    #[test]
+    fn summary_lines_partition_all_debits_and_serialise() {
+        let rows = vec![
+            tx("2025-01-01", "-100.10", &["groceries"]),
+            tx("2025-06-01", "-50.00", &[]),            // untagged -> spend, counted
+            tx("2025-06-02", "-20.00", &["business"]),
+            tx("2025-06-03", "-30.00", &["one-off", "business"]), // one-off wins
+            tx("2025-06-04", "-40.00", &["transfer"]),
+            tx("2025-12-31", "200.00", &["income"]),
+        ];
+        let refs: Vec<&Transaction> = rows.iter().collect();
+        let s = stats_summary(&refs).unwrap();
+        assert_eq!(s.transactions, 6);
+        assert_eq!(s.untagged, 1);
+        assert_eq!(s.untagged_debits, 1);
+        assert_eq!(s.date_from.to_string(), "2025-01-01");
+        assert_eq!(s.date_to.to_string(), "2025-12-31");
+        assert!((s.spend - 150.10).abs() < 1e-9);
+        assert!((s.income - 200.0).abs() < 1e-9);
+        assert!((s.business - 20.0).abs() < 1e-9);
+        assert!((s.one_off - 30.0).abs() < 1e-9);
+        assert!((s.excluded - 40.0).abs() < 1e-9);
+        // identity: spend + business + one_off + excluded == all debits
+        assert!(((s.spend + s.business + s.one_off + s.excluded) - 240.10).abs() < 1e-9);
+        // span is 364 days -> clamped to 365 -> annualised == one_off
+        assert!((s.one_off_annualised - 30.0).abs() < 1e-9);
+        let j = serde_json::to_value(&s).unwrap();
+        assert_eq!(j["date_to"], "2025-12-31");
+        assert_eq!(j["spend"].as_f64().unwrap(), 150.10);
+    }
+
+    #[test]
+    fn summary_is_none_for_no_rows() {
+        assert!(stats_summary(&[]).is_none());
     }
 }
