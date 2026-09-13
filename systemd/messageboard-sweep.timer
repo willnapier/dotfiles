@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Messageboard sweep (07:20, before the 08:00 system-health-check; nimbini is the single writer)
+Requires=messageboard-sweep.service
+
+[Timer]
+OnCalendar=*-*-* 07:20:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

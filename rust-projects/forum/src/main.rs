@@ -82,6 +82,19 @@ enum Commands {
     },
     /// Mark unread completion receipts for a thread or job as seen
     Acknowledge { id: String },
+    /// Archive Messageboard items whose forum state says they are finished: acknowledged
+    /// FORUM COMPLETE notices, FORUM OPEN pointers to threads no longer open, and work
+    /// orders whose thread carries an Implementation receipt. Ordinary items are untouched
+    /// unless `--older-than` applies the age ceiling.
+    Sweep {
+        /// Report what would be archived without touching the board
+        #[arg(long)]
+        dry_run: bool,
+        /// Also archive ordinary items older than this many days
+        /// (`messageboard-edit archive-older-than`; FORUM OPEN pointers and work orders exempt)
+        #[arg(long)]
+        older_than: Option<u32>,
+    },
     /// List forum threads from INDEX.md
     List,
     /// Validate paths, harness commands, and the forum index
@@ -489,6 +502,10 @@ fn run() -> Result<()> {
         Commands::Decision { id } => cmd_decision(&root, &id),
         Commands::Inbox { all, format } => cmd_inbox(&root, all, format),
         Commands::Acknowledge { id } => cmd_acknowledge(&root, &id),
+        Commands::Sweep {
+            dry_run,
+            older_than,
+        } => cmd_sweep(&root, dry_run, older_than),
         Commands::List => cmd_list(&root),
         Commands::Doctor => cmd_doctor(&root, &config),
     }
@@ -2187,14 +2204,15 @@ fn markdown_list(items: &[String]) -> String {
 }
 
 fn post_messageboard_message(message: &str) -> Result<()> {
-    run_messageboard_edit(&["insert", message])
+    run_messageboard_edit(&["insert", message]).map(|_| ())
 }
 
 fn archive_messageboard_containing(needle: &str) -> Result<()> {
-    run_messageboard_edit(&["archive-containing", needle])
+    run_messageboard_edit(&["archive-containing", needle]).map(|_| ())
 }
 
-fn run_messageboard_edit(args: &[&str]) -> Result<()> {
+/// Run `messageboard-edit` and return its trimmed stdout.
+fn run_messageboard_edit(args: &[&str]) -> Result<String> {
     if !command_exists("messageboard-edit") {
         bail!("messageboard-edit is not available on PATH");
     }
@@ -2211,6 +2229,260 @@ fn run_messageboard_edit(args: &[&str]) -> Result<()> {
             output.status,
             String::from_utf8_lossy(&output.stderr).trim()
         );
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+// --- Messageboard sweep ---
+//
+// The board's clearing protocol ("cleared by the responsible receiver once
+// addressed") has no mechanism behind it, so finished items strand. Three
+// classes of item have a completion condition the forum already records:
+// a FORUM COMPLETE notice is finished when its receipt is acknowledged, a
+// FORUM OPEN pointer when the thread is no longer open, a work order when the
+// thread carries an `### Implementation receipt`. `forum sweep` archives
+// exactly those, through `messageboard-edit archive-containing`, and leaves
+// every ordinary item alone: an unclaimed item is not a stale item (thread
+// `meta-messageboard-done-when`). The age ceiling is opt-in via
+// `--older-than` and exempts the forum-owned classes.
+
+const FORUM_COMPLETE_MARKER: &str = "<!-- forum-complete:";
+const FORUM_WORK_ORDER_MARKER: &str = "<!-- forum-work-order:";
+const FORUM_POINTER_PREFIXES: [&str; 2] = ["FORUM OPEN", "FORUM:"];
+
+#[derive(Debug, PartialEq)]
+enum SweepReason {
+    CompleteAcknowledged { job_id: String },
+    PointerClosed { thread_id: String, status: String },
+    WorkOrderReceipted { thread_id: String },
+}
+
+/// One archive instruction: the needle handed to `messageboard-edit archive-containing`.
+#[derive(Debug, PartialEq)]
+struct SweepAction {
+    needle: String,
+    reason: SweepReason,
+}
+
+#[derive(Debug, Clone)]
+struct ThreadState {
+    status: String,
+    receipted: bool,
+}
+
+/// The `### ` sections below `## Messages`, each as (header line, full section text).
+fn board_sections(board: &str) -> Vec<(String, String)> {
+    let mut sections = Vec::new();
+    let mut current: Option<(String, Vec<&str>)> = None;
+    let mut in_messages = false;
+    for line in board.lines() {
+        if !in_messages {
+            in_messages = line == "## Messages";
+            continue;
+        }
+        if line.starts_with("### ") {
+            if let Some((header, body)) = current.take() {
+                sections.push((header, body.join("\n")));
+            }
+            current = Some((line.to_string(), vec![line]));
+        } else if let Some((_, body)) = current.as_mut() {
+            body.push(line);
+        }
+    }
+    if let Some((header, body)) = current.take() {
+        sections.push((header, body.join("\n")));
+    }
+    sections
+}
+
+/// The full `<!-- prefix:VALUE -->` marker and its VALUE, when the section carries one.
+fn marker_in<'a>(section: &'a str, prefix: &str) -> Option<(&'a str, &'a str)> {
+    let start = section.find(prefix)?;
+    let rest = &section[start..];
+    let end = rest.find(" -->")?;
+    let marker = &rest[..end + " -->".len()];
+    let value = rest[prefix.len()..end].trim();
+    (!value.is_empty()).then_some((marker, value))
+}
+
+fn first_body_line(section: &str) -> Option<&str> {
+    section
+        .lines()
+        .skip(1)
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+}
+
+/// The longest thread id mentioned in the section. Longest wins because ids nest
+/// (`meta-x` is a prefix of `meta-x-impl-review`); a pointer to the child must not
+/// be judged by the parent's status.
+fn mentioned_thread<'a>(
+    section: &str,
+    threads: &'a BTreeMap<String, ThreadState>,
+) -> Option<&'a str> {
+    threads
+        .keys()
+        .filter(|id| section.contains(id.as_str()))
+        .max_by_key(|id| id.len())
+        .map(String::as_str)
+}
+
+/// Decide which sections the forum state says are finished. Returns the archive
+/// actions and human-readable notes for sections it deliberately skipped.
+fn sweep_actions(
+    board: &str,
+    threads: &BTreeMap<String, ThreadState>,
+    acknowledged_jobs: &BTreeSet<String>,
+) -> (Vec<SweepAction>, Vec<String>) {
+    let sections = board_sections(board);
+    let mut actions = Vec::new();
+    let mut notes = Vec::new();
+    for (header, text) in &sections {
+        if let Some((marker, job_id)) = marker_in(text, FORUM_COMPLETE_MARKER) {
+            if acknowledged_jobs.contains(job_id) {
+                actions.push(SweepAction {
+                    needle: marker.to_string(),
+                    reason: SweepReason::CompleteAcknowledged {
+                        job_id: job_id.to_string(),
+                    },
+                });
+            }
+            continue;
+        }
+        if let Some((marker, thread_id)) = marker_in(text, FORUM_WORK_ORDER_MARKER) {
+            if threads.get(thread_id).is_some_and(|t| t.receipted) {
+                actions.push(SweepAction {
+                    needle: marker.to_string(),
+                    reason: SweepReason::WorkOrderReceipted {
+                        thread_id: thread_id.to_string(),
+                    },
+                });
+            }
+            continue;
+        }
+        let Some(first) = first_body_line(text) else {
+            continue;
+        };
+        if !FORUM_POINTER_PREFIXES.iter().any(|p| first.starts_with(p)) {
+            continue;
+        }
+        let Some(thread_id) = mentioned_thread(text, threads) else {
+            notes.push(format!(
+                "skip {header}: forum pointer names no known thread"
+            ));
+            continue;
+        };
+        let state = &threads[thread_id];
+        if state.status == "open" {
+            continue;
+        }
+        // No marker to address the section by, so use its first body line and
+        // require it to be unique on the board: archive-containing takes every
+        // section containing the needle.
+        let hits = sections.iter().filter(|(_, t)| t.contains(first)).count();
+        if hits != 1 {
+            notes.push(format!(
+                "skip {header}: pointer to {} thread `{thread_id}` but its first line matches {hits} sections",
+                state.status
+            ));
+            continue;
+        }
+        actions.push(SweepAction {
+            needle: first.to_string(),
+            reason: SweepReason::PointerClosed {
+                thread_id: thread_id.to_string(),
+                status: state.status.clone(),
+            },
+        });
+    }
+    (actions, notes)
+}
+
+fn thread_states(root: &Path) -> Result<BTreeMap<String, ThreadState>> {
+    let mut threads = BTreeMap::new();
+    for path in thread_files(root)? {
+        let raw = fs::read_to_string(&path)?;
+        let Some(id) = frontmatter_value(&raw, "id") else {
+            continue;
+        };
+        let status = frontmatter_value(&raw, "status").unwrap_or_else(|| "unknown".to_string());
+        let receipted = raw
+            .lines()
+            .any(|line| line.starts_with("### Implementation receipt"));
+        threads.insert(id, ThreadState { status, receipted });
+    }
+    Ok(threads)
+}
+
+fn describe_reason(reason: &SweepReason) -> String {
+    match reason {
+        SweepReason::CompleteAcknowledged { job_id } => {
+            format!("FORUM COMPLETE acknowledged ({job_id})")
+        }
+        SweepReason::PointerClosed { thread_id, status } => {
+            format!("pointer to {status} thread `{thread_id}`")
+        }
+        SweepReason::WorkOrderReceipted { thread_id } => {
+            format!("work order receipted in `{thread_id}`")
+        }
+    }
+}
+
+fn cmd_sweep(root: &Path, dry_run: bool, older_than: Option<u32>) -> Result<()> {
+    let board_path = root
+        .parent()
+        .ok_or_else(|| anyhow!("forum root has no shared-directory parent"))?
+        .join("MESSAGEBOARD.md");
+    if !board_path.is_file() {
+        println!(
+            "no Messageboard at {}; nothing to sweep",
+            board_path.display()
+        );
+        return Ok(());
+    }
+    let board = fs::read_to_string(&board_path)?;
+    let threads = thread_states(root)?;
+    let acknowledged: BTreeSet<String> = read_receipts(&acknowledged_inbox_dir(root), true)?
+        .into_iter()
+        .map(|(_, receipt)| receipt.job_id)
+        .collect();
+    let (actions, notes) = sweep_actions(&board, &threads, &acknowledged);
+    let total = board_sections(&board).len();
+    let verb = if dry_run { "would archive" } else { "archive" };
+    for action in &actions {
+        let preview: String = action.needle.chars().take(72).collect();
+        println!("{verb}  {}  — {preview}", describe_reason(&action.reason));
+    }
+    for note in &notes {
+        println!("{note}");
+    }
+
+    let mut failures = 0usize;
+    if !dry_run {
+        for action in &actions {
+            if let Err(error) = archive_messageboard_containing(&action.needle) {
+                failures += 1;
+                eprintln!("warning: archive failed for {}: {error:#}", action.needle);
+            }
+        }
+    }
+    println!(
+        "sweep: {} of {total} section(s) finished by forum state{}",
+        actions.len(),
+        if dry_run { " (dry run)" } else { "" }
+    );
+
+    if let Some(days) = older_than {
+        let days = days.to_string();
+        let report = if dry_run {
+            run_messageboard_edit(&["unclaimed", &days])?
+        } else {
+            run_messageboard_edit(&["archive-older-than", &days])?
+        };
+        println!("{report}");
+    }
+    if failures > 0 {
+        bail!("{failures} archive action(s) failed");
     }
     Ok(())
 }
@@ -4134,5 +4406,117 @@ mod tests {
         fs::write(temp.path().join("meta/.shadow/test-thread-r1-fake-1.md"), delegated_thread()).unwrap();
         let lints = doctor_lints(temp.path()).unwrap();
         assert!(lints.last().unwrap().contains("0 decided thread(s)"));
+    }
+}
+
+#[cfg(test)]
+mod sweep_tests {
+    use super::*;
+
+    fn state(status: &str, receipted: bool) -> ThreadState {
+        ThreadState {
+            status: status.to_string(),
+            receipted,
+        }
+    }
+
+    fn board() -> String {
+        [
+            "# Messageboard\n\n> header mentions FORUM OPEN and meta-x but is not a section\n\n## Messages",
+            "### 2026-09-13 — mac\n\nordinary live item mentioning meta-x, untouched\n\n---",
+            "### 2026-09-11 — nimbini\n\nFORUM COMPLETE — `meta-x` round 1\n\n<!-- forum-complete:meta-x-r1-1 -->\n\n---",
+            "### 2026-09-11 — nimbini\n\nFORUM COMPLETE — `meta-y` round 1\n\n<!-- forum-complete:meta-y-r1-2 -->\n\n---",
+            "### 2026-09-10 — mac\n\nFORUM WORK ORDER — `meta-x`\n\nbody\n\n<!-- forum-work-order:meta-x -->\n\n---",
+            "### 2026-09-10 — mac\n\nFORUM WORK ORDER — `meta-y`\n\nbody\n\n<!-- forum-work-order:meta-y -->\n\n---",
+            "### 2026-09-09 — nimbini\n\nFORUM OPEN — `meta-x` (architecture): decided since\n\n---",
+            "### 2026-09-09 — nimbini\n\nFORUM OPEN — `meta-y` (architecture): still open\n\n---",
+            "### 2026-09-08 — mac\n\nFORUM: meta-x-impl-review opened — child of meta-x\n\n---",
+            "### 2026-09-07 — mac\n\nFORUM OPEN — `meta-unknown` (ops): no such thread\n",
+        ]
+        .join("\n\n")
+    }
+
+    fn threads() -> BTreeMap<String, ThreadState> {
+        BTreeMap::from([
+            ("meta-x".to_string(), state("decided", true)),
+            ("meta-x-impl-review".to_string(), state("open", false)),
+            ("meta-y".to_string(), state("open", false)),
+        ])
+    }
+
+    #[test]
+    fn board_sections_start_below_messages_heading() {
+        let sections = board_sections(&board());
+        assert_eq!(sections.len(), 9);
+        assert!(sections[0].0.starts_with("### 2026-09-13"));
+        assert!(sections[8].1.contains("meta-unknown"));
+    }
+
+    #[test]
+    fn marker_in_returns_marker_and_value() {
+        let text = "x\n\n<!-- forum-complete:job-1 -->\n";
+        assert_eq!(
+            marker_in(text, FORUM_COMPLETE_MARKER),
+            Some(("<!-- forum-complete:job-1 -->", "job-1"))
+        );
+        assert_eq!(marker_in("no marker", FORUM_COMPLETE_MARKER), None);
+        assert_eq!(marker_in("<!-- forum-complete: -->", FORUM_COMPLETE_MARKER), None);
+    }
+
+    #[test]
+    fn sweep_archives_only_what_forum_state_has_finished() {
+        let acknowledged = BTreeSet::from(["meta-x-r1-1".to_string()]);
+        let (actions, notes) = sweep_actions(&board(), &threads(), &acknowledged);
+        assert_eq!(
+            actions,
+            vec![
+                SweepAction {
+                    needle: "<!-- forum-complete:meta-x-r1-1 -->".into(),
+                    reason: SweepReason::CompleteAcknowledged {
+                        job_id: "meta-x-r1-1".into()
+                    },
+                },
+                SweepAction {
+                    needle: "<!-- forum-work-order:meta-x -->".into(),
+                    reason: SweepReason::WorkOrderReceipted {
+                        thread_id: "meta-x".into()
+                    },
+                },
+                SweepAction {
+                    needle: "FORUM OPEN — `meta-x` (architecture): decided since".into(),
+                    reason: SweepReason::PointerClosed {
+                        thread_id: "meta-x".into(),
+                        status: "decided".into()
+                    },
+                },
+            ]
+        );
+        // The impl-review pointer names the open child, not the decided parent;
+        // the unknown-thread pointer is reported, never guessed at.
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(notes[0].contains("meta-unknown") || notes[0].contains("2026-09-07"));
+    }
+
+    #[test]
+    fn unread_complete_and_unreceipted_work_order_and_open_pointer_stay() {
+        let (actions, _) = sweep_actions(&board(), &threads(), &BTreeSet::new());
+        let needles: Vec<&str> = actions.iter().map(|a| a.needle.as_str()).collect();
+        assert!(!needles.iter().any(|n| n.contains("meta-y")), "{needles:?}");
+        assert!(!needles.iter().any(|n| n.contains("meta-x-r1-1")), "{needles:?}");
+    }
+
+    #[test]
+    fn duplicate_pointer_first_line_is_skipped_not_archived() {
+        let dup = "# Messageboard\n\n## Messages\n\n### 2026-09-09 — a\n\nFORUM OPEN — `meta-x` same line\n\n---\n\n### 2026-09-08 — b\n\nFORUM OPEN — `meta-x` same line\n";
+        let (actions, notes) = sweep_actions(dup, &threads(), &BTreeSet::new());
+        assert!(actions.is_empty());
+        assert_eq!(notes.len(), 2);
+        assert!(notes[0].contains("matches 2 sections"));
+    }
+
+    #[test]
+    fn empty_board_yields_nothing() {
+        let (actions, notes) = sweep_actions("# Messageboard\n\n## Messages\n", &threads(), &BTreeSet::new());
+        assert!(actions.is_empty() && notes.is_empty());
     }
 }

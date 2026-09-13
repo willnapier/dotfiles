@@ -506,6 +506,11 @@ depends = ["shared"]
 "systemd/continuum-auto-import.timer" = "~/.config/systemd/user/continuum-auto-import.timer"
 "systemd/usagewatch-monitor.service" = "~/.config/systemd/user/usagewatch-monitor.service"
 "systemd/usagewatch-monitor.timer" = "~/.config/systemd/user/usagewatch-monitor.timer"
+# Messageboard sweep — daily `forum sweep --older-than 30` (07:20). nimbini is the
+# single writer; the Mac has no counterpart on purpose (two writers on a Syncthing
+# file invite conflict copies). Added 2026-09-13.
+"systemd/messageboard-sweep.service" = "~/.config/systemd/user/messageboard-sweep.service"
+"systemd/messageboard-sweep.timer" = "~/.config/systemd/user/messageboard-sweep.timer"
 "rustic/nimbini-general.toml" = "~/.config/rustic/nimbini-general.toml"
 "rustic/nimbini-photos.toml" = "~/.config/rustic/nimbini-photos.toml"
 "systemd/rustic-backup.service" = "~/.config/systemd/user/rustic-backup.service"

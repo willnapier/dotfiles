@@ -32,10 +32,17 @@ const LIVE_HEADER = "# Messageboard
 > **Clearing:** `messageboard-edit unclaimed 7` reports what nobody has cleared
 > (report-only — unclaimed is NOT the same as stale; most stranded items are
 > real work awaiting a machine that has not run a session). Verify, then
-> `archive-containing <unique text>`. `archive-older-than 30` is a blunt
-> fallback and usually a no-op: stranded items are unclaimed, not old.
+> `archive-containing <unique text>`.
+> **Automatic sweep:** `forum sweep --older-than 30` runs daily on nimbini
+> (`messageboard-sweep.timer`, 07:20). It archives what forum state proves
+> finished — acknowledged FORUM COMPLETE notices, FORUM OPEN pointers to
+> threads no longer open, work orders whose thread has an
+> `### Implementation receipt` — plus ordinary items older than 30 days.
+> FORUM OPEN pointers and unreceipted work orders are exempt from the age
+> ceiling. A live item must therefore be re-posted or moved to
+> `ASSISTANT-HANDOFF.md` before it turns 30 days old.
 > Older entries: [`MESSAGEBOARD-ARCHIVE.md`](MESSAGEBOARD-ARCHIVE.md).
-> Last archive: 2026-08-25. Newest at top. Format: `### YYYY-MM-DD — device`
+> Last archive: 2026-09-13. Newest at top. Format: `### YYYY-MM-DD — device`
 >
 > **Sync is automatic.** `messageboard-edit` triggers a Syncthing rescan.
 > Raw Edit/Write is blocked; never hand-edit this file.
@@ -52,7 +59,7 @@ const ARCHIVE_HEADER = "# Messageboard archive
 
 Historical inbox items, newest-first. The live file is the current inbox only — see [`MESSAGEBOARD.md`](MESSAGEBOARD.md).
 
-> Last archive: 2026-08-25 (moved shipped narratives, decided-forum pointers, and stale ordinary items from 2026-06-03 through 2026-08-23). Search this file; do not grow the live inbox.
+> Last archive: 2026-09-13 (manual sweep of shipped narratives, decided-forum pointers, receipted work orders, and resolved ordinary items from 2026-08-21 through 2026-09-11; `forum sweep` now runs daily on nimbini). Search this file; do not grow the live inbox.
 
 ## Messages"
 
@@ -182,8 +189,12 @@ def section-date [section: string] {
     }
 }
 
-def is-forum-open [section: string] {
-    $section | str contains "FORUM OPEN —"
+# Forum-owned items are retired by forum state, not by age: a FORUM OPEN
+# pointer when its thread closes, a dispatched work order when its thread
+# carries an `### Implementation receipt`. `forum sweep` archives both; the
+# age ceiling here must leave them alone or it would bury live instructions.
+def is-forum-owned [section: string] {
+    ($section | str contains "FORUM OPEN —") or ($section | str contains "<!-- forum-work-order:")
 }
 
 def main [action: string, content?: string, ...rest: string] {
@@ -315,7 +326,7 @@ def main [action: string, content?: string, ...rest: string] {
             mut keep_sections = []
             mut archive_sections = []
             for section in $parsed.sections {
-                if (is-forum-open $section) {
+                if (is-forum-owned $section) {
                     $keep_sections = ($keep_sections | append $section)
                     continue
                 }
@@ -337,7 +348,7 @@ def main [action: string, content?: string, ...rest: string] {
             }
             prepend-to-archive $archive_sections
             write-live $keep_sections
-            print $"✅ Archived ($archive_sections | length) ordinary items older than ($days) days; kept ($keep_sections | length); FORUM OPEN pointers retained"
+            print $"✅ Archived ($archive_sections | length) ordinary items older than ($days) days; kept ($keep_sections | length); FORUM OPEN pointers and unreceipted work orders retained"
         }
 
         # Report items nobody has cleared. Deliberately READ-ONLY: an unclaimed
@@ -358,7 +369,7 @@ def main [action: string, content?: string, ...rest: string] {
             let parsed = (parse-board (open $file))
             let stale = (
                 $parsed.sections
-                | where {|s| not (is-forum-open $s) }
+                | where {|s| not (is-forum-owned $s) }
                 | where {|s|
                     let d = (section-date $s)
                     ($d == null) or ($d < $cutoff)
