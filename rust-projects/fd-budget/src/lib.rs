@@ -2,6 +2,7 @@ pub mod coverage;
 pub mod dedup;
 pub mod enrich;
 pub mod import;
+pub mod merge;
 pub mod paypal;
 pub mod query;
 pub mod smooth;

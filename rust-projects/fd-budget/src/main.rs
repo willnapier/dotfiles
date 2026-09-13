@@ -10,7 +10,7 @@ use fd_budget::{
 use rust_decimal::Decimal;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(name = "fd-budget")]
@@ -99,6 +99,26 @@ enum Commands {
         /// --by-category.
         #[arg(long, conflicts_with_all = ["by_counterparty", "by_category"])]
         json: bool,
+    },
+    /// Merge another machine's store into this one (dry-run by default).
+    ///
+    /// Rows are matched by import_id; rows that are the same transaction under a
+    /// different id (two First Direct export schemas) are paired as twins by
+    /// account, date, amount and running balance and kept once; tags are unioned;
+    /// an unknown tx_type is filled from the other side. With --rules, the other
+    /// store's rules the local rules.toml lacks are appended (shared patterns keep
+    /// the local tags; differences are listed for you to reconcile). --apply
+    /// snapshots transactions.csv (and rules.toml) first.
+    Merge {
+        /// The other machine's transactions.csv
+        #[arg(long)]
+        from: PathBuf,
+        /// The other machine's rules.toml (optional)
+        #[arg(long)]
+        rules: Option<PathBuf>,
+        /// Write the merged store (default: report only)
+        #[arg(long)]
+        apply: bool,
     },
     /// Drill into individual bank rows.
     ///
@@ -518,6 +538,9 @@ fn main() -> anyhow::Result<()> {
         }
         Commands::Tx { action } => {
             cmd_tx(action)?;
+        }
+        Commands::Merge { from, rules, apply } => {
+            cmd_merge(&from, rules.as_deref(), apply)?;
         }
         Commands::Categorize {
             limit,
@@ -1596,6 +1619,62 @@ fn remove_tags_from_row(tx: &mut fd_budget::Transaction, tags: &[String]) -> Vec
 /// `tag unset` — remove tag(s) from one row (by import_id) or from every row
 /// matching `--merchant`. Rules are deliberately left alone: this fixes DATA,
 /// not the rule engine. Snapshots the store before any rewrite (primer rule 3).
+fn cmd_merge(from: &Path, rules: Option<&Path>, apply: bool) -> anyhow::Result<()> {
+    use fd_budget::merge::{merge_rules, merge_stores};
+    let store = CsvStore::new(get_store_path());
+    let local = store.load_all()?;
+    let other = CsvStore::new(from).load_all()?;
+    if other.is_empty() {
+        anyhow::bail!("{} has no rows", from.display());
+    }
+    let (merged, rep) = merge_stores(local, other);
+    println!("merge {} into {}", from.display(), get_store_path().display());
+    println!("  local rows:        {}", rep.local_rows);
+    println!("  other rows:        {}", rep.other_rows);
+    println!("  shared by id:      {}", rep.shared);
+    println!("  twins (kept once): {}", rep.twins);
+    println!("  added (new):       {}", rep.added);
+    println!("  tags merged into:  {} rows", rep.tags_merged);
+    println!("  tx_type filled on: {} rows", rep.tx_type_filled);
+    println!("  merged total:      {}", merged.len());
+    for (l, o) in rep.twin_pairs.iter().take(5) {
+        println!("  twin: local {} <- other {}", l, o);
+    }
+    if rep.twin_pairs.len() > 5 {
+        println!("  … {} more twins", rep.twin_pairs.len() - 5);
+    }
+    let mut rules_plan = None;
+    if let Some(rp) = rules {
+        let mut local_rules = TagRules::load(get_rules_path())?;
+        let other_rules = TagRules::load(rp)?;
+        let (appended, conflicts) = merge_rules(&mut local_rules, &other_rules);
+        println!("rules: {} appended from {}, {} shared pattern(s) differ (local kept):", appended.len(), rp.display(), conflicts.len());
+        for r in &appended {
+            println!("  + {}  -> {}", r.pattern, r.tags.join("|"));
+        }
+        for (p, l, o) in &conflicts {
+            println!("  ~ {}  local {}  other {}", p, l.join("|"), o.join("|"));
+        }
+        rules_plan = Some(local_rules);
+    }
+    if !apply {
+        println!("(dry run — nothing written; re-run with --apply)");
+        return Ok(());
+    }
+    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+    let backup = snapshot_store(&format!("merge-{stamp}"))?;
+    store.rewrite(&merged)?;
+    println!("wrote {} rows to {} (snapshot: {})", merged.len(), get_store_path().display(), backup.map(|b| b.display().to_string()).unwrap_or_default());
+    if let Some(rules) = rules_plan {
+        let rules_path = get_rules_path();
+        let rb = PathBuf::from(format!("/tmp/fd-budget-rules.backup-merge-{stamp}.toml"));
+        std::fs::copy(&rules_path, &rb)?;
+        rules.save(&rules_path)?;
+        println!("wrote {} rules to {} (snapshot: {})", rules.rules.len(), rules_path.display(), rb.display());
+    }
+    Ok(())
+}
+
 fn cmd_tag_unset(
     import_id: Option<&str>,
     tags: &[String],
