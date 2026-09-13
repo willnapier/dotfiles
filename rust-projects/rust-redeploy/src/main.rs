@@ -47,6 +47,16 @@ const MACOS_SIGNED_TOOLS: &[&str] = &[
     "continuum-grok",
     "dev-catchup",
     "continuum-dream",
+    // Every remaining Rust tool launched by a StartCalendarInterval job (2026-09-13).
+    // launchd pins a managed LWCR to these; an ad-hoc rebuild breaks the pin and the
+    // job dies at spawn with exit 78 EX_CONFIG before it can write a log line —
+    // `readwise-sync` failed 17 nights in a row that way after its 2026-09-08 rebuild.
+    "bequest",
+    "cross-machine-sync-check",
+    "dotter-drift-monitor",
+    "readwise-sync",
+    "state-capture",
+    "system-health-check",
 ];
 
 const MACOS_SIGNING_IDENTITY: &str = "Developer ID Application: William Napier (LU3TB2NLTD)";
