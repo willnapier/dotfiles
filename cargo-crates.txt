@@ -34,6 +34,7 @@ graph-send	0.1.0	/home/will/dotfiles/rust-projects/graph-send
 grok-publish	0.1.0	/home/will/dotfiles/rust-projects/grok-publish
 grok-to-continuum	0.1.0	/home/will/dotfiles/rust-projects/grok-to-continuum
 himalaya	1.1.0	https://github.com/pimalaya/himalaya.git#85988da4
+icalc	0.1.0	/home/will/dotfiles/rust-projects/icalc
 jaq	2.3.0	crates.io
 mailcurator	0.1.0	/home/will/dotfiles/rust-projects/mailcurator
 mailforge	0.1.0	/home/will/Code/mailforge

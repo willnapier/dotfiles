@@ -27,6 +27,7 @@ link-service.service
 mailcurator-drift.timer
 mailforge.service
 mbsync-cohs.timer
+messageboard-sweep.timer
 nushell-env.service
 p11-kit-server.socket
 pipewire-pulse.service
