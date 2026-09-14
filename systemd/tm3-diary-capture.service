@@ -7,3 +7,10 @@ Type=oneshot
 ExecStart=/home/will/.local/bin/tm3-diary-capture --live
 StandardOutput=append:/home/will/.local/share/tm3-diary-capture.log
 StandardError=append:/home/will/.local/share/tm3-diary-capture.log
+
+# 2026-09-14: a capture on 2026-09-03 ran for 14 h 45 min (803 MB peak) before
+# exiting 1, invisible to the hourly timer. A normal run is seconds; a run that
+# auto-onboards several new clients is minutes. RuntimeMaxSec does not apply to
+# Type=oneshot; TimeoutStartSec is the bound that does. 45 min stays under the
+# hourly cadence so a stuck run can never overlap the next one.
+TimeoutStartSec=45min
