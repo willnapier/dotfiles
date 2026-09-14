@@ -61,6 +61,7 @@ trashy	2.0.0	crates.io
 usage-probe-anthropic-api	0.1.0	/home/will/projects/continuum/usage-probe-anthropic-api
 usage-probe-claude	0.1.0	/home/will/projects/continuum/usage-probe-claude
 usage-probe-codex	0.1.0	/home/will/projects/continuum/usage-probe-codex
+usage-probe-codex-smoke	0.1.0	/home/will/projects/continuum/usage-probe-codex-smoke
 usage-probe-grok	0.1.0	/home/will/projects/continuum/usage-probe-grok
 wiki-link-service	0.2.8	/home/will/dotfiles/rust-projects/wiki-link-service
 yazi-cli	25.5.31	crates.io
