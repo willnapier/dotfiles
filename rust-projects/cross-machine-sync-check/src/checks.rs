@@ -799,3 +799,113 @@ pub fn unmanaged_scheduled_jobs() -> Result<CheckResult> {
         })
     }
 }
+
+
+// --- PracticeForge deployed-version parity ---
+
+/// The SHA token from a `practiceforge --version` line, e.g.
+/// `practiceforge 0.1.0 (6d8dba950824, built 2026-09-14 19:02Z)` → `6d8dba950824`.
+/// A `-dirty` suffix stays in the token: a dirty build on one machine IS drift.
+fn practiceforge_sha_token(version_line: &str) -> Option<String> {
+    let open = version_line.find('(')?;
+    let rest = &version_line[open + 1..];
+    let end = rest.find(',').or_else(|| rest.find(')'))?;
+    let tok = rest[..end].trim();
+    (!tok.is_empty()).then(|| tok.to_string())
+}
+
+/// Two-machine parity is a hard requirement for PracticeForge (2026-09-07).
+/// Compares the git SHA baked into `~/.local/bin/practiceforge` here and on
+/// the remote. Build time legitimately differs per machine and is ignored.
+/// Skipped (never green) when either binary is missing or predates
+/// `--version` (main before 2026-09-14), or SSH fails.
+pub fn practiceforge_version_parity(remote: &str) -> Result<CheckResult> {
+    let name = "practiceforge-version".to_string();
+    let skipped = |why: String| CheckResult {
+        name: name.clone(),
+        status: Status::Skipped,
+        details: vec![why],
+    };
+
+    let local_bin = home_dir().join(".local/bin/practiceforge");
+    if !local_bin.exists() {
+        return Ok(skipped("~/.local/bin/practiceforge not present locally".into()));
+    }
+    let local_line = match Command::new(&local_bin).arg("--version").output() {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
+        Ok(_) => {
+            return Ok(skipped(
+                "local practiceforge predates --version; rebuild from main ≥ 2026-09-14".into(),
+            ));
+        }
+        Err(e) => return Ok(skipped(format!("could not run local practiceforge: {e}"))),
+    };
+
+    let remote_line = match ssh_cmd(
+        remote,
+        "\"$HOME\"/.local/bin/practiceforge --version 2>/dev/null || echo __NOVERSION__",
+    ) {
+        Ok(s) => s,
+        Err(e) => return Ok(skipped(format!("ssh to {remote} failed: {e}"))),
+    };
+    if remote_line.is_empty() || remote_line.contains("__NOVERSION__") {
+        return Ok(skipped(format!(
+            "{remote}: practiceforge missing or predates --version"
+        )));
+    }
+
+    let (Some(local_sha), Some(remote_sha)) = (
+        practiceforge_sha_token(&local_line),
+        practiceforge_sha_token(&remote_line),
+    ) else {
+        return Ok(skipped(format!(
+            "could not parse a SHA token: local=\"{local_line}\" remote=\"{remote_line}\""
+        )));
+    };
+
+    if local_sha == remote_sha {
+        Ok(CheckResult {
+            name,
+            status: Status::Clean,
+            details: vec![format!("both machines run {local_sha}")],
+        })
+    } else {
+        Ok(CheckResult {
+            name,
+            status: Status::Drift,
+            details: vec![
+                format!("local:  {local_line}"),
+                format!("{remote}: {remote_line}"),
+                "deploy the same main SHA on both machines (per-machine build; see practiceforge/deployment.md)".to_string(),
+            ],
+        })
+    }
+}
+
+#[cfg(test)]
+mod practiceforge_version_tests {
+    use super::practiceforge_sha_token;
+
+    #[test]
+    fn parses_sha_from_version_line() {
+        assert_eq!(
+            practiceforge_sha_token("practiceforge 0.1.0 (6d8dba950824, built 2026-09-14 19:02Z)").as_deref(),
+            Some("6d8dba950824")
+        );
+    }
+
+    #[test]
+    fn dirty_suffix_is_part_of_the_token() {
+        assert_eq!(
+            practiceforge_sha_token("practiceforge 0.1.0 (6d8dba950824-dirty, built 2026-09-14 19:02Z)").as_deref(),
+            Some("6d8dba950824-dirty")
+        );
+    }
+
+    #[test]
+    fn old_binary_output_has_no_token() {
+        assert_eq!(practiceforge_sha_token("practiceforge 0.1.0"), None);
+        assert_eq!(practiceforge_sha_token(""), None);
+        assert_eq!(practiceforge_sha_token("x ()"), None);
+    }
+}

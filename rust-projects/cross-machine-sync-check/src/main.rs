@@ -67,6 +67,12 @@ fn run(cli: &Cli) -> Result<()> {
         results.extend(checks::skill_parity(remote)?);
     }
 
+    // 3b. PracticeForge deployed-version parity (requires SSH). Same SHA on
+    // both machines is a hard requirement (two-machine parity, 2026-09-07).
+    if let Some(ref remote) = remote {
+        results.push(checks::practiceforge_version_parity(remote)?);
+    }
+
     // 4. Messageboard staleness
     results.push(checks::messageboard_staleness()?);
 
