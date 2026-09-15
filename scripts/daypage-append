@@ -12,10 +12,38 @@
 #                         it is set. A future page is never open in Helix, so
 #                         the queue's clobber-protection is not needed.
 #
+# Idempotent: a line already queued or already on the DayPage is skipped.
+# (Whole-line match. Two wrappers dying together used to queue twins.)
+#
 # Usage: daypage-append "clinical-notes:: 8x 12min - XX00"
 #        daypage-append --date 2026-02-13 "concert.ilminster:: ..."
 #        daypage-append --date 2027-06-16 "dev:: REMINDER ..."   # future -> synced page
 # Flush: Space+U in Helix, or run daypage-flush from command line
+
+def text-has-line [text: string, entry: string] {
+    let needle = ($entry | str trim)
+    if ($needle | is-empty) { return false }
+    $text | lines | any {|l| ($l | str trim) == $needle }
+}
+
+def queue-entry [date: string, entry: string] {
+    let pending_dir = ($env.HOME | path join ".local" "share" "daypage-pending")
+    mkdir $pending_dir
+    let pending_file = ($pending_dir | path join $"($date).md")
+    let daypage = ($env.HOME | path join "Forge" "NapierianLogs" "DayPages" $"($date).md")
+
+    if ($daypage | path exists) {
+        if (text-has-line (open $daypage --raw) $entry) {
+            return
+        }
+    }
+    if ($pending_file | path exists) {
+        if (text-has-line (open $pending_file --raw) $entry) {
+            return
+        }
+    }
+    $"($entry)\n" | save --append $pending_file
+}
 
 def main [
     entry: string
@@ -28,10 +56,7 @@ def main [
     if ($target > $today) {
         append-to-daypage $target $entry
     } else {
-        let pending_dir = ($env.HOME | path join ".local" "share" "daypage-pending")
-        mkdir $pending_dir
-        let pending_file = ($pending_dir | path join $"($target).md")
-        $"($entry)\n" | save --append $pending_file
+        queue-entry $target $entry
     }
 }
 
@@ -50,15 +75,13 @@ def append-to-daypage [date: string, entry: string] {
             $result.stdout | save $daypage
         } else {
             print -e $"DayPage template failed for ($date) — falling back to pending queue"
-            let pending_dir = ($env.HOME | path join ".local" "share" "daypage-pending")
-            mkdir $pending_dir
-            $"($entry)\n" | save --append ($pending_dir | path join $"($date).md")
+            queue-entry $date $entry
             return
         }
     }
 
     let content = (open $daypage --raw)
-    if ($content | str contains $entry) {
+    if (text-has-line $content $entry) {
         return  # already set — idempotent no-op
     }
 

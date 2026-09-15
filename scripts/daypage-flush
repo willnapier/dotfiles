@@ -5,8 +5,47 @@
 #   - Text lines (from daypage-append): inserted before ## Backlinks
 #   - DONE:CLIENT_ID (from daypage-mark-done): toggles - [ ] → - [x]
 #
+# Duplicate lines in the pending file, and lines already on the DayPage,
+# are skipped. A mkdir lock serialises concurrent flushes (daily-note
+# outside Zellij starts a second daily-note in the layout).
+#
 # Helix keybinding chain (Space+U): :write! → :sh daypage-flush → :reload
 # Exits silently if there's nothing to merge.
+
+def text-has-line [text: string, entry: string] {
+    let needle = ($entry | str trim)
+    if ($needle | is-empty) { return false }
+    $text | lines | any {|l| ($l | str trim) == $needle }
+}
+
+def unique-nonempty [lines: list<string>] {
+    $lines
+    | each {|l| $l | str trim }
+    | where {|l| not ($l | is-empty)}
+    | uniq
+}
+
+def acquire-flush-lock [pending_dir: string] {
+    let lock = ($pending_dir | path join ".flush.lock")
+    mut i = 0
+    while $i < 100 {
+        let created = (do { ^/bin/mkdir $lock } | complete)
+        if $created.exit_code == 0 {
+            return $lock
+        }
+        if ($lock | path exists) {
+            let modified = try { ls --directory $lock | get 0.modified } catch { null }
+            if $modified != null {
+                if ((date now) - $modified) > 60sec {
+                    try { ^/bin/rmdir $lock }
+                }
+            }
+        }
+        sleep 50ms
+        $i = $i + 1
+    }
+    error make { msg: $"daypage-flush: timed out waiting for lock ($lock)" }
+}
 
 def main [] {
     let pending_dir = ($env.HOME | path join ".local" "share" "daypage-pending")
@@ -15,56 +54,65 @@ def main [] {
     # Exit silently if no pending directory
     if not ($pending_dir | path exists) { return }
 
-    # Process all pending files (one per date)
-    let pending_files = (ls $pending_dir | where name =~ '\.md$' | get name)
-    if ($pending_files | is-empty) { return }
+    let lock = (acquire-flush-lock $pending_dir)
+    try {
+        # Process all pending files (one per date)
+        let pending_files = (ls $pending_dir | where name =~ '\.md$' | get name)
+        for pending_file in $pending_files {
+            let date = ($pending_file | path basename | str replace '.md' '')
+            let daypage = ($daypage_dir | path join $"($date).md")
 
-    for pending_file in $pending_files {
-        let date = ($pending_file | path basename | str replace '.md' '')
-        let daypage = ($daypage_dir | path join $"($date).md")
-
-        # Skip if pending file is empty
-        let content_raw = (open $pending_file --raw | str trim)
-        if ($content_raw | is-empty) {
-            rm $pending_file
-            continue
-        }
-
-        # Create DayPage from template if it doesn't exist
-        if not ($daypage | path exists) {
-            let result = (do { daypage-template $date } | complete)
-            if $result.exit_code == 0 and ($result.stdout | str trim | is-not-empty) {
-                $result.stdout | save $daypage
-                print -e $"Created DayPage: ($daypage)"
-            } else {
-                print -e $"DayPage not found and template failed: ($daypage) — skipping"
+            # Skip if pending file is empty
+            let content_raw = (open $pending_file --raw | str trim)
+            if ($content_raw | is-empty) {
+                rm $pending_file
                 continue
             }
-        }
 
-        let lines = ($content_raw | lines)
-        let done_lines = ($lines | where {|l| $l | str starts-with "DONE:"})
-        let append_lines = ($lines | where {|l| not ($l | str starts-with "DONE:")})
-
-        mut content = (open $daypage --raw)
-
-        # Process DONE markers: toggle checkboxes
-        for line in $done_lines {
-            let client_id = ($line | str replace "DONE:" "")
-            $content = ($content | str replace $"- [ ] ($client_id)" $"- [x] ($client_id)")
-        }
-
-        # Process append lines: insert just above ## Backlinks (lowest available position)
-        if not ($append_lines | is-empty) {
-            let append_text = ($append_lines | str join "\n")
-            $content = if ($content | str contains "## Backlinks") {
-                $content | str replace "## Backlinks" $"($append_text)\n\n## Backlinks"
-            } else {
-                $"($content | str trim --right)\n\n($append_text)\n"
+            # Create DayPage from template if it doesn't exist
+            if not ($daypage | path exists) {
+                let result = (do { daypage-template $date } | complete)
+                if $result.exit_code == 0 and ($result.stdout | str trim | is-not-empty) {
+                    $result.stdout | save $daypage
+                    print -e $"Created DayPage: ($daypage)"
+                } else {
+                    print -e $"DayPage not found and template failed: ($daypage) — skipping"
+                    continue
+                }
             }
-        }
 
-        $content | save -f $daypage
-        rm $pending_file
+            let lines = ($content_raw | lines)
+            let done_lines = ($lines | where {|l| $l | str starts-with "DONE:"})
+            let append_lines = (
+                unique-nonempty ($lines | where {|l| not ($l | str starts-with "DONE:")})
+            )
+
+            let original = (open $daypage --raw)
+            mut content = $original
+
+            # Process DONE markers: toggle checkboxes
+            for line in $done_lines {
+                let client_id = ($line | str replace "DONE:" "")
+                $content = ($content | str replace $"- [ ] ($client_id)" $"- [x] ($client_id)")
+            }
+
+            let new_lines = ($append_lines | where {|l| not (text-has-line $content $l)})
+
+            # Process append lines: insert just above ## Backlinks (lowest available position)
+            if not ($new_lines | is-empty) {
+                let append_text = ($new_lines | str join "\n")
+                $content = if ($content | str contains "## Backlinks") {
+                    $content | str replace "## Backlinks" $"($append_text)\n\n## Backlinks"
+                } else {
+                    $"($content | str trim --right)\n\n($append_text)\n"
+                }
+            }
+
+            if $content != $original {
+                $content | save -f $daypage
+            }
+            rm $pending_file
+        }
     }
+    try { ^/bin/rmdir $lock }
 }
