@@ -1,5 +1,7 @@
 #!/bin/bash
-# Helix integration for concert-capture
-# Archives HTML and outputs entry for :insert-output to insert at cursor
+# Helix integration for concert-capture (Space+D)
+# Finds latest venue HTML in Downloads or Captures/web-archives,
+# archives it to Captures/concerts/, prints the concert.{venue}:: line
+# for Helix :insert-output.
 
 ~/.local/bin/concert-capture --latest --entry-only

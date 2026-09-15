@@ -125,7 +125,7 @@ w = [":sh echo %{buffer_name} > /tmp/helix-current-file.txt", ":sh echo %{buffer
 C = ":insert-output hx-web-clip"
 # Web archive link - Space+A: browse existing archives and insert wikilink
 A = ":insert-output hx-web-link"
-# Concert capture - Space+D: process latest Wigmore HTML, append to DayPage, reload
+# Concert capture - Space+D: latest venue HTML (Downloads or web-archives), insert entry
 D = ":insert-output hx-concert-capture"
 # Wiki link navigation to NEW PANE RIGHT - Space+W
 # Zellij: split right. Raw WezTerm: wezterm cli split-pane --right.

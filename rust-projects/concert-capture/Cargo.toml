@@ -16,3 +16,6 @@ scraper = "0.18"
 slug = "0.1"
 dirs = "5"
 urlencoding = "2"
+
+[dev-dependencies]
+tempfile = "3"

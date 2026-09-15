@@ -25,7 +25,7 @@ The binary is symlinked to `~/.local/bin/concert-capture` via dotter.
 # Process a specific HTML file
 concert-capture ~/Downloads/wigmore-concert.html
 
-# Find and process the latest Wigmore HTML in Downloads
+# Find and process the latest concert HTML in Downloads or web-archives
 concert-capture --latest
 
 # Preview what would happen (no file changes)
@@ -44,10 +44,13 @@ concert-capture list
 ## Helix Integration
 
 Press `Space+D` to:
-1. Find the latest Wigmore HTML in Downloads
-2. Insert wikilink at cursor position
+1. Find the latest concert HTML in `~/Downloads/` **or** `~/Captures/web-archives/`
+2. Archive it to `~/Captures/concerts/`
+3. Insert the full `concert.{venue}:: …` line at the cursor
 
-The keybinding calls `hx-concert-capture` which runs `concert-capture --latest --link-only`.
+The keybinding calls `hx-concert-capture`, which runs `concert-capture --latest --entry-only`.
+
+`ai-export-watcher` moves ordinary SingleFile saves from Downloads to `web-archives` within a second. `--latest` therefore searches both places, newest first, skips non-venue HTML, and ignores files older than **3 days** (so leftover venue pages in web-archives cannot steal the paste). After SingleFile, just `Space+D` — do not use `Space+C`.
 
 ## Output Format
 
@@ -125,11 +128,13 @@ Use `--no-api` to skip (faster, works offline).
 
 ## Workflow
 
-1. Save Wigmore Hall concert page with SingleFile browser extension
-2. File lands in `~/Downloads/` as `*.html`
-3. Run `concert-capture --latest` or press `Space+D` in Helix
-4. HTML moves to `~/Captures/concerts/YYYY-MM-DD-performer.html`
-5. Entry appears in that day's DayPage
+1. Save the venue concert page with the SingleFile browser extension
+2. File lands in `~/Downloads/` as `YYYY-MM-DD-Title.html`
+3. `ai-export-watcher` may immediately move it to `~/Captures/web-archives/` (generic clip route)
+4. In Helix, press `Space+D` — it finds the newest venue HTML in either folder, archives it to `~/Captures/concerts/YYYY-MM-DD-performer.html`, and pastes the `concert.{venue}::` line at the cursor
+5. Optional: type a reaction under the line; `collect-entries` accrues it to `concert.wigmore.md` (etc.)
+
+CLI `concert-capture --latest` (no `--entry-only`) instead queues the line onto the **concert date's** DayPage via `daypage-append` — flush with `Space+U`. That is not the Helix paste path.
 
 ## Dependencies
 

@@ -2,6 +2,8 @@ use anyhow::{Context, Result};
 use chrono::NaiveDate;
 use regex::Regex;
 use scraper::{Html, Selector};
+use std::io::Read;
+use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Venue {
@@ -43,7 +45,23 @@ pub fn parse_concert(html: &str) -> Result<Concert> {
     })
 }
 
-fn detect_venue(html: &str) -> Venue {
+/// True when the file's opening bytes contain a known venue URL.
+/// SingleFile puts `url: https://…` at the top, so a 64 KiB sniff is enough
+/// and avoids reading 10+ MB generic clips while searching `--latest`.
+pub fn path_looks_like_concert(path: &Path) -> bool {
+    let mut file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(_) => return false,
+    };
+    let mut buf = [0u8; 65536];
+    let n = match file.read(&mut buf) {
+        Ok(n) => n,
+        Err(_) => return false,
+    };
+    detect_venue(&String::from_utf8_lossy(&buf[..n])) != Venue::Unknown
+}
+
+pub(crate) fn detect_venue(html: &str) -> Venue {
     if html.contains("wigmore-hall.org.uk") {
         Venue::WigmoreHall
     } else if html.contains("southbankcentre.co.uk") {
@@ -601,6 +619,21 @@ mod tests {
         assert_eq!(detect_venue("url: https://www.wigmore-hall.org.uk/whats-on/123"), Venue::WigmoreHall);
         assert_eq!(detect_venue("url: https://www.southbankcentre.co.uk/whats-on/test"), Venue::SouthbankCentre);
         assert_eq!(detect_venue("some random html"), Venue::Unknown);
+    }
+
+    #[test]
+    fn path_sniff_reads_url_comment_without_full_file() {
+        let dir = std::env::temp_dir().join(format!(
+            "concert-capture-sniff-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("page.html");
+        let mut body = String::from("url: https://www.wigmore-hall.org.uk/whats-on/1\n");
+        body.push_str(&"x".repeat(80_000));
+        std::fs::write(&path, &body).unwrap();
+        assert!(path_looks_like_concert(&path));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
