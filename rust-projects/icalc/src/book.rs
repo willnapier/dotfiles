@@ -157,7 +157,7 @@ pub struct CheckReport {
 }
 
 pub struct Book {
-    model: Model<'static>,
+    pub(crate) model: Model<'static>,
     pub path: String,
 }
 

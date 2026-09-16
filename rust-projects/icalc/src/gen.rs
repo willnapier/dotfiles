@@ -69,7 +69,8 @@ const S_LIVES: u32 = 2;
 const S_RATE: u32 = 3;
 const S_BOOK: u32 = 4;
 const S_2032: u32 = 5;
-const SHEETS: [&str; 6] = ["Read me", "Assumptions", "Lives", "Rate sensitivity", "Book", "2032"];
+const S_THR: u32 = 6;
+const SHEETS: [&str; 7] = ["Read me", "Assumptions", "Lives", "Rate sensitivity", "Book", "2032", "Thresholds"];
 
 /// Column widths in pixels (the Python generator's cm widths at ~38 px/cm).
 const W_LABEL: f64 = 435.0; // 11.5cm
@@ -174,6 +175,78 @@ impl<'a> Gen<'a> {
     }
 }
 
+// ---- Tax engine expressions (IronCalc syntax, names from Assumptions) ----
+// Non-savings income (salary, pension, state pension) is taxed first; dividends
+// stack on top. The £100k taper, the £125,140 additional-rate line and the
+// £50k corporation-tax step are structural constants of the tax system and are
+// written as literals here, as they are on Lives.
+
+/// Personal allowance after the taper, for total gross income `total`.
+fn pa_after_taper(total: &str) -> String {
+    format!("MAX(0,pa-MAX(0,{total}-100000)/2)")
+}
+
+/// Income tax on taxable non-savings income `t`: basic, higher, additional above £125,140.
+fn ns_tax(t: &str) -> String {
+    format!("(ns_basic*MIN({t},basic_band)+ns_higher*MIN(MAX(0,{t}-basic_band),125140-basic_band)+ns_addl*MAX(0,{t}-125140))")
+}
+
+/// Dividends taxed in the basic band, for taxable dividends `td` above taxable
+/// non-savings `tns`. The £500 allowance is a nil rate that still occupies band
+/// space (the treatment that reproduces the verified £99,200 → £21,491).
+fn div_basic_band(td: &str, tns: &str) -> String {
+    format!("MIN(MAX(0,{td}-div_allow),MAX(0,basic_band-{tns}-MIN({td},div_allow)))")
+}
+
+/// Dividends taxed in the higher band, given the basic-band slice `db`.
+fn div_higher_band(td: &str, tns: &str, db: &str) -> String {
+    format!("MIN(MAX(0,{td}-div_allow)-{db},MAX(0,125140-MAX(basic_band,{tns}+MIN({td},div_allow)+{db})))")
+}
+
+/// Net in hand for non-savings income `ns` with dividends `dv` stacked on top,
+/// as one expression: the same rules as the visible engine columns on Thresholds.
+fn net_in_hand(ns: &str, dv: &str) -> String {
+    let total = format!("({ns}+{dv})");
+    let pa2 = pa_after_taper(&total);
+    let tns = format!("MAX(0,{ns}-{pa2})");
+    let td = format!("MAX(0,{dv}-MAX(0,{pa2}-{ns}))");
+    let db = div_basic_band(&td, &tns);
+    let dh = div_higher_band(&td, &tns, &db);
+    let da = format!("(MAX(0,{td}-div_allow)-{db}-{dh})");
+    format!("({total}-{}-(div_basic*{db}+div_higher*{dh}+div_addl*{da}))", ns_tax(&tns))
+}
+
+/// Gross non-savings income that leaves net `n` in hand when nothing else is
+/// taxed: the exact piecewise inverse of `ns_tax` with the taper (marginal 60%
+/// between £100k and £125,140) and the additional rate above.
+fn earnings_gross_for_net(n: &str) -> String {
+    let n2 = "(pa+(1-ns_basic)*basic_band)";
+    let n3 = "(100000-ns_basic*basic_band-ns_higher*(100000-pa-basic_band))";
+    let n4 = "(125140-ns_basic*basic_band-ns_higher*(125140-basic_band))";
+    format!("IF({n}<=pa,{n},IF({n}<={n2},pa+({n}-pa)/(1-ns_basic),IF({n}<={n3},pa+basic_band+({n}-{n2})/(1-ns_higher),IF({n}<={n4},100000+({n}-{n3})/(1-1.5*ns_higher),125140+({n}-{n4})/(1-ns_addl)))))")
+}
+
+/// Sessions needed (floor) and the ceiling when a pension `draw` and state
+/// pension `sp` arrive alongside the salary, the living target is `living`, and
+/// the company costs are `costs`. Shared by the 2032 and Thresholds sheets.
+fn floor_and_ceiling(living: &str, draw: &str, sp: &str, costs: &str) -> (String, String) {
+    let ns = format!("({sp}+{draw}+salary)");
+    let taxable = format!("MAX(0,{ns}-pa)");
+    let tax_ns = format!("(ns_basic*MIN({taxable},basic_band)+ns_higher*MAX({taxable}-basic_band,0))");
+    let net_ns = format!("({ns}-{tax_ns})");
+    let rem = format!("MAX(0,basic_band-{taxable})");
+    let target = format!("MAX(0,{living}-{net_ns})");
+    let d_basic = format!("(div_allow+({target}-div_allow)/(1-div_basic))");
+    let d_high = format!("(div_allow+{rem}+({target}-div_allow-{rem}*(1-div_basic))/(1-div_higher))");
+    let d = format!("IF({target}<=div_allow,{target},IF({target}<=div_allow+{rem}*(1-div_basic),{d_basic},{d_high}))");
+    let p = format!("IF(({d}-ct_adj)/(1-ct_marg)>50000,({d}-ct_adj)/(1-ct_marg),{d}/(1-ct_small))");
+    let floor = format!("=IF({target}<=0,0,(({p})+{costs})/(fee*weeks))");
+    let room = format!("MAX(0,cap-{ns})");
+    let pcap = format!("IF(({room}-ct_adj)/(1-ct_marg)>50000,({room}-ct_adj)/(1-ct_marg),{room}/(1-ct_small))");
+    let ceil = format!("=(({pcap})+{costs})/(fee*weeks)");
+    (floor, ceil)
+}
+
 /// Number format for a generic model row, by the Python generator's rule:
 /// percent for "Mortgage rate", one decimal for session rows, else integers.
 fn row_fmt(label: &str) -> &'static str {
@@ -211,7 +284,7 @@ pub fn build(spec: &Spec) -> Result<Model<'static>> {
     g.m.new_defined_name("book_roof", None, "Book!$B$8").map_err(|e| anyhow!(e))?;
     g.m.new_defined_name("book_remote_only", None, "Book!$B$14").map_err(|e| anyhow!(e))?;
     let need = |k: &str| -> Result<()> { if arow.contains_key(k) { Ok(()) } else { bail!("spec is missing assumption key '{k}'") } };
-    for k in ["fee","weeks","remote_weeks","remote_frac","roof","salary","rent_3days","leigh","motor","other_costs","pension_allowance","pa","basic_band","div_allow","div_basic","div_higher","cap","ct_marg","ct_adj","ct_small","ns_basic","ns_higher","base_life","flat_running","ct_premium","premium_share","london_transport","london_food","london_cash","trips_if_sold","heating_if_sold","nights","room","train","parking","forge_bal","flat_bal","rate","rate_now","jenny_share","capital","proceeds","shares","tsla","fx","sjp","sjp_g","tsla_g","years","chimney_in","draw_pct","state_pension","clear_flat","lsa"] {
+    for k in ["fee","weeks","remote_weeks","remote_frac","roof","salary","rent_3days","leigh","motor","other_costs","pension_allowance","pa","basic_band","div_allow","div_basic","div_higher","div_addl","cap","ct_marg","ct_adj","ct_small","ns_basic","ns_higher","ns_addl","base_life","flat_running","ct_premium","premium_share","london_transport","london_food","london_cash","trips_if_sold","heating_if_sold","nights","room","train","parking","forge_bal","flat_bal","rate","rate_now","jenny_share","capital","proceeds","shares","tsla","fx","sjp","sjp_g","tsla_g","years","chimney_in","draw_pct","state_pension","clear_flat","lsa","keep_sessions","target_lo","target_hi","draw_rate_safe","draw_rate_high","years_h","chimney_first","sp_years","thr_price_sold","thr_price_kept"] {
         need(k)?;
     }
 
@@ -224,6 +297,7 @@ pub fn build(spec: &Spec) -> Result<Model<'static>> {
         "Rate sensitivity: keep-the-flat at each mortgage rate.".into(),
         "Book: sessions by day, the roof, the chimney, and what a remote-only week keeps.".into(),
         "2032: the pot at each Tesla price, and the floor and ceiling you would work with the flat kept and no London clinic, state pension in.".into(),
+        "Thresholds: what the pot must reach for the practice to become optional — row by row (the ceiling, twenty sessions, no work; flat kept or sold), the draw needed, the pot at three draw rates, and the Tesla price that reaches it at the horizon; then the sessions still needed at a given Tesla price.".into(),
         String::new(),
         "The house: FLOOR = sessions that fund the living and the taxes. CEILING = sessions at which drawable profit reaches the £100k line. LEEWAY = ceiling − floor = the spendable room. ROOF = the book you actually carry. CHIMNEY = sessions above the ceiling, to the pension.".into(),
         spec.meta.calibration.clone(),
@@ -354,7 +428,7 @@ pub fn build(spec: &Spec) -> Result<Model<'static>> {
     push("Dividends in the basic band", each(&|c| format!("=MIN(MAX(0,{c}53-div_allow),MAX(0,basic_band-{c}52))"))); // 54
     push("Dividends in the higher band", each(&|c| format!("=MIN(MAX(0,{c}53-div_allow)-{c}54,MAX(0,125140-MAX(basic_band,{c}52+{c}54)))"))); // 55
     push("Dividends at the additional rate", each(&|c| format!("=MAX(0,{c}53-div_allow)-{c}54-{c}55"))); // 56
-    push("Personal tax", each(&|c| format!("=ns_basic*{c}52+div_basic*{c}54+div_higher*{c}55+0.3935*{c}56"))); // 57
+    push("Personal tax", each(&|c| format!("=ns_basic*{c}52+div_basic*{c}54+div_higher*{c}55+div_addl*{c}56"))); // 57
     push("NET IN HAND, everything drawn", each(&|c| format!("={c}50-{c}57"))); // 58
     push("Net in hand at the cap (for comparison)", each(&|c| format!("={c}35"))); // 59
     push("Extra spendable from drawing past the cap", each(&|c| format!("={c}58-{c}59"))); // 60
@@ -411,24 +485,7 @@ pub fn build(spec: &Spec) -> Result<Model<'static>> {
     // ---- 2032 (flat kept, no London work, state pension in) ----
     g.header_row(S_2032, &["Tesla price 2032 ($)", "Tesla (£)", "Non-Tesla sleeve (£)", "Chimney accumulated (£)", "Pot (£)", "Draw (£)", "Living 2032 (£)", "FLOOR you work", "CEILING you work", "LEEWAY", "Floor with no draw", "Pension covers (sessions)", "Lump to the flat (£)", "Pot after the lump (£)"])?;
     let prices: [V; 8] = [V::Num(0.0), V::from("=tsla/2"), V::from("=tsla"), V::from("=tsla*(1+tsla_g)^years"), V::Num(750.0), V::Num(1000.0), V::Num(1500.0), V::Num(2000.0)];
-    let sessions = |n: i32, draw: &str| -> (String, String) {
-        let ns = format!("(state_pension+{draw}+salary)");
-        let taxable = format!("MAX(0,{ns}-pa)");
-        let tax_ns = format!("(ns_basic*MIN({taxable},basic_band)+ns_higher*MAX({taxable}-basic_band,0))");
-        let net_ns = format!("({ns}-{tax_ns})");
-        let rem = format!("MAX(0,basic_band-{taxable})");
-        let target = format!("MAX(0,G{n}-{net_ns})");
-        let d_basic = format!("(div_allow+({target}-div_allow)/(1-div_basic))");
-        let d_high = format!("(div_allow+{rem}+({target}-div_allow-{rem}*(1-div_basic))/(1-div_higher))");
-        let d = format!("IF({target}<=div_allow,{target},IF({target}<=div_allow+{rem}*(1-div_basic),{d_basic},{d_high}))");
-        let p = format!("IF(({d}-ct_adj)/(1-ct_marg)>50000,({d}-ct_adj)/(1-ct_marg),{d}/(1-ct_small))");
-        let c = "(salary+leigh+motor+other_costs)";
-        let floor = format!("=IF({target}<=0,0,(({p})+{c})/(fee*weeks))");
-        let room = format!("MAX(0,cap-{ns})");
-        let pcap = format!("IF(({room}-ct_adj)/(1-ct_marg)>50000,({room}-ct_adj)/(1-ct_marg),{room}/(1-ct_small))");
-        let ceil = format!("=(({pcap})+{c})/(fee*weeks)");
-        (floor, ceil)
-    };
+    let sessions = |n: i32, draw: &str| -> (String, String) { floor_and_ceiling(&format!("G{n}"), draw, "state_pension", "(salary+leigh+motor+other_costs)") };
     for (i, p) in prices.iter().enumerate() {
         let n = i as i32 + 2;
         let (fl, ce) = sessions(n, &format!("F{n}"));
@@ -478,8 +535,167 @@ pub fn build(spec: &Spec) -> Result<Model<'static>> {
         g.m.set_column_width(S_2032, c, W_RATE).map_err(|e| anyhow!(e))?;
     }
 
+    // ---- Thresholds (16 Sep 2026: what the pot must reach for the practice to become optional) ----
+    build_thresholds(&mut g)?;
+
     g.m.evaluate();
     Ok(g.m)
+}
+
+/// Block A (rows 2–8): sessions given → the draw that fills the gap to the
+/// living or to an income target → the pot at three draw rates → the Tesla
+/// price that reaches it at the horizon. Headline columns A–S, engine T–AM.
+/// Block B (rows 11–12): a Tesla price given → the pot → the sessions still
+/// needed. KEY below. Everything reads the Assumptions names and Lives rows
+/// 25 (living) and 33 (ceiling), so the table moves with the inputs.
+fn build_thresholds(g: &mut Gen) -> Result<()> {
+    let head_a = [
+        "Scenario", "Flat kept (1/0)", "London clinic days", "Sessions per week", "Roof worked until the horizon (1/0)", "Target gross income (£; 0 = fund the living only)",
+        "Living, net (£)", "Practice gross: salary + dividends (£)", "Net in hand from the practice alone (£)", "Shortfall against the living (£)", "Draw needed (£/yr)", "Net in hand with the draw (£)", "Spare over the living (£)",
+        "Pot at the safe rate (£)", "Pot at the slider rate (£)", "Pot at the high rate (£)", "Tesla at the horizon, safe rate ($)", "Tesla, slider rate ($)", "Tesla, high rate ($)",
+        "Company costs (£)", "Revenue (£)", "Ceiling at this cost base (sessions)", "Chimney to the pension (£/yr)", "Pre-tax profit (£)", "Corporation tax (£)", "Dividends (£)", "State pension at the horizon (£)",
+        "Non-savings income with the draw (£)", "Total gross income (£)", "Personal allowance after the taper (£)", "Taxable non-savings income (£)", "Income tax on it (£)", "Taxable dividends (£)", "Dividends in the basic band (£)", "Dividends in the higher band (£)", "Dividends at the additional rate (£)", "Dividend tax (£)",
+        "Sleeve at the horizon (£)", "Chimney accumulated at the horizon (£)",
+    ];
+    if head_a.len() != 39 {
+        bail!("Thresholds block A header drifted: {} columns, expected 39 (A–AM)", head_a.len());
+    }
+    g.header_row(S_THR, &head_a)?;
+    // label, flat kept, London days, sessions, roof worked to the horizon, target gross income
+    let rows_a: [(&str, i32, i32, &str, i32, &str); 7] = [
+        ("1. Now: the ceiling, flat kept, two London days", 1, 2, "=Lives!$B$33", 1, "0"),
+        ("2. Twenty, enough to live: the draw that closes the shortfall", 1, 2, "=keep_sessions", 0, "0"),
+        ("3. Twenty + top-up to the lower income target", 1, 2, "=keep_sessions", 0, "=target_lo"),
+        ("4. Twenty + the upper income target", 1, 2, "=keep_sessions", 0, "=target_hi"),
+        ("5. No work, lower target, flat kept for visits", 1, 0, "0", 1, "=target_lo"),
+        ("6. No work, upper target, flat kept for visits", 1, 0, "0", 1, "=target_hi"),
+        ("7. No work, Somerset only, flat sold", 0, 0, "0", 1, "0"),
+    ];
+    for (i, (label, flat, days, sessions, roof, target)) in rows_a.iter().enumerate() {
+        let n = i as i32 + 2;
+        let num = |s: &str| if let Ok(x) = s.parse::<f64>() { V::Num(x) } else { V::from(s) };
+        let ns0 = format!("(IF(D{n}>0,salary,0)+AA{n})"); // non-savings income before any draw
+        let tns0 = format!("MAX(0,{ns0}-pa)");
+        // marginal keep-rate on a pension pound at that position: its own rate, plus the dividends it pushes up a band
+        let keep = format!("(1-IF({tns0}<basic_band,ns_basic+IF(MAX(0,Z{n}-div_allow)>basic_band-{tns0},div_higher-div_basic,0),ns_higher))");
+        let draw = format!(
+            "=IF(F{n}>0,MAX(0,F{n}-H{n}-AA{n}),IF(J{n}<=0,0,IF(Z{n}=0,MAX(0,{}-{ns0}),J{n}/{keep})))",
+            earnings_gross_for_net(&format!("G{n}"))
+        );
+        let cells: Vec<V> = vec![
+            V::from(*label),
+            V::Num(*flat as f64),
+            V::Num(*days as f64),
+            num(sessions),
+            V::Num(*roof as f64),
+            num(target),
+            V::from(format!("=IF(B{n}=1,Lives!$B$25,Lives!$D$25)")),                       // G living
+            V::from(format!("=IF(D{n}>0,salary+Z{n},0)")),                                  // H practice gross
+            V::from(format!("={}", net_in_hand(&ns0, &format!("Z{n}")))),                   // I net from the practice alone
+            V::from(format!("=MAX(0,G{n}-I{n})")),                                          // J shortfall
+            V::from(draw),                                                                  // K draw needed
+            V::from(format!("=AC{n}-AF{n}-AK{n}")),                                         // L net in hand with the draw
+            V::from(format!("=L{n}-G{n}")),                                                 // M spare
+            V::from(format!("=K{n}/draw_rate_safe")),                                       // N pot, safe
+            V::from(format!("=K{n}/draw_pct")),                                             // O pot, slider
+            V::from(format!("=K{n}/draw_rate_high")),                                       // P pot, high
+            V::from(format!("=MAX(0,N{n}-AL{n}-AM{n})/(shares*fx)")),                       // Q Tesla, safe
+            V::from(format!("=MAX(0,O{n}-AL{n}-AM{n})/(shares*fx)")),                       // R Tesla, slider
+            V::from(format!("=MAX(0,P{n}-AL{n}-AM{n})/(shares*fx)")),                       // S Tesla, high
+            V::from(format!("=IF(D{n}>0,rent_3days*C{n}/3+salary+leigh+motor+other_costs,0)")), // T company costs
+            V::from(format!("=D{n}*fee*weeks")),                                            // U revenue
+            V::from(format!("=IF(D{n}>0,(((cap-salary)-ct_adj)/(1-ct_marg)+T{n})/(fee*weeks),0)")), // V ceiling here
+            V::from(format!("=MIN(MAX(0,D{n}-V{n})*fee*weeks,pension_allowance)")),         // W chimney
+            V::from(format!("=U{n}-T{n}-W{n}")),                                            // X pre-tax profit
+            V::from(format!("=IF(X{n}>50000,ct_marg*X{n}-ct_adj,ct_small*MAX(0,X{n}))")),   // Y corporation tax
+            V::from(format!("=IF(D{n}>0,X{n}-Y{n},0)")),                                    // Z dividends
+            V::from("=IF(years_h>=sp_years,state_pension,0)"),                              // AA state pension
+            V::from(format!("=IF(D{n}>0,salary,0)+AA{n}+K{n}")),                            // AB non-savings with the draw
+            V::from(format!("=H{n}+AA{n}+K{n}")),                                           // AC total gross
+            V::from(format!("={}", pa_after_taper(&format!("AC{n}")))),                     // AD PA after taper
+            V::from(format!("=MAX(0,AB{n}-AD{n})")),                                        // AE taxable non-savings
+            V::from(format!("={}", ns_tax(&format!("AE{n}")))),                             // AF income tax
+            V::from(format!("=MAX(0,Z{n}-MAX(0,AD{n}-AB{n}))")),                            // AG taxable dividends
+            V::from(format!("={}", div_basic_band(&format!("AG{n}"), &format!("AE{n}")))),  // AH basic-band dividends
+            V::from(format!("={}", div_higher_band(&format!("AG{n}"), &format!("AE{n}"), &format!("AH{n}")))), // AI higher-band dividends
+            V::from(format!("=MAX(0,AG{n}-div_allow)-AH{n}-AI{n}")),                        // AJ additional-rate dividends
+            V::from(format!("=div_basic*AH{n}+div_higher*AI{n}+div_addl*AJ{n}")),           // AK dividend tax
+            V::from("=sjp*(1+sjp_g)^years_h"),                                              // AL sleeve
+            V::from(format!("=E{n}*chimney_in*((1+sjp_g)^MAX(0,INT(years_h-chimney_first)+1)-1)/sjp_g")), // AM chimney accumulated
+        ];
+        if cells.len() != head_a.len() {
+            bail!("Thresholds row {n} has {} cells for {} headers", cells.len(), head_a.len());
+        }
+        g.row(S_THR, n, &cells, &|i, _| Some(match i { 3 | 21 => FMT_1DP, _ => FMT_INT }))?;
+    }
+
+    // ---- Block B: a Tesla price given → the sessions still needed ----
+    let head_b = [
+        "Scenario", "Flat kept (1/0)", "London clinic days", "Roof worked until the horizon (1/0)", "Tesla price at the horizon ($)", "Living, net (£)",
+        "Sessions needed, safe rate", "Sessions needed, slider rate", "Sessions needed, high rate",
+        "Tesla (£)", "Sleeve at the horizon (£)", "Chimney accumulated at the horizon (£)", "Pot (£)", "Draw at the slider rate (£)", "State pension at the horizon (£)", "Company costs, no rooms (£)", "Ceiling at this cost base (sessions)",
+    ];
+    for (i, t) in head_b.iter().enumerate() {
+        g.put(S_THR, 10, i as i32 + 1, &V::from(*t))?;
+        g.style(S_THR, 10, i as i32 + 1, &style(None, true, true))?;
+    }
+    let rows_b: [(&str, i32, i32, i32, &str); 2] = [
+        ("8. Worst case: flat sold, Somerset work only, Tesla at the worst-case price", 0, 0, 1, "=thr_price_sold"),
+        ("9. Flat kept for visits, Somerset work only, Tesla at the kept price", 1, 0, 1, "=thr_price_kept"),
+    ];
+    for (i, (label, flat, days, roof, price)) in rows_b.iter().enumerate() {
+        let n = i as i32 + 11;
+        let sessions_at = |rate: &str| floor_and_ceiling(&format!("F{n}"), &format!("(M{n}*{rate})"), &format!("O{n}"), &format!("P{n}"));
+        let cells: Vec<V> = vec![
+            V::from(*label),
+            V::Num(*flat as f64),
+            V::Num(*days as f64),
+            V::Num(*roof as f64),
+            V::from(*price),
+            V::from(format!("=IF(B{n}=1,Lives!$B$25,Lives!$D$25)")),                        // F living
+            V::from(sessions_at("draw_rate_safe").0),                                       // G
+            V::from(sessions_at("draw_pct").0),                                             // H
+            V::from(sessions_at("draw_rate_high").0),                                       // I
+            V::from(format!("=E{n}*shares*fx")),                                            // J Tesla £
+            V::from("=sjp*(1+sjp_g)^years_h"),                                              // K sleeve
+            V::from(format!("=D{n}*chimney_in*((1+sjp_g)^MAX(0,INT(years_h-chimney_first)+1)-1)/sjp_g")), // L chimney
+            V::from(format!("=J{n}+K{n}+L{n}")),                                            // M pot
+            V::from(format!("=M{n}*draw_pct")),                                             // N draw at the slider
+            V::from("=IF(years_h>=sp_years,state_pension,0)"),                              // O state pension
+            V::from(format!("=rent_3days*C{n}/3+salary+leigh+motor+other_costs")),          // P company costs
+            V::from(sessions_at("draw_pct").1),                                             // Q ceiling here
+        ];
+        if cells.len() != head_b.len() {
+            bail!("Thresholds row {n} has {} cells for {} headers", cells.len(), head_b.len());
+        }
+        g.row(S_THR, n, &cells, &|i, _| Some(match i { 6..=8 | 16 => FMT_1DP, _ => FMT_INT }))?;
+    }
+
+    let key: [(&str, &str); 12] = [
+        ("KEY", ""),
+        ("Rows 1–7", "Sessions given. The living is Lives row 25: keep-the-flat (column B, which carries the London lines even with no clinic, as the visits) or Somerset-only with the flat sold (column D). Company costs are rooms scaled by London days plus salary, Leigh, motor and the small lines; nothing when no sessions are worked."),
+        ("Draw needed", "With a target: target − practice gross − state pension. Without: the pension income that lifts net in hand to the living — exact for pension alone (the piecewise inverse of income tax with the taper), and shortfall ÷ marginal keep-rate when dividends are stacked (a pension pound is taxed at its own rate and pushes a dividend pound up a band). 'Spare over the living' shows the residual either way."),
+        ("Tax", "Pension income is taxed as earnings on top of the salary: personal allowance tapered above £100k (gone at £125,140), basic / higher / additional rates; dividends stack on top at their three rates, the £500 allowance occupying band space. Corporation tax at the small rate below £50k, else the marginal rate less the adjustment."),
+        ("Chimney", "Zero when the sessions worked are below the ceiling at that cost base (the twenty rows). Where the roof is worked until the horizon (1 in column E), the yearly chimney contribution from Assumptions is paid once a year from the first contribution to the horizon and grown at the sleeve rate, as on 2032."),
+        ("Pot", "Draw needed ÷ draw rate, at the safe rate, the slider (draw_pct) and the high rate. Zero means the pot is untouched."),
+        ("Tesla at the horizon", "The price at which Tesla (shares × price × £/$) plus the sleeve and chimney at the horizon equals the pot; zero when the sleeve and chimney alone reach it."),
+        ("Horizon", "years_h on Assumptions: 3.25 = end-2029; 5.75 = June 2032. The state pension is added only when the horizon reaches sp_years (Aug 2032)."),
+        ("Rows 8–9", "A Tesla price given: the pot it makes, the draw at each rate, and the sessions still needed (the 2032 sheet's floor logic, no rooms, state pension in only past Aug 2032)."),
+        ("Not modelled", "The £2m lump that clears the flat's loan (it helps slightly and does not change the shape); tax-free cash by partial crystallisation; the MPAA."),
+        ("Source", "Scenario — The Pot Thresholds (16 September 2026), Table 1; WILLIAM-FINANCIAL-PLANNING-CONTEXT.md § 16 Sep 2026."),
+        ("Read it with", "icalc house --sheet thresholds (columns A–S are the table; T onwards the working)."),
+    ];
+    let mut row = 14;
+    for (k, text) in key {
+        g.put(S_THR, row, 1, &V::from(k))?;
+        g.put(S_THR, row, 2, &V::from(text))?;
+        row += 1;
+    }
+    g.m.set_column_width(S_THR, 1, W_LABEL).map_err(|e| anyhow!(e))?;
+    for c in 2..=39 {
+        g.m.set_column_width(S_THR, c, W_RATE).map_err(|e| anyhow!(e))?;
+    }
+    Ok(())
 }
 
 /// Build, refuse on any error cell, and write the workbook.
@@ -547,6 +763,59 @@ note = ""
         let spec: Spec = toml::from_str(MINI).unwrap();
         let e = match build(&spec) { Err(e) => e.to_string(), Ok(_) => panic!("built without required keys") };
         assert!(e.contains("missing assumption key"), "{e}");
+    }
+
+    /// A model with the 2026/27 tax constants as names, so the engine
+    /// expressions can be evaluated on their own.
+    fn tax_model() -> crate::book::Book {
+        let mut m = Model::new_empty("tax", "en", "UTC", "en").unwrap();
+        let consts = [("pa", 12570.0), ("basic_band", 37700.0), ("ns_basic", 0.2), ("ns_higher", 0.4), ("ns_addl", 0.45), ("div_allow", 500.0), ("div_basic", 0.1075), ("div_higher", 0.3575), ("div_addl", 0.3935)];
+        for (i, (k, v)) in consts.iter().enumerate() {
+            let row = i as i32 + 1;
+            m.update_cell_with_number(0, row, 2, *v).unwrap();
+            m.new_defined_name(k, None, &format!("Sheet1!$B${row}")).unwrap();
+        }
+        crate::book::Book::from_model(m, "tax")
+    }
+
+    fn eval(book: &mut crate::book::Book, row: i32, formula: &str) -> f64 {
+        book.model.update_cell_with_formula(0, row, 4, format!("={formula}")).unwrap();
+        book.evaluate();
+        book.number(crate::book::Pos { sheet: 0, row, col: 4 }).unwrap_or_else(|| panic!("row {row} is not a number: {}", book.formatted(crate::book::Pos { sheet: 0, row, col: 4 })))
+    }
+
+    #[test]
+    fn net_in_hand_reproduces_the_verified_draw_at_the_cap() {
+        // £12k salary + £87,200 dividends → £21,491 tax (verified 3 Aug 2026).
+        let mut b = tax_model();
+        let net = eval(&mut b, 20, &net_in_hand("12000", "87200"));
+        assert!((net - (99200.0 - 21491.0)).abs() < 1.0, "net {net}");
+        // Pension alone at £100k: PA intact at exactly the line.
+        let net = eval(&mut b, 21, &net_in_hand("100000", "0"));
+        assert!((net - 72568.0).abs() < 1.0, "net {net}");
+        // £150k of pension: PA gone, additional rate above £125,140.
+        let net = eval(&mut b, 22, &net_in_hand("150000", "0"));
+        assert!((net - 96297.0).abs() < 1.0, "net {net}");
+    }
+
+    #[test]
+    fn earnings_inverse_round_trips_through_every_region() {
+        let mut b = tax_model();
+        for (i, target) in [8000.0, 30000.0, 47965.0, 60000.0, 72000.0, 78000.0, 85000.0, 120000.0].iter().enumerate() {
+            let row = 30 + i as i32;
+            let gross = eval(&mut b, row, &earnings_gross_for_net(&target.to_string()));
+            let net = eval(&mut b, row + 20, &net_in_hand(&gross.to_string(), "0"));
+            assert!((net - target).abs() < 0.5, "target {target}: gross {gross} nets {net}");
+        }
+        // The Somerset-only row: £47,965 net needs ~£59k of pension.
+        let gross = eval(&mut b, 60, &earnings_gross_for_net("47965"));
+        assert!((gross - 58995.0).abs() < 1.0, "gross {gross}");
+    }
+
+    #[test]
+    fn engine_expressions_fit_a_spreadsheet_cell() {
+        assert!(net_in_hand("(IF(D2>0,salary,0)+AA2)", "Z2").len() < 8000);
+        assert!(floor_and_ceiling("F11", "(M11*draw_pct)", "O11", "P11").0.len() < 8000);
     }
 
     #[test]

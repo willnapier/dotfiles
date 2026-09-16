@@ -104,7 +104,7 @@ enum Cmd {
         /// With --live: start of the fd-budget spend window (default: 365 days ago)
         #[arg(long)]
         spend_since: Option<chrono::NaiveDate>,
-        /// Show a whole sheet instead of the house summary: lives, assumptions, rate, book, 2032
+        /// Show a whole sheet instead of the house summary: lives, assumptions, rate, book, 2032, thresholds
         #[arg(long)]
         sheet: Option<String>,
         /// List the alias keys usable in --set
