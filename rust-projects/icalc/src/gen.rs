@@ -347,7 +347,7 @@ pub fn build(spec: &Spec) -> Result<Model<'static>> {
         [V::from("Itemised book (sessions per full week)"), V::from("=SUM(B2:B6)"), V::from("=SUM(C2:C6)"), V::from("Total itemised / remote-always. The planning roof on Assumptions is what the model relies on")],
         [V::from("London sessions (Tue + Wed)"), V::from("=B3+B4"), V::from("=C3+C4"), V::Empty],
         [V::from("Somerset-day sessions (Mon + Thu + Fri)"), V::from("=B2+B5+B6"), V::from("=C2+C5+C6"), V::Empty],
-        [V::from("Average over the year incl. remote-only weeks"), V::from("=(B8*(weeks-remote_weeks)+B8*remote_frac*remote_weeks)/weeks"), V::Empty, V::from("The four remote weeks cost about one session a week on the average")],
+        [V::from("Average over the earning weeks (not the calendar year), remote-only weeks at their reduced strength"), V::from("=(B8*(weeks-remote_weeks)+B8*remote_frac*remote_weeks)/weeks"), V::Empty, V::from("The four remote weeks cost about one session a week on the average")],
         [V::from("Remote-only week: sessions kept, no in-person converts"), V::from("=C8"), V::from("=C8/B8"), V::from("share of a normal week")],
         [V::from("Remote-only week: kept if half the in-person clients accept a one-off remote"), V::from("=C8+0.5*(B8-C8)"), V::from("=(C8+0.5*(B8-C8))/B8"), V::Empty],
         [V::from("Book after leaving London (remote-always only)"), V::from("=C8"), V::Empty, V::from("Add any in-person clients who convert")],
