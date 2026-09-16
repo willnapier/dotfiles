@@ -77,6 +77,7 @@ const W_LABEL: f64 = 435.0; // 11.5cm
 const W_VALUE: f64 = 144.0; // 3.8cm
 const W_NOTE: f64 = 605.0; // 16cm
 const W_LIVES: f64 = 197.0; // 5.2cm
+const W_BOOK_LABEL: f64 = 720.0; // wide enough for the longest Book label in full
 const W_RATE: f64 = 166.0; // 4.4cm
 
 const FMT_INT: &str = "#,##0";
@@ -358,7 +359,7 @@ pub fn build(spec: &Spec) -> Result<Model<'static>> {
         let f = row_fmt(&label);
         g.row(S_BOOK, row, cells, &|_, _| Some(f))?;
     }
-    for (c, w) in [(1, W_LABEL), (2, W_LIVES), (3, W_LIVES), (4, W_NOTE)] {
+    for (c, w) in [(1, W_BOOK_LABEL), (2, W_LIVES), (3, W_LIVES), (4, W_NOTE)] {
         g.m.set_column_width(S_BOOK, c, w).map_err(|e| anyhow!(e))?;
     }
 
