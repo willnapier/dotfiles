@@ -24,10 +24,17 @@ use std::process::{Command, ExitCode};
 const ORIENTATION_SCHEMA: i64 = 1;
 const DEFAULT_BUDGET: usize = 18000;
 const HARNESSES: [&str; 4] = ["codex", "claude-code", "grok-build", "api"];
+/// Maxima for the four live surfaces. They are ceilings, not entitlements:
+/// the surfaces share whatever the fixed parts (kernel, machine layer,
+/// adapter, frame) leave of the budget, scaled down in these proportions when
+/// that residual is smaller than their sum. See `plan_live_budgets`.
 const MESSAGEBOARD_BUDGET: usize = 4500;
 const FORUM_INDEX_BUDGET: usize = 3500;
 const FORUM_INBOX_BUDGET: usize = 2000;
 const HEALTH_BUDGET: usize = 1200;
+/// The minimum a live surface is ever given: room for its own "truncated"
+/// notice and one line, so a starved surface still says it was starved.
+const LIVE_FLOOR: usize = 120;
 const HEALTH_STALE_HOURS: i64 = 26;
 const MARKER: &str = "## Vendor-neutral kernel";
 const PLACEHOLDER: &str = "########";
@@ -183,7 +190,7 @@ fn cap_component(text: &str, budget: usize, label: &str) -> String {
     format!("{}{notice}", kept.join("\n"))
 }
 
-fn messageboard_head(path: &Path) -> Result<String> {
+fn messageboard_head(path: &Path, budget: usize) -> Result<String> {
     let raw = required_text(path)?;
     let mut sections = raw.split("\n### ");
     sections.next(); // everything before the first entry
@@ -192,10 +199,10 @@ fn messageboard_head(path: &Path) -> Result<String> {
     };
     let trimmed = first.trim();
     let body = trimmed.strip_suffix("\n---").unwrap_or(trimmed);
-    Ok(cap_component(&format!("### {body}"), MESSAGEBOARD_BUDGET, "Messageboard head"))
+    Ok(cap_component(&format!("### {body}"), budget, "Messageboard head"))
 }
 
-fn forum_open_summary(path: &Path) -> Result<String> {
+fn forum_open_summary(path: &Path, budget: usize) -> Result<String> {
     let text = required_text(path)?;
     let mut inside = false;
     let mut rows: Vec<&str> = vec![];
@@ -211,7 +218,7 @@ fn forum_open_summary(path: &Path) -> Result<String> {
     Ok(if rows.is_empty() {
         "No open forum threads.".to_string()
     } else {
-        cap_component(&rows.join("\n"), FORUM_INDEX_BUDGET, "forum index summary")
+        cap_component(&rows.join("\n"), budget, "forum index summary")
     })
 }
 
@@ -221,7 +228,7 @@ fn on_path(bin: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn forum_inbox_summary() -> String {
+fn forum_inbox_summary(budget: usize) -> String {
     if !on_path("forum") {
         return "WARNING: forum CLI unavailable; unread completion state could not be checked.".to_string();
     }
@@ -230,7 +237,7 @@ fn forum_inbox_summary() -> String {
             let stdout = String::from_utf8_lossy(&out.stdout);
             let code = out.status.code().unwrap_or(-1);
             if code == 0 && !stdout.trim().is_empty() {
-                cap_component(stdout.trim(), FORUM_INBOX_BUDGET, "forum inbox")
+                cap_component(stdout.trim(), budget, "forum inbox")
             } else if code == 0 {
                 "WARNING: forum inbox returned empty output; unread completion state is unknown.".to_string()
             } else {
@@ -245,11 +252,11 @@ fn forum_inbox_summary() -> String {
 /// written by system-health-check to ~/Assistants/health/<host>.json (one
 /// writer per file; Syncthing carries the other machine's). Missing or stale
 /// is reported as such — "could not check" is never rendered as "fine".
-fn host_health_summary(home: &Path) -> String {
-    host_health_summary_at(&home.join("Assistants/health"), chrono::Local::now().into())
+fn host_health_summary(home: &Path, budget: usize) -> String {
+    host_health_summary_at(&home.join("Assistants/health"), chrono::Local::now().into(), budget)
 }
 
-fn host_health_summary_at(dir: &Path, now: chrono::DateTime<chrono::FixedOffset>) -> String {
+fn host_health_summary_at(dir: &Path, now: chrono::DateTime<chrono::FixedOffset>, budget: usize) -> String {
     let mut files: Vec<PathBuf> = fs::read_dir(dir)
         .map(|rd| {
             rd.filter_map(|e| e.ok().map(|e| e.path()))
@@ -309,7 +316,7 @@ fn host_health_summary_at(dir: &Path, now: chrono::DateTime<chrono::FixedOffset>
             }
         })
         .collect();
-    cap_component(&rows.join("\n"), HEALTH_BUDGET, "host health")
+    cap_component(&rows.join("\n"), budget, "host health")
 }
 
 // ---------------------------------------------------------------------------
@@ -321,11 +328,17 @@ fn sha256_hex(s: &str) -> String {
     digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// The header as rendered, with the byte field still a placeholder of the
+/// same width as the final number, so its length is the header's length.
+fn payload_header(harness: &str, host: &str, budget: usize, content_hash: &str) -> String {
+    format!(
+        "# Effective Assistant Startup Contract\n\norientation-schema: {ORIENTATION_SCHEMA}\nharness: {harness}\nhost: {host}\ncontent-sha256: {content_hash}\npayload-bytes: {PLACEHOLDER}\nbudget-bytes: {budget}\n"
+    )
+}
+
 fn assemble_payload(harness: &str, host: &str, budget: usize, body: &str) -> Result<String> {
     let content_hash = sha256_hex(body);
-    let header = format!(
-        "# Effective Assistant Startup Contract\n\norientation-schema: {ORIENTATION_SCHEMA}\nharness: {harness}\nhost: {host}\ncontent-sha256: {content_hash}\npayload-bytes: {PLACEHOLDER}\nbudget-bytes: {budget}\n"
-    );
+    let header = payload_header(harness, host, budget, &content_hash);
     let template = format!("{header}\n{body}");
     let total = template.len();
     if total > 99_999_999 {
@@ -404,7 +417,87 @@ fn kernel_int(kernel: &str, key: &str) -> Result<i64> {
         .with_context(|| format!("ORIENTATION.md `{key}` is not a number"))
 }
 
+/// Byte budgets for the four live surfaces, in section order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LiveBudgets {
+    messageboard: usize,
+    health: usize,
+    forum_index: usize,
+    forum_inbox: usize,
+}
+
+impl LiveBudgets {
+    const MAXIMA: LiveBudgets = LiveBudgets {
+        messageboard: MESSAGEBOARD_BUDGET,
+        health: HEALTH_BUDGET,
+        forum_index: FORUM_INDEX_BUDGET,
+        forum_inbox: FORUM_INBOX_BUDGET,
+    };
+
+    fn total(&self) -> usize {
+        self.messageboard + self.health + self.forum_index + self.forum_inbox
+    }
+}
+
+/// Give the live surfaces what the fixed parts leave. Each surface gets its
+/// maximum when the residual covers all four; otherwise all four scale down
+/// in proportion, none below `LIVE_FLOOR`. Fails only when the fixed parts
+/// alone (plus the floors) do not fit — that is a kernel problem, not a busy
+/// week, and deserves the hard failure.
+fn plan_live_budgets(fixed_bytes: usize, budget: usize) -> Result<LiveBudgets> {
+    let max = LiveBudgets::MAXIMA;
+    let floors = 4 * LIVE_FLOOR;
+    if fixed_bytes + floors > budget {
+        bail!(
+            "the fixed parts of the startup contract (kernel, machine layer, adapter, frame) are {fixed_bytes} bytes, leaving no room under the hard budget of {budget} for the live surfaces; shorten ORIENTATION.md or the machine/harness layers"
+        );
+    }
+    let residual = budget - fixed_bytes;
+    if residual >= max.total() {
+        return Ok(max);
+    }
+    let scale = |m: usize| -> usize { (((m as u128 * residual as u128) / max.total() as u128) as usize).max(LIVE_FLOOR) };
+    let planned = LiveBudgets {
+        messageboard: scale(max.messageboard),
+        health: scale(max.health),
+        forum_index: scale(max.forum_index),
+        forum_inbox: scale(max.forum_inbox),
+    };
+    debug_assert!(planned.total() <= residual);
+    Ok(planned)
+}
+
+/// Where the bytes went, for `doctor`.
+#[derive(Debug)]
+struct Breakdown {
+    budget: usize,
+    kernel: usize,
+    machine: usize,
+    adapter: usize,
+    frame: usize,
+    fixed: usize,
+    residual: usize,
+    planned: LiveBudgets,
+    actual: LiveBudgets,
+    total: usize,
+}
+
+impl Breakdown {
+    fn describe(&self) -> String {
+        format!(
+            "fixed {} = kernel {} + machine {} + adapter {} + frame {}; residual {} of budget {}; live (used/cap): messageboard {}/{}, health {}/{}, forum index {}/{}, forum inbox {}/{}; total {}",
+            self.fixed, self.kernel, self.machine, self.adapter, self.frame, self.residual, self.budget,
+            self.actual.messageboard, self.planned.messageboard, self.actual.health, self.planned.health,
+            self.actual.forum_index, self.planned.forum_index, self.actual.forum_inbox, self.planned.forum_inbox, self.total
+        )
+    }
+}
+
 fn render_contract(home: &Path, harness: &str, host: &str, budget: usize) -> Result<String> {
+    render_with_breakdown(home, harness, host, budget).map(|(payload, _)| payload)
+}
+
+fn render_with_breakdown(home: &Path, harness: &str, host: &str, budget: usize) -> Result<(String, Breakdown)> {
     if !HARNESSES.contains(&harness) {
         bail!("unknown harness: {harness}; expected {}", HARNESSES.join(", "));
     }
@@ -428,23 +521,67 @@ fn render_contract(home: &Path, harness: &str, host: &str, budget: usize) -> Res
         bail!("requested budget {budget} exceeds ORIENTATION.md hard limit {declared_budget}");
     }
 
-    let sections = [
+    // Fixed parts first: everything whose size the live surfaces cannot change.
+    let kernel_body = kernel.trim().to_string();
+    let machine_body = required_text(&machine_path)?.trim().to_string();
+    let adapter_body = required_text(&adapter_path)?.trim().to_string();
+    let headings = [
         MARKER.to_string(),
-        kernel.trim().to_string(),
         format!("## Machine layer: {host}"),
-        required_text(&machine_path)?.trim().to_string(),
         format!("## Harness adapter: {harness}"),
-        required_text(&adapter_path)?.trim().to_string(),
         "## Messageboard head (transient)".to_string(),
-        messageboard_head(&messageboard_path)?,
         "## Host health (last system-health-check per machine)".to_string(),
-        host_health_summary(home),
         "## Open forum summary (discovery only)".to_string(),
-        forum_open_summary(&index_path)?,
         "## Forum inbox".to_string(),
-        forum_inbox_summary(),
     ];
-    assemble_payload(harness, host, budget, &sections.join("\n\n"))
+    // Frame = header (with its fixed-width byte field), the blank line after
+    // it, the seven headings, and the "\n\n" between each of the 14 sections.
+    let header_len = payload_header(harness, host, budget, &sha256_hex("")).len() + 1;
+    let frame = header_len + headings.iter().map(|h| h.len()).sum::<usize>() + 13 * 2;
+    let fixed = kernel_body.len() + machine_body.len() + adapter_body.len() + frame;
+    let planned = plan_live_budgets(fixed, budget)?;
+
+    let messageboard = messageboard_head(&messageboard_path, planned.messageboard)?;
+    let health = host_health_summary(home, planned.health);
+    let forum_index = forum_open_summary(&index_path, planned.forum_index)?;
+    let forum_inbox = forum_inbox_summary(planned.forum_inbox);
+    let actual = LiveBudgets {
+        messageboard: messageboard.len(),
+        health: health.len(),
+        forum_index: forum_index.len(),
+        forum_inbox: forum_inbox.len(),
+    };
+
+    let sections = [
+        headings[0].clone(),
+        kernel_body.clone(),
+        headings[1].clone(),
+        machine_body.clone(),
+        headings[2].clone(),
+        adapter_body.clone(),
+        headings[3].clone(),
+        messageboard,
+        headings[4].clone(),
+        health,
+        headings[5].clone(),
+        forum_index,
+        headings[6].clone(),
+        forum_inbox,
+    ];
+    let payload = assemble_payload(harness, host, budget, &sections.join("\n\n"))?;
+    let breakdown = Breakdown {
+        budget,
+        kernel: kernel_body.len(),
+        machine: machine_body.len(),
+        adapter: adapter_body.len(),
+        frame,
+        fixed,
+        residual: budget - fixed,
+        planned,
+        actual,
+        total: payload.len(),
+    };
+    Ok((payload, breakdown))
 }
 
 // ---------------------------------------------------------------------------
@@ -474,9 +611,13 @@ fn verify_startup_surface(label: &str, path: &Path, needle: &str) -> Row {
 
 fn doctor(home: &Path, host: &str, budget: usize) -> Result<()> {
     let mut rows: Vec<Row> = vec![];
+    let mut breakdowns: Vec<(String, String)> = vec![];
     for harness in HARNESSES {
-        let row = match render_contract(home, harness, host, budget).and_then(|p| verify_payload(&p, harness, host)) {
-            Ok(v) => Row { harness: harness.into(), status: "ok", detail: format!("verified {} bytes; sha256: {}", v.bytes, v.hash) },
+        let row = match render_with_breakdown(home, harness, host, budget).and_then(|(p, b)| verify_payload(&p, harness, host).map(|v| (v, b))) {
+            Ok((v, b)) => {
+                breakdowns.push((harness.to_string(), b.describe()));
+                Row { harness: harness.into(), status: "ok", detail: format!("verified {} bytes; sha256: {}", v.bytes, v.hash) }
+            }
             Err(e) => Row { harness: harness.into(), status: "FAIL", detail: format!("{e:#}") },
         };
         rows.push(row);
@@ -505,6 +646,12 @@ fn doctor(home: &Path, host: &str, budget: usize) -> Result<()> {
     println!("{:<14} {:<6} detail", "harness", "status");
     for r in &rows {
         println!("{:<14} {:<6} {}", r.harness, r.status, r.detail);
+    }
+    if !breakdowns.is_empty() {
+        println!("\nbytes per section (the live surfaces share the residual; a cap below its maximum means the fixed parts have grown):");
+        for (harness, text) in &breakdowns {
+            println!("{:<14} {text}", harness);
+        }
     }
     if rows.iter().any(|r| r.status == "FAIL") {
         bail!("orientation doctor found failures");
@@ -542,9 +689,9 @@ mod tests {
         let d = temp("mb");
         let p = d.join("MESSAGEBOARD.md");
         fs::write(&p, "# Messageboard\n\nintro\n\n### 2026-09-01 — Mac\n\nfirst body\n\n---\n\n### 2026-08-31 — nimbini\n\nsecond\n").unwrap();
-        assert_eq!(messageboard_head(&p).unwrap(), "### 2026-09-01 — Mac\n\nfirst body\n");
+        assert_eq!(messageboard_head(&p, MESSAGEBOARD_BUDGET).unwrap(), "### 2026-09-01 — Mac\n\nfirst body\n");
         fs::write(&p, "# Messageboard\n\nnothing yet\n").unwrap();
-        assert_eq!(messageboard_head(&p).unwrap(), "No current Messageboard entries.");
+        assert_eq!(messageboard_head(&p, MESSAGEBOARD_BUDGET).unwrap(), "No current Messageboard entries.");
         let _ = fs::remove_dir_all(&d);
     }
 
@@ -553,9 +700,9 @@ mod tests {
         let d = temp("forum");
         let p = d.join("INDEX.md");
         fs::write(&p, "# Index\n\n## Open\n\n| id | x |\n| `a` | open-a |\n\n| `b` | open-b |\n\n## Decided\n\n| `c` | decided |\n").unwrap();
-        assert_eq!(forum_open_summary(&p).unwrap(), "| `a` | open-a |\n| `b` | open-b |");
+        assert_eq!(forum_open_summary(&p, FORUM_INDEX_BUDGET).unwrap(), "| `a` | open-a |\n| `b` | open-b |");
         fs::write(&p, "## Open\n\n## Decided\n| `c` | d |\n").unwrap();
-        assert_eq!(forum_open_summary(&p).unwrap(), "No open forum threads.");
+        assert_eq!(forum_open_summary(&p, FORUM_INDEX_BUDGET).unwrap(), "No open forum threads.");
         let _ = fs::remove_dir_all(&d);
     }
 
@@ -592,15 +739,77 @@ mod tests {
     fn host_health_renders_fresh_stale_unreadable_and_missing() {
         let d = temp("health");
         let now = chrono::DateTime::parse_from_rfc3339("2026-09-01T23:00:00+01:00").unwrap();
-        assert!(host_health_summary_at(&d.join("nope"), now).starts_with("WARNING: no host health status"));
+        assert!(host_health_summary_at(&d.join("nope"), now, HEALTH_BUDGET).starts_with("WARNING: no host health status"));
         fs::write(d.join("macos.json"), r#"{"host":"macos","checked_at":"2026-09-01T22:50:00+01:00","count":2,"problems":["p1","p2"]}"#).unwrap();
         fs::write(d.join("nimbini.json"), r#"{"host":"nimbini","checked_at":"2026-08-25T08:00:00+01:00","count":0,"problems":[]}"#).unwrap();
         fs::write(d.join("zz.json"), "not json").unwrap();
-        let out = host_health_summary_at(&d, now);
+        let out = host_health_summary_at(&d, now, HEALTH_BUDGET);
         assert_eq!(
             out,
             "macos: 🚨 2 problems (checked 10m ago)\n  - p1\n  - p2\nnimbini: ✅ clean — STALE (last check 183h ago; the health check itself may be dead)\nzz.json: unreadable status file"
         );
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn live_budgets_take_their_maxima_when_the_residual_allows_and_scale_when_not() {
+        let max = LiveBudgets::MAXIMA;
+        assert_eq!(plan_live_budgets(5_000, 18_000).unwrap(), max);
+        // 9,000 fixed leaves 9,000 for 11,200 of maxima: everything scales down, sum stays inside.
+        let p = plan_live_budgets(9_000, 18_000).unwrap();
+        assert!(p.total() <= 9_000, "{p:?}");
+        assert!(p.messageboard < max.messageboard && p.forum_index < max.forum_index && p.forum_inbox < max.forum_inbox && p.health < max.health);
+        assert!(p.messageboard > p.forum_index && p.forum_index > p.forum_inbox && p.forum_inbox > p.health, "proportions kept: {p:?}");
+        // A tiny residual still leaves every surface its floor.
+        let p = plan_live_budgets(17_500, 18_000).unwrap();
+        assert!(p.messageboard >= LIVE_FLOOR && p.health >= LIVE_FLOOR);
+        // Fixed parts alone over the budget: the genuine failure.
+        let e = plan_live_budgets(18_001, 18_000).unwrap_err().to_string();
+        assert!(e.contains("fixed parts"), "{e}");
+    }
+
+    /// A synthetic home where every live surface is far bigger than its cap:
+    /// the render must still fit the budget, and a kernel bigger than the
+    /// budget must still fail.
+    fn synthetic_home(name: &str, kernel_filler: usize) -> PathBuf {
+        let d = temp(name);
+        fs::create_dir_all(d.join("Assistants/shared/design-forum")).unwrap();
+        fs::create_dir_all(d.join("Assistants/context/machines")).unwrap();
+        fs::create_dir_all(d.join("Assistants/context/briefings")).unwrap();
+        fs::write(
+            d.join("Assistants/shared/ORIENTATION.md"),
+            format!("---\norientation_schema: 1\nrender_budget_bytes: 18000\n---\n\n# Kernel\n\n{}\n", "k".repeat(kernel_filler)),
+        )
+        .unwrap();
+        fs::write(d.join("Assistants/context/machines/macos.md"), format!("# macos\n\n{}\n", "m".repeat(1_100))).unwrap();
+        fs::write(d.join("Assistants/context/briefings/codex.md"), format!("# codex\n\n{}\n", "a".repeat(1_100))).unwrap();
+        let entries: String = (0..40).map(|i| format!("\n### 2026-09-{:02} — Mac\n\n{}\n\n---\n", 1 + i % 28, "b".repeat(if i == 0 { 6_000 } else { 400 }))).collect();
+        fs::write(d.join("Assistants/shared/MESSAGEBOARD.md"), format!("# Messageboard\n\nintro\n{entries}")).unwrap();
+        let rows: String = (0..60).map(|i| format!("| `t{i}` | {} |\n", "o".repeat(120))).collect();
+        fs::write(d.join("Assistants/shared/design-forum/INDEX.md"), format!("# Index\n\n## Open\n\n{rows}\n## Decided\n")).unwrap();
+        d
+    }
+
+    #[test]
+    fn render_fits_the_budget_when_every_live_surface_is_full() {
+        // 6.5 KB kernel like the real one: fixed ≈ 9 KB, so the live surfaces must share ≈ 9 KB.
+        let d = synthetic_home("full", 6_500);
+        let (payload, b) = render_with_breakdown(&d, "codex", "macos", 18_000).unwrap();
+        assert!(payload.len() <= 18_000, "{} bytes", payload.len());
+        assert_eq!(b.total, payload.len());
+        assert!(b.planned.total() <= b.residual, "{b:?}");
+        assert!(b.actual.messageboard <= b.planned.messageboard && b.actual.forum_index <= b.planned.forum_index);
+        assert!(payload.contains("[Messageboard head truncated at startup"));
+        assert!(payload.contains("[forum index summary truncated at startup"));
+        verify_payload(&payload, "codex", "macos").unwrap();
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn render_still_fails_when_the_kernel_alone_exceeds_the_budget() {
+        let d = synthetic_home("bigkernel", 18_500);
+        let e = render_contract(&d, "codex", "macos", 18_000).unwrap_err().to_string();
+        assert!(e.contains("fixed parts"), "{e}");
         let _ = fs::remove_dir_all(&d);
     }
 
