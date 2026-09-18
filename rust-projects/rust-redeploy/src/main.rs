@@ -23,8 +23,11 @@ use anyhow::{bail, Context, Result};
 use clap::Parser;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+const EXTERNAL_PROJECTS_FILE: &str = "rust-projects/external-deploy-projects.tsv";
 
 /// Tools that must carry a Developer ID signature on macOS or the kernel SIGKILLs them
 /// on launch (`cs_invalid_page`). This list is the source of truth; the runbook
@@ -64,7 +67,7 @@ const MACOS_SIGNING_IDENTITY: &str = "Developer ID Application: William Napier (
 #[derive(Parser)]
 #[command(
     name = "rust-redeploy",
-    about = "Rebuild and redeploy the ~/dotfiles/rust-projects binaries reported stale on this machine"
+    about = "Rebuild and redeploy registered Rust binaries reported stale on this machine"
 )]
 struct Cli {
     /// Show the plan and exit. Builds nothing, deploys nothing.
@@ -103,6 +106,12 @@ struct Outcome {
     detail: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Project {
+    name: String,
+    build_dir: PathBuf,
+}
+
 fn home() -> PathBuf {
     dirs::home_dir().expect("cannot determine home directory")
 }
@@ -111,8 +120,99 @@ fn bin_dir() -> PathBuf {
     home().join(".local/bin")
 }
 
-fn projects_dir() -> PathBuf {
-    home().join("dotfiles/rust-projects")
+fn safe_home_relative(path: &str) -> bool {
+    let path = Path::new(path);
+    !path.as_os_str().is_empty()
+        && !path.is_absolute()
+        && path.components().all(|part| {
+            matches!(
+                part,
+                std::path::Component::Normal(_) | std::path::Component::CurDir
+            )
+        })
+}
+
+fn parse_external_projects(contents: &str, home: &Path) -> Result<Vec<Project>> {
+    let mut projects = Vec::new();
+    for (index, raw) in contents.lines().enumerate() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let fields: Vec<&str> = raw.split('\t').collect();
+        if fields.len() != 3 {
+            bail!(
+                "{} line {}: expected three tab-separated fields",
+                EXTERNAL_PROJECTS_FILE,
+                index + 1
+            );
+        }
+        let name = fields[0].trim();
+        let build_path = fields[1].trim();
+        let freshness_path = fields[2].trim();
+        if name.is_empty() || name.contains('/') || name.contains('\\') {
+            bail!(
+                "{} line {}: invalid binary name",
+                EXTERNAL_PROJECTS_FILE,
+                index + 1
+            );
+        }
+        if !safe_home_relative(build_path) || !safe_home_relative(freshness_path) {
+            bail!(
+                "{} line {}: paths must stay beneath HOME",
+                EXTERNAL_PROJECTS_FILE,
+                index + 1
+            );
+        }
+        projects.push(Project {
+            name: name.to_string(),
+            build_dir: home.join(build_path),
+        });
+    }
+    Ok(projects)
+}
+
+fn discover_projects_at(home: &Path) -> Result<BTreeMap<String, Project>> {
+    let rust_projects = home.join("dotfiles/rust-projects");
+    let mut projects = BTreeMap::new();
+    for entry in std::fs::read_dir(&rust_projects)
+        .with_context(|| format!("cannot read {}", rust_projects.display()))?
+        .flatten()
+    {
+        let path = entry.path();
+        if !path.join("Cargo.toml").exists() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        projects.insert(
+            name.clone(),
+            Project {
+                name,
+                build_dir: path,
+            },
+        );
+    }
+
+    let registry = home.join("dotfiles").join(EXTERNAL_PROJECTS_FILE);
+    let contents = std::fs::read_to_string(&registry).with_context(|| {
+        format!(
+            "cannot read external project registry {}",
+            registry.display()
+        )
+    })?;
+    for project in parse_external_projects(&contents, home)? {
+        if projects
+            .insert(project.name.clone(), project.clone())
+            .is_some()
+        {
+            bail!("duplicate deployment project name: {}", project.name);
+        }
+    }
+    Ok(projects)
+}
+
+fn discover_projects() -> Result<BTreeMap<String, Project>> {
+    discover_projects_at(&home())
 }
 
 /// If `path` is a symlink resolving outside `~/.local/bin`, return the target.
@@ -203,19 +303,13 @@ fn systemctl(action: &str, unit: &str) -> Result<()> {
 }
 
 /// Which projects to act on: the drift report by default, everything deployed under `--all`.
-fn select_projects(cli: &Cli) -> Result<Vec<String>> {
-    let mut names = if cli.all {
-        let mut all = Vec::new();
-        for entry in std::fs::read_dir(projects_dir())?.flatten() {
-            if !entry.path().join("Cargo.toml").exists() {
-                continue;
-            }
-            let name = entry.file_name().to_string_lossy().to_string();
-            if bin_dir().join(&name).exists() {
-                all.push(name);
-            }
-        }
-        all
+fn select_projects(cli: &Cli, projects: &BTreeMap<String, Project>) -> Result<Vec<String>> {
+    let mut names: Vec<String> = if cli.all {
+        projects
+            .keys()
+            .filter(|name| bin_dir().join(name).exists())
+            .cloned()
+            .collect()
     } else {
         let out = Command::new("cross-machine-sync-check")
             .args(["--json", "--local-only"])
@@ -285,10 +379,19 @@ fn codesign(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn redeploy_one(name: &str, cli: &Cli) -> Outcome {
-    let project_dir = projects_dir().join(name);
+fn redeploy_one(project: &Project, cli: &Cli) -> Outcome {
+    let name = &project.name;
+    let project_dir = &project.build_dir;
     let installed = home().join(".cargo/bin").join(name);
     let deployed = bin_dir().join(name);
+
+    if !project_dir.join("Cargo.toml").exists() {
+        return Outcome {
+            project: name.to_string(),
+            result: "failed".to_string(),
+            detail: format!("registered source is missing: {}", project_dir.display()),
+        };
+    }
 
     // --- refusals, checked before anything is built ---
 
@@ -319,7 +422,7 @@ fn redeploy_one(name: &str, cli: &Cli) -> Outcome {
         };
     }
 
-    let signed_tool = cfg!(target_os = "macos") && MACOS_SIGNED_TOOLS.contains(&name);
+    let signed_tool = cfg!(target_os = "macos") && MACOS_SIGNED_TOOLS.contains(&name.as_str());
     if signed_tool && !running.is_empty() {
         return Outcome {
             project: name.to_string(),
@@ -335,7 +438,11 @@ fn redeploy_one(name: &str, cli: &Cli) -> Outcome {
     }
 
     if cli.dry_run {
-        let mut plan = format!("would rebuild and deploy to {}", deployed.display());
+        let mut plan = format!(
+            "would rebuild from {} and deploy to {}",
+            project_dir.display(),
+            deployed.display()
+        );
         if let Some(u) = &unit {
             plan.push_str(&format!("; would stop/start {}", u));
         }
@@ -359,7 +466,7 @@ fn redeploy_one(name: &str, cli: &Cli) -> Outcome {
     // Cargo.lock, so this is a tightening, not a new requirement.
     let build = Command::new("cargo")
         .args(["install", "--locked", "--path", "."])
-        .current_dir(&project_dir)
+        .current_dir(project_dir)
         .env("CARGO_BUILD_JOBS", cli.jobs.to_string())
         .status();
     match build {
@@ -483,7 +590,15 @@ fn redeploy_one(name: &str, cli: &Cli) -> Outcome {
 fn main() {
     let cli = Cli::parse();
 
-    let names = match select_projects(&cli) {
+    let projects = match discover_projects() {
+        Ok(projects) => projects,
+        Err(e) => {
+            eprintln!("error: {:#}", e);
+            std::process::exit(2);
+        }
+    };
+
+    let names = match select_projects(&cli, &projects) {
         Ok(n) => n,
         Err(e) => {
             eprintln!("error: {:#}", e);
@@ -508,7 +623,14 @@ fn main() {
     let outcomes: Vec<Outcome> = names
         .iter()
         .map(|name| {
-            let outcome = redeploy_one(name, &cli);
+            let outcome = match projects.get(name) {
+                Some(project) => redeploy_one(project, &cli),
+                None => Outcome {
+                    project: name.clone(),
+                    result: "failed".to_string(),
+                    detail: "freshness report named an unregistered project".to_string(),
+                },
+            };
             if !cli.json {
                 let icon = match outcome.result.as_str() {
                     "ok" => "✅",
@@ -536,5 +658,67 @@ fn main() {
     // failures set a non-zero exit.
     if outcomes.iter().any(|o| o.result.contains("fail")) {
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn external_registry_parses_canonical_code_paths() {
+        let home = Path::new("/home/tester");
+        let projects = parse_external_projects(
+            "practiceforge\tCode/practiceforge/practiceforge\tCode/practiceforge\n\
+             tm3-diary-capture\tCode/tm3-diary-capture\tCode/tm3-diary-capture\n",
+            home,
+        )
+        .unwrap();
+        assert_eq!(projects.len(), 2);
+        assert_eq!(
+            projects[0].build_dir,
+            home.join("Code/practiceforge/practiceforge")
+        );
+        assert_eq!(projects[1].build_dir, home.join("Code/tm3-diary-capture"));
+    }
+
+    #[test]
+    fn external_registry_rejects_paths_outside_home() {
+        let error = parse_external_projects("x\t../outside\tCode/x\n", Path::new("/tmp/home"))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("beneath HOME"), "{error}");
+    }
+
+    #[test]
+    fn discovery_combines_dotfiles_and_explicit_code_projects() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path();
+        fs::create_dir_all(home.join("dotfiles/rust-projects/local/src")).unwrap();
+        fs::write(
+            home.join("dotfiles/rust-projects/local/Cargo.toml"),
+            "[package]\nname='local'\nversion='0.1.0'\n",
+        )
+        .unwrap();
+        fs::create_dir_all(home.join("Code/external/src")).unwrap();
+        fs::write(
+            home.join("Code/external/Cargo.toml"),
+            "[package]\nname='external'\nversion='0.1.0'\n",
+        )
+        .unwrap();
+        fs::write(
+            home.join("dotfiles/rust-projects/external-deploy-projects.tsv"),
+            "external\tCode/external\tCode/external\n",
+        )
+        .unwrap();
+
+        let projects = discover_projects_at(home).unwrap();
+        assert_eq!(projects.len(), 2, "{projects:?}");
+        assert_eq!(
+            projects["local"].build_dir,
+            home.join("dotfiles/rust-projects/local")
+        );
+        assert_eq!(projects["external"].build_dir, home.join("Code/external"));
     }
 }

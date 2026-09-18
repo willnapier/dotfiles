@@ -20,6 +20,23 @@ Personal dotfiles and automation tools managed with [Dotter](https://github.com/
 | `hammerspoon/` | macOS automation (window management) |
 | `.dotter/` | Dotter deployment configuration |
 
+## Source tree boundary
+
+This repository owns machine configuration and the small utilities coupled to
+that configuration. Independent products and upstream forks live as their own
+Git repositories under `~/Code` (for example PracticeForge, MailForge,
+PhotoForge, `tm3-diary-capture`, and Meli). Their location outside this tree
+does **not** make them unversioned: each project has its own repository,
+history, and remote backup rather than being nested in dotfiles history. The
+scheduled `system-health-check` audits every top-level `~/Code` worktree for
+dirty state and local-branch commits that are unreachable from `origin`.
+
+Rust tools under `rust-projects/` are discovered automatically for freshness
+checks and redeployment. Canonical `~/Code` projects that support the same
+generic deployment contract are listed explicitly in
+[`rust-projects/external-deploy-projects.tsv`](rust-projects/external-deploy-projects.tsv),
+so linked feature worktrees are never selected accidentally.
+
 ## Mail account isolation
 
 Personal mail uses `~/Mail/.notmuch-config` and `~/Mail/.notmuch`; ingestion
@@ -40,7 +57,9 @@ detaching shared index copies. Operational evidence lives in
 
 ## Rust Projects
 
-All projects live in `rust-projects/` and build with `cargo build --release`. Binaries are symlinked to `~/.local/bin/` via Dotter.
+Dotfiles-owned Rust utilities live in `rust-projects/` and build with
+`cargo build --release`. Deployed binaries are managed separately under
+`~/.local/bin/`; see the per-tool instructions and `rust-redeploy`.
 
 | Project | Purpose |
 |---------|---------|
@@ -59,7 +78,6 @@ All projects live in `rust-projects/` and build with `cargo build --release`. Bi
 | [restore-content-dates](rust-projects/restore-content-dates/) | Restores file dates from Evernote exports (fuzzy matching) |
 | [restore-evernote-dates](rust-projects/restore-evernote-dates/) | Restores file dates from Evernote exports (exact matching) |
 | [restore-special-char-dates](rust-projects/restore-special-char-dates/) | Restores dates for files with escaped special characters |
-| [tm3-diary-capture](rust-projects/tm3-diary-capture/) | Parses clinical diary HTML snapshots into DayPage checklists |
 | [wiki-resolve-batch](rust-projects/wiki-resolve-batch/) | Batch-resolves broken wiki links by removing `?[[` markers |
 
 ## Key Design Patterns

@@ -1,9 +1,10 @@
 //! system-health-check — daily system health validator.
 //!
-//! Catches dead timers/agents, failed services, uncommitted dotfiles, missing
-//! Rust tool binaries, DNA drift (state-capture), dotter drift
-//! (dotter-drift-monitor) and orphaned headless Chrome processes. systemd on Linux, launchd on macOS. Runs via
-//! systemd timer (Linux) or launchd plist (macOS) daily at 08:00.
+//! Catches dead timers/agents, failed services, uncommitted dotfiles, dirty or
+//! unpushed `~/Code` repositories, missing Rust tool binaries, DNA drift
+//! (state-capture), dotter drift (dotter-drift-monitor), and orphaned headless
+//! Chrome processes. systemd on Linux, launchd on macOS. Runs via a systemd
+//! timer (Linux) or launchd plist (macOS) daily at 08:00.
 //!
 //! Rust port 2026-09-01 of the Nushell script (which crashed on every Mac run
 //! from 2026-07-17 to 2026-09-01 on `first` over an empty list — a compile
@@ -16,6 +17,7 @@
 
 mod checks;
 mod exec;
+mod git_audit;
 
 use clap::Parser;
 use std::fs::OpenOptions;
@@ -72,6 +74,7 @@ fn main() -> ExitCode {
         problems.extend(checks::check_services(&ctx));
     }
     problems.extend(checks::check_dotfiles(&ctx));
+    problems.extend(checks::check_code_repositories(&ctx));
     problems.extend(checks::check_rust_tools(&ctx));
     problems.extend(checks::check_dna_drift(&ctx, is_macos));
     problems.extend(checks::check_dotter_drift(&ctx));

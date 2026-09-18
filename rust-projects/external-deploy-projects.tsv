@@ -1,0 +1,7 @@
+# Binary<TAB>cargo-install path (relative to $HOME)<TAB>freshness root (relative to $HOME)
+#
+# Only projects compatible with rust-redeploy's generic `cargo install --locked`
+# contract belong here. Products with custom asset/build/deploy steps (MailForge,
+# Meli, PhotoForge) remain deliberately outside this registry.
+practiceforge	Code/practiceforge/practiceforge	Code/practiceforge
+tm3-diary-capture	Code/tm3-diary-capture	Code/tm3-diary-capture

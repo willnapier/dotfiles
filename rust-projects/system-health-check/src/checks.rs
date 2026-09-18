@@ -414,6 +414,24 @@ pub fn check_dotfiles(c: &Ctx) -> Vec<String> {
     vec![format!("Dotfiles: {n} uncommitted {} >24h old", if n == 1 { "file" } else { "files" })]
 }
 
+// ── Check 3b: independent repositories under ~/Code ─────────────────
+pub fn check_code_repositories(c: &Ctx) -> Vec<String> {
+    c.section("Code Repositories");
+    let report = crate::git_audit::audit_code_repositories(&c.home);
+    if report.findings.is_empty() {
+        c.say(&format!(
+            "  ✅ {} worktrees across {} repositories",
+            report.worktrees_scanned, report.repositories_scanned
+        ));
+    } else {
+        for finding in &report.findings {
+            c.say(&format!("  ❌ {finding}"));
+        }
+    }
+    c.end_section();
+    report.findings
+}
+
 // ── Check 4: Rust tool deployment ────────────────────────────────────
 // Source in rust-projects/ but binary missing from ~/.local/bin/.
 // Actively-used tools only.

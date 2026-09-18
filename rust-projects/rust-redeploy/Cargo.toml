@@ -2,7 +2,7 @@
 name = "rust-redeploy"
 version = "0.1.0"
 edition = "2021"
-description = "Rebuild and redeploy the rust-projects that cross-machine-sync-check reports as stale"
+description = "Rebuild and redeploy registered Rust projects that cross-machine-sync-check reports as stale"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
@@ -11,3 +11,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 dirs = "6"
 sha2 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"
