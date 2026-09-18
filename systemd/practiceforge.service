@@ -1,6 +1,10 @@
 [Unit]
 Description=PracticeForge Dashboard
-After=network.target
+# The dashboard can serve headlessly, but its attended TM3 renewal path launches
+# a visible passkey browser. Starting from default.target races Niri's display
+# environment import and leaves the long-running process without DISPLAY or
+# WAYLAND_DISPLAY for its entire lifetime.
+After=network.target graphical-session.target
 
 [Service]
 ExecStart=%h/.local/bin/practiceforge admin-dashboard --port 3457
@@ -8,4 +12,7 @@ Restart=on-failure
 RestartSec=5
 
 [Install]
-WantedBy=default.target
+# Start only once Niri has imported the graphical environment. Do not add
+# PartOf=graphical-session.target: after this ordered start the local dashboard
+# should remain available if the compositor is restarted.
+WantedBy=graphical-session.target
