@@ -3961,8 +3961,8 @@ def ftag [
 # The `hmail-*` functions (hmail-list, hmail-read, hmail-search, hmail-send,
 # hmail-extract, hmail-reply, hmail-forward, hmail-thread) have been removed
 # along with himalaya itself. The mail stack is now:
-#   - Reading/composing: meli (TUI). Launch with `meli`.
-#   - Sending: msmtp+pizauth (used internally by meli and any shell script).
+#   - Reading/composing: MailForge (browser). Launch with `email`.
+#   - Sending: msmtp / graph-send + pizauth (also used by MailForge).
 #   - Search: `nm-search` / `nm-read` below, backed by notmuch.
 #   - OAuth: owned by the pizauth daemon — `pizauth show <account>`.
 

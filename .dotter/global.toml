@@ -491,7 +491,7 @@ depends = ["shared"]
 # Helix - Linux override (slower scroll for Niri touchpad)
 "helix/config-linux.toml" = "~/.config/helix/config.toml"
 # email launcher — Linux equivalent of the Mac scripts/email (which uses
-# osascript and is macOS-only). Both deploy to ~/.local/bin/email so the
+# launchctl/open and is macOS-only). Both deploy to ~/.local/bin/email so the
 # command name is identical across platforms.
 "scripts/email-linux" = "~/.local/bin/email"
 # Wayland/Linux terminal configs

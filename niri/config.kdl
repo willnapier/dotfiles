@@ -141,7 +141,7 @@ binds {
     Mod+Space      { spawn "fuzzel"; }  // Primary launcher (matches macOS Cmd+Space)
     Mod+Alt+D      { spawn "fuzzel"; }  // Backup binding
     Mod+Alt+Return { spawn "wezterm"; }
-    Mod+Shift+Return { spawn "email"; }   // Open meli (matches macOS Cmd+Shift+Return via Hammerspoon)
+    Mod+Shift+Return { spawn "email"; }   // Open MailForge (matches macOS Cmd+Shift+Return via Hammerspoon)
 
     // Local dictation (Handy + Parakeet). Two-press toggle (niri has no key-release bind).
     // Super+Shift is home-row S+T and leaked "st". Mod+V is a bottom-row stretch.
