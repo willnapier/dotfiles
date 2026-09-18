@@ -1,8 +1,10 @@
 [Unit]
 Description=Dotter Real-time Configuration Watcher
 Documentation=file:///home/%i/Claude/REAL-TIME-CONFIG-ONBOARDING-SYSTEM.md
-After=graphical-session.target
-Wants=graphical-session.target
+# This is a headless default-target service. It must not pull in
+# graphical-session.target: niri.service owns that target and reaches it only
+# after the compositor has published its display environment. Pulling it in at
+# user-manager startup makes every GUI service race the compositor.
 
 [Service]
 Type=simple
