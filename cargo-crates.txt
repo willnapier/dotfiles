@@ -1,4 +1,4 @@
-ai-brief	0.2.0	/home/will/dotfiles/rust-projects/ai-brief
+ai-brief	0.3.0	/home/will/dotfiles/rust-projects/ai-brief
 ai-export-watcher	0.2.1	/home/will/dotfiles/rust-projects/ai-export-watcher
 bat	0.25.0	crates.io
 bequest	0.1.0	/home/will/dotfiles/rust-projects/bequest
