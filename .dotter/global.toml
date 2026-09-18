@@ -605,6 +605,7 @@ depends = ["shared"]
 "systemd/continuum-dream.service" = "~/.config/systemd/user/continuum-dream.service"
 "systemd/continuum-dream.timer" = "~/.config/systemd/user/continuum-dream.timer"
 "scripts/bt-pair" = "~/.local/bin/bt-pair"
+"scripts/bt-trackpad" = "~/.local/bin/bt-trackpad"
 "scripts/logrotate-verify" = "~/.local/bin/logrotate-verify"
 "scripts/chocofi-handy-bind" = "~/.local/bin/chocofi-handy-bind"
 "scripts/chocofi-trace" = "~/.local/bin/chocofi-trace"
