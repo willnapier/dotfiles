@@ -16,7 +16,14 @@
 # Usage:
 #   bt-pair <MAC>            pair, trust, connect
 #   bt-pair <MAC> --fresh    remove any stale host-side bond first
+#   bt-pair --fresh <MAC>    same
 #   bt-pair --check          report adapter health only
+#
+# --fresh MUST be honoured even when the device is still Bonded. A Magic
+# Trackpad can be bonded and still fail HID with Authentication Failure
+# (host auto-rejects User Confirmation). The bonded-but-disconnected path
+# below is for ZMK idle-sleep, not for that. See
+# ~/Assistants/shared/NIMBINI-BLUETOOTH-HID.md.
 
 set -uo pipefail
 
@@ -49,14 +56,27 @@ if [ "${1:-}" = "--check" ]; then
     exit $?
 fi
 
-MAC="${1:-}"
-[ -n "$MAC" ] || die "usage: bt-pair <MAC> [--fresh] | bt-pair --check"
+FRESH=0
+MAC=""
+case "${1:-}" in
+    --fresh) FRESH=1; MAC="${2:-}" ;;
+    *) MAC="${1:-}"; [ "${2:-}" = "--fresh" ] && FRESH=1 ;;
+esac
+[ -n "$MAC" ] || die "usage: bt-pair <MAC> [--fresh] | bt-pair --fresh <MAC> | bt-pair --check"
 [[ "$MAC" =~ ^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$ ]] || die "not a MAC address: $MAC"
 MAC=${MAC^^}
 
+if [ "$FRESH" = 1 ]; then
+    echo "removing stale host-side bond..."
+    timeout 20 bluetoothctl remove "$MAC" >/dev/null 2>&1
+    sleep 2
+fi
+
 # Already done? Say so rather than churning the bond.
+# Skipped after --fresh: a Bonded device can still be the broken Apple HID
+# case (ACL up, User Confirmation auto-rejected, HID never attaches).
 state=$(timeout 15 bluetoothctl info "$MAC" 2>/dev/null)
-if grep -q "Bonded: yes" <<<"$state"; then
+if [ "$FRESH" != 1 ] && grep -q "Bonded: yes" <<<"$state"; then
     if grep -q "Connected: yes" <<<"$state"; then
         echo "already paired, bonded and connected:"
         grep -E "Name:|Bonded:|Connected:|Battery" <<<"$state"
@@ -75,14 +95,10 @@ if grep -q "Bonded: yes" <<<"$state"; then
     fi
     echo "still disconnected. If this is a ZMK board it is probably asleep —" >&2
     echo "press any key on it, then run this again. The bond is intact; do NOT" >&2
-    echo "remove it or reflash." >&2
+    echo "remove it or reflash. If HCI shows User Confirmation Negative Reply" >&2
+    echo "plus HID Permission denied (13), that is a stale Apple bond — rerun" >&2
+    echo "with --fresh. See ~/Assistants/shared/NIMBINI-BLUETOOTH-HID.md." >&2
     exit 3
-fi
-
-if [ "${2:-}" = "--fresh" ]; then
-    echo "removing stale host-side bond..."
-    timeout 20 bluetoothctl remove "$MAC" >/dev/null 2>&1
-    sleep 2
 fi
 
 check_adapter || {

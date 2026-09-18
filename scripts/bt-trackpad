@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# bt-trackpad — bring nimbini's Magic Trackpad back without repeating the
+# 2026-09-18 hour. See ~/Assistants/shared/NIMBINI-BLUETOOTH-HID.md.
+#
+#   bt-trackpad           unblock adapter, connect, report HID
+#   bt-trackpad --fresh   last resort: drop the host bond and re-pair
+#
+# Do NOT reflash anything. Do NOT use blueman to pair this device.
+set -uo pipefail
+
+MAC=30:82:16:F2:D1:EA
+
+if [ "${1:-}" = "--fresh" ]; then
+    exec /home/will/.local/bin/bt-pair --fresh "$MAC"
+fi
+
+if [ -n "${1:-}" ]; then
+    echo "usage: bt-trackpad [--fresh]" >&2
+    exit 2
+fi
+
+echo "unblocking adapter..."
+rfkill unblock bluetooth >/dev/null 2>&1 || true
+timeout 10 bluetoothctl power on >/dev/null 2>&1 || true
+sleep 1
+
+powered=$(bluetoothctl show 2>/dev/null | awk '/Powered:/ {print $2; exit}')
+if [ "$powered" != "yes" ]; then
+    echo "adapter is not powered. Check rfkill / bluetooth.service." >&2
+    rfkill
+    systemctl is-active bluetooth >&2 || true
+    exit 1
+fi
+
+state=$(timeout 10 bluetoothctl info "$MAC" 2>/dev/null || true)
+if ! grep -q "Bonded: yes" <<<"$state"; then
+    echo "no host bond for $MAC. Pair with: bt-pair $MAC" >&2
+    echo "Put the pad in range, click it, then run that." >&2
+    exit 1
+fi
+
+if grep -q "Connected: yes" <<<"$state"; then
+    if rg -q 'Magic Trackpad' /sys/class/input/event*/device/name 2>/dev/null; then
+        echo "already connected and HID is bound."
+        bluetoothctl info "$MAC" | grep -E "Name:|Connected:|Bonded:"
+        exit 0
+    fi
+    echo "BlueZ says connected but HID is not bound — that is the false 'connected' flash."
+    echo "Disconnecting and retrying..."
+    timeout 10 bluetoothctl disconnect "$MAC" >/dev/null 2>&1 || true
+    sleep 1
+fi
+
+echo "connecting $MAC (click the pad if it is asleep)..."
+i=0
+while [ "$i" -lt 4 ]; do
+    i=$((i + 1))
+    timeout 12 bluetoothctl connect "$MAC" >/dev/null 2>&1 || true
+    sleep 1
+    if rg -q 'Magic Trackpad' /sys/class/input/event*/device/name 2>/dev/null; then
+        echo "HID bound."
+        bluetoothctl info "$MAC" | grep -E "Name:|Connected:|Bonded:"
+        exit 0
+    fi
+done
+
+echo "HID did not bind." >&2
+journalctl -u bluetooth --since "-2 min" --no-pager 2>/dev/null \
+    | rg "30:82:16:F2:D1:EA" | tail -n 8 >&2 || true
+if journalctl -u bluetooth --since "-2 min" --no-pager 2>/dev/null \
+        | rg -q "Permission denied \(13\)"; then
+    echo "Signature: HID Permission denied after ACL. Stale SSP / auto-rejected" >&2
+    echo "User Confirmation. Retry: bt-trackpad --fresh  (click the pad when it pages)" >&2
+elif journalctl -u bluetooth --since "-2 min" --no-pager 2>/dev/null \
+        | rg -q "Host is down \(112\)"; then
+    echo "Signature: page timeout. The pad is off, asleep, or on another host." >&2
+    echo "Power-cycle it, run this again, and click while it pages." >&2
+    echo "USB still works as a fallback." >&2
+else
+    echo "See ~/Assistants/shared/NIMBINI-BLUETOOTH-HID.md" >&2
+fi
+exit 1
