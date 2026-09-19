@@ -38,7 +38,11 @@ if command -v mailcurator >/dev/null 2>&1 && [ -z "${MAILFORGE_FAST_REINDEX:-}" 
     mc_last=$(cat "$mc_stamp" 2>/dev/null || echo 0)
     if [ "$((mc_now - mc_last))" -ge 120 ]; then
         printf '%s\n' "$mc_now" > "$mc_stamp" 2>/dev/null || true
-        mailcurator run --llm-disable 2>&1 | sed 's/^/[mailcurator] /' || true
+        if mailcurator evidence --help >/dev/null 2>&1; then
+            mailcurator run --llm-disable 2>&1 | sed 's/^/[mailcurator] /' || true
+        else
+            echo '[mailcurator] retained-evidence binary unavailable; curation skipped' >&2
+        fi
     fi
 fi
 

@@ -6,6 +6,8 @@ also explicitly pass `--llm-disable`. Every call to Claude requires the global
 `$HOME/Mail/.notmuch-config`. CoHS and custom indexes cannot opt in. This is a
 tool policy, not an OS sandbox or proof that personal mail contains no PHI.
 LLM-assisted label/propose/improve operations also require this opt-in.
+Hooks fail closed (skip curation, not mail sync) when an older binary lacks the
+`evidence` command, including a rollback after a signing/deployment failure.
 
 Before any lifecycle policy runs, all extractor-matching messages and existing
 `billing`, `receipts` or `Expenses` tags receive `curator-retain`. All trash
