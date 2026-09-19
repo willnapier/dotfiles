@@ -118,6 +118,55 @@ tags = ["income", "salary"]
 
 ## Common Workflows
 
+### Saved expenditure review
+
+`fd-budget review` maintains the existing personal/joint review worksheet,
+its Markdown report, linked live allocation tags and the accountant's local
+agenda. It uses decimal money and exact transaction IDs. It never creates
+transactions from receipts or changes original bank fields.
+
+Adopt once with `review init --csv <worksheet> --report <report> --agenda
+<agenda> --retained-refunds <known-refunds> --peer will@nimbini --apply`.
+Paths are saved in `~/.local/share/fd-budget-review/default.json`; use
+`--profile <path>` for a separate review. Omit `--peer` for isolated local
+work. Peer sync requires the default store and the new binary on both hosts.
+
+```nushell
+fd-budget review status --limit 1
+# Preview a confirmed decision, then repeat with --apply to save it:
+fd-budget review set <exact-id> --allocation personal --category "Personal food" --reason "Confirmed by Will" --tags food
+# Receipt metadata only; does not classify the payment:
+fd-budget review identify <exact-id> --product "Book title" --receipt-id "<message-id>" --receipt-date 2026-02-17 --evidence "Receipt amount matches GBP bank payment"
+fd-budget review sync
+```
+
+`set`, `identify` and `init` preview by default. `set` accepts multiple exact
+IDs for a confirmed batch; `--correct` explicitly revises an allocated row.
+Split rows, refunds and other protected partitions cannot be reassigned here.
+Business decisions queue notes beneath the existing agenda heading
+`## Accrued since 14 Sep — for the next send`; a missing/duplicate heading
+fails closed. No email or company-ledger posting occurs.
+
+The report's generated tables are current; its original narrative is retained
+verbatim under a labelled historical snapshot. Do not manually replace totals
+throughout that snapshot. Known retained refunds are an explicit adoption
+input, not automatically inferred; new refund/split structures need separate
+review. Receipt identification remains an evidence task, not an automatic match.
+
+Applied updates validate all rows, preserve bank identities, snapshot changed
+files and all eight store files, and check for intervening edits. Each file is
+replaced atomically; ordinary write errors roll back this command's writes.
+This is not a crash-atomic multi-file database: after a process/OS crash,
+inspect the lock and backup manifest before recovering. Backups live under
+`~/.local/share/fd-budget-review/backups/`.
+
+With a peer configured, the command checks parity before applying, uses the
+existing `fd-budget-sync` transport, and verifies all eight hashes afterwards.
+A failed sync leaves the local decision saved and blocks the next mutation;
+`review sync` resumes only when remote files match known before/after states.
+Independent peer edits are refused. Avoid concurrent imports/tagging on either
+host during review; the review lock does not lock other fd-budget commands.
+
 **Weekly review**:
 ```bash
 fd-budget categorize -l 30      # Tag new transactions

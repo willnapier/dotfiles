@@ -5,6 +5,7 @@ pub mod import;
 pub mod merge;
 pub mod paypal;
 pub mod query;
+pub mod review;
 pub mod smooth;
 pub mod store;
 pub mod subscriptions;

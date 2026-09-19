@@ -22,6 +22,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Maintain a personal/joint review, its report, and linked bank tags.
+    Review(fd_budget::review::ReviewArgs),
     /// Import transactions from a midata CSV file
     Import {
         /// Path to the midata CSV file
@@ -492,6 +494,7 @@ fn main() -> anyhow::Result<()> {
     ensure_data_dir()?;
 
     match cli.command {
+        Commands::Review(args) => fd_budget::review::run(args)?,
         Commands::Import { file, account } => {
             cmd_import(&file, account)?;
         }
