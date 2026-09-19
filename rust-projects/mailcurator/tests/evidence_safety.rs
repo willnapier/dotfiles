@@ -59,6 +59,7 @@ fn overlapping_trash_cannot_destroy_evidence_even_only_now() {
     fs::write(
         home.join(".config/mailcurator/policies.toml"),
         r#"
+allow_automatic_trash = true
 [[policy]]
 name = "noise"
 subject_contains = "Fixture"

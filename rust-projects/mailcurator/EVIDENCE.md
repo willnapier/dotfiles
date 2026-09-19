@@ -1,5 +1,32 @@
 # Expense evidence and retention
 
+## Booking safeguards (2026-09-19)
+
+Automatic trash now defaults OFF at config load, including Sweep/`--now` and
+newly proposed rules. Only an explicit top-level `allow_automatic_trash = true`
+can enable eligible lifecycle deletion. The deployed private policies explicitly
+set this false and have their old delete thresholds commented out, so even an
+older binary cannot run those trash rules. Tag-only placeholders keep policies
+with no remaining lifecycle action valid.
+
+Every booking-extractor match is marked `booking` before policy selection.
+All archive queries exclude booking matches and the booking tag, even across
+overlapping rules and `--only --now`. The independent six-month personal Inbox
+cleanup also excludes booking/retained tags and the supported booking-provider
+domains. This is an interim hold, not a date-aware acknowledgement workflow.
+Manual filing still works; no historical mail is automatically put in Inbox.
+
+The bounded historical Airbnb recovery restored 50 audited messages out of
+Gmail Trash and marked their copies on both hosts `booking` + `curator-retain`.
+Private original-message backups and a pre-change manifest are under each
+host's `Backups/mailcurator/2026-09-19-booking-safeguards` (full .eml copies on
+nimbini). Never put recovery contents or private policies in Git.
+
+MailForge's `/mail/bookings` is a deterministic, read-only register with
+uncertain-date visibility and possible-overlap warnings. It never authorises
+source deletion, asserts payment, or infers that missing evidence means no
+booking exists. Future-booking lifecycle decisions remain deferred.
+
 The normal `run` command is deterministic. The personal and CoHS post-new hooks
 also explicitly pass `--llm-disable`. Every call to Claude requires the global
 `--allow-llm` option, with `NOTMUCH_CONFIG` explicitly selecting
@@ -13,7 +40,7 @@ Before any lifecycle policy runs, all extractor-matching messages and existing
 `billing`, `receipts` or `Expenses` tags receive `curator-retain`. All trash
 queries exclude that tag and the current protection query, including `--only`,
 `--now`, dry runs and destroy previews. Overlapping noise policies cannot trash
-protected evidence. Archiving remains enabled. Previously trashed messages are
+protected evidence. Non-booking archiving remains enabled. Previously trashed messages are
 not restored; this is not a backup or a protection from manual/provider deletion.
 
 `mailcurator evidence --json [--offset N] [--limit N] [--exceptions-only]`

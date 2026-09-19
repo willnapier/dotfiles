@@ -9,6 +9,9 @@ use crate::policy::Policy;
 
 #[derive(Deserialize)]
 pub struct Config {
+    /// Explicit operator opt-in. Automatic trash is suspended by default.
+    #[serde(default)]
+    pub allow_automatic_trash: bool,
     #[serde(default, rename = "policy")]
     pub policies: Vec<Policy>,
 }
@@ -16,7 +19,7 @@ pub struct Config {
 pub fn load(path: &Path) -> Result<Config> {
     let text = fs::read_to_string(path)
         .with_context(|| format!("reading {}", path.display()))?;
-    let cfg: Config = toml::from_str(&text)
+    let mut cfg: Config = toml::from_str(&text)
         .with_context(|| format!("parsing {}", path.display()))?;
 
     // Validate names are unique (needed for the curator-<name>-seen tag convention)
@@ -29,5 +32,8 @@ pub fn load(path: &Path) -> Result<Config> {
             .with_context(|| format!("policy '{}' is invalid", p.name))?;
     }
 
+    if !cfg.allow_automatic_trash {
+        for p in &mut cfg.policies { p.delete_after_days = None; }
+    }
     Ok(cfg)
 }

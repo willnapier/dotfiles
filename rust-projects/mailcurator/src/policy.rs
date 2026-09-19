@@ -243,6 +243,14 @@ impl Policy {
 }
 
 /// Protect all extraction sources plus existing financial labels across overlapping policies.
+pub fn booking_hold_query(policies: &[Policy]) -> String {
+    let mut parts = vec!["tag:booking".to_string()];
+    parts.extend(policies.iter().filter(|p| p.extractors.iter().any(|e| e.category == "bookings"))
+        .map(|p| format!("({})",p.base_query())));
+    format!("({})",parts.join(" or "))
+}
+
+/// Protect all extraction sources plus existing financial labels across overlapping policies.
 pub fn retention_query(policies: &[Policy]) -> String {
     let mut parts = vec!["tag:billing".to_string(), "tag:receipts".to_string(), "tag:Expenses".to_string()];
     parts.extend(policies.iter().filter(|p| !p.extractors.is_empty())
@@ -259,7 +267,7 @@ pub fn retention_query(policies: &[Policy]) -> String {
 /// destroy them now" overrides — e.g. clearing accumulated PracticeForge
 /// OTP codes the moment they've been used. The extracted-tag gate is
 /// preserved (we never destroy uncaptured data).
-pub fn apply(pol: &Policy, dry_run: bool, now: bool, retention: &str) -> Result<Stats> {
+pub fn apply(pol: &Policy, dry_run: bool, now: bool, retention: &str, booking_hold: &str) -> Result<Stats> {
     let mut stats = Stats::default();
     let base = pol.base_query();
     let seen = pol.seen_tag();
@@ -293,7 +301,7 @@ pub fn apply(pol: &Policy, dry_run: bool, now: bool, retention: &str) -> Result<
     if let Some(days) = pol.archive_after_days {
         let age_clause = if now { String::new() } else { format!(" and date:..{days}d") };
         let q = format!(
-            "({base}) and tag:inbox{age_clause} and not tag:trash"
+            "({base}) and tag:inbox{age_clause} and not tag:trash and not ({booking_hold})"
         );
         let n = notmuch::count(&q)?;
         if n > 0 {

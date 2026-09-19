@@ -470,6 +470,7 @@ fn main() -> Result<()> {
             // Protect evidence BEFORE any policy can trash an overlapping match.
             // Applies even to --only/--now: a noise policy cannot override retention.
             if !dry_run {
+                notmuch::apply_tag_changes(&policy::booking_hold_query(&cfg.policies), &["booking"], &[])?;
                 notmuch::apply_tag_changes(&policy::retention_query(&cfg.policies), &["curator-retain"], &[])?;
             }
             let mut total_tagged = 0u64;
@@ -482,7 +483,7 @@ fn main() -> Result<()> {
                         continue;
                     }
                 }
-                let stats = policy::apply(pol, dry_run, now, &policy::retention_query(&cfg.policies))
+                let stats = policy::apply(pol, dry_run, now, &policy::retention_query(&cfg.policies), &policy::booking_hold_query(&cfg.policies))
                     .with_context(|| format!("policy '{}' failed", pol.name))?;
                 total_tagged += stats.tagged_on_arrival;
                 total_archived += stats.archived;
