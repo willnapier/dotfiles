@@ -12,7 +12,7 @@ with no remaining lifecycle action valid.
 Every booking-extractor match is marked `booking` before policy selection.
 All archive queries exclude booking matches and the booking tag, even across
 overlapping rules and `--only --now`. The independent six-month personal Inbox
-cleanup also excludes booking/retained tags and the supported booking-provider
+cleanup also excludes the booking tag and the supported booking-provider
 domains. This is an interim hold, not a date-aware acknowledgement workflow.
 Manual filing still works; no historical mail is automatically put in Inbox.
 

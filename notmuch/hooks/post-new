@@ -18,7 +18,7 @@ set -eu
 # Applies continuously: as messages cross the 6M threshold, they age out.
 # Booking evidence stays put pending an explicit user filing decision.
 # Sender exclusions also protect new arrivals while a curator upgrade is pending.
-notmuch tag -inbox -- 'tag:inbox and not date:6M.. and not (tag:booking or tag:curator-retain or from:airbnb.com or from:booking.com or from:marriott.com or from:premierinn.com or from:travelodge.co.uk or from:agoda.com or from:expedia.com or from:hotels.com)'
+notmuch tag -inbox -- 'tag:inbox and not date:6M.. and not (tag:booking or from:airbnb.com or from:booking.com or from:marriott.com or from:premierinn.com or from:travelodge.co.uk or from:agoda.com or from:expedia.com or from:hotels.com)'
 
 # --- Rule 2: mailcurator (per-sender policies) ---
 # Runs the mailcurator Rust binary (reads ~/.config/mailcurator/policies.toml)

@@ -13,6 +13,8 @@ fn six_month_hook_keeps_booking_sources_and_tags() {
         assert!(o.status.success(),"{}",String::from_utf8_lossy(&o.stderr));String::from_utf8(o.stdout).unwrap()
     };
     run("notmuch",&["new"]);run("notmuch",&["tag","+booking","--","id:tagged@example.org"]);
+    // Retaining a non-booking original does not mean holding it in Inbox.
+    run("notmuch",&["tag","+curator-retain","--","id:noise@example.org"]);
     assert_eq!(run("notmuch",&["count","tag:inbox"]).trim(),"3");
     let hook=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../notmuch/hooks/post-new");
     run("bash",&[hook.to_str().unwrap()]);
