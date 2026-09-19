@@ -169,7 +169,7 @@ enum Commands {
     },
     /// Reconcile bank rows against mailcurator email-evidence
     Enrich {
-        /// Path to mailcurator bills.jsonl
+        /// Mailcurator ledger directory (legacy + host shards), or one explicit JSONL file
         #[arg(long)]
         from: Option<PathBuf>,
         /// Path to write matches.jsonl
@@ -791,7 +791,7 @@ fn cmd_subscriptions(
 fn default_bills_jsonl() -> PathBuf {
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join(".local/share/mailcurator/bills.jsonl")
+        .join(".local/share/mailcurator")
 }
 
 fn default_matches_jsonl() -> PathBuf {

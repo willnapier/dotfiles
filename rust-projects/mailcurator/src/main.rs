@@ -32,6 +32,7 @@ mod bookings_cli;
 mod config;
 mod coverage;
 mod eval;
+mod evidence;
 mod extract;
 mod extractors;
 mod journeys_cli;
@@ -56,10 +57,25 @@ struct Cli {
     /// Path to policies.toml (default: ~/.config/mailcurator/policies.toml)
     #[arg(short, long, global = true)]
     config: Option<PathBuf>,
+
+    /// Explicitly permit Claude on the canonical personal index only. Never use in unattended hooks.
+    #[arg(long, global = true)]
+    allow_llm: bool,
 }
 
 #[derive(Subcommand)]
 enum Command {
+    /// Read-only expense evidence and extraction exceptions; never reads mail or calls an LLM.
+    Evidence {
+        #[arg(long)]
+        json: bool,
+        #[arg(long, default_value_t = 100)]
+        limit: usize,
+        #[arg(long, default_value_t = 0)]
+        offset: usize,
+        #[arg(long)]
+        exceptions_only: bool,
+    },
     /// Apply all policies to currently-matching messages
     Run {
         /// Show what would happen, don't modify anything
@@ -404,9 +420,15 @@ fn config_path(cli_arg: Option<PathBuf>) -> Result<PathBuf> {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    llm::configure_permission(cli.allow_llm)?;
     let path = config_path(cli.config)?;
 
     match cli.command {
+        Command::Evidence { json, limit, offset, exceptions_only } => {
+            let report = evidence::load(&store::store_dir()?, &config::load(&path)?.policies, offset, limit.min(200), exceptions_only)?;
+            if json { println!("{}", serde_json::to_string(&report)?); }
+            else { println!("{} bills; {} need review; {} malformed rows. Use --json for the read-only report.", report.total, report.exceptions, report.malformed); }
+        }
         Command::Validate => {
             let cfg = config::load(&path)?;
             println!(
@@ -442,8 +464,13 @@ fn main() -> Result<()> {
 
             let cfg = config::load(&path)?;
             extract::set_llm_budget(llm_budget);
-            if llm_disable {
+            if llm_disable || !cli.allow_llm {
                 extract::disable_llm_fallback();
+            }
+            // Protect evidence BEFORE any policy can trash an overlapping match.
+            // Applies even to --only/--now: a noise policy cannot override retention.
+            if !dry_run {
+                notmuch::apply_tag_changes(&policy::retention_query(&cfg.policies), &["curator-retain"], &[])?;
             }
             let mut total_tagged = 0u64;
             let mut total_archived = 0u64;
@@ -455,7 +482,7 @@ fn main() -> Result<()> {
                         continue;
                     }
                 }
-                let stats = policy::apply(pol, dry_run, now)
+                let stats = policy::apply(pol, dry_run, now, &policy::retention_query(&cfg.policies))
                     .with_context(|| format!("policy '{}' failed", pol.name))?;
                 total_tagged += stats.tagged_on_arrival;
                 total_archived += stats.archived;
@@ -476,7 +503,7 @@ fn main() -> Result<()> {
             let llm_used = extract::llm_calls_made();
             let llm_note = if llm_used > 0 {
                 format!("  llm-calls={} (budget={})", llm_used, llm_budget)
-            } else if llm_disable {
+            } else if llm_disable || !cli.allow_llm {
                 "  [llm fallback disabled]".to_string()
             } else {
                 String::new()
@@ -619,6 +646,8 @@ fn main() -> Result<()> {
                 }
                 parts.push(format!("date:..-{}d", delete_days));
                 parts.push("not tag:trash".to_string());
+                parts.push("not tag:curator-retain".to_string());
+                parts.push(format!("not ({})", policy::retention_query(&cfg.policies)));
                 let query = parts.join(" and ");
                 let messages = store::list_messages(&query)?;
                 println!(

@@ -187,27 +187,61 @@ fn parse_due_date(s: &str, _received_hint: Option<NaiveDate>) -> Option<NaiveDat
 /// occurrence per message_id since that's the freshest extraction
 /// with the most recent policy applied. Rows with empty message_id
 /// are kept individually (no key to dedup on).
+/// A directory unions bills.jsonl and regular bills.<host>.jsonl shards.
+/// Directory duplicates prefer newest extracted_at, then completeness; an
+/// explicit file retains the legacy tail-wins contract. No input is rewritten.
 pub fn load_email_rows<P: AsRef<Path>>(path: P) -> std::io::Result<Vec<EmailRow>> {
-    let file = File::open(path.as_ref())?;
-    let reader = BufReader::new(file);
+    let path = path.as_ref();
+    let directory = path.is_dir();
+    let mut paths = Vec::new();
+    if directory {
+        for entry in std::fs::read_dir(path)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            let shard = name.strip_prefix("bills.").and_then(|s| s.strip_suffix(".jsonl"))
+                .is_some_and(|host| !host.is_empty());
+            if (name == "bills.jsonl" || shard) && entry.file_type()?.is_file() {
+                paths.push(entry.path());
+            }
+        }
+        paths.sort();
+    } else {
+        paths.push(path.to_path_buf());
+    }
     let mut rows: Vec<EmailRow> = Vec::new();
     let mut seen: HashMap<String, usize> = HashMap::new();
-    for line in reader.lines() {
+    let mut ranks = Vec::new();
+    for path in paths {
+      for line in BufReader::new(File::open(path)?).lines() {
         let line = line?;
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
         }
         if let Some(row) = parse_email_row(trimmed) {
+            let timestamp = serde_json::from_str::<serde_json::Value>(trimmed).ok()
+                .and_then(|v| v.get("extracted_at").and_then(|v| v.as_str())
+                    .and_then(|s| DateTime::parse_from_rfc3339(s).ok()));
+            let completeness = [row.vendor.is_some(), row.counterparty.is_some(), row.amount.is_some(),
+                row.received_date.is_some(), row.due_date.is_some(), row.currency.is_some()]
+                .into_iter().filter(|b| *b).count();
+            let rank = (timestamp, completeness);
             if row.message_id.is_empty() {
                 rows.push(row);
+                ranks.push(rank);
             } else if let Some(&idx) = seen.get(&row.message_id) {
-                rows[idx] = row;
+                if !directory || rank >= ranks[idx] {
+                    rows[idx] = row;
+                    ranks[idx] = rank;
+                }
             } else {
                 seen.insert(row.message_id.clone(), rows.len());
                 rows.push(row);
+                ranks.push(rank);
             }
         }
+      }
     }
     Ok(rows)
 }
@@ -652,6 +686,28 @@ pub fn write_matches<P: AsRef<Path>>(path: P, results: &[MatchResult]) -> std::i
 mod tests {
     use super::*;
     use crate::{Account, TxType};
+
+    #[test]
+    fn directory_union_newest_dedup_and_explicit_file() {
+        let dir = std::env::temp_dir().join(format!("fd-evidence-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        std::fs::create_dir(&dir).unwrap();
+        let row = |id: &str, amount: &str, time: &str| serde_json::json!({"message_id":id,"amount":amount,"extracted_at":time}).to_string();
+        std::fs::write(dir.join("bills.jsonl"), format!("{}\n{}\n", row("same", "1", ""), row("legacy", "2", ""))).unwrap();
+        std::fs::write(dir.join("bills.a.jsonl"), format!("{}\n{}\n", row("same", "9", "2026-09-19T00:00:00Z"), row("new", "3", "2026-09-19T00:00:00Z"))).unwrap();
+        std::fs::write(dir.join("bills.z.jsonl"), format!("{}\nbroken\n", row("same", "4", "2026-05-19T00:00:00Z"))).unwrap();
+        std::fs::write(dir.join("bills..jsonl"), row("ignored", "4", "")).unwrap();
+        std::fs::write(dir.join("orders.x.jsonl"), row("ignored2", "4", "")).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(dir.join("bills.jsonl"), dir.join("bills.link.jsonl")).unwrap();
+        let rows = load_email_rows(&dir).unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows.iter().find(|r| r.message_id == "same").unwrap().amount, Some(Decimal::from(9)));
+        assert_eq!(load_email_rows(dir.join("bills.jsonl")).unwrap().len(), 2);
+        std::fs::remove_file(dir.join("bills.jsonl")).unwrap();
+        assert_eq!(load_email_rows(&dir).unwrap().len(), 2, "shard-only installations work");
+        assert!(load_email_rows(dir.join("missing")).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     fn mk_tx(date_str: &str, amount: &str, desc: &str, id: &str) -> Transaction {
         Transaction {

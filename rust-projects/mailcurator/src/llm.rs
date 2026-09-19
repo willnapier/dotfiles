@@ -12,10 +12,28 @@ use anyhow::{Context, Result};
 use serde_json::{Map, Value};
 use std::io::Write;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static ALLOWED: AtomicBool = AtomicBool::new(false);
+
+pub fn configure_permission(allow: bool) -> Result<()> {
+    if allow {
+        let expected = dirs::home_dir().context("home unavailable")?.join("Mail/.notmuch-config");
+        let selected = std::env::var_os("NOTMUCH_CONFIG").map(std::path::PathBuf::from);
+        // Positive path authorization, not a blacklist of known clinical paths.
+        // Require an explicit config: notmuch's implicit defaults are ambiguous.
+        anyhow::ensure!(selected.as_ref() == Some(&expected),
+            "--allow-llm requires NOTMUCH_CONFIG explicitly set to the canonical personal index; CoHS and custom indexes are not eligible");
+    }
+    ALLOWED.store(allow, Ordering::Relaxed);
+    Ok(())
+}
 
 /// Send a prompt to Claude via `claude -p` and return the response text.
 /// The prompt is passed on stdin to avoid argv-length limits.
 pub fn ask(prompt: &str) -> Result<String> {
+    anyhow::ensure!(ALLOWED.load(Ordering::Relaxed),
+        "LLM access disabled. Personal-mail assistance requires explicit --allow-llm; unattended runs are deterministic");
     let mut child = Command::new("claude")
         .arg("-p")
         .stdin(Stdio::piped())

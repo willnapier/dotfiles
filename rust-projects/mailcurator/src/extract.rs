@@ -358,6 +358,13 @@ fn extract_one(
             }
         }
 
+        // Account provenance is explicit for new records; never guess for old ledgers.
+        if let Some(home) = dirs::home_dir() {
+            let config = std::env::var_os("NOTMUCH_CONFIG").map(std::path::PathBuf::from);
+            let account = if config.as_ref() == Some(&home.join("Mail/.notmuch-config")) { Some("personal") }
+                else if config.as_ref() == Some(&home.join("Mail/.notmuch-cohs-config")) { Some("cohs") } else { None };
+            if let Some(account) = account { record.insert("account".into(), Value::String(account.into())); }
+        }
         store::append_record(&ex.category, &Value::Object(record))?;
     }
 

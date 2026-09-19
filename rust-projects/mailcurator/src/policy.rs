@@ -160,6 +160,9 @@ impl Policy {
     }
 
     pub fn validate(&self) -> Result<()> {
+        anyhow::ensure!(!self.on_arrival.tags_add.iter().any(|t| t == "trash")
+            && !self.on_arrival.tags_remove.iter().any(|t| t == "curator-retain"),
+            "on-arrival actions cannot bypass evidence retention; use lifecycle trash rules");
         if self.name.is_empty() {
             anyhow::bail!("name is empty");
         }
@@ -239,6 +242,14 @@ impl Policy {
     }
 }
 
+/// Protect all extraction sources plus existing financial labels across overlapping policies.
+pub fn retention_query(policies: &[Policy]) -> String {
+    let mut parts = vec!["tag:billing".to_string(), "tag:receipts".to_string(), "tag:Expenses".to_string()];
+    parts.extend(policies.iter().filter(|p| !p.extractors.is_empty())
+        .map(|p| format!("({})", p.base_query())));
+    format!("({}) and not tag:curator-retain", parts.join(" or "))
+}
+
 /// Apply a policy: handle on_arrival (new matches), extraction, then
 /// lifecycle transitions. When `dry_run` is true, nothing is modified;
 /// counts are still reported.
@@ -248,7 +259,7 @@ impl Policy {
 /// destroy them now" overrides — e.g. clearing accumulated PracticeForge
 /// OTP codes the moment they've been used. The extracted-tag gate is
 /// preserved (we never destroy uncaptured data).
-pub fn apply(pol: &Policy, dry_run: bool, now: bool) -> Result<Stats> {
+pub fn apply(pol: &Policy, dry_run: bool, now: bool, retention: &str) -> Result<Stats> {
     let mut stats = Stats::default();
     let base = pol.base_query();
     let seen = pol.seen_tag();
@@ -301,11 +312,11 @@ pub fn apply(pol: &Policy, dry_run: bool, now: bool) -> Result<Stats> {
     if let Some(days) = pol.delete_after_days {
         let age_clause = if now { String::new() } else { format!(" and date:..{days}d") };
         let q = if pol.extractors.is_empty() {
-            format!("({base}) and not tag:trash{age_clause}")
+            format!("({base}) and not tag:trash and not tag:curator-retain and not ({retention}){age_clause}")
         } else {
             let extracted = pol.extracted_tag();
             format!(
-                "({base}) and not tag:trash{age_clause} and tag:{extracted}"
+                "({base}) and not tag:trash and not tag:curator-retain and not ({retention}){age_clause} and tag:{extracted}"
             )
         };
         let n = notmuch::count(&q)?;
