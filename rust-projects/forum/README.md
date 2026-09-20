@@ -84,6 +84,12 @@ forum convene meta-example --caller codex --panel others --dry-run
 - Contributors receive one fixed snapshot, preserving independent first-round
   positions.
 - Contributors are told not to use tools, edit files, or convene more agents.
+- Contribution prompts require bold labels or level-four (`####`) subheadings,
+  not thread-level headings, and prohibit copying the orchestrator's HTML
+  markers. The structural validator remains fail-closed: reserved headings
+  such as `## Decisions for William` are rejected, not silently rewritten.
+  A failed blind round publishes nothing; retry with the original hash-locked
+  caller Position after correcting the output-format instructions.
 - Codex runs read-only and ephemeral; Claude and Grok run in plan/read-only
   permission modes.
 - Harness output is staged under `~/.local/state/forum/jobs/`.

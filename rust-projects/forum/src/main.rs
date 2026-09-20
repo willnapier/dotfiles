@@ -2947,6 +2947,7 @@ Thread: {id}\nRound: {round}\nContribution type: {kind}\n\n\
 Read the complete snapshot below. Produce an independent, substantive contribution. State a clear claim, use evidence from the snapshot or named paths, identify risks and alternatives, and say what would change if accepted. For a reply round, engage the strongest existing claims rather than merely agreeing. Stay PHI-free. Debate only: do not implement, invoke tools, edit files, or start other assistants.\n\n\
 {duties}\n\n\
 Return only the Markdown body of your contribution. Do not emit YAML frontmatter, a Position/Reply heading, code fences around the whole response, or commentary about the task.\n\n\
+Use bold labels or level-four (####) subheadings within your contribution. Do not emit level-one, level-two or level-three headings: the forum owns the thread sections and contribution headings. For example, write **Decisions for William** or #### Decisions for William, not a level-two Decisions heading. Never copy forum HTML markers from the snapshot or emit your own; forum-round and forum-staged markers are reserved for the orchestrator. Contributions containing reserved structure are rejected and a blind round publishes nothing if any contributor fails validation.\n\n\
 --- THREAD SNAPSHOT ---\n{snapshot}\n--- END SNAPSHOT ---\n",
         name = harness.display_name,
         id = id,
@@ -4108,6 +4109,61 @@ mod tests {
         assert!(reply_prompt.contains("**Dispositions:**"));
         assert!(!reply_prompt.contains("Falsification pass"));
         assert!(!position_prompt.contains("Dispositions"));
+    }
+
+    #[test]
+    fn contribution_prompts_explain_safe_subheadings_and_reserved_structure() {
+        let config = default_config();
+        for harness in config.harnesses.values() {
+            for (round, kind, critic) in [
+                (1, ContributionKind::Position, false),
+                (2, ContributionKind::Reply, false),
+                (2, ContributionKind::Reply, true),
+            ] {
+                let prompt = build_prompt("t", round, kind, harness, "snapshot", critic);
+                assert!(prompt.contains("Use bold labels or level-four (####) subheadings"));
+                assert!(prompt.contains("Do not emit level-one, level-two or level-three headings"));
+                assert!(prompt.contains("Never copy forum HTML markers"));
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reserved_heading_blocks_blind_reveal_but_safe_subheading_succeeds() {
+        for (heading, should_succeed) in [
+            ("## Decisions that need William", false),
+            ("#### Decisions that need William", true),
+        ] {
+            let temp = TempDir::new().unwrap();
+            write_temp_forum(&temp);
+            let staged = temp.path().join("staged.md");
+            fs::write(&staged, "**Claim:** original committed position.\n").unwrap();
+            let config = fake_config(&format!("printf '%s\\n' '{heading}' 'Retain user authority.'"));
+            let mut args = convene_args("test-thread", "codex", "fake");
+            args.with_position = Some(staged);
+            let result = cmd_convene(temp.path(), &config, args);
+            let thread = fs::read_to_string(temp.path().join("meta/thread.md")).unwrap();
+            if should_succeed {
+                result.unwrap();
+                assert!(has_round_marker(&thread, 1, "codex"));
+                assert!(has_round_marker(&thread, 1, "fake"));
+                assert!(thread.contains(heading));
+                assert!(thread.contains("original committed position"));
+            } else {
+                let error = format!("{:#}", result.unwrap_err());
+                assert!(error.contains("contribution contains reserved forum structure"));
+                assert!(round_markers(&thread).is_empty());
+                assert!(!thread.contains("original committed position"));
+                assert!(!thread.contains("Retain user authority"));
+            }
+        }
+        for marker in [
+            "<!-- forum-round:1 harness:fake -->",
+            "<!-- forum-staged:1 harness:codex sha256:x -->",
+        ] {
+            assert!(clean_model_output(marker).is_err());
+        }
     }
 
     #[test]
