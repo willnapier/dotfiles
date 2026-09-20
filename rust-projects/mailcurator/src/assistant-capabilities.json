@@ -1,0 +1,27 @@
+{
+  "protocol": "forge-assistant",
+  "schema_version": 1,
+  "program": "mailcurator",
+  "coverage": "explicit_subset",
+  "enforces_access_control": false,
+  "data_return_policy": "Only operations listed here return content-free metadata or receipts. Other commands are not authorised by this manifest. JSON, pseudonymisation and terminal output are not privacy guarantees.",
+  "operations": [
+    {
+      "id": "capabilities",
+      "argv": [
+        "assistant",
+        "capabilities"
+      ],
+      "output": "static_metadata",
+      "effect": "none"
+    }
+  ],
+  "response_format": "one_json_document",
+  "compatibility": "Ignore unknown fields; refuse unsupported schema versions. Static CLI help is text, not a protocol response.",
+  "statuses": [
+    "refused"
+  ],
+  "errors": [
+    "invalid_request"
+  ]
+}
