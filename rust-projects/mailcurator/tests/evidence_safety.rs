@@ -122,7 +122,7 @@ literal = "Fixture"
             "notmuch",
             &[
                 "count",
-                "id:bill@example.org and tag:curator-retain and not tag:inbox and not tag:trash"
+                "id:bill@example.org and tag:curator-retain and tag:inbox and not tag:trash"
             ]
         ))
         .trim(),

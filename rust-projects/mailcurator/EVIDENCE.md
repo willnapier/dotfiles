@@ -1,5 +1,17 @@
 # Expense evidence and retention
 
+## Verified delivery (2026-09-20)
+
+Automatic Inbox release for information mail now requires a live-verified
+destination receipt across every matching information policy. The first adapter
+is prospective personal booking Markdown, explicitly configured and single-writer.
+Missing destinations (including finance), edited files, uncertain extraction and
+uncaptured attachments hold mail. The six-month hook no longer files independently.
+`delivery-status --json` checks pending and already-archived receipts without
+changing mail. No deletion enabled. See [DELIVERY.md](DELIVERY.md) for the full
+contract and limits; this supersedes the unconditional booking archive hold below
+only for individual verified eligible items.
+
 ## Booking safeguards (2026-09-19)
 
 Automatic trash now defaults OFF at config load, including Sweep/`--now` and

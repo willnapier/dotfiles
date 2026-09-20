@@ -87,14 +87,15 @@ pub fn reset_llm_counters() {
 ///   5. tag the message with the extracted-tag (idempotency)
 ///
 /// Returns the number of messages actually extracted.
-pub fn run_extractors(pol: &Policy, dry_run: bool) -> Result<u64> {
+pub fn run_extractors(pol: &Policy, dry_run: bool, destination: Option<&crate::delivery::Destination>) -> Result<u64> {
     if pol.extractors.is_empty() {
         return Ok(0);
     }
 
     let base = pol.base_query();
     let extracted_tag = pol.extracted_tag();
-    let query = format!("({base}) and not tag:{extracted_tag}");
+    let retry_tag = format!("curator-{}-delivery-retry", pol.name);
+    let query = format!("({base}) and (not tag:{extracted_tag} or tag:{retry_tag})");
 
     // Get message file paths
     let files = list_files(&query)?;
@@ -125,7 +126,7 @@ pub fn run_extractors(pol: &Policy, dry_run: bool) -> Result<u64> {
 
     let mut count = 0u64;
     for path in &files {
-        match extract_one(pol, path, &mut cache, &mut seen_message_ids) {
+        match extract_one(pol, path, &mut cache, &mut seen_message_ids, destination) {
             Ok(true) => count += 1,
             Ok(false) => {} // duplicate message-id, skipped
             Err(e) => {
@@ -194,6 +195,7 @@ fn extract_one(
     path: &str,
     cache: &mut Cache,
     seen_message_ids: &mut std::collections::HashSet<String>,
+    destination: Option<&crate::delivery::Destination>,
 ) -> Result<bool> {
     let raw = fs::read(path).with_context(|| format!("reading {path}"))?;
     let parsed = parse_mail(&raw).with_context(|| format!("parsing RFC822 from {path}"))?;
@@ -351,7 +353,12 @@ fn extract_one(
         for f in &ex.fields {
             if let Some(v) = apply_rule(f, &parsed, &subject, &body_text)? {
                 let value = match f.kind.as_deref() {
-                    Some("date") => normalise_date(&v, &parsed).unwrap_or(v),
+                    Some("date") => {
+                        if !regex::Regex::new(r"\b\d{4}\b")?.is_match(&v) {
+                            record.insert("_date_inferred".into(), Value::Bool(true));
+                        }
+                        normalise_date(&v, &parsed).unwrap_or(v)
+                    },
                     _ => v,
                 };
                 record.insert(f.name.clone(), Value::String(value));
@@ -365,7 +372,24 @@ fn extract_one(
                 else if config.as_ref() == Some(&home.join("Mail/.notmuch-cohs-config")) { Some("cohs") } else { None };
             if let Some(account) = account { record.insert("account".into(), Value::String(account.into())); }
         }
-        store::append_record(&ex.category, &Value::Object(record))?;
+        // Only new deterministic extractions are eligible for prospective delivery.
+        // Historical ledgers/tags never constitute proof. Capture failure holds mail.
+        let value = Value::Object(record);
+        let mut delivery_failed = false;
+        if ex.category == "bookings" {
+            if let Some(destination) = destination {
+                if crate::delivery::capture(destination, pol, &value, &raw).is_err() {
+                    eprintln!("  [{}] destination delivery held; inspect delivery-status", pol.name);
+                    delivery_failed = true;
+                }
+                let retry_tag = format!("curator-{}-delivery-retry", pol.name);
+                let q = format!("id:\"{}\"", message_id.trim_start_matches('<').trim_end_matches('>'));
+                if delivery_failed { crate::notmuch::apply_tag_changes(&q, &[&retry_tag], &[])?; }
+                else { crate::notmuch::apply_tag_changes(&q, &[], &[&retry_tag])?; }
+            }
+        }
+        let q = format!("id:\"{}\" and tag:{}", message_id.trim_start_matches('<').trim_end_matches('>'), pol.extracted_tag());
+        if crate::notmuch::count(&q)? == 0 { store::append_record(&ex.category, &value)?; }
     }
 
     // Tag this single message as extracted (idempotent).

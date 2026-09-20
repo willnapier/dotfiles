@@ -31,6 +31,7 @@ mod bills_cli;
 mod bookings_cli;
 mod config;
 mod coverage;
+mod delivery;
 mod eval;
 mod evidence;
 mod extract;
@@ -65,6 +66,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Verify destination receipts against live files; no mail mutation or LLM.
+    DeliveryStatus {
+        #[arg(long)]
+        json: bool,
+    },
     /// Read-only expense evidence and extraction exceptions; never reads mail or calls an LLM.
     Evidence {
         #[arg(long)]
@@ -424,6 +430,13 @@ fn main() -> Result<()> {
     let path = config_path(cli.config)?;
 
     match cli.command {
+        Command::DeliveryStatus { json } => {
+            let cfg = config::load(&path)?;
+            let gate = delivery::ArchiveGate::new(&cfg)?;
+            let report = gate.report()?;
+            if json { println!("{}", serde_json::to_string(&report)?); }
+            else { println!("Information messages: {}; verified: {}; held: {}", report.total, report.verified, report.held); }
+        }
         Command::Evidence { json, limit, offset, exceptions_only } => {
             let report = evidence::load(&store::store_dir()?, &config::load(&path)?.policies, offset, limit.min(200), exceptions_only)?;
             if json { println!("{}", serde_json::to_string(&report)?); }
@@ -444,13 +457,22 @@ fn main() -> Result<()> {
             }
         }
         Command::Run { dry_run, now, only, llm_disable, llm_budget } => {
+            let cfg = config::load(&path)?;
             // Multi-machine leadership: skip clean if another machine has been
             // active more recently. Bypass with MAILCURATOR_FORCE=1 (e.g. for
             // backfill or explicit operator runs). Dry runs also honour the
             // gate — easier to reason about, and cheap to override when
             // genuinely needed. See src/leader.rs for the protocol.
-            let decision = leader::should_run();
             let id = leader::machine_id();
+            // A configured delivery pipeline has one designated writer; it must
+            // not depend on whether someone recently opened the mail UI.
+            let decision = if let Some(destination) = &cfg.delivery {
+                if destination.writer != id {
+                    eprintln!("mailcurator: delivery pipeline belongs to another configured host; skipped");
+                    return Ok(());
+                }
+                leader::RunDecision::Run
+            } else { leader::should_run() };
             match &decision {
                 leader::RunDecision::Run | leader::RunDecision::ForcedRun => {
                     eprintln!("{}", leader::explain_decision(&decision, &id));
@@ -462,7 +484,8 @@ fn main() -> Result<()> {
                 }
             }
 
-            let cfg = config::load(&path)?;
+            let _run_lock = if dry_run { None } else { Some(delivery::run_lock()?) };
+            let gate = delivery::ArchiveGate::new(&cfg)?;
             extract::set_llm_budget(llm_budget);
             if llm_disable || !cli.allow_llm {
                 extract::disable_llm_fallback();
@@ -483,19 +506,20 @@ fn main() -> Result<()> {
                         continue;
                     }
                 }
-                let stats = policy::apply(pol, dry_run, now, &policy::retention_query(&cfg.policies), &policy::booking_hold_query(&cfg.policies))
+                let stats = policy::apply(pol, dry_run, now, &policy::retention_query(&cfg.policies), &gate)
                     .with_context(|| format!("policy '{}' failed", pol.name))?;
                 total_tagged += stats.tagged_on_arrival;
                 total_archived += stats.archived;
                 total_deleted += stats.deleted;
                 let quarantine_note = if pol.quarantine { "  [QUARANTINE]" } else { "" };
                 println!(
-                    "{:<30}  +arrival={:<4}  ⤓extracted={:<4}  →archive={:<4}  →trash={:<4}{}",
+                    "{:<30}  +arrival={:<4}  ⤓extracted={:<4}  →archive={:<4}  →trash={:<4} held={:<4}{}",
                     pol.name,
                     stats.tagged_on_arrival,
                     stats.extracted,
                     stats.archived,
                     stats.deleted,
+                    stats.held,
                     quarantine_note
                 );
             }

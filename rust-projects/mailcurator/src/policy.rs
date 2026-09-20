@@ -14,11 +14,11 @@
 
 use anyhow::Result;
 use regex::Regex;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::notmuch;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Policy {
     pub name: String,
 
@@ -65,7 +65,7 @@ pub struct Policy {
     pub vendor_module: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Extractor {
     /// JSONL file basename (without .jsonl). Records appended to
     /// ~/.local/share/mailcurator/<category>.jsonl.
@@ -80,7 +80,7 @@ pub struct Extractor {
 
 /// A single field-extraction rule. Exactly one of (literal, header,
 /// body_regex, subject_regex) should be set; validate() enforces this.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct FieldRule {
     pub name: String,
 
@@ -111,7 +111,7 @@ pub struct FieldRule {
     pub kind: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct MatchSpec {
     /// Notmuch from: query fragment (e.g. "@royalmail.com" or "noreply@zoom.us")
     pub from: Option<String>,
@@ -128,7 +128,7 @@ pub struct MatchSpec {
     pub subject_not_contains: Option<String>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct OnArrival {
     #[serde(default)]
     pub tags_add: Vec<String>,
@@ -142,6 +142,7 @@ pub struct Stats {
     pub tagged_on_arrival: u64,
     pub extracted: u64,
     pub archived: u64,
+    pub held: u64,
     pub deleted: u64,
 }
 
@@ -161,7 +162,7 @@ impl Policy {
 
     pub fn validate(&self) -> Result<()> {
         anyhow::ensure!(!self.on_arrival.tags_add.iter().any(|t| t == "trash")
-            && !self.on_arrival.tags_remove.iter().any(|t| t == "curator-retain"),
+            && !self.on_arrival.tags_remove.iter().any(|t| matches!(t.as_str(), "curator-retain" | "inbox" | "booking" | "curator-delivery-pending")),
             "on-arrival actions cannot bypass evidence retention; use lifecycle trash rules");
         if self.name.is_empty() {
             anyhow::bail!("name is empty");
@@ -267,7 +268,7 @@ pub fn retention_query(policies: &[Policy]) -> String {
 /// destroy them now" overrides — e.g. clearing accumulated PracticeForge
 /// OTP codes the moment they've been used. The extracted-tag gate is
 /// preserved (we never destroy uncaptured data).
-pub fn apply(pol: &Policy, dry_run: bool, now: bool, retention: &str, booking_hold: &str) -> Result<Stats> {
+pub fn apply(pol: &Policy, dry_run: bool, now: bool, retention: &str, gate: &crate::delivery::ArchiveGate<'_>) -> Result<Stats> {
     let mut stats = Stats::default();
     let base = pol.base_query();
     let seen = pol.seen_tag();
@@ -289,7 +290,7 @@ pub fn apply(pol: &Policy, dry_run: bool, now: bool, retention: &str, booking_ho
     // Runs over (base) and not extracted-tag. Independent of seen — extraction
     // applies retroactively to existing matches that haven't been processed.
     if !pol.extractors.is_empty() {
-        stats.extracted = crate::extract::run_extractors(pol, dry_run)?;
+        stats.extracted = crate::extract::run_extractors(pol, dry_run, gate.destination())?;
     }
 
     // Quarantine short-circuits archive/delete — observe only.
@@ -301,15 +302,9 @@ pub fn apply(pol: &Policy, dry_run: bool, now: bool, retention: &str, booking_ho
     if let Some(days) = pol.archive_after_days {
         let age_clause = if now { String::new() } else { format!(" and date:..{days}d") };
         let q = format!(
-            "({base}) and tag:inbox{age_clause} and not tag:trash and not ({booking_hold})"
+            "({base}) and tag:inbox{age_clause} and not tag:trash"
         );
-        let n = notmuch::count(&q)?;
-        if n > 0 {
-            stats.archived = n;
-            if !dry_run {
-                notmuch::apply_tag_changes(&q, &[], &["inbox"])?;
-            }
-        }
+        (stats.archived, stats.held) = gate.archive(&q, dry_run)?;
     }
 
     // --- delete: matching messages past the trash threshold ---

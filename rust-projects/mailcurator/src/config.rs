@@ -9,6 +9,9 @@ use crate::policy::Policy;
 
 #[derive(Deserialize)]
 pub struct Config {
+    /// Optional personal-booking destination. Missing configuration means hold.
+    #[serde(rename = "verified_delivery")]
+    pub delivery: Option<crate::delivery::Destination>,
     /// Explicit operator opt-in. Automatic trash is suspended by default.
     #[serde(default)]
     pub allow_automatic_trash: bool,
@@ -21,6 +24,7 @@ pub fn load(path: &Path) -> Result<Config> {
         .with_context(|| format!("reading {}", path.display()))?;
     let mut cfg: Config = toml::from_str(&text)
         .with_context(|| format!("parsing {}", path.display()))?;
+    if let Some(destination) = &cfg.delivery { destination.validate()?; }
 
     // Validate names are unique (needed for the curator-<name>-seen tag convention)
     let mut names = std::collections::HashSet::new();

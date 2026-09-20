@@ -2,9 +2,8 @@
 # notmuch post-new hook
 # Runs automatically after every `notmuch new` (invoked by mail-sync every 15 min).
 #
-# Purpose: keep the inbox view self-maintaining by archiving messages that
-# have aged past the 6-month window. Messages aren't deleted — they just
-# lose the `inbox` tag, corresponding to Gmail's "Archive" action.
+# Purpose: classify new mail and run receipt-gated policy filing.
+# Age alone is not proof that important information reached its destination.
 #
 # Adding rules: drop `notmuch tag` lines below. Each is idempotent.
 # Effects propagate to Gmail on the next mail-sync tick (push phase).
@@ -13,12 +12,10 @@ set -eu
 
 # Personal index excludes COHS at ingestion. No COHS rules run here.
 
-# --- Rule 1: age-based inbox pruning ---
-# Any message still tagged `inbox` but older than 6 months leaves inbox.
-# Applies continuously: as messages cross the 6M threshold, they age out.
-# Booking evidence stays put pending an explicit user filing decision.
-# Sender exclusions also protect new arrivals while a curator upgrade is pending.
-notmuch tag -inbox -- 'tag:inbox and not date:6M.. and not (tag:booking or from:airbnb.com or from:booking.com or from:marriott.com or from:premierinn.com or from:travelodge.co.uk or from:agoda.com or from:expedia.com or from:hotels.com)'
+# --- Rule 1: no independent age-based inbox pruning ---
+# All automatic inbound filing belongs to MailCurator's verified-delivery gate.
+# Missing/old binaries, fast refreshes and unknown senders retain Inbox state.
+# Manual archive and outgoing/Sent classification below remain independent.
 
 # --- Rule 2: mailcurator (per-sender policies) ---
 # Runs the mailcurator Rust binary (reads ~/.config/mailcurator/policies.toml)
@@ -40,10 +37,10 @@ if command -v mailcurator >/dev/null 2>&1 && [ -z "${MAILFORGE_FAST_REINDEX:-}" 
     mc_last=$(cat "$mc_stamp" 2>/dev/null || echo 0)
     if [ "$((mc_now - mc_last))" -ge 120 ]; then
         printf '%s\n' "$mc_now" > "$mc_stamp" 2>/dev/null || true
-        if mailcurator evidence --help >/dev/null 2>&1; then
+        if mailcurator delivery-status --help >/dev/null 2>&1; then
             mailcurator run --llm-disable 2>&1 | sed 's/^/[mailcurator] /' || true
         else
-            echo '[mailcurator] retained-evidence binary unavailable; curation skipped' >&2
+            echo '[mailcurator] verified-delivery binary unavailable; curation skipped' >&2
         fi
     fi
 fi

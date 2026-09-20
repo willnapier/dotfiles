@@ -15,9 +15,9 @@ notmuch tag -new -- tag:new
 # COHS blacklist policies are independent of personal sender policies.
 cohs_policies="${XDG_CONFIG_HOME:-$HOME/.config}/mailcurator/policies-cohs.toml"
 if [ -f "$cohs_policies" ] && command -v mailcurator >/dev/null 2>&1 && [ -z "${MAILFORGE_FAST_REINDEX:-}" ]; then
-    if mailcurator evidence --help >/dev/null 2>&1; then
+    if mailcurator delivery-status --help >/dev/null 2>&1; then
         mailcurator --config "$cohs_policies" run --llm-disable
     else
-        echo '[mailcurator] retained-evidence binary unavailable; curation skipped' >&2
+        echo '[mailcurator] verified-delivery binary unavailable; curation skipped' >&2
     fi
 fi
