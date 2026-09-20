@@ -32,6 +32,7 @@ The filename is an opaque stable digest, not a subject, property or client name.
 
 The v1 capture contract requires property, booking reference and explicit-year
 check-in/out dates with a valid future interval relative to the source date.
+Ambiguous slash dates (such as 03/04/2027) also require review.
 All additional extracted fields are included too. The original full email remains
 retained as evidence; this contract does NOT claim to understand every sentence.
 Missing/inferred dates, LLM-derived fields, cancellation/amendment/reminder subjects,
@@ -53,11 +54,13 @@ overwritten or resurrected. Symlinks, unsafe paths, excessive reads and ambiguou
 source identities fail closed.
 
 Receipts in `~/.local/share/mailcurator/delivery-receipts/` bind account-qualified
-identity, policy/config-derived fingerprint, destination-relative path, SHA-256 of
+identity, match/extractor/vendor-contract fingerprint, destination-relative path, SHA-256 of
 the destination and source bytes, and minimal dates/dependency hashes. They contain
 no body, subject or property name. Receipts are writer-local operational state;
 Forge files sync normally. Losing the receipt store causes holds, not guessed proof.
 They are not disposal tombstones, and no lifetime/backup-erasure promise is made.
+Schedule or tag edits do not invalidate receipts; changing the capture contract
+does. There is no automatic re-attestation of changed contracts or edited records.
 
 Every matching extraction policy must be satisfied; an unsatisfied expense claim
 blocks filing even when the booking file exists. Financial labels are held until
@@ -72,6 +75,11 @@ The personal hook no longer has an independent age-filing operation. Both hooks
 require the `delivery-status` capability before running curation; missing/older
 binaries skip curation without stopping mail sync. Outgoing/Sent classification
 remains separate from automatic inbound filing.
+The trash path independently excludes the entire information net and recorded
+source identities, even if legacy automatic-trash opt-in is enabled. Successful
+delivery is never destruction authority. CoHS also keeps information-like matches
+in Inbox, but never exports them to this adapter or reads personal receipts;
+each index has a separate process lock.
 
 `mailcurator delivery-status --json` is a read-only, sensitive user-facing report
 of information awaiting delivery and existing receipts (including archived mail).
@@ -79,6 +87,8 @@ It gives source ids, verified destination paths and held reasons, but no bodies 
 LLM calls. An edited/missing destination remains an exception; it neither restores
 Inbox nor deletes anything. This is not an assistant-safe or deidentified API.
 `curator-delivery-pending` is an Inbox review marker, not authority to archive.
+Run this report on the designated writer; other hosts do not own its receipts.
+Recognised receipt, destination and source failures have distinct reason codes.
 
 ## Operational limits
 
@@ -93,6 +103,25 @@ erases every copy. No expiry or coordinated destruction is implemented here.
 Later cancellation correspondence remains visible in Inbox; records explicitly
 state their evidence date and require checking later mail. There is no automatic
 amendment reconciliation or claim of a complete trip register.
+Sender authenticity is not verified: the receipt attests local capture integrity,
+not that a sender or a claimed reservation is genuine. Conservative MIME/subject
+checks may hold confirmations with inline logos or "free cancellation" wording.
+Malformed/oversized receipt or legacy evidence inventories fail closed and need
+operator repair; they are not silently discarded. Searches are scoped to Inbox
+plus already-receipted sources, not the entire historical mailbox.
+
+## Deployment order
+
+1. Deploy both hosts' hooks first and check no old six-month prune remains.
+   With an old binary, the new hook safely skips curation.
+2. Build/test the candidate on both hosts. Install the writer's binary before
+   enabling its private destination configuration or booking archive thresholds.
+3. Preserve a signed Mac binary if the signing identity is unavailable. Do not
+   install unsigned over it or enable new archive thresholds with the old binary.
+   The Mac hook skips curation until its signed upgrade; nimbini owns processing.
+4. Verify installed hashes, synthetic positive/negative workflows, live read-only
+   held volume, and a bounded live run. Zero eligible deliveries is not proof of
+   real booking capture; report it separately from non-empty synthetic tests.
 
 ## Verification
 

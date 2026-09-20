@@ -88,7 +88,12 @@ fn key(policy: &Policy, message: &str) -> Result<String> {
     ))
 }
 fn policy_hash(policy: &Policy) -> Result<String> {
-    Ok(digest(&serde_json::to_vec(policy)?))
+    // Scheduling and tags do not change the captured information contract.
+    Ok(digest(&serde_json::to_vec(&(
+        &policy.r#match,
+        &policy.extractors,
+        &policy.vendor_module,
+    ))?))
 }
 
 fn safe_dir(path: &Path, create: bool) -> Result<()> {
@@ -183,7 +188,8 @@ fn receipts(create: bool) -> Result<PathBuf> {
 }
 pub fn run_lock() -> Result<File> {
     let root = receipts(true)?;
-    let path = root.join("run.lock");
+    let account = std::env::var_os("NOTMUCH_CONFIG").unwrap_or_default();
+    let path = root.join(format!("run-{}.lock", digest(account.as_encoded_bytes())));
     if let Ok(meta) = fs::symlink_metadata(&path) {
         ensure!(
             meta.is_file() && !meta.file_type().is_symlink(),
@@ -218,11 +224,24 @@ struct Receipt {
 fn text<'a>(v: &'a Value, name: &str) -> &'a str {
     v.get(name).and_then(Value::as_str).unwrap_or("").trim()
 }
+pub fn date_needs_review(raw: &str) -> bool {
+    if !regex::Regex::new(r"\b20\d{2}\b").unwrap().is_match(raw) {
+        return true;
+    }
+    regex::Regex::new(r"\b(\d{1,2})/(\d{1,2})/20\d{2}\b")
+        .unwrap()
+        .captures(raw)
+        .is_some_and(|c| {
+            let a: u32 = c[1].parse().unwrap_or(0);
+            let b: u32 = c[2].parse().unwrap_or(0);
+            a != b && (1..=12).contains(&a) && (1..=12).contains(&b)
+        })
+}
 fn explicit_date(raw: &str) -> Result<NaiveDate> {
     let raw = raw.replace(',', "");
     ensure!(
-        regex::Regex::new(r"\b\d{4}\b")?.is_match(&raw),
-        "date year unverified"
+        !date_needs_review(&raw),
+        "date year or day/month order unverified"
     );
     for format in [
         "%Y-%m-%d",
@@ -293,6 +312,7 @@ pub fn capture(
             == message,
         "source identity mismatch"
     );
+    verify_source(&message, &digest(raw))?;
     let received = DateTime::parse_from_rfc2822(
         &parsed
             .headers
@@ -463,8 +483,15 @@ fn verify(destination: &Destination, policy: &Policy, message: &str) -> Result<P
         "unsupported_or_quarantined"
     );
     let key = key(policy, message)?;
-    let receipt: Receipt =
-        serde_json::from_slice(&read(&receipts(false)?.join(format!("{key}.json")))?)?;
+    let receipt: Receipt = serde_json::from_slice(
+        &read(
+            &receipts(false)
+                .context("receipt_unavailable")?
+                .join(format!("{key}.json")),
+        )
+        .context("receipt_unavailable")?,
+    )
+    .context("receipt_invalid")?;
     ensure!(
         receipt.version == 1
             && receipt.key == key
@@ -474,20 +501,27 @@ fn verify(destination: &Destination, policy: &Policy, message: &str) -> Result<P
             && receipt.root == destination.root,
         "receipt_stale"
     );
-    let target = destination.path(false)?.join(format!("{key}.md"));
+    let target = destination
+        .path(false)
+        .context("destination_unavailable")?
+        .join(format!("{key}.md"));
     ensure!(
-        digest(&read(&target)?) == receipt.destination_hash,
+        digest(&read(&target).context("destination_unavailable")?) == receipt.destination_hash,
         "destination_changed"
     );
+    verify_source(message, &receipt.source_hash)?;
+    Ok(target)
+}
+fn verify_source(message: &str, source_hash: &str) -> Result<()> {
     let files = search("files", &query(message)?)?;
     ensure!(!files.is_empty(), "source_missing");
     for file in files {
         ensure!(
-            digest(&read(Path::new(&file))?) == receipt.source_hash,
+            digest(&read(Path::new(&file)).context("source_unavailable")?) == source_hash,
             "source_changed_or_ambiguous"
         );
     }
-    Ok(target)
+    Ok(())
 }
 
 pub struct ArchiveGate<'a> {
@@ -523,14 +557,12 @@ impl<'a> ArchiveGate<'a> {
         )?
         .into_iter()
         .collect();
-        let financial = search("messages", "tag:billing or tag:receipts or tag:Expenses")?
-            .into_iter()
-            .collect();
         // Continue checking delivered records after the email has left Inbox.
         // A missing or edited destination remains a visible exception, never a
         // signal to resurrect/delete source or destination content.
         let receipt_root = home()?.join(".local/share/mailcurator/delivery-receipts");
-        if receipt_root.exists() {
+        let mut receipt_queries = Vec::new();
+        if personal() && receipt_root.exists() {
             safe_dir(&receipt_root, false)?;
             let entries = fs::read_dir(&receipt_root)?.collect::<std::io::Result<Vec<_>>>()?;
             ensure!(entries.len() <= 10000, "receipt inventory too large");
@@ -538,14 +570,29 @@ impl<'a> ArchiveGate<'a> {
                 if entry.path().extension().is_some_and(|e| e == "json") {
                     let receipt: Receipt = serde_json::from_slice(&read(&entry.path())?)?;
                     required.insert(id(&receipt.message_id)?);
+                    receipt_queries.push(query(&receipt.message_id)?);
                 }
             }
         }
+        let scope = if receipt_queries.is_empty() {
+            "tag:inbox".to_string()
+        } else {
+            format!("tag:inbox or ({})", receipt_queries.join(" or "))
+        };
+        let financial = search(
+            "messages",
+            &format!("({scope}) and (tag:billing or tag:receipts or tag:Expenses)"),
+        )?
+        .into_iter()
+        .collect();
         for policy in &config.policies {
             if policy.extractors.is_empty() {
                 continue;
             }
-            for message in search("messages", &policy.base_query())? {
+            for message in search(
+                "messages",
+                &format!("({scope}) and ({})", policy.base_query()),
+            )? {
                 owners.entry(message).or_default().push(policy);
             }
         }
@@ -578,7 +625,22 @@ impl<'a> ArchiveGate<'a> {
         for policy in owners {
             match verify(destination, policy, message) {
                 Ok(path) => status.destinations.push(path),
-                Err(_) => return status,
+                Err(error) => {
+                    status.reason = match error.to_string().as_str() {
+                        "account_unverified" => "account_unverified",
+                        "unsupported_or_quarantined" => "unsupported_or_quarantined",
+                        "receipt_unavailable" => "receipt_unavailable",
+                        "receipt_invalid" => "receipt_invalid",
+                        "receipt_stale" => "receipt_stale",
+                        "destination_changed" => "destination_changed",
+                        "destination_unavailable" => "destination_unavailable",
+                        "source_missing" => "source_missing",
+                        "source_unavailable" => "source_unavailable",
+                        "source_changed_or_ambiguous" => "source_changed_or_ambiguous",
+                        _ => "verification_error",
+                    };
+                    return status;
+                }
             }
         }
         status.verified = true;
@@ -598,6 +660,15 @@ impl<'a> ArchiveGate<'a> {
             verified,
             rows,
         })
+    }
+    /// Delivery never grants destruction authority. Even explicit legacy trash
+    /// opt-in cannot delete information matches or acknowledged source ids.
+    pub fn trash_query(&self, q: &str) -> Result<String> {
+        let mut protected = vec![information_query(self.config)];
+        for message in &self.required {
+            protected.push(query(message)?);
+        }
+        Ok(format!("({q}) and not ({})", protected.join(" or ")))
     }
     pub fn archive(&self, q: &str, dry_run: bool) -> Result<(u64, u64)> {
         let mut archived = 0;

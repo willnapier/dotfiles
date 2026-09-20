@@ -322,6 +322,7 @@ pub fn apply(pol: &Policy, dry_run: bool, now: bool, retention: &str, gate: &cra
                 "({base}) and not tag:trash and not tag:curator-retain and not ({retention}){age_clause} and tag:{extracted}"
             )
         };
+        let q = gate.trash_query(&q)?;
         let n = notmuch::count(&q)?;
         if n > 0 {
             stats.deleted = n;

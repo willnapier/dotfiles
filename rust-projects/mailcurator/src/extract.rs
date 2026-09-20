@@ -354,7 +354,7 @@ fn extract_one(
             if let Some(v) = apply_rule(f, &parsed, &subject, &body_text)? {
                 let value = match f.kind.as_deref() {
                     Some("date") => {
-                        if !regex::Regex::new(r"\b\d{4}\b")?.is_match(&v) {
+                        if crate::delivery::date_needs_review(&v) {
                             record.insert("_date_inferred".into(), Value::Bool(true));
                         }
                         normalise_date(&v, &parsed).unwrap_or(v)

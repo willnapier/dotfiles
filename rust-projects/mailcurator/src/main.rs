@@ -498,6 +498,7 @@ fn main() -> Result<()> {
             }
             let mut total_tagged = 0u64;
             let mut total_archived = 0u64;
+            let mut total_held = 0u64;
             let mut total_deleted = 0u64;
 
             for pol in &cfg.policies {
@@ -510,6 +511,7 @@ fn main() -> Result<()> {
                     .with_context(|| format!("policy '{}' failed", pol.name))?;
                 total_tagged += stats.tagged_on_arrival;
                 total_archived += stats.archived;
+                total_held += stats.held;
                 total_deleted += stats.deleted;
                 let quarantine_note = if pol.quarantine { "  [QUARANTINE]" } else { "" };
                 println!(
@@ -534,10 +536,11 @@ fn main() -> Result<()> {
                 String::new()
             };
             println!(
-                "TOTAL  tagged-on-arrival={}  archived={}  trashed={}{}{}",
+                "TOTAL  tagged-on-arrival={}  archived={}  trashed={}  held-policy-matches={}{}{}",
                 total_tagged,
                 total_archived,
                 total_deleted,
+                total_held,
                 if dry_run { "  [DRY RUN — no changes made]" } else { "" },
                 llm_note
             );
@@ -650,6 +653,7 @@ fn main() -> Result<()> {
         }
         Command::DestroyPreview { only, limit } => {
             let cfg = config::load(&path)?;
+            let gate = delivery::ArchiveGate::new(&cfg)?;
             let mut total_caught = 0u64;
             let mut policies_with_delete = 0u64;
             for pol in &cfg.policies {
@@ -673,7 +677,7 @@ fn main() -> Result<()> {
                 parts.push("not tag:trash".to_string());
                 parts.push("not tag:curator-retain".to_string());
                 parts.push(format!("not ({})", policy::retention_query(&cfg.policies)));
-                let query = parts.join(" and ");
+                let query = gate.trash_query(&parts.join(" and "))?;
                 let messages = store::list_messages(&query)?;
                 println!(
                     "=== {} (delete_after_days={}) ===",

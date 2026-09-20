@@ -135,6 +135,7 @@ fn only_verified_delivery_releases_mail_and_reruns_are_idempotent() {
     f.mc(&["run", "--dry-run", "--now"]);
     assert!(f.documents().is_empty());
     assert!(f.inbox("good"));
+    assert_eq!(f.ok("notmuch", &["count", "tag:curator-booking-seen or tag:curator-delivery-pending or tag:curator-booking-extracted"]).trim(), "0");
     assert!(
         !f.home
             .join(".local/share/mailcurator/delivery-receipts")
@@ -216,6 +217,14 @@ fn destination_edits_removal_and_source_changes_invalidate_receipts() {
         }
         f.mc(&["run", "--only", "noise", "--now"]);
         assert!(f.inbox("good"));
+        let report: serde_json::Value =
+            serde_json::from_str(&f.mc(&["delivery-status", "--json"])).unwrap();
+        let expected = match change {
+            "edit" => "destination_changed",
+            "remove" => "destination_unavailable",
+            _ => "source_changed_or_ambiguous",
+        };
+        assert_eq!(report["rows"][0]["reason"], expected);
         f.ok("notmuch", &["tag", "-curator-booking-extracted", "--", "*"]);
         f.mc(&["run", "--now"]);
         assert!(f.inbox("good"));
@@ -433,4 +442,135 @@ fn on_arrival_financial_claim_added_after_snapshot_still_blocks_archive() {
         f.inbox("good"),
         "fresh financial claims must not use the stale pre-arrival snapshot"
     );
+}
+
+#[test]
+fn explicit_trash_opt_in_cannot_destroy_held_or_delivered_information() {
+    let f = Fixture::new();
+    f.config(true, "");
+    let path = f.home.join(".config/mailcurator/policies.toml");
+    let config = fs::read_to_string(&path).unwrap().replace(
+        "archive_after_days=0",
+        "archive_after_days=0\ndelete_after_days=0",
+    );
+    fs::write(path, format!("allow_automatic_trash=true\n{config}")).unwrap();
+    f.complete();
+    f.mail(
+        "unknown",
+        "unknown@example.org",
+        "Fixture reservation",
+        "Incomplete",
+    );
+    f.mail(
+        "routine",
+        "noise@example.org",
+        "Fixture bulletin",
+        "Routine",
+    );
+    f.index();
+    f.mc(&["run", "--now"]);
+    assert!(f.inbox("unknown"));
+    assert!(!f.inbox("good"));
+    assert_eq!(
+        f.ok(
+            "notmuch",
+            &[
+                "count",
+                "tag:trash and (id:good@example.org or id:unknown@example.org)"
+            ]
+        )
+        .trim(),
+        "0"
+    );
+    assert_eq!(
+        f.ok(
+            "notmuch",
+            &["count", "tag:trash and id:routine@example.org"]
+        )
+        .trim(),
+        "1"
+    );
+}
+
+#[test]
+fn ambiguous_numeric_dates_and_time_as_year_hold() {
+    for date in ["03/04/2035", "03 April 1500"] {
+        let f = Fixture::new();
+        f.config(true, "");
+        f.mail(
+            "good",
+            "hotel@example.org",
+            "Fixture confirmation",
+            &format!(
+                "Property: Example Inn\nReference: TEST123\nCheckin: {date}\nCheckout: 2035-05-20"
+            ),
+        );
+        f.index();
+        f.mc(&["run", "--now"]);
+        assert!(f.inbox("good"), "{date}");
+        assert!(f.documents().is_empty());
+    }
+}
+
+#[test]
+fn schedule_changes_preserve_receipt_but_capture_contract_changes_invalidate() {
+    let f = Fixture::new();
+    f.config(true, "");
+    f.complete();
+    f.index();
+    f.mc(&["run", "--now"]);
+    let path = f.home.join(".config/mailcurator/policies.toml");
+    let original = fs::read_to_string(&path).unwrap();
+    fs::write(
+        &path,
+        original.replace("archive_after_days=0", "archive_after_days=7"),
+    )
+    .unwrap();
+    let report: serde_json::Value =
+        serde_json::from_str(&f.mc(&["delivery-status", "--json"])).unwrap();
+    assert_eq!(report["verified"], 1);
+    fs::write(
+        &path,
+        original.replace("body_regex='Reference:", "body_regex='Booking Reference:"),
+    )
+    .unwrap();
+    let report: serde_json::Value =
+        serde_json::from_str(&f.mc(&["delivery-status", "--json"])).unwrap();
+    assert_eq!(report["verified"], 0);
+    assert_eq!(report["rows"][0]["reason"], "receipt_stale");
+}
+
+#[test]
+fn cohs_never_exports_and_does_not_read_personal_receipts() {
+    let f = Fixture::new();
+    f.config(true, "");
+    f.complete();
+    f.mail(
+        "routine",
+        "noise@example.org",
+        "Fixture bulletin",
+        "Routine",
+    );
+    f.index();
+    let receipts = f.home.join(".local/share/mailcurator/delivery-receipts");
+    fs::create_dir_all(&receipts).unwrap();
+    fs::write(receipts.join("broken.json"), "not a receipt").unwrap();
+    let cohs = f.home.join("Mail/.notmuch-cohs-config");
+    fs::copy(f.home.join("Mail/.notmuch-config"), &cohs).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_mailcurator"))
+        .args(["run", "--now", "--llm-disable"])
+        .env("HOME", &f.home)
+        .env("HOSTNAME", "fixture-writer")
+        .env("NOTMUCH_CONFIG", cohs)
+        .env("MAILCURATOR_FORCE", "1")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(f.inbox("good"));
+    assert!(!f.inbox("routine"));
+    assert!(f.documents().is_empty());
 }
