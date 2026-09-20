@@ -1,5 +1,18 @@
 # Expense evidence and retention
 
+## Content-free operation discovery (2026-09-20)
+
+`mailcurator assistant capabilities` prints compiled-in version-1 metadata and
+reads no config, mailbox or ledger, even with root config/LLM flags supplied.
+It currently advertises discovery only: no evidence rows, matching, extraction,
+archiving or LLM operation is authorised by this manifest. It is an explicit
+subset, not an ACL, and says `enforces_access_control: false`.
+Existing `evidence --json` and delivery-status output remain sensitive.
+Malformed requests containing the reserved `assistant` argument return a fixed
+error instead of echoing arguments. Verify with
+`cargo test --locked --test assistant_cli`. This additive namespace does not
+change the verified-delivery or retention controls below.
+
 ## Verified delivery (2026-09-20)
 
 Automatic Inbox release for information mail now requires a live-verified

@@ -2,6 +2,19 @@
 
 CLI tool for analyzing First Direct bank transactions. Rust handles import/tagging, Nushell handles analysis.
 
+## Content-free operation discovery
+
+`fd-budget assistant capabilities` prints compiled-in version-1 metadata without
+opening or creating its data directory. It currently advertises discovery only:
+no transactions, matching, totals or exports are approved for assistant input.
+The manifest is an explicit subset, not an ACL, and says
+`enforces_access_control: false`. Existing JSON and deterministic processing are
+not privacy guarantees. Malformed requests containing the reserved `assistant`
+argument return a fixed error without echoing arguments.
+
+Verify with `cargo test --locked --test assistant_cli`. This namespace does not
+change imports, matching, mailcurator integration or any financial data.
+
 ## Quick Reference
 
 ### Rust CLI (`fd-budget`)

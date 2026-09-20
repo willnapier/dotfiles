@@ -12,6 +12,8 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 
+mod assistant;
+
 #[derive(Parser)]
 #[command(name = "fd-budget")]
 #[command(about = "First Direct budget analysis tool")]
@@ -22,6 +24,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Static assistant discovery; does not inspect or initialise financial data.
+    Assistant {
+        #[command(subcommand)]
+        action: assistant::Action,
+    },
     /// Maintain a personal/joint review, its report, and linked bank tags.
     Review(fd_budget::review::ReviewArgs),
     /// Import transactions from a midata CSV file
@@ -489,11 +496,16 @@ fn ensure_data_dir() -> std::io::Result<()> {
 }
 
 fn main() -> anyhow::Result<()> {
-    let cli = Cli::parse();
+    let cli = assistant::parse_cli::<Cli>();
+    if let Commands::Assistant { ref action } = cli.command {
+        assistant::run(action);
+        return Ok(());
+    }
 
     ensure_data_dir()?;
 
     match cli.command {
+        Commands::Assistant { .. } => unreachable!("handled before data initialisation"),
         Commands::Review(args) => fd_budget::review::run(args)?,
         Commands::Import { file, account } => {
             cmd_import(&file, account)?;

@@ -48,6 +48,8 @@ mod store;
 mod subscriptions;
 mod tesla_cli;
 
+mod assistant;
+
 #[derive(Parser)]
 #[command(name = "mailcurator")]
 #[command(about = "Email lifecycle policies + structured extraction, via notmuch")]
@@ -66,6 +68,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Static assistant discovery; does not inspect mail or private configuration.
+    Assistant {
+        #[command(subcommand)]
+        action: assistant::Action,
+    },
     /// Verify destination receipts against live files; no mail mutation or LLM.
     DeliveryStatus {
         #[arg(long)]
@@ -425,11 +432,16 @@ fn config_path(cli_arg: Option<PathBuf>) -> Result<PathBuf> {
 }
 
 fn main() -> Result<()> {
-    let cli = Cli::parse();
+    let cli = assistant::parse_cli::<Cli>();
+    if let Command::Assistant { ref action } = cli.command {
+        assistant::run(action);
+        return Ok(());
+    }
     llm::configure_permission(cli.allow_llm)?;
     let path = config_path(cli.config)?;
 
     match cli.command {
+        Command::Assistant { .. } => unreachable!("handled before private configuration"),
         Command::DeliveryStatus { json } => {
             delivery::selected_account()?;
             let cfg = config::load(&path)?;
