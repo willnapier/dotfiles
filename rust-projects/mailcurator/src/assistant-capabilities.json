@@ -15,5 +15,13 @@
       "output": "static_metadata",
       "effect": "none"
     }
+  ],
+  "response_format": "one_json_document",
+  "compatibility": "Ignore unknown fields; refuse unsupported schema versions. Static CLI help is text, not a protocol response.",
+  "statuses": [
+    "refused"
+  ],
+  "errors": [
+    "invalid_request"
   ]
 }
