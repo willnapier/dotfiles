@@ -162,7 +162,7 @@ impl Policy {
 
     pub fn validate(&self) -> Result<()> {
         anyhow::ensure!(!self.on_arrival.tags_add.iter().any(|t| t == "trash")
-            && !self.on_arrival.tags_remove.iter().any(|t| matches!(t.as_str(), "curator-retain" | "inbox" | "booking" | "curator-delivery-pending")),
+            && !self.on_arrival.tags_remove.iter().any(|t| matches!(t.as_str(), "curator-retain" | "inbox" | "booking" | "curator-delivery-pending" | "billing" | "receipts" | "Expenses")),
             "on-arrival actions cannot bypass evidence retention; use lifecycle trash rules");
         if self.name.is_empty() {
             anyhow::bail!("name is empty");

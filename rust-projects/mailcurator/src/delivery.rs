@@ -349,12 +349,28 @@ pub fn capture(
         let bytes = read(&path)?;
         bytes_read += bytes.len();
         ensure!(bytes_read <= 64 * 1024 * 1024, "booking evidence too large");
-        for line in std::str::from_utf8(&bytes)?.lines().filter(|l| !l.trim().is_empty()) {
+        for line in std::str::from_utf8(&bytes)?
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+        {
             let prior: Value = serde_json::from_str(line)?;
-            if text(&prior, "account") == "cohs" || id(text(&prior, "message_id")).ok().as_deref() == Some(&message) { continue; }
-            ensure!(text(&prior, "booking_ref") != text(record, "booking_ref"), "related booking evidence requires review");
-            if let (Ok(a), Ok(b)) = (explicit_date(text(&prior, "checkin")), explicit_date(text(&prior, "checkout"))) {
-                ensure!(!(checkin < b && a < checkout), "overlapping booking evidence requires review");
+            if text(&prior, "account") == "cohs"
+                || id(text(&prior, "message_id")).ok().as_deref() == Some(&message)
+            {
+                continue;
+            }
+            ensure!(
+                text(&prior, "booking_ref") != text(record, "booking_ref"),
+                "related booking evidence requires review"
+            );
+            if let (Ok(a), Ok(b)) = (
+                explicit_date(text(&prior, "checkin")),
+                explicit_date(text(&prior, "checkout")),
+            ) {
+                ensure!(
+                    !(checkin < b && a < checkout),
+                    "overlapping booking evidence requires review"
+                );
             }
         }
     }
@@ -590,10 +606,17 @@ impl<'a> ArchiveGate<'a> {
         let fresh: BTreeSet<_> = search("messages", &format!("({q}) and ({information})"))?
             .into_iter()
             .collect();
+        let financial_query = "tag:billing or tag:receipts or tag:Expenses";
+        let fresh_financial: BTreeSet<_> =
+            search("messages", &format!("({q}) and ({financial_query})"))?
+                .into_iter()
+                .collect();
         for message in search("messages", q)? {
             let exact = query(&message)?;
             let needs_delivery = self.required.contains(&message) || fresh.contains(&message);
-            if needs_delivery && !self.status(&message).verified {
+            if fresh_financial.contains(&message)
+                || (needs_delivery && !self.status(&message).verified)
+            {
                 held += 1;
                 if !dry_run {
                     crate::notmuch::apply_tag_changes(&exact, &["curator-delivery-pending"], &[])?;
@@ -603,7 +626,7 @@ impl<'a> ArchiveGate<'a> {
                 if !dry_run {
                     // Recheck classification at mutation time for routine mail too.
                     let eligible = if needs_delivery {
-                        exact
+                        format!("({exact}) and not ({financial_query})")
                     } else {
                         format!("({exact}) and not ({information})")
                     };

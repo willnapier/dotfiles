@@ -86,7 +86,11 @@ kind='date'
         String::from_utf8(out.stdout).unwrap()
     }
     fn mc(&self, args: &[&str]) -> String {
-        self.ok(&std::env::var("DELIVERY_TEST_BIN").unwrap_or_else(|_| env!("CARGO_BIN_EXE_mailcurator").into()), args)
+        self.ok(
+            &std::env::var("DELIVERY_TEST_BIN")
+                .unwrap_or_else(|_| env!("CARGO_BIN_EXE_mailcurator").into()),
+            args,
+        )
     }
     fn inbox(&self, name: &str) -> bool {
         self.ok(
@@ -410,4 +414,23 @@ fn a_second_overlapping_reservation_is_held_not_silently_delivered() {
     f.mc(&["run", "--now"]);
     assert!(f.inbox("second"));
     assert_eq!(f.documents().len(), 1);
+}
+
+#[test]
+fn on_arrival_financial_claim_added_after_snapshot_still_blocks_archive() {
+    let f = Fixture::new();
+    f.config(true, "");
+    f.complete();
+    let path = f.home.join(".config/mailcurator/policies.toml");
+    let config = fs::read_to_string(&path).unwrap().replace(
+        "name='booking'",
+        "name='booking'\non_arrival.tags_add=['receipts']",
+    );
+    fs::write(path, config).unwrap();
+    f.index();
+    f.mc(&["run", "--now"]);
+    assert!(
+        f.inbox("good"),
+        "fresh financial claims must not use the stale pre-arrival snapshot"
+    );
 }

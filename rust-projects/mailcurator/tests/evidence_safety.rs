@@ -169,7 +169,7 @@ fn llm_opt_in_rejects_cohs_before_any_work() {
 fn on_arrival_cannot_bypass_retention() {
     let home = tempfile::tempdir().unwrap();
     let cfg = home.path().join("policies.toml");
-    for action in ["tags_add=['trash']", "tags_remove=['curator-retain']"] {
+    for action in ["tags_add=['trash']", "tags_remove=['curator-retain']", "tags_remove=['inbox']", "tags_remove=['receipts']", "tags_remove=['billing']", "tags_remove=['Expenses']"] {
         fs::write(&cfg, format!("[[policy]]\nname='unsafe'\nfrom='fixture@example.org'\n[policy.on_arrival]\n{action}\n")).unwrap();
         let out = run(home.path(), env!("CARGO_BIN_EXE_mailcurator"), &["--config", cfg.to_str().unwrap(), "validate"]);
         assert!(!out.status.success());
