@@ -26,7 +26,7 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/opt/homebrew/bin:/Users/williamnapier/.local/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <string>/Users/williamnapier/.local/libexec/mailcurator-verified:/opt/homebrew/bin:/Users/williamnapier/.local/bin:/usr/local/bin:/usr/bin:/bin</string>
         <key>HOME</key>
         <string>/Users/williamnapier</string>
         <key>RUST_LOG</key>

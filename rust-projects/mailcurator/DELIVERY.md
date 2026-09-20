@@ -129,6 +129,11 @@ reason codes are tracked follow-ups before broadening destination adapters.
 3. Preserve a signed Mac binary if the signing identity is unavailable. Do not
    install unsigned over it or enable new archive thresholds with the old binary.
    The Mac hook skips curation until its signed upgrade; nimbini owns processing.
+   MailForge's Mac launch agent prepends a capability-checking subprocess bridge
+   to PATH. It refuses Sweep and blacklist execution with missing/legacy engines,
+   including newly created policies; it does not replace or re-sign the binary.
+   A blacklist click may still save its rule but cannot run it on that old engine.
+   The bridge automatically delegates once a capable signed engine is installed.
 4. Verify installed hashes, synthetic positive/negative workflows, live read-only
    held volume, and a bounded live run. Zero eligible deliveries is not proof of
    real booking capture; report it separately from non-empty synthetic tests.

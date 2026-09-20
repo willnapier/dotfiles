@@ -656,3 +656,37 @@ fn identical_multiple_source_copies_pass_but_ambiguous_copies_do_not_publish() {
         assert_eq!(f.documents().len(), usize::from(identical));
     }
 }
+
+#[test]
+fn mailforge_bridge_refuses_legacy_or_missing_engine_and_preserves_arguments() {
+    use std::os::unix::fs::PermissionsExt;
+    let f = Fixture::new();
+    let guard =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/mailcurator-verified-bridge");
+    let bin = f.home.join(".local/bin/mailcurator");
+    fs::create_dir_all(bin.parent().unwrap()).unwrap();
+    for variant in ["missing", "old", "new"] {
+        if variant != "missing" {
+            let code = if variant == "old" { "exit 1" } else { "exit 0" };
+            fs::write(&bin, format!("#!/bin/sh\nif [ \"$1\" = delivery-status ]; then {code}; fi\nprintf '%s\\n' \"$@\"\n")).unwrap();
+            fs::set_permissions(&bin, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let out = Command::new("sh")
+            .arg(&guard)
+            .args(["--config", "path with spaces", "run", "--now"])
+            .env("HOME", &f.home)
+            .output()
+            .unwrap();
+        if variant == "new" {
+            assert!(out.status.success());
+            assert_eq!(
+                String::from_utf8(out.stdout).unwrap(),
+                "--config\npath with spaces\nrun\n--now\n"
+            );
+        } else {
+            assert_eq!(out.status.code(), Some(69));
+            assert!(out.stdout.is_empty(), "legacy engine must not receive run");
+            assert!(String::from_utf8_lossy(&out.stderr).contains("policy actions disabled"));
+        }
+    }
+}

@@ -35,6 +35,7 @@ depends = []
 "scripts/claude-voice" = "~/.local/bin/claude-voice"
 "scripts/email-attachments" = "~/.local/bin/email-attachments"
 "scripts/mailforge-html" = "~/.local/bin/mailforge-html"
+"scripts/mailcurator-verified-bridge" = "~/.local/libexec/mailcurator-verified/mailcurator"
 "scripts/meli-html-auto" = "~/.local/bin/meli-html-auto"
 "meli/mailcap" = "~/.config/meli/mailcap"
 "scripts/forge-batch-classifier" = "~/.local/bin/forge-batch-classifier"

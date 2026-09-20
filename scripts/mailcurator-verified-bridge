@@ -1,0 +1,10 @@
+#!/bin/sh
+# MailForge's subprocess PATH shim; never replaces the signed Rust binary.
+# A missing/legacy engine must not execute policy-wide Sweep or blacklist runs.
+set -eu
+engine="$HOME/.local/bin/mailcurator"
+if [ ! -x "$engine" ] || ! "$engine" delivery-status --help >/dev/null 2>&1; then
+    echo 'mailcurator: verified-delivery engine unavailable; policy actions disabled until signed upgrade' >&2
+    exit 69
+fi
+exec "$engine" "$@"
