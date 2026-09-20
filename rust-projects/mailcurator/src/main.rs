@@ -431,11 +431,12 @@ fn main() -> Result<()> {
 
     match cli.command {
         Command::DeliveryStatus { json } => {
+            delivery::selected_account()?;
             let cfg = config::load(&path)?;
             let gate = delivery::ArchiveGate::new(&cfg)?;
             let report = gate.report()?;
             if json { println!("{}", serde_json::to_string(&report)?); }
-            else { println!("Information messages: {}; verified: {}; held: {}", report.total, report.verified, report.held); }
+            else { println!("Account: {}; information messages: {}; verified: {}; held: {}", report.account, report.total, report.verified, report.held); }
         }
         Command::Evidence { json, limit, offset, exceptions_only } => {
             let report = evidence::load(&store::store_dir()?, &config::load(&path)?.policies, offset, limit.min(200), exceptions_only)?;

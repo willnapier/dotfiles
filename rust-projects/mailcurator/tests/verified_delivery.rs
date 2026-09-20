@@ -574,3 +574,85 @@ fn cohs_never_exports_and_does_not_read_personal_receipts() {
     assert!(!f.inbox("routine"));
     assert!(f.documents().is_empty());
 }
+
+#[test]
+fn later_tag_only_claims_hold_even_when_only_earlier_policy_runs() {
+    for financial in [true, false] {
+        for only in [true, false] {
+            let f = Fixture::new();
+            let tag = if financial { "receipts" } else { "booking" };
+            f.config(true, &format!("[[policy]]\nname='late-claim'\nfrom='hotel@example.org'\non_arrival.tags_add=['{tag}']\n"));
+            if !financial {
+                let path = f.home.join(".config/mailcurator/policies.toml");
+                let config = fs::read_to_string(&path).unwrap().replacen(
+                    "from='hotel@example.org'",
+                    "from='unmatched@example.org'",
+                    1,
+                );
+                fs::write(path, config).unwrap();
+            }
+            if financial {
+                f.complete();
+            } else {
+                f.mail(
+                    "good",
+                    "hotel@example.org",
+                    "Fixture bulletin",
+                    "Unknown information",
+                );
+            }
+            f.index();
+            let args = if only {
+                vec![
+                    "run",
+                    "--now",
+                    "--only",
+                    if financial { "booking" } else { "noise" },
+                ]
+            } else {
+                vec!["run", "--now"]
+            };
+            f.mc(&args);
+            assert!(f.inbox("good"), "financial={financial}, only={only}");
+        }
+    }
+}
+
+#[test]
+fn status_refuses_an_unselected_index_instead_of_silently_losing_receipts() {
+    let f = Fixture::new();
+    f.config(true, "");
+    f.complete();
+    f.index();
+    f.mc(&["run", "--now"]);
+    let out = Command::new(env!("CARGO_BIN_EXE_mailcurator"))
+        .args(["delivery-status", "--json"])
+        .env("HOME", &f.home)
+        .env_remove("NOTMUCH_CONFIG")
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("explicit NOTMUCH_CONFIG"));
+    let report: serde_json::Value =
+        serde_json::from_str(&f.mc(&["delivery-status", "--json"])).unwrap();
+    assert_eq!(report["account"], "personal");
+    assert_eq!(report["verified"], 1);
+}
+
+#[test]
+fn identical_multiple_source_copies_pass_but_ambiguous_copies_do_not_publish() {
+    for identical in [true, false] {
+        let f = Fixture::new();
+        f.config(true, "");
+        f.complete();
+        let mut raw = fs::read_to_string(f.home.join("Mail/cur/good")).unwrap();
+        if !identical {
+            raw.push_str("Different copy\n");
+        }
+        fs::write(f.home.join("Mail/cur/duplicate"), raw).unwrap();
+        f.index();
+        f.mc(&["run", "--now"]);
+        assert_eq!(f.inbox("good"), !identical);
+        assert_eq!(f.documents().len(), usize::from(identical));
+    }
+}

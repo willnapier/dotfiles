@@ -64,7 +64,9 @@ does. There is no automatic re-attestation of changed contracts or edited record
 
 Every matching extraction policy must be satisfied; an unsatisfied expense claim
 blocks filing even when the booking file exists. Financial labels are held until
-a financial destination is implemented. Booking-like subject/provider cues and
+a financial destination is implemented. All policies' declared information and
+financial tag additions are claims before they run, independent of policy order
+or `--only`. Booking-like subject/provider cues and
 existing evidence/retention tags also hold unknown senders against broad noise
 policies. This conservative cue net is not proof of complete recognition.
 Unknown mail no longer disappears solely because it is six months old.
@@ -88,6 +90,11 @@ LLM calls. An edited/missing destination remains an exception; it neither restor
 Inbox nor deletes anything. This is not an assistant-safe or deidentified API.
 `curator-delivery-pending` is an Inbox review marker, not authority to archive.
 Run this report on the designated writer; other hosts do not own its receipts.
+The report names its account and refuses an unset/unrecognised `NOTMUCH_CONFIG`.
+Before migrating the writer, copy and validate its receipt store along with the
+destination files; otherwise archived deliveries fall out of monitoring.
+Manual archive remains the deliberate human release path for held messages; it
+does not mint a delivery receipt or claim verified capture.
 Recognised receipt, destination and source failures have distinct reason codes.
 
 ## Operational limits
@@ -109,6 +116,9 @@ checks may hold confirmations with inline logos or "free cancellation" wording.
 Malformed/oversized receipt or legacy evidence inventories fail closed and need
 operator repair; they are not silently discarded. Searches are scoped to Inbox
 plus already-receipted sources, not the entire historical mailbox.
+The combined source-id query can hit the OS argument-length limit before the
+inventory cap; this fails closed. Chunked queries and static capture-rejection
+reason codes are tracked follow-ups before broadening destination adapters.
 
 ## Deployment order
 
@@ -122,6 +132,9 @@ plus already-receipted sources, not the entire historical mailbox.
 4. Verify installed hashes, synthetic positive/negative workflows, live read-only
    held volume, and a bounded live run. Zero eligible deliveries is not proof of
    real booking capture; report it separately from non-empty synthetic tests.
+   Inventory other invokers (MailForge/manual Sweep is separate from hooks),
+   verify the writer identity in the sync service environment, check multiple
+   source copies, and establish which operational tags can reach each server.
 
 ## Verification
 

@@ -63,6 +63,19 @@ fn personal() -> bool {
             == Some(&h.join("Mail/.notmuch-config"))
     })
 }
+pub fn selected_account() -> Result<&'static str> {
+    if personal() {
+        return Ok("personal");
+    }
+    if std::env::var_os("NOTMUCH_CONFIG").map(PathBuf::from)
+        == Some(home()?.join("Mail/.notmuch-cohs-config"))
+    {
+        return Ok("cohs");
+    }
+    bail!(
+        "delivery-status requires explicit NOTMUCH_CONFIG for the canonical personal or cohs index"
+    )
+}
 fn digest(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
@@ -532,6 +545,7 @@ pub struct ArchiveGate<'a> {
 }
 #[derive(Serialize)]
 pub struct Report {
+    pub account: &'static str,
     pub total: usize,
     pub verified: usize,
     pub held: usize,
@@ -581,7 +595,7 @@ impl<'a> ArchiveGate<'a> {
         };
         let financial = search(
             "messages",
-            &format!("({scope}) and (tag:billing or tag:receipts or tag:Expenses)"),
+            &format!("({scope}) and ({})", financial_query(config)),
         )?
         .into_iter()
         .collect();
@@ -655,6 +669,7 @@ impl<'a> ArchiveGate<'a> {
             .collect();
         let verified = rows.iter().filter(|r| r.verified).count();
         Ok(Report {
+            account: selected_account()?,
             total: rows.len(),
             held: rows.len() - verified,
             verified,
@@ -677,7 +692,7 @@ impl<'a> ArchiveGate<'a> {
         let fresh: BTreeSet<_> = search("messages", &format!("({q}) and ({information})"))?
             .into_iter()
             .collect();
-        let financial_query = "tag:billing or tag:receipts or tag:Expenses";
+        let financial_query = financial_query(self.config);
         let fresh_financial: BTreeSet<_> =
             search("messages", &format!("({q}) and ({financial_query})"))?
                 .into_iter()
@@ -721,7 +736,37 @@ fn information_query(config: &Config) -> String {
         config
             .policies
             .iter()
-            .filter(|p| !p.extractors.is_empty())
+            .filter(|p| {
+                !p.extractors.is_empty()
+                    || p.on_arrival.tags_add.iter().any(|tag| {
+                        matches!(
+                            tag.as_str(),
+                            "booking"
+                                | "billing"
+                                | "receipts"
+                                | "Expenses"
+                                | "curator-retain"
+                                | "curator-delivery-pending"
+                        )
+                    })
+            })
+            .map(|p| format!("({})", p.base_query())),
+    );
+    format!("({})", terms.join(" or "))
+}
+
+fn financial_query(config: &Config) -> String {
+    let mut terms = vec!["tag:billing or tag:receipts or tag:Expenses".to_string()];
+    terms.extend(
+        config
+            .policies
+            .iter()
+            .filter(|p| {
+                p.on_arrival
+                    .tags_add
+                    .iter()
+                    .any(|tag| matches!(tag.as_str(), "billing" | "receipts" | "Expenses"))
+            })
             .map(|p| format!("({})", p.base_query())),
     );
     format!("({})", terms.join(" or "))
