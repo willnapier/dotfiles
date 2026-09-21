@@ -6,7 +6,7 @@
 # Theme selection — hx-auto rewrites this line from system appearance on every
 # launch (dark → solarized_dark_nostrike, light → solarized_light_nostrike).
 # Both themes disable markup.strikethrough so `~` stays "approximately".
-theme = "solarized_dark_nostrike"
+theme = "solarized_light_nostrike"
 
 [editor]
 # Enable cursor shape changing
