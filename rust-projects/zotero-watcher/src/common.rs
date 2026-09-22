@@ -11,10 +11,6 @@ pub fn home() -> PathBuf {
     std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"))
 }
 
-pub fn on_path(bin: &str) -> bool {
-    std::env::var_os("PATH").map(|p| std::env::split_paths(&p).any(|d| d.join(bin).is_file())).unwrap_or(false)
-}
-
 pub fn hostname() -> String {
     std::fs::read_to_string("/etc/hostname")
         .ok()
@@ -154,17 +150,12 @@ pub fn json_str(s: &str) -> String {
 }
 
 // ── notifications (best effort) ─────────────────────────────────────
-/// terminal-notifier, else notify-send, else nothing. Returns the method used.
+/// Returns the method used, or None when nothing was delivered.
 pub fn notify(title: &str, message: &str) -> Option<&'static str> {
-    if on_path("terminal-notifier") {
-        let ok = Command::new("terminal-notifier").args(["-title", title, "-message", message]).output().map(|o| o.status.success()).unwrap_or(false);
-        return ok.then_some("terminal-notifier");
-    }
-    if on_path("notify-send") {
-        let ok = Command::new("notify-send").args([title, message]).output().map(|o| o.status.success()).unwrap_or(false);
-        return ok.then_some("notify-send");
-    }
-    None
+    // Through `notify-user`, which tries the platform channel and records
+    // whether the alert arrived (audit D2-23); exit 0 means delivered.
+    let ok = Command::new("notify-user").args(["--tool", "zotero-watcher", title, message]).output().map(|o| o.status.success()).unwrap_or(false);
+    ok.then_some("notify-user")
 }
 
 // ── file moves ──────────────────────────────────────────────────────

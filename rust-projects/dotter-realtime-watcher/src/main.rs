@@ -308,15 +308,10 @@ pub fn decide(path: &Path, home: &Path, exists: bool, dotter_toml: Option<&str>)
 }
 
 // ── desktop notification (best effort) ──────────────────────────────
+/// Through `notify-user`, which records whether the alert arrived (D2-23).
 fn notify_desktop(filename: &str) {
     let body = format!("Unmanaged config: {filename} — dotter-add to onboard");
-    let title = "Dotter watcher";
-    let _ = if cfg!(target_os = "macos") {
-        let esc = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
-        Command::new("osascript").args(["-e", &format!("display notification \"{}\" with title \"{}\"", esc(&body), esc(title))]).output()
-    } else {
-        Command::new("notify-send").args([title, &body]).output()
-    };
+    let _ = Command::new("notify-user").args(["--tool", "dotter-realtime-watcher", "Dotter watcher", &body]).status();
 }
 
 // ── logger (oracle format: `YYYY-mm-dd HH:MM:SS - message`) ─────────

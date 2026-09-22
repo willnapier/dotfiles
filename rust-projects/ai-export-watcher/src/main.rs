@@ -207,13 +207,9 @@ fn chrono_free_timestamp() -> String {
     format!("[{secs}]")
 }
 
+/// Through `notify-user`, which records whether the alert arrived (D2-23).
 fn notify(title: &str, body: &str) {
-    let on_path = |bin: &str| std::env::var_os("PATH").map(|p| std::env::split_paths(&p).any(|d| d.join(bin).is_file())).unwrap_or(false);
-    if on_path("notify-send") {
-        let _ = Command::new("notify-send").args([title, body]).output();
-    } else if on_path("terminal-notifier") {
-        let _ = Command::new("terminal-notifier").args(["-title", title, "-message", body, "-sound", "default"]).output();
-    }
+    let _ = Command::new("notify-user").args(["--tool", "ai-export-watcher", title, body]).status();
 }
 
 /// The messageboard line written on failure. The messageboard is a synced

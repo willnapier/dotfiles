@@ -1333,3 +1333,84 @@ mod tests {
         assert!(heartbeat_verdict(now, &files, &[]).is_empty());
     }
 }
+
+// ── Check 11: undelivered alerts ─────────────────────────────────────
+// Since 2026-09-22 every unattended alert goes through `notify-user`, which
+// appends one JSON line per attempt to ~/.local/state/alerts/<tool>.jsonl
+// with `delivered: bool`. A delivery that failed (no session, notifier
+// missing, osascript error) used to vanish behind `|| true` (audit D2-23);
+// here it becomes a problem, and item 1's history carries it to the board.
+
+/// Problem line for one tool's attempts within the window, if any failed.
+pub fn undelivered_verdict(now: chrono::DateTime<chrono::Local>, tool: &str, lines: &str, window_days: i64) -> Option<String> {
+    let mut failed = 0usize;
+    let mut last: Option<(String, String)> = None;
+    for line in lines.lines().filter(|l| !l.trim().is_empty()) {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+        let ts = v.get("ts").and_then(|t| t.as_str()).and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok());
+        let Some(ts) = ts else { continue };
+        if now.signed_duration_since(ts.with_timezone(&chrono::Local)).num_days() >= window_days {
+            continue;
+        }
+        if v.get("delivered").and_then(|d| d.as_bool()) == Some(false) {
+            failed += 1;
+            last = Some((
+                v.get("title").and_then(|t| t.as_str()).unwrap_or("?").to_string(),
+                v.get("error").and_then(|e| e.as_str()).unwrap_or("unknown").to_string(),
+            ));
+        }
+    }
+    let (title, error) = last?;
+    Some(format!("Alerts undelivered: {tool} {failed} in {window_days}d — last '{title}' ({error})"))
+}
+
+pub fn check_undelivered_alerts(c: &Ctx) -> Vec<String> {
+    c.section("Undelivered Alerts");
+    let dir = c.home.join(".local/state/alerts");
+    let mut problems = vec![];
+    let Ok(rd) = fs::read_dir(&dir) else {
+        c.say("  no alert records yet");
+        c.end_section();
+        return problems;
+    };
+    let mut files: Vec<PathBuf> = rd.filter_map(|e| e.ok().map(|e| e.path())).filter(|p| p.extension().and_then(|x| x.to_str()) == Some("jsonl")).collect();
+    files.sort();
+    for f in &files {
+        let tool = f.file_stem().and_then(|n| n.to_str()).unwrap_or("?").to_string();
+        let text = fs::read_to_string(f).unwrap_or_default();
+        match undelivered_verdict(chrono::Local::now(), &tool, &text, 7) {
+            Some(p) => {
+                c.say(&format!("  ❌ {p}"));
+                problems.push(p);
+            }
+            None => c.say(&format!("  ✅ {tool}: every alert in 7d delivered")),
+        }
+    }
+    if files.is_empty() {
+        c.say("  no alert records yet");
+    }
+    c.end_section();
+    problems
+}
+
+#[cfg(test)]
+mod alert_tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn undelivered_within_window_is_a_problem_old_and_delivered_are_not() {
+        let now = chrono::Local.with_ymd_and_hms(2026, 9, 22, 18, 0, 0).unwrap();
+        let lines = concat!(
+            r#"{"ts":"2026-09-22T08:00:00+01:00","tool":"rustic-backup","title":"Rustic backup","delivered":false,"channel":"notify-send","error":"no graphical session"}"#, "\n",
+            r#"{"ts":"2026-09-21T08:00:00+01:00","tool":"rustic-backup","title":"Rustic backup","delivered":true,"channel":"notify-send","error":null}"#, "\n",
+            r#"{"ts":"2026-09-01T08:00:00+01:00","tool":"rustic-backup","title":"Old","delivered":false,"channel":"notify-send","error":"stale"}"#, "\n",
+            "not json\n",
+        );
+        let p = undelivered_verdict(now, "rustic-backup", lines, 7).unwrap();
+        assert_eq!(p, "Alerts undelivered: rustic-backup 1 in 7d — last 'Rustic backup' (no graphical session)");
+        let ok = r#"{"ts":"2026-09-22T08:00:00+01:00","tool":"x","title":"t","delivered":true,"channel":"osascript","error":null}"#;
+        assert_eq!(undelivered_verdict(now, "x", ok, 7), None);
+        assert_eq!(undelivered_verdict(now, "x", "", 7), None);
+    }
+}

@@ -86,6 +86,7 @@ fn main() -> ExitCode {
     problems.extend(checks::check_derived_docs(&ctx));
     problems.extend(checks::check_watcher_heartbeats(&ctx));
     problems.extend(checks::check_stray_chrome(&ctx));
+    problems.extend(checks::check_undelivered_alerts(&ctx));
 
     // Status file for the session-start kernel (ai-brief "Host health"):
     // one writer per file, namespaced by machine, under the Syncthing-carried
@@ -240,19 +241,11 @@ fn write_status(home: &std::path::Path, host: &str, hostname: &str, nu_version: 
     std::fs::rename(&tmp, dir.join(format!("{host}.json")))
 }
 
-/// Desktop notification, platform-aware. Best effort; failures are ignored.
+/// The health check's own desktop alert, through `notify-user` so the attempt
+/// is recorded and a failed delivery shows up in Check 11 next run.
 fn notify(problems: &[String]) {
-    let on_path = |bin: &str| {
-        std::env::var_os("PATH")
-            .map(|p| std::env::split_paths(&p).any(|d| d.join(bin).is_file()))
-            .unwrap_or(false)
-    };
-    if on_path("notify-send") {
-        let body = problems.join("\n");
-        let _ = Command::new("notify-send").args(["--urgency=critical", "System Health Check", &body]).status();
-    } else if on_path("osascript") {
-        let body = problems.join(", ").replace('"', "'");
-        let script = format!("display notification \"{body}\" with title \"System Health Check\" sound name \"Basso\"");
-        let _ = Command::new("osascript").args(["-e", &script]).status();
-    }
+    let body = problems.join("\n");
+    let _ = Command::new("notify-user")
+        .args(["--tool", "system-health-check", "--urgency", "critical", "System Health Check", &body])
+        .status();
 }

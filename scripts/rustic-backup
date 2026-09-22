@@ -25,11 +25,9 @@ die() {
 
 notify_failure() {
     local message="$1"
-    if command -v notify-send >/dev/null 2>&1; then
-        notify-send --urgency=critical "Rustic backup" "$message" >/dev/null 2>&1 || true
-    elif command -v osascript >/dev/null 2>&1; then
-        osascript -e "display notification \"$message\" with title \"Rustic backup\" sound name \"Basso\"" >/dev/null 2>&1 || true
-    fi
+    # notify-user picks the channel and records whether the alert arrived;
+    # a failed delivery surfaces in system-health-check (D2-23).
+    notify-user --tool rustic-backup --urgency critical "Rustic backup" "$message" >/dev/null 2>&1 || true
 }
 
 check_mode_0600() {

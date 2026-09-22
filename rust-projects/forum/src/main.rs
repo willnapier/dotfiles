@@ -1382,15 +1382,11 @@ fn publish_completion(root: &Path, job: &QueueJob) -> Result<()> {
     Ok(())
 }
 
+/// Through `notify-user`, which records whether the alert arrived (D2-23)
+/// and itself declines when there is no graphical session.
 fn notify_completion_best_effort(thread_id: &str, round: u32) {
-    if !command_exists("notify-send")
-        || (std::env::var_os("DISPLAY").is_none() && std::env::var_os("WAYLAND_DISPLAY").is_none())
-    {
-        return;
-    }
-    let _ = Command::new("notify-send")
-        .arg("Forum round complete")
-        .arg(format!("{thread_id} round {round} is ready for review"))
+    let _ = Command::new("notify-user")
+        .args(["--tool", "forum", "Forum round complete", &format!("{thread_id} round {round} is ready for review")])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

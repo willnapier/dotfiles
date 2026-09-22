@@ -25,8 +25,8 @@ log() {
 alert() {
     local msg="$1"
     log "ALERT: $msg"
-    # macOS notification
-    osascript -e "display notification \"$msg\" with title \"Syncthing Watchdog\" sound name \"Basso\"" 2>/dev/null || true
+    # notify-user records whether the alert arrived (D2-23)
+    notify-user --tool syncthing-sync-watchdog --urgency critical "Syncthing Watchdog" "$msg" >/dev/null 2>&1 || true
     # Also write to a status file for easy checking
     echo "STALLED: $msg ($(date))" > "$HOME/.syncthing-watchdog-status"
 }

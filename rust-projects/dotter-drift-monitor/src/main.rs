@@ -675,19 +675,9 @@ fn side_checks(df: &Path, home: &Path) {
     }
 }
 
+/// Through `notify-user`, which records whether the alert arrived (D2-23).
 fn notify(msg: &str) {
-    if which("notify-send") {
-        let _ = Command::new("notify-send").args(["-u", "critical", "Dotter drift", msg]).status();
-    } else if which("osascript") {
-        let script = format!("display notification \"{}\" with title \"Dotter drift\"", msg.replace('"', "'"));
-        let _ = Command::new("osascript").args(["-e", &script]).status();
-    }
-}
-
-fn which(bin: &str) -> bool {
-    std::env::var_os("PATH")
-        .map(|p| std::env::split_paths(&p).any(|d| d.join(bin).is_file()))
-        .unwrap_or(false)
+    let _ = Command::new("notify-user").args(["--tool", "dotter-drift-monitor", "--urgency", "critical", "Dotter drift", msg]).status();
 }
 
 // ---------------------------------------------------------------------------

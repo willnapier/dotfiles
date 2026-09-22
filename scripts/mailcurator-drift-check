@@ -70,15 +70,10 @@ BODY="$FIRST"
 [[ -z "$BODY" ]] && BODY="Run \`mailcurator coverage --drift\` to investigate."
 
 case "$PLATFORM" in
-    Darwin)
-        # macOS native notification. Use a single-line title to avoid
-        # truncation; full detail is in the log.
-        osascript -e "display notification \"$BODY\" with title \"$TITLE\"" 2>/dev/null || true
-        ;;
-    Linux)
-        # notify-send works in most desktop sessions; if there's no
-        # session bus it silently fails.
-        notify-send --urgency=normal "$TITLE" "$BODY" 2>/dev/null || true
+    *)
+        # notify-user picks the channel and records whether the alert
+        # arrived; a failed delivery surfaces in system-health-check (D2-23).
+        notify-user --tool mailcurator-drift-check "$TITLE" "$BODY" >/dev/null 2>&1 || true
         ;;
 esac
 

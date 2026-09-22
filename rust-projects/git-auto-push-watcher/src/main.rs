@@ -50,6 +50,43 @@ struct Cli {
     /// Directory for the heartbeat file (<name>-<repo>.json), read by system-health-check
     #[arg(long, default_value_os_t = default_state_dir())]
     state_dir: PathBuf,
+    /// Print this repo's heartbeat as a status report and exit (0 alive, 1 stale or last cycle errored).
+    /// Replaces the retired `git-push-reliability-monitor`, which read a lock file and counters
+    /// this watcher never wrote.
+    #[arg(long)]
+    status: bool,
+}
+
+/// Human report from the heartbeat JSON; `alive` is false when the last cycle
+/// recorded an error or the last cycle is older than max(3×interval, 15 min).
+fn status_report(json: &str, now: chrono::DateTime<chrono::Local>) -> (String, bool) {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else {
+        return ("heartbeat file is not valid JSON".into(), false);
+    };
+    let s = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("—").to_string();
+    let interval = v.get("interval_secs").and_then(|x| x.as_u64()).unwrap_or(0);
+    let last_cycle = v.get("last_cycle").and_then(|x| x.as_str()).and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok());
+    let age_min = last_cycle.map(|t| now.signed_duration_since(t.with_timezone(&chrono::Local)).num_minutes());
+    let stale = match age_min {
+        Some(m) => interval > 0 && m * 60 > std::cmp::max(3 * interval as i64, 900),
+        None => true,
+    };
+    let error = v.get("last_error").and_then(|x| x.as_str()).map(String::from);
+    let alive = !stale && error.is_none();
+    let mut out = vec![
+        format!("git-auto-push-watcher {} — {}", s("version"), if alive { "✅ alive" } else { "❌ needs attention" }),
+        format!("  started     {}", s("started_at")),
+        format!("  last cycle  {}{}", s("last_cycle"), age_min.map(|m| format!(" ({m} min ago, every {interval}s)")).unwrap_or_default()),
+        format!("  last push   {}", s("last_action")),
+        format!("  pushes      {}", v.get("actions").and_then(|x| x.as_u64()).unwrap_or(0)),
+    ];
+    if let Some(e) = &error {
+        out.push(format!("  last error  {e}"));
+    }
+    if stale {
+        out.push("  STALE — the watcher is not cycling; check its unit/agent".into());
+    }
+    (out.join("\n"), alive)
 }
 fn default_state_dir() -> PathBuf {
     home().join(".local/state/watchers")
@@ -72,6 +109,19 @@ fn lock_path(repo: &Path) -> PathBuf {
 }
 
 fn main() -> Result<()> {
+    {
+        let cli = Cli::parse();
+        if cli.status {
+            let name = cli.repo.file_name().and_then(|n| n.to_str()).unwrap_or("repo");
+            let path = cli.state_dir.join(format!("git-auto-push-watcher-{name}.json"));
+            let (report, alive) = match std::fs::read_to_string(&path) {
+                Ok(j) => status_report(&j, chrono::Local::now()),
+                Err(e) => (format!("no heartbeat at {} ({e}) — the watcher has never run on this machine", path.display()), false),
+            };
+            println!("{report}");
+            std::process::exit(if alive { 0 } else { 1 });
+        }
+    }
     let cli = Cli::parse();
     refuse_syncthing_assistants(&cli.repo)?;
     let logger = Logger { path: cli.log.clone() };
@@ -558,5 +608,27 @@ mod tests {
             Outcome::Blocked(m) => assert!(m.contains("nu-check") && m.contains("bad.nu"), "{m}"),
             o => panic!("expected Blocked, got {o:?}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn status_report_reads_the_heartbeat_and_flags_error_or_staleness() {
+        let now = chrono::Local.with_ymd_and_hms(2026, 9, 22, 18, 0, 0).unwrap();
+        let fresh = r#"{"watcher":"git-auto-push-watcher","version":"0.3.4","started_at":"2026-09-18T11:02:00+01:00","last_cycle":"2026-09-22T17:59:00+01:00","last_action":"2026-09-22T13:14:00+01:00","actions":12,"last_error":null,"host":"macos","interval_secs":120}"#;
+        let (r, alive) = status_report(fresh, now);
+        assert!(alive, "{r}");
+        assert!(r.contains("✅ alive") && r.contains("pushes      12"));
+        let errored = fresh.replace("\"last_error\":null", "\"last_error\":\"push failed after 3 attempts\"");
+        let (r, alive) = status_report(&errored, now);
+        assert!(!alive && r.contains("last error  push failed"));
+        let stale = fresh.replace("2026-09-22T17:59:00+01:00", "2026-09-18T11:02:00+01:00");
+        let (r, alive) = status_report(&stale, now);
+        assert!(!alive && r.contains("STALE"));
+        assert!(!status_report("nope", now).1);
     }
 }

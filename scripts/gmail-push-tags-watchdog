@@ -46,16 +46,10 @@ log() {
 notify() {
     local msg="$1"
     log "ALERT: $msg"
-    case "$PLATFORM" in
-        Darwin)
-            # osascript NotificationCenter — fires regardless of foreground app
-            osascript -e "display notification \"$msg\" with title \"gmail-push-tags health\"" >/dev/null 2>&1 || true
-            ;;
-        Linux)
-            # libnotify via notify-send. Critical urgency keeps it on screen until dismissed.
-            notify-send -u critical "gmail-push-tags health" "$msg" 2>/dev/null || true
-            ;;
-    esac
+    # notify-user picks the platform channel and records whether the alert
+    # arrived (~/.local/state/alerts/gmail-push-tags-watchdog.jsonl); a failed
+    # delivery surfaces in system-health-check instead of vanishing (D2-23).
+    notify-user --tool gmail-push-tags-watchdog --urgency critical "gmail-push-tags health" "$msg" >/dev/null 2>&1 || true
 }
 
 check_mac() {
