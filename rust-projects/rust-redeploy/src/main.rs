@@ -60,6 +60,8 @@ const MACOS_SIGNED_TOOLS: &[&str] = &[
     "readwise-sync",
     "state-capture",
     "system-health-check",
+    // gmail-push-tags-watchdog is launchd-run every 30 min (StartInterval); Rust port 2026-09-22.
+    "gmail-push-tags-watchdog",
 ];
 
 const MACOS_SIGNING_IDENTITY: &str = "Developer ID Application: William Napier (LU3TB2NLTD)";

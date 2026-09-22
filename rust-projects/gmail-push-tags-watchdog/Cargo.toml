@@ -1,0 +1,12 @@
+[package]
+name = "gmail-push-tags-watchdog"
+version = "0.2.0"
+edition = "2021"
+description = "Periodic health check for the gmail-push-tags service: wedged-while-running, failed last run, or timer not firing. Silent when healthy; alerts through notify-user."
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+chrono = "0.4"
+
+[dev-dependencies]
+tempfile = "3"
