@@ -218,24 +218,36 @@ fn read_history() -> Result<Vec<Snapshot>> {
 /// *always* extracted badly (uk2-hosting `status` at 11.9%) never drops
 /// enough to be flagged and stays green forever. Any policy whose health
 /// is below the floor is reported every run, prior snapshot or not.
-pub fn drift(reports: &[Report], threshold_pp: f64, floor_pct: Option<f64>) -> Result<DriftReport> {
+/// `floor_min_records`: the floor is a claim about an extractor, and one or
+/// four records cannot support it — marriott-bookings sat at "0% health" on
+/// a single record from 20 Sep 2026, travelodge at 25% on four, and both
+/// held a permanent alarm. Below this many records the floor is not applied;
+/// the policy still appears in the coverage listing.
+pub fn floor_finding(report: &Report, floor_pct: Option<f64>, floor_min_records: usize) -> Option<Finding> {
+    let floor = floor_pct?;
+    let h_now = report.health_pct()?;
+    if report.records < floor_min_records || h_now >= floor {
+        return None;
+    }
+    Some(Finding {
+        policy: report.policy_name.clone(),
+        field: "<health floor>".into(),
+        prev: floor,
+        current: h_now,
+        drop: floor - h_now,
+        prev_ts: "absolute floor".into(),
+    })
+}
+
+pub fn drift(reports: &[Report], threshold_pp: f64, floor_pct: Option<f64>, floor_min_records: usize) -> Result<DriftReport> {
     let history = read_history()?;
     let now = Utc::now();
     let mut findings = Vec::new();
 
     for current_report in reports {
         let current = Snapshot::from_report(current_report);
-        if let (Some(floor), Some(h_now)) = (floor_pct, current.health_pct) {
-            if h_now < floor {
-                findings.push(Finding {
-                    policy: current.policy.clone(),
-                    field: "<health floor>".into(),
-                    prev: floor,
-                    current: h_now,
-                    drop: floor - h_now,
-                    prev_ts: "absolute floor".into(),
-                });
-            }
+        if let Some(f) = floor_finding(current_report, floor_pct, floor_min_records) {
+            findings.push(f);
         }
         // Find latest historical snapshot for this policy that's strictly older.
         let prior = history
@@ -391,5 +403,39 @@ pub fn print_reports(reports: &[Report]) {
             );
         }
         println!();
+    }
+}
+
+#[cfg(test)]
+mod floor_tests {
+    use super::*;
+
+    fn report(name: &str, records: usize, fully_covered: usize) -> Report {
+        Report {
+            policy_name: name.into(),
+            category: "bookings".into(),
+            records,
+            field_population: BTreeMap::new(),
+            required_fields: vec!["checkin".into(), "checkout".into()],
+            fully_covered,
+            vendor_module: Some("generic_hotel".into()),
+        }
+    }
+
+    #[test]
+    fn floor_needs_a_sample_before_it_speaks() {
+        // marriott-bookings, 20 Sep 2026: one record, 0% — not a claim about the extractor.
+        assert!(floor_finding(&report("marriott-bookings", 1, 0), Some(50.0), 5).is_none());
+        // travelodge-bookings: four records, 25% — still below the sample.
+        assert!(floor_finding(&report("travelodge-bookings", 4, 1), Some(50.0), 5).is_none());
+        // booking-com-bookings: 27 records, 44.4% — a real finding.
+        let f = floor_finding(&report("booking-com-bookings", 27, 12), Some(50.0), 5).unwrap();
+        assert_eq!(f.policy, "booking-com-bookings");
+        assert!((f.current - 44.4).abs() < 0.1 && (f.drop - 5.6).abs() < 0.1);
+        // At or above the floor, or no floor asked for: nothing.
+        assert!(floor_finding(&report("x", 27, 14), Some(50.0), 5).is_none());
+        assert!(floor_finding(&report("x", 27, 1), None, 5).is_none());
+        // Minimum of 0 restores the old behaviour.
+        assert!(floor_finding(&report("marriott-bookings", 1, 0), Some(50.0), 0).is_some());
     }
 }

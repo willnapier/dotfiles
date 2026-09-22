@@ -235,6 +235,10 @@ enum Command {
         /// reported every run, whatever the previous snapshot said.
         #[arg(long)]
         floor: Option<f64>,
+        /// Records a policy needs before the floor applies to it — one or
+        /// four records cannot indict an extractor. Default 5.
+        #[arg(long, default_value_t = 5)]
+        floor_min_records: usize,
         /// Skip writing today's snapshot to coverage-history.jsonl. Useful
         /// when you're spot-checking and don't want to pollute the history.
         #[arg(long)]
@@ -721,13 +725,13 @@ fn main() -> Result<()> {
                 );
             }
         }
-        Command::Coverage { policy, drift, threshold, floor, no_snapshot } => {
+        Command::Coverage { policy, drift, threshold, floor, floor_min_records, no_snapshot } => {
             let cfg = config::load(&path)?;
             let reports = coverage::report_all(&cfg.policies, policy.as_deref())?;
             coverage::print_reports(&reports);
             if drift {
                 println!();
-                let d = coverage::drift(&reports, threshold, floor)?;
+                let d = coverage::drift(&reports, threshold, floor, floor_min_records)?;
                 coverage::print_drift(&d);
                 if !d.findings.is_empty() {
                     std::process::exit(1);

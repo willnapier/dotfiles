@@ -185,9 +185,11 @@ fn property_from_subject(subject: &str) -> Option<String> {
 fn checkin_compound_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     R.get_or_init(|| {
-        // "Check-in Saturday, 4 July 2026 (15:00 - 21:00)"
+        // "Check-in Saturday, 4 July 2026 (15:00 - 21:00)" or "(from 13:00)";
+        // check-out is usually "(until 11:00)". The bare-time form was the
+        // only one matched until 2026-09-22, which left checkout at 44%.
         Regex::new(
-            r"(?i)Check[\-\s]?in\s+((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,\s+\d{1,2}\s+\w+\s+\d{4})\s*\((\d{2}:\d{2})",
+            r"(?i)Check[\-\s]?in\s+((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,\s+\d{1,2}\s+\w+\s+\d{4})\s*\(\s*(?:from|until|by|before|after)?\s*(\d{2}:\d{2})",
         )
         .unwrap()
     })
@@ -197,7 +199,7 @@ fn checkout_compound_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     R.get_or_init(|| {
         Regex::new(
-            r"(?i)Check[\-\s]?out\s+((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,\s+\d{1,2}\s+\w+\s+\d{4})\s*\((\d{2}:\d{2})",
+            r"(?i)Check[\-\s]?out\s+((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,\s+\d{1,2}\s+\w+\s+\d{4})\s*\(\s*(?:from|until|by|before|after)?\s*(\d{2}:\d{2})",
         )
         .unwrap()
     })
@@ -332,5 +334,25 @@ mod tests {
             Some("5022794464")
         );
         assert_eq!(r.get("pin").and_then(|v| v.as_str()), Some("2554"));
+    }
+}
+
+#[cfg(test)]
+mod window_tests {
+    use super::*;
+
+    #[test]
+    fn compound_regexes_accept_every_booking_com_time_window_form() {
+        // Three real template shapes from the store (dates changed, text as written).
+        let a = "Check-in Saturday, 4 July 2026 (15:00 - 21:00) Check-out Sunday, 5 July 2026 (08:00 - 10:00) Your reservation";
+        let b = "Check-in Saturday, 6 December 2025 (15:00 - 00:00) Check-out Sunday, 7 December 2025 (until 11:00) Your reservation";
+        let c = "Check-in Saturday, 25 October 2025 (from 13:00) Check-out Sunday, 26 October 2025 (until 12:00) Your reservation";
+        let pick = |re: &Regex, t: &str| re.captures(t).map(|c| (c[1].to_string(), c[2].to_string()));
+        assert_eq!(pick(checkin_compound_re(), a), Some(("Saturday, 4 July 2026".into(), "15:00".into())));
+        assert_eq!(pick(checkout_compound_re(), a), Some(("Sunday, 5 July 2026".into(), "08:00".into())));
+        assert_eq!(pick(checkout_compound_re(), b), Some(("Sunday, 7 December 2025".into(), "11:00".into())));
+        assert_eq!(pick(checkin_compound_re(), c), Some(("Saturday, 25 October 2025".into(), "13:00".into())));
+        assert_eq!(pick(checkout_compound_re(), c), Some(("Sunday, 26 October 2025".into(), "12:00".into())));
+        assert_eq!(pick(checkout_compound_re(), "Check-out Sunday, 7 December 2025 tomorrow"), None);
     }
 }

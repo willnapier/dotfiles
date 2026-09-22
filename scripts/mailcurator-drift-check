@@ -26,6 +26,10 @@ THRESHOLD=10.0
 # it never "dropped" — chronically bad extraction was permanently green before
 # 2026-09-02 (review D1-11).
 FLOOR=50
+# The floor is a claim about an extractor; below this many records it is not
+# applied (marriott sat at "0%" on one record, travelodge at 25% on four —
+# permanent alarms, 20–22 Sep 2026). Such policies still appear in the listing.
+FLOOR_MIN_RECORDS=5
 
 case "$PLATFORM" in
     Darwin) LOG="$HOME/Library/Logs/mailcurator-drift.log" ;;
@@ -38,12 +42,12 @@ mkdir -p "$(dirname "$LOG")"
 
 # Run mailcurator coverage --drift, capturing both output and exit code.
 # Coverage runs against ~/.config/mailcurator/policies.toml (the default).
-OUT=$(mailcurator coverage --drift --threshold "$THRESHOLD" --floor "$FLOOR" 2>&1)
+OUT=$(mailcurator coverage --drift --threshold "$THRESHOLD" --floor "$FLOOR" --floor-min-records "$FLOOR_MIN_RECORDS" 2>&1)
 RC=$?
 
 {
     echo "==========================================================="
-    echo "[$NOW] mailcurator-drift-check (threshold=${THRESHOLD}pp floor=${FLOOR}%)"
+    echo "[$NOW] mailcurator-drift-check (threshold=${THRESHOLD}pp floor=${FLOOR}% min-records=${FLOOR_MIN_RECORDS})"
     echo "exit=$RC"
     echo "$OUT"
 } >> "$LOG"
