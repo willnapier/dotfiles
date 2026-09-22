@@ -135,10 +135,12 @@ pub fn summarise(services: &[Service], beats: &[Heartbeat]) -> Summary {
                 s.missing_script += 1;
             }
         } else if !svc.loaded {
+            // Deployed-but-not-enabled is how a single-writer decision is
+            // expressed (WATCHERS.md); a unit deliberately left disabled on
+            // this host naturally has no binary here either. Degraded, not
+            // a missing-script red — that is reserved for units that would
+            // run it.
             s.degraded += 1;
-            if !svc.script_exists {
-                s.missing_script += 1;
-            }
         }
     }
     s.bad_heartbeats = beats.iter().filter(|b| b.problem()).count();
@@ -223,7 +225,8 @@ pub fn full_check(c: &Ctx) -> bool {
     if !not_loaded.is_empty() {
         println!("── Not loaded ({}) ──", not_loaded.len());
         for svc in &not_loaded {
-            println!("  ⚪ {}{}", svc.label(), missing_tag(svc));
+            let absent = if svc.script_exists { "" } else { " (binary absent here too)" };
+            println!("  ⚪ {}{}", svc.label(), absent);
         }
         println!();
     }
@@ -286,7 +289,7 @@ pub fn quick_check(c: &Ctx) -> bool {
 }
 
 pub fn check_missing_scripts(c: &Ctx) -> bool {
-    let services: Vec<Service> = discover(c).into_iter().filter(|s| !s.script_exists).collect();
+    let services: Vec<Service> = discover(c).into_iter().filter(|s| !s.script_exists && s.loaded).collect();
     if services.is_empty() {
         println!("✅ All service scripts exist");
         return true;
@@ -337,7 +340,7 @@ pub fn check_all_heartbeats(c: &Ctx) -> bool {
 
 pub fn suggest_fixes(c: &Ctx) -> bool {
     let services = discover(c);
-    let missing: Vec<&Service> = services.iter().filter(|s| !s.script_exists).collect();
+    let missing: Vec<&Service> = services.iter().filter(|s| !s.script_exists && s.loaded).collect();
     let errored: Vec<&Service> = services.iter().filter(|s| s.errored()).collect();
     let beats = read_heartbeats(&heartbeat_dir(c), Local::now());
     let bad: Vec<&Heartbeat> = beats.iter().filter(|b| b.problem()).collect();
@@ -504,5 +507,11 @@ mod tests {
         let s = summarise(&services, &[]);
         assert_eq!(s, Summary { healthy: 0, degraded: 2, broken: 0, missing_script: 1, reporting: 0, bad_heartbeats: 0 });
         assert!(s.red());
+        // A unit deliberately not enabled here, whose binary is absent here
+        // too (nimbini's zotero-pdf-watcher), is degraded but not red.
+        let parked = vec![svc("zotero-pdf-watcher", Kind::Service, false, None, None, false)];
+        let s = summarise(&parked, &[]);
+        assert_eq!((s.degraded, s.missing_script), (1, 0));
+        assert!(!s.red());
     }
 }
