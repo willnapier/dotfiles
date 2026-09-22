@@ -552,7 +552,6 @@ depends = ["shared"]
 "systemd/assistants-docs-watcher.service" = "~/.config/systemd/user/assistants-docs-watcher.service"
 "scripts/dotter-sync-watcher" = "~/.local/bin/dotter-sync-watcher"
 "scripts/dotter-sync-watcher-wrapper" = "~/.local/bin/dotter-sync-watcher-wrapper"
-"scripts/sync-service-monitor" = "~/.local/bin/sync-service-monitor"
 # "scripts/setup-forge-link-service" = "~/.local/bin/setup-forge-link-service"  # Missing file - temporarily disabled
 "scripts/backup-to-dropbox" = "~/.local/bin/backup-to-dropbox"
 # forge-metadata-backup scripts moved to [shared.files]

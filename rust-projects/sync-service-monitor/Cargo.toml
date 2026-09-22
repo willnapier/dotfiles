@@ -1,0 +1,13 @@
+[package]
+name = "sync-service-monitor"
+version = "0.2.0"
+edition = "2021"
+description = "Health of the dotfiles sync watchers on this host and its peer: units, heartbeats, PID-checked locks, time-bounded log activity; restart and lock cleanup stay explicit actions."
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+chrono = "0.4"
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
