@@ -173,6 +173,11 @@
   },
   "alwaysThinkingEnabled": true,
   "effortLevel": "high",
+  "modelSettings": {
+    "claude-fable-5-1": {
+      "effortLevel": "xhigh"
+    }
+  },
   "skipWorkflowUsageWarning": true,
   "agentPushNotifEnabled": true,
   "autoMode": {
@@ -219,10 +224,5 @@
   "voiceEnabled": true,
   "feedbackSurveyState": {
     "lastShownTime": 1754246159316
-  },
-  "modelSettings": {
-    "claude-fable-5-1": {
-      "effortLevel": "xhigh"
-    }
   }
 }
