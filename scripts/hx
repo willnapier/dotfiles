@@ -11,7 +11,13 @@ if [ -x "$SCRIPT_DIR/hx-sync-check" ]; then
     for arg in "$@"; do
         # Skip flags (arguments starting with -)
         if [[ "$arg" != -* ]] && [ -f "$arg" ]; then
-            "$SCRIPT_DIR/hx-sync-check" "$arg" || true
+            # Exit 1 = modified on another device (warning printed);
+            # exit 2 = the check could not run (reason printed, D2-22).
+            # Either way the editor still opens — this is visibility, not a block.
+            "$SCRIPT_DIR/hx-sync-check" "$arg"
+            if [ $? -eq 2 ]; then
+                echo "   (sync check unavailable — opening anyway)" >&2
+            fi
         fi
     done
 fi

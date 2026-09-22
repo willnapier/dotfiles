@@ -1,0 +1,12 @@
+[package]
+name = "hx-sync-check"
+version = "0.2.0"
+edition = "2021"
+description = "Before opening a file in Helix: warn if Syncthing says another device modified it within the last N minutes. Exit 0 safe, 1 modified remotely, 2 could not check."
+
+[dependencies]
+clap = { version = "4", features = ["derive", "env"] }
+anyhow = "1"
+chrono = "0.4"
+serde_json = "1"
+ureq = { version = "2", default-features = false }
