@@ -349,8 +349,59 @@ struct GitOut {
     out: String,
     err: String,
 }
+/// A hard bound on every git call. ssh to GitHub can hang at connect: the
+/// Mac's pull watcher sat in one from 21:14 to 23:25 on 2026-09-22 (a
+/// 19-day-old process with a stuck `git-upload-pack` child) and nothing
+/// noticed until the new sync monitor read its heartbeat. `GIT_SSH_COMMAND`
+/// bounds the connect and detects a dead peer — unless the user already
+/// chose an ssh command (env or `core.sshCommand`), which is left alone —
+/// and the wall-clock kill covers everything else.
+const GIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+const GIT_SSH: &str = "ssh -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=2";
+
+fn ssh_command_override() -> Option<&'static str> {
+    static CHOICE: std::sync::OnceLock<Option<&'static str>> = std::sync::OnceLock::new();
+    *CHOICE.get_or_init(|| {
+        if std::env::var_os("GIT_SSH_COMMAND").is_some() || std::env::var_os("GIT_SSH").is_some() {
+            return None;
+        }
+        let configured = Command::new("git")
+            .args(["config", "--get", "core.sshCommand"])
+            .output()
+            .map(|o| o.status.success() && !o.stdout.is_empty())
+            .unwrap_or(false);
+        if configured { None } else { Some(GIT_SSH) }
+    })
+}
+
+/// Wait for a child, killing it after `limit`; a killed child's stderr says so.
+fn wait_bounded(mut child: std::process::Child, limit: std::time::Duration) -> std::io::Result<std::process::Output> {
+    let start = std::time::Instant::now();
+    loop {
+        if child.try_wait()?.is_some() {
+            return child.wait_with_output();
+        }
+        if start.elapsed() > limit {
+            let _ = child.kill();
+            let mut o = child.wait_with_output()?;
+            o.stderr.extend_from_slice(format!("\n(killed by the watcher after {}s)", limit.as_secs()).as_bytes());
+            return Ok(o);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+}
+
+fn git_output(repo: &Path, args: &[&str]) -> std::io::Result<std::process::Output> {
+    let mut cmd = Command::new("git");
+    cmd.args(args).current_dir(repo).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
+    if let Some(ssh) = ssh_command_override() {
+        cmd.env("GIT_SSH_COMMAND", ssh);
+    }
+    wait_bounded(cmd.spawn()?, GIT_TIMEOUT)
+}
+
 fn git(repo: &Path, args: &[&str]) -> Result<GitOut> {
-    let o = Command::new("git").args(args).current_dir(repo).output().with_context(|| format!("running git {} in {}", args.join(" "), repo.display()))?;
+    let o = git_output(repo, args).with_context(|| format!("running git {} in {}", args.join(" "), repo.display()))?;
     Ok(GitOut { ok: o.status.success(), out: String::from_utf8_lossy(&o.stdout).trim().to_string(), err: String::from_utf8_lossy(&o.stderr).into_owned() })
 }
 
@@ -610,5 +661,22 @@ mod tests {
         let before = head(&a);
         assert_eq!(w.cycle(), vec![Outcome::DryRun { behind: 1 }]);
         assert_eq!(head(&a), before);
+    }
+}
+
+#[cfg(test)]
+mod bounded_git_tests {
+    use super::*;
+
+    #[test]
+    fn wait_bounded_kills_a_hung_child_and_says_so() {
+        let child = Command::new("sleep").arg("10").stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().unwrap();
+        let t = std::time::Instant::now();
+        let o = wait_bounded(child, std::time::Duration::from_millis(500)).unwrap();
+        assert!(t.elapsed() < std::time::Duration::from_secs(5));
+        assert!(!o.status.success());
+        assert!(String::from_utf8_lossy(&o.stderr).contains("killed by the watcher"));
+        let ok = Command::new("true").stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().unwrap();
+        assert!(wait_bounded(ok, std::time::Duration::from_secs(5)).unwrap().status.success());
     }
 }
