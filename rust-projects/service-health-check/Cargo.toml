@@ -1,0 +1,11 @@
+[package]
+name = "service-health-check"
+version = "0.2.0"
+edition = "2021"
+description = "Service integrity validator: discovers user services (launchd / systemd --user), checks scripts exist, running state, last exit — including timer-fired units — and watcher lock files."
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+
+[dev-dependencies]
+tempfile = "3"

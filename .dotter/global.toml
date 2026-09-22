@@ -340,7 +340,6 @@ depends = []
 "scripts/semantic-auto-update" = "~/.local/bin/semantic-auto-update"
 # Frecency daemon wrapper - cross-platform API key handling
 "scripts/frecency-daemon-wrapper" = "~/.local/bin/frecency-daemon-wrapper"
-"scripts/service-health-check" = "~/.local/bin/service-health-check"
 # forge-metadata-backup itself is NO LONGER a script (2026-07-31). It is the Rust binary
 # at rust-projects/forge-metadata-backup, deployed to ~/.local/bin by `rust-redeploy`.
 # Do NOT re-add a mapping here: it would symlink ~/.local/bin/forge-metadata-backup back
