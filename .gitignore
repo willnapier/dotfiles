@@ -62,4 +62,3 @@ niri/config-minimal.kdl
 .claude/worktrees/
 
 # Personal sender/vendor patterns — machine-local per mailcurator.md, never published
-mailcurator/policies.toml
