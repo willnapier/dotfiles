@@ -139,7 +139,6 @@ depends = []
 # Cross-platform script branches on uname; Mac uses osascript +
 # launchd, Linux uses notify-send + systemd. Built 2026-04-27 after
 # nimbini's gmail-push-tags hung silently for 3.5h.
-"scripts/gmail-push-tags-watchdog" = "~/.local/bin/gmail-push-tags-watchdog"
 # mailcurator drift-check — weekly health check for vendor extractors.
 # Wrapper around `mailcurator coverage --drift`; fires OS notification
 # when any policy's required-field coverage regressed >= 10pp vs the
