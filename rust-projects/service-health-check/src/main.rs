@@ -10,6 +10,14 @@
 //! finding D2-18 (2026-08-01): a oneshot failing on every fire behind an active
 //! timer was invisible — exactly how nimbini's `tm3-diary-capture` failed five
 //! times in a row on 2026-09-22 while this check said "0 errored".
+//!
+//! Two more changes the same afternoon: the `/tmp/*.lock` age check is gone —
+//! watchers write those once at startup and never again, so every watcher up
+//! for more than ten minutes read as STALE — replaced by the heartbeat files in
+//! `~/.local/state/watchers` (same rules as system-health-check Check 9); and
+//! exit 1 from a *checker* (cross-machine-sync-check, system-health-check,
+//! dotter-drift-monitor, mailcurator-drift) means "found something", so it is
+//! reported as 🟡 rather than as a broken service.
 
 mod exec;
 mod report;
@@ -22,7 +30,7 @@ use std::process::ExitCode;
 #[derive(Parser)]
 #[command(name = "service-health-check", about = "Comprehensive service integrity validator")]
 struct Cli {
-    /// full (default) | quick | missing | locks | fix
+    /// full (default) | quick | missing | heartbeats (alias: locks) | fix
     #[arg(value_enum, default_value_t = Action::Full)]
     action: Action,
 }
@@ -35,8 +43,9 @@ enum Action {
     Quick,
     /// List services whose scripts are missing
     Missing,
-    /// Check all watcher lock files
-    Locks,
+    /// Check every watcher heartbeat in ~/.local/state/watchers
+    #[value(alias = "locks")]
+    Heartbeats,
     /// Suggest fixes for broken services
     Fix,
 }
@@ -52,7 +61,7 @@ fn main() -> ExitCode {
         Action::Full => report::full_check(&ctx),
         Action::Quick => report::quick_check(&ctx),
         Action::Missing => report::check_missing_scripts(&ctx),
-        Action::Locks => report::check_all_locks(&ctx),
+        Action::Heartbeats => report::check_all_heartbeats(&ctx),
         Action::Fix => report::suggest_fixes(&ctx),
     };
     if ok {

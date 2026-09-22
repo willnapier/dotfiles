@@ -38,12 +38,33 @@ pub struct Service {
     pub last_exit_at: String,
 }
 
+/// Tools whose exit 1 means "I found issues", not "I broke". Their unit or
+/// agent is named after them (`com.williamnapier.<name>` on macOS). Exit 2 and
+/// above is still a broken run — cross-machine-sync-check and
+/// dotter-drift-monitor use 2 for "could not check".
+pub const CHECKERS: [&str; 4] = ["cross-machine-sync-check", "system-health-check", "dotter-drift-monitor", "mailcurator-drift"];
+
 impl Service {
     pub fn running(&self) -> bool {
         self.pid.is_some()
     }
+    /// Name without the launchd reverse-DNS prefix.
+    pub fn short_name(&self) -> &str {
+        self.name.strip_prefix("com.williamnapier.").or_else(|| self.name.strip_prefix("com.user.")).unwrap_or(&self.name)
+    }
+    fn is_checker(&self) -> bool {
+        CHECKERS.contains(&self.short_name())
+    }
+    /// A checker whose last run exited 1: it reported issues and is itself fine.
+    pub fn reports_issues(&self) -> bool {
+        self.loaded && self.pid.is_none() && self.last_exit == Some(1) && self.is_checker()
+    }
+    /// Loaded, not running now, and the last run failed. The one predicate
+    /// every action uses — the script's `quick`/`fix` ignored the PID and so
+    /// counted a KeepAlive-relaunched agent (last exit −15) as errored while
+    /// `full` listed it as running.
     pub fn errored(&self) -> bool {
-        self.loaded && self.pid.is_none() && matches!(self.last_exit, Some(c) if c != 0)
+        self.loaded && self.pid.is_none() && matches!(self.last_exit, Some(c) if c != 0) && !self.reports_issues()
     }
     pub fn loaded_ok(&self) -> bool {
         self.loaded && self.pid.is_none() && self.last_exit == Some(0)
@@ -271,6 +292,39 @@ mod tests {
 
     fn ctx(fake: Fake, home: &Path) -> Ctx {
         Ctx { exec: Box::new(fake), home: home.to_path_buf() }
+    }
+
+    fn plain(name: &str, loaded: bool, pid: Option<u32>, last_exit: Option<i32>) -> Service {
+        Service {
+            name: name.into(),
+            kind: Kind::Agent,
+            script: String::new(),
+            unit_path: PathBuf::new(),
+            loaded,
+            pid,
+            last_exit,
+            script_exists: true,
+            last_exit_at: String::new(),
+        }
+    }
+
+    #[test]
+    fn checker_exit_one_reports_issues_but_exit_two_and_others_are_errors() {
+        let sync = plain("com.williamnapier.cross-machine-sync-check", true, None, Some(1));
+        assert!(sync.reports_issues() && !sync.errored());
+        let could_not = plain("cross-machine-sync-check", true, None, Some(2));
+        assert!(!could_not.reports_issues() && could_not.errored());
+        let other = plain("com.user.thing", true, None, Some(1));
+        assert!(!other.reports_issues() && other.errored());
+    }
+
+    #[test]
+    fn running_agent_with_old_nonzero_exit_is_not_errored() {
+        // KeepAlive relaunched it after a SIGTERM; launchctl still shows -15.
+        let relaunched = plain("com.williamnapier.forge-md-revs", true, Some(88), Some(-15));
+        assert!(relaunched.running() && !relaunched.errored() && !relaunched.reports_issues());
+        let unloaded = plain("com.user.off", false, None, Some(1));
+        assert!(!unloaded.errored());
     }
 
     #[test]

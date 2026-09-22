@@ -2,10 +2,12 @@
 name = "service-health-check"
 version = "0.2.0"
 edition = "2021"
-description = "Service integrity validator: discovers user services (launchd / systemd --user), checks scripts exist, running state, last exit — including timer-fired units — and watcher lock files."
+description = "Service integrity validator: discovers user services (launchd / systemd --user), checks scripts exist, running state, last exit — including timer-fired units — and watcher heartbeats."
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
+chrono = "0.4"
+serde_json = "1"
 
 [dev-dependencies]
 tempfile = "3"
