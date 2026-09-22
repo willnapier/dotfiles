@@ -33,7 +33,12 @@ struct Arrow {
     segments: Vec<(f64, f64, f64, f64)>,
 }
 
-fn parse_svg(svg: &str) -> Result<(Vec<Rect>, Vec<Text>, Vec<Arrow>, Vec<Diamond>)> {
+/// Elements found plus every XML error met on the way. Before 2026-09-22 an
+/// XML error was printed as a "warning" and parsing carried on with partial
+/// geometry, and a file with no recognisable elements passed every check
+/// vacuously (audit D2-16) — including .d2 sources fed in by mistake.
+fn parse_svg(svg: &str) -> Result<(Vec<Rect>, Vec<Text>, Vec<Arrow>, Vec<Diamond>, Vec<String>)> {
+    let mut xml_errors = Vec::new();
     let mut rects = Vec::new();
     let mut texts = Vec::new();
     let mut arrows = Vec::new();
@@ -185,13 +190,27 @@ fn parse_svg(svg: &str) -> Result<(Vec<Rect>, Vec<Text>, Vec<Arrow>, Vec<Diamond
                     in_text = false;
                 }
             }
-            Err(e) => eprintln!("XML warning: {}", e),
+            Err(e) => xml_errors.push(format!("XML error at byte {}: {e}", reader.buffer_position())),
             _ => {}
         }
         buf.clear();
     }
 
-    Ok((rects, texts, arrows, diamonds))
+    Ok((rects, texts, arrows, diamonds, xml_errors))
+}
+
+/// The reasons a parse cannot support any verdict: nothing recognisable was
+/// found (not an SVG this linter models, or the wrong file), or the XML was
+/// broken along the way. Either is a failure, never a pass.
+fn parse_floor(rects: usize, texts: usize, arrows: usize, diamonds: usize, xml_errors: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    for e in xml_errors {
+        out.push(format!("UNPARSEABLE: {e}"));
+    }
+    if rects + texts + arrows + diamonds == 0 {
+        out.push("NO ELEMENTS: nothing this linter models was found (rects/texts/arrows/diamonds all 0) — not an SVG of the expected shape, or the wrong file; no check can pass".into());
+    }
+    out
 }
 
 /// Find the smallest content rect containing a text element.
@@ -941,7 +960,7 @@ fn main() -> Result<()> {
 
     for path in &paths {
         let mut svg = fs::read_to_string(path).with_context(|| format!("Failed to read: {}", path))?;
-        let (rects, texts, arrows, diamonds) = parse_svg(&svg)?;
+        let (rects, texts, arrows, diamonds, xml_errors) = parse_svg(&svg)?;
 
         println!("=== {} ===", path);
         println!(
@@ -949,7 +968,9 @@ fn main() -> Result<()> {
             rects.len(), texts.len(), arrows.len(), diamonds.len()
         );
 
-        let mut failures = Vec::new();
+        let mut failures = parse_floor(rects.len(), texts.len(), arrows.len(), diamonds.len(), &xml_errors);
+        let floored = !failures.is_empty();
+        if !floored {
         failures.extend(check_text_overflow(&texts, &rects));
         failures.extend(check_diamond_text(&texts, &diamonds));
         failures.extend(check_arrow_length(&arrows));
@@ -957,8 +978,9 @@ fn main() -> Result<()> {
         failures.extend(check_consistent_stroke(&arrows, &svg));
         failures.extend(check_arrow_crossing(&arrows, &rects));
         failures.extend(check_symmetrical_margins(&rects));
+        }
 
-        if fix_mode && !failures.is_empty() {
+        if fix_mode && !failures.is_empty() && !floored {
             let mut fixed = Vec::new();
 
             // Fix stroke consistency
@@ -1014,8 +1036,8 @@ fn main() -> Result<()> {
                 println!("  Fixed: {}", fixed.join(", "));
 
                 // Re-check after fixes
-                let (rects2, texts2, arrows2, diamonds2) = parse_svg(&svg)?;
-                failures.clear();
+                let (rects2, texts2, arrows2, diamonds2, xml_errors2) = parse_svg(&svg)?;
+                failures = parse_floor(rects2.len(), texts2.len(), arrows2.len(), diamonds2.len(), &xml_errors2);
                 failures.extend(check_text_overflow(&texts2, &rects2));
                 failures.extend(check_diamond_text(&texts2, &diamonds2));
                 failures.extend(check_arrow_length(&arrows2));
@@ -1045,4 +1067,21 @@ fn main() -> Result<()> {
         println!("All {} files passed", total_pass);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod floor_tests {
+    use super::*;
+
+    #[test]
+    fn nothing_parsed_or_broken_xml_is_a_failure_not_a_pass() {
+        assert!(parse_floor(0, 0, 0, 0, &[]).iter().any(|f| f.starts_with("NO ELEMENTS")));
+        assert!(parse_floor(3, 2, 1, 0, &[]).is_empty());
+        let f = parse_floor(3, 2, 1, 0, &["XML error at byte 10: x".into()]);
+        assert_eq!(f.len(), 1);
+        assert!(f[0].starts_with("UNPARSEABLE"));
+        // A .d2 source fed in by mistake: no elements, and a failure.
+        let (r, t, a, d, e) = parse_svg("direction: right\nA -> B: sends\n").unwrap();
+        assert!(!parse_floor(r.len(), t.len(), a.len(), d.len(), &e).is_empty());
+    }
 }
