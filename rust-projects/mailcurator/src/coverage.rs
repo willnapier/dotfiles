@@ -83,6 +83,7 @@ fn build_report(pol: &Policy, category: &str) -> Result<Report> {
     let mut fully_covered = 0usize;
 
     let lines = store::read_category_lines(category)?;
+    let mut rows: Vec<Value> = Vec::new();
     for line in lines {
         if line.trim().is_empty() {
             continue;
@@ -99,6 +100,9 @@ fn build_report(pol: &Policy, category: &str) -> Result<Report> {
                 continue;
             }
         }
+        rows.push(obj);
+    }
+    for obj in latest_per_message(rows) {
         records += 1;
         let mut all_required = !required_fields.is_empty();
         if let Some(map) = obj.as_object() {
@@ -130,6 +134,32 @@ fn build_report(pol: &Policy, category: &str) -> Result<Report> {
         fully_covered,
         vendor_module: pol.vendor_module.clone(),
     })
+}
+
+/// One row per message, the last written winning. The store is append-only
+/// and a held message (Inbox hold since 2026-09-19) is re-extracted on every
+/// run, so the same booking appears once per run; health computed over raw
+/// rows counted each of them, and an extractor fix could never repair the
+/// number because the old rows stayed. Rows without a message_id are kept
+/// as they are.
+fn latest_per_message(rows: Vec<Value>) -> Vec<Value> {
+    let mut by_id: BTreeMap<String, usize> = BTreeMap::new();
+    let mut out: Vec<Option<Value>> = Vec::with_capacity(rows.len());
+    for obj in rows {
+        let id = obj.get("message_id").and_then(|v| v.as_str()).map(str::to_string);
+        match id {
+            Some(id) => {
+                if let Some(&slot) = by_id.get(&id) {
+                    out[slot] = Some(obj);
+                } else {
+                    by_id.insert(id, out.len());
+                    out.push(Some(obj));
+                }
+            }
+            None => out.push(Some(obj)),
+        }
+    }
+    out.into_iter().flatten().collect()
 }
 
 fn is_populated(v: &Value) -> bool {
@@ -437,5 +467,28 @@ mod floor_tests {
         assert!(floor_finding(&report("x", 27, 1), None, 5).is_none());
         // Minimum of 0 restores the old behaviour.
         assert!(floor_finding(&report("marriott-bookings", 1, 0), Some(50.0), 0).is_some());
+    }
+}
+
+#[cfg(test)]
+mod dedupe_tests {
+    use super::*;
+
+    #[test]
+    fn latest_row_per_message_wins_and_idless_rows_stay() {
+        let rows: Vec<Value> = [
+            r#"{"message_id":"<a>","checkout":null}"#,
+            r#"{"message_id":"<b>","checkout":"Sun"}"#,
+            r#"{"checkout":null}"#,
+            r#"{"message_id":"<a>","checkout":"Mon"}"#,
+        ]
+        .iter()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+        let kept = latest_per_message(rows);
+        assert_eq!(kept.len(), 3);
+        let a = kept.iter().find(|r| r.get("message_id").and_then(|v| v.as_str()) == Some("<a>")).unwrap();
+        assert_eq!(a["checkout"], "Mon");
+        assert!(kept.iter().any(|r| r.get("message_id").is_none()));
     }
 }
