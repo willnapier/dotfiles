@@ -1,4 +1,4 @@
-ai-brief	0.3.0	/home/will/dotfiles/rust-projects/ai-brief
+ai-brief	0.3.1	/home/will/dotfiles/rust-projects/ai-brief
 ai-export-watcher	0.2.1	/home/will/dotfiles/rust-projects/ai-export-watcher
 bat	0.25.0	crates.io
 bequest	0.1.0	/home/will/dotfiles/rust-projects/bequest
@@ -20,6 +20,7 @@ cross-machine-sync-check	0.1.0	/home/will/dotfiles/rust-projects/cross-machine-s
 dev-catchup	0.1.0	/home/will/dotfiles/rust-projects/dev-catchup
 dotter	0.13.4	crates.io
 dotter-drift-monitor	0.2.0	/home/will/dotfiles/rust-projects/dotter-drift-monitor
+dotter-realtime-watcher	0.1.0	/home/will/dotfiles/rust-projects/dotter-realtime-watcher
 dprint	0.50.2	crates.io
 easel	0.1.0	/home/will/dotfiles/rust-projects/easel
 email-extract	0.1.0	/home/will/dotfiles/rust-projects/email-extract
@@ -28,7 +29,7 @@ fd-find	10.3.0	crates.io
 forge-md-revs	0.1.1	/home/will/dotfiles/rust-projects/forge-md-revs
 forge-metadata-backup	0.1.0	/home/will/dotfiles/rust-projects/forge-metadata-backup
 forum	0.1.0	/home/will/dotfiles/rust-projects/forum
-git-auto-push-watcher	0.3.2	/home/will/dotfiles/rust-projects/git-auto-push-watcher
+git-auto-push-watcher	0.3.4	/home/will/dotfiles/rust-projects/git-auto-push-watcher
 gmpull	0.1.0	/home/will/dotfiles/rust-projects/gmpull
 graph-send	0.1.0	/home/will/dotfiles/rust-projects/graph-send
 grok-publish	0.1.0	/home/will/dotfiles/rust-projects/grok-publish
@@ -40,6 +41,7 @@ mailcurator	0.1.0	/home/will/dotfiles/rust-projects/mailcurator
 mailforge	0.1.0	/home/will/Code/mailforge
 meliview	0.1.0	/home/will/dotfiles/rust-projects/meliview
 module	0.1.0	/home/will/dotfiles/rust-projects/module
+notify-user	0.1.0	/home/will/dotfiles/rust-projects/notify-user
 nu	0.107.0	crates.io
 pageprobe	0.3.1	/home/will/dotfiles/rust-projects/pageprobe
 pizauth	1.0.11	https://github.com/ltratt/pizauth?tag=pizauth-1.0.11#f58048fc
@@ -50,12 +52,13 @@ rust-redeploy	0.1.0	/home/will/dotfiles/rust-projects/rust-redeploy
 rustic-rs	0.11.3	crates.io
 scroll-server	0.1.0	/home/will/dotfiles/rust-projects/scroll-server
 sd	1.0.0	crates.io
+service-health-check	0.2.0	/home/will/dotfiles/rust-projects/service-health-check
 skill-eval	0.1.0	/home/will/dotfiles/rust-projects/skill-eval
 skim	0.20.5	crates.io
 sr	0.1.1	/home/will/dotfiles/rust-projects/sr
 starship	1.23.0	crates.io
 stylance-cli	0.8.2	crates.io
-system-health-check	0.3.6	/home/will/dotfiles/rust-projects/system-health-check
+system-health-check	0.4.1	/home/will/dotfiles/rust-projects/system-health-check
 tm3-diary-capture	0.1.0	/home/will/Code/tm3-diary-capture
 trashy	2.0.0	crates.io
 usage-probe-anthropic-api	0.1.0	/home/will/projects/continuum/usage-probe-anthropic-api
