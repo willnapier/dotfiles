@@ -1,6 +1,6 @@
 [package]
 name = "system-health-check"
-version = "0.3.6"
+version = "0.4.0"
 edition = "2021"
 description = "Daily system health validator: services, timers, Git backup reachability, deployed tools, configuration drift, and orphaned headless Chrome."
 

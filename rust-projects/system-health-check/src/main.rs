@@ -18,6 +18,7 @@
 mod checks;
 mod exec;
 mod git_audit;
+mod history;
 
 use clap::Parser;
 use std::fs::OpenOptions;
@@ -34,6 +35,9 @@ struct Cli {
     /// Attempt auto-repair: restart dead timers/services, reload agents
     #[arg(short, long)]
     fix: bool,
+    /// Do not post confirmed problems to, or archive cleared ones from, the Messageboard
+    #[arg(long)]
+    no_board: bool,
 }
 
 fn main() -> ExitCode {
@@ -88,7 +92,15 @@ fn main() -> ExitCode {
     // ~/Assistants tree so every session on either machine sees both hosts and
     // the AGE of each result. A stale file is itself the signal that this
     // check has died — the failure mode the Mac lived in for six weeks.
-    if let Err(e) = write_status(&home, &host, &hostname, nu_version.as_deref(), &problems) {
+    // Problem persistence: fold into last run's records (same file, same
+    // single writer) so the brief can say how long a red has stood, and so a
+    // problem confirmed on its second run reaches the Messageboard.
+    let now = chrono::Local::now().to_rfc3339();
+    let (previous, previous_board) = read_previous_history(&home, &host);
+    let (records, cleared) = history::merge_history(&previous, &problems, &now);
+    let board_keys = if cli.no_board { previous_board } else { post_to_board(&host, &records, &previous_board, &log) };
+    let _ = cleared;
+    if let Err(e) = write_status(&home, &host, &hostname, nu_version.as_deref(), &problems, &records, &board_keys) {
         eprintln!("system-health-check: could not write status file: {e}");
     }
 
@@ -130,6 +142,63 @@ struct Status<'a> {
     tool_version: &'static str,
     /// `nu --version` on this host; read by peers' watch-flag check (Check 7).
     nu_version: Option<&'a str>,
+    /// Same problems with key / first_seen / consecutive runs (2026-09-22; additive).
+    problem_history: &'a [history::ProblemRecord],
+    /// Confirmed keys the Messageboard `HEALTH-<host>` section currently lists.
+    board_keys: &'a [String],
+}
+
+fn read_previous_history(home: &std::path::Path, host: &str) -> (Vec<history::ProblemRecord>, Vec<String>) {
+    let path = home.join("Assistants/health").join(format!("{host}.json"));
+    let Some(v) = std::fs::read_to_string(path).ok().and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()) else {
+        return (vec![], vec![]);
+    };
+    let history = v.get("problem_history").cloned().and_then(|h| serde_json::from_value(h).ok()).unwrap_or_default();
+    let board = v.get("board_keys").cloned().and_then(|b| serde_json::from_value(b).ok()).unwrap_or_default();
+    (history, board)
+}
+
+/// Messageboard delivery through the repo's own atomic editor: one rolling
+/// `HEALTH-<host>` section, touched only when the confirmed set changes.
+/// Best effort — a missing editor or a failed call is logged, never fatal; the
+/// status file still carries the history, and `board_keys` records what the
+/// board is believed to show so the next run can reconcile.
+/// Returns the keys the board shows after this run.
+fn post_to_board(host: &str, records: &[history::ProblemRecord], previously_posted: &[String], log: &dyn Fn(&str, &str)) -> Vec<String> {
+    let confirmed = history::confirmed_keys(records);
+    let action = history::board_action(previously_posted, &confirmed);
+    if action == history::BoardAction::Nothing {
+        return previously_posted.to_vec();
+    }
+    let editor = "messageboard-edit";
+    let tag = format!("HEALTH-{host} —");
+    let run = |args: &[&str]| -> Result<(), String> {
+        match Command::new(editor).args(args).output() {
+            Ok(o) if o.status.success() => Ok(()),
+            Ok(o) => Err(format!("exit {}", o.status.code().unwrap_or(-1))),
+            Err(e) => Err(format!("{editor} unavailable: {e}")),
+        }
+    };
+    if !previously_posted.is_empty() {
+        if let Err(e) = run(&["archive-containing", &tag]) {
+            log("WARN", &format!("board: could not archive {tag} [{e}]"));
+            return previously_posted.to_vec();
+        }
+    }
+    if action == history::BoardAction::Archive {
+        log("INFO", &format!("board: archived {tag} — no confirmed problems"));
+        return vec![];
+    }
+    match run(&["insert", &history::board_summary(host, records)]) {
+        Ok(()) => {
+            log("INFO", &format!("board: posted {tag} {} confirmed", confirmed.len()));
+            confirmed
+        }
+        Err(e) => {
+            log("WARN", &format!("board: post failed [{e}]"));
+            vec![]
+        }
+    }
 }
 
 /// /etc/hostname first (Arch ships no `hostname` binary by default), then the
@@ -149,7 +218,7 @@ fn short_hostname() -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
-fn write_status(home: &std::path::Path, host: &str, hostname: &str, nu_version: Option<&str>, problems: &[String]) -> std::io::Result<()> {
+fn write_status(home: &std::path::Path, host: &str, hostname: &str, nu_version: Option<&str>, problems: &[String], problem_history: &[history::ProblemRecord], board_keys: &[String]) -> std::io::Result<()> {
     let dir = home.join("Assistants/health");
     std::fs::create_dir_all(&dir)?;
     let status = Status {
@@ -161,6 +230,8 @@ fn write_status(home: &std::path::Path, host: &str, hostname: &str, nu_version: 
         problems,
         tool_version: env!("CARGO_PKG_VERSION"),
         nu_version,
+        problem_history,
+        board_keys,
     };
     let json = serde_json::to_string_pretty(&status).map_err(std::io::Error::other)?;
     // atomic replace so a reader (or Syncthing) never sees a half-written file

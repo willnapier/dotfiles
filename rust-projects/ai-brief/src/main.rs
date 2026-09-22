@@ -304,10 +304,30 @@ fn host_health_summary_at(dir: &Path, now: chrono::DateTime<chrono::FixedOffset>
             } else {
                 format!(" (checked {age_text})")
             };
+            // Age per problem (system-health-check ≥ 0.4.0 writes
+            // `problem_history`): "[since 15 Sep, 8×]" is the cue that a red
+            // has been ignored; "[new]" may be a wake-time artefact.
+            let history = s.get("problem_history").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            let age_tag = |text: &str| -> String {
+                let Some(rec) = history.iter().find(|r| r.get("text").and_then(|t| t.as_str()) == Some(text)) else {
+                    return String::new();
+                };
+                let runs = rec.get("runs").and_then(|r| r.as_u64()).unwrap_or(1);
+                if runs <= 1 {
+                    return " [new]".to_string();
+                }
+                let since = rec
+                    .get("first_seen")
+                    .and_then(|f| f.as_str())
+                    .and_then(|f| chrono::DateTime::parse_from_rfc3339(f).ok())
+                    .map(|f| f.format("%-d %b").to_string())
+                    .unwrap_or_else(|| "?".to_string());
+                format!(" [since {since}, {runs}×]")
+            };
             let problems: Vec<String> = s
                 .get("problems")
                 .and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|p| p.as_str()).map(|p| format!("  - {p}")).collect())
+                .map(|a| a.iter().filter_map(|p| p.as_str()).map(|p| format!("  - {p}{}", age_tag(p))).collect())
                 .unwrap_or_default();
             if count == 0 {
                 format!("{head}{when}")
@@ -456,14 +476,37 @@ fn plan_live_budgets(fixed_bytes: usize, budget: usize) -> Result<LiveBudgets> {
     if residual >= max.total() {
         return Ok(max);
     }
-    let scale = |m: usize| -> usize { (((m as u128 * residual as u128) / max.total() as u128) as usize).max(LIVE_FLOOR) };
-    let planned = LiveBudgets {
-        messageboard: scale(max.messageboard),
-        health: scale(max.health),
-        forum_index: scale(max.forum_index),
-        forum_inbox: scale(max.forum_inbox),
-    };
-    debug_assert!(planned.total() <= residual);
+    // Water-fill: a surface whose proportional share would fall below the
+    // floor is pinned at the floor and the rest of the residual is shared, in
+    // proportion, among the others — repeated until nothing new pins. Plain
+    // "scale then max(floor)" could overshoot the residual (found 2026-09-22:
+    // the 0.3.0 debug_assert below failed at residual 500).
+    let maxima = [max.messageboard, max.health, max.forum_index, max.forum_inbox];
+    let mut planned = [0usize; 4];
+    let mut pinned = [false; 4];
+    loop {
+        let free_max: usize = (0..4).filter(|&i| !pinned[i]).map(|i| maxima[i]).sum();
+        let free_residual = residual.saturating_sub(pinned.iter().filter(|&&p| p).count() * LIVE_FLOOR);
+        let mut newly_pinned = false;
+        for i in 0..4 {
+            if pinned[i] {
+                planned[i] = LIVE_FLOOR;
+                continue;
+            }
+            let share = if free_max == 0 { 0 } else { ((maxima[i] as u128 * free_residual as u128) / free_max as u128) as usize };
+            if share < LIVE_FLOOR {
+                pinned[i] = true;
+                newly_pinned = true;
+            } else {
+                planned[i] = share;
+            }
+        }
+        if !newly_pinned {
+            break;
+        }
+    }
+    let planned = LiveBudgets { messageboard: planned[0], health: planned[1], forum_index: planned[2], forum_inbox: planned[3] };
+    debug_assert!(planned.total() <= residual, "{planned:?} exceeds residual {residual}");
     Ok(planned)
 }
 
@@ -733,6 +776,25 @@ mod tests {
     fn metadata_value_reads_first_matching_line() {
         assert_eq!(metadata_value("a: 1\nhost: macos\nhost: other", "host").unwrap(), "macos");
         assert!(metadata_value("a: 1", "host").is_err());
+    }
+
+    #[test]
+    fn host_health_renders_problem_age_when_history_present() {
+        let dir = temp("health-age");
+        let now = chrono::DateTime::parse_from_rfc3339("2026-09-22T09:00:00+01:00").unwrap();
+        fs::write(
+            dir.join("macos.json"),
+            r#"{"schema":1,"host":"macos","hostname":"mac","checked_at":"2026-09-22T08:03:00+01:00","count":2,
+                "problems":["Watcher f: last error: x","Watcher g: last cycle 16 min ago — dead or hung"],
+                "problem_history":[
+                  {"text":"Watcher f: last error: x","key":"k1","first_seen":"2026-09-15T08:03:00+01:00","runs":8},
+                  {"text":"Watcher g: last cycle 16 min ago — dead or hung","key":"k2","first_seen":"2026-09-22T08:03:00+01:00","runs":1}
+                ]}"#,
+        )
+        .unwrap();
+        let out = host_health_summary_at(&dir, now, HEALTH_BUDGET);
+        assert!(out.contains("  - Watcher f: last error: x [since 15 Sep, 8×]"), "{out}");
+        assert!(out.contains("dead or hung [new]"), "{out}");
     }
 
     #[test]
