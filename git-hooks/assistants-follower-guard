@@ -1,0 +1,31 @@
+#!/bin/sh
+# Assistants follower guard — installed by Dotter as
+# ~/Assistants/.git/hooks/pre-commit and pre-merge-commit on every host.
+#
+# ~/Assistants is a Syncthing-shared tree whose Git history is written by ONE
+# process: nimbini's historian (assistants-git-sync --role historian). Every
+# other host is an exact-tree follower. A hand commit anywhere else leaves that
+# clone "ahead", the follower refuses to adopt origin (by design), and the
+# heartbeat carries an error until someone repairs the refs — 13 Sep and 22 Sep
+# 2026 both went this way. Edit the files; Syncthing delivers the bytes; nimbini
+# commits them. See ~/Assistants/shared/ASSISTANTS-DOCS-AUTO-PUSH.md.
+#
+# A supervised reconciliation may set ASSISTANTS_ALLOW_COMMIT=1 for one command.
+# Assistants never use --no-verify.
+
+case "$(hostname -s 2>/dev/null || hostname)" in
+  nimbini) exit 0 ;;
+esac
+
+if [ "${ASSISTANTS_ALLOW_COMMIT:-}" = "1" ]; then
+  exit 0
+fi
+
+cat >&2 <<'MSG'
+refused: ~/Assistants commits are made only by nimbini's historian.
+  This host is a follower. Leave the edited files in place — Syncthing delivers
+  them and nimbini commits them within a couple of minutes.
+  Details and the repair for a clone already ahead: ~/Assistants/shared/ASSISTANTS-DOCS-AUTO-PUSH.md
+  Supervised reconciliation only: ASSISTANTS_ALLOW_COMMIT=1 git commit …
+MSG
+exit 1

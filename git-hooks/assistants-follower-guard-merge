@@ -1,0 +1,4 @@
+#!/bin/sh
+# pre-merge-commit twin of assistants-follower-guard (Dotter cannot map one
+# source to two targets). Delegates to the pre-commit hook beside it.
+exec "$(dirname "$0")/pre-commit" "$@"
