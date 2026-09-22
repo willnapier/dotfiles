@@ -13,7 +13,10 @@
 # A supervised reconciliation may set ASSISTANTS_ALLOW_COMMIT=1 for one command.
 # Assistants never use --no-verify.
 
-case "$(hostname -s 2>/dev/null || hostname)" in
+# uname -n, not hostname: the historian runs from a systemd unit whose PATH
+# has no `hostname` (found on the first nimbini control, 2026-09-22).
+host="$(uname -n 2>/dev/null)"
+case "${host%%.*}" in
   nimbini) exit 0 ;;
 esac
 
