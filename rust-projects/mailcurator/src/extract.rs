@@ -87,7 +87,51 @@ pub fn reset_llm_counters() {
 ///   5. tag the message with the extracted-tag (idempotency)
 ///
 /// Returns the number of messages actually extracted.
-pub fn run_extractors(pol: &Policy, dry_run: bool, destination: Option<&crate::delivery::Destination>) -> Result<u64> {
+/// How a run treats messages the store already holds.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Mode {
+    /// The scheduled run: new or delivery-retry messages only; deliver, tag,
+    /// and never append a message_id the store already has.
+    Normal,
+    /// Operator repair after an extractor fix: re-run extraction over
+    /// messages already tagged extracted and append fresh rows (readers
+    /// take the latest row per message_id). No delivery, no tag changes,
+    /// no lifecycle actions.
+    Reextract,
+}
+
+/// The notmuch query for a policy's extraction pass.
+pub fn extraction_query(base: &str, extracted_tag: &str, retry_tag: &str, mode: Mode) -> String {
+    match mode {
+        Mode::Normal => format!("({base}) and (not tag:{extracted_tag} or tag:{retry_tag})"),
+        Mode::Reextract => format!("({base}) and tag:{extracted_tag}"),
+    }
+}
+
+/// message_ids already in each category's store, loaded on first use.
+#[derive(Default)]
+pub struct Known {
+    by_category: std::collections::BTreeMap<String, std::collections::HashSet<String>>,
+}
+
+impl Known {
+    fn load(&mut self, category: &str) -> Result<&mut std::collections::HashSet<String>> {
+        if !self.by_category.contains_key(category) {
+            let ids = store::message_ids(category)?;
+            self.by_category.insert(category.to_string(), ids);
+        }
+        Ok(self.by_category.get_mut(category).expect("just inserted"))
+    }
+    pub fn contains(&mut self, category: &str, message_id: &str) -> Result<bool> {
+        Ok(self.load(category)?.contains(message_id))
+    }
+    pub fn insert(&mut self, category: &str, message_id: &str) -> Result<()> {
+        self.load(category)?.insert(message_id.to_string());
+        Ok(())
+    }
+}
+
+pub fn run_extractors(pol: &Policy, dry_run: bool, destination: Option<&crate::delivery::Destination>, mode: Mode) -> Result<u64> {
     if pol.extractors.is_empty() {
         return Ok(0);
     }
@@ -95,7 +139,7 @@ pub fn run_extractors(pol: &Policy, dry_run: bool, destination: Option<&crate::d
     let base = pol.base_query();
     let extracted_tag = pol.extracted_tag();
     let retry_tag = format!("curator-{}-delivery-retry", pol.name);
-    let query = format!("({base}) and (not tag:{extracted_tag} or tag:{retry_tag})");
+    let query = extraction_query(&base, &extracted_tag, &retry_tag, mode);
 
     // Get message file paths
     let files = list_files(&query)?;
@@ -123,10 +167,11 @@ pub fn run_extractors(pol: &Policy, dry_run: bool, destination: Option<&crate::d
     // would just be wasted work.
     use std::collections::HashSet;
     let mut seen_message_ids: HashSet<String> = HashSet::new();
+    let mut known = Known::default();
 
     let mut count = 0u64;
     for path in &files {
-        match extract_one(pol, path, &mut cache, &mut seen_message_ids, destination) {
+        match extract_one(pol, path, &mut cache, &mut seen_message_ids, destination, mode, &mut known) {
             Ok(true) => count += 1,
             Ok(false) => {} // duplicate message-id, skipped
             Err(e) => {
@@ -196,6 +241,8 @@ fn extract_one(
     cache: &mut Cache,
     seen_message_ids: &mut std::collections::HashSet<String>,
     destination: Option<&crate::delivery::Destination>,
+    mode: Mode,
+    known: &mut Known,
 ) -> Result<bool> {
     let raw = fs::read(path).with_context(|| format!("reading {path}"))?;
     let parsed = parse_mail(&raw).with_context(|| format!("parsing RFC822 from {path}"))?;
@@ -376,7 +423,7 @@ fn extract_one(
         // Historical ledgers/tags never constitute proof. Capture failure holds mail.
         let value = Value::Object(record);
         let mut delivery_failed = false;
-        if ex.category == "bookings" {
+        if ex.category == "bookings" && mode == Mode::Normal {
             if let Some(destination) = destination {
                 if crate::delivery::capture(destination, pol, &value, &raw).is_err() {
                     eprintln!("  [{}] destination delivery held; inspect delivery-status", pol.name);
@@ -388,16 +435,30 @@ fn extract_one(
                 else { crate::notmuch::apply_tag_changes(&q, &[], &[&retry_tag])?; }
             }
         }
-        let q = format!("id:\"{}\" and tag:{}", message_id.trim_start_matches('<').trim_end_matches('>'), pol.extracted_tag());
-        if crate::notmuch::count(&q)? == 0 { store::append_record(&ex.category, &value)?; }
+        match mode {
+            Mode::Reextract => store::append_record(&ex.category, &value)?,
+            Mode::Normal => {
+                // Belt and braces: the extracted tag can be lost between runs
+                // (an error after the append but before tagging, or a tag
+                // rewrite), and the store must not gain a second row for it.
+                let q = format!("id:\"{}\" and tag:{}", message_id.trim_start_matches('<').trim_end_matches('>'), pol.extracted_tag());
+                let already_tagged = crate::notmuch::count(&q)? > 0;
+                if !already_tagged && !known.contains(&ex.category, &message_id)? {
+                    store::append_record(&ex.category, &value)?;
+                    known.insert(&ex.category, &message_id)?;
+                }
+            }
+        }
     }
 
-    // Tag this single message as extracted (idempotent).
-    crate::notmuch::apply_tag_changes(
-        &format!("id:\"{}\"", message_id.trim_start_matches('<').trim_end_matches('>')),
-        &[&pol.extracted_tag()],
-        &[],
-    )?;
+    if mode == Mode::Normal {
+        // Tag this single message as extracted (idempotent).
+        crate::notmuch::apply_tag_changes(
+            &format!("id:\"{}\"", message_id.trim_start_matches('<').trim_end_matches('>')),
+            &[&pol.extracted_tag()],
+            &[],
+        )?;
+    }
 
     Ok(true)
 }
@@ -568,4 +629,17 @@ fn strip_html(html: &str) -> String {
     // Collapse whitespace runs to single spaces.
     let collapsed = Regex::new(r"\s+").unwrap().replace_all(&s, " ");
     collapsed.trim().to_string()
+}
+
+#[cfg(test)]
+mod mode_tests {
+    use super::*;
+
+    #[test]
+    fn extraction_query_per_mode() {
+        let normal = extraction_query("from:x", "curator-p-extracted", "curator-p-delivery-retry", Mode::Normal);
+        assert_eq!(normal, "(from:x) and (not tag:curator-p-extracted or tag:curator-p-delivery-retry)");
+        let re = extraction_query("from:x", "curator-p-extracted", "curator-p-delivery-retry", Mode::Reextract);
+        assert_eq!(re, "(from:x) and tag:curator-p-extracted");
+    }
 }

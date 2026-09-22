@@ -290,7 +290,7 @@ pub fn apply(pol: &Policy, dry_run: bool, now: bool, retention: &str, gate: &cra
     // Runs over (base) and not extracted-tag. Independent of seen — extraction
     // applies retroactively to existing matches that haven't been processed.
     if !pol.extractors.is_empty() {
-        stats.extracted = crate::extract::run_extractors(pol, dry_run, gate.destination())?;
+        stats.extracted = crate::extract::run_extractors(pol, dry_run, gate.destination(), crate::extract::Mode::Normal)?;
     }
 
     // Quarantine short-circuits archive/delete — observe only.

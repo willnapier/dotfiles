@@ -123,6 +123,18 @@ enum Command {
         #[arg(long, default_value_t = 100)]
         llm_budget: usize,
     },
+    /// Re-run extraction for one policy over messages already tagged
+    /// extracted and append fresh rows — the repair after an extractor fix
+    /// (readers such as `coverage` take the latest row per message). No
+    /// delivery, tag changes or lifecycle actions; LLM off unless --allow-llm.
+    Reextract {
+        /// Policy name
+        #[arg(long)]
+        policy: String,
+        /// Count the messages that would be re-extracted; write nothing
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Validate the config file without running
     Validate,
     /// List loaded policies
@@ -458,6 +470,20 @@ fn main() -> Result<()> {
             let report = evidence::load(&store::store_dir()?, &config::load(&path)?.policies, offset, limit.min(200), exceptions_only)?;
             if json { println!("{}", serde_json::to_string(&report)?); }
             else { println!("{} bills; {} need review; {} malformed rows. Use --json for the read-only report.", report.total, report.exceptions, report.malformed); }
+        }
+        Command::Reextract { policy, dry_run } => {
+            let cfg = config::load(&path)?;
+            let pol = cfg.policies.iter().find(|p| p.name == policy).with_context(|| format!("no policy named '{policy}'"))?;
+            if !cli.allow_llm {
+                extract::disable_llm_fallback();
+            }
+            let _run_lock = if dry_run { None } else { Some(delivery::run_lock()?) };
+            let n = extract::run_extractors(pol, dry_run, None, extract::Mode::Reextract)?;
+            if dry_run {
+                println!("{policy}: {n} message(s) would be re-extracted");
+            } else {
+                println!("{policy}: {n} message(s) re-extracted; run `mailcurator coverage -p {policy}` to see the effect");
+            }
         }
         Command::Validate => {
             let cfg = config::load(&path)?;

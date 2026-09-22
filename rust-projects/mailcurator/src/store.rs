@@ -125,6 +125,23 @@ pub fn append_record<T: Serialize>(category: &str, record: &T) -> Result<()> {
 /// order — callers parsing records should sort by timestamp if order matters.
 ///
 /// Errors propagate from file open/read; missing files are silently skipped.
+/// Every message_id already recorded for a category, across legacy and
+/// per-host files. The extractor loads this once per run so a message whose
+/// extracted tag was lost — a held booking whose delivery-retry path errored
+/// before the tag was applied, 20–22 Sep 2026: 33 rows for 24 Booking.com
+/// messages — is not appended a second time.
+pub fn message_ids(category: &str) -> Result<std::collections::HashSet<String>> {
+    let mut ids = std::collections::HashSet::new();
+    for line in read_category_lines(category)? {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
+            if let Some(id) = v.get("message_id").and_then(|x| x.as_str()) {
+                ids.insert(id.to_string());
+            }
+        }
+    }
+    Ok(ids)
+}
+
 pub fn read_category_lines(category: &str) -> Result<Vec<String>> {
     let mut out = Vec::new();
     for path in category_paths_all(category)? {
