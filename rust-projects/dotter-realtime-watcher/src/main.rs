@@ -235,6 +235,11 @@ const CONFIG_EXTENSIONS: &[&str] = &["toml", "yml", "yaml", "json", "nu", "sh", 
 const CONFIG_NAMES: &[&str] = &["config", "settings", "preferences"];
 const TEMP_EXTENSIONS: &[&str] = &["tmp", "temp", "lock", "pid", "log", "cache"];
 const DOT_TEMP_EXTENSIONS: &[&str] = &["tmp", "swp", "bak"];
+/// Runtime state a tool rewrites as it runs, not configuration a person edits.
+/// `~/.config/gmpull/state.json` produced an "unmanaged config" alert every
+/// five minutes on nimbini — silently for weeks, visibly from 2026-09-22 once
+/// alerts were recorded (D2-23). Matched on the file stem.
+const STATE_STEMS: &[&str] = &["state", "history", "sessions", "recent", "last-run", "heartbeat"];
 
 /// Port of the oracle's `should_monitor_file`, plus: nothing under
 /// `<home>/dotfiles` (the managed side), nothing inside a `.git` directory.
@@ -260,6 +265,10 @@ pub fn should_monitor_file(path: &Path, home: &Path) -> bool {
         return false;
     }
     if filename == ".DS_Store" {
+        return false;
+    }
+    let stem = filename[1..].rsplit_once('.').map(|(st, _)| &filename[..st.len() + 1]).unwrap_or(filename);
+    if STATE_STEMS.contains(&stem) {
         return false;
     }
     if CONFIG_EXTENSIONS.contains(&extension) {
@@ -349,6 +358,16 @@ mod tests {
         for f in ["/Users/w/.config/ghostty/config", "/Users/w/.config/x/settings", "/Users/w/.config/x/preferences"] {
             assert!(should_monitor_file(&p(f), &h), "{f}");
         }
+    }
+
+    #[test]
+    fn filter_skips_runtime_state_files_but_keeps_real_config() {
+        let home = Path::new("/home/w");
+        assert!(!should_monitor_file(Path::new("/home/w/.config/gmpull/state.json"), home));
+        assert!(!should_monitor_file(Path::new("/home/w/.config/x/history.json"), home));
+        assert!(!should_monitor_file(Path::new("/home/w/.config/x/sessions.toml"), home));
+        assert!(should_monitor_file(Path::new("/home/w/.config/gmpull/config.toml"), home));
+        assert!(should_monitor_file(Path::new("/home/w/.config/x/statement.toml"), home), "stem match is exact");
     }
 
     #[test]
