@@ -194,8 +194,16 @@ fn cmd_run(cli_name: &str, skill: &str, scenario_filter: Option<&str>, runs: usi
 
     println!();
     report::print_totals(&all_results);
+    exit_if_failures(&all_results);
 
     Ok(())
+}
+
+/// The verdict is the exit status (audit D2-17: the process always exited 0).
+fn exit_if_failures(results: &[evaluate::EvalResult]) {
+    if results.iter().any(|r| r.outcome == evaluate::EvalOutcome::Fail) {
+        std::process::exit(1);
+    }
 }
 
 fn cmd_score(log_path: &Path, skill: &str) -> Result<()> {
@@ -213,6 +221,7 @@ fn cmd_score(log_path: &Path, skill: &str) -> Result<()> {
     report::print_scenario_results("full-session", &results);
     println!();
     report::print_totals(&results);
+    exit_if_failures(&results);
 
     Ok(())
 }
