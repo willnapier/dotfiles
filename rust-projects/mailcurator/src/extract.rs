@@ -108,27 +108,81 @@ pub fn extraction_query(base: &str, extracted_tag: &str, retry_tag: &str, mode: 
     }
 }
 
-/// message_ids already in each category's store, loaded on first use.
+/// What each category's store already holds, loaded on first use: the
+/// message_ids (so a run never appends a second row for one message) and
+/// the latest row per message (so a repair can merge over it).
 #[derive(Default)]
 pub struct Known {
-    by_category: std::collections::BTreeMap<String, std::collections::HashSet<String>>,
+    ids: std::collections::BTreeMap<String, std::collections::HashSet<String>>,
+    rows: std::collections::BTreeMap<String, std::collections::HashMap<String, Value>>,
 }
 
 impl Known {
-    fn load(&mut self, category: &str) -> Result<&mut std::collections::HashSet<String>> {
-        if !self.by_category.contains_key(category) {
+    fn load_ids(&mut self, category: &str) -> Result<&mut std::collections::HashSet<String>> {
+        if !self.ids.contains_key(category) {
             let ids = store::message_ids(category)?;
-            self.by_category.insert(category.to_string(), ids);
+            self.ids.insert(category.to_string(), ids);
         }
-        Ok(self.by_category.get_mut(category).expect("just inserted"))
+        Ok(self.ids.get_mut(category).expect("just inserted"))
     }
     pub fn contains(&mut self, category: &str, message_id: &str) -> Result<bool> {
-        Ok(self.load(category)?.contains(message_id))
+        Ok(self.load_ids(category)?.contains(message_id))
     }
     pub fn insert(&mut self, category: &str, message_id: &str) -> Result<()> {
-        self.load(category)?.insert(message_id.to_string());
+        self.load_ids(category)?.insert(message_id.to_string());
         Ok(())
     }
+    /// Everything the store knows about this message: every stored row folded
+    /// in write order with `merge_repair`, so a later row that found less (the
+    /// deterministic-only re-run of 2026-09-22) does not erase what an earlier
+    /// one found.
+    pub fn latest(&mut self, category: &str, message_id: &str) -> Result<Option<Value>> {
+        if !self.rows.contains_key(category) {
+            let folded = store::rows_by_message(category)?
+                .into_iter()
+                .map(|(id, rows)| (id, rows.into_iter().fold(None, |acc, row| Some(merge_repair(acc, row))).expect("non-empty")))
+                .collect();
+            self.rows.insert(category.to_string(), folded);
+        }
+        Ok(self.rows.get(category).and_then(|m| m.get(message_id)).cloned())
+    }
+}
+
+/// Fresh extraction over the previous row: a field the fresh pass found
+/// replaces the old value; a field it did not find keeps the old value;
+/// `_provenance` merges the same way; `extracted_at` is the fresh one and
+/// `_repaired_from` records the previous extraction time.
+pub fn merge_repair(previous: Option<Value>, fresh: Value) -> Value {
+    let Some(Value::Object(mut merged)) = previous else { return fresh };
+    let Value::Object(fresh) = fresh else { return Value::Object(merged) };
+    let populated = |v: &Value| match v {
+        Value::Null => false,
+        Value::String(s) => !s.trim().is_empty(),
+        Value::Array(a) => !a.is_empty(),
+        Value::Object(o) => !o.is_empty(),
+        _ => true,
+    };
+    if let Some(prev_at) = merged.get("extracted_at").cloned() {
+        merged.insert("_repaired_from".into(), prev_at);
+    }
+    for (k, v) in fresh {
+        if k == "_provenance" {
+            let mut prov = match merged.remove("_provenance") {
+                Some(Value::Object(p)) => p,
+                _ => Map::new(),
+            };
+            if let Value::Object(fresh_prov) = v {
+                for (fk, fv) in fresh_prov {
+                    // The fresh pass claims a field only if it produced one.
+                    prov.insert(fk, fv);
+                }
+            }
+            merged.insert("_provenance".into(), Value::Object(prov));
+        } else if populated(&v) || !merged.get(&k).map(populated).unwrap_or(false) {
+            merged.insert(k, v);
+        }
+    }
+    Value::Object(merged)
 }
 
 pub fn run_extractors(pol: &Policy, dry_run: bool, destination: Option<&crate::delivery::Destination>, mode: Mode) -> Result<u64> {
@@ -436,7 +490,16 @@ fn extract_one(
             }
         }
         match mode {
-            Mode::Reextract => store::append_record(&ex.category, &value)?,
+            Mode::Reextract => {
+                // A repair is monotone: start from the latest stored row and
+                // let the fresh deterministic extraction override only where it
+                // found something. The first deterministic-only re-run on
+                // 2026-09-22 replaced rows outright and halved Booking.com's
+                // health — the originals owed check-in, refs and location to
+                // the LLM fallback that a repair run does not use.
+                let merged = merge_repair(known.latest(&ex.category, &message_id)?, value);
+                store::append_record(&ex.category, &merged)?;
+            }
             Mode::Normal => {
                 // Belt and braces: the extracted tag can be lost between runs
                 // (an error after the append but before tagging, or a tag
@@ -569,7 +632,7 @@ fn normalise_date(s: &str, parsed: &mailparse::ParsedMail) -> Option<String> {
 /// string otherwise. Used by vendor extractor modules that need the DOM
 /// structure (CSS selectors) rather than HTML-stripped plain text.
 /// Quoted-printable / base64 transfer encodings are decoded by mailparse.
-fn decode_body_to_html(parsed: &mailparse::ParsedMail) -> String {
+pub(crate) fn decode_body_to_html(parsed: &mailparse::ParsedMail) -> String {
     let mut bodies: HashMap<String, String> = HashMap::new();
     collect_bodies(parsed, &mut bodies);
     bodies.remove("text/html").unwrap_or_default()
@@ -641,5 +704,46 @@ mod mode_tests {
         assert_eq!(normal, "(from:x) and (not tag:curator-p-extracted or tag:curator-p-delivery-retry)");
         let re = extraction_query("from:x", "curator-p-extracted", "curator-p-delivery-retry", Mode::Reextract);
         assert_eq!(re, "(from:x) and tag:curator-p-extracted");
+    }
+}
+
+#[cfg(test)]
+mod repair_tests {
+    use super::*;
+
+    #[test]
+    fn merge_repair_never_loses_a_field_and_prefers_fresh_values() {
+        let previous: Value = serde_json::json!({
+            "message_id": "<a>", "policy": "p", "extracted_at": "2026-09-01T00:00:00Z",
+            "property": "Old Hotel", "checkin": "Saturday, 6 December 2025", "checkout": null,
+            "location": "Bath", "_provenance": {"property": "deterministic", "checkin": "llm", "location": "llm"}
+        });
+        let fresh: Value = serde_json::json!({
+            "message_id": "<a>", "policy": "p", "extracted_at": "2026-09-22T18:20:00Z",
+            "property": "Old Hotel", "checkin": null, "checkout": "Sunday, 7 December 2025",
+            "_provenance": {"property": "deterministic", "checkout": "deterministic"}
+        });
+        let m = merge_repair(Some(previous), fresh);
+        assert_eq!(m["checkin"], "Saturday, 6 December 2025", "unfound field keeps the old value");
+        assert_eq!(m["checkout"], "Sunday, 7 December 2025", "fresh finding lands");
+        assert_eq!(m["location"], "Bath", "field absent from the fresh pass survives");
+        assert_eq!(m["extracted_at"], "2026-09-22T18:20:00Z");
+        assert_eq!(m["_repaired_from"], "2026-09-01T00:00:00Z");
+        assert_eq!(m["_provenance"]["checkin"], "llm");
+        assert_eq!(m["_provenance"]["checkout"], "deterministic");
+        // Folding rows in write order: a poorer later row cannot erase an earlier finding.
+        let rows: Vec<Value> = vec![
+            serde_json::json!({"message_id": "<c>", "extracted_at": "1", "checkin": "Sat", "location": "Bath"}),
+            serde_json::json!({"message_id": "<c>", "extracted_at": "2", "checkin": null}),
+            serde_json::json!({"message_id": "<c>", "extracted_at": "3", "checkout": "Sun"}),
+        ];
+        let folded = rows.into_iter().fold(None, |acc, row| Some(merge_repair(acc, row))).unwrap();
+        assert_eq!(folded["checkin"], "Sat");
+        assert_eq!(folded["location"], "Bath");
+        assert_eq!(folded["checkout"], "Sun");
+        assert_eq!(folded["extracted_at"], "3");
+        // No previous row: the fresh row as-is.
+        let f: Value = serde_json::json!({"message_id": "<b>", "checkout": "x"});
+        assert_eq!(merge_repair(None, f.clone()), f);
     }
 }

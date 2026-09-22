@@ -299,6 +299,24 @@ mod tests {
         mailparse::parse_mail(raw.as_bytes()).unwrap()
     }
 
+    /// Debug aid, never run by default: `MAILCURATOR_DEBUG_MSG=/path/to/eml
+    /// cargo test -- --ignored debug_extract_one_message --nocapture` prints
+    /// what the deterministic pass finds in one real message.
+    #[test]
+    #[ignore]
+    fn debug_extract_one_message() {
+        let Some(path) = std::env::var_os("MAILCURATOR_DEBUG_MSG") else { return };
+        let raw = std::fs::read(path).unwrap();
+        let parsed = mailparse::parse_mail(&raw).unwrap();
+        let html = crate::extract::decode_body_to_html(&parsed);
+        let text = strip_to_text(&html);
+        for m in text.match_indices("Check-").take(4) {
+            let start = m.0.saturating_sub(4);
+            println!("TEXT: {}", &text[start..(m.0 + 90).min(text.len())]);
+        }
+        println!("FIELDS: {}", serde_json::to_string(&BookingComBookings.extract(&parsed, &html).unwrap()).unwrap());
+    }
+
     #[test]
     fn property_from_subject_confirmed() {
         let raw = "Subject: 🛄 Thanks! Your booking is confirmed at The Mounts Bay Inn\nFrom: x@booking.com\n\n";

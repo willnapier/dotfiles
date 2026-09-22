@@ -142,6 +142,21 @@ pub fn message_ids(category: &str) -> Result<std::collections::HashSet<String>> 
     Ok(ids)
 }
 
+/// Every stored row per message_id for a category, in write order across
+/// legacy and per-host files. `reextract` folds these so a repair starts from
+/// everything any earlier run found, not just the last row written.
+pub fn rows_by_message(category: &str) -> Result<std::collections::HashMap<String, Vec<serde_json::Value>>> {
+    let mut rows: std::collections::HashMap<String, Vec<serde_json::Value>> = std::collections::HashMap::new();
+    for line in read_category_lines(category)? {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
+            if let Some(id) = v.get("message_id").and_then(|x| x.as_str()) {
+                rows.entry(id.to_string()).or_default().push(v);
+            }
+        }
+    }
+    Ok(rows)
+}
+
 pub fn read_category_lines(category: &str) -> Result<Vec<String>> {
     let mut out = Vec::new();
     for path in category_paths_all(category)? {
