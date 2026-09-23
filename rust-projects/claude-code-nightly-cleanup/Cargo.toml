@@ -1,0 +1,10 @@
+[package]
+name = "claude-code-nightly-cleanup"
+version = "0.1.0"
+edition = "2021"
+description = "Terminate abandoned Claude Code processes with checked identity and outcomes"
+[dependencies]
+anyhow = "1"
+chrono = "0.4"
+[dev-dependencies]
+tempfile = "3"
