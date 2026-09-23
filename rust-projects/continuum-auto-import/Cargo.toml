@@ -1,0 +1,10 @@
+[package]
+name = "continuum-auto-import"
+version = "0.1.0"
+edition = "2021"
+description = "Scheduled Codex and Goose imports with truthful outcomes"
+[dependencies]
+anyhow = "1"
+chrono = "0.4"
+[dev-dependencies]
+tempfile = "3"

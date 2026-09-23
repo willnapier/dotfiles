@@ -54,7 +54,6 @@ depends = []
 "scripts/workshop-output" = "~/.local/bin/workshop-output"
 "scripts/tool-versions" = "~/.local/bin/tool-versions"
 "scripts/package-drift-check" = "~/.local/bin/package-drift-check"
-"scripts/rustic-backup" = "~/.local/bin/rustic-backup"
 "scripts/niri-tile-all-floating" = { target = "~/.local/bin/niri-tile-all-floating", type = "symbolic" }
 "scripts/niri-move-dir" = { target = "~/.local/bin/niri-move-dir", type = "symbolic" }
 "scripts/niri-center-focused" = { target = "~/.local/bin/niri-center-focused", type = "symbolic" }
