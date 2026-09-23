@@ -1,0 +1,10 @@
+[package]
+name = "collect-projects-cron"
+version = "0.1.0"
+edition = "2021"
+description = "Scheduled DayPage entry collection with recorded outcomes"
+[dependencies]
+anyhow = "1"
+chrono = "0.4"
+[dev-dependencies]
+tempfile = "3"

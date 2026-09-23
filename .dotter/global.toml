@@ -311,7 +311,6 @@ depends = []
 "scripts/collect-entries" = "~/.local/bin/collect-entries"
 "scripts/generate-subactivity-lists" = "~/.local/bin/generate-subactivity-lists"
 "scripts/collect-projects" = "~/.local/bin/collect-projects"  # Legacy, will be removed
-"scripts/collect-projects-cron" = "~/.local/bin/collect-projects-cron"
 "scripts/para-projects" = "~/.local/bin/para-projects"
 "scripts/para-areas" = "~/.local/bin/para-areas"
 "scripts/para-connect" = "~/.local/bin/para-connect"
