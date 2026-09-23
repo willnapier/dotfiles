@@ -19,6 +19,7 @@ mod checks;
 mod exec;
 mod git_audit;
 mod history;
+mod park;
 
 use clap::Parser;
 use std::fs::OpenOptions;
@@ -38,6 +39,31 @@ struct Cli {
     /// Do not post confirmed problems to, or archive cleared ones from, the Messageboard
     #[arg(long)]
     no_board: bool,
+    #[command(subcommand)]
+    command: Option<Cmd>,
+}
+
+#[derive(clap::Subcommand, Debug)]
+enum Cmd {
+    /// Park a known problem until a date, with a reason: it leaves the verdict,
+    /// the alert and the Messageboard but keeps its age in the history
+    Park {
+        /// Substring of the problem key (see `parked` or the status file); must match exactly one
+        needle: String,
+        /// Last day the park holds, YYYY-MM-DD
+        #[arg(long)]
+        until: String,
+        /// Why, and what will change by then
+        #[arg(long)]
+        reason: String,
+    },
+    /// Remove a park so the problem counts again
+    Unpark {
+        /// Substring of the parked key; must match exactly one park
+        needle: String,
+    },
+    /// List this host's parks
+    Parked,
 }
 
 fn main() -> ExitCode {
@@ -45,6 +71,11 @@ fn main() -> ExitCode {
     let is_macos = cfg!(target_os = "macos");
     let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"));
     let log_path = home.join(".local/share/system-health-check.log");
+    if let Some(cmd) = cli.command {
+        let hostname = short_hostname();
+        let host = if is_macos { "macos".to_string() } else { hostname.clone() };
+        return run_park_command(cmd, &home, &host, &hostname);
+    }
 
     let log = |level: &str, message: &str| {
         let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
@@ -98,11 +129,40 @@ fn main() -> ExitCode {
     // problem confirmed on its second run reaches the Messageboard.
     let now = chrono::Local::now().to_rfc3339();
     let (previous, previous_board) = read_previous_history(&home, &host);
+    // History keeps every problem, parked or not, so a park never resets the age.
     let (records, cleared) = history::merge_history(&previous, &problems, &now);
-    let board_keys = if cli.no_board { previous_board } else { post_to_board(&host, &records, &previous_board, &log) };
     let _ = cleared;
-    if let Err(e) = write_status(&home, &host, &hostname, nu_version.as_deref(), &problems, &records, &board_keys) {
+
+    // Parks: a problem held by an unexpired park is recorded as parked and
+    // leaves the verdict, the alert and the board. Expired parks are pruned
+    // here, with a log line, so the problem is red again on this very run.
+    let park_path = park::path(&home, &host);
+    let parks = match park::load(&park_path) {
+        Ok(p) => p,
+        Err(e) => {
+            log("WARN", &format!("parks: {e} — treating as none"));
+            vec![]
+        }
+    };
+    let (parks, expired) = park::prune_expired(parks, chrono::Local::now().date_naive());
+    if !expired.is_empty() {
+        for p in &expired {
+            log("INFO", &format!("park expired: {} (until {}) — back to red", p.key, p.until));
+        }
+        if let Err(e) = park::save(&park_path, &parks) {
+            log("WARN", &format!("parks: could not prune expired entries: {e}"));
+        }
+    }
+    let split = park::split_problems(&problems, &parks);
+    let problems = split.active;
+    let parked_keys: Vec<&str> = split.parked.iter().map(|p| p.key.as_str()).collect();
+    let board_records: Vec<history::ProblemRecord> = records.iter().filter(|r| !parked_keys.contains(&r.key.as_str())).cloned().collect();
+    let board_keys = if cli.no_board { previous_board } else { post_to_board(&host, &board_records, &previous_board, &log) };
+    if let Err(e) = write_status(&home, &host, &hostname, nu_version.as_deref(), &problems, &records, &board_keys, &split.parked) {
         eprintln!("system-health-check: could not write status file: {e}");
+    }
+    for p in &split.parked {
+        log("INFO", &format!("parked until {}: {} ({})", p.until, p.text, p.reason));
     }
 
     if problems.is_empty() {
@@ -147,6 +207,117 @@ struct Status<'a> {
     problem_history: &'a [history::ProblemRecord],
     /// Confirmed keys the Messageboard `HEALTH-<host>` section currently lists.
     board_keys: &'a [String],
+    /// Problems held by an unexpired park this run (2026-09-23; additive).
+    parked: &'a [park::ParkedProblem],
+}
+
+/// `park` / `unpark` / `parked`. Candidates are the keys in this host's
+/// problem history (current and recent problems), so a park can be placed
+/// from a session that has just read the brief, without waiting for a run.
+fn run_park_command(cmd: Cmd, home: &std::path::Path, host: &str, hostname: &str) -> ExitCode {
+    let path = park::path(home, host);
+    let mut parks = match park::load(&path) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("system-health-check: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    match cmd {
+        Cmd::Parked => {
+            if parks.is_empty() {
+                println!("no parks on {host}");
+                return ExitCode::SUCCESS;
+            }
+            let today = chrono::Local::now().date_naive();
+            for p in &parks {
+                let state = if park::is_expired(p, today) { "EXPIRED" } else { "holds" };
+                println!("{state:8} until {}  {}\n         {} — parked {} on {}", p.until, p.key, p.reason, p.parked_at, p.by);
+            }
+            ExitCode::SUCCESS
+        }
+        Cmd::Park { needle, until, reason } => {
+            let until_date = match park::parse_until(&until) {
+                Ok(d) => d,
+                Err(e) => {
+                    eprintln!("system-health-check: {e}");
+                    return ExitCode::from(2);
+                }
+            };
+            if until_date < chrono::Local::now().date_naive() {
+                eprintln!("system-health-check: --until {until} is in the past");
+                return ExitCode::from(2);
+            }
+            if reason.trim().is_empty() {
+                eprintln!("system-health-check: --reason must say why and what will change by then");
+                return ExitCode::from(2);
+            }
+            let (records, _) = read_previous_history(home, host);
+            let keys: Vec<&str> = records.iter().map(|r| r.key.as_str()).collect();
+            let found = park::candidates(&keys, &needle);
+            match found.as_slice() {
+                [key] => {
+                    let key = key.to_string();
+                    parks.retain(|p| p.key != key);
+                    parks.push(park::Park {
+                        key: key.clone(),
+                        until: until.clone(),
+                        reason: reason.clone(),
+                        parked_at: chrono::Local::now().to_rfc3339(),
+                        by: hostname.to_string(),
+                    });
+                    if let Err(e) = park::save(&path, &parks) {
+                        eprintln!("system-health-check: could not write {}: {e}", path.display());
+                        return ExitCode::from(2);
+                    }
+                    let text = records.iter().find(|r| r.key == key).map(|r| r.text.as_str()).unwrap_or(&key);
+                    println!("parked until {until}: {text}\n  reason: {reason}\n  takes effect on the next run; `system-health-check unpark {needle:?}` to undo");
+                    ExitCode::SUCCESS
+                }
+                [] => {
+                    eprintln!("system-health-check: no current or recent problem key contains {needle:?}. Keys in this host's history:");
+                    for k in &keys {
+                        eprintln!("  {k}");
+                    }
+                    ExitCode::from(2)
+                }
+                many => {
+                    eprintln!("system-health-check: {needle:?} matches {} problems; be more specific:", many.len());
+                    for k in many {
+                        eprintln!("  {k}");
+                    }
+                    ExitCode::from(2)
+                }
+            }
+        }
+        Cmd::Unpark { needle } => {
+            let keys: Vec<&str> = parks.iter().map(|p| p.key.as_str()).collect();
+            let found = park::candidates(&keys, &needle);
+            match found.as_slice() {
+                [key] => {
+                    let key = key.to_string();
+                    parks.retain(|p| p.key != key);
+                    if let Err(e) = park::save(&path, &parks) {
+                        eprintln!("system-health-check: could not write {}: {e}", path.display());
+                        return ExitCode::from(2);
+                    }
+                    println!("unparked: {key}");
+                    ExitCode::SUCCESS
+                }
+                [] => {
+                    eprintln!("system-health-check: no park on {host} matches {needle:?}");
+                    ExitCode::from(2)
+                }
+                many => {
+                    eprintln!("system-health-check: {needle:?} matches {} parks; be more specific:", many.len());
+                    for k in many {
+                        eprintln!("  {k}");
+                    }
+                    ExitCode::from(2)
+                }
+            }
+        }
+    }
 }
 
 fn read_previous_history(home: &std::path::Path, host: &str) -> (Vec<history::ProblemRecord>, Vec<String>) {
@@ -219,7 +390,7 @@ fn short_hostname() -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
-fn write_status(home: &std::path::Path, host: &str, hostname: &str, nu_version: Option<&str>, problems: &[String], problem_history: &[history::ProblemRecord], board_keys: &[String]) -> std::io::Result<()> {
+fn write_status(home: &std::path::Path, host: &str, hostname: &str, nu_version: Option<&str>, problems: &[String], problem_history: &[history::ProblemRecord], board_keys: &[String], parked: &[park::ParkedProblem]) -> std::io::Result<()> {
     let dir = home.join("Assistants/health");
     std::fs::create_dir_all(&dir)?;
     let status = Status {
@@ -233,6 +404,7 @@ fn write_status(home: &std::path::Path, host: &str, hostname: &str, nu_version: 
         nu_version,
         problem_history,
         board_keys,
+        parked,
     };
     let json = serde_json::to_string_pretty(&status).map_err(std::io::Error::other)?;
     // atomic replace so a reader (or Syncthing) never sees a half-written file
@@ -248,4 +420,33 @@ fn notify(problems: &[String]) {
     let _ = Command::new("notify-user")
         .args(["--tool", "system-health-check", "--urgency", "critical", "System Health Check", &body])
         .status();
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::*;
+
+    #[test]
+    fn status_file_carries_parked_problems_separately_from_active_ones() {
+        let d = tempfile::tempdir().unwrap();
+        let home = d.path();
+        let all = vec!["Service failed: mailcurator-drift".to_string(), "Watcher f: last error: x".to_string()];
+        let (records, _) = history::merge_history(&[], &all, "2026-09-23T01:40:00+01:00");
+        let parks = vec![park::Park {
+            key: history::problem_key(&all[0]),
+            until: "2026-09-30".into(),
+            reason: "extractor coverage work queued".into(),
+            parked_at: "2026-09-23T01:40:00+01:00".into(),
+            by: "macos".into(),
+        }];
+        let split = park::split_problems(&all, &parks);
+        write_status(home, "macos", "mac", None, &split.active, &records, &[], &split.parked).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(home.join("Assistants/health/macos.json")).unwrap()).unwrap();
+        assert_eq!(v["count"], 1);
+        assert_eq!(v["problems"].as_array().unwrap().len(), 1);
+        assert_eq!(v["problem_history"].as_array().unwrap().len(), 2, "history keeps the parked problem");
+        assert_eq!(v["parked"][0]["text"], "Service failed: mailcurator-drift");
+        assert_eq!(v["parked"][0]["until"], "2026-09-30");
+        assert_eq!(v["parked"][0]["reason"], "extractor coverage work queued");
+    }
 }

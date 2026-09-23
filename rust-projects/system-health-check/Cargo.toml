@@ -1,6 +1,6 @@
 [package]
 name = "system-health-check"
-version = "0.4.1"
+version = "0.5.0"
 edition = "2021"
 description = "Daily system health validator: services, timers, Git backup reachability, deployed tools, configuration drift, and orphaned headless Chrome."
 
@@ -9,6 +9,7 @@ clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = "0.4"
+toml = "0.8"
 
 [dev-dependencies]
 tempfile = "3"
