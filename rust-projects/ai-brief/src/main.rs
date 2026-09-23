@@ -298,7 +298,15 @@ fn host_health_summary_at(dir: &Path, now: chrono::DateTime<chrono::FixedOffset>
                 None => true,
                 Some(a) => a > chrono::Duration::hours(HEALTH_STALE_HOURS),
             };
-            let head = if count == 0 { format!("{host}: ✅ clean") } else { format!("{host}: 🚨 {count} problems") };
+            // Parked problems (system-health-check ≥ 0.5.0): a recorded
+            // decision with an end date — shown, counted apart, never red.
+            let parked = s.get("parked").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+            let head = match (count, parked.len()) {
+                (0, 0) => format!("{host}: ✅ clean"),
+                (0, p) => format!("{host}: ✅ clean ({p} parked)"),
+                (n, 0) => format!("{host}: 🚨 {n} problems"),
+                (n, p) => format!("{host}: 🚨 {n} problems, {p} parked"),
+            };
             let when = if stale {
                 format!(" — STALE (last check {age_text}; the health check itself may be dead)")
             } else {
@@ -324,15 +332,26 @@ fn host_health_summary_at(dir: &Path, now: chrono::DateTime<chrono::FixedOffset>
                     .unwrap_or_else(|| "?".to_string());
                 format!(" [since {since}, {runs}×]")
             };
-            let problems: Vec<String> = s
+            let mut lines: Vec<String> = s
                 .get("problems")
                 .and_then(|v| v.as_array())
                 .map(|a| a.iter().filter_map(|p| p.as_str()).map(|p| format!("  - {p}{}", age_tag(p))).collect())
                 .unwrap_or_default();
-            if count == 0 {
+            for park in &parked {
+                let text = park.get("text").and_then(|t| t.as_str()).unwrap_or("?");
+                let until = park
+                    .get("until")
+                    .and_then(|u| u.as_str())
+                    .and_then(|u| chrono::NaiveDate::parse_from_str(u, "%Y-%m-%d").ok())
+                    .map(|u| u.format("%-d %b").to_string())
+                    .unwrap_or_else(|| "?".to_string());
+                let reason = park.get("reason").and_then(|r| r.as_str()).unwrap_or("");
+                lines.push(format!("  ⏸ {text} — parked until {until}: {reason}{}", age_tag(text)));
+            }
+            if lines.is_empty() {
                 format!("{head}{when}")
             } else {
-                format!("{head}{when}\n{}", problems.join("\n"))
+                format!("{head}{when}\n{}", lines.join("\n"))
             }
         })
         .collect();
@@ -776,6 +795,38 @@ mod tests {
     fn metadata_value_reads_first_matching_line() {
         assert_eq!(metadata_value("a: 1\nhost: macos\nhost: other", "host").unwrap(), "macos");
         assert!(metadata_value("a: 1", "host").is_err());
+    }
+
+    #[test]
+    fn host_health_renders_parked_problems_apart_and_never_red() {
+        let dir = temp("health-park");
+        let now = chrono::DateTime::parse_from_rfc3339("2026-09-23T09:00:00+01:00").unwrap();
+        fs::write(
+            dir.join("macos.json"),
+            r#"{"schema":1,"host":"macos","hostname":"mac","checked_at":"2026-09-23T08:05:00+01:00","count":2,
+                "problems":["Agent errored: a [exit 1]","Watcher g: last error: y"],
+                "problem_history":[
+                  {"text":"Agent errored: a [exit 1]","key":"k1","first_seen":"2026-09-22T08:00:00+01:00","runs":2},
+                  {"text":"Watcher g: last error: y","key":"k2","first_seen":"2026-09-23T08:05:00+01:00","runs":1},
+                  {"text":"Service failed: mailcurator-drift","key":"k3","first_seen":"2026-09-20T09:00:00+01:00","runs":4}
+                ],
+                "parked":[{"key":"k3","text":"Service failed: mailcurator-drift","until":"2026-09-30","reason":"coverage work queued","parked_at":"2026-09-23T01:40:00+01:00"}]}"#,
+        )
+        .unwrap();
+        fs::write(
+            dir.join("nimbini.json"),
+            r#"{"schema":1,"host":"nimbini","hostname":"nimbini","checked_at":"2026-09-23T08:00:00+01:00","count":0,
+                "problems":[],"problem_history":[{"text":"Service failed: x","key":"k9","first_seen":"2026-09-21T08:00:00+01:00","runs":3}],
+                "parked":[{"key":"k9","text":"Service failed: x","until":"2026-10-01","reason":"awaiting vendor","parked_at":"2026-09-23T01:40:00+01:00"}]}"#,
+        )
+        .unwrap();
+        let out = host_health_summary_at(&dir, now, HEALTH_BUDGET);
+        assert!(out.contains("macos: 🚨 2 problems, 1 parked"), "{out}");
+        assert!(out.contains("  ⏸ Service failed: mailcurator-drift — parked until 30 Sep: coverage work queued [since 20 Sep, 4×]"), "{out}");
+        assert!(out.contains("nimbini: ✅ clean (1 parked)"), "{out}");
+        assert!(out.contains("  ⏸ Service failed: x — parked until 1 Oct: awaiting vendor [since 21 Sep, 3×]"), "{out}");
+        // The parked line comes after the active ones.
+        assert!(out.find("Watcher g").unwrap() < out.find("⏸ Service failed: mailcurator").unwrap());
     }
 
     #[test]
