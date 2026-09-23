@@ -1359,8 +1359,7 @@ fn publish_completion(root: &Path, job: &QueueJob) -> Result<()> {
             .parent()
             .ok_or_else(|| anyhow!("forum root has no shared-directory parent"))?
             .join("MESSAGEBOARD.md");
-        let already_notified =
-            messageboard.is_file() && fs::read_to_string(&messageboard)?.contains(&marker);
+        let already_notified = board_contains(&messageboard, &marker)?;
         if !already_notified {
             let dissent = receipt
                 .residual_dissent
@@ -2067,8 +2066,7 @@ fn cmd_dispatch(root: &Path, args: DispatchArgs) -> Result<()> {
         .parent()
         .ok_or_else(|| anyhow!("forum root has no shared-directory parent"))?
         .join("MESSAGEBOARD.md");
-    let already_posted = messageboard_path.is_file()
-        && fs::read_to_string(&messageboard_path)?.contains(&messageboard_marker);
+    let already_posted = board_contains(&messageboard_path, &messageboard_marker)?;
     if !already_posted {
         post_messageboard_message(&work_order)?;
     }
@@ -2205,6 +2203,27 @@ fn post_messageboard_message(message: &str) -> Result<()> {
 
 fn archive_messageboard_containing(needle: &str) -> Result<()> {
     run_messageboard_edit(&["archive-containing", needle]).map(|_| ())
+}
+
+/// The live board as readers must see it: `messageboard-edit render` merges
+/// every host's `MESSAGEBOARD.<host>.md` with the legacy file and hides
+/// tombstoned sections (one writer per file since 2026-09-23). Falls back to
+/// the legacy file when the binary is unavailable; `None` when neither
+/// exists.
+fn board_text(legacy_path: &Path) -> Result<Option<String>> {
+    if command_exists("messageboard-edit") {
+        if let Ok(text) = run_messageboard_edit(&["render"]) {
+            return Ok(Some(text));
+        }
+    }
+    if legacy_path.is_file() {
+        return Ok(Some(fs::read_to_string(legacy_path)?));
+    }
+    Ok(None)
+}
+
+fn board_contains(legacy_path: &Path, needle: &str) -> Result<bool> {
+    Ok(board_text(legacy_path)?.map(|t| t.contains(needle)).unwrap_or(false))
 }
 
 /// Run `messageboard-edit` and return its trimmed stdout.
@@ -2429,14 +2448,13 @@ fn cmd_sweep(root: &Path, dry_run: bool, older_than: Option<u32>) -> Result<()> 
         .parent()
         .ok_or_else(|| anyhow!("forum root has no shared-directory parent"))?
         .join("MESSAGEBOARD.md");
-    if !board_path.is_file() {
+    let Some(board) = board_text(&board_path)? else {
         println!(
-            "no Messageboard at {}; nothing to sweep",
+            "no Messageboard at {} (nor any per-host file); nothing to sweep",
             board_path.display()
         );
         return Ok(());
-    }
-    let board = fs::read_to_string(&board_path)?;
+    };
     let threads = thread_states(root)?;
     let acknowledged: BTreeSet<String> = read_receipts(&acknowledged_inbox_dir(root), true)?
         .into_iter()
