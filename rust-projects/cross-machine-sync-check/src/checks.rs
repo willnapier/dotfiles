@@ -972,15 +972,25 @@ mod messageboard_tests {
 pub fn messageboard_staleness() -> Result<CheckResult> {
     let messageboard = home_dir().join("Assistants/shared/MESSAGEBOARD.md");
 
-    if !messageboard.exists() {
-        return Ok(CheckResult {
-            name: "messageboard".to_string(),
-            status: Status::Skipped,
-            details: vec!["MESSAGEBOARD.md not found".to_string()],
-        });
-    }
-
-    let content = std::fs::read_to_string(&messageboard)?;
+    // Since 2026-09-23 each host writes its own MESSAGEBOARD.<host>.md and the
+    // old file is legacy; `messageboard-edit render` is the merged view.
+    let rendered = Command::new("messageboard-edit")
+        .arg("render")
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned());
+    let content = match rendered {
+        Some(text) => text,
+        None if messageboard.exists() => std::fs::read_to_string(&messageboard)?,
+        None => {
+            return Ok(CheckResult {
+                name: "messageboard".to_string(),
+                status: Status::Skipped,
+                details: vec!["no Messageboard: messageboard-edit unavailable and MESSAGEBOARD.md not found".to_string()],
+            });
+        }
+    };
     let today = chrono::Local::now().date_naive();
     let (stale_messages, fresh, pointers) = messageboard_sections(&content, today);
 

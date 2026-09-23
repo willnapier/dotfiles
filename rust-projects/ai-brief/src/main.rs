@@ -190,16 +190,35 @@ fn cap_component(text: &str, budget: usize, label: &str) -> String {
     format!("{}{notice}", kept.join("\n"))
 }
 
+/// The merged Messageboard (every host's file plus the legacy file, tombstones
+/// applied) comes from `messageboard-edit render` since 2026-09-23; the legacy
+/// file alone is the fallback when the binary is absent or fails.
+fn messageboard_head_merged(legacy_path: &Path, budget: usize) -> Result<String> {
+    if on_path("messageboard-edit") {
+        let root = legacy_path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+        if let Ok(o) = Command::new("messageboard-edit").args(["--root".as_ref(), root.as_os_str(), "render".as_ref()]).output() {
+            if o.status.success() {
+                return Ok(messageboard_head_text(&String::from_utf8_lossy(&o.stdout), budget));
+            }
+        }
+    }
+    messageboard_head(legacy_path, budget)
+}
+
 fn messageboard_head(path: &Path, budget: usize) -> Result<String> {
     let raw = required_text(path)?;
+    Ok(messageboard_head_text(&raw, budget))
+}
+
+fn messageboard_head_text(raw: &str, budget: usize) -> String {
     let mut sections = raw.split("\n### ");
     sections.next(); // everything before the first entry
     let Some(first) = sections.next() else {
-        return Ok("No current Messageboard entries.".to_string());
+        return "No current Messageboard entries.".to_string();
     };
     let trimmed = first.trim();
     let body = trimmed.strip_suffix("\n---").unwrap_or(trimmed);
-    Ok(cap_component(&format!("### {body}"), budget, "Messageboard head"))
+    cap_component(&format!("### {body}"), budget, "Messageboard head")
 }
 
 fn forum_open_summary(path: &Path, budget: usize) -> Result<String> {
@@ -603,7 +622,7 @@ fn render_with_breakdown(home: &Path, harness: &str, host: &str, budget: usize) 
     let fixed = kernel_body.len() + machine_body.len() + adapter_body.len() + frame;
     let planned = plan_live_budgets(fixed, budget)?;
 
-    let messageboard = messageboard_head(&messageboard_path, planned.messageboard)?;
+    let messageboard = messageboard_head_merged(&messageboard_path, planned.messageboard)?;
     let health = host_health_summary(home, planned.health);
     let forum_index = forum_open_summary(&index_path, planned.forum_index)?;
     let forum_inbox = forum_inbox_summary(planned.forum_inbox);

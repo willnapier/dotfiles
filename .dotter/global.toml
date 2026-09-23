@@ -40,7 +40,6 @@ depends = []
 "meli/mailcap" = "~/.config/meli/mailcap"
 "scripts/forge-batch-classifier" = "~/.local/bin/forge-batch-classifier"
 "scripts/pf-stray-reaper" = "~/.local/bin/pf-stray-reaper"
-"scripts/messageboard-edit" = "~/.local/bin/messageboard-edit"
 "scripts/grok-forum-waiter-gate" = "~/.local/bin/grok-forum-waiter-gate"
 "scripts/messageboard-lock" = "~/.local/bin/messageboard-lock"
 "scripts/music-notation-lint" = "~/.local/bin/music-notation-lint"
