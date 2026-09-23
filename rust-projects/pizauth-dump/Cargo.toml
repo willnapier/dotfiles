@@ -1,6 +1,6 @@
 [package]
 name = "pizauth-dump"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 description = "Write pizauth daemon state to ~/.cache/pizauth-state.bin atomically (mode 0600, tmp + rename). Exit 1 and keep the prior dump when pizauth fails or returns nothing; failures alert via notify-user and are recorded in the heartbeat."
 

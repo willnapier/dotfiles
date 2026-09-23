@@ -17,7 +17,17 @@
 //!   (interval_secs 900), so a timer that stops firing or a run that keeps
 //!   failing reaches system-health-check Check 9.
 //!
-//! Exit status: 0 dump written; 1 pizauth failed or produced no bytes.
+//! 0.3.0 (2026-09-23, after the corrupt-dump incident): every dump keeps ONE
+//! predecessor, `~/.cache/pizauth-state.bin.1` (a hard link to the previous
+//! generation, so the live file is never absent), and a broker that holds no
+//! tokens at all — every account "No access token" or "pending authentication",
+//! as `pizauth status` reports it — is refused: the prior dump is the recovery
+//! material and a dump of an empty broker would erase it. That refusal alerts
+//! only when a prior dump exists (nothing to protect otherwise), but always
+//! exits 1 and records last_error.
+//!
+//! Exit status: 0 dump written; 1 pizauth failed, produced no bytes, or holds
+//! no tokens.
 //! 0.2.1: the dump is copied as raw bytes (0.2.0 passed it through a lossy
 //! UTF-8 conversion and wrote a file `pizauth restore` could not read).
 //! The dump content is secret: it is never logged or printed.
@@ -42,6 +52,27 @@ enum Verdict {
     Written(usize),
     /// pizauth failed (exit code) or produced nothing; prior dump kept.
     Failed(String),
+    /// The broker holds no tokens; the prior dump is kept. `bool` = a prior
+    /// dump exists (worth a banner).
+    Refused(bool),
+}
+
+pub fn predecessor(dump: &Path) -> PathBuf {
+    let mut s = dump.as_os_str().to_owned();
+    s.push(".1");
+    PathBuf::from(s)
+}
+
+/// Does `pizauth status` output show any account with a token? An account
+/// whose access token is merely expired still has a refresh token and counts.
+/// Empty or unparseable output counts as "unknown" → true, so a broken status
+/// command never blocks a dump (the dump itself will fail if the broker is down).
+pub fn broker_holds_tokens(status: &str) -> bool {
+    let lines: Vec<&str> = status.lines().filter(|l| l.contains(": ")).collect();
+    if lines.is_empty() {
+        return true;
+    }
+    lines.iter().any(|l| l.contains("Active access token") || l.contains("Access token expired"))
 }
 
 fn dump_file(home: &Path) -> PathBuf {
@@ -61,6 +92,10 @@ fn run_dump(exec: &dyn Exec, home: &Path) -> Verdict {
         return Verdict::Failed(format!("cannot create {}: {e}", dir.display()));
     }
     let bin = pizauth_bin(home);
+    let status = exec.run(&bin.to_string_lossy(), &["status"]);
+    if status.ok() && !broker_holds_tokens(&status.stdout) {
+        return Verdict::Refused(dump.is_file());
+    }
     // Raw bytes: the dump is an encrypted blob, and `from_utf8_lossy` would
     // rewrite every non-UTF-8 sequence as U+FFFD (63 of them in the first
     // install's dump, 2026-09-23 — `pizauth restore` refused it).
@@ -75,6 +110,18 @@ fn run_dump(exec: &dyn Exec, home: &Path) -> Verdict {
     if let Err(e) = write_private(&tmp, &r.stdout) {
         let _ = std::fs::remove_file(&tmp);
         return Verdict::Failed(format!("cannot write {}: {e}", tmp.display()));
+    }
+    // Keep exactly one predecessor: link the current generation to `.1`
+    // (replacing the old `.1`) before the new one takes its place.
+    if dump.is_file() {
+        let prev = predecessor(&dump);
+        let _ = std::fs::remove_file(&prev);
+        if std::fs::hard_link(&dump, &prev).is_err() {
+            if let Err(e) = std::fs::copy(&dump, &prev) {
+                let _ = std::fs::remove_file(&tmp);
+                return Verdict::Failed(format!("cannot keep predecessor {}: {e}", prev.display()));
+            }
+        }
     }
     if let Err(e) = std::fs::rename(&tmp, &dump) {
         let _ = std::fs::remove_file(&tmp);
@@ -118,6 +165,14 @@ fn main() {
             notify(&exec::Real, why);
             (1, None, 0, Some(why.clone()))
         }
+        Verdict::Refused(prior_exists) => {
+            let why = "broker holds no tokens — refusing to overwrite the prior dump; authenticate the accounts".to_string();
+            eprintln!("pizauth-dump: {why}");
+            if *prior_exists {
+                notify(&exec::Real, &why);
+            }
+            (1, None, 0, Some(why))
+        }
     };
     let o = outcome::Outcome { name: NAME, interval_secs: INTERVAL_SECS, started_at, last_action, actions, last_error };
     if let Err(e) = outcome::record(&outcome::state_dir(&home), &o) {
@@ -131,10 +186,59 @@ mod tests {
     use super::*;
     use exec::{CmdResult, Fake};
 
+    const STATUS_LIVE: &str = "cohs-graph: Active access token (obtained x; expires y)\ncohs: Access token expired (last refresh attempt z)\ngmail: Active access token (obtained x; expires y)\n";
+    const STATUS_EMPTY: &str = "cohs-graph: No access token\ncohs: Access token pending authentication (last notification t)\ngmail: No access token\n";
+
     fn fake(home: &Path, r: CmdResult) -> Fake {
         let mut f = Fake::default();
         f.respond(&pizauth_bin(home).to_string_lossy(), &["dump"], r);
+        f.respond(&pizauth_bin(home).to_string_lossy(), &["status"], CmdResult::success(STATUS_LIVE));
         f
+    }
+
+    #[test]
+    fn status_parsing_expired_counts_as_held_pending_does_not() {
+        assert!(broker_holds_tokens(STATUS_LIVE));
+        assert!(!broker_holds_tokens(STATUS_EMPTY));
+        assert!(broker_holds_tokens("gmail: Access token expired (x)\n"));
+        assert!(broker_holds_tokens(""), "unknown output never blocks a dump");
+        assert!(broker_holds_tokens("garbage"));
+    }
+
+    #[test]
+    fn red_control_empty_broker_is_refused_and_prior_dump_kept() {
+        let d = tempfile::tempdir().unwrap();
+        let home = d.path();
+        std::fs::create_dir_all(home.join(".cache")).unwrap();
+        std::fs::write(dump_file(home), b"prior-good-state").unwrap();
+        let mut f = Fake::default();
+        f.respond(&pizauth_bin(home).to_string_lossy(), &["dump"], CmdResult::success("empty-broker-blob"));
+        f.respond(&pizauth_bin(home).to_string_lossy(), &["status"], CmdResult::success(STATUS_EMPTY));
+        assert_eq!(run_dump(&f, home), Verdict::Refused(true));
+        assert_eq!(std::fs::read(dump_file(home)).unwrap(), b"prior-good-state");
+        assert!(!f.calls.borrow().iter().any(|c| c.ends_with(" dump")), "dump never even run");
+        // No prior dump: still refused, flagged as nothing-to-protect.
+        std::fs::remove_file(dump_file(home)).unwrap();
+        assert_eq!(run_dump(&f, home), Verdict::Refused(false));
+    }
+
+    #[test]
+    fn exactly_one_predecessor_is_kept_across_generations() {
+        let d = tempfile::tempdir().unwrap();
+        let home = d.path();
+        let f1 = fake(home, CmdResult::success("gen-1"));
+        assert_eq!(run_dump(&f1, home), Verdict::Written(5));
+        assert!(!predecessor(&dump_file(home)).exists(), "first dump has no predecessor");
+        let f2 = fake(home, CmdResult::success("gen-2!"));
+        assert_eq!(run_dump(&f2, home), Verdict::Written(6));
+        assert_eq!(std::fs::read(predecessor(&dump_file(home))).unwrap(), b"gen-1");
+        let f3 = fake(home, CmdResult::success("gen-3!!"));
+        assert_eq!(run_dump(&f3, home), Verdict::Written(7));
+        assert_eq!(std::fs::read(dump_file(home)).unwrap(), b"gen-3!!");
+        assert_eq!(std::fs::read(predecessor(&dump_file(home))).unwrap(), b"gen-2!", "predecessor replaced, no .1.1 chain");
+        assert!(!predecessor(&predecessor(&dump_file(home))).exists());
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(std::fs::metadata(predecessor(&dump_file(home))).unwrap().permissions().mode() & 0o777, 0o600);
     }
 
     fn mode(p: &Path) -> u32 {
@@ -210,6 +314,7 @@ mod tests {
         let blob: Vec<u8> = (0u8..=255).chain([0xff, 0xfe, 0x80, 0xc0]).collect();
         let mut f = Fake::default();
         f.respond_raw(&pizauth_bin(home).to_string_lossy(), &["dump"], 0, &blob);
+        f.respond(&pizauth_bin(home).to_string_lossy(), &["status"], CmdResult::success(STATUS_LIVE));
         assert_eq!(run_dump(&f, home), Verdict::Written(blob.len()));
         let on_disk = std::fs::read(dump_file(home)).unwrap();
         assert_eq!(on_disk, blob, "bytes must be verbatim");
