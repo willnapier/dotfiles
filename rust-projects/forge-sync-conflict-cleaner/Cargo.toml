@@ -1,0 +1,14 @@
+[package]
+name = "forge-sync-conflict-cleaner"
+version = "0.2.0"
+edition = "2021"
+description = "Daily (04:00, launchd) deletion of Syncthing sync-conflict files under ~/Forge older than 7 days. A delete that fails or a missing Forge is exit 1 and recorded."
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+chrono = "0.4"
+serde_json = "1"
+logkeep = { path = "../logkeep" }
+
+[dev-dependencies]
+tempfile = "3"

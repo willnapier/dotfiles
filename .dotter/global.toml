@@ -39,7 +39,6 @@ depends = []
 "scripts/meli-html-auto" = "~/.local/bin/meli-html-auto"
 "meli/mailcap" = "~/.config/meli/mailcap"
 "scripts/forge-batch-classifier" = "~/.local/bin/forge-batch-classifier"
-"scripts/forge-sync-conflict-cleaner" = "~/.local/bin/forge-sync-conflict-cleaner"
 "scripts/claude-worktree-cleaner" = "~/.local/bin/claude-worktree-cleaner"
 "scripts/pf-stray-reaper" = "~/.local/bin/pf-stray-reaper"
 "scripts/messageboard-edit" = "~/.local/bin/messageboard-edit"
