@@ -277,7 +277,6 @@ depends = []
 "scripts/activity-duration-processor-buffer" = "~/.local/bin/activity-duration-processor-buffer"
 "scripts/hx-process-durations-wezterm" = "~/.local/bin/hx-process-durations-wezterm"
 # Claude Code nightly cleanup - cross-platform (launchd on mac, systemd on linux)
-"scripts/claude-code-nightly-cleanup" = "~/.local/bin/claude-code-nightly-cleanup"
 # Mail sync (lieer/gmi) — RETIRED 2026-05-04, replaced by gmpull (Rust
 # Gmail-API puller). Source files preserved in ~/dotfiles/legacy/.
 # Re-nu conversion scripts - Native Nushell watchers with no external dependencies
@@ -309,7 +308,6 @@ depends = []
 "scripts/collect-entries" = "~/.local/bin/collect-entries"
 "scripts/generate-subactivity-lists" = "~/.local/bin/generate-subactivity-lists"
 "scripts/collect-projects" = "~/.local/bin/collect-projects"  # Legacy, will be removed
-"scripts/collect-projects-cron" = "~/.local/bin/collect-projects-cron"
 "scripts/para-projects" = "~/.local/bin/para-projects"
 "scripts/para-areas" = "~/.local/bin/para-areas"
 "scripts/para-connect" = "~/.local/bin/para-connect"
