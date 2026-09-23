@@ -1,0 +1,13 @@
+[package]
+name = "pizauth-server-wrapper"
+version = "0.2.0"
+edition = "2021"
+description = "launchd/systemd entry point for the pizauth OAuth broker: runs `pizauth server -d` in the foreground, waits for its socket, restores the last encrypted state dump (a failed restore now alerts via notify-user and is recorded), then holds the daemon's lifetime and exit status for the supervisor."
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+chrono = "0.4"
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
