@@ -82,6 +82,7 @@ enum Cmd {
 }
 
 fn main() -> Result<()> {
+    cap_supervisor_log();
     init_tracing();
     let cli = Cli::parse();
 
@@ -960,4 +961,22 @@ fn log_progress(
         msg_per_s = format!("{:.1}", rate),
         "progress"
     );
+}
+
+// D2-24: systemd holds gmpull.log open with O_APPEND, so rename rotation
+// would leave it growing in the predecessor. Copy/truncate preserves that fd.
+// This touches only our log; no mail, config or token is loaded here.
+fn cap_supervisor_log() {
+    if let Some(home) = dirs::home_dir() {
+        let log = home.join(".local/share/gmpull.log");
+        match logkeep::cap_in_place(&log, 10 * logkeep::MB) {
+            Ok(logkeep::Outcome::Rolled(n)) => eprintln!("gmpull: logkeep rolled {n} bytes; kept one predecessor"),
+            Ok(_) => {},
+            Err(e) => {
+                eprintln!("gmpull: logkeep failed: {e}");
+                let _ = std::process::Command::new(home.join(".local/bin/notify-user"))
+                    .args(["--tool", "gmpull", "Gmail pull log", "Could not cap gmpull.log; pull will continue"]).status();
+            }
+        }
+    }
 }

@@ -194,6 +194,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "logkeep",
  "notify",
  "serde_json",
  "tempfile",
@@ -385,6 +386,10 @@ name = "log"
 version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
+
+[[package]]
+name = "logkeep"
+version = "0.1.0"
 
 [[package]]
 name = "memchr"

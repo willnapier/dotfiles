@@ -86,6 +86,7 @@ fn main() -> Result<()> {
     if let Some(dir) = cli.log.parent() {
         std::fs::create_dir_all(dir).ok();
     }
+    maintain_logs(&logger);
     let ctx = Ctx { home: home(), dotter_config: cli.dotter_config.clone(), dry_run: cli.dry_run };
     // interval_secs 0 = event-driven; the health check skips staleness for it.
     let mut hb = Heartbeat::new(&cli.state_dir, NAME, env!("CARGO_PKG_VERSION"), 0);
@@ -173,7 +174,12 @@ fn watch_loop(paths: &[PathBuf], debounce: Duration, ctx: &Ctx, logger: &Logger,
     logger.log(&format!("⚡ Monitoring active on {watched} path(s), debounce {} ms", debounce.as_millis()));
 
     let mut pending: HashMap<PathBuf, (Instant, &'static str)> = HashMap::new();
+    let mut last_log_check = Instant::now();
     loop {
+        if last_log_check.elapsed() >= Duration::from_secs(60) {
+            maintain_logs(logger);
+            last_log_check = Instant::now();
+        }
         match rx.recv_timeout(Duration::from_millis(100)) {
             Ok(Ok(event)) => {
                 let label = match event.kind {
@@ -465,4 +471,68 @@ mod tests {
         assert!(std::fs::read_to_string(d.path().join("log")).unwrap().contains("⚠️  Removing stale lock file — pid 999999999 not running"));
     }
 
+}
+
+// Own log reopens per line: rename. stdout/stderr are held by the supervisor:
+// copy/truncate. Inspect periodically even if no config event is arriving.
+fn cap_logs(log: &Path, max_bytes: u64) -> Result<()> {
+    logkeep::cap(log, max_bytes)?;
+    for ext in ["stdout", "stderr"] {
+        let path = log.with_extension(ext);
+        if path != log {
+            logkeep::cap_in_place(&path, max_bytes)?;
+        }
+    }
+    Ok(())
+}
+fn maintain_logs(logger: &Logger) {
+    if let Err(e) = cap_logs(&logger.path, 10 * logkeep::MB) {
+        eprintln!("dotter-realtime-watcher: logkeep failed: {e:#}");
+        let _ = Command::new(home().join(".local/bin/notify-user"))
+            .args([
+                "--tool",
+                NAME,
+                "Dotter watcher log",
+                "Could not cap watcher logs; watcher will continue",
+            ])
+            .status();
+    }
+}
+#[cfg(test)]
+mod rotation_tests {
+    use super::*;
+    #[test]
+    fn caps_own_and_open_supervisor_logs_and_retains_one_predecessor() {
+        let t = tempfile::tempdir().unwrap();
+        let log = t.path().join("watcher.log");
+        std::fs::write(&log, "old-own-log").unwrap();
+        let stdout = log.with_extension("stdout");
+        let mut held = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&stdout)
+            .unwrap();
+        held.write_all(b"old-stdout-log").unwrap();
+        cap_logs(&log, 4).unwrap();
+        assert!(!log.exists());
+        assert_eq!(
+            std::fs::read_to_string(logkeep::predecessor(&log)).unwrap(),
+            "old-own-log"
+        );
+        held.write_all(b"new").unwrap();
+        assert_eq!(std::fs::read_to_string(&stdout).unwrap(), "new");
+        assert_eq!(
+            std::fs::read_to_string(logkeep::predecessor(&stdout)).unwrap(),
+            "old-stdout-log"
+        );
+        cap_logs(&log, 4).unwrap();
+        assert_eq!(std::fs::read_to_string(&stdout).unwrap(), "new");
+    }
+    #[test]
+    fn rotation_error_is_reportable_not_silently_green() {
+        let t = tempfile::tempdir().unwrap();
+        let log = t.path().join("watcher.log");
+        std::fs::create_dir(&log).unwrap();
+        assert!(cap_logs(&log, 4).is_err());
+    }
 }

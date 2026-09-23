@@ -5,6 +5,7 @@ edition = "2024"
 description = "Pull Gmail messages via REST API into a maildir, replacement for lieer."
 
 [dependencies]
+logkeep = { path = "../logkeep" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "fs", "process", "signal", "sync"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
