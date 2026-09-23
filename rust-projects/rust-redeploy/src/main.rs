@@ -62,6 +62,22 @@ const MACOS_SIGNED_TOOLS: &[&str] = &[
     "system-health-check",
     // gmail-push-tags-watchdog is launchd-run every 30 min (StartInterval); Rust port 2026-09-22.
     "gmail-push-tags-watchdog",
+    // WO-2026-09-23-OXIDISE-FABLE: every script ported to Rust that a launchd agent
+    // launches (StartCalendarInterval, StartInterval, WatchPaths or KeepAlive) — the
+    // LWCR pin applies to any launchd-registered job, so the whole set is signed.
+    "cohs-trash-mover",
+    "mailcurator-drift-check",
+    "pizauth-dump",
+    "pizauth-server-wrapper",
+    "continuum-sync-claude",
+    "syncthing-sync-watchdog",
+    "sync-forge-to-dropbox",
+    "forge-sync-conflict-cleaner",
+    "forge-metadata-backup-monthly",
+    "remind-notify",
+    "morning-briefing",
+    "ghostty-config-validate",
+    "karabiner-relink",
 ];
 
 const MACOS_SIGNING_IDENTITY: &str = "Developer ID Application: William Napier (LU3TB2NLTD)";
