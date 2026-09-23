@@ -142,7 +142,6 @@ depends = []
 # when any policy's required-field coverage regressed >= 10pp vs the
 # most recent prior snapshot. Built 2026-04-29 alongside the
 # vendor-extractor architecture (see SESSION 1+2+3 work).
-"scripts/mailcurator-drift-check" = "~/.local/bin/mailcurator-drift-check"
 # mailcurator policy rules — extract-and-destroy lifecycle definitions
 # (~108 policies as of 2026-05-14). Brought under dotter management
 # this date to fix the orphan exposure that risked silent loss of all
@@ -153,7 +152,6 @@ depends = []
 # pipeline native) to mbsync's folder-based IMAP sync. Moves trash-
 # tagged COHS messages from cohs/INBOX/cur to cohs/Deleted Items/cur
 # every 5 min so mbsync's next tick replicates to M365 server.
-"scripts/cohs-trash-mover" = "~/.local/bin/cohs-trash-mover"
 # Zed editor configuration (added 2025-10-01)
 "zed/keymap.json" = "~/.config/zed/keymap.json"
 "zed/settings.json" = "~/.config/zed/settings.json"
