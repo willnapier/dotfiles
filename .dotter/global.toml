@@ -354,7 +354,6 @@ depends = []
 "scripts/capture-cargo-crates" = "~/.local/bin/capture-cargo-crates"
 "scripts/context-staleness-check" = "~/.local/bin/context-staleness-check"
 # Ghostty config validation - fires on app update
-"scripts/ghostty-config-validate" = "~/.local/bin/ghostty-config-validate"
 
 # Semantic search system - managed separately (has virtual environment)
 
