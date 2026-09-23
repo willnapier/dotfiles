@@ -18,6 +18,8 @@
 //!   failing reaches system-health-check Check 9.
 //!
 //! Exit status: 0 dump written; 1 pizauth failed or produced no bytes.
+//! 0.2.1: the dump is copied as raw bytes (0.2.0 passed it through a lossy
+//! UTF-8 conversion and wrote a file `pizauth restore` could not read).
 //! The dump content is secret: it is never logged or printed.
 
 mod exec;
@@ -59,7 +61,10 @@ fn run_dump(exec: &dyn Exec, home: &Path) -> Verdict {
         return Verdict::Failed(format!("cannot create {}: {e}", dir.display()));
     }
     let bin = pizauth_bin(home);
-    let r = exec.run(&bin.to_string_lossy(), &["dump"]);
+    // Raw bytes: the dump is an encrypted blob, and `from_utf8_lossy` would
+    // rewrite every non-UTF-8 sequence as U+FFFD (63 of them in the first
+    // install's dump, 2026-09-23 — `pizauth restore` refused it).
+    let r = exec.run_raw(&bin.to_string_lossy(), &["dump"]);
     if !r.ok() {
         return Verdict::Failed(format!("pizauth dump exited {}", r.exit_code));
     }
@@ -67,7 +72,7 @@ fn run_dump(exec: &dyn Exec, home: &Path) -> Verdict {
         return Verdict::Failed("pizauth dump exited 0 but produced no bytes".into());
     }
     let tmp = dir.join(format!(".pizauth-state.bin.{}.tmp", std::process::id()));
-    if let Err(e) = write_private(&tmp, r.stdout.as_bytes()) {
+    if let Err(e) = write_private(&tmp, &r.stdout) {
         let _ = std::fs::remove_file(&tmp);
         return Verdict::Failed(format!("cannot write {}: {e}", tmp.display()));
     }
@@ -194,6 +199,21 @@ mod tests {
         assert!(matches!(run_dump(&f, home), Verdict::Failed(w) if w.contains("no bytes")));
         assert_eq!(std::fs::read(dump_file(home)).unwrap(), b"prior-good-state");
         assert!(leftovers(&home.join(".cache")).is_empty());
+    }
+
+    /// The 0.2.0 defect: bytes that are not valid UTF-8 must land on disk
+    /// unchanged, with no U+FFFD substitution.
+    #[test]
+    fn red_control_non_utf8_dump_bytes_are_written_verbatim() {
+        let d = tempfile::tempdir().unwrap();
+        let home = d.path();
+        let blob: Vec<u8> = (0u8..=255).chain([0xff, 0xfe, 0x80, 0xc0]).collect();
+        let mut f = Fake::default();
+        f.respond_raw(&pizauth_bin(home).to_string_lossy(), &["dump"], 0, &blob);
+        assert_eq!(run_dump(&f, home), Verdict::Written(blob.len()));
+        let on_disk = std::fs::read(dump_file(home)).unwrap();
+        assert_eq!(on_disk, blob, "bytes must be verbatim");
+        assert!(!on_disk.windows(3).any(|w| w == [0xef, 0xbf, 0xbd]), "no U+FFFD replacement characters");
     }
 
     #[test]

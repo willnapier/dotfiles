@@ -34,8 +34,25 @@ impl CmdResult {
     }
 }
 
+/// Raw stdout for commands whose output is bytes, not text (an encrypted
+/// dump). `CmdResult` goes through `from_utf8_lossy`, which silently replaces
+/// every invalid sequence with U+FFFD — the 2026-09-23 first install wrote a
+/// dump `pizauth restore` could not read that way.
+#[derive(Debug, Clone, Default)]
+pub struct RawResult {
+    pub exit_code: i32,
+    pub stdout: Vec<u8>,
+}
+
+impl RawResult {
+    pub fn ok(&self) -> bool {
+        self.exit_code == 0
+    }
+}
+
 pub trait Exec {
     fn run(&self, program: &str, args: &[&str]) -> CmdResult;
+    fn run_raw(&self, program: &str, args: &[&str]) -> RawResult;
 }
 
 /// Runs real commands.
@@ -54,6 +71,12 @@ impl Exec for Real {
         }
     }
 
+    fn run_raw(&self, program: &str, args: &[&str]) -> RawResult {
+        match Command::new(program).args(args).output() {
+            Ok(o) => RawResult { exit_code: o.status.code().unwrap_or(-1), stdout: o.stdout },
+            Err(_) => RawResult { exit_code: 127, stdout: Vec::new() },
+        }
+    }
 }
 
 /// Canned responses keyed by `"program arg1 arg2 …"`. Anything not scripted
@@ -63,6 +86,8 @@ impl Exec for Real {
 #[derive(Default)]
 pub struct Fake {
     pub responses: HashMap<String, CmdResult>,
+    /// Byte responses for `run_raw`; a key absent here falls back to `responses`.
+    pub raw_responses: HashMap<String, RawResult>,
     pub calls: std::cell::RefCell<Vec<String>>,
 }
 
@@ -80,6 +105,10 @@ impl Fake {
         self.responses.insert(Self::key(program, args), r);
         self
     }
+    pub fn respond_raw(&mut self, program: &str, args: &[&str], exit_code: i32, stdout: &[u8]) -> &mut Self {
+        self.raw_responses.insert(Self::key(program, args), RawResult { exit_code, stdout: stdout.to_vec() });
+        self
+    }
 }
 
 #[cfg(test)]
@@ -88,5 +117,16 @@ impl Exec for Fake {
         let k = Self::key(program, args);
         self.calls.borrow_mut().push(k.clone());
         self.responses.get(&k).cloned().unwrap_or_else(|| CmdResult::failure(127, "unscripted command"))
+    }
+    fn run_raw(&self, program: &str, args: &[&str]) -> RawResult {
+        let k = Self::key(program, args);
+        self.calls.borrow_mut().push(k.clone());
+        if let Some(r) = self.raw_responses.get(&k) {
+            return r.clone();
+        }
+        match self.responses.get(&k) {
+            Some(c) => RawResult { exit_code: c.exit_code, stdout: c.stdout.as_bytes().to_vec() },
+            None => RawResult { exit_code: 127, stdout: Vec::new() },
+        }
     }
 }
