@@ -15,7 +15,9 @@ struct Cli {
     apply: bool,
     #[arg(long, default_value_t = 7)]
     age_days: u64,
-    #[arg(long, default_value_t = 30)]
+    /// cargo-sweep keeps layers used within this many days. 30 let `~/Code/practiceforge/target`
+    /// reach 182 GB by 2026-09-23 (disk 96 %); the cleaner runs daily, so a week is the ceiling now.
+    #[arg(long, default_value_t = 7)]
     sweep_days: u64,
     #[arg(long,default_value_t=85,value_parser=clap::value_parser!(u8).range(1..=100))]
     disk_warn_pct: u8,
@@ -450,7 +452,7 @@ mod tests {
         let c = Cli {
             apply: false,
             age_days: 7,
-            sweep_days: 30,
+            sweep_days: 7,
             disk_warn_pct: 85,
         };
         let root = if cfg!(target_os = "macos") {
@@ -508,7 +510,7 @@ mod tests {
         let mut c = Cli {
             apply: false,
             age_days: 0,
-            sweep_days: 30,
+            sweep_days: 7,
             disk_warn_pct: 85,
         };
         assert!(run(h, &c, &f).is_ok());
