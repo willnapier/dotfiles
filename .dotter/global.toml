@@ -130,7 +130,6 @@ depends = []
 # watcher catches that, syncs GUI-side changes back into the dotfile,
 # and re-symlinks. Mac-only because Linux has no Karabiner. The plist
 # itself goes in [macos.files].
-"scripts/karabiner-relink" = "~/.local/bin/karabiner-relink"
 # gmail-push-tags health watchdog — fires OS notification when the
 # gmail-push-tags service is hung, failed, or hasn't run recently.
 # Cross-platform script branches on uname; Mac uses osascript +
@@ -347,7 +346,6 @@ depends = []
 "scripts/capture-cargo-crates" = "~/.local/bin/capture-cargo-crates"
 "scripts/context-staleness-check" = "~/.local/bin/context-staleness-check"
 # Ghostty config validation - fires on app update
-"scripts/ghostty-config-validate" = "~/.local/bin/ghostty-config-validate"
 
 # Semantic search system - managed separately (has virtual environment)
 
@@ -438,7 +436,6 @@ depends = ["shared"]
 "macos/launchd/com.user.forge-dropbox-sync.plist" = "~/Library/LaunchAgents/com.user.forge-dropbox-sync.plist"
 "macos/launchd/com.williamnapier.forum-worker.plist" = "~/Library/LaunchAgents/com.williamnapier.forum-worker.plist"
 "macos/launchd/com.williamnapier.morning-briefing.plist" = "~/Library/LaunchAgents/com.williamnapier.morning-briefing.plist"
-"scripts/morning-briefing" = "~/.local/bin/morning-briefing"
 "macos/launchd/com.williamnapier.subscriptions-check.plist" = "~/Library/LaunchAgents/com.williamnapier.subscriptions-check.plist"
 "macos/launchd/com.williamnapier.bequest-heartbeat.plist" = "~/Library/LaunchAgents/com.williamnapier.bequest-heartbeat.plist"
 "macos/LaunchAgents/com.williamnapier.ghostty-config-validate.plist" = "~/Library/LaunchAgents/com.williamnapier.ghostty-config-validate.plist"

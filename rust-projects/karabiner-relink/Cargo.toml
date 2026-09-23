@@ -1,0 +1,14 @@
+[package]
+name = "karabiner-relink"
+version = "0.2.0"
+edition = "2021"
+description = "Self-healing sync for ~/.config/karabiner/karabiner.json: when Karabiner-Elements replaces the Dotter symlink with a real file, capture GUI-side edits into ~/dotfiles, restore the symlink, auto-commit and push. Rust port of the bash script, 2026-09-23."
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+chrono = "0.4"
+serde_json = "1"
+logkeep = { path = "../logkeep" }
+
+[dev-dependencies]
+tempfile = "3"

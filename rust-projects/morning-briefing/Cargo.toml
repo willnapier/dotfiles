@@ -1,0 +1,13 @@
+[package]
+name = "morning-briefing"
+version = "0.2.0"
+edition = "2021"
+description = "Overnight-state digest (gmpull, package drift, frontend audits, CI, mailcurator) written to ~/Assistants/shared/MORNING-BRIEFING.md as a rolling two-day window. Rust port of the bash script, 2026-09-23."
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+chrono = "0.4"
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
