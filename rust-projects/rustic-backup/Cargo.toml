@@ -1,0 +1,12 @@
+[package]
+name = "rustic-backup"
+version = "0.1.0"
+edition = "2021"
+description = "Pinned Rustic operations with fail-closed health and recorded outcomes"
+[dependencies]
+anyhow = "1"
+chrono = "0.4"
+fs2 = "0.4"
+serde_json = "1"
+[dev-dependencies]
+tempfile = "3"
