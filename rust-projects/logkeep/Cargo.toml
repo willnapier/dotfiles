@@ -1,0 +1,12 @@
+[package]
+name = "logkeep"
+version = "0.1.0"
+edition = "2021"
+description = "Cap a tool's own log file at N bytes, keeping exactly one predecessor (<log>.1). The library half of audit row D2-24: a tool that appends to its log calls logkeep::cap at startup; a supervisor-held log uses cap_in_place."
+publish = false
+include = ["src/**", "README.md"]
+
+[dependencies]
+
+[dev-dependencies]
+tempfile = "3"
