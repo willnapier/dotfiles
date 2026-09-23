@@ -399,7 +399,6 @@ depends = ["shared"]
 "launchagents/com.user.zotero-watcher.plist" = "~/Library/LaunchAgents/com.user.zotero-watcher.plist"  # zotero-watcher pdf (Rust)
 "macos/launchd/com.williamnapier.ai-export-watcher.plist" = "~/Library/LaunchAgents/com.williamnapier.ai-export-watcher.plist"  # Linux twin: systemd/ai-export-watcher.service
 "launchagents/com.user.dotter-realtime-watcher.plist" = "~/Library/LaunchAgents/com.user.dotter-realtime-watcher.plist"
-"scripts/syncthing-sync-watchdog" = "~/.local/bin/syncthing-sync-watchdog"
 "macos/LaunchAgents/com.williamnapier.git-auto-pull-watcher.plist" = "~/Library/LaunchAgents/com.williamnapier.git-auto-pull-watcher.plist"
 "macos/LaunchAgents/com.williamnapier.assistants-auto-push.plist" = "~/Library/LaunchAgents/com.williamnapier.assistants-auto-push.plist"
 "macos/LaunchAgents/com.williamnapier.git-auto-push-watcher.plist" = "~/Library/LaunchAgents/com.williamnapier.git-auto-push-watcher.plist"
