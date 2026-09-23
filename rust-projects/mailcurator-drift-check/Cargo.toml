@@ -1,0 +1,15 @@
+[package]
+name = "mailcurator-drift-check"
+version = "0.2.0"
+edition = "2021"
+description = "Weekly health check for mailcurator's vendor extractors: runs `mailcurator coverage --drift`, logs the block, alerts through notify-user on drift, exits with mailcurator's status; a missing mailcurator is its own failure. Outcome recorded in ~/.local/state/watchers."
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+chrono = "0.4"
+serde_json = "1"
+regex = "1"
+logkeep = { path = "../logkeep" }
+
+[dev-dependencies]
+tempfile = "3"

@@ -144,7 +144,6 @@ depends = []
 # when any policy's required-field coverage regressed >= 10pp vs the
 # most recent prior snapshot. Built 2026-04-29 alongside the
 # vendor-extractor architecture (see SESSION 1+2+3 work).
-"scripts/mailcurator-drift-check" = "~/.local/bin/mailcurator-drift-check"
 # mailcurator policy rules — extract-and-destroy lifecycle definitions
 # (~108 policies as of 2026-05-14). Brought under dotter management
 # this date to fix the orphan exposure that risked silent loss of all
