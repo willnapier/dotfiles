@@ -132,7 +132,6 @@ depends = []
 # watcher catches that, syncs GUI-side changes back into the dotfile,
 # and re-symlinks. Mac-only because Linux has no Karabiner. The plist
 # itself goes in [macos.files].
-"scripts/karabiner-relink" = "~/.local/bin/karabiner-relink"
 # gmail-push-tags health watchdog — fires OS notification when the
 # gmail-push-tags service is hung, failed, or hasn't run recently.
 # Cross-platform script branches on uname; Mac uses osascript +
