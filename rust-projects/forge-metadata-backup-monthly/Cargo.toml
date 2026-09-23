@@ -1,0 +1,13 @@
+[package]
+name = "forge-metadata-backup-monthly"
+version = "0.1.0"
+edition = "2021"
+description = "Monthly launchd job: run `forge-metadata-backup export ~/Forge` and commit .metadata-backup.csv to the Forge repo. Every error path alerts through notify-user and is recorded in the outcome heartbeat; exit 1 on any failure."
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+chrono = "0.4"
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
