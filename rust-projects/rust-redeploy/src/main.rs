@@ -78,6 +78,10 @@ const MACOS_SIGNED_TOOLS: &[&str] = &[
     "morning-briefing",
     "ghostty-config-validate",
     "karabiner-relink",
+    // Astra's ports from WO-2026-09-23-OXIDISE-ASTRA that a Mac calendar agent runs.
+    "claude-worktree-cleaner",
+    "claude-code-nightly-cleanup",
+    "collect-projects-cron",
 ];
 
 const MACOS_SIGNING_IDENTITY: &str = "Developer ID Application: William Napier (LU3TB2NLTD)";
