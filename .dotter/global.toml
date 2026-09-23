@@ -391,7 +391,6 @@ depends = ["shared"]
 "macos/launchd/com.williamnapier.pizauth-dump.plist" = "~/Library/LaunchAgents/com.williamnapier.pizauth-dump.plist"
 "macos/launchd/com.williamnapier.pf-stray-reaper.plist" = "~/Library/LaunchAgents/com.williamnapier.pf-stray-reaper.plist"
 "scripts/pizauth-server-wrapper" = "~/.local/bin/pizauth-server-wrapper"
-"scripts/pizauth-dump" = "~/.local/bin/pizauth-dump"
 "msmtp/config" = "~/.config/msmtp/config"
 "meli/config.toml" = "~/.config/meli/config.toml"
 "meli/meli-mine.1" = "~/.local/share/man/man1/meli-mine.1"
