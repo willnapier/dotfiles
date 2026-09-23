@@ -1,0 +1,12 @@
+[package]
+name = "claude-worktree-cleaner"
+version = "0.1.0"
+edition = "2021"
+description = "Conservative stale agent worktree and build-cache cleanup"
+[dependencies]
+anyhow = "1"
+chrono = "0.4"
+clap = { version = "4", features = ["derive"] }
+walkdir = "2"
+[dev-dependencies]
+tempfile = "3"

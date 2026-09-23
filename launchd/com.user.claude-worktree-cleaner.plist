@@ -7,7 +7,6 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/opt/homebrew/bin/nu</string>
         <string>/Users/williamnapier/.local/bin/claude-worktree-cleaner</string>
         <string>--apply</string>
     </array>
