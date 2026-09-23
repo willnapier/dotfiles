@@ -1,0 +1,14 @@
+[package]
+name = "sync-forge-to-dropbox"
+version = "0.2.0"
+edition = "2021"
+description = "One-way rsync of ~/Forge and ~/Admin into the Dropbox folder for 1Writer on iOS, every 30 minutes under launchd. A failed rsync is now exit 1 and notified; rsync 24 (vanished files) is OK."
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+chrono = "0.4"
+serde_json = "1"
+logkeep = { path = "../logkeep" }
+
+[dev-dependencies]
+tempfile = "3"

@@ -39,7 +39,6 @@ depends = []
 "scripts/meli-html-auto" = "~/.local/bin/meli-html-auto"
 "meli/mailcap" = "~/.config/meli/mailcap"
 "scripts/forge-batch-classifier" = "~/.local/bin/forge-batch-classifier"
-"scripts/forge-sync-conflict-cleaner" = "~/.local/bin/forge-sync-conflict-cleaner"
 "scripts/pf-stray-reaper" = "~/.local/bin/pf-stray-reaper"
 "scripts/messageboard-edit" = "~/.local/bin/messageboard-edit"
 "scripts/grok-forum-waiter-gate" = "~/.local/bin/grok-forum-waiter-gate"
@@ -390,7 +389,6 @@ depends = ["shared"]
 "launchagents/com.user.zotero-watcher.plist" = "~/Library/LaunchAgents/com.user.zotero-watcher.plist"  # zotero-watcher pdf (Rust)
 "macos/launchd/com.williamnapier.ai-export-watcher.plist" = "~/Library/LaunchAgents/com.williamnapier.ai-export-watcher.plist"  # Linux twin: systemd/ai-export-watcher.service
 "launchagents/com.user.dotter-realtime-watcher.plist" = "~/Library/LaunchAgents/com.user.dotter-realtime-watcher.plist"
-"scripts/syncthing-sync-watchdog" = "~/.local/bin/syncthing-sync-watchdog"
 "macos/LaunchAgents/com.williamnapier.git-auto-pull-watcher.plist" = "~/Library/LaunchAgents/com.williamnapier.git-auto-pull-watcher.plist"
 "macos/LaunchAgents/com.williamnapier.assistants-auto-push.plist" = "~/Library/LaunchAgents/com.williamnapier.assistants-auto-push.plist"
 "macos/LaunchAgents/com.williamnapier.git-auto-push-watcher.plist" = "~/Library/LaunchAgents/com.williamnapier.git-auto-push-watcher.plist"
@@ -438,7 +436,6 @@ depends = ["shared"]
 # Brought under dotter 2026-09-03; it had been failing since 2026-07-27 with "Operation not
 # permitted" on the Dropbox folder under launchd (macOS file-access permission, not the script).
 "macos/launchd/com.user.forge-dropbox-sync.plist" = "~/Library/LaunchAgents/com.user.forge-dropbox-sync.plist"
-"scripts/sync-forge-to-dropbox" = "~/.local/bin/sync-forge-to-dropbox"
 "macos/launchd/com.williamnapier.forum-worker.plist" = "~/Library/LaunchAgents/com.williamnapier.forum-worker.plist"
 "macos/launchd/com.williamnapier.morning-briefing.plist" = "~/Library/LaunchAgents/com.williamnapier.morning-briefing.plist"
 "scripts/morning-briefing" = "~/.local/bin/morning-briefing"
