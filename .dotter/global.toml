@@ -155,7 +155,6 @@ depends = []
 # pipeline native) to mbsync's folder-based IMAP sync. Moves trash-
 # tagged COHS messages from cohs/INBOX/cur to cohs/Deleted Items/cur
 # every 5 min so mbsync's next tick replicates to M365 server.
-"scripts/cohs-trash-mover" = "~/.local/bin/cohs-trash-mover"
 # Zed editor configuration (added 2025-10-01)
 "zed/keymap.json" = "~/.config/zed/keymap.json"
 "zed/settings.json" = "~/.config/zed/settings.json"

@@ -1,0 +1,13 @@
+[package]
+name = "cohs-trash-mover"
+version = "0.2.0"
+edition = "2021"
+description = "Reconcile notmuch trash tags in the COHS-only index with its Maildir folders: trash-tagged INBOX files move to Deleted Items so mbsync propagates the deletion to M365. Exit 1 when notmuch or a move failed; outcome recorded in ~/.local/state/watchers."
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+chrono = "0.4"
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
