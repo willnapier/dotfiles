@@ -188,8 +188,8 @@ def main [
         return
     }
 
-    # Flush any pending queue entries (from tm3-diary-capture, CC skills, etc.)
-    # before opening in Helix. Safe because file isn't open in Helix yet.
+    # Acknowledge already-saved queue items only. Another editor may have this
+    # page open; importing pending entries belongs to Space+U in its buffer.
     run-external "daypage-flush"
 
     # If not inside Zellij, start a new session with the daily-note layout.

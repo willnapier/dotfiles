@@ -18,7 +18,7 @@
 # Usage: daypage-append "clinical-notes:: 8x 12min - XX00"
 #        daypage-append --date 2026-02-13 "concert.ilminster:: ..."
 #        daypage-append --date 2027-06-16 "dev:: REMINDER ..."   # future -> synced page
-# Flush: Space+U in Helix, or run daypage-flush from command line
+# Import: Space+U in Helix, then :w. daypage-flush only acknowledges saved entries.
 
 def text-has-line [text: string, entry: string] {
     let needle = ($entry | str trim)
@@ -27,22 +27,8 @@ def text-has-line [text: string, entry: string] {
 }
 
 def queue-entry [date: string, entry: string] {
-    let pending_dir = ($env.HOME | path join ".local" "share" "daypage-pending")
-    mkdir $pending_dir
-    let pending_file = ($pending_dir | path join $"($date).md")
-    let daypage = ($env.HOME | path join "Forge" "NapierianLogs" "DayPages" $"($date).md")
-
-    if ($daypage | path exists) {
-        if (text-has-line (open $daypage --raw) $entry) {
-            return
-        }
-    }
-    if ($pending_file | path exists) {
-        if (text-has-line (open $pending_file --raw) $entry) {
-            return
-        }
-    }
-    $"($entry)\n" | save --append $pending_file
+    ^wiki-link-service daypage-queue $date $entry
+    if $env.LAST_EXIT_CODE != 0 { error make { msg: "Could not queue DayPage entry" } }
 }
 
 def main [

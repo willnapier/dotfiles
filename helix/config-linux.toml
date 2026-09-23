@@ -148,9 +148,10 @@ i = ":sh hx-show-real-file %{buffer_name}"
 # Quick save commands - Space+m ("memorize" or "save to memory")
 m = ":write"         # Quick save current file
 M = ":write-all"     # Save all modified files
-# Flush pending DayPage entries - Space+U (Update from queue)
-# Claude skills queue entries via daypage-append; this merges them in
-U = [":write!", ":sh daypage-flush", ":reload"]
+# Import this DayPage's queue and links into the buffer; then save normally (:w).
+# Never force-write or reload. Both versions are snapshotted under daypage-recovery.
+# Helix 25.07 treats stderr as replacement text: suppress it so failure leaves the buffer intact.
+U = ["select_all", ":pipe wiki-link-service daypage-import '%{buffer_name}' 2>/dev/null", "collapse_selection"]
 
 # Remove comments and copy to clipboard - Space+# (strips # comments)
 "#" = ":sh remove-comments %{buffer_name}"
@@ -170,7 +171,7 @@ v = ":sh hx-mark-revisit %{buffer_name}"   # Add today to revisited dates
 # Removed: Space+. export (the bindings above export %{buffer_name} themselves)
 
 # Buffer navigation - Space+b for back (intuitive)
-b = [":write-all", "goto_previous_buffer", ":sh sleep 0.5", ":reload-all"]  # Save all, go back, wait for backlinks, reload all
+b = [":write-all", "goto_previous_buffer"]  # A refused save must never be followed by reload-all
 
 # Save and return to previous buffer - Space+q
 q = [":write", ":buffer-previous"]       # Save then go to previous buffer

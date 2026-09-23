@@ -164,30 +164,15 @@ def fireworks-chat [prompt: string] {
 }
 
 # ---- Quick Logging Functions ----
-# Log entry directly to today's DayPage and trigger collection
+# Queue an entry for today's DayPage; Space+U imports it in Helix
 # Usage: log "P.website:: 2hr implemented-nav"
 #        log "p.c:: 45min Bach-Prelude"
 def log [entry: string] {
     let today = (date now | format date "%Y-%m-%d")
-    let daypage = $"($env.HOME)/Forge/NapierianLogs/DayPages/($today).md"
+    ^daypage-append $entry
+    if $env.LAST_EXIT_CODE != 0 { error make { msg: "DayPage entry was not queued" } }
 
-    # Ensure DayPages directory exists
-    let daypage_dir = ($daypage | path dirname)
-    if not ($daypage_dir | path exists) {
-        mkdir $daypage_dir
-    }
-
-    # Append entry with blank line for spacing
-    $"\n($entry)" | save --append $daypage
-
-    # Trigger collection silently
-    try {
-        ^collect-entries out+err> /dev/null
-    } catch {
-        # Collection errors logged separately, don't interrupt workflow
-    }
-
-    print $"✓ Logged to ($today): ($entry)"
+    print $"✓ Queued for ($today): ($entry) — import with Space+U, then :w"
 }
 
 # Pomodoro timer with automatic logging (background job)
@@ -229,9 +214,8 @@ def pomo [
         sleep 25min
 
         # Auto-log the completed pomodoro
-        let today = (date now | format date "%Y-%m-%d")
-        let daypage = $"($env.HOME)/Forge/NapierianLogs/DayPages/($today).md"
-        $"\n($proj):: 25min ($tsk)" | save --append $daypage
+        ^daypage-append $"($proj):: 25min ($tsk)"
+        if $env.LAST_EXIT_CODE != 0 { error make { msg: "Pomodoro completion was not queued" } }
 
         # Trigger collection
         try {

@@ -179,6 +179,10 @@ fn handle_write(ctx: &Ctx, file_path: &Path, created: bool, out: &mut Outcome) {
 
 /// Transform one note and save it if anything changed.
 fn apply(ctx: &Ctx, index: &Index, path: &Path, content: &str, out: &mut Outcome) -> bool {
+    if crate::daypage::is_daypage(path) {
+        ctx.log(&format!("   Deferred DayPage markers to Helix Space+U: {}", basename(path)));
+        return false;
+    }
     let t = transform(content, index);
     if t.content == content {
         return false;

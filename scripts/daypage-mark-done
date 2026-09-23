@@ -1,6 +1,6 @@
 #!/usr/bin/env nu
 # Mark a client as attended in a DayPage.
-# Queues a DONE instruction for daypage-flush to process.
+# Queues a DONE instruction for Helix Space+U to import.
 # Changes "- [ ] CLIENT_ID ..." to "- [x] CLIENT_ID ..." in the clinic section.
 #
 # Usage: daypage-mark-done "XX00"
@@ -11,15 +11,11 @@ def main [
     client_id: string
     --date (-d): string  # Target date (YYYY-MM-DD), defaults to today
 ] {
-    let pending_dir = ($env.HOME | path join ".local" "share" "daypage-pending")
-    mkdir $pending_dir
-
     let target = if ($date | is-empty) {
         date now | format date "%Y-%m-%d"
     } else {
         $date
     }
-    let pending_file = ($pending_dir | path join $"($target).md")
-
-    $"DONE:($client_id)\n" | save --append $pending_file
+    ^wiki-link-service daypage-queue $target $"DONE:($client_id)"
+    if $env.LAST_EXIT_CODE != 0 { error make { msg: "Could not queue DayPage completion" } }
 }

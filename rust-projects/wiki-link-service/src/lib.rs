@@ -28,8 +28,13 @@
 //! and `promote` ([`ops`]) so the last Nushell note commands that byte-matched
 //! file names become thin wrappers over the service.
 
+//! 0.3.0: DayPage marker/backlink writes are deferred to an editor-buffer
+//! import. Queues use a shared lock; only persisted instructions are acknowledged.
+//! Every import snapshots the buffer and disk separately before emitting output.
+
 pub mod audit;
 pub mod backlinks;
+pub mod daypage;
 pub mod heartbeat;
 pub mod logger;
 pub mod ops;

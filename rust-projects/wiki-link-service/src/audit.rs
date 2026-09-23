@@ -33,6 +33,8 @@ pub struct MarkerChange {
 pub struct AuditReport {
     pub roots: Vec<PathBuf>,
     pub notes: usize,
+    /// DayPage derived edits are performed in the editor, not by disk writers.
+    pub daypages_deferred: usize,
     pub sections: Vec<SectionChange>,
     pub entries_added: usize,
     pub entries_removed: usize,
@@ -75,6 +77,10 @@ pub fn audit_index(index: &Index, roots: &[PathBuf]) -> AuditReport {
     for i in 0..index.files().len() {
         let Some(content) = index.content(i) else { continue };
         let path = index.files()[i].clone();
+        if crate::daypage::is_daypage(&path) {
+            r.daypages_deferred += 1;
+            continue;
+        }
 
         let desired = index.backlink_names(i);
         if content.len() >= 10 && wiki::with_section(&content, &desired) != *content {
@@ -118,6 +124,7 @@ impl AuditReport {
             s.push_str(&format!("   root: {}{}\n", root.display(), if root.exists() { "" } else { " (missing)" }));
         }
         s.push_str(&format!("   notes scanned: {}\n\n", self.notes));
+        s.push_str(&format!("   DayPages deferred to Helix Space+U: {}\n\n", self.daypages_deferred));
 
         let [added, removed, rewritten] = ["added", "removed", "rewritten"].map(|k| self.sections.iter().filter(|c| c.kind == k).count());
         s.push_str(&format!(

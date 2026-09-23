@@ -155,6 +155,10 @@ pub fn rewrite_links(content: &str, old: &str, new: &str) -> Option<String> {
 /// Rebuild the target's section from the notes that link to it; write only if it changes.
 pub fn update_backlinks(ctx: &Ctx, index: &Index, target: usize, out: &mut Outcome) {
     let path = &index.files()[target];
+    if crate::daypage::is_daypage(path) {
+        ctx.log(&format!("   Deferred DayPage backlinks to Helix Space+U: {}", basename(path)));
+        return;
+    }
     ctx.log(&format!("   🔗 Updating backlinks for: {}", note_name(path)));
     let names = index.backlink_names(target);
     if names.is_empty() {

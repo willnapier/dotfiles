@@ -39,6 +39,12 @@ struct Cli {
 
 #[derive(Subcommand, Debug, Clone)]
 enum Cmd {
+    /// Import this DayPage's queue and derived links from stdin to stdout; never writes the page
+    DaypageImport { path: PathBuf },
+    /// Queue one entry under a lock (used by daypage-append / daypage-mark-done)
+    DaypageQueue { date: String, entry: String },
+    /// Remove only queued instructions already confirmed on disk; never writes pages
+    DaypageAck,
     /// Run the wiki-backlinks watcher (maintains ## Backlinks sections)
     Backlinks,
     /// Run the wiki-resolve-mark watcher (marks ?[[target]] when the target is missing, unmarks when it exists)
@@ -101,6 +107,22 @@ fn default_log_dir() -> PathBuf {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd.clone() {
+        Cmd::DaypageImport { path } => {
+            use std::io::{Read, Write};
+            let mut buffer = String::new();
+            std::io::stdin().read_to_string(&mut buffer)?;
+            let imported = wiki_link_service::daypage::Store::local().import(&resolve_roots(&cli)?, &path, &buffer)?;
+            std::io::stdout().write_all(imported.as_bytes())?;
+            return Ok(());
+        }
+        Cmd::DaypageQueue { date, entry } => {
+            return wiki_link_service::daypage::Store::local().queue(&date, &entry);
+        }
+        Cmd::DaypageAck => {
+            let remaining = wiki_link_service::daypage::Store::local().acknowledge()?;
+            if remaining > 0 { println!("{remaining} queued entries await Space+U and a successful save in Helix"); }
+            return Ok(());
+        }
         Cmd::Resolve { name, all } => {
             let roots = resolve_roots(&cli)?;
             let found = forge_names::find_note(&roots, &name);
@@ -167,7 +189,7 @@ fn main() -> Result<()> {
         Cmd::Backlinks => run_one(&cli, Which::Backlinks),
         Cmd::ResolveMark => run_one(&cli, Which::ResolveMark),
         Cmd::Start => start(&cli),
-        Cmd::Status | Cmd::Stop | Cmd::Audit | Cmd::Reconcile { .. } | Cmd::Resolve { .. } | Cmd::LinkFor { .. } | Cmd::LinksTo { .. } | Cmd::Rename { .. } | Cmd::New { .. } | Cmd::Promote { .. } => unreachable!(),
+        Cmd::Status | Cmd::Stop | Cmd::Audit | Cmd::Reconcile { .. } | Cmd::Resolve { .. } | Cmd::LinkFor { .. } | Cmd::LinksTo { .. } | Cmd::Rename { .. } | Cmd::New { .. } | Cmd::Promote { .. } | Cmd::DaypageImport { .. } | Cmd::DaypageQueue { .. } | Cmd::DaypageAck => unreachable!(),
     }
 }
 
