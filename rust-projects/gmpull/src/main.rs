@@ -969,8 +969,8 @@ fn log_progress(
 fn cap_supervisor_log() {
     if let Some(home) = dirs::home_dir() {
         let log = home.join(".local/share/gmpull.log");
-        match logkeep::cap_in_place(&log, 10 * logkeep::MB) {
-            Ok(logkeep::Outcome::Rolled(n)) => eprintln!("gmpull: logkeep rolled {n} bytes; kept one predecessor"),
+        match cap_mail_log(&log, 10 * logkeep::MB) {
+            Ok(logkeep::Outcome::Rolled(n)) => eprintln!("gmpull: logkeep capped {n} bytes; mail retention=0"),
             Ok(_) => {},
             Err(e) => {
                 eprintln!("gmpull: logkeep failed: {e}");
@@ -978,5 +978,32 @@ fn cap_supervisor_log() {
                     .args(["--tool", "gmpull", "Gmail pull log", "Could not cap gmpull.log; pull will continue"]).status();
             }
         }
+    }
+}
+
+// Preserve /etc/logrotate.d/nimbini-mail's rotate=0 policy: the shared helper
+// handles the supervisor-held fd, then its just-created predecessor is removed.
+// Never turn a size cap into a new archive of potentially private mail metadata.
+fn cap_mail_log(log: &std::path::Path, max_bytes: u64) -> std::io::Result<logkeep::Outcome> {
+    let outcome = logkeep::cap_in_place(log, max_bytes)?;
+    if outcome.rolled() { std::fs::remove_file(logkeep::predecessor(log))?; }
+    Ok(outcome)
+}
+#[cfg(test)]
+mod log_retention_tests {
+    use super::*;
+    #[test]
+    fn mail_cap_preserves_no_archive_policy_and_open_fd() {
+        use std::io::Write;
+        let dir=std::env::temp_dir().join(format!("gmpull-log-retention-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();let log=dir.join("synthetic.log");
+        let mut held=std::fs::OpenOptions::new().create(true).append(true).open(&log).unwrap();
+        held.write_all(b"synthetic oversized log").unwrap();
+        assert!(cap_mail_log(&log, 4).unwrap().rolled());
+        assert!(!logkeep::predecessor(&log).exists());
+        held.write_all(b"new").unwrap();
+        assert_eq!(std::fs::read_to_string(&log).unwrap(), "new");
+        assert!(!cap_mail_log(&log, 4).unwrap().rolled());
+        drop(held);std::fs::remove_dir_all(dir).unwrap();
     }
 }
