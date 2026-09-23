@@ -192,7 +192,6 @@ depends = []
 "scripts/todo-scanner" = "~/.local/bin/todo-scanner"
 "scripts/new-script" = "~/.local/bin/new-script"
 "scripts/nosave" = "~/.local/bin/nosave"
-"scripts/continuum-sync-claude" = "~/.local/bin/continuum-sync-claude"
 "scripts/quantified-sum" = "~/.local/bin/quantified-sum"
 "scripts/cn" = "~/.local/bin/cn"
 "scripts/inference-start" = "~/.local/bin/inference-start"

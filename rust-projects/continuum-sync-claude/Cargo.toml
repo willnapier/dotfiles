@@ -1,0 +1,14 @@
+[package]
+name = "continuum-sync-claude"
+version = "0.2.0"
+edition = "2021"
+description = "Every 5 minutes: import Claude Code session transcripts modified in the last 30 minutes into Continuum, never passing a cc-clinical-protected session to the importer. An import failure now exits 1 and is recorded in the heartbeat."
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+chrono = "0.4"
+serde_json = "1"
+logkeep = { path = "../logkeep" }
+
+[dev-dependencies]
+tempfile = "3"
