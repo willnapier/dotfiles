@@ -55,6 +55,11 @@ const LIVE_HEADER: &str = "# Messageboard
 > (report-only — unclaimed is NOT the same as stale; most stranded items are
 > real work awaiting a machine that has not run a session). Verify, then
 > `archive-containing <unique text>`.
+> **Work claims (kernel rule, 2026-09-23):** before the first mutation of any
+> batch, `messageboard-edit claims` (open claims across hosts), then one insert
+> `CLAIMED <id> — host, paths, services cycled, not touching …`; finish with
+> one `DONE <id> — …` insert. Overlap with an open claim is raised, not worked
+> around. Reading and diagnosis need no claim.
 > **Automatic sweep:** `forum sweep --older-than 14` runs daily on nimbini
 > (`messageboard-sweep.timer`, 07:20). It archives what forum state proves
 > finished — acknowledged FORUM COMPLETE notices, FORUM OPEN pointers to
@@ -105,6 +110,7 @@ enum Action {
     ArchiveUnless,
     ArchiveOlderThan,
     Unclaimed,
+    Claims,
     SweepStubs,
     RefreshHeader,
     Show,
@@ -122,7 +128,7 @@ in MESSAGEBOARD-TOMBSTONES.<host>.tsv (and copied into your archive for archive-
 and hide tombstoned sections.\n\n\
 Actions:\n  insert \"message\"\n  remove-section \"### 2026-01-11 — device\"\n  remove-containing \"unique text\"\n  \
 archive-containing \"unique text\"\n  archive-unless \"keep needle\" \"keep needle\" ...\n  archive-older-than 30\n  \
-unclaimed 7           # report-only: what nobody has cleared\n  sweep-stubs           # remove header-only residue\n  \
+unclaimed 7           # report-only: what nobody has cleared\n  claims                # open CLAIMED <id> items with no DONE <id> (any host)\n  sweep-stubs           # remove header-only residue\n  \
 refresh-header\n  show                  # merged live view\n  render [--json]       # merged live view, undecorated"
 )]
 struct Cli {
@@ -156,6 +162,27 @@ struct Section {
 }
 
 impl Section {
+    /// `CLAIMED <id> — …` / `DONE <id> — …` on the first body line: the
+    /// work-claim protocol (kernel, 2026-09-23). `COMPLETE <id>` (the
+    /// 2026-09-23 work-order precedent) counts as DONE. Returns (verb, id)
+    /// with verb normalised to "CLAIMED" or "DONE".
+    fn claim(&self) -> Option<(&'static str, String)> {
+        let line = self.first_body_line();
+        for (written, verb) in [("CLAIMED", "CLAIMED"), ("DONE", "DONE"), ("COMPLETE", "DONE")] {
+            if let Some(rest) = line.strip_prefix(written).and_then(|r| r.strip_prefix(' ')) {
+                let id: String = rest
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .trim_end_matches(|c: char| !c.is_alphanumeric())
+                    .to_string();
+                if !id.is_empty() {
+                    return Some((verb, id));
+                }
+            }
+        }
+        None
+    }
     /// The section as written to disk: header, blank line, body.
     fn text(&self) -> String {
         if self.body.is_empty() {
@@ -623,6 +650,31 @@ fn run(cli: Cli) -> Result<()> {
                 println!("  [{age}] {header} — {body}");
             }
         }
+        Action::Claims => {
+            let merged = board.merged()?;
+            let done: std::collections::HashSet<String> = merged
+                .iter()
+                .filter_map(|s| s.claim())
+                .filter(|(verb, _)| *verb == "DONE")
+                .map(|(_, id)| id)
+                .collect();
+            let open: Vec<&Section> = merged
+                .iter()
+                .filter(|s| matches!(s.claim(), Some(("CLAIMED", id)) if !done.contains(&id)))
+                .collect();
+            if open.is_empty() {
+                println!("✅ No open claims — nothing on the board is CLAIMED without a matching DONE");
+                return Ok(());
+            }
+            println!("⚠️ {} open claim(s). Do not start work that overlaps their paths, services or hosts; raise it instead.", open.len());
+            for s in &open {
+                let header = s.header.trim_start_matches("### ");
+                let age = s.date().map(|d| (today - d).num_days()).unwrap_or(-1);
+                let flag = if age > 1 { " STALE" } else { "" };
+                let age_s = if age < 0 { "?".to_string() } else { format!("{age}d") };
+                println!("  [{age_s}{flag}] {header} — {}", s.first_body_line());
+            }
+        }
         Action::SweepStubs => {
             let own_source = Source::Host(board.host.clone());
             let (own, own_stubs) = board.read_live(&own_source)?;
@@ -727,6 +779,44 @@ mod tests {
         assert_ne!(a.id(), c.id());
         assert_eq!(a.id().len(), 12);
         assert_eq!(section_id("### 2026-09-22 — x\n\nhello"), a.id());
+    }
+
+    #[test]
+    fn claims_pairs_claimed_with_done_across_hosts() {
+        let d = tempfile::tempdir().unwrap();
+        file_with(
+            d.path(),
+            "MESSAGEBOARD.williams-macbook-air.md",
+            &[
+                ("2026-09-23 — mac", "CLAIMED BATCH-A — Fable on the Mac. Touching: x"),
+                ("2026-09-23 — mac", "DONE BATCH-B — finished"),
+                ("2026-09-20 — mac", "CLAIMED WO-OLD — never closed"),
+                ("2026-09-23 — mac", "MORNING BRIEF — not a claim; CLAIMED appears later in the body"),
+            ],
+        );
+        file_with(d.path(), "MESSAGEBOARD.nimbini.md", &[("2026-09-23 — nimbini", "CLAIMED BATCH-B — Astra. Touching: y")]);
+        let b = board_in(d.path(), "williams-macbook-air");
+        let merged = b.merged().unwrap();
+        let claims: Vec<(&str, String)> = merged.iter().filter_map(|s| s.claim()).collect();
+        assert_eq!(claims.len(), 4, "three CLAIMED + one DONE; the brief is not a claim");
+        let done: std::collections::HashSet<String> =
+            claims.iter().filter(|(v, _)| *v == "DONE").map(|(_, id)| id.clone()).collect();
+        let open: Vec<String> = merged
+            .iter()
+            .filter_map(|s| s.claim())
+            .filter(|(v, id)| *v == "CLAIMED" && !done.contains(id))
+            .map(|(_, id)| id)
+            .collect();
+        // Green control: BATCH-B was claimed on nimbini and closed from the Mac — not open.
+        // Red control: BATCH-A (today) and WO-OLD (three days) are open.
+        assert_eq!(open, vec!["BATCH-A".to_string(), "WO-OLD".to_string()]);
+        // A trailing punctuation mark after the id does not enter it.
+        let s = Section { header: "### 2026-09-23 — x".into(), body: "DONE BATCH-C. all good".into(), source: Source::Legacy };
+        assert_eq!(s.claim(), Some(("DONE", "BATCH-C".to_string())));
+        let n = Section { header: "### 2026-09-23 — x".into(), body: "CLAIMEDX".into(), source: Source::Legacy };
+        assert_eq!(n.claim(), None);
+        let c = Section { header: "### 2026-09-23 — x".into(), body: "COMPLETE WO-1 — six ports".into(), source: Source::Legacy };
+        assert_eq!(c.claim(), Some(("DONE", "WO-1".to_string())), "COMPLETE closes a claim");
     }
 
     #[test]
