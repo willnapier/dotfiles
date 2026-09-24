@@ -85,7 +85,7 @@ usage-probe-codex	0.1.0	/home/will/projects/continuum/usage-probe-codex
 usage-probe-codex-smoke	0.1.0	/home/will/projects/continuum/usage-probe-codex-smoke
 usage-probe-grok	0.1.0	/home/will/projects/continuum/usage-probe-grok
 usage-probe-grok-smoke	0.1.0	/home/will/projects/continuum/usage-probe-grok-smoke
-wiki-link-service	0.2.8	/home/will/dotfiles/rust-projects/wiki-link-service
+wiki-link-service	0.3.0	/home/will/dotfiles/rust-projects/wiki-link-service
 yazi-cli	25.5.31	crates.io
 yazi-fm	25.5.31	crates.io
 yt-transcript	0.1.0	/home/will/dotfiles/rust-projects/yt-transcript
